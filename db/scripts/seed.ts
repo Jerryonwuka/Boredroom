@@ -11,9 +11,13 @@ async function main() {
   if (process.env.NODE_ENV === "production") throw new Error("Refusing to seed a production database.");
   const pool = getPool();
   if (process.env.NODE_ENV === "test") { await pool.query("SELECT 1"); }
-  const existing = await pool.query("SELECT 1 FROM organisations LIMIT 1").catch(() => ({ rows: [] }));
-  if (existing.rows.length) {
-    console.log("Database already contains organisations; run `pnpm db:reset` first for a clean seed.");
+  const { Client } = await import("pg");
+  const admin = new Client({ connectionString: process.env.NODE_ENV === "test" ? process.env.TEST_DATABASE_ADMIN_URL : process.env.DATABASE_ADMIN_URL });
+  await admin.connect();
+  const existing = await admin.query("SELECT (SELECT count(*) FROM organisations)::int AS orgs, (SELECT count(*) FROM auth_users)::int AS users");
+  await admin.end();
+  if (existing.rows[0].orgs > 0 || existing.rows[0].users > 0) {
+    console.log("Database already contains data; skipping seed. Run `pnpm db:reset && pnpm db:seed` for a clean demo dataset.");
     await pool.end();
     return;
   }

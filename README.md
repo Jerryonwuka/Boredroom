@@ -25,9 +25,15 @@ Requirements: Node 22, pnpm 10, PostgreSQL 16 with the `btree_gist`, `citext` an
 
 ```bash
 pnpm install
-cp .env.example .env.local            # then set APP_SECRET (openssl rand -base64 32)
+pnpm first-run        # writes .env.local, creates roles/databases/extensions, migrates, seeds, runs pnpm doctor
+pnpm dev              # web app on http://localhost:3000
+pnpm worker           # in a second terminal: heartbeat recovery, reminders, media assembly, retention deletion
+```
 
-# One-off database roles and databases (run as a PostgreSQL superuser):
+`pnpm first-run` connects to PostgreSQL as a superuser using `PG_SUPERUSER_URL` (default `postgres://postgres:postgres@localhost:5432/postgres`); set that variable if your local superuser or password differs. The manual equivalent is:
+
+```bash
+cp .env.example .env.local            # then set APP_SECRET (openssl rand -base64 32)
 psql -U postgres <<'SQL'
 CREATE ROLE boardroom_owner LOGIN PASSWORD 'boardroom_owner' SUPERUSER;
 CREATE ROLE boardroom_app LOGIN PASSWORD 'boardroom_app' NOSUPERUSER NOBYPASSRLS;
@@ -37,11 +43,7 @@ SQL
 for db in boardroom boardroom_test; do
   psql -U postgres -d $db -c "CREATE EXTENSION IF NOT EXISTS btree_gist; CREATE EXTENSION IF NOT EXISTS citext; CREATE EXTENSION IF NOT EXISTS pgcrypto;"
 done
-
-pnpm db:migrate        # apply db/migrations/*.sql
-pnpm db:seed           # Company A and Company B fixtures (password: correct-horse-battery)
-pnpm dev               # web app on http://localhost:3000
-pnpm worker            # in a second terminal: heartbeat recovery, reminders, media assembly, retention deletion
+pnpm db:migrate && pnpm db:seed
 ```
 
 `boardroom_owner` is only used by migrations and seeding. Every web and worker query runs as `boardroom_app`, which cannot bypass row-level security. Identity is bound per transaction with `SET LOCAL app.user_id`; the worker sets `app.role = 'worker'` and validates organisation relationships explicitly.
