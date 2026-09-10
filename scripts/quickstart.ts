@@ -26,7 +26,8 @@ function ensureEnvFile() {
     PG_SUPERUSER_URL: superUrl("postgres"),
     SCAN_ALLOW_UNSCANNED: "true",
   };
-  let text = existsSync(".env.local") ? readFileSync(".env.local", "utf8") : readFileSync(".env.example", "utf8").replace(/^APP_SECRET=.*$/m, `APP_SECRET=${randomBytes(32).toString("base64")}`);
+  const template = existsSync(".env.example") ? readFileSync(".env.example", "utf8") : "APP_ORIGIN=http://localhost:3000\nAPP_SECRET=change-me\nMAIL_PROVIDER=sink\nSTORAGE_PROVIDER=local\n";
+  let text = existsSync(".env.local") ? readFileSync(".env.local", "utf8") : template.replace(/^APP_SECRET=.*$/m, `APP_SECRET=${randomBytes(32).toString("base64")}`);
   for (const [k, v] of Object.entries(wanted)) {
     const re = new RegExp(`^${k}=.*$`, "m");
     text = re.test(text) ? text.replace(re, `${k}=${v}`) : `${text.trimEnd()}\n${k}=${v}\n`;
