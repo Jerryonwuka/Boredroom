@@ -21,7 +21,9 @@ export function errorResponse(err: unknown, requestId: string) {
     return NextResponse.json({ code: "FORBIDDEN", message: "You are not allowed to do that.", requestId }, { status: 403 });
   }
   console.error(`[${requestId}]`, err);
-  return NextResponse.json({ code: "INTERNAL", message: "Something went wrong. Try again.", requestId }, { status: 500 });
+  // Outside production, show the underlying cause so misconfiguration (database, storage, mail) is obvious.
+  const detail = process.env.NODE_ENV !== "production" && err instanceof Error ? ` (${err.message})` : "";
+  return NextResponse.json({ code: "INTERNAL", message: `Something went wrong. Try again.${detail}`, requestId, hint: "Check /api/health for configuration problems." }, { status: 500 });
 }
 
 const MUTATING = new Set(["POST", "PUT", "PATCH", "DELETE"]);

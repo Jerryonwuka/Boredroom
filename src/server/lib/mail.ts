@@ -11,10 +11,16 @@ export interface MailProvider {
 export class SinkMailProvider implements MailProvider {
   constructor(private dir: string) {}
   async send(message: MailMessage) {
-    mkdirSync(this.dir, { recursive: true });
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const from = process.env.MAIL_FROM ?? "Boredroom <no-reply@boredroom.local>";
-    writeFileSync(join(this.dir, `${id}.json`), JSON.stringify({ id, from, sentAt: new Date().toISOString(), ...message }, null, 2));
+    const record = { id, from, sentAt: new Date().toISOString(), ...message };
+    try {
+      mkdirSync(this.dir, { recursive: true });
+      writeFileSync(join(this.dir, `${id}.json`), JSON.stringify(record, null, 2));
+    } catch (err) {
+      // Read-only or ephemeral filesystems (serverless hosts): never fail the user action over a dev-only sink.
+      console.warn(`[mail sink] cannot write to ${this.dir} (${(err as Error).message}); message logged instead:\n${message.subject}\n${message.text}`);
+    }
     return { id };
   }
 }

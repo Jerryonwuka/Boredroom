@@ -55,6 +55,10 @@ pnpm worker            # in a second terminal: heartbeat recovery, reminders, me
 
 All passwords: `correct-horse-battery`. Company A has a "Website relaunch" project with a homepage design task (Figma-link deliverable expected) and a client meeting task assigned to Ada, reviewed by David.
 
+### If sign-up or sign-in shows "Something went wrong"
+
+Open `http://localhost:3000/api/health`. It reports whether the database is reachable as `boardroom_app`, whether all migrations are applied, and whether the storage and mail-sink directories are writable. In development the error banner also includes the underlying message. Typical fixes: start PostgreSQL, create the two roles, run `pnpm db:migrate`, or set `DATABASE_URL`/`APP_SECRET` in `.env.local`.
+
 ## Scripts
 
 | Command | Purpose |
