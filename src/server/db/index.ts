@@ -8,7 +8,6 @@ types.setTypeParser(1700, (v: string) => Number(v));
 types.setTypeParser(1082, (v: string) => v); // date -> 'YYYY-MM-DD'
 
 declare global {
-  // eslint-disable-next-line no-var
   var __boredroomPool: Pool | undefined;
 }
 

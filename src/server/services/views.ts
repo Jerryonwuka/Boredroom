@@ -192,3 +192,49 @@ export async function policyView(ctx: OrgContext) {
 }
 
 export type { Db };
+
+export async function reviewQueue(ctx: OrgContext) {
+  return withUser(ctx.user.profileId, async (db) => {
+    const submissions = await db.query<{ task_id: string; title: string; assignee_name: string; submission_id: string; revision: number; submitted_at: string; note: string; reviewer_is_me: boolean }>(
+      `SELECT t.id AS task_id, t.title, pr.display_name AS assignee_name, s.id AS submission_id, s.revision, s.submitted_at, s.note, (t.reviewer_membership_id = $2) AS reviewer_is_me
+       FROM tasks t JOIN memberships m ON m.id = t.assignee_membership_id JOIN profiles pr ON pr.id = m.user_id
+       JOIN LATERAL (SELECT id, revision, submitted_at, note FROM task_submissions WHERE task_id = t.id ORDER BY revision DESC LIMIT 1) s ON true
+       WHERE t.organisation_id = $1 AND t.status = 'in_review' AND t.assignee_membership_id <> $2
+         AND (t.reviewer_membership_id = $2 OR app_has_role($1, 'owner', 'hr') OR app_manages($1, t.assignee_membership_id))
+         AND NOT EXISTS (SELECT 1 FROM reviews r WHERE r.submission_id = s.id AND r.decision <> 'question')
+       ORDER BY s.submitted_at`, [ctx.org.id, ctx.membership.id]);
+    const reports = await db.query<{ id: string; membership_id: string; display_name: string; local_date: string; current_version: number; total_seconds: number; blockers: string; next_priorities: string; submitted_at: string; has_adjustment: boolean }>(
+      `SELECT r.id, r.membership_id, pr.display_name, r.local_date, r.current_version, v.total_seconds, v.blockers, v.next_priorities, v.submitted_at, (v.adjustment_id IS NOT NULL) AS has_adjustment
+       FROM daily_reports r JOIN report_versions v ON v.report_id = r.id AND v.version = r.current_version
+       JOIN memberships m ON m.id = r.membership_id JOIN profiles pr ON pr.id = m.user_id
+       WHERE r.organisation_id = $1 AND r.status = 'submitted' AND r.membership_id <> $2 AND (app_has_role($1, 'owner', 'hr') OR app_manages($1, r.membership_id))
+       ORDER BY v.submitted_at`, [ctx.org.id, ctx.membership.id]);
+    const adjustments = await db.query<{ id: string; display_name: string; task_title: string; reason: string; evidence_note: string | null; proposed_intervals: { startedAt: string; endedAt: string }[]; original_count: number; created_at: string; report_id: string | null }>(
+      `SELECT a.id, pr.display_name, t.title AS task_title, a.reason, a.evidence_note, a.proposed_intervals, cardinality(a.original_interval_ids) AS original_count, a.created_at, a.report_id
+       FROM time_adjustments a JOIN memberships m ON m.id = a.membership_id JOIN profiles pr ON pr.id = m.user_id JOIN tasks t ON t.id = a.task_id
+       WHERE a.organisation_id = $1 AND a.status = 'pending' AND a.membership_id <> $2 AND (app_has_role($1, 'owner', 'hr') OR app_manages($1, a.membership_id)) ORDER BY a.created_at`, [ctx.org.id, ctx.membership.id]);
+    const exceptions = await db.query<{ id: string; display_name: string; reason_code: string; reason: string; created_at: string; task_title: string | null }>(
+      `SELECT c.id, pr.display_name, c.reason_code, c.reason, c.created_at, t.title AS task_title
+       FROM capture_exceptions c JOIN memberships m ON m.id = c.membership_id JOIN profiles pr ON pr.id = m.user_id LEFT JOIN tasks t ON t.id = COALESCE(c.task_id, (SELECT task_id FROM work_sessions WHERE id = c.session_id))
+       WHERE c.organisation_id = $1 AND c.status = 'pending' AND c.membership_id <> $2 AND (app_has_role($1, 'owner', 'hr') OR app_manages($1, c.membership_id)) ORDER BY c.created_at`, [ctx.org.id, ctx.membership.id]);
+    const incidents = await db.query<{ id: string; recording_id: string; reason: string; restricted_at: string; reporter_name: string }>(
+      `SELECT i.id, i.recording_id, i.reason, i.restricted_at, pr.display_name AS reporter_name FROM privacy_incidents i JOIN memberships m ON m.id = i.reporter_membership_id JOIN profiles pr ON pr.id = m.user_id
+       WHERE i.organisation_id = $1 AND i.disposition = 'open' AND app_is_privacy_admin($1) ORDER BY i.restricted_at`, [ctx.org.id]);
+    const overdue = await db.query<{ id: string; title: string; assignee_name: string; due_at: string; status: string }>(
+      `SELECT t.id, t.title, pr.display_name AS assignee_name, t.due_at, t.status FROM tasks t JOIN memberships m ON m.id = t.assignee_membership_id JOIN profiles pr ON pr.id = m.user_id
+       WHERE t.organisation_id = $1 AND t.archived_at IS NULL AND t.status <> 'completed' AND t.due_at < now() AND (app_has_role($1, 'owner', 'hr') OR app_manages($1, t.assignee_membership_id)) ORDER BY t.due_at LIMIT 50`, [ctx.org.id]);
+    const missing = ctx.membership.role === "employee" ? [] : await db.query<{ membership_id: string; display_name: string; local_date: string }>(
+      `WITH sched AS (SELECT working_days FROM schedules WHERE organisation_id = $1 AND membership_id IS NULL ORDER BY effective_from DESC, created_at DESC LIMIT 1),
+       days AS (SELECT d::date AS local_date FROM generate_series((now() AT TIME ZONE $2)::date - 7, (now() AT TIME ZONE $2)::date - 1, interval '1 day') d)
+       SELECT m.id AS membership_id, pr.display_name, days.local_date::text
+       FROM memberships m JOIN profiles pr ON pr.id = m.user_id CROSS JOIN days, sched
+       WHERE m.organisation_id = $1 AND m.status = 'active' AND m.id <> $3 AND m.created_at::date <= days.local_date
+         AND EXTRACT(DOW FROM days.local_date)::int = ANY(sched.working_days)
+         AND (app_has_role($1, 'owner', 'hr') OR app_manages($1, m.id))
+         AND NOT EXISTS (SELECT 1 FROM daily_reports r WHERE r.membership_id = m.id AND r.local_date = days.local_date AND r.status <> 'draft')
+         AND NOT EXISTS (SELECT 1 FROM workday_exemptions e WHERE e.membership_id = m.id AND e.local_date = days.local_date)
+         AND EXISTS (SELECT 1 FROM session_intervals i WHERE i.membership_id = m.id AND i.started_at >= days.local_date - 1 AND i.started_at < days.local_date + 2)
+       ORDER BY days.local_date DESC, pr.display_name LIMIT 50`, [ctx.org.id, ctx.org.timezone, ctx.membership.id]);
+    return { submissions, reports, adjustments, exceptions, incidents, overdue, missing };
+  });
+}

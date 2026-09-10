@@ -15,6 +15,7 @@ export function OnboardingForm() {
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
   const [slug, setSlug] = useState("");
+  const [slugTouched, setSlugTouched] = useState(false);
   return (
     <form className="space-y-4" onSubmit={async (e) => {
       e.preventDefault(); setPending(true); setError(null); setFieldErrors({});
@@ -28,10 +29,10 @@ export function OnboardingForm() {
     }}>
       {error ? <Alert tone="danger">{error}</Alert> : null}
       <Field label="Organisation name" htmlFor="name" error={fieldErrors.name}>
-        <Input id="name" name="name" required maxLength={160} onChange={(e) => { if (!slug) e.currentTarget.form?.slug && ((e.currentTarget.form.slug as HTMLInputElement).value = e.currentTarget.value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40)); }} />
+        <Input id="name" name="name" required maxLength={160} onChange={(e) => { if (!slugTouched) setSlug(e.currentTarget.value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40)); }} />
       </Field>
       <Field label="Workspace URL" htmlFor="slug" hint="lowercase letters, numbers, hyphens" error={fieldErrors.slug}>
-        <div className="flex items-center gap-2"><span className="text-sm text-fg-subtle">/app/</span><Input id="slug" name="slug" required pattern="[a-z0-9][a-z0-9-]{1,62}[a-z0-9]" onChange={(e) => setSlug(e.target.value)} /></div>
+        <div className="flex items-center gap-2"><span className="text-sm text-fg-subtle">/app/</span><Input id="slug" name="slug" required pattern="[a-z0-9][a-z0-9-]{1,62}[a-z0-9]" value={slug} onChange={(e) => { setSlugTouched(true); setSlug(e.target.value); }} /></div>
       </Field>
       <Field label="Company time zone" htmlFor="timezone" error={fieldErrors.timezone}>
         <Select id="timezone" name="timezone" defaultValue="Africa/Lagos">{ZONES.map((z) => <option key={z} value={z}>{z}</option>)}</Select>
