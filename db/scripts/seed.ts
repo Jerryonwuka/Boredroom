@@ -10,6 +10,7 @@ import { getPool } from "../../src/server/db";
 async function main() {
   if (process.env.NODE_ENV === "production") throw new Error("Refusing to seed a production database.");
   const pool = getPool();
+  if (process.env.NODE_ENV === "test") { await pool.query("SELECT 1"); }
   const existing = await pool.query("SELECT 1 FROM organisations LIMIT 1").catch(() => ({ rows: [] }));
   if (existing.rows.length) {
     console.log("Database already contains organisations; run `pnpm db:reset` first for a clean seed.");

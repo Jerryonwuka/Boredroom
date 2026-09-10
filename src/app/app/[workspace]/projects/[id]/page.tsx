@@ -25,7 +25,7 @@ export default async function ProjectPage({ params, searchParams }: { params: Pr
   const statuses = ["todo", "in_progress", "blocked", "in_review", "completed"];
   return (
     <AppShell ctx={ctx} counts={counts}>
-      <PageHeader overline={<><Link href={`/app/${ctx.org.slug}/projects`} className="hover:underline">Projects</Link></> as unknown as string} title={project.name}
+      <PageHeader overline={<Link href={`/app/${ctx.org.slug}/projects`} className="hover:underline">Projects</Link>} title={project.name}
         description={<>{project.description}{project.status === "archived" ? " · Archived: no new sessions can start." : ""}</>}
         actions={<>{canCreate && project.status === "active" ? <NewTaskForm orgSlug={ctx.org.slug} projectId={project.id} members={allMembers} self={ctx.membership.id} canAssignOthers={canManage || ctx.membership.role === "manager"} requiresDueDate={project.requires_due_date} requiresEstimate={project.requires_estimate} /> : null}{canManage && project.status === "active" ? <ArchiveProjectButton orgSlug={ctx.org.slug} projectId={project.id} /> : null}</>} />
       <div className="mb-4 flex flex-wrap items-center gap-2 text-sm">

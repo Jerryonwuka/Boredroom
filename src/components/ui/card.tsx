@@ -21,7 +21,7 @@ export function Overline({ children, className }: { children: React.ReactNode; c
   return <p className={cn("text-[12px] font-semibold uppercase tracking-[0.3em] text-accent/70", className)}>{children}</p>;
 }
 
-export function PageHeader({ overline, title, description, actions }: { overline?: string; title: React.ReactNode; description?: React.ReactNode; actions?: React.ReactNode }) {
+export function PageHeader({ overline, title, description, actions }: { overline?: React.ReactNode; title: React.ReactNode; description?: React.ReactNode; actions?: React.ReactNode }) {
   return (
     <div className="glow-header mb-8 flex flex-wrap items-end justify-between gap-4">
       <div>

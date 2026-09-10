@@ -1,15 +1,19 @@
+import { execSync } from "node:child_process";
 import { config } from "dotenv";
 config({ path: [".env.local", ".env"], quiet: true });
-import { migrate } from "../db/scripts/migrate";
 
+/**
+ * Rebuilds and seeds the test database through the project's own scripts (tsx resolves the
+ * `@/` alias; Playwright's loader does not for transitive imports).
+ */
 export default async function globalSetup() {
-  (process.env as Record<string, string>).NODE_ENV = "test";
-  process.env.MAIL_SINK_DIR = "./var/e2e-mail";
-  process.env.STORAGE_LOCAL_DIR = "./var/e2e-storage";
-  await migrate(process.env.TEST_DATABASE_ADMIN_URL!, { reset: true, quiet: true });
-  const { buildCompany } = await import("../src/server/services/fixtures");
-  await buildCompany("a");
-  await buildCompany("b");
-  const { getPool } = await import("../src/server/db");
-  await getPool().end();
+  const env = {
+    ...process.env,
+    NODE_ENV: "test",
+    DATABASE_URL: process.env.TEST_DATABASE_URL ?? "postgres://boardroom_app:boardroom_app@localhost:5432/boardroom_test",
+    MAIL_SINK_DIR: "./var/e2e-mail",
+    STORAGE_LOCAL_DIR: "./var/e2e-storage",
+  };
+  execSync("pnpm exec tsx db/scripts/migrate.ts --test --reset", { stdio: "inherit", env });
+  execSync("pnpm exec tsx db/scripts/seed.ts", { stdio: "inherit", env });
 }
