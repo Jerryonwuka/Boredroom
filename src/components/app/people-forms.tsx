@@ -28,7 +28,12 @@ export function InviteForm({ orgSlug, teams, isOwner }: { orgSlug: string; teams
   const { pending, error, fieldErrors, submit } = useForm();
   const [open, setOpen] = useState(false);
   const [done, setDone] = useState<string | null>(null);
-  if (!open) return <Button onClick={() => { setOpen(true); setDone(null); }}>Invite someone</Button>;
+  if (!open) return (
+    <div className="flex flex-col items-end gap-2">
+      <Button onClick={() => { setOpen(true); setDone(null); }}>Invite someone</Button>
+      {done ? <Alert tone="success">Invitation sent to {done}.</Alert> : null}
+    </div>
+  );
   return (
     <form className="tile grid w-full gap-3 p-4 md:w-[520px]" onSubmit={(e) => { e.preventDefault(); const f = new FormData(e.currentTarget); submit(() => api(`/api/orgs/${orgSlug}/invitations`, { method: "POST", body: { email: f.get("email"), role: f.get("role"), teamId: f.get("teamId") || null, employeeCode: f.get("employeeCode") || null } }), () => { setDone(String(f.get("email"))); setOpen(false); }); }}>
       {error ? <Alert tone="danger">{error}</Alert> : null}
@@ -39,7 +44,6 @@ export function InviteForm({ orgSlug, teams, isOwner }: { orgSlug: string; teams
       </div>
       <Field label="Employee ID" htmlFor="inv-code" hint="optional, e.g. EMP-042" error={fieldErrors.employeeCode}><Input id="inv-code" name="employeeCode" /></Field>
       <div className="flex gap-2"><Button type="submit" disabled={pending}>{pending ? "Sending…" : "Invite"}</Button><Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button></div>
-      {done ? <Alert tone="success">Invitation sent to {done}.</Alert> : null}
     </form>
   );
 }

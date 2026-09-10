@@ -58,7 +58,7 @@ Living record of decisions, requirement coverage, test evidence and blockers for
 | A21 | evidence-reports.test.ts, recording.test.ts | pass |
 | A22 | recording.test.ts | pass |
 | A23 | tenancy.test.ts | pass |
-| A24 | e2e core-workflow (keyboard-reachable controls, labels, focus ring) | see e2e results |
+| A24 | e2e core-workflow (keyboard-reachable controls, labels, focus ring) | pass |
 
 ## Tests run (10 September 2026, this environment)
 
@@ -70,7 +70,7 @@ Living record of decisions, requirement coverage, test evidence and blockers for
 | `pnpm build` (Next.js 16.3.4) | succeeds; all workspace routes are dynamic (server-rendered per request) |
 | `pnpm smoke` | every page read model executes for the seeded fixtures (15 checks) |
 | `pnpm worker` | job loop runs against the seeded database; housekeeping job succeeded; reminder scheduling deduplicated |
-| `pnpm test:e2e` (Playwright 1.63, Chromium 141 preinstalled, production build on port 3100) | see the final report in the session summary and CI |
+| `pnpm test:e2e` (Playwright 1.63, Chromium 141 preinstalled, production build on port 3100) | 3 passed: A24 core workflow (plan, start, reload, pause/resume, switch, stop, submit, changes requested, resubmit, approve, report approval, CSV export), A01/A02 browser isolation, A03 invitation lifecycle through the mail sink |
 
 Environment notes: no Docker daemon, no Supabase CLI, no ffmpeg; Figma and most external hosts are blocked by the network policy. Nothing was sent to a real mailbox and no external service was configured.
 

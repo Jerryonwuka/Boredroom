@@ -12,7 +12,7 @@ Prerequisites: `pnpm db:setup`, `pnpm dev`, `pnpm worker` running. Password for 
 8. **Report approval** — as David, Reviews → Daily reports → Approve.
 9. **Correction** — as Ada, Timesheets → Request a time correction (replace an interval with a longer one, reason). A new report version appears; version 1 stays approved until David approves the correction, then it becomes superseded (A12).
 10. **Export** — sign in as `mary@company-a.test`, Timesheets → Export CSV. Totals match the approved snapshots; text is formula-safe (A20).
-11. **Isolation** — sign in as `chidi@company-b.test`; `/app/company-a/...` is not found; API calls with Company A ids return 404 (A01).
+11. **Isolation** — sign in as `ada@company-b.test`; `/app/company-a/...` is not found; API calls with Company A ids return 404 (A01).
 12. **Recording pilot** (Chrome/Edge on localhost or HTTPS) — as the owner, Settings → publish a policy with recording "Required on designated tasks". Every member acknowledges it on the Policy page. As David, edit Homepage design → Screen capture: Required. As Ada, Start → the browser asks which screen/window to share; decline once to see the exception route (A14). Accept: the red indicator shows chunks uploading; press "Stop sharing" in the browser to see an interrupted segment recorded honestly (A16); Resume creates a new segment. Playback: Ada can play her own segment; David cannot until the owner grants team access in Settings (A17). Ada flags the segment as sensitive → David is denied; the owner (granted privacy administrator) deletes it → chunks and media are gone, tombstone kept (A18).
 
 Automated coverage for the same journeys: `pnpm test` (integration) and `pnpm test:e2e` (browser).
