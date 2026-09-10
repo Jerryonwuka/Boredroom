@@ -21,6 +21,17 @@ The product specification is in [`BOARDROOM_BUILD_SPEC.md`](./BOARDROOM_BUILD_SP
 
 ## Local setup
 
+### Fastest: no PostgreSQL install needed
+
+```bash
+pnpm install
+pnpm quickstart        # add --worker to also run the background worker
+```
+
+`pnpm quickstart` starts a self-contained PostgreSQL (downloaded as a dev dependency, data in `var/pgdata`), writes `.env.local`, creates roles and databases, applies migrations, seeds the two demo companies, runs the health check and starts the web app on http://localhost:3000. Sign in with `ada@company-a.test` / `correct-horse-battery`.
+
+### Using your own PostgreSQL 16
+
 Requirements: Node 22, pnpm 10, PostgreSQL 16 with the `btree_gist`, `citext` and `pgcrypto` extensions.
 
 ```bash

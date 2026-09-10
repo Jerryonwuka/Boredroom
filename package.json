@@ -22,7 +22,8 @@
     "doctor": "tsx scripts/doctor.ts",
     "setup:env": "tsx scripts/setup-env.ts",
     "db:bootstrap": "tsx db/scripts/bootstrap.ts",
-    "first-run": "pnpm setup:env && pnpm db:bootstrap && pnpm db:migrate && pnpm db:seed && pnpm doctor"
+    "first-run": "pnpm setup:env && pnpm db:bootstrap && pnpm db:migrate && pnpm db:seed && pnpm doctor",
+    "quickstart": "tsx scripts/quickstart.ts"
   },
   "dependencies": {
     "@fontsource/cal-sans": "^5.3.0",
@@ -45,6 +46,7 @@
     "@types/pg": "^8.23.1",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "embedded-postgres": "18.4.0-beta.17",
     "eslint": "^9",
     "eslint-config-next": "16.3.4",
     "tailwindcss": "^4",
