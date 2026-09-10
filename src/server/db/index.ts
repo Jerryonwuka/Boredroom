@@ -31,20 +31,32 @@ export type Db = {
   client: PoolClient;
 };
 
+async function run(client: PoolClient, text: string, params?: unknown[]) {
+  try {
+    return await client.query(text, params as never[]);
+  } catch (err) {
+    if (process.env.NODE_ENV !== "production" && err instanceof Error) {
+      (err as Error & { query?: string }).query = text;
+      err.message = `${err.message} [sql: ${text.replace(/\s+/g, " ").slice(0, 160)}]`;
+    }
+    throw err;
+  }
+}
+
 function wrap(client: PoolClient): Db {
   return {
     client,
     async query(text, params) {
-      const res = await client.query(text, params as never[]);
+      const res = await run(client, text, params);
       return res.rows as never;
     },
     async one(text, params) {
-      const res = await client.query(text, params as never[]);
+      const res = await run(client, text, params);
       if (res.rows.length !== 1) throw new Error(`expected exactly one row, got ${res.rows.length}`);
       return res.rows[0] as never;
     },
     async maybeOne(text, params) {
-      const res = await client.query(text, params as never[]);
+      const res = await run(client, text, params);
       return (res.rows[0] as never) ?? null;
     },
   };

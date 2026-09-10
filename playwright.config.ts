@@ -18,12 +18,15 @@ export default defineConfig({
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
     ...devices["Desktop Chrome"],
+    // Environments with a preinstalled Chromium can point at it instead of downloading browsers.
+    launchOptions: process.env.PLAYWRIGHT_CHROMIUM_PATH ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_PATH } : {},
   },
   webServer: {
-    command: "pnpm exec next dev -p 3100",
+    // Production server: no on-demand compilation, so timings match what users see.
+    command: "pnpm exec next build && pnpm exec next start -p 3100",
     url: "http://localhost:3100/login",
     reuseExistingServer: !process.env.CI,
-    timeout: 180_000,
+    timeout: 300_000,
     env: {
       NODE_ENV: "test",
       DATABASE_URL: process.env.TEST_DATABASE_URL ?? "postgres://boardroom_app:boardroom_app@localhost:5432/boardroom_test",

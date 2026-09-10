@@ -4,7 +4,7 @@
  */
 import { withSystem, withUser } from "@/server/db";
 import { hashPassword } from "@/server/lib/crypto";
-import { createOrganisation, createTeam, setTeamMember, createInvitation, acceptInvitation } from "@/server/services/orgs";
+import { createOrganisation, createTeam, setTeamMember, createInvitation, acceptInvitation, acknowledgePolicy } from "@/server/services/orgs";
 import { createProject, createTask } from "@/server/services/tasks";
 import type { OrgContext } from "@/server/lib/api";
 
@@ -33,7 +33,10 @@ export async function contextFor(user: FixtureUser, orgSlug: string): Promise<Or
 export async function joinViaInvitation(inviter: OrgContext, user: FixtureUser, role: "owner" | "hr" | "manager" | "employee", teamId?: string | null, employeeCode?: string) {
   const inv = await createInvitation(inviter, { email: user.email, role, teamId: teamId ?? null, employeeCode: employeeCode ?? null }, { send: false });
   await acceptInvitation(user.profileId, user.email, inv.token!);
-  return contextFor(user, inviter.org.slug);
+  const ctx = await contextFor(user, inviter.org.slug);
+  // Fixture members have read the initial notice (as they would during onboarding).
+  await acknowledgePolicy(ctx);
+  return ctx;
 }
 
 export type CompanyFixture = {

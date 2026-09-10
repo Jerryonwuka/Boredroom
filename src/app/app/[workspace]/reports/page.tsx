@@ -8,6 +8,7 @@ import { metrics } from "@/server/services/reports";
 import { withUser } from "@/server/db";
 import { todayLocal, addDays } from "@/server/lib/time";
 import { formatDuration, formatDateTime } from "@/lib/utils";
+import { ExemptionForm } from "@/components/app/exemption-form";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Reports" };
@@ -66,6 +67,7 @@ export default async function ReportsPage({ params, searchParams }: { params: Pr
           <h2 className="font-display text-lg">Report completeness</h2>
           <p className="text-xs text-fg-subtle">Submitted reports ÷ expected workdays ({m.expectedDays}) under the saved schedule, minus authorised exemptions.</p>
           <ul className="mt-2 space-y-1 text-sm">{m.completeness.map((c) => { const expected = Math.max(0, m.expectedDays - c.exempt); return <li key={c.membership_id} className="flex justify-between"><span>{c.display_name}</span><span>{c.submitted} / {expected}{expected ? ` (${Math.round((c.submitted / expected) * 100)}%)` : ""}</span></li>; })}</ul>
+          {!isEmployee && members.length ? <div className="mt-3"><ExemptionForm orgSlug={ctx.org.slug} members={members} /></div> : null}
         </Card>
       </div>
     </AppShell>

@@ -13,6 +13,8 @@ test("A24: employee plans, starts, pauses, stops and submits; manager reviews; r
   await row.getByRole("button", { name: "Start" }).click();
   await expect(page.getByText("Running", { exact: true })).toBeVisible();
   await expect(page.getByLabel(/Elapsed/)).toBeVisible();
+  // The display counter is rebuilt from server state and advances while running.
+  await expect(page.getByLabel(/Elapsed/)).not.toHaveText("00:00:00", { timeout: 15000 });
   // Reload preserves the same session (A07).
   await page.reload();
   await expect(page.getByText("Running", { exact: true })).toBeVisible();
@@ -44,7 +46,7 @@ test("A24: employee plans, starts, pauses, stops and submits; manager reviews; r
   await page.getByLabel("Link note").fill("Homepage v1");
   await page.getByRole("button", { name: "Submit for review", exact: true }).click();
   await expect(page.getByText("In review").first()).toBeVisible();
-  await expect(page.getByText("Revision 1")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Revision 1" })).toBeVisible();
 
   // Daily report: submit.
   await page.goto("/app/company-a/timesheets");
@@ -60,6 +62,8 @@ test("A24: employee plans, starts, pauses, stops and submits; manager reviews; r
   await david.goto("/app/company-a/reviews");
   await expect(david.getByText("Homepage design")).toBeVisible();
   await david.getByRole("link", { name: "Open task to review evidence" }).click();
+  await david.waitForURL(/\/tasks\//);
+  await expect(david.getByRole("heading", { name: "Review revision 1" })).toBeVisible();
   await david.getByLabel("Decision").selectOption("changes_requested");
   await david.getByLabel(/^Note/).fill("Add the mobile nav");
   await david.getByRole("button", { name: "Submit review" }).click();
@@ -71,15 +75,16 @@ test("A24: employee plans, starts, pauses, stops and submits; manager reviews; r
   await page.getByRole("button", { name: "Add link" }).click();
   await page.getByLabel("Link URL").fill("https://www.figma.com/file/abc/homepage?v=2");
   await page.getByRole("button", { name: "Submit for review", exact: true }).click();
-  await expect(page.getByText("Revision 2")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Revision 2" })).toBeVisible();
 
   await david.reload();
+  await expect(david.getByRole("heading", { name: "Review revision 2" })).toBeVisible();
   await david.getByLabel("Decision").selectOption("approved");
   await david.getByRole("button", { name: "Submit review" }).click();
   await expect(david.getByText("Completed").first()).toBeVisible();
   // Both revisions preserved.
-  await expect(david.getByText("Revision 1")).toBeVisible();
-  await expect(david.getByText("Revision 2")).toBeVisible();
+  await expect(david.getByRole("heading", { name: "Revision 1" })).toBeVisible();
+  await expect(david.getByRole("heading", { name: "Revision 2" })).toBeVisible();
 
   // Team dashboard shows Ada; report approval.
   await david.goto("/app/company-a/team");

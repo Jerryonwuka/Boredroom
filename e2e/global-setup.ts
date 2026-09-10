@@ -7,7 +7,7 @@ config({ path: [".env.local", ".env"], quiet: true });
  * `@/` alias; Playwright's loader does not for transitive imports).
  */
 export default async function globalSetup() {
-  const env = {
+  const env: NodeJS.ProcessEnv = {
     ...process.env,
     NODE_ENV: "test",
     DATABASE_URL: process.env.TEST_DATABASE_URL ?? "postgres://boardroom_app:boardroom_app@localhost:5432/boardroom_test",

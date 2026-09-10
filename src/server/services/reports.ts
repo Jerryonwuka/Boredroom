@@ -344,7 +344,7 @@ export async function metrics(ctx: OrgContext, filters: { from: string; to: stri
     const blockers = await db.query<{ id: string; title: string; display_name: string; blocked_reason: string | null; since: string }>(
       `SELECT t.id, t.title, pr.display_name, t.blocked_reason, (SELECT MAX(h.occurred_at) FROM task_status_history h WHERE h.task_id = t.id AND h.to_status = 'blocked') AS since
        FROM tasks t JOIN memberships m ON m.id = t.assignee_membership_id JOIN profiles pr ON pr.id = m.user_id
-       WHERE t.organisation_id = $1 AND t.status = 'blocked' AND t.archived_at IS NULL AND ($6::uuid IS NULL OR t.project_id = $6) ${scope} ORDER BY since`, [ctx.org.id, filters.from, filters.to, filters.membershipId ?? null, filters.teamId ?? null, filters.projectId ?? null]);
+       WHERE t.organisation_id = $1 AND t.status = 'blocked' AND t.archived_at IS NULL AND $2::date <= $3::date AND ($6::uuid IS NULL OR t.project_id = $6) ${scope} ORDER BY since`, [ctx.org.id, filters.from, filters.to, filters.membershipId ?? null, filters.teamId ?? null, filters.projectId ?? null]);
     const schedule = await db.maybeOne<{ working_days: number[] }>(`SELECT working_days FROM schedules WHERE organisation_id = $1 AND membership_id IS NULL ORDER BY effective_from DESC, created_at DESC LIMIT 1`, [ctx.org.id]);
     const workingDays = schedule?.working_days ?? [1, 2, 3, 4, 5];
     const expectedDays: string[] = [];
@@ -353,7 +353,7 @@ export async function metrics(ctx: OrgContext, filters: { from: string; to: stri
       `SELECT m.id AS membership_id, pr.display_name,
               (SELECT count(*) FROM daily_reports r WHERE r.membership_id = m.id AND r.local_date = ANY($6::date[]) AND r.status IN ('submitted','approved','changes_requested'))::int AS submitted,
               (SELECT count(*) FROM workday_exemptions e WHERE e.membership_id = m.id AND e.local_date = ANY($6::date[]))::int AS exempt
-       FROM memberships m JOIN profiles pr ON pr.id = m.user_id WHERE m.organisation_id = $1 AND m.status = 'active' ${scope} ORDER BY pr.display_name`, [ctx.org.id, filters.from, filters.to, filters.membershipId ?? null, filters.teamId ?? null, expectedDays]);
+       FROM memberships m JOIN profiles pr ON pr.id = m.user_id WHERE m.organisation_id = $1 AND m.status = 'active' AND $2::date <= $3::date ${scope} ORDER BY pr.display_name`, [ctx.org.id, filters.from, filters.to, filters.membershipId ?? null, filters.teamId ?? null, expectedDays]);
     const capture = await db.one<{ recorded: number; tracked: number; pending: number }>(
       `SELECT COALESCE(SUM(EXTRACT(EPOCH FROM (LEAST(rc.capture_ended_at, i.ended_at) - GREATEST(rc.capture_started_at, i.started_at)))) FILTER (WHERE rc.upload_state = 'ready' AND LEAST(rc.capture_ended_at, i.ended_at) > GREATEST(rc.capture_started_at, i.started_at)), 0)::int AS recorded,
               COALESCE(SUM(EXTRACT(EPOCH FROM (i.ended_at - i.started_at))), 0)::int AS tracked,

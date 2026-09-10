@@ -31,18 +31,19 @@ export function DecisionForm({ path, options, noteLabel = "Note", extra }: { pat
   const router = useRouter();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [decision, setDecision] = useState(options[0].value);
+  const [note, setNote] = useState("");
   return (
     <form className="mt-2 grid gap-2" onSubmit={async (e) => {
       e.preventDefault(); setPending(true); setError(null);
-      const f = new FormData(e.currentTarget);
       const decisionKey = options[0].value === "deleted" || options[0].value === "released" ? "disposition" : "decision";
-      try { await api(path, { method: "POST", body: { [decisionKey]: f.get("decision"), note: f.get("note"), ...(extra ?? {}) } }); router.refresh(); }
+      try { await api(path, { method: "POST", body: { [decisionKey]: decision, note, ...(extra ?? {}) } }); router.refresh(); }
       catch (err) { setError(isApiFailure(err) ? err.error.message : "Cannot reach the server."); } finally { setPending(false); }
     }}>
       {error ? <Alert tone="danger">{error}</Alert> : null}
       <div className="flex flex-wrap items-end gap-2">
-        <label className="text-sm"><span className="sr-only">Decision</span><select name="decision" className="h-10 rounded-xl border border-border-strong bg-inset px-3 text-sm">{options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</select></label>
-        <div className="min-w-60 flex-1"><Field label={noteLabel} htmlFor={`note-${path}`}><Textarea id={`note-${path}`} name="note" className="min-h-10" maxLength={4000} /></Field></div>
+        <label className="text-sm"><span className="sr-only">Decision</span><select name="decision" value={decision} onChange={(e) => setDecision(e.target.value)} className="h-10 rounded-xl border border-border-strong bg-inset px-3 text-sm">{options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</select></label>
+        <div className="min-w-60 flex-1"><Field label={noteLabel} htmlFor={`note-${path}`}><Textarea id={`note-${path}`} name="note" className="min-h-10" maxLength={4000} value={note} onChange={(e) => setNote(e.target.value)} /></Field></div>
         <Button size="sm" type="submit" disabled={pending}>{pending ? "Saving…" : "Decide"}</Button>
       </div>
     </form>

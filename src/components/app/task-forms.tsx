@@ -108,12 +108,14 @@ export function SubmissionForm({ orgSlug, taskId, hasReviewer, autoOpen, nextRev
 
 export function ReviewForm({ orgSlug, submissionId, revision }: { orgSlug: string; submissionId: string; revision: number }) {
   const { pending, error, fieldErrors, submit } = useForm();
+  const [decision, setDecision] = useState("approved");
+  const [note, setNote] = useState("");
   return (
-    <form className="tile grid gap-3 border-info/40 p-4" onSubmit={(e) => { e.preventDefault(); const f = new FormData(e.currentTarget); submit(() => api(`/api/orgs/${orgSlug}/submissions/${submissionId}/review`, { method: "POST", body: { decision: f.get("decision"), note: f.get("note") } })); }}>
+    <form className="tile grid gap-3 border-info/40 p-4" onSubmit={(e) => { e.preventDefault(); submit(() => api(`/api/orgs/${orgSlug}/submissions/${submissionId}/review`, { method: "POST", body: { decision, note } })); }}>
       <h2 className="font-display text-lg">Review revision {revision}</h2>
       {error ? <Alert tone="danger">{error}</Alert> : null}
-      <Field label="Decision" htmlFor="rv-dec"><Select id="rv-dec" name="decision" defaultValue="approved"><option value="approved">Approve — completes the task</option><option value="changes_requested">Request changes — returns to active work</option><option value="question">Ask a question — stays in review</option></Select></Field>
-      <Field label="Note" htmlFor="rv-note" hint="required unless approving" error={fieldErrors.note}><Textarea id="rv-note" name="note" maxLength={4000} /></Field>
+      <Field label="Decision" htmlFor="rv-dec"><Select id="rv-dec" name="decision" value={decision} onChange={(e) => setDecision(e.target.value)}><option value="approved">Approve — completes the task</option><option value="changes_requested">Request changes — returns to active work</option><option value="question">Ask a question — stays in review</option></Select></Field>
+      <Field label="Note" htmlFor="rv-note" hint="required unless approving" error={fieldErrors.note}><Textarea id="rv-note" name="note" maxLength={4000} value={note} onChange={(e) => setNote(e.target.value)} /></Field>
       <div><Button type="submit" disabled={pending}>{pending ? "Saving…" : "Submit review"}</Button></div>
     </form>
   );

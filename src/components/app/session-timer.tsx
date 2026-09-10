@@ -122,7 +122,7 @@ export function SessionTimer({ orgSlug, initial, tasks, captureGate, onCaptureSe
           await refetch();
         } else if (e.code === "VERSION_CONFLICT" || e.code === "BAD_STATE") { setError("The session changed elsewhere; showing its current state."); await refetch(); }
         else setError(e.message);
-      } else setError("Cannot reach the server. Your timer state is safe on the server; retry when you are back online.");
+      } else setError(`Cannot reach the server. Your timer state is safe on the server; retry when you are back online.${process.env.NODE_ENV !== "production" ? ` (${(err as Error).message})` : ""}`);
       return null;
     } finally { setBusy(null); }
   }, [refetch]);

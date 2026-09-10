@@ -37,9 +37,9 @@ export async function myDay(ctx: OrgContext) {
     const overdue = assigned.filter((t) => t.due_at && new Date(t.due_at) < new Date());
     const report = await db.maybeOne<{ id: string; status: string; current_version: number }>(`SELECT id, status, current_version FROM daily_reports WHERE membership_id = $1 AND local_date = $2`, [ctx.membership.id, today]);
     const todaySeconds = await db.one<{ n: number }>(
-      `SELECT COALESCE(SUM(EXTRACT(EPOCH FROM (LEAST(COALESCE(i.ended_at, now()), $3::timestamptz + interval '1 day') - GREATEST(i.started_at, $3::timestamptz))))::int, 0) AS n
-       FROM session_intervals i WHERE i.membership_id = $1 AND i.confirmation_status = 'confirmed' AND i.started_at < $3::timestamptz + interval '1 day' AND COALESCE(i.ended_at, now()) > $3::timestamptz`,
-      [ctx.membership.id, ctx.org.id, dayStartIso(today, ctx.org.timezone)]);
+      `SELECT COALESCE(SUM(EXTRACT(EPOCH FROM (LEAST(COALESCE(i.ended_at, now()), $2::timestamptz + interval '1 day') - GREATEST(i.started_at, $2::timestamptz))))::int, 0) AS n
+       FROM session_intervals i WHERE i.membership_id = $1 AND i.confirmation_status = 'confirmed' AND i.started_at < $2::timestamptz + interval '1 day' AND COALESCE(i.ended_at, now()) > $2::timestamptz`,
+      [ctx.membership.id, dayStartIso(today, ctx.org.timezone)]);
     const projects = await db.query<{ id: string; name: string }>(`SELECT p.id, p.name FROM projects p WHERE p.organisation_id = $1 AND p.status = 'active' AND (app_has_role($1, 'owner', 'hr', 'manager') OR EXISTS (SELECT 1 FROM project_members pm WHERE pm.project_id = p.id AND pm.membership_id = $2)) ORDER BY p.name`, [ctx.org.id, ctx.membership.id]);
     const members = await db.query<{ id: string; display_name: string }>(`SELECT m.id, pr.display_name FROM memberships m JOIN profiles pr ON pr.id = m.user_id WHERE m.organisation_id = $1 AND m.status = 'active' ORDER BY pr.display_name`, [ctx.org.id]);
     return { today, planned, assigned, overdue, report, todaySeconds: todaySeconds.n, projects, members };

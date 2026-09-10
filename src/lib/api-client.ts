@@ -37,7 +37,8 @@ export async function api<T = unknown>(path: string, init: { method?: string; bo
       if (attempt < retries) await new Promise((r) => setTimeout(r, 400 * 2 ** attempt));
     }
   }
-  throw lastErr instanceof Error ? lastErr : new Error("Network error");
+  const detail = lastErr instanceof Error ? lastErr.message : String(lastErr);
+  throw new Error(`Network error: ${detail}`);
 }
 
 export function isApiFailure(err: unknown): err is ApiFailure { return err instanceof ApiFailure; }

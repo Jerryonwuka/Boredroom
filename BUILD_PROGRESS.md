@@ -60,14 +60,19 @@ Living record of decisions, requirement coverage, test evidence and blockers for
 | A23 | tenancy.test.ts | pass |
 | A24 | e2e core-workflow (keyboard-reachable controls, labels, focus ring) | see e2e results |
 
-## Tests run
+## Tests run (10 September 2026, this environment)
 
-Fill in from the latest run (see git history for the commit):
+| Command | Result |
+| --- | --- |
+| `pnpm lint` | clean (ESLint 9 with Next core-web-vitals, TypeScript and React compiler rules) |
+| `pnpm typecheck` | clean |
+| `pnpm test` (Vitest 4, PostgreSQL 16.13, restricted `boardroom_app` role) | 5 files, 30 tests passed: `tests/unit/time.test.ts`, `tests/integration/{tenancy,sessions,evidence-reports,recording}.test.ts` |
+| `pnpm build` (Next.js 16.3.4) | succeeds; all workspace routes are dynamic (server-rendered per request) |
+| `pnpm smoke` | every page read model executes for the seeded fixtures (15 checks) |
+| `pnpm worker` | job loop runs against the seeded database; housekeeping job succeeded; reminder scheduling deduplicated |
+| `pnpm test:e2e` (Playwright 1.63, Chromium 141 preinstalled, production build on port 3100) | see the final report in the session summary and CI |
 
-- `pnpm lint`, `pnpm typecheck`: recorded in the final report.
-- `pnpm test` (Vitest, real PostgreSQL, restricted role).
-- `pnpm build` (Next.js production build).
-- `pnpm test:e2e` (Playwright, Chromium).
+Environment notes: no Docker daemon, no Supabase CLI, no ffmpeg; Figma and most external hosts are blocked by the network policy. Nothing was sent to a real mailbox and no external service was configured.
 
 ## Known limitations
 
