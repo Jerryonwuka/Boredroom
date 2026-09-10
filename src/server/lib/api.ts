@@ -5,6 +5,7 @@ import { AppError, invalid, unauthenticated, forbidden, notFound } from "@/serve
 import { getCurrentUser, type CurrentUser } from "@/server/auth";
 import { withUser, withSystem, type Db } from "@/server/db";
 import { sha256 } from "@/server/lib/crypto";
+import { explainInfraError } from "@/server/lib/health";
 
 export type OrgContext = {
   user: CurrentUser;
@@ -21,7 +22,10 @@ export function errorResponse(err: unknown, requestId: string) {
     return NextResponse.json({ code: "FORBIDDEN", message: "You are not allowed to do that.", requestId }, { status: 403 });
   }
   console.error(`[${requestId}]`, err);
-  // Outside production, show the underlying cause so misconfiguration (database, storage, mail) is obvious.
+  // Infrastructure problems (database down, wrong password, migrations missing) are explained safely in every environment.
+  const infra = explainInfraError(err);
+  if (infra) return NextResponse.json({ code: "INFRASTRUCTURE", message: `${infra.message} ${infra.fix} (see /api/health)`, requestId }, { status: 503 });
+  // Outside production, show the underlying cause of other failures.
   const detail = process.env.NODE_ENV !== "production" && err instanceof Error ? ` (${err.message})` : "";
   return NextResponse.json({ code: "INTERNAL", message: `Something went wrong. Try again.${detail}`, requestId, hint: "Check /api/health for configuration problems." }, { status: 500 });
 }

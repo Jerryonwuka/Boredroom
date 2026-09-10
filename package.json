@@ -18,7 +18,8 @@
     "test:integration": "vitest run tests/integration",
     "test:e2e": "playwright test",
     "check": "pnpm lint && pnpm typecheck && pnpm test",
-    "smoke": "tsx scripts/smoke-views.ts"
+    "smoke": "tsx scripts/smoke-views.ts",
+    "doctor": "tsx scripts/doctor.ts"
   },
   "dependencies": {
     "@fontsource/cal-sans": "^5.3.0",

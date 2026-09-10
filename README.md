@@ -57,7 +57,7 @@ All passwords: `correct-horse-battery`. Company A has a "Website relaunch" proje
 
 ### If sign-up or sign-in shows "Something went wrong"
 
-Open `http://localhost:3000/api/health`. It reports whether the database is reachable as `boardroom_app`, whether all migrations are applied, and whether the storage and mail-sink directories are writable. In development the error banner also includes the underlying message. Typical fixes: start PostgreSQL, create the two roles, run `pnpm db:migrate`, or set `DATABASE_URL`/`APP_SECRET` in `.env.local`.
+Run `pnpm doctor` in the project folder, or open `http://localhost:3000/api/health`. Both report whether the database is reachable as `boardroom_app`, whether all migrations are applied, and whether the storage and mail-sink directories are writable. In development the error banner also includes the underlying message. Typical fixes: start PostgreSQL, create the two roles, run `pnpm db:migrate`, or set `DATABASE_URL`/`APP_SECRET` in `.env.local`.
 
 ## Scripts
 
