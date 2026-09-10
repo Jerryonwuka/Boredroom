@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_ADMIN_URL: postgres://boardroom_owner:boardroom_owner@localhost:5432/boardroom
+      DATABASE_URL: postgres://boardroom_app:boardroom_app@localhost:5432/boardroom
+      TEST_DATABASE_ADMIN_URL: postgres://boardroom_owner:boardroom_owner@localhost:5432/boardroom_test
+      TEST_DATABASE_URL: postgres://boardroom_app:boardroom_app@localhost:5432/boardroom_test
+      APP_ORIGIN: http://localhost:3100
+      APP_SECRET: ci-only-secret-not-for-production-0123456789
+      MAIL_PROVIDER: sink
+      STORAGE_PROVIDER: local
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Create database roles
+        run: |
+          psql postgres://postgres:postgres@localhost:5432/postgres <<'SQL'
+          CREATE ROLE boardroom_owner LOGIN PASSWORD 'boardroom_owner' SUPERUSER;
+          CREATE ROLE boardroom_app LOGIN PASSWORD 'boardroom_app' NOSUPERUSER NOBYPASSRLS;
+          CREATE DATABASE boardroom OWNER boardroom_owner;
+          CREATE DATABASE boardroom_test OWNER boardroom_owner;
+          SQL
+          for db in boardroom boardroom_test; do
+            psql postgres://postgres:postgres@localhost:5432/$db -c "CREATE EXTENSION IF NOT EXISTS btree_gist; CREATE EXTENSION IF NOT EXISTS citext; CREATE EXTENSION IF NOT EXISTS pgcrypto;"
+          done
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm db:migrate
+      - run: pnpm test
+      - run: pnpm build
+      - name: Install Playwright browser
+        run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm test:e2e
+        env:
+          CI: "true"
