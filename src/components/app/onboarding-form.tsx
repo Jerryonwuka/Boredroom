@@ -22,7 +22,7 @@ export function OnboardingForm() {
       const f = new FormData(e.currentTarget);
       try {
         const r = await api<{ slug: string }>("/api/organisations", { method: "POST", body: { name: f.get("name"), slug: f.get("slug"), timezone: f.get("timezone"), employeeCode: f.get("employeeCode") || "OWN-001" }, retries: 0 });
-        router.push(`/app/${r.slug}/settings?setup=1`);
+        router.push(`/app/${r.slug}/dashboard`);
       } catch (err) {
         if (isApiFailure(err)) { setError(err.error.message); setFieldErrors(err.error.fieldErrors ?? {}); } else setError("Cannot reach the server.");
       } finally { setPending(false); }

@@ -2,11 +2,11 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Activity, BarChart3, Bell, CalendarDays, ClipboardCheck, FolderKanban, History, Settings, ShieldCheck, Users, UsersRound } from "lucide-react";
+import { Activity, BarChart3, Bell, CalendarDays, ClipboardCheck, FolderKanban, History, LayoutDashboard, Settings, ShieldCheck, Users, UsersRound, Kanban } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export type NavItem = { href: string; label: string; icon: keyof typeof ICONS; badge?: number };
-const ICONS = { myday: CalendarDays, projects: FolderKanban, team: Activity, reviews: ClipboardCheck, timesheets: History, reports: BarChart3, people: UsersRound, settings: Settings, audit: ShieldCheck, notifications: Bell, policy: Users };
+const ICONS = { dashboard: LayoutDashboard, board: Kanban, myday: CalendarDays, projects: FolderKanban, team: Activity, reviews: ClipboardCheck, timesheets: History, reports: BarChart3, people: UsersRound, settings: Settings, audit: ShieldCheck, notifications: Bell, policy: Users };
 
 export function WorkspaceNav({ items }: { items: NavItem[] }) {
   const pathname = usePathname();

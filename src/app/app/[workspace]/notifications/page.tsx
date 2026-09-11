@@ -12,10 +12,10 @@ export const metadata = { title: "Notifications" };
 
 export default async function NotificationsPage({ params }: { params: Promise<{ workspace: string }> }) {
   const { workspace } = await params;
-  const { ctx, counts } = await workspacePage(workspace, `/app/${workspace}/notifications`);
+  const { ctx, counts, teams } = await workspacePage(workspace, `/app/${workspace}/notifications`);
   const items = await notificationsView(ctx);
   return (
-    <AppShell ctx={ctx} counts={counts}>
+    <AppShell ctx={ctx} counts={counts} teams={teams}>
       <PageHeader overline="Inbox" title="Notifications" description="Assignments, review requests, decisions, blockers and reminders. Email delivery is optional and off in the pilot." />
       {items.length === 0 ? <EmptyState title="Nothing here yet" /> : (
         <ul className="space-y-2">

@@ -99,9 +99,14 @@ tests                unit + integration (Vitest); e2e (Playwright)
 docs                 providers, runbooks, walkthrough
 ```
 
+## Account types
+
+- **Organisation account**: created at `/signup?intent=org`, then `/onboarding`. Owners and HR land on the organisation dashboard, create teams, appoint team leads and share the organisation's join code or link from People.
+- **Staff account**: can only be created on the way into an organisation, via `/join` (code), `/join/[code]` (link) or `/invite/[token]` (email invitation). Team leads land on their team board; staff land on My Day.
+
 ## Product routes
 
-`/login`, `/signup`, `/recover`, `/verify`, `/invite/[token]`, `/onboarding`, `/app` (workspace picker), and under `/app/[workspace]`: `my-day`, `projects`, `projects/[id]`, `tasks/[id]`, `team`, `reviews`, `timesheets`, `reports`, `people`, `policy`, `settings`, `notifications`, `audit`. `/dev/mail` shows the local mail sink in development.
+`/login`, `/signup`, `/join`, `/join/[code]`, `/recover`, `/verify`, `/invite/[token]`, `/onboarding`, `/app` (workspace picker), and under `/app/[workspace]`: `dashboard`, `my-day`, `teams/[id]`, `projects`, `projects/[id]`, `tasks/[id]`, `team` (activity), `reviews`, `timesheets`, `reports`, `people`, `policy`, `settings`, `notifications`, `audit`. `/dev/mail` shows the local mail sink in development.
 
 ## Security notes
 

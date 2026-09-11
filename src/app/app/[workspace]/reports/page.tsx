@@ -16,7 +16,7 @@ export const metadata = { title: "Reports" };
 export default async function ReportsPage({ params, searchParams }: { params: Promise<{ workspace: string }>; searchParams: Promise<{ from?: string; to?: string; member?: string; project?: string; team?: string }> }) {
   const { workspace } = await params;
   const sp = await searchParams;
-  const { ctx, counts } = await workspacePage(workspace, `/app/${workspace}/reports`);
+  const { ctx, counts, teams: navTeams } = await workspacePage(workspace, `/app/${workspace}/reports`);
   const today = todayLocal(ctx.org.timezone);
   const from = sp.from && /^\d{4}-\d{2}-\d{2}$/.test(sp.from) ? sp.from : addDays(today, -13);
   const to = sp.to && /^\d{4}-\d{2}-\d{2}$/.test(sp.to) ? sp.to : today;
@@ -31,7 +31,7 @@ export default async function ReportsPage({ params, searchParams }: { params: Pr
   const provisionalBy = new Map(m.provisional.map((p) => [p.membership_id, p.seconds]));
   const onTime = m.delivery.with_due ? Math.round((m.delivery.on_time / m.delivery.with_due) * 100) : null;
   return (
-    <AppShell ctx={ctx} counts={counts}>
+    <AppShell ctx={ctx} counts={counts} teams={navTeams}>
       <PageHeader overline={`${from} → ${to}`} title="Reports" description="Transparent measures at employee, team and project scope. No composite score, no ranking by hours. Approved and provisional data are shown separately." />
       <form className="mb-6 flex flex-wrap items-end gap-2 text-sm">
         <label><span className="block text-xs text-fg-subtle">From</span><Input name="from" type="date" defaultValue={from} /></label>

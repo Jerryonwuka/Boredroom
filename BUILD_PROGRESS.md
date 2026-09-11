@@ -20,6 +20,18 @@ Living record of decisions, requirement coverage, test evidence and blockers for
 | Manager visibility of team ("private records") | Managers see sessions, intervals, reports, adjustments only for members of teams they manage; HR/owner organisation-wide; tasks visible to assignee, reviewer, creator, managers and project members. | Section 4 table and A02. |
 | Sole-owner submissions | Owner cannot review their own work; without another reviewer it stays in review and is excluded from approved exports. | Section 4. |
 
+## Owner feedback round 1 (11 September 2026)
+
+| Ask | Done |
+| --- | --- |
+| Two account types: organisation accounts create workspaces; staff can only join through the organisation | Sign-up now offers "Create an organisation account" or "Join my organisation". A staff account can only be created from a join link, join code or email invitation (`/join`, `/join/[code]`, `/invite/[token]`). |
+| Organisation gives out a link or unique code | Each organisation has a join code (e.g. `K7QM-3XNA`) and link `/join/<code>`; owners/HR generate, pause, rotate it and choose the role (staff or team lead) and team new joiners land in. Rotation invalidates the old code immediately. Never grants owner/HR. |
+| Organisation dashboard: tasks done, people, accounts connected, total time today, who is working | `/app/[workspace]/dashboard` for owners/HR (their landing page): tiles, "working right now" table, teams overview, recently completed. |
+| Organisation creates teams and puts leads in charge; leads assign tasks to their people | Every team gets a working project; team leads (managers of a team) get a **team board** (`/app/[workspace]/teams/[id]`) to create, assign, reassign and remove tasks for their members. Making someone a team lead raises them to the team-lead role. Leads land on their board after sign-in. |
+| Role names | UI now says Organisation owner, HR administrator, Team lead, Staff (database roles unchanged: owner, hr, manager, employee). |
+
+Tests: `tests/integration/join-codes.test.ts` (code lifecycle, role and team placement, RLS rejection of self-insert, team board and lead permissions, dashboard counts).
+
 ## Milestone status
 
 | Milestone | Status | Evidence |

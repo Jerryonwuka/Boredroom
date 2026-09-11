@@ -6,20 +6,25 @@ import { DataTable } from "@/components/ui/table";
 import { PermissionDenied } from "@/components/ui/states";
 import { peopleView } from "@/server/services/views";
 import { formatDateTime } from "@/lib/utils";
-import { InviteForm, MemberRow, TeamsPanel, InvitationRow } from "@/components/app/people-forms";
+import { InviteForm, MemberRow, TeamsPanel, InvitationRow, JoinCodePanel } from "@/components/app/people-forms";
+import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "People" };
 
 export default async function PeoplePage({ params }: { params: Promise<{ workspace: string }> }) {
   const { workspace } = await params;
-  const { ctx, counts } = await workspacePage(workspace, `/app/${workspace}/people`);
-  if (!["owner", "hr"].includes(ctx.membership.role)) return <AppShell ctx={ctx} counts={counts}><PermissionDenied /></AppShell>;
-  const { members, invitations, teams } = await peopleView(ctx);
+  const { ctx, counts, teams: navTeams } = await workspacePage(workspace, `/app/${workspace}/people`);
+  if (!["owner", "hr"].includes(ctx.membership.role)) return <AppShell ctx={ctx} counts={counts} teams={navTeams}><PermissionDenied /></AppShell>;
+  const { members, invitations, teams, joinCode } = await peopleView(ctx);
   const isOwner = ctx.membership.role === "owner";
   return (
-    <AppShell ctx={ctx} counts={counts}>
-      <PageHeader overline="People" title="Members and invitations" description="Invitations are email-bound, single-use and expire after 72 hours. Nothing is sent until you click Invite." actions={<InviteForm orgSlug={ctx.org.slug} teams={teams} isOwner={isOwner} />} />
+    <AppShell ctx={ctx} counts={counts} teams={navTeams}>
+      <PageHeader overline="People" title="People, teams and access" description="Staff can only join through your join code or link, or an email invitation you send. You decide teams and who leads them." actions={<InviteForm orgSlug={ctx.org.slug} teams={teams} isOwner={isOwner} />} />
+      <section className="mb-8">
+        <h2 className="mb-3 font-display text-lg">Join code and link</h2>
+        <JoinCodePanel orgSlug={ctx.org.slug} appOrigin={process.env.APP_ORIGIN ?? "http://localhost:3000"} joinCode={joinCode} teams={teams} />
+      </section>
       <section className="mb-8">
         <h2 className="mb-3 font-display text-lg">Members</h2>
         <DataTable caption="Members">
@@ -44,7 +49,8 @@ export default async function PeoplePage({ params }: { params: Promise<{ workspa
       <section>
         <h2 className="mb-3 font-display text-lg">Teams</h2>
         <TeamsPanel orgSlug={ctx.org.slug} teams={teams} />
-        <p className="mt-2 text-xs text-fg-subtle"><Badge>manager</Badge> flags in the Teams column above mark who reviews that team&apos;s records.</p>
+        {teams.length ? <ul className="mt-3 grid gap-2 md:grid-cols-2">{teams.map((t) => <li key={t.id} className="tile flex items-center justify-between px-4 py-3"><span><Link href={`/app/${ctx.org.slug}/teams/${t.id}`} className="font-semibold hover:underline">{t.name}</Link><p className="text-xs text-fg-subtle">{t.member_count} member{t.member_count === 1 ? "" : "s"} · lead: {t.leads.length ? t.leads.join(", ") : <span className="text-warning">none yet</span>}</p></span><Link href={`/app/${ctx.org.slug}/teams/${t.id}`} className="text-sm underline">Open board</Link></li>)}</ul> : null}
+        <p className="mt-2 text-xs text-fg-subtle"><Badge tone="accent">Team lead</Badge> in the Teams column marks who creates and assigns that team&apos;s tasks and reviews its records.</p>
       </section>
     </AppShell>
   );

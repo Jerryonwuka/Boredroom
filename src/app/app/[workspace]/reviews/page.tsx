@@ -13,13 +13,13 @@ export const metadata = { title: "Reviews" };
 
 export default async function ReviewsPage({ params }: { params: Promise<{ workspace: string }> }) {
   const { workspace } = await params;
-  const { ctx, counts } = await workspacePage(workspace, `/app/${workspace}/reviews`);
+  const { ctx, counts, teams } = await workspacePage(workspace, `/app/${workspace}/reviews`);
   const q = await reviewQueue(ctx);
   const tz = ctx.org.timezone;
   const base = `/app/${ctx.org.slug}`;
   const total = q.submissions.length + q.reports.length + q.adjustments.length + q.exceptions.length + q.incidents.length;
   return (
-    <AppShell ctx={ctx} counts={counts}>
+    <AppShell ctx={ctx} counts={counts} teams={teams}>
       <PageHeader overline="Attention queue" title="Reviews" description="Submitted work, daily reports, time corrections, capture exceptions and privacy incidents waiting for a decision. You never see your own submissions here." />
       {total === 0 && q.overdue.length === 0 && q.missing.length === 0 ? <EmptyState title="Queue is clear" description="Nothing is waiting for you." /> : null}
       <div className="space-y-8">

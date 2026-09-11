@@ -14,11 +14,11 @@ export const metadata = { title: "Audit" };
 export default async function AuditPage({ params, searchParams }: { params: Promise<{ workspace: string }>; searchParams: Promise<{ action?: string; from?: string; to?: string }> }) {
   const { workspace } = await params;
   const sp = await searchParams;
-  const { ctx, counts } = await workspacePage(workspace, `/app/${workspace}/audit`);
+  const { ctx, counts, teams } = await workspacePage(workspace, `/app/${workspace}/audit`);
   const rows = await auditView(ctx, { action: sp.action, from: sp.from ? new Date(sp.from).toISOString() : undefined, to: sp.to ? new Date(new Date(sp.to).getTime() + 86400000).toISOString() : undefined });
   const scope = { owner: "the whole organisation", hr: "operational events across the organisation", manager: "your own actions and your teams' review events", employee: "events about your own records" }[ctx.membership.role];
   return (
-    <AppShell ctx={ctx} counts={counts}>
+    <AppShell ctx={ctx} counts={counts} teams={teams}>
       <PageHeader overline="History" title="Audit" description={`Who did what and when. You can see ${scope}. Entries cannot be edited or deleted from the application.`} />
       <form className="mb-4 flex flex-wrap items-end gap-2">
         <label className="text-sm"><span className="block text-xs text-fg-subtle">Action prefix</span><Input name="action" defaultValue={sp.action ?? ""} placeholder="e.g. session., review., invitation." className="w-56" /></label>

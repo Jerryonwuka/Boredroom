@@ -17,7 +17,7 @@ export const metadata = { title: "Timesheets" };
 export default async function TimesheetsPage({ params, searchParams }: { params: Promise<{ workspace: string }>; searchParams: Promise<{ member?: string; date?: string }> }) {
   const { workspace } = await params;
   const sp = await searchParams;
-  const { ctx, counts } = await workspacePage(workspace, `/app/${workspace}/timesheets`);
+  const { ctx, counts, teams } = await workspacePage(workspace, `/app/${workspace}/timesheets`);
   const tz = ctx.org.timezone;
   const date = sp.date && /^\d{4}-\d{2}-\d{2}$/.test(sp.date) ? sp.date : todayLocal(tz);
   const membershipId = sp.member ?? ctx.membership.id;
@@ -29,7 +29,7 @@ export default async function TimesheetsPage({ params, searchParams }: { params:
   const memberName = own ? "You" : members.find((m) => m.id === membershipId)?.display_name ?? "Member";
   const recent = await withUser(ctx.user.profileId, (db) => db.query<{ local_date: string; status: string; total_seconds: number | null }>(`SELECT r.local_date, r.status, v.total_seconds FROM daily_reports r LEFT JOIN report_versions v ON v.report_id = r.id AND v.version = r.current_version WHERE r.membership_id = $1 ORDER BY r.local_date DESC LIMIT 14`, [membershipId]));
   return (
-    <AppShell ctx={ctx} counts={counts}>
+    <AppShell ctx={ctx} counts={counts} teams={teams}>
       <PageHeader overline="Records" title="Timesheets" description="Daily reports are generated from work sessions and split at local midnight. Submitting creates an immutable versioned snapshot; corrections create a new version that needs fresh approval." actions={["owner", "hr", "manager"].includes(ctx.membership.role) ? <ExportForm orgSlug={ctx.org.slug} members={members} /> : null} />
       <MemberDatePicker orgSlug={ctx.org.slug} members={members} membershipId={membershipId} date={date} prev={addDays(date, -1)} next={addDays(date, 1)} />
       {denied || !data ? <Alert tone="danger">You cannot view that member&apos;s records.</Alert> : (

@@ -27,8 +27,8 @@ export default async function LandingPage() {
           <h1 className="mt-5 font-display text-5xl leading-[1.05] md:text-7xl">Stop asking <span className="gradient-text">&ldquo;what are you working on?&rdquo;</span></h1>
           <p className="mx-auto mt-6 max-w-2xl text-lg text-fg-muted">Boredroom links what your remote team plans, what they report working on, what they deliver, and what their managers accept. One workflow, no check-in calls.</p>
           <div className="mt-8 flex flex-wrap justify-center gap-3">
-            <Link href="/signup"><Button size="lg">Create your workspace</Button></Link>
-            <Link href="/login"><Button size="lg" variant="outline">Sign in</Button></Link>
+            <Link href="/signup?intent=org"><Button size="lg">Create an organisation account</Button></Link>
+            <Link href="/join"><Button size="lg" variant="outline">Join my organisation</Button></Link>
           </div>
           <p className="mt-4 text-xs text-fg-subtle">Timers, heartbeats and recordings are never treated as proof of productivity.</p>
         </div>
@@ -48,7 +48,7 @@ export default async function LandingPage() {
         </div>
         <ol className="space-y-6">
           {[
-            { n: "01.", t: "Add your team.", d: "Invite people by email, define teams and reviewers. Every seat is a real account.", I: Users },
+            { n: "01.", t: "Add your team.", d: "Create teams, appoint team leads, and share one join code. Staff can only join through it.", I: Users },
             { n: "02.", t: "They log the work.", d: "Plan the day, start a session, stop with a note. Time is the sum of confirmed intervals.", I: ListChecks },
             { n: "03.", t: "You see it live.", d: "Reported activity, blockers and submitted evidence, with last-sync timestamps.", I: Eye },
           ].map((s) => (

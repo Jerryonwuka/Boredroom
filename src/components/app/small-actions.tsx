@@ -21,7 +21,7 @@ export function AcknowledgePolicy({ orgSlug, next }: { orgSlug: string; next?: s
     <div className="space-y-3">
       {error ? <Alert tone="danger">{error}</Alert> : null}
       <label className="flex items-start gap-3 text-sm"><input type="checkbox" className="mt-1" checked={checked} onChange={(e) => setChecked(e.target.checked)} /> <span>I have read this version of the notice. (This records what you were shown and when; it does not by itself settle every legal question about monitoring.)</span></label>
-      <Button disabled={!checked || pending} onClick={async () => { setPending(true); setError(null); try { await api(`/api/orgs/${orgSlug}/policy/acknowledge`, { method: "POST" }); router.push(next && next.startsWith("/") ? next : `/app/${orgSlug}/my-day`); router.refresh(); } catch (err) { setError(isApiFailure(err) ? err.error.message : "Cannot reach the server."); } finally { setPending(false); } }}>{pending ? "Saving…" : "Acknowledge"}</Button>
+      <Button disabled={!checked || pending} onClick={async () => { setPending(true); setError(null); try { await api(`/api/orgs/${orgSlug}/policy/acknowledge`, { method: "POST" }); router.push(next && next.startsWith("/") ? next : `/app/${orgSlug}`); router.refresh(); } catch (err) { setError(isApiFailure(err) ? err.error.message : "Cannot reach the server."); } finally { setPending(false); } }}>{pending ? "Saving…" : "Acknowledge"}</Button>
     </div>
   );
 }

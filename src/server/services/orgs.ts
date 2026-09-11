@@ -228,7 +228,10 @@ export async function createTeam(ctx: OrgContext, name: string) {
   return withUser(ctx.user.profileId, async (db) => {
     try {
       const t = await db.one<{ id: string }>(`INSERT INTO teams(organisation_id, name) VALUES ($1, $2) RETURNING id`, [ctx.org.id, name.trim()]);
-      await audit(db, { organisationId: ctx.org.id, actorMembershipId: ctx.membership.id, action: "team.created", subjectType: "team", subjectId: t.id, metadata: { name } });
+      // Every team gets a working project of the same name where its lead creates and assigns tasks.
+      const p = await db.one<{ id: string }>(`INSERT INTO projects(organisation_id, name, description, created_by) VALUES ($1, $2, $3, $4) RETURNING id`, [ctx.org.id, name.trim(), `Working project for the ${name.trim()} team`, ctx.membership.id]);
+      await db.query(`UPDATE teams SET project_id = $2 WHERE id = $1`, [t.id, p.id]);
+      await audit(db, { organisationId: ctx.org.id, actorMembershipId: ctx.membership.id, action: "team.created", subjectType: "team", subjectId: t.id, metadata: { name, projectId: p.id } });
       return t;
     } catch (err) {
       if (isUniqueViolation(err)) throw conflict("TEAM_EXISTS", "A team with that name already exists.");
@@ -241,10 +244,14 @@ export async function setTeamMember(ctx: OrgContext, teamId: string, membershipI
   return withUser(ctx.user.profileId, async (db) => {
     if (opts.remove) {
       await db.query(`DELETE FROM team_members WHERE organisation_id = $1 AND team_id = $2 AND membership_id = $3`, [ctx.org.id, teamId, membershipId]);
+      await syncTeamProjectMember(db, ctx.org.id, teamId, membershipId, "remove");
     } else {
       await db.query(
         `INSERT INTO team_members(organisation_id, team_id, membership_id, is_manager) VALUES ($1, $2, $3, $4)
          ON CONFLICT (team_id, membership_id) DO UPDATE SET is_manager = EXCLUDED.is_manager`, [ctx.org.id, teamId, membershipId, opts.isManager]);
+      // Team leads are managers of their team; the role is raised (never lowered) so a lead can review the team's work.
+      if (opts.isManager) await db.query(`UPDATE memberships SET role = 'manager' WHERE id = $1 AND organisation_id = $2 AND role = 'employee'`, [membershipId, ctx.org.id]);
+      await syncTeamProjectMember(db, ctx.org.id, teamId, membershipId, opts.isManager ? "lead" : "contributor");
     }
     await audit(db, { organisationId: ctx.org.id, actorMembershipId: ctx.membership.id, action: opts.remove ? "team.member_removed" : "team.member_set", subjectType: "team", subjectId: teamId, subjectMembershipId: membershipId, metadata: { isManager: opts.isManager } });
   });
@@ -351,3 +358,81 @@ export async function revokeRecordingAccess(ctx: OrgContext, grantId: string) {
 }
 
 export { AppError };
+
+// ---------------------------------------------------------------------------
+// Join codes: the organisation account hands out a code or link; staff can only join through it.
+// ---------------------------------------------------------------------------
+function newJoinCode() {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const pick = (n: number) => Array.from({ length: n }, () => alphabet[Math.floor(Math.random() * alphabet.length)]).join("");
+  return `${pick(4)}-${pick(4)}`;
+}
+
+export const joinCodeSchema = z.object({
+  enabled: z.boolean().optional(),
+  role: z.enum(["manager", "employee"]).optional(),
+  teamId: z.string().uuid().nullable().optional(),
+  rotate: z.boolean().optional(),
+});
+
+/** Owner/HR: enable, disable, retarget or rotate the organisation's join code. Rotating invalidates the old one immediately. */
+export async function updateJoinCode(ctx: OrgContext, input: z.infer<typeof joinCodeSchema>) {
+  if (!["owner", "hr"].includes(ctx.membership.role)) throw forbidden();
+  return withUser(ctx.user.profileId, async (db) => {
+    const cur = await db.one<{ join_code: string | null }>(`SELECT join_code FROM organisations WHERE id = $1`, [ctx.org.id]);
+    const code = input.rotate || !cur.join_code ? newJoinCode() : cur.join_code;
+    await db.query(
+      `UPDATE organisations SET join_code = $2, join_code_enabled = COALESCE($3, join_code_enabled), join_code_role = COALESCE($4, join_code_role),
+         join_code_team_id = CASE WHEN $6 THEN $5 ELSE join_code_team_id END, join_code_rotated_at = CASE WHEN $2 <> COALESCE(join_code, '') THEN now() ELSE join_code_rotated_at END
+       WHERE id = $1`,
+      [ctx.org.id, code, input.enabled ?? null, input.role ?? null, input.teamId ?? null, input.teamId !== undefined]);
+    await audit(db, { organisationId: ctx.org.id, actorMembershipId: ctx.membership.id, action: "join_code.updated", subjectType: "organisation", subjectId: ctx.org.id, metadata: { enabled: input.enabled, role: input.role, teamId: input.teamId, rotated: !!input.rotate || !cur.join_code } });
+    return readJoinCode(db, ctx.org.id);
+  });
+}
+
+type JoinCodeRow = { join_code: string | null; join_code_enabled: boolean; join_code_role: string; join_code_team_id: string | null; join_code_rotated_at: string | null };
+const readJoinCode = (db: Db, orgId: string) => db.one<JoinCodeRow>(`SELECT join_code, join_code_enabled, join_code_role, join_code_team_id, join_code_rotated_at FROM organisations WHERE id = $1`, [orgId]);
+
+export async function joinCodeView(ctx: OrgContext) {
+  return withUser(ctx.user.profileId, (db) => readJoinCode(db, ctx.org.id));
+}
+
+export type JoinPreview = { organisationId: string; name: string; slug: string; role: "manager" | "employee"; teamId: string | null; enabled: boolean };
+
+export async function previewJoinCode(code: string): Promise<JoinPreview | null> {
+  const clean = code.trim().toUpperCase().replace(/\s+/g, "");
+  if (!/^[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(clean)) return null;
+  return withSystem(async (db) => {
+    const r = await db.maybeOne<{ organisation_id: string; name: string; slug: string; role: "manager" | "employee"; team_id: string | null; enabled: boolean }>(`SELECT * FROM app_join_code_preview($1)`, [clean]);
+    return r ? { organisationId: r.organisation_id, name: r.name, slug: r.slug, role: r.role, teamId: r.team_id, enabled: r.enabled } : null;
+  });
+}
+
+/** Staff joins with the organisation's code. The role comes from the code's configuration, never from the client. */
+export async function joinWithCode(userId: string, code: string) {
+  const preview = await previewJoinCode(code);
+  if (!preview) throw notFound("That organisation code is not valid.");
+  if (!preview.enabled) throw conflict("JOIN_DISABLED", "This organisation is not accepting new members with this code right now. Ask your administrator for a new one.");
+  const clean = code.trim().toUpperCase().replace(/\s+/g, "");
+  return withUser(userId, async (db) => {
+    await db.query(`SELECT set_config('app.join_code', $1, true)`, [clean]);
+    const existing = await db.maybeOne<{ status: string }>(`SELECT status FROM memberships WHERE organisation_id = $1 AND user_id = $2`, [preview.organisationId, userId]);
+    if (existing?.status === "active") throw conflict("ALREADY_MEMBER", "You are already a member of this organisation.");
+    if (existing?.status === "revoked") throw forbidden("Your access to this organisation was removed. Ask your administrator to invite you again.");
+    const employeeCode = await db.one<{ code: string }>(`SELECT app_next_employee_code($1) AS code`, [preview.organisationId]);
+    const membership = await db.one<{ id: string }>(`INSERT INTO memberships(organisation_id, user_id, employee_code, role) VALUES ($1, $2, $3, $4) RETURNING id`,
+      [preview.organisationId, userId, employeeCode.code, preview.role]);
+    if (preview.teamId) {
+      await db.query(`INSERT INTO team_members(organisation_id, team_id, membership_id, is_manager) VALUES ($1, $2, $3, false)`, [preview.organisationId, preview.teamId, membership.id]);
+      await syncTeamProjectMember(db, preview.organisationId, preview.teamId, membership.id, "contributor");
+    }
+    await audit(db, { organisationId: preview.organisationId, actorMembershipId: membership.id, actorUserId: userId, action: "join_code.accepted", subjectType: "membership", subjectId: membership.id, subjectMembershipId: membership.id, metadata: { role: preview.role, teamId: preview.teamId } });
+    return { orgSlug: preview.slug, membershipId: membership.id };
+  });
+}
+
+/** Keeps a team's working project in step with team membership so leads can assign tasks to their people. */
+export async function syncTeamProjectMember(db: Db, orgId: string, teamId: string, membershipId: string, accessRole: "lead" | "contributor" | "remove") {
+  await db.query(`SELECT app_sync_team_project_member($1, $2, $3, $4)`, [orgId, teamId, membershipId, accessRole]);
+}

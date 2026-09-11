@@ -13,10 +13,10 @@ export const metadata = { title: "Monitoring policy" };
 export default async function PolicyPage({ params, searchParams }: { params: Promise<{ workspace: string }>; searchParams: Promise<{ required?: string; welcome?: string; next?: string }> }) {
   const { workspace } = await params;
   const sp = await searchParams;
-  const { ctx, counts } = await workspacePage(workspace, `/app/${workspace}/policy`);
+  const { ctx, counts, teams } = await workspacePage(workspace, `/app/${workspace}/policy`);
   const { policy, acknowledgedAt, history } = await policyView(ctx);
   return (
-    <AppShell ctx={ctx} counts={counts}>
+    <AppShell ctx={ctx} counts={counts} teams={teams}>
       <PageHeader overline="Transparency" title="What Boredroom records about you" description="Read the current notice. Material changes create a new version that must be acknowledged before recorded work starts." />
       {sp.welcome ? <Alert tone="success" className="mb-4" title={`Welcome to ${ctx.org.name}`}>Your employee ID is {ctx.membership.employee_code}. Review the notice below to continue.</Alert> : null}
       {sp.required ? <Alert tone="warning" className="mb-4">Acknowledge the current policy version to continue.</Alert> : null}

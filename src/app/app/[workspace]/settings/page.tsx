@@ -13,8 +13,8 @@ export const metadata = { title: "Settings" };
 export default async function SettingsPage({ params, searchParams }: { params: Promise<{ workspace: string }>; searchParams: Promise<{ setup?: string }> }) {
   const { workspace } = await params;
   const sp = await searchParams;
-  const { ctx, counts } = await workspacePage(workspace, `/app/${workspace}/settings`);
-  if (!["owner", "hr"].includes(ctx.membership.role)) return <AppShell ctx={ctx} counts={counts}><PermissionDenied /></AppShell>;
+  const { ctx, counts, teams: navTeams } = await workspacePage(workspace, `/app/${workspace}/settings`);
+  if (!["owner", "hr"].includes(ctx.membership.role)) return <AppShell ctx={ctx} counts={counts} teams={navTeams}><PermissionDenied /></AppShell>;
   const { policy, schedule, grants, members, teams, counts: c } = await settingsView(ctx);
   const isOwner = ctx.membership.role === "owner";
   const checklist = [
@@ -26,7 +26,7 @@ export default async function SettingsPage({ params, searchParams }: { params: P
     { label: "Employees invited", done: c.members > 1 },
   ];
   return (
-    <AppShell ctx={ctx} counts={counts}>
+    <AppShell ctx={ctx} counts={counts} teams={navTeams}>
       <PageHeader overline="Workspace" title="Settings" description="Values here live in policy and schedule records, not in the interface. Changes are audited." />
       {sp.setup ? <Alert tone="success" className="mb-6" title="Workspace ready">Work through the checklist to finish setup.</Alert> : null}
       <div className="grid gap-6 lg:grid-cols-[1fr_320px]">

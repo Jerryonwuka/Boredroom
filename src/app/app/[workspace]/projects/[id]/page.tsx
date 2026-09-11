@@ -15,7 +15,7 @@ export const dynamic = "force-dynamic";
 export default async function ProjectPage({ params, searchParams }: { params: Promise<{ workspace: string; id: string }>; searchParams: Promise<{ status?: string; assignee?: string }> }) {
   const { workspace, id } = await params;
   const sp = await searchParams;
-  const { ctx, counts } = await workspacePage(workspace, `/app/${workspace}/projects/${id}`);
+  const { ctx, counts, teams } = await workspacePage(workspace, `/app/${workspace}/projects/${id}`);
   const data = await projectDetail(ctx, id);
   if (!data) notFound();
   const { project, tasks, members, allMembers, isLead } = data;
@@ -24,7 +24,7 @@ export default async function ProjectPage({ params, searchParams }: { params: Pr
   const visible = tasks.filter((t) => (!sp.status || t.status === sp.status) && (!sp.assignee || t.assignee_membership_id === sp.assignee));
   const statuses = ["todo", "in_progress", "blocked", "in_review", "completed"];
   return (
-    <AppShell ctx={ctx} counts={counts}>
+    <AppShell ctx={ctx} counts={counts} teams={teams}>
       <PageHeader overline={<Link href={`/app/${ctx.org.slug}/projects`} className="hover:underline">Projects</Link>} title={project.name}
         description={<>{project.description}{project.status === "archived" ? " · Archived: no new sessions can start." : ""}</>}
         actions={<>{canCreate && project.status === "active" ? <NewTaskForm orgSlug={ctx.org.slug} projectId={project.id} members={allMembers} self={ctx.membership.id} canAssignOthers={canManage || ctx.membership.role === "manager"} requiresDueDate={project.requires_due_date} requiresEstimate={project.requires_estimate} /> : null}{canManage && project.status === "active" ? <ArchiveProjectButton orgSlug={ctx.org.slug} projectId={project.id} /> : null}</>} />

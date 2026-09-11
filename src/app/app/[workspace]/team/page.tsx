@@ -14,12 +14,12 @@ export const metadata = { title: "Team" };
 export default async function TeamPage({ params, searchParams }: { params: Promise<{ workspace: string }>; searchParams: Promise<{ team?: string }> }) {
   const { workspace } = await params;
   const sp = await searchParams;
-  const { ctx, counts } = await workspacePage(workspace, `/app/${workspace}/team`);
-  if (ctx.membership.role === "employee") return <AppShell ctx={ctx} counts={counts}><PermissionDenied description="The team view is available to managers, HR and owners. Your own records are under Timesheets." /></AppShell>;
+  const { ctx, counts, teams } = await workspacePage(workspace, `/app/${workspace}/team`);
+  if (ctx.membership.role === "employee") return <AppShell ctx={ctx} counts={counts} teams={teams}><PermissionDenied description="The team view is available to managers, HR and owners. Your own records are under Timesheets." /></AppShell>;
   const data = await teamStatus(ctx, { teamId: sp.team ?? null });
   const now = new Date(data.serverNow).getTime();
   return (
-    <AppShell ctx={ctx} counts={counts}>
+    <AppShell ctx={ctx} counts={counts} teams={teams}>
       <PageHeader overline={`Reported activity · ${data.today}`} title="Team" description={<>What people report working on right now. Status turns stale after {data.staleAfterSeconds}s without a heartbeat. Last sync: {formatDateTime(data.serverNow, ctx.org.timezone)}. Heartbeats show connection, not productivity.</>} />
       <div className="mb-4 flex flex-wrap items-center gap-2 text-sm">
         <span className="text-fg-subtle">Team:</span>

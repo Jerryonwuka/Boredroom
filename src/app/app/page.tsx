@@ -16,7 +16,7 @@ export default async function WorkspacesPage({ searchParams }: { searchParams: P
   if (!user) redirect("/login?next=/app");
   if (!user.emailVerified) redirect("/verify/pending");
   const workspaces = await listMyWorkspaces(user.profileId);
-  if (workspaces.length === 1 && !sp.verified) redirect(`/app/${workspaces[0].slug}/my-day`);
+  if (workspaces.length === 1 && !sp.verified) redirect(`/app/${workspaces[0].slug}`);
   return (
     <main id="main" className="mx-auto w-full max-w-2xl px-4 py-12">
       <div className="mb-8 flex items-center justify-between"><Logo /><SignOutButton /></div>
@@ -25,11 +25,11 @@ export default async function WorkspacesPage({ searchParams }: { searchParams: P
       <p className="mt-1 text-fg-muted">Signed in as {user.email}</p>
       <div className="mt-6 grid gap-3">
         {workspaces.length === 0 ? (
-          <EmptyState title="You are not in a workspace yet" description="Create one for your organisation, or accept an invitation link from your administrator." action={<Link href="/onboarding"><Button>Create a workspace</Button></Link>} />
+          <EmptyState title="You are not in a workspace yet" description="Create an organisation account for your company, or join your organisation with the code or link it gave you." action={<div className="flex gap-2"><Link href="/onboarding"><Button>Create an organisation</Button></Link><Link href="/join"><Button variant="outline">Join with a code</Button></Link></div>} />
         ) : workspaces.map((w) => (
-          <Link key={w.id} href={`/app/${w.slug}/my-day`} className="tile flex items-center justify-between px-5 py-4 hover:border-border-strong">
+          <Link key={w.id} href={`/app/${w.slug}`} className="tile flex items-center justify-between px-5 py-4 hover:border-border-strong">
             <div><p className="font-semibold">{w.name}</p><p className="text-sm text-fg-subtle">{w.timezone}</p></div>
-            <Badge tone="accent">{w.role}</Badge>
+            <Badge tone="accent">{{ owner: "Organisation owner", hr: "HR administrator", manager: "Team lead", employee: "Staff" }[w.role]}</Badge>
           </Link>
         ))}
       </div>

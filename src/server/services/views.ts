@@ -138,8 +138,9 @@ export async function peopleView(ctx: OrgContext) {
        FROM memberships m JOIN profiles pr ON pr.id = m.user_id WHERE m.organisation_id = $1 ORDER BY m.status, pr.display_name`, [ctx.org.id, ctx.org.current_policy_id]);
     const invitations = await db.query<{ id: string; email: string; role: string; expires_at: string; accepted_at: string | null; revoked_at: string | null; sent_at: string | null; created_at: string; team_name: string | null }>(
       `SELECT i.id, i.email, i.role, i.expires_at, i.accepted_at, i.revoked_at, i.sent_at, i.created_at, t.name AS team_name FROM invitations i LEFT JOIN teams t ON t.id = i.team_id WHERE i.organisation_id = $1 ORDER BY i.created_at DESC LIMIT 100`, [ctx.org.id]);
-    const teams = await db.query<{ id: string; name: string; member_count: number }>(`SELECT t.id, t.name, (SELECT count(*) FROM team_members tm WHERE tm.team_id = t.id)::int AS member_count FROM teams t WHERE t.organisation_id = $1 AND t.archived_at IS NULL ORDER BY t.name`, [ctx.org.id]);
-    return { members, invitations, teams };
+    const teams = await db.query<{ id: string; name: string; member_count: number; project_id: string | null; leads: string[] }>(`SELECT t.id, t.name, t.project_id, (SELECT count(*) FROM team_members tm WHERE tm.team_id = t.id)::int AS member_count, COALESCE((SELECT array_agg(pr.display_name ORDER BY pr.display_name) FROM team_members tm JOIN memberships m ON m.id = tm.membership_id JOIN profiles pr ON pr.id = m.user_id WHERE tm.team_id = t.id AND tm.is_manager), '{}') AS leads FROM teams t WHERE t.organisation_id = $1 AND t.archived_at IS NULL ORDER BY t.name`, [ctx.org.id]);
+    const joinCode = await db.one<{ join_code: string | null; join_code_enabled: boolean; join_code_role: string; join_code_team_id: string | null; join_code_rotated_at: string | null }>(`SELECT join_code, join_code_enabled, join_code_role, join_code_team_id, join_code_rotated_at FROM organisations WHERE id = $1`, [ctx.org.id]);
+    return { members, invitations, teams, joinCode };
   });
 }
 
@@ -237,4 +238,77 @@ export async function reviewQueue(ctx: OrgContext) {
        ORDER BY days.local_date DESC, pr.display_name LIMIT 50`, [ctx.org.id, ctx.org.timezone, ctx.membership.id]);
     return { submissions, reports, adjustments, exceptions, incidents, overdue, missing };
   });
+}
+
+/** Organisation dashboard for owners and HR: what is happening right now, in plain counts. */
+export async function orgDashboard(ctx: OrgContext) {
+  return withUser(ctx.user.profileId, async (db) => {
+    const today = todayLocal(ctx.org.timezone);
+    const dayStart = dayStartIso(today, ctx.org.timezone);
+    const timings = await db.maybeOne<{ stale_after_seconds: number }>(`SELECT stale_after_seconds FROM policies WHERE id = $1`, [ctx.org.current_policy_id]);
+    const stale = timings?.stale_after_seconds ?? 90;
+    const counts = await db.one<{ people: number; teams: number; connected: number; working: number; tasks_done_today: number; tasks_done_total: number; tasks_open: number; tasks_blocked: number; tasks_in_review: number; seconds_today: number; reports_pending: number }>(
+      `SELECT
+         (SELECT count(*) FROM memberships m WHERE m.organisation_id = $1 AND m.status = 'active')::int AS people,
+         (SELECT count(*) FROM teams t WHERE t.organisation_id = $1 AND t.archived_at IS NULL)::int AS teams,
+         (SELECT count(*) FROM work_sessions s WHERE s.organisation_id = $1 AND s.state = 'running' AND s.last_heartbeat_at > now() - make_interval(secs => $3))::int AS connected,
+         (SELECT count(*) FROM work_sessions s WHERE s.organisation_id = $1 AND s.state IN ('running','paused','interrupted'))::int AS working,
+         (SELECT count(*) FROM tasks t WHERE t.organisation_id = $1 AND t.status = 'completed' AND t.completed_at >= $2::timestamptz)::int AS tasks_done_today,
+         (SELECT count(*) FROM tasks t WHERE t.organisation_id = $1 AND t.status = 'completed')::int AS tasks_done_total,
+         (SELECT count(*) FROM tasks t WHERE t.organisation_id = $1 AND t.status IN ('todo','in_progress') AND t.archived_at IS NULL)::int AS tasks_open,
+         (SELECT count(*) FROM tasks t WHERE t.organisation_id = $1 AND t.status = 'blocked' AND t.archived_at IS NULL)::int AS tasks_blocked,
+         (SELECT count(*) FROM tasks t WHERE t.organisation_id = $1 AND t.status = 'in_review' AND t.archived_at IS NULL)::int AS tasks_in_review,
+         COALESCE((SELECT SUM(EXTRACT(EPOCH FROM (LEAST(COALESCE(i.ended_at, now()), $2::timestamptz + interval '1 day') - GREATEST(i.started_at, $2::timestamptz))))::int
+                   FROM session_intervals i WHERE i.organisation_id = $1 AND i.confirmation_status = 'confirmed' AND i.started_at < $2::timestamptz + interval '1 day' AND COALESCE(i.ended_at, now()) > $2::timestamptz), 0) AS seconds_today,
+         (SELECT count(*) FROM daily_reports r WHERE r.organisation_id = $1 AND r.status = 'submitted')::int AS reports_pending`,
+      [ctx.org.id, dayStart, stale]);
+    const workingNow = await db.query<{ membership_id: string; display_name: string; team_names: string[]; state: string; task_id: string; task_title: string; started_at: string; last_heartbeat_at: string; today_seconds: number }>(
+      `SELECT m.id AS membership_id, pr.display_name,
+              COALESCE((SELECT array_agg(t.name ORDER BY t.name) FROM team_members tm JOIN teams t ON t.id = tm.team_id WHERE tm.membership_id = m.id), '{}') AS team_names,
+              s.state, s.task_id, tk.title AS task_title, s.started_at, s.last_heartbeat_at,
+              COALESCE((SELECT SUM(EXTRACT(EPOCH FROM (LEAST(COALESCE(i.ended_at, now()), $2::timestamptz + interval '1 day') - GREATEST(i.started_at, $2::timestamptz))))::int FROM session_intervals i WHERE i.membership_id = m.id AND i.confirmation_status = 'confirmed' AND i.started_at < $2::timestamptz + interval '1 day' AND COALESCE(i.ended_at, now()) > $2::timestamptz), 0) AS today_seconds
+       FROM work_sessions s JOIN memberships m ON m.id = s.membership_id JOIN profiles pr ON pr.id = m.user_id JOIN tasks tk ON tk.id = s.task_id
+       WHERE s.organisation_id = $1 AND s.state IN ('running','paused','interrupted') ORDER BY s.started_at`, [ctx.org.id, dayStart]);
+    const teams = await db.query<{ id: string; name: string; members: number; leads: string[]; open_tasks: number; blocked: number; working: number; project_id: string | null }>(
+      `SELECT t.id, t.name, t.project_id,
+              (SELECT count(*) FROM team_members tm WHERE tm.team_id = t.id)::int AS members,
+              COALESCE((SELECT array_agg(pr.display_name ORDER BY pr.display_name) FROM team_members tm JOIN memberships m ON m.id = tm.membership_id JOIN profiles pr ON pr.id = m.user_id WHERE tm.team_id = t.id AND tm.is_manager), '{}') AS leads,
+              (SELECT count(*) FROM tasks x JOIN team_members tm ON tm.membership_id = x.assignee_membership_id AND tm.team_id = t.id WHERE x.status IN ('todo','in_progress') AND x.archived_at IS NULL)::int AS open_tasks,
+              (SELECT count(*) FROM tasks x JOIN team_members tm ON tm.membership_id = x.assignee_membership_id AND tm.team_id = t.id WHERE x.status = 'blocked' AND x.archived_at IS NULL)::int AS blocked,
+              (SELECT count(*) FROM work_sessions s JOIN team_members tm ON tm.membership_id = s.membership_id AND tm.team_id = t.id WHERE s.state IN ('running','paused','interrupted'))::int AS working
+       FROM teams t WHERE t.organisation_id = $1 AND t.archived_at IS NULL ORDER BY t.name`, [ctx.org.id]);
+    const recentDone = await db.query<{ id: string; title: string; assignee_name: string; completed_at: string }>(
+      `SELECT t.id, t.title, pr.display_name AS assignee_name, t.completed_at FROM tasks t JOIN memberships m ON m.id = t.assignee_membership_id JOIN profiles pr ON pr.id = m.user_id
+       WHERE t.organisation_id = $1 AND t.status = 'completed' ORDER BY t.completed_at DESC LIMIT 8`, [ctx.org.id]);
+    const now = await db.one<{ now: string }>(`SELECT now() AS now`);
+    return { today, counts, workingNow, teams, recentDone, staleAfterSeconds: stale, serverNow: now.now };
+  });
+}
+
+/** Team board: the lead's working area (members, their tasks, who is on what). */
+export async function teamBoard(ctx: OrgContext, teamId: string) {
+  return withUser(ctx.user.profileId, async (db) => {
+    const team = await db.maybeOne<{ id: string; name: string; project_id: string | null; project_name: string | null }>(`SELECT t.id, t.name, t.project_id, p.name AS project_name FROM teams t LEFT JOIN projects p ON p.id = t.project_id WHERE t.id = $1 AND t.organisation_id = $2 AND t.archived_at IS NULL`, [teamId, ctx.org.id]);
+    if (!team) return null;
+    const members = await db.query<{ membership_id: string; display_name: string; employee_code: string; role: string; is_manager: boolean; session_state: string | null; task_title: string | null; open_tasks: number; blocked_tasks: number; in_review_tasks: number }>(
+      `SELECT m.id AS membership_id, pr.display_name, m.employee_code, m.role, tm.is_manager,
+              s.state AS session_state, tk.title AS task_title,
+              (SELECT count(*) FROM tasks x WHERE x.assignee_membership_id = m.id AND x.status IN ('todo','in_progress') AND x.archived_at IS NULL)::int AS open_tasks,
+              (SELECT count(*) FROM tasks x WHERE x.assignee_membership_id = m.id AND x.status = 'blocked' AND x.archived_at IS NULL)::int AS blocked_tasks,
+              (SELECT count(*) FROM tasks x WHERE x.assignee_membership_id = m.id AND x.status = 'in_review' AND x.archived_at IS NULL)::int AS in_review_tasks
+       FROM team_members tm JOIN memberships m ON m.id = tm.membership_id JOIN profiles pr ON pr.id = m.user_id
+       LEFT JOIN work_sessions s ON s.membership_id = m.id AND s.state IN ('running','paused','interrupted') LEFT JOIN tasks tk ON tk.id = s.task_id
+       WHERE tm.team_id = $1 AND m.status = 'active' ORDER BY tm.is_manager DESC, pr.display_name`, [teamId]);
+    const memberIds = members.map((m) => m.membership_id);
+    const tasks = memberIds.length ? await db.query<TaskRow>(`${TASK_SELECT} WHERE t.organisation_id = $1 AND t.assignee_membership_id = ANY($2::uuid[]) AND t.archived_at IS NULL ORDER BY CASE t.status WHEN 'blocked' THEN 0 WHEN 'in_progress' THEN 1 WHEN 'in_review' THEN 2 WHEN 'todo' THEN 3 ELSE 4 END, t.due_at NULLS LAST, t.created_at DESC`, [ctx.org.id, memberIds]) : [];
+    const isLead = members.some((m) => m.membership_id === ctx.membership.id && m.is_manager) || ["owner", "hr"].includes(ctx.membership.role);
+    const projects = await db.query<{ id: string; name: string }>(`SELECT id, name FROM projects WHERE organisation_id = $1 AND status = 'active' ORDER BY (id = $2) DESC, name`, [ctx.org.id, team.project_id]);
+    const others = await db.query<{ id: string; display_name: string }>(`SELECT m.id, pr.display_name FROM memberships m JOIN profiles pr ON pr.id = m.user_id WHERE m.organisation_id = $1 AND m.status = 'active' AND NOT (m.id = ANY($2::uuid[])) ORDER BY pr.display_name`, [ctx.org.id, memberIds]);
+    return { team, members, tasks, isLead, projects, others };
+  });
+}
+
+export async function myTeams(ctx: OrgContext) {
+  return withUser(ctx.user.profileId, (db) => db.query<{ id: string; name: string; is_manager: boolean }>(
+    `SELECT t.id, t.name, tm.is_manager FROM team_members tm JOIN teams t ON t.id = tm.team_id WHERE tm.membership_id = $1 AND t.archived_at IS NULL ORDER BY t.name`, [ctx.membership.id]));
 }
