@@ -105,7 +105,7 @@ function Board({ orgSlug, today, initialSession, planned, ownTodos, fromLeads, d
             <Button size="sm" variant="ghost" onClick={() => setShowCreate((v) => !v)}><Plus className="h-4 w-4" aria-hidden />{showCreate ? "Hide details" : "Add with details"}</Button>
           </div>
           {showCreate ? <CreateTaskForm orgSlug={orgSlug} projects={projects} members={members} onDone={() => { setShowCreate(false); router.refresh(); }} /> : null}
-          {ownTodos.length === 0 ? <p className="tile p-4 text-sm text-fg-muted">Type a to-do above and press Enter. Then press Start when you begin.</p> : (
+          {ownTodos.length === 0 ? <p className="tile p-4 text-sm text-fg-muted">{planned.length ? "Everything you added is in today's plan above." : "Type a to-do above and press Enter. Then press Start when you begin."}</p> : (
             <ul className="space-y-2">
               {ownTodos.map((t) => (
                 <li key={t.id} className={`tile flex items-center gap-3 px-4 py-3 ${session?.taskId === t.id ? "tile-glow" : ""}`}>
