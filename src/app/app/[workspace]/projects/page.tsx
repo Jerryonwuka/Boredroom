@@ -20,7 +20,7 @@ export default async function ProjectsPage({ params }: { params: Promise<{ works
   const members = canCreate ? await withUser(ctx.user.profileId, (db) => db.query<{ id: string; display_name: string }>(`SELECT m.id, pr.display_name FROM memberships m JOIN profiles pr ON pr.id = m.user_id WHERE m.organisation_id = $1 AND m.status = 'active' ORDER BY pr.display_name`, [ctx.org.id])) : [];
   return (
     <AppShell ctx={ctx} counts={counts} teams={teams}>
-      <PageHeader overline="Projects" title="Projects" description="Tasks live inside projects. Archive a project to stop new sessions without deleting history." actions={canCreate ? <NewProjectForm orgSlug={ctx.org.slug} members={members.filter((m) => m.id !== ctx.membership.id)} /> : null} />
+      <PageHeader back={{ href: `/app/${ctx.org.slug}`, label: "Home" }} overline="Projects" title="Projects" description="Tasks live inside projects. Archive a project to stop new sessions without deleting history." actions={canCreate ? <NewProjectForm orgSlug={ctx.org.slug} members={members.filter((m) => m.id !== ctx.membership.id)} /> : null} />
       {projects.length === 0 ? <EmptyState title="No projects yet" description={canCreate ? "Create the first project to start assigning tasks." : "A manager needs to create a project and add you to it."} /> : (
         <DataTable caption="Projects">
           <thead><tr><th>Project</th><th>Status</th><th>Open tasks</th><th>Blocked</th><th>Members</th></tr></thead>

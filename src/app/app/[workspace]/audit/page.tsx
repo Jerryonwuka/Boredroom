@@ -19,7 +19,7 @@ export default async function AuditPage({ params, searchParams }: { params: Prom
   const scope = { owner: "the whole organisation", hr: "operational events across the organisation", manager: "your own actions and your teams' review events", employee: "events about your own records" }[ctx.membership.role];
   return (
     <AppShell ctx={ctx} counts={counts} teams={teams}>
-      <PageHeader overline="History" title="Audit" description={`Who did what and when. You can see ${scope}. Entries cannot be edited or deleted from the application.`} />
+      <PageHeader back={{ href: `/app/${ctx.org.slug}`, label: "Home" }} overline="History" title="Audit" description={`Who did what and when. You can see ${scope}. Entries cannot be edited or deleted from the application.`} />
       <form className="mb-4 flex flex-wrap items-end gap-2">
         <label className="text-sm"><span className="block text-xs text-fg-subtle">Action prefix</span><Input name="action" defaultValue={sp.action ?? ""} placeholder="e.g. session., review., invitation." className="w-56" /></label>
         <label className="text-sm"><span className="block text-xs text-fg-subtle">From</span><Input name="from" type="date" defaultValue={sp.from ?? ""} /></label>

@@ -30,7 +30,7 @@ export default async function TimesheetsPage({ params, searchParams }: { params:
   const recent = await withUser(ctx.user.profileId, (db) => db.query<{ local_date: string; status: string; total_seconds: number | null }>(`SELECT r.local_date, r.status, v.total_seconds FROM daily_reports r LEFT JOIN report_versions v ON v.report_id = r.id AND v.version = r.current_version WHERE r.membership_id = $1 ORDER BY r.local_date DESC LIMIT 14`, [membershipId]));
   return (
     <AppShell ctx={ctx} counts={counts} teams={teams}>
-      <PageHeader overline="Records" title="Timesheets" description="Daily reports are generated from work sessions and split at local midnight. Submitting creates an immutable versioned snapshot; corrections create a new version that needs fresh approval." actions={["owner", "hr", "manager"].includes(ctx.membership.role) ? <ExportForm orgSlug={ctx.org.slug} members={members} /> : null} />
+      <PageHeader back={{ href: `/app/${ctx.org.slug}`, label: "Home" }} overline="Records" title={ctx.membership.role === "employee" ? "My timesheet" : "Timesheets"} description="Daily reports are generated from work sessions and split at local midnight. Submitting creates an immutable versioned snapshot; corrections create a new version that needs fresh approval." actions={["owner", "hr", "manager"].includes(ctx.membership.role) ? <ExportForm orgSlug={ctx.org.slug} members={members} /> : null} />
       <MemberDatePicker orgSlug={ctx.org.slug} members={members} membershipId={membershipId} date={date} prev={addDays(date, -1)} next={addDays(date, 1)} />
       {denied || !data ? <Alert tone="danger">You cannot view that member&apos;s records.</Alert> : (
         <div className="mt-4 grid gap-6 lg:grid-cols-[1fr_320px]">

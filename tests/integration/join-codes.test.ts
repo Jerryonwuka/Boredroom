@@ -88,3 +88,28 @@ describe("teams, leads and the team board", () => {
     await expect(orgDashboard(a.employeeCtx)).resolves.toBeTruthy(); // service returns; page layer restricts to owner/HR
   });
 });
+
+describe("staff quick to-dos", () => {
+  it("creates a to-do with only a title, in the team project, reviewed by the team lead, planned for today", async () => {
+    const { quickTodo } = await import("@/server/services/tasks");
+    const { myDay } = await import("@/server/services/views");
+    const todo = await quickTodo(a.employeeCtx, { title: "Export final logo files" });
+    const row = await adminQuery<{ project_id: string; reviewer_membership_id: string; expected_output: string }>("SELECT project_id, reviewer_membership_id, expected_output FROM tasks WHERE id = $1", [todo.id]);
+    expect(row[0].reviewer_membership_id).toBe(a.managerCtx.membership.id);
+    expect(row[0].expected_output).toBe("Export final logo files");
+    const day = await myDay(a.employeeCtx);
+    expect(day.planned.map((t) => t.id)).toContain(todo.id);
+    // Organisation accounts cannot add to-dos.
+    await expect(quickTodo(a.ownerCtx, { title: "x" })).rejects.toMatchObject({ status: 403 });
+    // A member with no team gets a personal to-do project.
+    const { createVerifiedUser: mk, contextFor: ctxFor } = await import("@/server/services/fixtures");
+    const { updateJoinCode: setCode, joinWithCode: join } = await import("@/server/services/orgs");
+    const jc = await setCode(a.ownerCtx, { rotate: true, enabled: true, role: "employee", teamId: null });
+    const solo = await mk("solo@company-a.test", "Solo Staff");
+    await join(solo.profileId, jc.join_code!);
+    const soloCtx = await ctxFor(solo, "company-a");
+    const soloTodo = await quickTodo(soloCtx, { title: "Read onboarding docs" });
+    const p = await adminQuery<{ name: string }>("SELECT p.name FROM tasks t JOIN projects p ON p.id = t.project_id WHERE t.id = $1", [soloTodo.id]);
+    expect(p[0].name).toBe("Solo Staff's to-dos");
+  });
+});

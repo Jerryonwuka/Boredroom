@@ -28,7 +28,7 @@ export default async function TaskPage({ params, searchParams }: { params: Promi
   const recordingsBySession = Object.fromEntries(await Promise.all(sessions.slice(0, 10).map(async (s) => [s.id, await listSessionRecordings(ctx, s.id)] as const)));
   return (
     <AppShell ctx={ctx} counts={counts} teams={teams}>
-      <PageHeader overline={task.project_name} title={task.title}
+      <PageHeader back={{ href: `/app/${ctx.org.slug}`, label: "Back" }} overline={task.project_name} title={task.title}
         description={<span className="flex flex-wrap items-center gap-2"><Badge tone={TASK_STATUS_TONE[task.status]}>{label(task.status)}</Badge><Badge>{task.priority}</Badge><Badge>{task.category}</Badge>{task.capture_requirement !== "none" ? <Badge tone="warning">capture {task.capture_requirement}</Badge> : null}{task.archived_at ? <Badge tone="danger">archived</Badge> : null}<span className="text-sm">Assignee {task.assignee_name} · Reviewer {task.reviewer_name ?? "not set"}{task.due_at ? ` · Due ${formatDateTime(task.due_at, ctx.org.timezone)}` : ""}</span></span>}
         actions={<TaskActions orgSlug={ctx.org.slug} task={{ id: task.id, version: task.version, status: task.status, archived: !!task.archived_at, blockedReason: task.blocked_reason }} isAssignee={isAssignee} canManage={canManage} members={members} reviewerId={task.reviewer_membership_id} assigneeId={task.assignee_membership_id} />} />
 

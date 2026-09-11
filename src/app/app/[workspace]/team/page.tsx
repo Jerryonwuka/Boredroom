@@ -20,7 +20,7 @@ export default async function TeamPage({ params, searchParams }: { params: Promi
   const now = new Date(data.serverNow).getTime();
   return (
     <AppShell ctx={ctx} counts={counts} teams={teams}>
-      <PageHeader overline={`Reported activity · ${data.today}`} title="Team" description={<>What people report working on right now. Status turns stale after {data.staleAfterSeconds}s without a heartbeat. Last sync: {formatDateTime(data.serverNow, ctx.org.timezone)}. Heartbeats show connection, not productivity.</>} />
+      <PageHeader back={{ href: `/app/${ctx.org.slug}`, label: "Home" }} overline={`Reported activity · ${data.today}`} title="Activity" description={<>What people report working on right now. Status turns stale after {data.staleAfterSeconds}s without a heartbeat. Last sync: {formatDateTime(data.serverNow, ctx.org.timezone)}. Heartbeats show connection, not productivity.</>} />
       <div className="mb-4 flex flex-wrap items-center gap-2 text-sm">
         <span className="text-fg-subtle">Team:</span>
         <Link href="?" className={`rounded-full border px-3 py-1 ${!sp.team ? "border-accent" : "border-border text-fg-muted"}`}>All</Link>

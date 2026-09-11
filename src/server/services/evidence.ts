@@ -55,7 +55,13 @@ export async function submitTask(ctx: OrgContext, taskId: string, input: z.infer
     if (!t) throw notFound("Task not found.");
     if (t.assignee_membership_id !== ctx.membership.id) throw forbidden("Only the assignee can submit this task.");
     if (t.archived_at) throw conflict("TASK_ARCHIVED", "Archived tasks cannot be submitted.");
-    if (!t.reviewer_membership_id) throw invalid("Choose a reviewer before submitting for review.", { reviewerMembershipId: ["A reviewer is required."] });
+    if (!t.reviewer_membership_id) {
+      const { defaultReviewerFor } = await import("@/server/services/tasks");
+      const fallback = await defaultReviewerFor(db, ctx.org.id, ctx.membership.id);
+      if (!fallback) throw invalid("No one can review this yet: ask your organisation to add a team lead for your team.", { reviewerMembershipId: ["A reviewer is required."] });
+      await db.query(`UPDATE tasks SET reviewer_membership_id = $2 WHERE id = $1`, [taskId, fallback]);
+      t.reviewer_membership_id = fallback;
+    }
     if (t.reviewer_membership_id === ctx.membership.id) throw conflict("SELF_REVIEW", "You cannot review your own work. Ask a manager to set a different reviewer.");
     if (!["todo", "in_progress", "blocked"].includes(t.status)) throw conflict("BAD_TRANSITION", `A ${t.status.replace("_", " ")} task cannot be submitted.`);
     const open = await db.maybeOne(`SELECT 1 FROM work_sessions WHERE task_id = $1 AND state IN ('running','paused','interrupted')`, [taskId]);

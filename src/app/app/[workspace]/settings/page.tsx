@@ -27,7 +27,7 @@ export default async function SettingsPage({ params, searchParams }: { params: P
   ];
   return (
     <AppShell ctx={ctx} counts={counts} teams={navTeams}>
-      <PageHeader overline="Workspace" title="Settings" description="Values here live in policy and schedule records, not in the interface. Changes are audited." />
+      <PageHeader back={{ href: `/app/${ctx.org.slug}/dashboard`, label: "Dashboard" }} overline="Workspace" title="Settings" description="Values here live in policy and schedule records, not in the interface. Changes are audited." />
       {sp.setup ? <Alert tone="success" className="mb-6" title="Workspace ready">Work through the checklist to finish setup.</Alert> : null}
       <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
         <div className="space-y-6">

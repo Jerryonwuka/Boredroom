@@ -32,6 +32,18 @@ Living record of decisions, requirement coverage, test evidence and blockers for
 
 Tests: `tests/integration/join-codes.test.ts` (code lifecycle, role and team placement, RLS rejection of self-insert, team board and lead permissions, dashboard counts).
 
+## Owner feedback round 2 (11 September 2026)
+
+| Ask | Done |
+| --- | --- |
+| Organisation account is for management only: no tasks or timers of its own | Owners/HR cannot be assigned tasks (service check on create and reassign), cannot start timers, cannot add to-dos, and are redirected from My Day to the dashboard. Their menu is Dashboard, People and teams, Activity, Reviews, Records, Reports, Projects, Notifications, Policy, Settings, Audit. |
+| Easier navigation | Every page except the role's home has a back link (uses browser history inside the app, otherwise a sensible fallback). Menus are trimmed per role: staff see only My Day, My timesheet, Notifications, Policy; team leads see their boards, My Day, Activity, Reviews, Timesheets, Reports, Projects. |
+| Staff flow as simple as possible | My Day: one text box ("What do you need to do?") creates a to-do with Enter; the team's working project, expected output and reviewer (their team lead) are filled in automatically and the to-do is planned for today. Sections: Today's plan, From your team lead, Your to-dos, Done today. Start/Stop on every row. Submitting for review no longer requires choosing a reviewer (defaults to the team lead, then HR/owner). Staff with no team get a personal to-do project automatically. |
+
+Tests: `tests/integration/join-codes.test.ts` (quick to-dos, personal projects), `tenancy` and `evidence-reports` updated for management-only organisation accounts.
+
+Next phase (not started): AI assistant that turns a voice note or text into to-dos.
+
 ## Milestone status
 
 | Milestone | Status | Evidence |

@@ -13,19 +13,38 @@ export function navItems(ctx: OrgContext, counts: NavCounts, teams: { id: string
   const base = `/app/${ctx.org.slug}`;
   const role = ctx.membership.role;
   const items: NavItem[] = [];
-  if (role === "owner" || role === "hr") items.push({ href: `${base}/dashboard`, label: "Dashboard", icon: "dashboard" });
+  if (role === "owner" || role === "hr") {
+    // Organisation account: supervision and management only.
+    items.push({ href: `${base}/dashboard`, label: "Dashboard", icon: "dashboard" });
+    items.push({ href: `${base}/people`, label: "People and teams", icon: "people" });
+    items.push({ href: `${base}/team`, label: "Activity", icon: "team" });
+    items.push({ href: `${base}/reviews`, label: "Reviews", icon: "reviews", badge: counts.attention || undefined });
+    items.push({ href: `${base}/timesheets`, label: "Records", icon: "timesheets" });
+    items.push({ href: `${base}/reports`, label: "Reports", icon: "reports" });
+    items.push({ href: `${base}/projects`, label: "Projects", icon: "projects" });
+    items.push({ href: `${base}/notifications`, label: "Notifications", icon: "notifications", badge: counts.unread || undefined });
+    items.push({ href: `${base}/policy`, label: "Policy", icon: "policy" });
+    items.push({ href: `${base}/settings`, label: "Settings", icon: "settings" });
+    items.push({ href: `${base}/audit`, label: "Audit", icon: "audit" });
+    return items;
+  }
+  if (role === "manager") {
+    for (const t of teams.filter((t) => t.is_manager)) items.push({ href: `${base}/teams/${t.id}`, label: `${t.name} board`, icon: "board" });
+    items.push({ href: `${base}/my-day`, label: "My Day", icon: "myday" });
+    items.push({ href: `${base}/team`, label: "Activity", icon: "team" });
+    items.push({ href: `${base}/reviews`, label: "Reviews", icon: "reviews", badge: counts.attention || undefined });
+    items.push({ href: `${base}/timesheets`, label: "Timesheets", icon: "timesheets" });
+    items.push({ href: `${base}/reports`, label: "Reports", icon: "reports" });
+    items.push({ href: `${base}/projects`, label: "Projects", icon: "projects" });
+    items.push({ href: `${base}/notifications`, label: "Notifications", icon: "notifications", badge: counts.unread || undefined });
+    items.push({ href: `${base}/policy`, label: "Policy", icon: "policy" });
+    return items;
+  }
+  // Staff: the smallest possible menu.
   items.push({ href: `${base}/my-day`, label: "My Day", icon: "myday" });
-  for (const t of teams.filter((t) => t.is_manager)) items.push({ href: `${base}/teams/${t.id}`, label: `${t.name} board`, icon: "board" });
-  items.push({ href: `${base}/projects`, label: "Projects", icon: "projects" });
-  if (role !== "employee") items.push({ href: `${base}/team`, label: "Activity", icon: "team" });
-  items.push({ href: `${base}/reviews`, label: "Reviews", icon: "reviews", badge: counts.attention || undefined });
-  items.push({ href: `${base}/timesheets`, label: "Timesheets", icon: "timesheets" });
-  items.push({ href: `${base}/reports`, label: "Reports", icon: "reports" });
+  items.push({ href: `${base}/timesheets`, label: "My timesheet", icon: "timesheets" });
   items.push({ href: `${base}/notifications`, label: "Notifications", icon: "notifications", badge: counts.unread || undefined });
-  if (role === "owner" || role === "hr") items.push({ href: `${base}/people`, label: "People", icon: "people" });
   items.push({ href: `${base}/policy`, label: "Policy", icon: "policy" });
-  if (role === "owner" || role === "hr") items.push({ href: `${base}/settings`, label: "Settings", icon: "settings" });
-  items.push({ href: `${base}/audit`, label: "Audit", icon: "audit" });
   return items;
 }
 

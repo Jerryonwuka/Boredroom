@@ -64,8 +64,10 @@ export async function createTask(ctx: OrgContext, input: z.infer<typeof createTa
     if (project.requires_due_date && !input.dueAt) throw invalid("This project requires a due date.", { dueAt: ["Required by project policy."] });
     if (project.requires_estimate && !input.estimateMinutes) throw invalid("This project requires an effort estimate.", { estimateMinutes: ["Required by project policy."] });
     if (!(await canManageAssignee(db, ctx, assignee, input.projectId))) throw forbidden("You cannot assign tasks to that person in this project.");
-    const assigneeRow = await db.maybeOne(`SELECT 1 FROM memberships WHERE id = $1 AND organisation_id = $2 AND status = 'active'`, [assignee, ctx.org.id]);
+    const assigneeRow = await db.maybeOne<{ role: string }>(`SELECT role FROM memberships WHERE id = $1 AND organisation_id = $2 AND status = 'active'`, [assignee, ctx.org.id]);
     if (!assigneeRow) throw invalid("Assignee is not an active member.", { assigneeMembershipId: ["Not an active member."] });
+    // Organisation accounts manage and supervise; tasks are only for staff and team leads.
+    if (assigneeRow.role === "owner" || assigneeRow.role === "hr") throw invalid("Tasks are for staff and team leads. Organisation accounts supervise; they do not hold tasks.", { assigneeMembershipId: ["Organisation accounts cannot be assigned tasks."] });
     if (input.reviewerMembershipId) {
       const rev = await db.maybeOne(`SELECT 1 FROM memberships WHERE id = $1 AND organisation_id = $2 AND status = 'active'`, [input.reviewerMembershipId, ctx.org.id]);
       if (!rev) throw invalid("Reviewer is not an active member.", { reviewerMembershipId: ["Not an active member."] });
@@ -124,6 +126,9 @@ export async function updateTask(ctx: OrgContext, taskId: string, input: z.infer
     }
     if (input.assigneeMembershipId !== undefined && input.assigneeMembershipId !== t.assignee_membership_id) {
       if (!manages) throw forbidden("Only managers can reassign tasks.");
+      const target = await db.maybeOne<{ role: string }>(`SELECT role FROM memberships WHERE id = $1 AND organisation_id = $2 AND status = 'active'`, [input.assigneeMembershipId, ctx.org.id]);
+      if (!target) throw invalid("Assignee is not an active member.", { assigneeMembershipId: ["Not an active member."] });
+      if (target.role === "owner" || target.role === "hr") throw invalid("Organisation accounts cannot be assigned tasks.", { assigneeMembershipId: ["Organisation accounts cannot be assigned tasks."] });
       const open = await db.maybeOne(`SELECT 1 FROM work_sessions WHERE task_id = $1 AND state IN ('running','paused','interrupted')`, [taskId]);
       if (open) throw conflict("SESSION_OPEN", "This task has an open work session. The employee must stop it before reassignment.");
       if (input.assigneeMembershipId === t.reviewer_membership_id) throw invalid("Assignee cannot be the reviewer.", { assigneeMembershipId: ["Assignee cannot be the reviewer."] });
@@ -228,4 +233,41 @@ export async function archiveProject(ctx: OrgContext, projectId: string) {
     if (!r) throw notFound("Project not found.");
     await audit(db, { organisationId: ctx.org.id, actorMembershipId: ctx.membership.id, action: "project.archived", subjectType: "project", subjectId: projectId });
   });
+}
+
+/** The team lead of the first team a member belongs to (used as the default reviewer). */
+export async function defaultReviewerFor(db: Db, orgId: string, membershipId: string): Promise<string | null> {
+  const r = await db.maybeOne<{ membership_id: string }>(
+    `SELECT mgr.membership_id FROM team_members tm JOIN team_members mgr ON mgr.team_id = tm.team_id AND mgr.is_manager AND mgr.membership_id <> tm.membership_id
+     JOIN teams t ON t.id = tm.team_id WHERE tm.organisation_id = $1 AND tm.membership_id = $2 AND t.archived_at IS NULL ORDER BY t.name LIMIT 1`, [orgId, membershipId]);
+  if (r) return r.membership_id;
+  // No team lead: fall back to an organisation account so work can still be reviewed.
+  const o = await db.maybeOne<{ id: string }>(`SELECT id FROM memberships WHERE organisation_id = $1 AND status = 'active' AND role IN ('hr','owner') AND id <> $2 ORDER BY (role = 'hr') DESC, created_at LIMIT 1`, [orgId, membershipId]);
+  return o?.id ?? null;
+}
+
+/** Where a member's own to-dos go: their team's working project, else a personal project created on first use. */
+export async function todoProjectFor(db: Db, ctx: OrgContext): Promise<string> {
+  const team = await db.maybeOne<{ team_id: string; project_id: string; is_manager: boolean }>(
+    `SELECT t.id AS team_id, t.project_id, tm.is_manager FROM team_members tm JOIN teams t ON t.id = tm.team_id JOIN projects p ON p.id = t.project_id
+     WHERE tm.membership_id = $1 AND t.archived_at IS NULL AND p.status = 'active' ORDER BY t.name LIMIT 1`, [ctx.membership.id]);
+  if (team?.project_id) {
+    // Make sure the member has access to their team's working project (idempotent).
+    await db.query(`SELECT app_sync_team_project_member($1, $2, $3, $4)`, [ctx.org.id, team.team_id, ctx.membership.id, team.is_manager ? "lead" : "contributor"]);
+    return team.project_id;
+  }
+  const existing = await db.maybeOne<{ project_id: string }>(`SELECT pm.project_id FROM project_members pm JOIN projects p ON p.id = pm.project_id WHERE pm.membership_id = $1 AND pm.access_role = 'lead' AND p.status = 'active' AND p.name = $2`, [ctx.membership.id, `${ctx.user.displayName}'s to-dos`]);
+  if (existing) return existing.project_id;
+  const created = await db.one<{ id: string }>(`SELECT app_create_personal_project($1, $2, $3) AS id`, [ctx.org.id, ctx.membership.id, `${ctx.user.displayName}'s to-dos`]);
+  return created.id;
+}
+
+export const quickTodoSchema = z.object({ title: z.string().trim().min(1).max(200), estimateMinutes: z.number().int().positive().nullable().optional() });
+
+/** One-line to-do for staff: title only. Project, expected output, reviewer and today's plan are filled in automatically. */
+export async function quickTodo(ctx: OrgContext, input: z.infer<typeof quickTodoSchema>, requestId?: string) {
+  if (ctx.membership.role === "owner" || ctx.membership.role === "hr") throw forbidden("Organisation accounts supervise; they do not hold tasks.");
+  const projectId = await withUser(ctx.user.profileId, (db) => todoProjectFor(db, ctx));
+  const reviewer = await withUser(ctx.user.profileId, (db) => defaultReviewerFor(db, ctx.org.id, ctx.membership.id));
+  return createTask(ctx, { projectId, title: input.title, expectedOutput: input.title, reviewerMembershipId: reviewer, category: "work", priority: "normal", estimateMinutes: input.estimateMinutes ?? null, dueAt: null, captureRequirement: "none", addToMyDay: true }, requestId);
 }

@@ -160,6 +160,7 @@ async function startInternal(db: Db, ctx: OrgContext, input: StartOpts, requestI
 }
 
 export async function startSession(ctx: OrgContext, input: StartOpts, requestId?: string) {
+  if (ctx.membership.role === "owner" || ctx.membership.role === "hr") throw forbidden("Organisation accounts supervise; they do not run timers.");
   return withUser(ctx.user.profileId, async (db) => {
     await lockUser(db, ctx.user.profileId);
     const open = await db.maybeOne<{ id: string; organisation_id: string; task_id: string; state: string }>(

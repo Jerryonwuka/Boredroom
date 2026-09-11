@@ -30,10 +30,12 @@ export async function myDay(ctx: OrgContext) {
       JOIN daily_plan_items d ON d.task_id = t.id AND d.membership_id = $1 AND d.local_date = $2
       WHERE t.organisation_id = $3 ORDER BY d.position`, [ctx.membership.id, today, ctx.org.id]);
     const plannedIds = new Set(planned.map((t) => t.id));
-    const assigned = (await db.query<TaskRow>(`${TASK_SELECT}
+    const allMine = await db.query<TaskRow & { created_by: string; created_by_name: string }>(`${TASK_SELECT.replace("SELECT t.id,", "SELECT t.created_by, pc.display_name AS created_by_name, t.id,").replace("LEFT JOIN memberships mr", "JOIN memberships mc ON mc.id = t.created_by JOIN profiles pc ON pc.id = mc.user_id LEFT JOIN memberships mr")}
       WHERE t.organisation_id = $1 AND t.assignee_membership_id = $2 AND t.archived_at IS NULL AND t.status <> 'completed' AND p.status = 'active'
-      ORDER BY CASE t.status WHEN 'blocked' THEN 0 WHEN 'in_progress' THEN 1 WHEN 'in_review' THEN 3 ELSE 2 END, t.due_at NULLS LAST, t.priority DESC, t.created_at`, [ctx.org.id, ctx.membership.id]))
-      .filter((t) => !plannedIds.has(t.id));
+      ORDER BY CASE t.status WHEN 'blocked' THEN 0 WHEN 'in_progress' THEN 1 WHEN 'in_review' THEN 3 ELSE 2 END, t.due_at NULLS LAST, t.priority DESC, t.created_at DESC`, [ctx.org.id, ctx.membership.id]);
+    const assigned = allMine.filter((t) => !plannedIds.has(t.id));
+    const ownTodos = assigned.filter((t) => t.created_by === ctx.membership.id);
+    const fromLeads = assigned.filter((t) => t.created_by !== ctx.membership.id);
     const overdue = assigned.filter((t) => t.due_at && new Date(t.due_at) < new Date());
     const report = await db.maybeOne<{ id: string; status: string; current_version: number }>(`SELECT id, status, current_version FROM daily_reports WHERE membership_id = $1 AND local_date = $2`, [ctx.membership.id, today]);
     const todaySeconds = await db.one<{ n: number }>(
@@ -42,7 +44,8 @@ export async function myDay(ctx: OrgContext) {
       [ctx.membership.id, dayStartIso(today, ctx.org.timezone)]);
     const projects = await db.query<{ id: string; name: string }>(`SELECT p.id, p.name FROM projects p WHERE p.organisation_id = $1 AND p.status = 'active' AND (app_has_role($1, 'owner', 'hr', 'manager') OR EXISTS (SELECT 1 FROM project_members pm WHERE pm.project_id = p.id AND pm.membership_id = $2)) ORDER BY p.name`, [ctx.org.id, ctx.membership.id]);
     const members = await db.query<{ id: string; display_name: string }>(`SELECT m.id, pr.display_name FROM memberships m JOIN profiles pr ON pr.id = m.user_id WHERE m.organisation_id = $1 AND m.status = 'active' ORDER BY pr.display_name`, [ctx.org.id]);
-    return { today, planned, assigned, overdue, report, todaySeconds: todaySeconds.n, projects, members };
+    const doneToday = await db.query<{ id: string; title: string; completed_at: string }>(`SELECT id, title, completed_at FROM tasks WHERE assignee_membership_id = $1 AND status = 'completed' AND completed_at >= $2::timestamptz ORDER BY completed_at DESC LIMIT 10`, [ctx.membership.id, dayStartIso(today, ctx.org.timezone)]);
+    return { today, planned, assigned, ownTodos, fromLeads, overdue, report, todaySeconds: todaySeconds.n, projects, members, doneToday };
   });
 }
 

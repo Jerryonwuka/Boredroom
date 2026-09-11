@@ -20,7 +20,7 @@ export default async function PeoplePage({ params }: { params: Promise<{ workspa
   const isOwner = ctx.membership.role === "owner";
   return (
     <AppShell ctx={ctx} counts={counts} teams={navTeams}>
-      <PageHeader overline="People" title="People, teams and access" description="Staff can only join through your join code or link, or an email invitation you send. You decide teams and who leads them." actions={<InviteForm orgSlug={ctx.org.slug} teams={teams} isOwner={isOwner} />} />
+      <PageHeader back={{ href: `/app/${ctx.org.slug}/dashboard`, label: "Dashboard" }} overline="People" title="People, teams and access" description="Staff can only join through your join code or link, or an email invitation you send. You decide teams and who leads them." actions={<InviteForm orgSlug={ctx.org.slug} teams={teams} isOwner={isOwner} />} />
       <section className="mb-8">
         <h2 className="mb-3 font-display text-lg">Join code and link</h2>
         <JoinCodePanel orgSlug={ctx.org.slug} appOrigin={process.env.APP_ORIGIN ?? "http://localhost:3000"} joinCode={joinCode} teams={teams} />

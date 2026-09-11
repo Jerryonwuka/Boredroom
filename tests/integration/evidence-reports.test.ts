@@ -29,10 +29,10 @@ describe("A10 / A11 evidence and review", () => {
     // Self-review is rejected (service and DB).
     await expect(reviewSubmission(a.employeeCtx, r1.submissionId, { decision: "approved", note: "" })).rejects.toMatchObject({ status: 403 });
     await expect(adminQuery("INSERT INTO reviews(organisation_id, submission_id, reviewer_membership_id, decision) VALUES ($1, $2, $3, 'approved')", [a.ownerCtx.org.id, r1.submissionId, a.employeeCtx.membership.id])).rejects.toThrow(/SELF_REVIEW/);
-    // Owner fallback: the owner cannot approve their own submission either.
-    const ownTask = await createTask(a.ownerCtx, { projectId: a.projectId, title: "Owner task", expectedOutput: "x", reviewerMembershipId: a.managerCtx.membership.id, category: "work", priority: "normal", captureRequirement: "none", addToMyDay: false });
-    const ownSub = await submitTask(a.ownerCtx, ownTask.id, { note: "mine", links: [], fileIds: [] });
-    await expect(reviewSubmission(a.ownerCtx, ownSub.submissionId, { decision: "approved", note: "" })).rejects.toMatchObject({ status: 403 });
+    // Organisation accounts supervise only: they cannot hold tasks or run timers at all.
+    await expect(createTask(a.ownerCtx, { projectId: a.projectId, title: "Owner task", expectedOutput: "x", reviewerMembershipId: a.managerCtx.membership.id, category: "work", priority: "normal", captureRequirement: "none", addToMyDay: false })).rejects.toMatchObject({ status: 422 });
+    const { startSession: start } = await import("@/server/services/sessions");
+    await expect(start(a.ownerCtx, { taskId: t, captureMode: "none" })).rejects.toMatchObject({ status: 403 });
     // David requests changes.
     const rv1 = await reviewSubmission(a.managerCtx, r1.submissionId, { decision: "changes_requested", note: "Mobile layout missing" });
     expect(rv1.taskStatus).toBe("in_progress");

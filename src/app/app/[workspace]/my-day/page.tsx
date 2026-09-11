@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { workspacePage } from "@/server/lib/workspace-page";
 import { AppShell } from "@/components/app/shell";
 import { PageHeader } from "@/components/ui/card";
@@ -14,6 +15,7 @@ export const metadata = { title: "My Day" };
 export default async function MyDayPage({ params }: { params: Promise<{ workspace: string }> }) {
   const { workspace } = await params;
   const { ctx, counts, teams } = await workspacePage(workspace, `/app/${workspace}/my-day`);
+  if (ctx.membership.role === "owner" || ctx.membership.role === "hr") redirect(`/app/${ctx.org.slug}/dashboard`);
   const [data, session, timings] = await Promise.all([
     myDay(ctx),
     currentSession(ctx),
@@ -22,13 +24,15 @@ export default async function MyDayPage({ params }: { params: Promise<{ workspac
   return (
     <AppShell ctx={ctx} counts={counts} teams={teams}>
       <PageHeader overline={data.today} title={<>Good day, <span className="gradient-text">{ctx.user.displayName.split(" ")[0]}</span>.</>}
-        description={<>Confirmed time today: <strong className="text-fg">{formatDuration(data.todaySeconds)}</strong>. Timers only count while you run them. {data.report ? <Link className="underline" href={`/app/${ctx.org.slug}/timesheets?date=${data.today}`}>Today&apos;s report is {data.report.status.replace("_", " ")}.</Link> : null}</>} />
+        description={<>Time worked today: <strong className="text-fg">{formatDuration(data.todaySeconds)}</strong>. {data.report ? <Link className="underline" href={`/app/${ctx.org.slug}/timesheets?date=${data.today}`}>Today&apos;s report is {data.report.status.replace("_", " ")}.</Link> : null}</>} />
       <MyDayBoard
         orgSlug={ctx.org.slug}
         today={data.today}
         initialSession={session}
         planned={data.planned}
-        assigned={data.assigned}
+        ownTodos={data.ownTodos}
+        fromLeads={data.fromLeads}
+        doneToday={data.doneToday}
         projects={data.projects}
         members={data.members.filter((m) => m.id !== ctx.membership.id)}
         membershipId={ctx.membership.id}

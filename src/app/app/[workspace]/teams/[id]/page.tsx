@@ -24,7 +24,7 @@ export default async function TeamBoardPage({ params }: { params: Promise<{ work
   const memberOptions = members.map((m) => ({ id: m.membership_id, display_name: m.display_name }));
   return (
     <AppShell ctx={ctx} counts={counts} teams={teams}>
-      <PageHeader overline="Team board" title={team.name}
+      <PageHeader back={{ href: isOrgAdmin ? `/app/${ctx.org.slug}/people` : `/app/${ctx.org.slug}`, label: isOrgAdmin ? "People and teams" : "Back" }} overline="Team board" title={team.name}
         description={isLead ? "Your team's work in one place. Create tasks, assign them to your people, and remove what is no longer needed." : "Tasks assigned to the people in this team."}
         actions={isLead && (team.project_id ?? projects[0]?.id) ? <NewTaskForm orgSlug={ctx.org.slug} projectId={team.project_id ?? projects[0].id} members={memberOptions} self={ctx.membership.id} canAssignOthers requiresDueDate={false} requiresEstimate={false} /> : null} />
       <section className="mb-8">

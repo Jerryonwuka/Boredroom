@@ -156,6 +156,7 @@ export async function acceptInvitation(userId: string, userEmail: string, token:
     if (inv.team_id) {
       await db.query(`INSERT INTO team_members(organisation_id, team_id, membership_id, is_manager) VALUES ($1, $2, $3, $4)`,
         [inv.organisation_id, inv.team_id, membership.id, inv.role === "manager"]);
+      await syncTeamProjectMember(db, inv.organisation_id, inv.team_id, membership.id, inv.role === "manager" ? "lead" : "contributor");
     }
     await audit(db, { organisationId: inv.organisation_id, actorMembershipId: membership.id, actorUserId: userId, action: "invitation.accepted", subjectType: "membership", subjectId: membership.id, subjectMembershipId: membership.id });
     const org = await db.one<{ slug: string }>(`SELECT slug FROM organisations WHERE id = $1`, [inv.organisation_id]);

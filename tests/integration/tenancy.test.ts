@@ -26,8 +26,9 @@ describe("A01 cross-tenant isolation", () => {
       [a.ownerCtx.org.id, a.employeeCtx.membership.id, b.taskIds.homepage])).rejects.toThrow(/foreign key/);
   });
 
-  it("company A owner cannot start a session on a company B task", async () => {
-    await expect(startSession(a.ownerCtx, { taskId: b.taskIds.homepage, captureMode: "none" })).rejects.toMatchObject({ status: 404 });
+  it("company A staff cannot start a session on a company B task; organisation accounts cannot run timers at all", async () => {
+    await expect(startSession(a.employeeCtx, { taskId: b.taskIds.homepage, captureMode: "none" })).rejects.toMatchObject({ status: 404 });
+    await expect(startSession(a.ownerCtx, { taskId: a.taskIds.homepage, captureMode: "none" })).rejects.toMatchObject({ status: 403 });
   });
 
   it("organisation list only shows the caller's workspaces", async () => {

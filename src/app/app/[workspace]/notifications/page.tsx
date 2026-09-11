@@ -16,7 +16,7 @@ export default async function NotificationsPage({ params }: { params: Promise<{ 
   const items = await notificationsView(ctx);
   return (
     <AppShell ctx={ctx} counts={counts} teams={teams}>
-      <PageHeader overline="Inbox" title="Notifications" description="Assignments, review requests, decisions, blockers and reminders. Email delivery is optional and off in the pilot." />
+      <PageHeader back={{ href: `/app/${ctx.org.slug}`, label: "Home" }} overline="Inbox" title="Notifications" description="Assignments, review requests, decisions, blockers and reminders. Email delivery is optional and off in the pilot." />
       {items.length === 0 ? <EmptyState title="Nothing here yet" /> : (
         <ul className="space-y-2">
           {items.map((n) => (

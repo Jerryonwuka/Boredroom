@@ -101,8 +101,8 @@ docs                 providers, runbooks, walkthrough
 
 ## Account types
 
-- **Organisation account**: created at `/signup?intent=org`, then `/onboarding`. Owners and HR land on the organisation dashboard, create teams, appoint team leads and share the organisation's join code or link from People.
-- **Staff account**: can only be created on the way into an organisation, via `/join` (code), `/join/[code]` (link) or `/invite/[token]` (email invitation). Team leads land on their team board; staff land on My Day.
+- **Organisation account**: created at `/signup?intent=org`, then `/onboarding`. Owners and HR land on the organisation dashboard, create teams, appoint team leads and share the organisation's join code or link from People. Organisation accounts supervise only: they cannot hold tasks or run timers.
+- **Staff account**: can only be created on the way into an organisation, via `/join` (code), `/join/[code]` (link) or `/invite/[token]` (email invitation). Team leads land on their team board; staff land on My Day, where a to-do is one line of text and Start is one click.
 
 ## Product routes
 

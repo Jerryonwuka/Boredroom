@@ -32,7 +32,7 @@ export default async function ReportsPage({ params, searchParams }: { params: Pr
   const onTime = m.delivery.with_due ? Math.round((m.delivery.on_time / m.delivery.with_due) * 100) : null;
   return (
     <AppShell ctx={ctx} counts={counts} teams={navTeams}>
-      <PageHeader overline={`${from} → ${to}`} title="Reports" description="Transparent measures at employee, team and project scope. No composite score, no ranking by hours. Approved and provisional data are shown separately." />
+      <PageHeader back={{ href: `/app/${ctx.org.slug}`, label: "Home" }} overline={`${from} → ${to}`} title="Reports" description="Transparent measures at employee, team and project scope. No composite score, no ranking by hours. Approved and provisional data are shown separately." />
       <form className="mb-6 flex flex-wrap items-end gap-2 text-sm">
         <label><span className="block text-xs text-fg-subtle">From</span><Input name="from" type="date" defaultValue={from} /></label>
         <label><span className="block text-xs text-fg-subtle">To</span><Input name="to" type="date" defaultValue={to} /></label>

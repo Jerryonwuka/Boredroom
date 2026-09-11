@@ -20,7 +20,7 @@ export default async function ReviewsPage({ params }: { params: Promise<{ worksp
   const total = q.submissions.length + q.reports.length + q.adjustments.length + q.exceptions.length + q.incidents.length;
   return (
     <AppShell ctx={ctx} counts={counts} teams={teams}>
-      <PageHeader overline="Attention queue" title="Reviews" description="Submitted work, daily reports, time corrections, capture exceptions and privacy incidents waiting for a decision. You never see your own submissions here." />
+      <PageHeader back={{ href: `/app/${ctx.org.slug}`, label: "Home" }} overline="Attention queue" title="Reviews" description="Submitted work, daily reports, time corrections, capture exceptions and privacy incidents waiting for a decision. You never see your own submissions here." />
       {total === 0 && q.overdue.length === 0 && q.missing.length === 0 ? <EmptyState title="Queue is clear" description="Nothing is waiting for you." /> : null}
       <div className="space-y-8">
         <Section title="Task submissions" count={q.submissions.length}>

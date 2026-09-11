@@ -17,7 +17,7 @@ export default async function PolicyPage({ params, searchParams }: { params: Pro
   const { policy, acknowledgedAt, history } = await policyView(ctx);
   return (
     <AppShell ctx={ctx} counts={counts} teams={teams}>
-      <PageHeader overline="Transparency" title="What Boredroom records about you" description="Read the current notice. Material changes create a new version that must be acknowledged before recorded work starts." />
+      <PageHeader back={{ href: `/app/${ctx.org.slug}`, label: "Home" }} overline="Transparency" title="What Boredroom records about you" description="Read the current notice. Material changes create a new version that must be acknowledged before recorded work starts." />
       {sp.welcome ? <Alert tone="success" className="mb-4" title={`Welcome to ${ctx.org.name}`}>Your employee ID is {ctx.membership.employee_code}. Review the notice below to continue.</Alert> : null}
       {sp.required ? <Alert tone="warning" className="mb-4">Acknowledge the current policy version to continue.</Alert> : null}
       {!policy ? <Alert tone="info">No policy is configured yet.</Alert> : (

@@ -9,7 +9,7 @@ import { CaptureProvider, useCaptureGate } from "@/components/app/capture";
 import { Button } from "@/components/ui/button";
 import { Badge, TASK_STATUS_TONE, label } from "@/components/ui/badge";
 import { Input, Textarea, Select, Field } from "@/components/ui/input";
-import { Alert, EmptyState } from "@/components/ui/states";
+import { Alert } from "@/components/ui/states";
 import { api, isApiFailure } from "@/lib/api-client";
 import { formatDuration, formatDateTime } from "@/lib/utils";
 import type { TaskRow } from "@/server/services/views";
@@ -17,7 +17,8 @@ import type { SessionView } from "@/server/services/sessions";
 
 type Props = {
   orgSlug: string; today: string; initialSession: CurrentSessionPayload;
-  planned: TaskRow[]; assigned: TaskRow[]; projects: { id: string; name: string }[]; members: { id: string; display_name: string }[];
+  planned: TaskRow[]; ownTodos: TaskRow[]; fromLeads: (TaskRow & { created_by_name: string })[]; doneToday: { id: string; title: string; completed_at: string }[];
+  projects: { id: string; name: string }[]; members: { id: string; display_name: string }[];
   membershipId: string; recordingMode: string; reportStatus: string | null;
 };
 
@@ -29,12 +30,13 @@ export function MyDayBoard(props: Props) {
   );
 }
 
-function Board({ orgSlug, today, initialSession, planned, assigned, projects, members, recordingMode, reportStatus }: Props) {
+function Board({ orgSlug, today, initialSession, planned, ownTodos, fromLeads, doneToday, projects, members, recordingMode, reportStatus }: Props) {
   const router = useRouter();
   const [session, setSession] = useState<SessionView | null>(initialSession.session);
   const [showCreate, setShowCreate] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { captureGate, onSession, dialogEl, recordingControls } = useCaptureGate();
+  const assigned = useMemo(() => [...fromLeads, ...ownTodos], [fromLeads, ownTodos]);
   const all = useMemo(() => [...planned, ...assigned], [planned, assigned]);
   const startable: StartableTask[] = useMemo(() => all.filter((t) => t.status !== "completed" && t.status !== "in_review" && !t.archived_at).map((t) => ({ id: t.id, title: t.title, project_name: t.project_name, status: t.status, capture_requirement: t.capture_requirement, estimate_minutes: t.estimate_minutes })), [all]);
 
@@ -52,15 +54,11 @@ function Board({ orgSlug, today, initialSession, planned, assigned, projects, me
         <SessionTimer orgSlug={orgSlug} initial={initialSession} tasks={startable} captureGate={recordingMode === "disabled" ? undefined : captureGate} onCaptureSession={recordingMode === "disabled" ? undefined : onSession} captureDialog={dialogEl} onSessionChange={setSession} recordingControls={recordingMode === "disabled" ? undefined : recordingControls} />
         {error ? <Alert tone="danger">{error}</Alert> : null}
 
-        <section aria-labelledby="plan-heading" className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h2 id="plan-heading" className="text-lg font-display">Today&apos;s priorities</h2>
-            <Button size="sm" variant="outline" onClick={() => setShowCreate((v) => !v)}><Plus className="h-4 w-4" aria-hidden />New task</Button>
-          </div>
-          {showCreate ? <CreateTaskForm orgSlug={orgSlug} projects={projects} members={members} onDone={() => { setShowCreate(false); router.refresh(); }} /> : null}
-          {planned.length === 0 ? (
-            <EmptyState title="No priorities picked yet" description="Add tasks from your assigned list below. The order is yours; it does not change project priority." />
-          ) : (
+        <QuickTodo orgSlug={orgSlug} onDone={() => router.refresh()} />
+
+        {planned.length ? (
+          <section aria-labelledby="plan-heading" className="space-y-3">
+            <h2 id="plan-heading" className="text-lg font-display">Today&apos;s plan</h2>
             <ol className="space-y-2">
               {planned.map((t, i) => (
                 <li key={t.id} className={`tile flex items-center gap-3 px-4 py-3 ${session?.taskId === t.id ? "tile-glow" : ""}`}>
@@ -78,21 +76,21 @@ function Board({ orgSlug, today, initialSession, planned, assigned, projects, me
                 </li>
               ))}
             </ol>
-          )}
-        </section>
+          </section>
+        ) : null}
 
-        <section aria-labelledby="assigned-heading" className="space-y-3">
-          <h2 id="assigned-heading" className="text-lg font-display">Assigned to you</h2>
-          {assigned.length === 0 ? <EmptyState title="Nothing else assigned" description="Tasks assigned to you that are not in today's plan appear here." /> : (
+        <section aria-labelledby="lead-heading" className="space-y-3">
+          <h2 id="lead-heading" className="text-lg font-display">From your team lead</h2>
+          {fromLeads.length === 0 ? <p className="tile p-4 text-sm text-fg-muted">Nothing assigned to you right now. Tasks your team lead gives you appear here.</p> : (
             <ul className="space-y-2">
-              {assigned.map((t) => (
+              {fromLeads.map((t) => (
                 <li key={t.id} className={`tile flex items-center gap-3 px-4 py-3 ${session?.taskId === t.id ? "tile-glow" : ""}`}>
                   <div className="min-w-0 flex-1">
                     <Link href={`/app/${orgSlug}/tasks/${t.id}`} className="block truncate font-semibold hover:underline">{t.title}</Link>
-                    <TaskMeta t={t} />
+                    <TaskMeta t={t} by={t.created_by_name} />
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
-                    <Button size="sm" variant="ghost" onClick={() => savePlan([...plannedIds, t.id])}>Add to today</Button>
+                    <Button size="sm" variant="ghost" onClick={() => savePlan([...plannedIds, t.id])}>Plan for today</Button>
                     <StartButton t={t} session={session} orgSlug={orgSlug} />
                   </div>
                 </li>
@@ -100,6 +98,37 @@ function Board({ orgSlug, today, initialSession, planned, assigned, projects, me
             </ul>
           )}
         </section>
+
+        <section aria-labelledby="todo-heading" className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 id="todo-heading" className="text-lg font-display">Your to-dos</h2>
+            <Button size="sm" variant="ghost" onClick={() => setShowCreate((v) => !v)}><Plus className="h-4 w-4" aria-hidden />{showCreate ? "Hide details" : "Add with details"}</Button>
+          </div>
+          {showCreate ? <CreateTaskForm orgSlug={orgSlug} projects={projects} members={members} onDone={() => { setShowCreate(false); router.refresh(); }} /> : null}
+          {ownTodos.length === 0 ? <p className="tile p-4 text-sm text-fg-muted">Type a to-do above and press Enter. Then press Start when you begin.</p> : (
+            <ul className="space-y-2">
+              {ownTodos.map((t) => (
+                <li key={t.id} className={`tile flex items-center gap-3 px-4 py-3 ${session?.taskId === t.id ? "tile-glow" : ""}`}>
+                  <div className="min-w-0 flex-1">
+                    <Link href={`/app/${orgSlug}/tasks/${t.id}`} className="block truncate font-semibold hover:underline">{t.title}</Link>
+                    <TaskMeta t={t} />
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <Button size="sm" variant="ghost" onClick={() => savePlan([...plannedIds, t.id])}>Plan for today</Button>
+                    <StartButton t={t} session={session} orgSlug={orgSlug} />
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        {doneToday.length ? (
+          <section aria-labelledby="done-heading" className="space-y-2">
+            <h2 id="done-heading" className="text-lg font-display">Done today</h2>
+            <ul className="space-y-1 text-sm text-fg-muted">{doneToday.map((t) => <li key={t.id}>✓ <Link href={`/app/${orgSlug}/tasks/${t.id}`} className="hover:underline">{t.title}</Link></li>)}</ul>
+          </section>
+        ) : null}
       </div>
 
       <aside className="space-y-4">
@@ -109,24 +138,24 @@ function Board({ orgSlug, today, initialSession, planned, assigned, projects, me
           <Link href={`/app/${orgSlug}/timesheets?date=${today}`} className="mt-3 inline-block"><Button size="sm" variant={reportStatus === "approved" ? "subtle" : "primary"}>{reportStatus ? "Open report" : "Review and submit"}</Button></Link>
         </div>
         <div className="tile p-5 text-sm text-fg-muted">
-          <h2 className="font-display text-lg text-fg">How time works</h2>
-          <ul className="mt-2 list-disc space-y-1 pl-4">
-            <li>Only time between Start and Pause/Stop counts, confirmed by server heartbeats.</li>
-            <li>Lost connection? Time stops at the last heartbeat; you can request a correction.</li>
-            <li>Nothing here is a productivity score.</li>
-          </ul>
+          <h2 className="font-display text-lg text-fg">How it works</h2>
+          <ol className="mt-2 list-decimal space-y-1 pl-4">
+            <li>Add a to-do, or pick a task from your team lead.</li>
+            <li>Press Start when you begin, Stop when you finish.</li>
+            <li>Submit finished work for your lead to check.</li>
+          </ol>
         </div>
       </aside>
     </div>
   );
 }
 
-function TaskMeta({ t }: { t: TaskRow }) {
+function TaskMeta({ t, by }: { t: TaskRow; by?: string }) {
   const overdue = t.due_at && new Date(t.due_at) < new Date() && t.status !== "completed";
   return (
     <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-fg-muted">
       <Badge tone={TASK_STATUS_TONE[t.status]}>{label(t.status)}</Badge>
-      <span>{t.project_name}</span>
+      {by ? <span>from {by}</span> : null}
       {t.due_at ? <span className={overdue ? "text-danger" : ""}>due {formatDateTime(t.due_at)}{overdue ? " · overdue" : ""}</span> : null}
       {t.estimate_minutes ? <span>est. {formatDuration(t.estimate_minutes * 60)}</span> : null}
       {t.tracked_seconds ? <span>tracked {formatDuration(t.tracked_seconds)}</span> : null}
@@ -179,6 +208,25 @@ function CreateTaskForm({ orgSlug, projects, members, onDone }: { orgSlug: strin
       </div>
       <input type="hidden" name="priority" value="normal" />
       <div className="flex gap-2"><Button type="submit" disabled={pending}>{pending ? "Creating…" : "Create and add to today"}</Button><Button variant="ghost" onClick={onDone}>Cancel</Button></div>
+    </form>
+  );
+}
+
+/** The simplest possible entry point for staff: a title, Enter, done. */
+function QuickTodo({ orgSlug, onDone }: { orgSlug: string; onDone: () => void }) {
+  const [title, setTitle] = useState("");
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <form className="tile flex flex-wrap items-center gap-2 p-3" onSubmit={async (e) => {
+      e.preventDefault(); if (!title.trim()) return; setPending(true); setError(null);
+      try { await api(`/api/orgs/${orgSlug}/todos`, { method: "POST", body: { title: title.trim() } }); setTitle(""); onDone(); }
+      catch (err) { setError(isApiFailure(err) ? err.error.message : "Cannot reach the server."); } finally { setPending(false); }
+    }}>
+      <label htmlFor="quick-todo" className="sr-only">New to-do</label>
+      <Input id="quick-todo" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="What do you need to do? Press Enter to add it." maxLength={200} className="min-w-0 flex-1" autoComplete="off" />
+      <Button type="submit" disabled={pending || !title.trim()}><Plus className="h-4 w-4" aria-hidden />{pending ? "Adding…" : "Add to-do"}</Button>
+      {error ? <Alert tone="danger" className="w-full">{error}</Alert> : null}
     </form>
   );
 }
