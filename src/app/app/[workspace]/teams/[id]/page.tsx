@@ -26,7 +26,7 @@ export default async function TeamBoardPage({ params }: { params: Promise<{ work
     <AppShell ctx={ctx} counts={counts} teams={teams}>
       <PageHeader overline="Team board" title={team.name}
         description={isLead ? "Your team's work in one place. Create tasks, assign them to your people, and remove what is no longer needed." : "Tasks assigned to the people in this team."}
-        actions={isLead && team.project_id ? <NewTaskForm orgSlug={ctx.org.slug} projectId={team.project_id} members={memberOptions} self={ctx.membership.id} canAssignOthers requiresDueDate={false} requiresEstimate={false} /> : null} />
+        actions={isLead && (team.project_id ?? projects[0]?.id) ? <NewTaskForm orgSlug={ctx.org.slug} projectId={team.project_id ?? projects[0].id} members={memberOptions} self={ctx.membership.id} canAssignOthers requiresDueDate={false} requiresEstimate={false} /> : null} />
       <section className="mb-8">
         <h2 className="mb-3 font-display text-lg">Members ({members.length})</h2>
         {members.length === 0 ? <EmptyState title="No members yet" description="Add staff to this team from the People page." /> : (
@@ -63,7 +63,7 @@ export default async function TeamBoardPage({ params }: { params: Promise<{ work
             ))}</tbody>
           </DataTable>
         )}
-        {isLead && projects.length > 1 ? <p className="mt-3 text-xs text-fg-subtle">New tasks go into the team&apos;s working project (&ldquo;{team.project_name}&rdquo;). Tasks in other projects still appear here when assigned to a team member.</p> : null}
+        {isLead && team.project_name ? <p className="mt-3 text-xs text-fg-subtle">New tasks go into the team&apos;s working project (&ldquo;{team.project_name}&rdquo;). Tasks in other projects still appear here when assigned to a team member.</p> : null}
       </section>
     </AppShell>
   );

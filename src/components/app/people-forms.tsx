@@ -65,9 +65,9 @@ export function MemberRow({ orgSlug, member, teams, isOwner, self }: { orgSlug: 
       <td>
         <div className="flex flex-wrap gap-1">{member.teams.map((t) => <Badge key={t.id} tone={t.is_manager ? "accent" : "neutral"}>{t.name}{t.is_manager ? " · Team lead" : ""}</Badge>)}</div>
         {!revoked ? (
-          <form className="mt-1 flex gap-1" onSubmit={(e) => { e.preventDefault(); const f = new FormData(e.currentTarget); const teamId = String(f.get("teamId")); if (!teamId) return; submit(() => api(`/api/orgs/${orgSlug}/teams/${teamId}/members`, { method: "POST", body: { membershipId: member.id, isManager: f.get("isManager") === "on" } })); }}>
+          <form className="mt-1 flex flex-wrap items-center gap-1" onSubmit={(e) => { e.preventDefault(); const f = new FormData(e.currentTarget); const teamId = String(f.get("teamId")); if (!teamId) return; submit(() => api(`/api/orgs/${orgSlug}/teams/${teamId}/members`, { method: "POST", body: { membershipId: member.id, isManager: f.get("isManager") === "on" } })); }}>
             <select aria-label="Team" name="teamId" className="h-8 rounded-lg border border-border bg-inset px-2 text-xs"><option value="">Add to team…</option>{teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select>
-            <label className="flex items-center gap-1 text-xs"><input type="checkbox" name="isManager" /> as team lead</label>
+            <label className="flex items-center gap-1 whitespace-nowrap text-xs"><input type="checkbox" name="isManager" /> as team lead</label>
             <Button size="sm" variant="ghost" type="submit" disabled={pending}>Add</Button>
             {member.teams.length ? <Button size="sm" variant="ghost" disabled={pending} onClick={() => submit(() => api(`/api/orgs/${orgSlug}/teams/${member.teams[0].id}/members`, { method: "POST", body: { membershipId: member.id, isManager: false, remove: true } }))}>Remove from {member.teams[0].name}</Button> : null}
           </form>

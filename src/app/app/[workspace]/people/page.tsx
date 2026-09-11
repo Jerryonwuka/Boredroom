@@ -41,7 +41,7 @@ export default async function PeoplePage({ params }: { params: Promise<{ workspa
             <thead><tr><th>Email</th><th>Role</th><th>Team</th><th>State</th><th>Expires</th><th></th></tr></thead>
             <tbody>{invitations.map((i) => {
               const state = i.accepted_at ? "accepted" : i.revoked_at ? "revoked" : new Date(i.expires_at) < new Date() ? "expired" : "pending";
-              return <InvitationRow key={i.id} orgSlug={ctx.org.slug} id={i.id} email={i.email} role={i.role} team={i.team_name} state={state} expires={formatDateTime(i.expires_at, ctx.org.timezone)} sent={!!i.sent_at} />;
+              return <InvitationRow key={i.id} orgSlug={ctx.org.slug} id={i.id} email={i.email} role={{ owner: "Organisation owner", hr: "HR administrator", manager: "Team lead", employee: "Staff" }[i.role] ?? i.role} team={i.team_name} state={state} expires={formatDateTime(i.expires_at, ctx.org.timezone)} sent={!!i.sent_at} />;
             })}</tbody>
           </DataTable>
         )}
