@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "tsx scripts/dev.ts",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
@@ -23,7 +23,8 @@
     "setup:env": "tsx scripts/setup-env.ts",
     "db:bootstrap": "tsx db/scripts/bootstrap.ts",
     "first-run": "pnpm setup:env && pnpm db:bootstrap && pnpm db:migrate && pnpm db:seed && pnpm doctor",
-    "quickstart": "tsx scripts/quickstart.ts"
+    "quickstart": "tsx scripts/quickstart.ts",
+    "dev:next": "next dev"
   },
   "dependencies": {
     "@fontsource/cal-sans": "^5.3.0",

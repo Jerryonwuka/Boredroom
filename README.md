@@ -28,7 +28,7 @@ pnpm install
 pnpm quickstart        # add --worker to also run the background worker
 ```
 
-`pnpm quickstart` starts a self-contained PostgreSQL (downloaded as a dev dependency, data in `var/pgdata`), writes `.env.local`, creates roles and databases, applies migrations, seeds the two demo companies, runs the health check and starts the web app on http://localhost:3000. Sign in with `ada@company-a.test` / `correct-horse-battery`.
+After the first run, `pnpm dev` also starts that database automatically, so either command works. `pnpm quickstart` starts a self-contained PostgreSQL (downloaded as a dev dependency, data in `var/pgdata`), writes `.env.local`, creates roles and databases, applies migrations, seeds the two demo companies, runs the health check and starts the web app on http://localhost:3000. Sign in with `ada@company-a.test` / `correct-horse-battery`.
 
 ### Using your own PostgreSQL 16
 

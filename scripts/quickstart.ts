@@ -8,14 +8,9 @@
  * Data lives in ./var/pgdata and survives restarts. Ctrl+C stops everything.
  */
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
-import { Client } from "pg";
-
-const PORT = Number(process.env.LOCAL_PG_PORT ?? 54329);
-const DATA_DIR = "./var/pgdata";
-const SUPER = { user: "postgres", password: "postgres" };
-const superUrl = (db: string) => `postgres://${SUPER.user}:${SUPER.password}@localhost:${PORT}/${db}`;
+import { startLocalPostgres, superUrl, LOCAL_PG_PORT as PORT } from "./local-pg";
 
 function ensureEnvFile() {
   const wanted: Record<string, string> = {
@@ -36,14 +31,6 @@ function ensureEnvFile() {
   for (const [k, v] of Object.entries(wanted)) process.env[k] = v;
 }
 
-async function waitFor(url: string, tries = 60) {
-  for (let i = 0; i < tries; i++) {
-    const c = new Client({ connectionString: url });
-    try { await c.connect(); await c.end(); return; } catch { await new Promise((r) => setTimeout(r, 500)); }
-  }
-  throw new Error("PostgreSQL did not start in time");
-}
-
 function run(cmd: string, args: string[], extraEnv: Record<string, string> = {}): Promise<void> {
   return new Promise((resolve, reject) => {
     const p = spawn(cmd, args, { stdio: "inherit", env: { ...process.env, ...extraEnv }, shell: process.platform === "win32" });
@@ -53,18 +40,8 @@ function run(cmd: string, args: string[], extraEnv: Record<string, string> = {})
 
 async function main() {
   ensureEnvFile();
-  mkdirSync(DATA_DIR, { recursive: true });
-  // PostgreSQL refuses to run as root; embedded-postgres then runs it as the "postgres" system user, which needs to own the data directory.
-  if (process.getuid?.() === 0) {
-    try { const { execSync } = await import("node:child_process"); execSync(`chown -R postgres:postgres ${DATA_DIR}`, { stdio: "ignore" }); } catch { /* not on this platform */ }
-  }
-  const { default: EmbeddedPostgres } = await import("embedded-postgres");
-  const pg = new EmbeddedPostgres({ databaseDir: DATA_DIR, user: SUPER.user, password: SUPER.password, port: PORT, persistent: true, onLog: () => undefined, onError: (m) => console.error(String(m)) });
-  if (!existsSync(`${DATA_DIR}/PG_VERSION`)) { console.log("Initialising local PostgreSQL data directory…"); await pg.initialise(); }
-  console.log(`Starting local PostgreSQL on port ${PORT}…`);
-  await pg.start();
-  await waitFor(superUrl("postgres"));
-  const stop = async () => { console.log("\nStopping local PostgreSQL…"); await pg.stop().catch(() => undefined); process.exit(0); };
+  const stopPg = await startLocalPostgres();
+  const stop = async () => { console.log("\nStopping local PostgreSQL…"); await stopPg(); process.exit(0); };
   process.on("SIGINT", stop); process.on("SIGTERM", stop);
 
   const tsx = process.platform === "win32" ? "npx.cmd" : "npx";

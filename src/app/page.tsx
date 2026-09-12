@@ -7,7 +7,7 @@ import { getCurrentUser } from "@/server/auth";
 export const metadata = { title: "Boredroom · Stop asking \"what are you working on?\"" };
 
 export default async function LandingPage() {
-  const user = await getCurrentUser();
+  const user = await getCurrentUser().catch(() => null);
   return (
     <main id="main" className="relative overflow-hidden">
       <header className="relative z-10 mx-auto flex max-w-6xl items-center justify-between px-6 py-6">
