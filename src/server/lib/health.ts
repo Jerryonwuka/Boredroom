@@ -8,6 +8,7 @@ export function explainInfraError(err: unknown): { message: string; fix: string 
   const e = err as { code?: string; message?: string } | null;
   const code = e?.code ?? "";
   const msg = e?.message ?? "";
+  if (/timeout exceeded when trying to connect/i.test(msg)) return { message: "All database connections are busy.", fix: "Wait a moment and reload. If this keeps happening, restart `pnpm dev`." };
   if (code === "ECONNREFUSED" || /ECONNREFUSED/.test(msg)) return { message: "The database is not reachable (connection refused).", fix: "Start PostgreSQL and check DATABASE_URL (host and port)." };
   if (code === "ENOTFOUND" || code === "EAI_AGAIN") return { message: "The database host name cannot be resolved.", fix: "Check the host in DATABASE_URL." };
   if (code === "ETIMEDOUT" || code === "ECONNRESET") return { message: "The database connection timed out.", fix: "Check network access, firewall rules or the database's allowed IPs." };

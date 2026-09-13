@@ -68,6 +68,8 @@ Not verified here: the Claude engine was implemented from the SDK documentation 
 
 Still not verified in this environment: a real Claude round-trip (no key available here). The connection test in Settings is the check: it makes one request and shows Claude's reply.
 
+**"The page isn't loading" on a staff sign-in (13 September 2026).** Root cause: every open live-updates stream (`/api/orgs/[org]/events`, one per open tab) borrowed a connection from the ten-connection database pool for its `LISTEN`, and in dev mode Next did not always call the stream's `cancel()` when the browser navigated away. After enough page views the pool was exhausted and every server page waited forever. Reproduced with twelve open streams (page never loaded); fixed by one shared listener connection per process (`src/server/lib/notify-bus.ts`), tearing streams down on the request's abort signal, and a pool that reports "all database connections are busy" after 10 s instead of hanging. Verified: thirty open streams, pages load in under a second, idle connections fall back to one.
+
 ## Milestone status
 
 | Milestone | Status | Evidence |

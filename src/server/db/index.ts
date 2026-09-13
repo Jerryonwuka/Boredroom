@@ -19,7 +19,8 @@ function connectionString() {
 
 export function getPool(): Pool {
   if (!globalThis.__boredroomPool) {
-    globalThis.__boredroomPool = new Pool({ connectionString: connectionString(), max: 10 });
+    // connectionTimeoutMillis turns an exhausted pool into a clear error instead of a page that never loads.
+    globalThis.__boredroomPool = new Pool({ connectionString: connectionString(), max: 20, connectionTimeoutMillis: 10_000, idleTimeoutMillis: 30_000 });
   }
   return globalThis.__boredroomPool;
 }
