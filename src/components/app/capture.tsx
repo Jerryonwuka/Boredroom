@@ -264,12 +264,12 @@ export function useCaptureGate() {
     if (session.state !== "running") return null;
     if (session.captureMode === "exception") return null;
     if (session.captureMode === "none") {
-      // Recording is allowed by policy but this session cannot record: the member has not acknowledged the current notice.
-      return <span className="inline-flex items-center gap-2 text-xs text-fg-subtle"><Circle className="h-3 w-3" aria-hidden />Screen recording available after you <a className="underline" href={`/app/${c.orgSlug}/policy`}>acknowledge the monitoring notice</a>.</span>;
+      // Recording is allowed by policy but this session cannot record: the member had not acknowledged the current notice when it started.
+      return <span className="inline-flex items-center gap-2 text-xs text-warning"><Circle className="h-3 w-3" aria-hidden />This session started before you acknowledged the monitoring notice. <a className="underline" href={`/app/${c.orgSlug}/policy?next=/app/${c.orgSlug}/my-day`}>Acknowledge it</a>, then stop and start the timer to record.</span>;
     }
     if (c.state.status === "recording") return <Button variant="outline" onClick={() => c.stopCapture("stopped")}><Square className="h-3 w-3" aria-hidden />Stop recording</Button>;
     const support = captureSupport();
-    if (!support.supported) return <span className="text-xs text-fg-subtle" title={support.reason}>Screen recording is not available in this browser.</span>;
+    if (!support.supported) return <span className="max-w-sm text-xs text-warning">Screen recording unavailable here: {support.reason} {typeof window !== "undefined" && !window.isSecureContext ? `Open the app at http://localhost:${window.location.port || "3000"} (or an https:// address) instead of ${window.location.host}.` : "Use Chrome or Edge on a computer."}</span>;
     return <Button variant="outline" disabled={c.state.status === "requesting"} onClick={() => c.startCapture(session.id)}><Circle className="h-3 w-3 fill-danger text-danger" aria-hidden />{c.state.status === "requesting" ? "Choose a screen…" : "Record screen"}</Button>;
   }, [c]);
 

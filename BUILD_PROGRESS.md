@@ -58,6 +58,16 @@ Tests: `tests/integration/round3.test.ts` (lead hand-outs and notification, Done
 
 Not verified here: the Claude engine was implemented from the SDK documentation but could not be exercised in this environment (no API key). The built-in parser is what ran in the tests. Browser dictation and screen-share dialogs need a manual check in Chrome or Edge.
 
+### Round 3 follow-up (13 September 2026): "still cannot record", "cannot access mic", "the AI looks like a demo"
+
+| Finding | Change |
+| --- | --- |
+| Recording was off because every organisation started with the policy `disabled`, and the only way to change it was the full policy form. | New organisations start with recording **on** (`optional`, each person's choice); the default notice text says so. Settings has a one-click **Turn screen recording on/off** switch (`setRecordingMode`, publishes a policy version that changes only the mode). My Day shows a banner when recording is off for the organisation or when the person has not yet acknowledged the notice, with a link to the notice. When the browser cannot record, the timer now says why (for example "not a secure address: open http://localhost:3000 instead of 192.168…"). |
+| Dictation said it could not access the microphone. Causes seen in the wild: the app opened on a LAN address (not a secure context), the mic blocked in the browser or the OS, or a browser without speech recognition. | The Dictate button first asks for the microphone through the browser's own prompt, then explains precisely what to fix (address, site permission, OS permission, no microphone, offline speech service). Dictation remains the browser's speech recognition: the Claude API has no audio input, and no other provider was added. |
+| The assistant "looked like a demo" because no API key was configured, so the built-in parser answered. | Owners connect an Anthropic API key in Settings → AI assistant. The key is tested with one real request before it is stored, encrypted with APP_SECRET in `organisation_secrets` (RLS: owners and the server only), never displayed again, and can be replaced or removed. Model selectable (Opus 5 default, Sonnet 5). The server's `ANTHROPIC_API_KEY` remains a fallback. The assistant prompt was rewritten and now also returns a short reply to the person (what it set up, assumptions); the panel shows a clear "AI not connected" notice until a key exists. Migration `0013_assistant_secrets.sql`. |
+
+Still not verified in this environment: a real Claude round-trip (no key available here). The connection test in Settings is the check: it makes one request and shows Claude's reply.
+
 ## Milestone status
 
 | Milestone | Status | Evidence |
@@ -104,7 +114,7 @@ Not verified here: the Claude engine was implemented from the SDK documentation 
 | --- | --- |
 | `pnpm lint` | clean (ESLint 9 with Next core-web-vitals, TypeScript and React compiler rules) |
 | `pnpm typecheck` | clean |
-| `pnpm test` (Vitest 4, embedded PostgreSQL 18, restricted `boardroom_app` role) | 8 files, 45 tests passed (12 September 2026): `tests/unit/{time,assistant}.test.ts`, `tests/integration/{tenancy,sessions,evidence-reports,recording,join-codes,round3}.test.ts` |
+| `pnpm test` (Vitest 4, embedded PostgreSQL 18, restricted `boardroom_app` role) | 8 files, 47 tests passed (13 September 2026): `tests/unit/{time,assistant}.test.ts`, `tests/integration/{tenancy,sessions,evidence-reports,recording,join-codes,round3}.test.ts` |
 | `pnpm build` (Next.js 16.3.4) | succeeds; all workspace routes are dynamic (server-rendered per request) |
 | `pnpm smoke` | every page read model executes for the seeded fixtures (15 checks) |
 | `pnpm worker` | job loop runs against the seeded database; housekeeping job succeeded; reminder scheduling deduplicated |
@@ -120,7 +130,7 @@ Environment notes: no Docker daemon, no Supabase CLI, no ffmpeg; Figma and most 
 - MFA for owner/HR accounts is not implemented (production gate).
 - Leave/holiday support deferred; `workday_exemptions` exist so completeness is not knowingly wrong, but there is no UI to create exemptions yet (SQL or a small admin action).
 - Mobile: planning and review pages are responsive; recording is desktop-only by feature detection.
-- The to-do assistant's Claude engine needs `ANTHROPIC_API_KEY` on the server; without it the built-in parser runs (weaker on long, rambling notes). Dictation depends on the browser (Chrome, Edge, Safari); Firefox users type.
+- The to-do assistant runs on Claude only after an owner connects an Anthropic API key (Settings → AI assistant) or the server sets `ANTHROPIC_API_KEY`; without either the built-in parser runs and the page says so. Dictation depends on the browser (Chrome, Edge, Safari) and a secure address (localhost or HTTPS); Firefox users type.
 - Performance targets (p95 < 1 s under 50 users, dashboard < 5 s) are not measured here; the SSE/refresh design and indexes are in place.
 
 ## Blockers and external prerequisites (before a real pilot)

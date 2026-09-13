@@ -110,11 +110,15 @@ docs                 providers, runbooks, walkthrough
 
 ## The to-do assistant
 
-On My Day, **Assistant** turns a typed or dictated note ("finish the logo export by Friday, then ask Ada to update the brand deck") into proposed to-dos that the person reviews and confirms. Set `ANTHROPIC_API_KEY` in `.env.local` to use Claude (`claude-opus-5` by default, `ASSISTANT_MODEL` to change); without a key a built-in parser runs and the page says so. Dictation uses the browser's speech recognition (Chrome, Edge, Safari); no audio is sent to the server.
+On My Day, **Assistant** turns a typed or dictated note ("finish the logo export by Friday, then ask Ada to update the brand deck") into proposed to-dos that the person reviews and confirms.
+
+To run it on Claude, an organisation owner opens **Settings → AI assistant** and pastes an Anthropic API key (from console.anthropic.com). The key is tested with one request, stored encrypted, and never shown again; pick Claude Opus 5 (default) or Sonnet 5. Alternatively set `ANTHROPIC_API_KEY` in `.env.local` for the whole server. Without either, a built-in parser runs and the page says so.
+
+Dictation uses the browser's speech recognition (Chrome, Edge, Safari) and needs the app open at `http://localhost:3000` or an `https://` address; the browser asks for the microphone the first time.
 
 ## Screen recording
 
-Recording is off for a new organisation. Turn it on under Settings → Monitoring policy ("On — staff and team leads get a Record screen button"). Each person acknowledges the notice once (Policy page); after that the timer shows **Record screen** while a session runs. Recording starts only when they press it and the browser asks what to share. Needs Chrome or Edge on `localhost` or HTTPS.
+Recording is on (each person's choice) for new organisations; owners switch it under **Settings → Screen recording**. Each person acknowledges the monitoring notice once (Policy page; My Day links to it); after that the timer shows **Record screen** while a session runs. Recording starts only when they press it and the browser asks what to share. Needs Chrome or Edge on `http://localhost:3000` or an HTTPS address; on a LAN address such as `http://192.168.x.x:3000` browsers refuse screen and microphone access and the app tells you so.
 
 ## Product routes
 

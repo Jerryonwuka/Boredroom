@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { planBuiltin, matchPerson, cleanTitle } from "@/server/services/assistant";
+import { encryptSecret, decryptSecret } from "@/server/lib/crypto";
 
 const people = [{ id: "p-ada", display_name: "Ada Okafor" }, { id: "p-ben", display_name: "Ben Musa" }];
 const opts = { people, today: "2026-09-09", timezone: "Europe/London" }; // a Wednesday
@@ -31,5 +32,15 @@ describe("built-in to-do assistant", () => {
     expect(matchPerson("Ben Musa", people)?.id).toBe("p-ben");
     expect(matchPerson("Zed", people)).toBeNull();
     expect(cleanTitle("i'm going to  call the printer.")).toBe("Call the printer");
+  });
+});
+
+describe("secrets at rest", () => {
+  it("round-trips and rejects tampering", () => {
+    const enc = encryptSecret("sk-ant-example-key");
+    expect(enc).not.toContain("sk-ant");
+    expect(decryptSecret(enc)).toBe("sk-ant-example-key");
+    expect(decryptSecret(enc.slice(0, -2) + "zz")).toBeNull();
+    expect(encryptSecret("x")).not.toBe(encryptSecret("x"));
   });
 });

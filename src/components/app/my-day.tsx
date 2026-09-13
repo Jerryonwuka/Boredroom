@@ -25,7 +25,7 @@ type Props = {
   projects: { id: string; name: string }[]; members: Person[];
   /** People this member may hand to-dos to (team leads only; empty for staff). */
   assignable: Person[];
-  membershipId: string; recordingMode: string; reportStatus: string | null; assistantConfigured: boolean;
+  membershipId: string; recordingMode: string; reportStatus: string | null; assistantConfigured: boolean; policyAcknowledged: boolean;
 };
 
 export function MyDayBoard(props: Props) {
@@ -36,7 +36,7 @@ export function MyDayBoard(props: Props) {
   );
 }
 
-function Board({ orgSlug, today, initialSession, planned, ownTodos, fromLeads, doneToday, pastTasks, projects, members, assignable, membershipId, recordingMode, reportStatus, assistantConfigured }: Props) {
+function Board({ orgSlug, today, initialSession, planned, ownTodos, fromLeads, doneToday, pastTasks, projects, members, assignable, membershipId, recordingMode, reportStatus, assistantConfigured, policyAcknowledged }: Props) {
   const router = useRouter();
   const [session, setSession] = useState<SessionView | null>(initialSession.session);
   const [showCreate, setShowCreate] = useState(false);
@@ -70,7 +70,7 @@ function Board({ orgSlug, today, initialSession, planned, ownTodos, fromLeads, d
     <div className="grid gap-6 lg:grid-cols-[1fr_340px]">
       <div className="space-y-6">
         <SessionTimer orgSlug={orgSlug} initial={initialSession} tasks={startable} captureDialog={dialogEl} onSessionChange={setSession} {...capture} />
-        {recordingMode === "disabled" && session ? <p className="-mt-3 text-xs text-fg-subtle">Screen recording is switched off for this organisation (Settings → Monitoring policy).</p> : null}
+        {recordingMode === "disabled" ? <Alert tone="info">Screen recording is switched off for this organisation. An organisation owner can turn it on under Settings → Screen recording; you then see a <strong>Record screen</strong> button here while a timer runs.</Alert> : !policyAcknowledged ? <Alert tone="warning">Screen recording is available once you <Link className="underline" href={`/app/${orgSlug}/policy?next=/app/${orgSlug}/my-day`}>read and acknowledge the monitoring notice</Link>. Sessions started before that cannot record.</Alert> : null}
         {error ? <Alert tone="danger">{error}</Alert> : null}
         {notice ? <Alert tone="success">{notice}</Alert> : null}
 

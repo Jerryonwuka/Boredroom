@@ -21,7 +21,7 @@ export function explainInfraError(err: unknown): { message: string; fix: string 
   return null;
 }
 
-export async function runHealthChecks(): Promise<{ ok: boolean; checks: Record<string, Check>; nodeEnv: string | undefined; mailProvider: string; storageProvider: string }> {
+export async function runHealthChecks(): Promise<{ ok: boolean; checks: Record<string, Check>; nodeEnv: string | undefined; mailProvider: string; storageProvider: string; assistantServerKey: boolean }> {
   const checks: Record<string, Check> = {};
   const has = (name: string) => !!process.env[name] && !String(process.env[name]).startsWith("change-me");
   const missing = [!has("DATABASE_URL") && "DATABASE_URL", !has("APP_SECRET") && "APP_SECRET"].filter(Boolean) as string[];
@@ -39,5 +39,5 @@ export async function runHealthChecks(): Promise<{ ok: boolean; checks: Record<s
     try { mkdirSync(dir, { recursive: true }); accessSync(dir, constants.W_OK); checks[name] = { ok: true, detail: dir }; }
     catch (err) { checks[name] = { ok: false, detail: `${dir}: ${(err as Error).message}`, fix: "Use a writable directory or configure a storage/mail provider." }; }
   }
-  return { ok: Object.values(checks).every((c) => c.ok), checks, nodeEnv: process.env.NODE_ENV, mailProvider: process.env.MAIL_PROVIDER ?? "sink", storageProvider: process.env.STORAGE_PROVIDER ?? "local" };
+  return { ok: Object.values(checks).every((c) => c.ok), checks, nodeEnv: process.env.NODE_ENV, mailProvider: process.env.MAIL_PROVIDER ?? "sink", storageProvider: process.env.STORAGE_PROVIDER ?? "local", assistantServerKey: !!process.env.ANTHROPIC_API_KEY };
 }

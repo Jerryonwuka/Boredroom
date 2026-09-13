@@ -10,8 +10,32 @@
  */
 import { z } from "zod";
 import type { OrgContext } from "@/server/lib/api";
+import { withSystem } from "@/server/db";
+import { decryptSecret } from "@/server/lib/crypto";
 import { assignableMembers } from "@/server/services/tasks";
 import { todayLocal, localMidnight, addDays, weekdayOf } from "@/server/lib/time";
+
+export const DEFAULT_ASSISTANT_MODEL = "claude-opus-5";
+
+export type AssistantConnection = { apiKey: string; model: string; source: "organisation" | "environment" };
+
+/** The organisation's own key (Settings → AI assistant) wins; the server's ANTHROPIC_API_KEY is the fallback. */
+export async function resolveAssistant(orgId: string): Promise<AssistantConnection | null> {
+  const row = await withSystem((db) => db.maybeOne<{ assistant_key_enc: string | null; assistant_model: string | null }>(`SELECT assistant_key_enc, assistant_model FROM organisation_secrets WHERE organisation_id = $1`, [orgId]));
+  const orgKey = row?.assistant_key_enc ? decryptSecret(row.assistant_key_enc) : null;
+  if (orgKey) return { apiKey: orgKey, model: row?.assistant_model || process.env.ASSISTANT_MODEL || DEFAULT_ASSISTANT_MODEL, source: "organisation" };
+  if (process.env.ANTHROPIC_API_KEY) return { apiKey: process.env.ANTHROPIC_API_KEY, model: process.env.ASSISTANT_MODEL || DEFAULT_ASSISTANT_MODEL, source: "environment" };
+  return null;
+}
+
+/** Makes one tiny request with a candidate key so Settings can say "connected" only when it really works. */
+export async function testAssistantKey(apiKey: string, model: string): Promise<{ model: string; reply: string }> {
+  const { default: Anthropic } = await import("@anthropic-ai/sdk");
+  const client = new Anthropic({ apiKey, maxRetries: 1, timeout: 30_000 });
+  const res = await client.messages.create({ model, max_tokens: 40, messages: [{ role: "user", content: "Reply with one short friendly sentence confirming you are connected to Boredroom." }] });
+  const text = res.content.map((b) => (b.type === "text" ? b.text : "")).join("").trim();
+  return { model: res.model, reply: text || "Connected." };
+}
 
 export const planRequestSchema = z.object({ text: z.string().trim().min(1).max(4000) });
 
@@ -21,30 +45,41 @@ export type ProposedTodo = {
   /** A name the note mentioned that is not on the member's team (shown so they can fix it). */
   unmatchedAssignee: string | null; estimateMinutes: number | null;
 };
-export type PlanResult = { items: ProposedTodo[]; engine: "claude" | "builtin"; note: string | null; people: { id: string; display_name: string }[] };
+export type PlanResult = { items: ProposedTodo[]; engine: "claude" | "builtin"; reply: string | null; note: string | null; people: { id: string; display_name: string }[] };
 
 type Person = { id: string; display_name: string };
 
-export function assistantConfigured() { return !!process.env.ANTHROPIC_API_KEY; }
+/** Whether an AI connection exists for this organisation (its own key or the server's). */
+export async function assistantConfigured(orgId: string): Promise<boolean> { return !!(await resolveAssistant(orgId)); }
 
 export async function planFromText(ctx: OrgContext, input: z.infer<typeof planRequestSchema>): Promise<PlanResult> {
   const people = ctx.membership.role === "owner" || ctx.membership.role === "hr" ? [] : await assignableMembers(ctx);
   const today = todayLocal(ctx.org.timezone);
-  if (assistantConfigured()) {
+  const conn = await resolveAssistant(ctx.org.id);
+  if (conn) {
     try {
-      const items = await planWithClaude(input.text, { people, today, timezone: ctx.org.timezone, leadName: ctx.user.displayName });
-      return { items, engine: "claude", note: null, people };
+      const r = await planWithClaude(conn, input.text, { people, today, timezone: ctx.org.timezone, leadName: ctx.user.displayName, isLead: people.length > 0 });
+      return { items: r.items, engine: "claude", reply: r.reply, note: null, people };
     } catch (err) {
       const items = planBuiltin(input.text, { people, today, timezone: ctx.org.timezone });
-      return { items, engine: "builtin", note: `The AI assistant could not be reached (${(err as Error).message.slice(0, 120)}). The built-in parser was used instead.`, people };
+      return { items, engine: "builtin", reply: null, note: `Claude could not be reached (${describeError(err)}). The built-in parser was used instead.`, people };
     }
   }
-  return { items: planBuiltin(input.text, { people, today, timezone: ctx.org.timezone }), engine: "builtin", note: null, people };
+  return { items: planBuiltin(input.text, { people, today, timezone: ctx.org.timezone }), engine: "builtin", reply: null, note: null, people };
+}
+
+function describeError(err: unknown): string {
+  const e = err as { status?: number; message?: string };
+  if (e?.status === 401) return "the API key was rejected";
+  if (e?.status === 429) return "rate limit or credit limit reached";
+  if (e?.status === 404) return "the configured model was not found";
+  return (e?.message ?? String(err)).slice(0, 140);
 }
 
 // ---- Claude ---------------------------------------------------------------
 
 const ClaudeOutput = z.object({
+  reply: z.string().describe("One or two friendly sentences to the person: what you understood, anything you assumed (dates, who gets what), and anything unclear. Plain text, no lists."),
   items: z.array(z.object({
     title: z.string().describe("Short imperative to-do title, at most 120 characters"),
     description: z.string().nullable().describe("Extra detail from the note that does not fit the title, or null"),
@@ -54,21 +89,24 @@ const ClaudeOutput = z.object({
   })),
 });
 
-async function planWithClaude(text: string, opts: { people: Person[]; today: string; timezone: string; leadName: string }): Promise<ProposedTodo[]> {
+async function planWithClaude(conn: AssistantConnection, text: string, opts: { people: Person[]; today: string; timezone: string; leadName: string; isLead: boolean }): Promise<{ items: ProposedTodo[]; reply: string }> {
   const { default: Anthropic } = await import("@anthropic-ai/sdk");
   const { zodOutputFormat } = await import("@anthropic-ai/sdk/helpers/zod");
-  const client = new Anthropic();
+  const client = new Anthropic({ apiKey: conn.apiKey, maxRetries: 2, timeout: 60_000 });
   const names = opts.people.map((p) => p.display_name);
+  const weekday = new Date(`${opts.today}T12:00:00Z`).toLocaleDateString("en-GB", { weekday: "long", timeZone: "UTC" });
   const system = [
-    "You turn a worker's spoken or typed note about their work into a list of to-dos for a work tracker.",
-    `Today is ${opts.today} in the ${opts.timezone} timezone; resolve relative dates ("Friday", "tomorrow", "end of the month") against it and use 17:00 local time when the note gives a day but no time.`,
-    "One item per distinct piece of work, in the order mentioned. Keep titles short and imperative. Do not invent work that the note does not mention.",
-    names.length
-      ? `The note is from a team lead (${opts.leadName}). They may hand items to these team members only: ${names.join(", ")}. Set assignee to the exact listed name when the note clearly gives the item to that person; otherwise null (the lead keeps it).`
-      : "The note is from a staff member; every item is for them. Set assignee to null.",
+    "You are the to-do assistant inside Boredroom, a work tracker. A person tells you, in speech or text, what they are working on; you turn it into clear to-dos they can start a timer on.",
+    `Today is ${weekday} ${opts.today} in the ${opts.timezone} timezone. Resolve relative dates ("Friday", "tomorrow", "end of the month", "next week") against today and give ISO 8601 datetimes with the correct offset for that timezone. Use 17:00 local time when the note gives a day but no time. When no deadline is mentioned, due is null.`,
+    "Write one item per distinct piece of work, in the order mentioned. Titles are short and imperative (\"Send the invoice to Acme\"), at most 120 characters. Put useful detail from the note (links, what done looks like, context) in description; otherwise null. Never invent work the note does not mention; never merge unrelated work into one item. Dictated notes contain filler and mistakes: read through them.",
+    "estimateMinutes only when the note states an effort (\"about two hours\" → 120); otherwise null.",
+    opts.isLead
+      ? `The note is from a team lead, ${opts.leadName}. They may hand items to these team members only: ${names.join(", ")}. Set assignee to the exact listed name when the note gives the item to that person (\"ask Ada to…\", \"Ben should…\", \"for Chidi\"); when the person named is not on the list, leave assignee null and say so in the reply; when nobody is named, the lead keeps it (null).`
+      : `The note is from ${opts.leadName}, a staff member. Every item is for them; set assignee to null. If the note asks someone else to do something, keep the item as a reminder for them (e.g. "Ask Ada to…").`,
+    "In reply, speak directly to the person in one or two warm, plain sentences: what you set up and any assumption you made (dates, assignees). If the note contains no work at all, return an empty items list and explain in reply.",
   ].join("\n");
   const res = await client.messages.parse({
-    model: process.env.ASSISTANT_MODEL ?? "claude-opus-5",
+    model: conn.model,
     max_tokens: 4000,
     thinking: { type: "adaptive" },
     system,
@@ -76,12 +114,13 @@ async function planWithClaude(text: string, opts: { people: Person[]; today: str
     output_config: { format: zodOutputFormat(ClaudeOutput) },
   });
   const parsed = res.parsed_output;
-  if (!parsed) throw new Error("The assistant returned no usable items.");
-  return parsed.items.slice(0, 25).map((it) => {
+  if (!parsed) throw new Error("the model returned no usable items");
+  const items = parsed.items.slice(0, 25).map((it) => {
     const person = it.assignee ? matchPerson(it.assignee, opts.people) : null;
     const due = it.due && !Number.isNaN(Date.parse(it.due)) ? new Date(it.due).toISOString() : null;
-    return { title: cleanTitle(it.title).slice(0, 200) || "Untitled to-do", description: it.description?.trim() || null, dueAt: due, assigneeMembershipId: person?.id ?? null, assigneeName: person?.display_name ?? null, unmatchedAssignee: it.assignee && !person ? it.assignee : null, estimateMinutes: it.estimateMinutes && it.estimateMinutes > 0 ? Math.round(it.estimateMinutes) : null };
+    return { title: it.title.trim().replace(/[.!]+$/, "").slice(0, 200) || "Untitled to-do", description: it.description?.trim() || null, dueAt: due, assigneeMembershipId: person?.id ?? null, assigneeName: person?.display_name ?? null, unmatchedAssignee: it.assignee && !person ? it.assignee : null, estimateMinutes: it.estimateMinutes && it.estimateMinutes > 0 ? Math.round(it.estimateMinutes) : null };
   });
+  return { items, reply: parsed.reply.trim() };
 }
 
 // ---- Built-in parser ------------------------------------------------------

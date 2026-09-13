@@ -62,7 +62,7 @@ export function PolicyForm({ orgSlug, policy }: { orgSlug: string; policy: { rec
       {error ? <Alert tone="danger">{error}</Alert> : null}{ok ? <Alert tone="success">{ok}</Alert> : null}
       <div className="grid gap-3 md:grid-cols-3">
         <Field label="Recording" htmlFor="p-mode"><Select id="p-mode" name="recordingMode" defaultValue={policy?.recording_mode ?? "disabled"}><option value="disabled">Off — nobody can record</option><option value="optional">On — staff and team leads get a “Record screen” button while a timer runs (their choice)</option><option value="required_on_designated_tasks">On, and required on tasks marked “recording required”</option></Select></Field>
-        <p className="-mt-1 text-xs text-fg-subtle">Recording is off for new organisations. Switch it on here; each person must acknowledge the notice below before they can record. Recordings are video only, started by the person, with a visible indicator.</p>
+        <p className="-mt-1 text-xs text-fg-subtle">Each person must acknowledge the notice below before they can record. Recordings are video only, started by the person, with a visible indicator. The quick switch at the top of this page changes only this setting.</p>
         <Field label="Retention (days)" htmlFor="p-ret" hint="1–30" error={fieldErrors.retentionDays}><Input id="p-ret" name="retentionDays" type="number" min={1} max={30} defaultValue={policy?.retention_days ?? 7} required /></Field>
         <Field label="Reminder before day end (min)" htmlFor="p-rem"><Input id="p-rem" name="reminder" type="number" min={0} max={240} defaultValue={policy?.reminder_minutes_before_end ?? 30} /></Field>
       </div>
@@ -92,6 +92,52 @@ export function GrantsPanel({ orgSlug, grants, members, teams, isOwner }: { orgS
           <Button type="submit" variant="outline" disabled={pending}>Grant</Button>
         </form>
       ) : null}
+    </div>
+  );
+}
+
+/** One-click recording switch. */
+export function RecordingSwitch({ orgSlug, mode }: { orgSlug: string; mode: string }) {
+  const { pending, error, ok, submit } = useForm();
+  const set = (m: string) => submit(() => api(`/api/orgs/${orgSlug}/settings/recording`, { method: "POST", body: { mode: m } }), m === "disabled" ? "Screen recording is off." : "Screen recording is on. Each person sees the new notice once and can then press Record screen while a timer runs.");
+  return (
+    <div className="grid gap-2">
+      {error ? <Alert tone="danger">{error}</Alert> : null}{ok ? <Alert tone="success">{ok}</Alert> : null}
+      <div className="flex flex-wrap gap-2">
+        {mode === "disabled" ? <Button disabled={pending} onClick={() => set("optional")}>{pending ? "Switching…" : "Turn screen recording on"}</Button> : <Button variant="outline" disabled={pending} onClick={() => { if (confirm("Turn screen recording off for everyone?")) set("disabled"); }}>{pending ? "Switching…" : "Turn recording off"}</Button>}
+        {mode === "optional" ? <Button variant="ghost" disabled={pending} onClick={() => set("required_on_designated_tasks")}>Also allow “recording required” tasks</Button> : null}
+        {mode === "required_on_designated_tasks" ? <Button variant="ghost" disabled={pending} onClick={() => set("optional")}>Back to each person&apos;s choice</Button> : null}
+      </div>
+    </div>
+  );
+}
+
+type AiStatus = { source: "organisation" | "environment" | "none"; hint: string | null; model: string | null; connectedAt: string | null };
+
+/** Connect / replace / remove the organisation's Anthropic API key. */
+export function AssistantConnectionForm({ orgSlug, status }: { orgSlug: string; status: AiStatus }) {
+  const { pending, error, ok, fieldErrors, submit } = useForm();
+  const [open, setOpen] = useState(status.source !== "organisation");
+  const [reply, setReply] = useState<string | null>(null);
+  return (
+    <div className="grid gap-3">
+      {error ? <Alert tone="danger">{error}</Alert> : null}
+      {ok ? <Alert tone="success">{ok}{reply ? <span className="mt-1 block text-fg-muted">Claude says: “{reply}”</span> : null}</Alert> : null}
+      {status.source === "organisation" ? <p className="text-sm text-fg-muted">Key ending {status.hint} · model {status.model}{status.connectedAt ? ` · connected ${new Date(status.connectedAt).toLocaleDateString()}` : ""}</p> : null}
+      {status.source === "environment" ? <p className="text-sm text-fg-muted">Using the server&apos;s ANTHROPIC_API_KEY. Add an organisation key below to override it.</p> : null}
+      {open ? (
+        <form className="grid gap-3 md:grid-cols-[1fr_220px_auto]" onSubmit={(e) => { e.preventDefault(); const f = new FormData(e.currentTarget); const form = e.currentTarget; submit(async () => { const r = await api<{ model: string; reply: string }>(`/api/orgs/${orgSlug}/settings/assistant`, { method: "POST", body: { apiKey: f.get("apiKey"), model: f.get("model") || undefined } }); setReply(r.reply); form.reset(); setOpen(false); return r; }, "Connected. The assistant on My Day now runs on Claude."); }}>
+          <Field label="Anthropic API key" htmlFor="ai-key" hint="from console.anthropic.com → API keys; starts with sk-ant-" error={fieldErrors.apiKey}><Input id="ai-key" name="apiKey" type="password" autoComplete="off" required minLength={20} placeholder="sk-ant-…" /></Field>
+          <Field label="Model" htmlFor="ai-model" hint="optional" error={fieldErrors.model}><Select id="ai-model" name="model" defaultValue=""><option value="">Claude Opus 5 (default)</option><option value="claude-sonnet-5">Claude Sonnet 5 (faster, cheaper)</option><option value="claude-opus-5">Claude Opus 5</option></Select></Field>
+          <div className="flex items-end gap-2"><Button type="submit" disabled={pending}>{pending ? "Testing…" : "Connect and test"}</Button>{status.source === "organisation" ? <Button type="button" variant="ghost" onClick={() => setOpen(false)}>Cancel</Button> : null}</div>
+        </form>
+      ) : (
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" onClick={() => setOpen(true)}>Replace key</Button>
+          <Button variant="ghost" disabled={pending} onClick={() => { if (confirm("Disconnect the AI assistant? The built-in parser will be used until a key is added again.")) submit(() => api(`/api/orgs/${orgSlug}/settings/assistant`, { method: "DELETE" }), "Disconnected."); }}>Disconnect</Button>
+        </div>
+      )}
+      <p className="text-xs text-fg-subtle">Each suggestion is one request to Anthropic, billed to this key. Notes are sent to Anthropic to be understood; nothing else from the workspace is.</p>
     </div>
   );
 }

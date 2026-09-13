@@ -13,7 +13,7 @@ export type Role = (typeof ROLES)[number];
 
 export const DEFAULT_NOTICE = `Boredroom records the tasks you plan, the work sessions you start and stop, the progress notes and evidence you submit, and the daily reports you file. Timers only run when you start them. Heartbeats show whether your browser is connected; they are not a measure of productivity.
 
-Screen recording is disabled for this workspace unless a policy version explicitly enables it. When enabled, recording only happens after you choose a screen or window in your browser, never audio, always with a visible indicator, and only people with an explicit, logged access grant can watch it. Recordings are deleted automatically after the retention period.
+Screen recording is optional and is never started for you: it only happens while your timer runs and after you press "Record screen" and choose a screen or window in your browser. Never audio, always with a visible indicator, and only people with an explicit, logged access grant can watch it. Recordings are deleted automatically after the retention period. Your organisation can switch recording off, or require it on specific tasks, by publishing a new version of this notice.
 
 Unlogged or uncertain time leads to a clarification request, not an automatic penalty.`;
 
@@ -41,7 +41,7 @@ export async function createOrganisation(userId: string, input: z.infer<typeof c
       [org.id, userId, input.employeeCode]);
     const policy = await db.one<{ id: string }>(
       `INSERT INTO policies(organisation_id, version, recording_mode, retention_days, notice_text, created_by, effective_at)
-       VALUES ($1, 1, 'disabled', 7, $2, $3, now()) RETURNING id`, [org.id, DEFAULT_NOTICE, membership.id]);
+       VALUES ($1, 1, 'optional', 7, $2, $3, now()) RETURNING id`, [org.id, DEFAULT_NOTICE, membership.id]);
     await db.query(`UPDATE organisations SET current_policy_id = $2 WHERE id = $1`, [org.id, policy.id]);
     await db.query(`INSERT INTO schedules(organisation_id, timezone) VALUES ($1, $2)`, [org.id, input.timezone]);
     await db.query(`INSERT INTO policy_acknowledgements(organisation_id, membership_id, policy_id, shown_notice_text) VALUES ($1, $2, $3, $4)`,
@@ -436,4 +436,63 @@ export async function joinWithCode(userId: string, code: string) {
 /** Keeps a team's working project in step with team membership so leads can assign tasks to their people. */
 export async function syncTeamProjectMember(db: Db, orgId: string, teamId: string, membershipId: string, accessRole: "lead" | "contributor" | "remove") {
   await db.query(`SELECT app_sync_team_project_member($1, $2, $3, $4)`, [orgId, teamId, membershipId, accessRole]);
+}
+
+// ---------------------------------------------------------------------------
+// AI assistant connection (per organisation)
+// ---------------------------------------------------------------------------
+export const assistantKeySchema = z.object({
+  apiKey: z.string().trim().min(20).max(400),
+  model: z.string().trim().min(3).max(80).optional(),
+});
+
+export type AssistantStatus = { source: "organisation" | "environment" | "none"; hint: string | null; model: string | null; connectedAt: string | null };
+
+export async function assistantStatus(ctx: OrgContext): Promise<AssistantStatus> {
+  const row = await withSystem((db) => db.maybeOne<{ assistant_key_hint: string | null; assistant_model: string | null; assistant_connected_at: string | null; assistant_key_enc: string | null }>(`SELECT assistant_key_hint, assistant_model, assistant_connected_at, assistant_key_enc FROM organisation_secrets WHERE organisation_id = $1`, [ctx.org.id]));
+  if (row?.assistant_key_enc) return { source: "organisation", hint: row.assistant_key_hint, model: row.assistant_model, connectedAt: row.assistant_connected_at };
+  if (process.env.ANTHROPIC_API_KEY) return { source: "environment", hint: null, model: process.env.ASSISTANT_MODEL ?? null, connectedAt: null };
+  return { source: "none", hint: null, model: null, connectedAt: null };
+}
+
+/** Stores the organisation's Anthropic API key after one real test request succeeds. Owners only. */
+export async function setAssistantKey(ctx: OrgContext, input: z.infer<typeof assistantKeySchema>, verify: (apiKey: string, model: string) => Promise<{ model: string; reply: string }>) {
+  if (ctx.membership.role !== "owner") throw forbidden("Only owners can connect the AI assistant.");
+  const { DEFAULT_ASSISTANT_MODEL } = await import("@/server/services/assistant");
+  const model = input.model || process.env.ASSISTANT_MODEL || DEFAULT_ASSISTANT_MODEL;
+  let test: { model: string; reply: string };
+  try { test = await verify(input.apiKey, model); }
+  catch (err) {
+    const e = err as { status?: number; message?: string };
+    if (e?.status === 401) throw invalid("Anthropic rejected this key. Copy it again from console.anthropic.com → API keys.", { apiKey: ["Key rejected."] });
+    if (e?.status === 404) throw invalid(`The model "${model}" is not available to this key.`, { model: ["Model not found."] });
+    if (e?.status === 429 || e?.status === 400) throw invalid(`Anthropic answered: ${(e.message ?? "request refused").slice(0, 200)}`);
+    throw invalid(`Could not reach Anthropic: ${(e?.message ?? String(err)).slice(0, 200)}`);
+  }
+  const { encryptSecret } = await import("@/server/lib/crypto");
+  await withUser(ctx.user.profileId, async (db) => {
+    await db.query(`INSERT INTO organisation_secrets(organisation_id, assistant_key_enc, assistant_key_hint, assistant_model, assistant_connected_at, updated_by, updated_at)
+      VALUES ($1, $2, $3, $4, now(), $5, now())
+      ON CONFLICT (organisation_id) DO UPDATE SET assistant_key_enc = EXCLUDED.assistant_key_enc, assistant_key_hint = EXCLUDED.assistant_key_hint, assistant_model = EXCLUDED.assistant_model, assistant_connected_at = now(), updated_by = EXCLUDED.updated_by, updated_at = now()`,
+      [ctx.org.id, encryptSecret(input.apiKey), `…${input.apiKey.slice(-4)}`, model, ctx.membership.id]);
+    await audit(db, { organisationId: ctx.org.id, actorMembershipId: ctx.membership.id, action: "assistant.connected", subjectType: "organisation", subjectId: ctx.org.id, metadata: { model } });
+  });
+  return { model: test.model, reply: test.reply };
+}
+
+export async function clearAssistantKey(ctx: OrgContext) {
+  if (ctx.membership.role !== "owner") throw forbidden("Only owners can disconnect the AI assistant.");
+  await withUser(ctx.user.profileId, async (db) => {
+    await db.query(`DELETE FROM organisation_secrets WHERE organisation_id = $1`, [ctx.org.id]);
+    await audit(db, { organisationId: ctx.org.id, actorMembershipId: ctx.membership.id, action: "assistant.disconnected", subjectType: "organisation", subjectId: ctx.org.id });
+  });
+}
+
+/** One-click recording switch: publishes a new policy version that changes only the recording mode. Owners only. */
+export async function setRecordingMode(ctx: OrgContext, mode: "disabled" | "optional" | "required_on_designated_tasks") {
+  if (ctx.membership.role !== "owner") throw forbidden("Only owners can change the monitoring policy.");
+  const current = await withUser(ctx.user.profileId, (db) => db.maybeOne<{ recording_mode: string; retention_days: number; notice_text: string; reminder_minutes_before_end: number }>(`SELECT recording_mode, retention_days, notice_text, reminder_minutes_before_end FROM policies WHERE id = $1`, [ctx.org.current_policy_id]));
+  if (current?.recording_mode === mode) return { changed: false as const };
+  const r = await publishPolicy(ctx, { recordingMode: mode, retentionDays: current?.retention_days ?? 7, noticeText: current?.notice_text ?? DEFAULT_NOTICE, reminderMinutesBeforeEnd: current?.reminder_minutes_before_end ?? 30 });
+  return { changed: true as const, version: r.version };
 }

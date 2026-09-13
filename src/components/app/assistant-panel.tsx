@@ -16,7 +16,7 @@ import { api, isApiFailure } from "@/lib/api-client";
 
 type Person = { id: string; display_name: string };
 type Proposal = { title: string; description: string | null; dueAt: string | null; assigneeMembershipId: string | null; assigneeName: string | null; unmatchedAssignee: string | null; estimateMinutes: number | null };
-type PlanResult = { items: Proposal[]; engine: "claude" | "builtin"; note: string | null; people: Person[] };
+type PlanResult = { items: Proposal[]; engine: "claude" | "builtin"; reply: string | null; note: string | null; people: Person[] };
 
 type SpeechRecognitionLike = { lang: string; continuous: boolean; interimResults: boolean; start: () => void; stop: () => void; onresult: ((e: { resultIndex: number; results: ArrayLike<ArrayLike<{ transcript: string }> & { isFinal: boolean }> }) => void) | null; onend: (() => void) | null; onerror: ((e: { error: string }) => void) | null };
 function speechCtor(): (new () => SpeechRecognitionLike) | null {
@@ -46,9 +46,20 @@ export function AssistantPanel({ orgSlug, people, configured, onCreated, onClose
 
   useEffect(() => () => { rec.current?.stop(); }, []);
 
-  function toggleMic() {
+  async function toggleMic() {
     if (listening) { rec.current?.stop(); setListening(false); return; }
     const Ctor = speechCtor(); if (!Ctor) return;
+    setError(null);
+    if (!window.isSecureContext) { setError(`Dictation needs a secure address. Open the app at http://localhost:${window.location.port || "3000"} or an https:// address (you are on ${window.location.host}).`); return; }
+    // Ask for the microphone explicitly first: the browser's own prompt is clearer, and a refusal gives a precise reason.
+    try { const stream = await navigator.mediaDevices.getUserMedia({ audio: true }); stream.getTracks().forEach((t) => t.stop()); }
+    catch (err) {
+      const name = (err as { name?: string })?.name;
+      if (name === "NotAllowedError" || name === "SecurityError") setError("Microphone access is blocked. Click the lock or camera icon in the address bar, allow the microphone for this site, then try again. On a Mac also check System Settings → Privacy & Security → Microphone for your browser.");
+      else if (name === "NotFoundError") setError("No microphone was found on this device.");
+      else setError(`Could not open the microphone (${name ?? "unknown error"}). You can type the note instead.`);
+      return;
+    }
     const r = new Ctor(); rec.current = r;
     r.lang = navigator.language || "en-GB"; r.continuous = true; r.interimResults = true;
     base.current = text ? text.trimEnd() + " " : "";
@@ -57,7 +68,14 @@ export function AssistantPanel({ orgSlug, people, configured, onCreated, onClose
       for (let i = 0; i < e.results.length; i++) { const res = e.results[i]; const t = res[0].transcript; if (res.isFinal) finalText += t + " "; else interim += t; }
       setText(base.current + finalText + interim);
     };
-    r.onerror = (e) => { setError(e.error === "not-allowed" ? "Microphone access was declined." : `Dictation stopped (${e.error}).`); setListening(false); };
+    r.onerror = (e) => {
+      const why = e.error === "not-allowed" || e.error === "service-not-allowed" ? "Microphone access was declined for speech recognition. Allow the microphone in the address bar and try again."
+        : e.error === "network" ? "Dictation needs an internet connection (the browser's speech service is online)."
+        : e.error === "no-speech" ? "No speech was heard. Try again and speak after pressing Dictate."
+        : e.error === "audio-capture" ? "No microphone could be used."
+        : `Dictation stopped (${e.error}). You can type the note instead.`;
+      setError(why); setListening(false);
+    };
     r.onend = () => setListening(false);
     try { r.start(); setListening(true); setError(null); } catch { setError("Could not start dictation."); }
   }
@@ -95,6 +113,7 @@ export function AssistantPanel({ orgSlug, people, configured, onCreated, onClose
         </div>
         <Button size="icon" variant="ghost" aria-label="Close assistant" onClick={onClose}><X className="h-4 w-4" /></Button>
       </div>
+      {!configured ? <Alert tone="warning">The AI is not connected yet, so a simple built-in parser makes these suggestions. {people.length ? "" : ""}An organisation owner connects Claude under Settings → AI assistant (an Anthropic API key).</Alert> : null}
       <Textarea aria-label="What are you working on?" value={text} onChange={(e) => setText(e.target.value)} rows={3} maxLength={4000} placeholder={people.length ? "e.g. Ask Ada to redo the homepage banner by Monday. Ben should fix the checkout bug today. I will prepare the sprint review." : "e.g. Finish the logo export by Friday, then update the brand deck. Also reply to the client email tomorrow morning."} />
       <div className="flex flex-wrap items-center gap-2">
         {speechSupported ? <Button type="button" variant={listening ? "danger" : "outline"} onClick={toggleMic}>{listening ? <MicOff className="h-4 w-4" aria-hidden /> : <Mic className="h-4 w-4" aria-hidden />}{listening ? "Stop dictating" : "Dictate"}</Button> : speechSupported === false ? <span className="text-xs text-fg-subtle">Dictation needs Chrome, Edge or Safari; typing works everywhere.</span> : null}
@@ -102,7 +121,9 @@ export function AssistantPanel({ orgSlug, people, configured, onCreated, onClose
         {listening ? <span className="text-xs text-danger">Listening… speak naturally, one task per sentence.</span> : null}
       </div>
       {error ? <Alert tone="danger">{error}</Alert> : null}
-      {result ? <p className="text-xs text-fg-subtle">{result.engine === "claude" ? "Suggested by Claude." : configured ? "Suggested by the built-in parser." : "Suggested by the built-in parser (no AI key configured; set ANTHROPIC_API_KEY on the server for smarter suggestions)."}{result.note ? ` ${result.note}` : ""}</p> : null}
+      {result?.reply ? <div className="flex gap-2 rounded-xl border border-accent/30 bg-accent-soft/40 p-3 text-sm"><Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-accent" aria-hidden /><p>{result.reply}</p></div> : null}
+      {result ? <p className="text-xs text-fg-subtle">{result.engine === "claude" ? "Suggested by Claude. Check the details, then add." : "Suggested by the built-in parser."}{result.note ? ` ${result.note}` : ""}</p> : null}
+      {result && items.length === 0 && !error ? <p className="text-sm text-fg-muted">No to-dos to add from that note.</p> : null}
       {items.length ? (
         <div className="space-y-2">
           <ul className="space-y-2">{items.map((it, i) => (

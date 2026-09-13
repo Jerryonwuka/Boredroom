@@ -1,4 +1,4 @@
-import { createHash, createHmac, randomBytes, scrypt as scryptCb, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, createCipheriv, createDecipheriv, randomBytes, scrypt as scryptCb, timingSafeEqual } from "node:crypto";
 
 const SCRYPT = { N: 16384, r: 8, p: 1 };
 function scrypt(password: string, salt: Buffer, keylen: number): Promise<Buffer> {
@@ -58,4 +58,25 @@ export function verifyPayload<T = Record<string, unknown>>(token: string): T | n
   } catch {
     return null;
   }
+}
+
+// ---- Secrets at rest (AES-256-GCM keyed from APP_SECRET) -------------------
+function aesKey(): Buffer { return createHash("sha256").update(`boredroom-secrets:${secret()}`).digest(); }
+
+/** Encrypts a short secret (an API key) for storage. Output: base64url(iv).base64url(ciphertext).base64url(tag). */
+export function encryptSecret(plain: string): string {
+  const iv = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", aesKey(), iv);
+  const enc = Buffer.concat([cipher.update(plain, "utf8"), cipher.final()]);
+  return `${iv.toString("base64url")}.${enc.toString("base64url")}.${cipher.getAuthTag().toString("base64url")}`;
+}
+
+export function decryptSecret(stored: string): string | null {
+  const [ivB, encB, tagB] = stored.split(".");
+  if (!ivB || !encB || !tagB) return null;
+  try {
+    const decipher = createDecipheriv("aes-256-gcm", aesKey(), Buffer.from(ivB, "base64url"));
+    decipher.setAuthTag(Buffer.from(tagB, "base64url"));
+    return Buffer.concat([decipher.update(Buffer.from(encB, "base64url")), decipher.final()]).toString("utf8");
+  } catch { return null; }
 }
