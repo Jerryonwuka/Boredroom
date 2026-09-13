@@ -4,12 +4,24 @@
  */
 import { config } from "dotenv";
 config({ path: [".env.local", ".env"], quiet: true });
-import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { spawn, spawnSync } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
 import { usesLocalPostgres, canConnect, startLocalPostgres, superUrl, DATA_DIR } from "./local-pg";
 import { migrate } from "../db/scripts/migrate";
 
+/** After a `git pull` that added a package, node_modules is behind package.json; install before Next tries to resolve it. */
+function ensureDependencies() {
+  const pkg = JSON.parse(readFileSync("package.json", "utf8")) as { dependencies?: Record<string, string>; devDependencies?: Record<string, string> };
+  const names = Object.keys({ ...(pkg.dependencies ?? {}), ...(pkg.devDependencies ?? {}) });
+  const missing = names.filter((n) => !existsSync(`node_modules/${n}/package.json`));
+  if (missing.length === 0) return;
+  console.log(`Installing ${missing.length} missing package${missing.length === 1 ? "" : "s"} (${missing.join(", ")})…`);
+  const r = spawnSync(process.platform === "win32" ? "pnpm.cmd" : "pnpm", ["install"], { stdio: "inherit", shell: process.platform === "win32" });
+  if (r.status !== 0) { console.error("pnpm install failed. Run it yourself, then `pnpm dev` again."); process.exit(1); }
+}
+
 async function main() {
+  ensureDependencies();
   let stop: (() => Promise<void>) | null = null;
   if (usesLocalPostgres()) {
     if (!existsSync(`${DATA_DIR}/PG_VERSION`)) { console.error("The local database has not been set up yet. Run: pnpm quickstart"); process.exit(1); }

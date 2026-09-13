@@ -68,6 +68,10 @@ pnpm db:migrate && pnpm db:seed
 
 All passwords: `correct-horse-battery`. Company A has a "Website relaunch" project with a homepage design task (Figma-link deliverable expected) and a client meeting task assigned to Ada, reviewed by David.
 
+### After `git pull`
+
+Run `pnpm dev` as usual: it installs any packages a pull added and applies new database migrations before starting. If you start Next.js some other way and see "Module not found: Can't resolve …", run `pnpm install` first.
+
 ### If sign-up or sign-in shows "Something went wrong"
 
 Run `pnpm doctor` in the project folder, or open `http://localhost:3000/api/health`. Both report whether the database is reachable as `boardroom_app`, whether all migrations are applied, and whether the storage and mail-sink directories are writable. In development the error banner also includes the underlying message. Typical fixes: start PostgreSQL, create the two roles, run `pnpm db:migrate`, or set `DATABASE_URL`/`APP_SECRET` in `.env.local`.
