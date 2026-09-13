@@ -42,7 +42,21 @@ Tests: `tests/integration/join-codes.test.ts` (code lifecycle, role and team pla
 
 Tests: `tests/integration/join-codes.test.ts` (quick to-dos, personal projects), `tenancy` and `evidence-reports` updated for management-only organisation accounts.
 
-Next phase (not started): AI assistant that turns a voice note or text into to-dos.
+## Owner feedback round 3 (12 September 2026)
+
+| Ask | Done |
+| --- | --- |
+| People page as tabs: Teams / People / Invitations; click a team to open it and add people | `/people?tab=teams|people|invitations`. Teams tab: team cards (members, lead) and "Add new team", which creates the team and opens its page where people are added and the lead chosen. People tab: "Add new person" (email invitation), the join code and link, and everyone in the organisation. Invitations tab: all invitations with state, revoke. |
+| Take out "Records" | Removed from the organisation menu. Timesheets, corrections and CSV export are reached from Reports ("Timesheets, corrections and CSV export" button), from the dashboard's "Total time today" tile and from any person's name on a team page. Team leads and staff keep their Timesheets / My timesheet item because that is where they submit and correct their own day. |
+| Calendar / monthly tracking | No monthly reset (records are permanent and versioned). Reports gained period presets: This week, Last 14 days, This month, Last month, Last 90 days, plus custom dates. |
+| Screen recording "not working" | Cause: new organisations start with recording *off*, and even when on, sessions on ordinary tasks were created with capture mode "none", so the timer never showed a recording button. Now: with recording "On" in Settings → Monitoring policy, every session of a member who acknowledged the notice is allowed to record; the timer shows **Record screen** (and **Stop recording**) while a timer runs. Nothing records unless the person presses it; the browser asks which screen or window to share; the red indicator shows while recording. Members who have not acknowledged the notice see a link to it instead of the button. Tasks marked "recording required" still gate at Start as before. Settings copy explains the three modes. |
+| Team leads add to-dos with description, deadline and assignee from their own list | My Day quick-add has "Details" (description, deadline) and, for team leads, a "For" selector listing everyone on the teams they lead. The assignee gets a `task.assigned` notification and sees the item under "From your team lead". The lead is the reviewer of what they hand out. |
+| Completed tasks still showed Start | Today's plan now excludes completed and removed tasks. Every open row has **Start** and **Done**. Done on an own to-do completes it immediately; Done on a task from a lead sends it for the lead's check ("Waiting for check") and it shows Completed when approved. The stop dialog has a "Done — mark the task completed" outcome that does the same in one step. Completed items appear under "Done today", then "Past tasks" (collapsible), with **Clear past tasks** that hides them from that person's list only (`tasks.cleared_at`; nothing is deleted, organisation views and reports are unchanged). |
+| AI assistant: say or type what you are working on, it adds and arranges the to-dos; leads can name who does what | "Assistant" on My Day: type or dictate a note (dictation uses the browser's built-in speech recognition in Chrome/Edge/Safari; no audio is uploaded), press "Suggest to-dos", review the proposed titles, deadlines and assignees, then "Add N to-dos". Two engines: Claude (`@anthropic-ai/sdk`, model `claude-opus-5`, structured output) when `ANTHROPIC_API_KEY` is set; otherwise a built-in parser (sentence splitting, dates like "by Friday", "tomorrow", "3pm", estimates like "2 hours", and name matching against the lead's team). The response states which engine ran, and the UI says so. Proposals are never created silently: creation goes through the normal to-do endpoint after the person confirms, so notifications and reviewers are the same as manual entry. |
+
+Tests: `tests/integration/round3.test.ts` (lead hand-outs and notification, Done for own and lead-assigned tasks, past tasks and clearing, stop-with-done, optional recording on every session once acknowledged, assistant proposals), `tests/unit/assistant.test.ts` (built-in parser). Migration `0012_done_and_past_tasks.sql`.
+
+Not verified here: the Claude engine was implemented from the SDK documentation but could not be exercised in this environment (no API key). The built-in parser is what ran in the tests. Browser dictation and screen-share dialogs need a manual check in Chrome or Edge.
 
 ## Milestone status
 
@@ -84,13 +98,13 @@ Next phase (not started): AI assistant that turns a voice note or text into to-d
 | A23 | tenancy.test.ts | pass |
 | A24 | e2e core-workflow (keyboard-reachable controls, labels, focus ring) | pass |
 
-## Tests run (10 September 2026, this environment)
+## Tests run (latest: 12 September 2026, this environment)
 
 | Command | Result |
 | --- | --- |
 | `pnpm lint` | clean (ESLint 9 with Next core-web-vitals, TypeScript and React compiler rules) |
 | `pnpm typecheck` | clean |
-| `pnpm test` (Vitest 4, PostgreSQL 16.13, restricted `boardroom_app` role) | 5 files, 30 tests passed: `tests/unit/time.test.ts`, `tests/integration/{tenancy,sessions,evidence-reports,recording}.test.ts` |
+| `pnpm test` (Vitest 4, embedded PostgreSQL 18, restricted `boardroom_app` role) | 8 files, 45 tests passed (12 September 2026): `tests/unit/{time,assistant}.test.ts`, `tests/integration/{tenancy,sessions,evidence-reports,recording,join-codes,round3}.test.ts` |
 | `pnpm build` (Next.js 16.3.4) | succeeds; all workspace routes are dynamic (server-rendered per request) |
 | `pnpm smoke` | every page read model executes for the seeded fixtures (15 checks) |
 | `pnpm worker` | job loop runs against the seeded database; housekeeping job succeeded; reminder scheduling deduplicated |
@@ -106,6 +120,7 @@ Environment notes: no Docker daemon, no Supabase CLI, no ffmpeg; Figma and most 
 - MFA for owner/HR accounts is not implemented (production gate).
 - Leave/holiday support deferred; `workday_exemptions` exist so completeness is not knowingly wrong, but there is no UI to create exemptions yet (SQL or a small admin action).
 - Mobile: planning and review pages are responsive; recording is desktop-only by feature detection.
+- The to-do assistant's Claude engine needs `ANTHROPIC_API_KEY` on the server; without it the built-in parser runs (weaker on long, rambling notes). Dictation depends on the browser (Chrome, Edge, Safari); Firefox users type.
 - Performance targets (p95 < 1 s under 50 users, dashboard < 5 s) are not measured here; the SSE/refresh design and indexes are in place.
 
 ## Blockers and external prerequisites (before a real pilot)

@@ -25,19 +25,20 @@ function useForm() {
 type Team = { id: string; name: string; member_count?: number };
 const ROLE_LABEL: Record<string, string> = { owner: "Organisation owner", hr: "HR administrator", manager: "Team lead", employee: "Staff" };
 
-export function InviteForm({ orgSlug, teams, isOwner }: { orgSlug: string; teams: Team[]; isOwner: boolean }) {
+export function InviteForm({ orgSlug, teams, isOwner, label = "Invite someone" }: { orgSlug: string; teams: Team[]; isOwner: boolean; label?: string }) {
   const { pending, error, fieldErrors, submit } = useForm();
   const [open, setOpen] = useState(false);
   const [done, setDone] = useState<string | null>(null);
   if (!open) return (
     <div className="flex flex-col items-end gap-2">
-      <Button onClick={() => { setOpen(true); setDone(null); }}>Invite someone</Button>
+      <Button onClick={() => { setOpen(true); setDone(null); }}>{label}</Button>
       {done ? <Alert tone="success">Invitation sent to {done}.</Alert> : null}
     </div>
   );
   return (
     <form className="tile grid w-full gap-3 p-4 md:w-[520px]" onSubmit={(e) => { e.preventDefault(); const f = new FormData(e.currentTarget); submit(() => api(`/api/orgs/${orgSlug}/invitations`, { method: "POST", body: { email: f.get("email"), role: f.get("role"), teamId: f.get("teamId") || null, employeeCode: f.get("employeeCode") || null } }), () => { setDone(String(f.get("email"))); setOpen(false); }); }}>
       {error ? <Alert tone="danger">{error}</Alert> : null}
+      <p className="text-sm text-fg-muted">They get an email link that creates their account with this role and team. For quick joining, share the join code instead.</p>
       <Field label="Email" htmlFor="inv-email" error={fieldErrors.email}><Input id="inv-email" name="email" type="email" required /></Field>
       <div className="grid grid-cols-2 gap-3">
         <Field label="Role" htmlFor="inv-role" error={fieldErrors.role}><Select id="inv-role" name="role" defaultValue="employee"><option value="employee">Staff</option><option value="manager">Team lead</option>{isOwner ? <><option value="hr">HR administrator</option><option value="owner">Organisation owner</option></> : null}</Select></Field>
@@ -94,17 +95,19 @@ export function InvitationRow({ orgSlug, id, email, role, team, state, expires, 
   );
 }
 
-export function TeamsPanel({ orgSlug, teams }: { orgSlug: string; teams: Team[] }) {
+/** "Add new team": creates the team and opens it so people can be added straight away. */
+export function NewTeamForm({ orgSlug }: { orgSlug: string }) {
+  const router = useRouter();
   const { pending, error, submit } = useForm();
+  const [open, setOpen] = useState(false);
+  if (!open) return <Button onClick={() => setOpen(true)}>Add new team</Button>;
   return (
-    <div className="tile p-4">
-      {error ? <Alert tone="danger" className="mb-2">{error}</Alert> : null}
-      <ul className="mb-3 flex flex-wrap gap-2">{teams.map((t) => <li key={t.id}><Badge>{t.name} · {t.member_count ?? 0}</Badge></li>)}{teams.length === 0 ? <li className="text-sm text-fg-muted">No teams yet.</li> : null}</ul>
-      <form className="flex items-end gap-2" onSubmit={(e) => { e.preventDefault(); const form = e.currentTarget; const f = new FormData(form); submit(() => api(`/api/orgs/${orgSlug}/teams`, { method: "POST", body: { name: f.get("name") } }), () => form.reset()); }}>
-        <Field label="New team" htmlFor="team-name"><Input id="team-name" name="name" required maxLength={120} /></Field>
-        <Button type="submit" variant="outline" disabled={pending}>Create team</Button>
-      </form>
-    </div>
+    <form className="tile flex w-full flex-wrap items-end gap-2 p-4 md:w-[420px]" onSubmit={(e) => { e.preventDefault(); const f = new FormData(e.currentTarget); submit(() => api<{ id: string }>(`/api/orgs/${orgSlug}/teams`, { method: "POST", body: { name: f.get("name") } }), (r) => { setOpen(false); if (r?.id) router.push(`/app/${orgSlug}/teams/${r.id}`); }); }}>
+      {error ? <Alert tone="danger" className="w-full">{error}</Alert> : null}
+      <Field label="Team name" htmlFor="team-name" hint="e.g. Design, Tech, Branding"><Input id="team-name" name="name" required maxLength={120} autoFocus /></Field>
+      <Button type="submit" disabled={pending}>{pending ? "Creating…" : "Create team"}</Button>
+      <Button type="button" variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
+    </form>
   );
 }
 

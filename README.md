@@ -104,9 +104,17 @@ docs                 providers, runbooks, walkthrough
 - **Organisation account**: created at `/signup?intent=org`, then `/onboarding`. Owners and HR land on the organisation dashboard, create teams, appoint team leads and share the organisation's join code or link from People. Organisation accounts supervise only: they cannot hold tasks or run timers.
 - **Staff account**: can only be created on the way into an organisation, via `/join` (code), `/join/[code]` (link) or `/invite/[token]` (email invitation). Team leads land on their team board; staff land on My Day, where a to-do is one line of text and Start is one click.
 
+## The to-do assistant
+
+On My Day, **Assistant** turns a typed or dictated note ("finish the logo export by Friday, then ask Ada to update the brand deck") into proposed to-dos that the person reviews and confirms. Set `ANTHROPIC_API_KEY` in `.env.local` to use Claude (`claude-opus-5` by default, `ASSISTANT_MODEL` to change); without a key a built-in parser runs and the page says so. Dictation uses the browser's speech recognition (Chrome, Edge, Safari); no audio is sent to the server.
+
+## Screen recording
+
+Recording is off for a new organisation. Turn it on under Settings → Monitoring policy ("On — staff and team leads get a Record screen button"). Each person acknowledges the notice once (Policy page); after that the timer shows **Record screen** while a session runs. Recording starts only when they press it and the browser asks what to share. Needs Chrome or Edge on `localhost` or HTTPS.
+
 ## Product routes
 
-`/login`, `/signup`, `/join`, `/join/[code]`, `/recover`, `/verify`, `/invite/[token]`, `/onboarding`, `/app` (workspace picker), and under `/app/[workspace]`: `dashboard`, `my-day`, `teams/[id]`, `projects`, `projects/[id]`, `tasks/[id]`, `team` (activity), `reviews`, `timesheets`, `reports`, `people`, `policy`, `settings`, `notifications`, `audit`. `/dev/mail` shows the local mail sink in development.
+`/login`, `/signup`, `/join`, `/join/[code]`, `/recover`, `/verify`, `/invite/[token]`, `/onboarding`, `/app` (workspace picker), and under `/app/[workspace]`: `dashboard`, `my-day`, `teams/[id]`, `projects`, `projects/[id]`, `tasks/[id]`, `team` (activity), `reviews`, `timesheets`, `reports` (with period presets), `people` (tabs: teams, people, invitations), `policy`, `settings`, `notifications`, `audit`. `/dev/mail` shows the local mail sink in development.
 
 ## Security notes
 

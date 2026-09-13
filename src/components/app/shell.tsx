@@ -19,7 +19,7 @@ export function navItems(ctx: OrgContext, counts: NavCounts, teams: { id: string
     items.push({ href: `${base}/people`, label: "People and teams", icon: "people" });
     items.push({ href: `${base}/team`, label: "Activity", icon: "team" });
     items.push({ href: `${base}/reviews`, label: "Reviews", icon: "reviews", badge: counts.attention || undefined });
-    items.push({ href: `${base}/timesheets`, label: "Records", icon: "timesheets" });
+    // Records (timesheets, corrections, CSV export) are reached from Reports and from any person's row; not a top-level item.
     items.push({ href: `${base}/reports`, label: "Reports", icon: "reports" });
     items.push({ href: `${base}/projects`, label: "Projects", icon: "projects" });
     items.push({ href: `${base}/notifications`, label: "Notifications", icon: "notifications", badge: counts.unread || undefined });

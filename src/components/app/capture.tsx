@@ -237,16 +237,13 @@ export function useCaptureGate() {
   const captureGate: CaptureGate = useCallback(async (task) => {
     if (!c) return { captureMode: "none" };
     const required = task.capture_requirement === "required" && c.recordingMode === "required_on_designated_tasks";
-    const optional = c.recordingMode !== "disabled" && (task.capture_requirement === "optional" || (task.capture_requirement === "required" && c.recordingMode === "optional"));
-    if (!required && !optional) return { captureMode: "none" };
-    const support = captureSupport();
-    if (!support.supported) {
-      if (!required) return { captureMode: "none" };
-      return new Promise((resolve) => setDialog({ task, resolve, reason: support.reason ?? "Unsupported browser" }));
-    }
-    const perm = await c.requestPermissionOnly();
-    if (perm) return { captureMode: required ? "required" : "optional" };
+    // Optional recording never prompts at Start: the server marks the session as allowed to record and the
+    // member presses "Record screen" in the timer when they want to. Only designated-required tasks gate here.
     if (!required) return { captureMode: "none" };
+    const support = captureSupport();
+    if (!support.supported) return new Promise((resolve) => setDialog({ task, resolve, reason: support.reason ?? "Unsupported browser" }));
+    const perm = await c.requestPermissionOnly();
+    if (perm) return { captureMode: "required" };
     return new Promise((resolve) => setDialog({ task, resolve, reason: c.state.error ?? "Screen sharing was declined." }));
   }, [c]);
 
@@ -255,7 +252,7 @@ export function useCaptureGate() {
   const onSession = useCallback((s: SessionView | null) => {
     if (!c) return;
     const key = s ? `${s.id}:${s.version}` : null;
-    if (s && s.state === "running" && (s.captureMode === "required" || s.captureMode === "optional") && startedFor.current !== key) {
+    if (s && s.state === "running" && s.captureMode === "required" && startedFor.current !== key) {
       startedFor.current = key;
       void c.startCapture(s.id);
     }
@@ -263,10 +260,17 @@ export function useCaptureGate() {
   }, [c]);
 
   const recordingControls = useCallback((session: SessionView) => {
-    if (!c) return null;
-    if (session.captureMode === "none" || session.captureMode === "exception") return null;
+    if (!c || c.recordingMode === "disabled") return null;
     if (session.state !== "running") return null;
-    return c.state.status === "recording" ? null : <Button variant="outline" onClick={() => c.startCapture(session.id)}><Circle className="h-3 w-3 fill-danger text-danger" aria-hidden />Start recording</Button>;
+    if (session.captureMode === "exception") return null;
+    if (session.captureMode === "none") {
+      // Recording is allowed by policy but this session cannot record: the member has not acknowledged the current notice.
+      return <span className="inline-flex items-center gap-2 text-xs text-fg-subtle"><Circle className="h-3 w-3" aria-hidden />Screen recording available after you <a className="underline" href={`/app/${c.orgSlug}/policy`}>acknowledge the monitoring notice</a>.</span>;
+    }
+    if (c.state.status === "recording") return <Button variant="outline" onClick={() => c.stopCapture("stopped")}><Square className="h-3 w-3" aria-hidden />Stop recording</Button>;
+    const support = captureSupport();
+    if (!support.supported) return <span className="text-xs text-fg-subtle" title={support.reason}>Screen recording is not available in this browser.</span>;
+    return <Button variant="outline" disabled={c.state.status === "requesting"} onClick={() => c.startCapture(session.id)}><Circle className="h-3 w-3 fill-danger text-danger" aria-hidden />{c.state.status === "requesting" ? "Choose a screen…" : "Record screen"}</Button>;
   }, [c]);
 
   const dialogEl = useMemo(() => dialog ? <ExceptionDialog orgSlug={c!.orgSlug} task={dialog.task} reason={dialog.reason} onResolve={(v) => { dialog.resolve(v); setDialog(null); }} onRetry={async () => { const p = await c!.requestPermissionOnly(); if (p) { dialog.resolve({ captureMode: "required" }); setDialog(null); } }} /> : null, [dialog, c]);

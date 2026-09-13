@@ -262,12 +262,84 @@ export async function todoProjectFor(db: Db, ctx: OrgContext): Promise<string> {
   return created.id;
 }
 
-export const quickTodoSchema = z.object({ title: z.string().trim().min(1).max(200), estimateMinutes: z.number().int().positive().nullable().optional() });
+export const quickTodoSchema = z.object({
+  title: z.string().trim().min(1).max(200),
+  description: z.string().trim().max(4000).nullable().optional(),
+  dueAt: z.string().datetime({ offset: true }).nullable().optional(),
+  /** Team leads may hand a to-do to someone on their team; staff can only add for themselves. */
+  assigneeMembershipId: z.string().uuid().nullable().optional(),
+  estimateMinutes: z.number().int().positive().nullable().optional(),
+});
 
-/** One-line to-do for staff: title only. Project, expected output, reviewer and today's plan are filled in automatically. */
+/**
+ * One-line to-do: title only, or title plus a description, deadline and (for team leads) an assignee.
+ * Project, reviewer and today's plan are filled in automatically; an assignee who is not the creator is notified.
+ */
 export async function quickTodo(ctx: OrgContext, input: z.infer<typeof quickTodoSchema>, requestId?: string) {
   if (ctx.membership.role === "owner" || ctx.membership.role === "hr") throw forbidden("Organisation accounts supervise; they do not hold tasks.");
+  const assignee = input.assigneeMembershipId ?? ctx.membership.id;
+  const forSelf = assignee === ctx.membership.id;
   const projectId = await withUser(ctx.user.profileId, (db) => todoProjectFor(db, ctx));
-  const reviewer = await withUser(ctx.user.profileId, (db) => defaultReviewerFor(db, ctx.org.id, ctx.membership.id));
-  return createTask(ctx, { projectId, title: input.title, expectedOutput: input.title, reviewerMembershipId: reviewer, category: "work", priority: "normal", estimateMinutes: input.estimateMinutes ?? null, dueAt: null, captureRequirement: "none", addToMyDay: true }, requestId);
+  // Own to-dos are checked by the team lead; a to-do handed out by a lead is checked by that lead.
+  const reviewer = forSelf ? await withUser(ctx.user.profileId, (db) => defaultReviewerFor(db, ctx.org.id, ctx.membership.id)) : ctx.membership.id;
+  return createTask(ctx, { projectId, title: input.title, expectedOutput: input.description?.trim() || input.title, assigneeMembershipId: assignee, reviewerMembershipId: reviewer, category: "work", priority: "normal", estimateMinutes: input.estimateMinutes ?? null, dueAt: input.dueAt ?? null, captureRequirement: "none", addToMyDay: forSelf }, requestId);
+}
+
+/** People a member may hand to-dos to: everyone on the teams they lead (owner/HR see everyone who can hold tasks). */
+export async function assignableMembers(ctx: OrgContext): Promise<{ id: string; display_name: string; team_name: string }[]> {
+  return withUser(ctx.user.profileId, (db) => db.query<{ id: string; display_name: string; team_name: string }>(
+    `SELECT DISTINCT ON (m.id) m.id, pr.display_name, t.name AS team_name
+     FROM team_members lead JOIN teams t ON t.id = lead.team_id AND t.archived_at IS NULL
+     JOIN team_members tm ON tm.team_id = lead.team_id JOIN memberships m ON m.id = tm.membership_id AND m.status = 'active' AND m.role IN ('employee','manager')
+     JOIN profiles pr ON pr.id = m.user_id
+     WHERE lead.membership_id = $1 AND lead.is_manager AND m.id <> $1
+     ORDER BY m.id, t.name`, [ctx.membership.id]).then((rows) => rows.sort((a, b) => a.display_name.localeCompare(b.display_name))));
+}
+
+type CompletableTask = { id: string; title: string; status: TaskStatus; assignee_membership_id: string; created_by: string; reviewer_membership_id: string | null; archived_at: string | null; version: number };
+
+/** Marks a member's own to-do completed in one step (no review round-trip). Caller holds the row lock. */
+export async function completeOwnTaskInternal(db: Db, ctx: OrgContext, t: CompletableTask, note: string | null, requestId?: string) {
+  if (t.archived_at) throw conflict("TASK_ARCHIVED", "Archived tasks cannot be completed.");
+  if (t.status === "completed") return { id: t.id, version: t.version, completed: true as const };
+  if (t.status === "in_review") throw conflict("TASK_IN_REVIEW", "This task is waiting for your team lead's check.");
+  const open = await db.maybeOne(`SELECT 1 FROM work_sessions WHERE task_id = $1 AND state IN ('running','paused','interrupted')`, [t.id]);
+  if (open) throw conflict("SESSION_OPEN", "Stop the running session on this task first.");
+  const updated = await db.one<{ version: number }>(`UPDATE tasks SET status = 'completed', completed_at = now(), blocked_reason = NULL, version = version + 1 WHERE id = $1 RETURNING version`, [t.id]);
+  await db.query(`INSERT INTO task_status_history(organisation_id, task_id, actor_membership_id, from_status, to_status, reason) VALUES ($1, $2, $3, $4, 'completed', $5)`, [ctx.org.id, t.id, ctx.membership.id, t.status, note || "Marked done"]);
+  if (note) await db.query(`INSERT INTO task_comments(organisation_id, task_id, author_membership_id, body) VALUES ($1, $2, $3, $4)`, [ctx.org.id, t.id, ctx.membership.id, `Done: ${note}`]);
+  await audit(db, { organisationId: ctx.org.id, actorMembershipId: ctx.membership.id, action: "task.completed", subjectType: "task", subjectId: t.id, subjectMembershipId: t.assignee_membership_id, requestId, metadata: { self: true } });
+  return { id: t.id, version: updated.version, completed: true as const };
+}
+
+export const completeSchema = z.object({ note: z.string().trim().max(2000).default("") });
+
+/**
+ * "Done" from My Day. A to-do the member wrote for themselves is completed on the spot.
+ * A task handed out by a team lead (or anyone else) is submitted for that person's check instead,
+ * so leads still see finished work before it counts as done.
+ */
+export async function completeTask(ctx: OrgContext, taskId: string, input: z.infer<typeof completeSchema>, requestId?: string): Promise<{ id: string; version: number; completed: boolean }> {
+  const decision = await withUser(ctx.user.profileId, async (db) => {
+    const visible = await db.maybeOne<{ assignee_membership_id: string }>(`SELECT assignee_membership_id FROM tasks WHERE id = $1 AND organisation_id = $2`, [taskId, ctx.org.id]);
+    if (!visible) throw notFound("Task not found.");
+    if (visible.assignee_membership_id !== ctx.membership.id) throw forbidden("Only the person the task is assigned to can mark it done.");
+    const t = await db.one<CompletableTask>(`SELECT id, title, status, assignee_membership_id, created_by, reviewer_membership_id, archived_at, version FROM tasks WHERE id = $1 AND organisation_id = $2 FOR UPDATE`, [taskId, ctx.org.id]);
+    const selfMade = t.created_by === ctx.membership.id;
+    if (selfMade) return { kind: "completed" as const, result: await completeOwnTaskInternal(db, ctx, t, input.note || null, requestId) };
+    return { kind: "submit" as const, version: t.version };
+  });
+  if (decision.kind === "completed") return decision.result;
+  const { submitTask } = await import("@/server/services/evidence");
+  await submitTask(ctx, taskId, { note: input.note || "Marked done from My Day", links: [], fileIds: [] }, requestId);
+  return { id: taskId, version: decision.version + 1, completed: false };
+}
+
+/** Hides the member's completed tasks from their past-tasks list. Nothing is deleted. */
+export async function clearPastTasks(ctx: OrgContext, requestId?: string): Promise<{ cleared: number }> {
+  return withUser(ctx.user.profileId, async (db) => {
+    const rows = await db.query<{ id: string }>(`UPDATE tasks SET cleared_at = now() WHERE organisation_id = $1 AND assignee_membership_id = $2 AND cleared_at IS NULL AND (status = 'completed' OR archived_at IS NOT NULL) RETURNING id`, [ctx.org.id, ctx.membership.id]);
+    if (rows.length) await audit(db, { organisationId: ctx.org.id, actorMembershipId: ctx.membership.id, action: "task.past_cleared", subjectType: "membership", subjectId: ctx.membership.id, subjectMembershipId: ctx.membership.id, requestId, metadata: { count: rows.length } });
+    return { cleared: rows.length };
+  });
 }

@@ -124,8 +124,8 @@ test("A01/A02 in the browser: Company B cannot see Company A, employee cannot op
 
 test("A03 invitation lifecycle in the browser with the local mail sink", async ({ page, browser }) => {
   await signIn(page, "mary@company-a.test");
-  await page.goto("/app/company-a/people");
-  await page.getByRole("button", { name: "Invite someone" }).click();
+  await page.goto("/app/company-a/people?tab=people");
+  await page.getByRole("button", { name: "Add new person" }).click();
   await page.getByLabel("Email").fill("newbie@company-a.test");
   await page.getByRole("button", { name: "Invite", exact: true }).click();
   await expect(page.getByText("Invitation sent to newbie@company-a.test")).toBeVisible();

@@ -8,6 +8,8 @@ import { currentSession } from "@/server/services/sessions";
 import { withUser } from "@/server/db";
 import { MyDayBoard } from "@/components/app/my-day";
 import { formatDuration } from "@/lib/utils";
+import { assignableMembers } from "@/server/services/tasks";
+import { assistantConfigured } from "@/server/services/assistant";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "My Day" };
@@ -16,9 +18,10 @@ export default async function MyDayPage({ params }: { params: Promise<{ workspac
   const { workspace } = await params;
   const { ctx, counts, teams } = await workspacePage(workspace, `/app/${workspace}/my-day`);
   if (ctx.membership.role === "owner" || ctx.membership.role === "hr") redirect(`/app/${ctx.org.slug}/dashboard`);
-  const [data, session, timings] = await Promise.all([
+  const [data, session, assignable, timings] = await Promise.all([
     myDay(ctx),
     currentSession(ctx),
+    assignableMembers(ctx),
     withUser(ctx.user.profileId, (db) => db.maybeOne<{ heartbeat_seconds: number; stale_after_seconds: number; recording_mode: string }>(`SELECT heartbeat_seconds, stale_after_seconds, recording_mode FROM policies WHERE id = $1`, [ctx.org.current_policy_id])),
   ]);
   return (
@@ -33,11 +36,14 @@ export default async function MyDayPage({ params }: { params: Promise<{ workspac
         ownTodos={data.ownTodos}
         fromLeads={data.fromLeads}
         doneToday={data.doneToday}
+        pastTasks={data.pastTasks}
         projects={data.projects}
         members={data.members.filter((m) => m.id !== ctx.membership.id)}
+        assignable={assignable}
         membershipId={ctx.membership.id}
         recordingMode={timings?.recording_mode ?? "disabled"}
         reportStatus={data.report?.status ?? null}
+        assistantConfigured={assistantConfigured()}
       />
     </AppShell>
   );

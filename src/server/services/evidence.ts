@@ -49,7 +49,12 @@ export async function uploadDeliverableFile(ctx: OrgContext, taskId: string, fil
 /** Creates an immutable submission revision with its evidence and moves the task into review. */
 export async function submitTask(ctx: OrgContext, taskId: string, input: z.infer<typeof submissionSchema>, requestId?: string) {
   if (input.links.length === 0 && input.fileIds.length === 0 && !input.note) throw invalid("Add a note, a link or a file as evidence.");
-  return withUser(ctx.user.profileId, async (db) => {
+  return withUser(ctx.user.profileId, (db) => submitInternal(db, ctx, taskId, input, requestId));
+}
+
+/** Submits a task for review inside the caller's transaction (also used when a session stops with "done"). */
+export async function submitInternal(db: Db, ctx: OrgContext, taskId: string, input: z.infer<typeof submissionSchema>, requestId?: string) {
+  {
     const t = await db.maybeOne<{ id: string; title: string; status: string; assignee_membership_id: string; reviewer_membership_id: string | null; version: number; archived_at: string | null }>(
       `SELECT id, title, status, assignee_membership_id, reviewer_membership_id, version, archived_at FROM tasks WHERE id = $1 AND organisation_id = $2 FOR UPDATE`, [taskId, ctx.org.id]);
     if (!t) throw notFound("Task not found.");
@@ -85,7 +90,7 @@ export async function submitTask(ctx: OrgContext, taskId: string, input: z.infer
     await notify(db, { organisationId: ctx.org.id, recipientMembershipId: t.reviewer_membership_id, type: "review.requested", title: `Review requested: ${t.title}`, body: `Revision ${rev.next} from ${ctx.user.displayName}`, resourceType: "task", resourceId: taskId, href: `/app/${ctx.org.slug}/tasks/${taskId}`, dedupKey: `review.requested:${sub.id}` });
     await audit(db, { organisationId: ctx.org.id, actorMembershipId: ctx.membership.id, action: "task.submitted", subjectType: "task_submission", subjectId: sub.id, subjectMembershipId: ctx.membership.id, requestId, metadata: { taskId, revision: rev.next, links: input.links.length, files: input.fileIds.length } });
     return { submissionId: sub.id, revision: rev.next };
-  });
+  }
 }
 
 export const reviewSchema = z.object({ decision: z.enum(["approved", "changes_requested", "question"]), note: z.string().trim().max(4000).default("") });

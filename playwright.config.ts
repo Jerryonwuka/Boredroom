@@ -1,3 +1,5 @@
+import { config } from "dotenv";
+config({ path: [".env.local", ".env"], quiet: true }); // so the test database from .env.local (e.g. the quickstart one on 54329) is used
 import { defineConfig, devices } from "@playwright/test";
 
 /**

@@ -150,7 +150,7 @@ export function SessionTimer({ orgSlug, initial, tasks, captureGate, onCaptureSe
   async function stop(note: string, outcome: string) {
     if (!session) return;
     const s = await run("stop", () => api<SessionView>(`${base}/${session.id}/stop`, { method: "POST", body: { expectedVersion: session.version, note, outcome } }));
-    if (s) { setStopDialog(null); apply(null); if (outcome === "ready_for_review") router.push(`/app/${orgSlug}/tasks/${session.taskId}?submit=1`); }
+    if (s) { setStopDialog(null); apply(null); if (outcome === "ready_for_review") router.push(`/app/${orgSlug}/tasks/${session.taskId}?submit=1`); else router.refresh(); }
   }
   async function doSwitch(nextTaskId: string, note: string) {
     if (!session) return;
@@ -242,11 +242,13 @@ function StopDialog({ mode, nextTaskId, tasks, busy, onCancel, onStop, onSwitch 
           <Field label="Next task" htmlFor="next-task"><Select id="next-task" value={next} onChange={(e) => setNext(e.target.value)}>{tasks.map((t) => <option key={t.id} value={t.id}>{t.title} — {t.project_name}</option>)}</Select></Field>
         ) : null}
         <Field label="Progress note" htmlFor="stop-note" hint={mode === "stop" ? "recommended" : "optional"}><Textarea id="stop-note" value={note} onChange={(e) => setNote(e.target.value)} maxLength={2000} placeholder="What did you get done? What is next?" /></Field>
+        {mode === "stop" && outcome === "completed" ? <p className="text-xs text-fg-muted">Your own to-dos are completed straight away. A task your team lead gave you goes to them for a quick check first.</p> : null}
         {mode === "stop" ? (
           <Field label="Task outcome" htmlFor="outcome"><Select id="outcome" value={outcome} onChange={(e) => setOutcome(e.target.value)}>
             <option value="continue_later">Continue later</option>
+            <option value="completed">Done — mark the task completed</option>
             <option value="blocked">Blocked — needs help</option>
-            <option value="ready_for_review">Ready for review — submit evidence next</option>
+            <option value="ready_for_review">Ready for review — attach evidence next</option>
           </Select></Field>
         ) : null}
       </div>

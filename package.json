@@ -27,6 +27,7 @@
     "dev:next": "next dev"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.125.0",
     "@fontsource/cal-sans": "^5.3.0",
     "@fontsource/manrope": "^5.3.0",
     "class-variance-authority": "^0.7.1",

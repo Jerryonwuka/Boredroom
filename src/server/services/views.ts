@@ -10,13 +10,13 @@ export type TaskRow = {
   id: string; title: string; status: string; priority: string; category: string; project_id: string; project_name: string;
   assignee_membership_id: string; assignee_name: string; reviewer_membership_id: string | null; reviewer_name: string | null;
   due_at: string | null; estimate_minutes: number | null; capture_requirement: string; blocked_reason: string | null; version: number;
-  archived_at: string | null; tracked_seconds: number; updated_at: string;
+  archived_at: string | null; tracked_seconds: number; updated_at: string; created_by: string;
 };
 
 const TASK_SELECT = `
   SELECT t.id, t.title, t.status, t.priority, t.category, t.project_id, p.name AS project_name,
          t.assignee_membership_id, pa.display_name AS assignee_name, t.reviewer_membership_id, pr.display_name AS reviewer_name,
-         t.due_at, t.estimate_minutes, t.capture_requirement, t.blocked_reason, t.version, t.archived_at, t.updated_at,
+         t.due_at, t.estimate_minutes, t.capture_requirement, t.blocked_reason, t.version, t.archived_at, t.updated_at, t.created_by,
          COALESCE((SELECT SUM(EXTRACT(EPOCH FROM (COALESCE(i.ended_at, now()) - i.started_at)))::int FROM session_intervals i WHERE i.task_id = t.id AND i.confirmation_status = 'confirmed'), 0) AS tracked_seconds
   FROM tasks t
   JOIN projects p ON p.id = t.project_id
@@ -26,11 +26,12 @@ const TASK_SELECT = `
 export async function myDay(ctx: OrgContext) {
   return withUser(ctx.user.profileId, async (db) => {
     const today = todayLocal(ctx.org.timezone);
+    // Finished or removed tasks leave the plan: they show under "Done today" / "Past tasks" instead of offering Start.
     const planned = await db.query<TaskRow & { position: number }>(`${TASK_SELECT}
       JOIN daily_plan_items d ON d.task_id = t.id AND d.membership_id = $1 AND d.local_date = $2
-      WHERE t.organisation_id = $3 ORDER BY d.position`, [ctx.membership.id, today, ctx.org.id]);
+      WHERE t.organisation_id = $3 AND t.status <> 'completed' AND t.archived_at IS NULL AND p.status = 'active' ORDER BY d.position`, [ctx.membership.id, today, ctx.org.id]);
     const plannedIds = new Set(planned.map((t) => t.id));
-    const allMine = await db.query<TaskRow & { created_by: string; created_by_name: string }>(`${TASK_SELECT.replace("SELECT t.id,", "SELECT t.created_by, pc.display_name AS created_by_name, t.id,").replace("LEFT JOIN memberships mr", "JOIN memberships mc ON mc.id = t.created_by JOIN profiles pc ON pc.id = mc.user_id LEFT JOIN memberships mr")}
+    const allMine = await db.query<TaskRow & { created_by: string; created_by_name: string }>(`${TASK_SELECT.replace("SELECT t.id,", "SELECT pc.display_name AS created_by_name, t.id,").replace("LEFT JOIN memberships mr", "JOIN memberships mc ON mc.id = t.created_by JOIN profiles pc ON pc.id = mc.user_id LEFT JOIN memberships mr")}
       WHERE t.organisation_id = $1 AND t.assignee_membership_id = $2 AND t.archived_at IS NULL AND t.status <> 'completed' AND p.status = 'active'
       ORDER BY CASE t.status WHEN 'blocked' THEN 0 WHEN 'in_progress' THEN 1 WHEN 'in_review' THEN 3 ELSE 2 END, t.due_at NULLS LAST, t.priority DESC, t.created_at DESC`, [ctx.org.id, ctx.membership.id]);
     const assigned = allMine.filter((t) => !plannedIds.has(t.id));
@@ -44,8 +45,17 @@ export async function myDay(ctx: OrgContext) {
       [ctx.membership.id, dayStartIso(today, ctx.org.timezone)]);
     const projects = await db.query<{ id: string; name: string }>(`SELECT p.id, p.name FROM projects p WHERE p.organisation_id = $1 AND p.status = 'active' AND (app_has_role($1, 'owner', 'hr', 'manager') OR EXISTS (SELECT 1 FROM project_members pm WHERE pm.project_id = p.id AND pm.membership_id = $2)) ORDER BY p.name`, [ctx.org.id, ctx.membership.id]);
     const members = await db.query<{ id: string; display_name: string }>(`SELECT m.id, pr.display_name FROM memberships m JOIN profiles pr ON pr.id = m.user_id WHERE m.organisation_id = $1 AND m.status = 'active' ORDER BY pr.display_name`, [ctx.org.id]);
-    const doneToday = await db.query<{ id: string; title: string; completed_at: string }>(`SELECT id, title, completed_at FROM tasks WHERE assignee_membership_id = $1 AND status = 'completed' AND completed_at >= $2::timestamptz ORDER BY completed_at DESC LIMIT 10`, [ctx.membership.id, dayStartIso(today, ctx.org.timezone)]);
-    return { today, planned, assigned, ownTodos, fromLeads, overdue, report, todaySeconds: todaySeconds.n, projects, members, doneToday };
+    const doneToday = await db.query<{ id: string; title: string; completed_at: string }>(`SELECT id, title, completed_at FROM tasks WHERE assignee_membership_id = $1 AND status = 'completed' AND cleared_at IS NULL AND completed_at >= $2::timestamptz ORDER BY completed_at DESC LIMIT 10`, [ctx.membership.id, dayStartIso(today, ctx.org.timezone)]);
+    // Past tasks: completed (before today) or removed, until the member clears them.
+    const pastTasks = await db.query<{ id: string; title: string; status: string; completed_at: string | null; archived_at: string | null; tracked_seconds: number; created_by_name: string; self_made: boolean }>(
+      `SELECT t.id, t.title, t.status, t.completed_at, t.archived_at, pc.display_name AS created_by_name, (t.created_by = t.assignee_membership_id) AS self_made,
+              COALESCE((SELECT SUM(EXTRACT(EPOCH FROM (COALESCE(i.ended_at, now()) - i.started_at)))::int FROM session_intervals i WHERE i.task_id = t.id AND i.confirmation_status = 'confirmed'), 0) AS tracked_seconds
+       FROM tasks t JOIN memberships mc ON mc.id = t.created_by JOIN profiles pc ON pc.id = mc.user_id
+       WHERE t.organisation_id = $1 AND t.assignee_membership_id = $2 AND t.cleared_at IS NULL
+         AND ((t.status = 'completed' AND t.completed_at < $3::timestamptz) OR (t.archived_at IS NOT NULL AND t.status <> 'completed'))
+       ORDER BY COALESCE(t.completed_at, t.archived_at) DESC LIMIT 50`, [ctx.org.id, ctx.membership.id, dayStartIso(today, ctx.org.timezone)]);
+    const policyAcknowledged = ctx.org.current_policy_id ? !!(await db.maybeOne(`SELECT 1 FROM policy_acknowledgements WHERE membership_id = $1 AND policy_id = $2`, [ctx.membership.id, ctx.org.current_policy_id])) : true;
+    return { today, planned, assigned, ownTodos, fromLeads, overdue, report, todaySeconds: todaySeconds.n, projects, members, doneToday, pastTasks, policyAcknowledged };
   });
 }
 
@@ -76,7 +86,7 @@ export async function projectDetail(ctx: OrgContext, projectId: string) {
 export async function taskDetail(ctx: OrgContext, taskId: string) {
   return withUser(ctx.user.profileId, async (db) => {
     const task = await db.maybeOne<TaskRow & { expected_output: string; created_by: string; created_by_name: string; completed_at: string | null; created_at: string }>(
-      `${TASK_SELECT.replace("SELECT t.id,", "SELECT t.expected_output, t.created_by, pc.display_name AS created_by_name, t.completed_at, t.created_at, t.id,").replace("LEFT JOIN memberships mr", "JOIN memberships mc ON mc.id = t.created_by JOIN profiles pc ON pc.id = mc.user_id LEFT JOIN memberships mr")} WHERE t.id = $1 AND t.organisation_id = $2`, [taskId, ctx.org.id]);
+      `${TASK_SELECT.replace("SELECT t.id,", "SELECT t.expected_output, pc.display_name AS created_by_name, t.completed_at, t.created_at, t.id,").replace("LEFT JOIN memberships mr", "JOIN memberships mc ON mc.id = t.created_by JOIN profiles pc ON pc.id = mc.user_id LEFT JOIN memberships mr")} WHERE t.id = $1 AND t.organisation_id = $2`, [taskId, ctx.org.id]);
     if (!task) return null;
     const sessions = await db.query<{ id: string; state: string; started_at: string; ended_at: string | null; stop_outcome: string | null; stop_note: string | null; member_name: string; confirmed_seconds: number; uncertain_seconds: number }>(
       `SELECT s.id, s.state, s.started_at, s.ended_at, s.stop_outcome, s.stop_note, pr.display_name AS member_name,

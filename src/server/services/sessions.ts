@@ -3,6 +3,8 @@ import { withUser, withWorker, isUniqueViolation, isExclusionViolation, type Db 
 import { conflict, forbidden, invalid, notFound } from "@/server/lib/errors";
 import { audit, notify, managersOf } from "@/server/services/common";
 import type { OrgContext } from "@/server/lib/api";
+import { completeOwnTaskInternal, type TaskStatus } from "@/server/services/tasks";
+import { submitInternal } from "@/server/services/evidence";
 
 export type SessionState = "running" | "paused" | "interrupted" | "stopped";
 
@@ -38,7 +40,7 @@ export const startSchema = z.object({
 export const versionSchema = z.object({ expectedVersion: z.number().int().positive() });
 export const stopSchema = versionSchema.extend({
   note: z.string().trim().max(2000).default(""),
-  outcome: z.enum(["continue_later", "blocked", "ready_for_review"]).default("continue_later"),
+  outcome: z.enum(["continue_later", "blocked", "ready_for_review", "completed"]).default("continue_later"),
 });
 export const switchSchema = versionSchema.extend({
   nextTaskId: z.string().uuid(),
@@ -118,6 +120,10 @@ async function startInternal(db: Db, ctx: OrgContext, input: StartOpts, requestI
   const captureRequired = t.capture_requirement === "required" && timings.recordingMode === "required_on_designated_tasks";
   let captureMode = input.captureMode;
   if (timings.recordingMode === "disabled") captureMode = "none";
+  const acknowledged = ctx.org.current_policy_id ? !!(await db.maybeOne(`SELECT 1 FROM policy_acknowledgements WHERE membership_id = $1 AND policy_id = $2`, [ctx.membership.id, ctx.org.current_policy_id])) : true;
+  // Recording allowed by policy but not demanded for this task: the session may record (the member presses
+  // "Record screen" when they want to); nothing starts without their explicit action.
+  if (!captureRequired && captureMode === "none" && timings.recordingMode !== "disabled" && acknowledged) captureMode = "optional";
   if (captureRequired) {
     if (captureMode === "exception") {
       const ex = input.captureExceptionId ? await db.maybeOne(`SELECT 1 FROM capture_exceptions WHERE id = $1 AND membership_id = $2 AND organisation_id = $3`, [input.captureExceptionId, ctx.membership.id, ctx.org.id]) : null;
@@ -126,10 +132,7 @@ async function startInternal(db: Db, ctx: OrgContext, input: StartOpts, requestI
       throw conflict("CAPTURE_REQUIRED", "This task requires screen capture. Start recording, or request an exception.", { taskId: t.id });
     }
   }
-  if (captureMode === "required" || captureMode === "optional") {
-    const ack = ctx.org.current_policy_id ? await db.maybeOne(`SELECT 1 FROM policy_acknowledgements WHERE membership_id = $1 AND policy_id = $2`, [ctx.membership.id, ctx.org.current_policy_id]) : true;
-    if (!ack) throw conflict("POLICY_NOT_ACKNOWLEDGED", "Acknowledge the current monitoring policy before starting a recorded session.");
-  }
+  if ((captureMode === "required" || captureMode === "optional") && !acknowledged) throw conflict("POLICY_NOT_ACKNOWLEDGED", "Acknowledge the current monitoring policy before starting a recorded session.");
 
   let s: { id: string; started_at: string };
   try {
@@ -250,13 +253,18 @@ async function recordUncertainGap(db: Db, ctx: OrgContext, s: { id: string; task
     [ctx.org.id, s.id, ctx.user.profileId, JSON.stringify({ uncertainFrom: gap?.started_at ?? null })]);
 }
 
-async function stopInternal(db: Db, ctx: OrgContext, s: { id: string; state: SessionState; task_id: string; last_heartbeat_at: string }, input: { note: string; outcome: "continue_later" | "blocked" | "ready_for_review" }, requestId?: string) {
+async function stopInternal(db: Db, ctx: OrgContext, s: { id: string; state: SessionState; task_id: string; last_heartbeat_at: string }, input: { note: string; outcome: "continue_later" | "blocked" | "ready_for_review" | "completed" }, requestId?: string) {
   if (s.state === "interrupted") await recordUncertainGap(db, ctx, s);
   await closeOpenInterval(db, s.id, "now");
   await db.query(`UPDATE work_sessions SET state = 'stopped', ended_at = now(), stop_note = $2, stop_outcome = $3, version = version + 1 WHERE id = $1`, [s.id, input.note, input.outcome]);
   await db.query(`INSERT INTO session_events(organisation_id, session_id, actor_user_id, event_type, request_id, metadata) VALUES ($1, $2, $3, 'stopped', $4, $5)`,
     [ctx.org.id, s.id, ctx.user.profileId, requestId ?? null, JSON.stringify({ outcome: input.outcome })]);
-  const t = await db.one<{ status: string; title: string; version: number }>(`SELECT status, title, version FROM tasks WHERE id = $1 FOR UPDATE`, [s.task_id]);
+  const t = await db.one<{ status: TaskStatus; title: string; version: number; assignee_membership_id: string; created_by: string; reviewer_membership_id: string | null; archived_at: string | null }>(`SELECT status, title, version, assignee_membership_id, created_by, reviewer_membership_id, archived_at FROM tasks WHERE id = $1 FOR UPDATE`, [s.task_id]);
+  if (input.outcome === "completed") {
+    // "Done" at the end of a session: own to-dos complete on the spot; work handed out by someone else goes to them for a check.
+    if (t.created_by === ctx.membership.id) await completeOwnTaskInternal(db, ctx, { id: s.task_id, ...t }, null, requestId);
+    else await submitInternal(db, ctx, s.task_id, { note: input.note || "Marked done at the end of a work session", links: [], fileIds: [] }, requestId);
+  }
   if (input.outcome === "blocked" && t.status !== "blocked") {
     await db.query(`UPDATE tasks SET status = 'blocked', blocked_reason = $2, version = version + 1 WHERE id = $1`, [s.task_id, input.note || "Blocked at end of session"]);
     await db.query(`INSERT INTO task_status_history(organisation_id, task_id, actor_membership_id, from_status, to_status, reason) VALUES ($1, $2, $3, $4, 'blocked', $5)`, [ctx.org.id, s.task_id, ctx.membership.id, t.status, input.note]);
