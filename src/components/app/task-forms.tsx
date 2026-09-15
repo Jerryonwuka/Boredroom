@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { ConfirmButton } from "@/components/ui/confirm";
 import { Input, Textarea, Select, Field } from "@/components/ui/input";
 import { Alert } from "@/components/ui/states";
 import { Badge } from "@/components/ui/badge";
@@ -36,7 +37,7 @@ export function TaskActions({ orgSlug, task, isAssignee, canManage, members, rev
         {isAssignee && task.status === "in_progress" ? <Button size="sm" variant="subtle" onClick={() => setMode("block")}>Mark blocked</Button> : null}
         {isAssignee && task.status === "blocked" ? <Button size="sm" variant="subtle" disabled={pending} onClick={() => patch({ status: "in_progress" })}>Unblock</Button> : null}
         {(isAssignee || canManage) && task.status !== "completed" ? <Button size="sm" variant="ghost" onClick={() => setMode("edit")}>Edit</Button> : null}
-        {canManage && task.status !== "in_progress" ? <Button size="sm" variant="ghost" disabled={pending} onClick={() => { if (confirm("Archive this task? History is kept; no new sessions can start.")) patch({ archive: true }); }}>Archive</Button> : null}
+        {canManage && task.status !== "in_progress" ? <ConfirmButton size="sm" variant="ghost" disabled={pending} title="Archive this task?" description="History is kept and nothing is deleted, but no new work sessions can start on it." confirmLabel="Archive task" onConfirm={() => patch({ archive: true })}>Archive</ConfirmButton> : null}
       </div>
       {mode === "block" ? (
         <form className="tile grid w-80 gap-2 p-3" onSubmit={(e) => { e.preventDefault(); const f = new FormData(e.currentTarget); patch({ status: "blocked", reason: f.get("reason") }); }}>

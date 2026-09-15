@@ -29,7 +29,7 @@ export default async function TeamBoardPage({ params }: { params: Promise<{ work
         actions={isLead && (team.project_id ?? projects[0]?.id) ? <NewTaskForm orgSlug={ctx.org.slug} projectId={team.project_id ?? projects[0].id} members={memberOptions} self={ctx.membership.id} canAssignOthers requiresDueDate={false} requiresEstimate={false} /> : null} />
       <section className="mb-8">
         <h2 className="mb-3 font-display text-lg">Members ({members.length})</h2>
-        {members.length === 0 ? <EmptyState title="No members yet" description="Add staff to this team from the People page." /> : (
+        {members.length === 0 ? <EmptyState title="No members yet" description={isOrgAdmin ? "Add someone with the form below, or from the People page." : "Your organisation adds people to this team from the People page."} action={isOrgAdmin ? <Link href={`${base}/people?tab=people`} className="underline">Open People</Link> : undefined} /> : (
           <DataTable caption="Team members">
             <thead><tr><th>Person</th><th>Role in team</th><th>Now</th><th>Open</th><th>Blocked</th><th>In review</th>{isOrgAdmin ? <th></th> : null}</tr></thead>
             <tbody>{members.map((m) => (

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { ConfirmButton } from "@/components/ui/confirm";
 import { Input, Select, Field } from "@/components/ui/input";
 import { Alert } from "@/components/ui/states";
 import { Badge } from "@/components/ui/badge";
@@ -143,7 +144,7 @@ export function JoinCodePanel({ orgSlug, appOrigin, joinCode, teams }: { orgSlug
             <div className="flex flex-wrap items-center gap-3">
               <Badge tone={joinCode.join_code_enabled ? "success" : "danger"} dot>{joinCode.join_code_enabled ? "Accepting joins" : "Paused"}</Badge>
               <Button size="sm" variant="subtle" disabled={pending} onClick={() => patch({ enabled: !joinCode.join_code_enabled })}>{joinCode.join_code_enabled ? "Pause joining" : "Resume joining"}</Button>
-              <Button size="sm" variant="ghost" disabled={pending} onClick={() => { if (confirm("Generate a new code? The current code and link stop working immediately.")) patch({ rotate: true }); }}>Generate new code</Button>
+              <ConfirmButton size="sm" variant="ghost" disabled={pending} title="Generate a new join code?" description="The current code and link stop working immediately. People who already joined are not affected." confirmLabel="Generate new code" onConfirm={() => patch({ rotate: true })}>Generate new code</ConfirmButton>
             </div>
             <div className="flex flex-wrap items-end gap-3">
               <Field label="People who join become" htmlFor="jc-role"><Select id="jc-role" className="h-10 w-44 py-1 text-sm" value={joinCode.join_code_role} disabled={pending} onChange={(e) => patch({ role: e.target.value })}><option value="employee">Staff</option><option value="manager">Team lead</option></Select></Field>

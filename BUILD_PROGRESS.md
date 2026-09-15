@@ -70,6 +70,20 @@ Still not verified in this environment: a real Claude round-trip (no key availab
 
 **"The page isn't loading" on a staff sign-in (13 September 2026).** Root cause: every open live-updates stream (`/api/orgs/[org]/events`, one per open tab) borrowed a connection from the ten-connection database pool for its `LISTEN`, and in dev mode Next did not always call the stream's `cancel()` when the browser navigated away. After enough page views the pool was exhausted and every server page waited forever. Reproduced with twelve open streams (page never loaded); fixed by one shared listener connection per process (`src/server/lib/notify-bus.ts`), tearing streams down on the request's abort signal, and a pool that reports "all database connections are busy" after 10 s instead of hanging. Verified: thirty open streams, pages load in under a second, idle connections fall back to one.
 
+## Design pass from the UI Skills registry (15 September 2026)
+
+The owner asked for the skills on ui-skills.com to be applied. The site is blocked from this environment, so the registry was taken from its npm package (`ui-skills@0.2.4`) and 156 of the 181 listed skill files were downloaded from their GitHub sources (25 are 404 or off-GitHub). The ones that govern a dark SaaS tool were applied: `baseline-ui`, `interface-design`, `fixing-accessibility`, `fixing-motion-performance`, Anthropic `frontend-design`, Vercel Web Interface Guidelines, `beautiful-shadows`. Framework-specific skills (Vue, Nuxt, Three.js, SwiftUI, Remotion, React Native) do not apply.
+
+What changed (`docs/design-system.md` records the decisions; `.claude/skills/boredroom-ui/SKILL.md` makes them the rule for future UI work):
+
+- Tokens: surface elevation scale on one hue, three border strengths, four text tiers, radius scale, fixed z-index scale, motion tokens (custom ease-out, 120/180 ms), depth strategy fixed to borders + one ring (no drop shadows, no gradient wash on tiles). Sidebar shares the canvas colour.
+- Typography: 1.25 type scale, `text-wrap: balance` on headings and `pretty` on body, tabular numbers everywhere numbers change, quieter table headers (no all-caps), calmer overline tracking.
+- Components: pill buttons get press feedback and named transitions; icon buttons are 40×40; inputs darker than surroundings with hover; `Field` links errors to controls (`aria-describedby`, `aria-invalid`); toggles carry `aria-expanded`/`aria-controls`; the one live row uses an accent edge (`tile-active`) instead of a glow.
+- New `ConfirmDialog`/`ConfirmButton` on the native `<dialog>` replaces every `window.confirm` (archive task, publish policy, turn recording off, disconnect AI, rotate join code): focus trapped, Escape closes, specific action labels.
+- Loading skeleton for workspace pages; `h-dvh` instead of `h-screen`; the recording indicator respects safe-area insets; `prefers-reduced-motion` handled globally; empty states name a next action.
+
+Verified: lint, typecheck, 47 Vitest tests, 3 Playwright tests; screenshots at 1360px and 400px widths.
+
 ## Milestone status
 
 | Milestone | Status | Evidence |

@@ -50,8 +50,8 @@ export function navItems(ctx: OrgContext, counts: NavCounts, teams: { id: string
 
 export function AppShell({ ctx, counts, teams = [], children }: { ctx: OrgContext; counts: NavCounts; teams?: { id: string; name: string; is_manager: boolean }[]; children: React.ReactNode }) {
   return (
-    <div className="flex min-h-screen">
-      <aside className="hidden w-64 shrink-0 flex-col border-r border-border bg-bg-elevated/60 px-4 py-5 md:flex">
+    <div className="flex min-h-dvh">
+      <aside className="hidden w-64 shrink-0 flex-col border-r border-border px-4 py-5 md:flex">
         <div className="mb-6 flex items-center justify-between px-2">
           <Logo href={`/app/${ctx.org.slug}`} />
         </div>
@@ -74,7 +74,7 @@ export function AppShell({ ctx, counts, teams = [], children }: { ctx: OrgContex
           <Logo href={`/app/${ctx.org.slug}`} />
           <details className="relative">
             <summary className="cursor-pointer rounded-full border border-border px-3 py-1.5 text-sm">Menu</summary>
-            <div className="absolute right-0 z-40 mt-2 w-64 rounded-xl border border-border bg-bg-elevated p-3 shadow-xl">
+            <div className="absolute right-0 z-[var(--z-dropdown)] mt-2 w-64 rounded-[var(--radius)] border border-border-strong bg-popover p-3">
               <WorkspaceNav items={navItems(ctx, counts, teams)} />
               <div className="mt-3 border-t border-border pt-3"><Link href="/app" className="text-sm text-fg-muted">Switch workspace</Link></div>
               <div className="mt-2"><SignOutButton /></div>

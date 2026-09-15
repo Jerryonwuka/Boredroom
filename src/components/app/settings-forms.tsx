@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { ConfirmButton, ConfirmDialog } from "@/components/ui/confirm";
 import { Input, Textarea, Select, Field } from "@/components/ui/input";
 import { Alert } from "@/components/ui/states";
 import { Badge } from "@/components/ui/badge";
@@ -57,8 +58,11 @@ export function ScheduleForm({ orgSlug, schedule }: { orgSlug: string; schedule:
 
 export function PolicyForm({ orgSlug, policy }: { orgSlug: string; policy: { recording_mode: string; retention_days: number; notice_text: string; reminder_minutes_before_end: number } | null }) {
   const { pending, error, ok, fieldErrors, submit } = useForm();
+  const [draft, setDraft] = useState<FormData | null>(null);
+  const publish = (f: FormData) => submit(() => api(`/api/orgs/${orgSlug}/settings/policy`, { method: "POST", body: { recordingMode: f.get("recordingMode"), retentionDays: Number(f.get("retentionDays")), noticeText: f.get("noticeText"), reminderMinutesBeforeEnd: Number(f.get("reminder")) } }), "New policy version published.");
   return (
-    <form className="grid gap-3" onSubmit={(e) => { e.preventDefault(); const f = new FormData(e.currentTarget); if (!confirm("Publish a new policy version? Every member must acknowledge it before recorded work.")) return; submit(() => api(`/api/orgs/${orgSlug}/settings/policy`, { method: "POST", body: { recordingMode: f.get("recordingMode"), retentionDays: Number(f.get("retentionDays")), noticeText: f.get("noticeText"), reminderMinutesBeforeEnd: Number(f.get("reminder")) } }), "New policy version published."); }}>
+    <form className="grid gap-3" onSubmit={(e) => { e.preventDefault(); setDraft(new FormData(e.currentTarget)); }}>
+      <ConfirmDialog open={!!draft} onClose={() => setDraft(null)} tone="primary" title="Publish a new policy version?" description="Every member sees the new notice once and acknowledges it before their next recorded session. Nothing else changes for them." confirmLabel="Publish version" onConfirm={async () => { if (draft) await publish(draft); }} />
       {error ? <Alert tone="danger">{error}</Alert> : null}{ok ? <Alert tone="success">{ok}</Alert> : null}
       <div className="grid gap-3 md:grid-cols-3">
         <Field label="Recording" htmlFor="p-mode"><Select id="p-mode" name="recordingMode" defaultValue={policy?.recording_mode ?? "disabled"}><option value="disabled">Off — nobody can record</option><option value="optional">On — staff and team leads get a “Record screen” button while a timer runs (their choice)</option><option value="required_on_designated_tasks">On, and required on tasks marked “recording required”</option></Select></Field>
@@ -104,7 +108,7 @@ export function RecordingSwitch({ orgSlug, mode }: { orgSlug: string; mode: stri
     <div className="grid gap-2">
       {error ? <Alert tone="danger">{error}</Alert> : null}{ok ? <Alert tone="success">{ok}</Alert> : null}
       <div className="flex flex-wrap gap-2">
-        {mode === "disabled" ? <Button disabled={pending} onClick={() => set("optional")}>{pending ? "Switching…" : "Turn screen recording on"}</Button> : <Button variant="outline" disabled={pending} onClick={() => { if (confirm("Turn screen recording off for everyone?")) set("disabled"); }}>{pending ? "Switching…" : "Turn recording off"}</Button>}
+        {mode === "disabled" ? <Button disabled={pending} onClick={() => set("optional")}>{pending ? "Switching…" : "Turn screen recording on"}</Button> : <ConfirmButton variant="outline" disabled={pending} title="Turn screen recording off for everyone?" description="Nobody can start a recording until it is turned on again. Existing recordings are kept until they expire." confirmLabel="Turn recording off" onConfirm={() => set("disabled")}>{pending ? "Switching…" : "Turn recording off"}</ConfirmButton>}
         {mode === "optional" ? <Button variant="ghost" disabled={pending} onClick={() => set("required_on_designated_tasks")}>Also allow “recording required” tasks</Button> : null}
         {mode === "required_on_designated_tasks" ? <Button variant="ghost" disabled={pending} onClick={() => set("optional")}>Back to each person&apos;s choice</Button> : null}
       </div>
@@ -134,7 +138,7 @@ export function AssistantConnectionForm({ orgSlug, status }: { orgSlug: string; 
       ) : (
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" onClick={() => setOpen(true)}>Replace key</Button>
-          <Button variant="ghost" disabled={pending} onClick={() => { if (confirm("Disconnect the AI assistant? The built-in parser will be used until a key is added again.")) submit(() => api(`/api/orgs/${orgSlug}/settings/assistant`, { method: "DELETE" }), "Disconnected."); }}>Disconnect</Button>
+          <ConfirmButton variant="ghost" disabled={pending} title="Disconnect the AI assistant?" description="The stored key is deleted. The built-in parser answers until a key is added again." confirmLabel="Disconnect" onConfirm={() => submit(() => api(`/api/orgs/${orgSlug}/settings/assistant`, { method: "DELETE" }), "Disconnected.")}>Disconnect</ConfirmButton>
         </div>
       )}
       <p className="text-xs text-fg-subtle">Each suggestion is one request to Anthropic, billed to this key. Notes are sent to Anthropic to be understood; nothing else from the workspace is.</p>

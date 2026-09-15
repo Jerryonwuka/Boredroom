@@ -1,7 +1,7 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
 
-const base = "w-full rounded-xl border border-border-strong bg-inset px-3.5 py-2.5 text-base text-fg placeholder:text-fg-subtle focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-1 disabled:opacity-50 aria-[invalid=true]:border-danger";
+const base = "w-full rounded-[var(--radius-sm)] border border-border-strong bg-inset px-3.5 py-2.5 text-base text-fg placeholder:text-fg-subtle transition-[border-color] duration-[var(--duration-fast)] hover:border-fg-subtle focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-1 disabled:opacity-50 aria-[invalid=true]:border-danger";
 
 export const Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement>>(function Input({ className, ...props }, ref) {
   return <input ref={ref} className={cn(base, className)} {...props} />;
@@ -24,13 +24,21 @@ export function Label({ className, children, hint, ...props }: React.LabelHTMLAt
   );
 }
 
+/**
+ * Label + control + inline error. The error is announced and linked to the control (aria-describedby, aria-invalid)
+ * so screen readers hear it next to the field, not somewhere else on the page.
+ */
 export function Field({ label, htmlFor, error, hint, children }: { label: string; htmlFor: string; error?: string | string[]; hint?: string; children: React.ReactNode }) {
   const msg = Array.isArray(error) ? error[0] : error;
+  const errorId = `${htmlFor}-error`;
+  const control = React.isValidElement(children)
+    ? React.cloneElement(children as React.ReactElement<Record<string, unknown>>, msg ? { "aria-invalid": true, "aria-describedby": errorId } : {})
+    : children;
   return (
     <div className="space-y-1">
       <Label htmlFor={htmlFor} hint={hint}>{label}</Label>
-      {children}
-      {msg ? <p id={`${htmlFor}-error`} role="alert" className="text-sm text-danger">{msg}</p> : null}
+      {control}
+      {msg ? <p id={errorId} role="alert" className="text-sm text-danger">{msg}</p> : null}
     </div>
   );
 }

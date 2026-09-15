@@ -75,14 +75,14 @@ function Board({ orgSlug, today, initialSession, planned, ownTodos, fromLeads, d
         {notice ? <Alert tone="success">{notice}</Alert> : null}
 
         <QuickTodo orgSlug={orgSlug} assignable={assignable} onDone={(msg) => { setNotice(msg ?? null); router.refresh(); }} onAssistant={() => setShowAssistant((v) => !v)} assistantOpen={showAssistant} />
-        {showAssistant ? <AssistantPanel orgSlug={orgSlug} people={assignable} configured={assistantConfigured} onClose={() => setShowAssistant(false)} onCreated={(n) => { setNotice(`${n} to-do${n === 1 ? "" : "s"} added.`); router.refresh(); }} /> : null}
+        {showAssistant ? <div id="assistant-panel" className="rise-in"><AssistantPanel orgSlug={orgSlug} people={assignable} configured={assistantConfigured} onClose={() => setShowAssistant(false)} onCreated={(n) => { setNotice(`${n} to-do${n === 1 ? "" : "s"} added.`); router.refresh(); }} /></div> : null}
 
         {planned.length ? (
           <section aria-labelledby="plan-heading" className="space-y-3">
             <h2 id="plan-heading" className="text-lg font-display">Today&apos;s plan</h2>
             <ol className="space-y-2">
               {planned.map((t, i) => (
-                <li key={t.id} className={`tile flex items-center gap-3 px-4 py-3 ${session?.taskId === t.id ? "tile-glow" : ""}`}>
+                <li key={t.id} className={`tile flex items-center gap-3 px-4 py-3 ${session?.taskId === t.id ? "tile-active" : ""}`}>
                   <GripVertical className="h-4 w-4 shrink-0 text-fg-subtle" aria-hidden />
                   <div className="min-w-0 flex-1">
                     <Link href={`/app/${orgSlug}/tasks/${t.id}`} className="block truncate font-semibold hover:underline">{t.title}</Link>
@@ -105,7 +105,7 @@ function Board({ orgSlug, today, initialSession, planned, ownTodos, fromLeads, d
           {fromLeads.length === 0 ? <p className="tile p-4 text-sm text-fg-muted">Nothing assigned to you right now. Tasks your team lead gives you appear here, and you get a notification.</p> : (
             <ul className="space-y-2">
               {fromLeads.map((t) => (
-                <li key={t.id} className={`tile flex items-center gap-3 px-4 py-3 ${session?.taskId === t.id ? "tile-glow" : ""}`}>
+                <li key={t.id} className={`tile flex items-center gap-3 px-4 py-3 ${session?.taskId === t.id ? "tile-active" : ""}`}>
                   <div className="min-w-0 flex-1">
                     <Link href={`/app/${orgSlug}/tasks/${t.id}`} className="block truncate font-semibold hover:underline">{t.title}</Link>
                     <TaskMeta t={t} by={t.created_by_name} />
@@ -123,13 +123,13 @@ function Board({ orgSlug, today, initialSession, planned, ownTodos, fromLeads, d
         <section aria-labelledby="todo-heading" className="space-y-3">
           <div className="flex items-center justify-between">
             <h2 id="todo-heading" className="text-lg font-display">Your to-dos</h2>
-            <Button size="sm" variant="ghost" onClick={() => setShowCreate((v) => !v)}><Plus className="h-4 w-4" aria-hidden />{showCreate ? "Hide full form" : "Full task form"}</Button>
+            <Button size="sm" variant="ghost" aria-expanded={showCreate} aria-controls="full-task-form" onClick={() => setShowCreate((v) => !v)}><Plus className="h-4 w-4" aria-hidden />{showCreate ? "Hide full form" : "Full task form"}</Button>
           </div>
-          {showCreate ? <CreateTaskForm orgSlug={orgSlug} projects={projects} members={members} onDone={() => { setShowCreate(false); router.refresh(); }} /> : null}
+          {showCreate ? <div id="full-task-form" className="rise-in"><CreateTaskForm orgSlug={orgSlug} projects={projects} members={members} onDone={() => { setShowCreate(false); router.refresh(); }} /></div> : null}
           {ownTodos.length === 0 ? <p className="tile p-4 text-sm text-fg-muted">{planned.length ? "Everything you added is in today's plan above." : "Type a to-do above and press Enter. Then press Start when you begin, and Done when you finish."}</p> : (
             <ul className="space-y-2">
               {ownTodos.map((t) => (
-                <li key={t.id} className={`tile flex items-center gap-3 px-4 py-3 ${session?.taskId === t.id ? "tile-glow" : ""}`}>
+                <li key={t.id} className={`tile flex items-center gap-3 px-4 py-3 ${session?.taskId === t.id ? "tile-active" : ""}`}>
                   <div className="min-w-0 flex-1">
                     <Link href={`/app/${orgSlug}/tasks/${t.id}`} className="block truncate font-semibold hover:underline">{t.title}</Link>
                     <TaskMeta t={t} />
@@ -311,11 +311,11 @@ function QuickTodo({ orgSlug, assignable, onDone, onAssistant, assistantOpen }: 
           </Select>
         ) : null}
         <Button type="submit" disabled={pending || !title.trim()}><Plus className="h-4 w-4" aria-hidden />{pending ? "Adding…" : person ? "Hand out" : "Add to-do"}</Button>
-        <Button type="button" variant="ghost" size="sm" onClick={() => setDetails((v) => !v)}>{details ? "Hide details" : "Details"}</Button>
-        <Button type="button" variant={assistantOpen ? "subtle" : "ghost"} size="sm" onClick={onAssistant}><Sparkles className="h-4 w-4 text-accent" aria-hidden />Assistant</Button>
+        <Button type="button" variant="ghost" size="sm" aria-expanded={details} aria-controls="quick-details" onClick={() => setDetails((v) => !v)}>{details ? "Hide details" : "Details"}</Button>
+        <Button type="button" variant={assistantOpen ? "subtle" : "ghost"} size="sm" aria-expanded={assistantOpen} aria-controls="assistant-panel" onClick={onAssistant}><Sparkles className="h-4 w-4 text-accent" aria-hidden />Assistant</Button>
       </div>
       {details ? (
-        <div className="grid gap-2 md:grid-cols-[1fr_auto]">
+        <div id="quick-details" className="rise-in grid gap-2 md:grid-cols-[1fr_auto]">
           <Field label="Description" htmlFor="quick-desc" hint="optional" error={fieldErrors.description}><Textarea id="quick-desc" value={description} onChange={(e) => setDescription(e.target.value)} rows={2} maxLength={4000} placeholder="What does done look like? Any links or context." /></Field>
           <Field label="Deadline" htmlFor="quick-due" hint="optional" error={fieldErrors.dueAt}><Input id="quick-due" type="datetime-local" value={dueAt} onChange={(e) => setDueAt(e.target.value)} className="w-56" /></Field>
         </div>

@@ -19,7 +19,7 @@ export function CardHeader({ title, description, action, className }: { title: R
 }
 
 export function Overline({ children, className }: { children: React.ReactNode; className?: string }) {
-  return <p className={cn("text-[12px] font-semibold uppercase tracking-[0.3em] text-accent/70", className)}>{children}</p>;
+  return <p className={cn("text-[12px] font-semibold uppercase tracking-[0.18em] text-accent/80", className)}>{children}</p>;
 }
 
 export function PageHeader({ overline, title, description, actions, back }: { overline?: React.ReactNode; title: React.ReactNode; description?: React.ReactNode; actions?: React.ReactNode; back?: { href: string; label: string } }) {
@@ -28,8 +28,8 @@ export function PageHeader({ overline, title, description, actions, back }: { ov
       <div>
         {back ? <BackLink href={back.href} label={back.label} /> : null}
         {overline ? <Overline className="mb-2">{overline}</Overline> : null}
-        <h1 className="text-3xl md:text-4xl font-display text-fg">{title}</h1>
-        {description ? <p className="mt-2 max-w-2xl text-fg-muted">{description}</p> : null}
+        <h1 className="text-balance text-3xl md:text-4xl font-display text-fg">{title}</h1>
+        {description ? <p className="mt-2 max-w-2xl text-pretty text-fg-muted">{description}</p> : null}
       </div>
       {actions ? <div className="flex flex-wrap gap-2">{actions}</div> : null}
     </div>

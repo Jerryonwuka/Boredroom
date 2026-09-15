@@ -216,7 +216,7 @@ function RecordingIndicator() {
   if (!c || c.state.status === "idle") return null;
   const mb = (c.state.pendingBytes / 1048576).toFixed(1);
   return (
-    <div role="status" aria-live="polite" className="fixed bottom-4 right-4 z-50 flex max-w-sm items-center gap-3 rounded-full border border-danger/50 bg-bg-elevated px-4 py-2 shadow-xl">
+    <div role="status" aria-live="polite" className="fixed bottom-[max(1rem,env(safe-area-inset-bottom))] right-[max(1rem,env(safe-area-inset-right))] z-[var(--z-toast)] flex max-w-sm items-center gap-3 rounded-full border border-danger/50 bg-popover px-4 py-2 shadow-[var(--ring-lift)]">
       {c.state.status === "recording" ? <Circle className="rec-dot h-3 w-3 fill-danger text-danger" aria-hidden /> : <AlertTriangle className="h-4 w-4 text-warning" aria-hidden />}
       <div className="text-sm">
         <p className="font-semibold">{c.state.status === "recording" ? "Recording screen" : c.state.status === "uploading" ? "Uploading recording" : c.state.status === "requesting" ? "Choose what to share" : "Capture problem"}</p>
@@ -281,7 +281,7 @@ function ExceptionDialog({ orgSlug, task, reason, onResolve, onRetry }: { orgSlu
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   return (
-    <div role="dialog" aria-modal="true" aria-labelledby="cex-title" className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+    <div role="dialog" aria-modal="true" aria-labelledby="cex-title" className="fixed inset-0 z-[var(--z-dialog)] flex items-center justify-center bg-black/70 p-4 overscroll-contain">
       <form className="tile w-full max-w-lg p-6" onSubmit={async (e) => {
         e.preventDefault(); setPending(true); setError(null);
         const f = new FormData(e.currentTarget);
