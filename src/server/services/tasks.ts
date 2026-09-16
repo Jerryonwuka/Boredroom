@@ -315,9 +315,18 @@ export async function completeOwnTaskInternal(db: Db, ctx: OrgContext, t: Comple
 export const completeSchema = z.object({ note: z.string().trim().max(2000).default("") });
 
 /**
- * "Done" from My Day. A to-do the member wrote for themselves is completed on the spot.
- * A task handed out by a team lead (or anyone else) is submitted for that person's check instead,
- * so leads still see finished work before it counts as done.
+ * Who checks a finished task: its reviewer, else the member's team lead (or an organisation account).
+ * Null when nobody but the member exists, in which case Done completes the task directly.
+ */
+export async function checkerFor(db: Db, ctx: OrgContext, t: { reviewer_membership_id: string | null }): Promise<string | null> {
+  const r = t.reviewer_membership_id ?? (await defaultReviewerFor(db, ctx.org.id, ctx.membership.id));
+  return r && r !== ctx.membership.id ? r : null;
+}
+
+/**
+ * "Done" from My Day (owner decision, round 4): finished work goes to the person who checks it (the task's reviewer,
+ * else the team lead) and shows as "Sent for check" until they approve; then it is Completed. Only when nobody can
+ * check it (a member with no lead and no organisation account) is the task completed on the spot.
  */
 export async function completeTask(ctx: OrgContext, taskId: string, input: z.infer<typeof completeSchema>, requestId?: string): Promise<{ id: string; version: number; completed: boolean }> {
   const decision = await withUser(ctx.user.profileId, async (db) => {
@@ -325,8 +334,8 @@ export async function completeTask(ctx: OrgContext, taskId: string, input: z.inf
     if (!visible) throw notFound("Task not found.");
     if (visible.assignee_membership_id !== ctx.membership.id) throw forbidden("Only the person the task is assigned to can mark it done.");
     const t = await db.one<CompletableTask>(`SELECT id, title, status, assignee_membership_id, created_by, reviewer_membership_id, archived_at, version FROM tasks WHERE id = $1 AND organisation_id = $2 FOR UPDATE`, [taskId, ctx.org.id]);
-    const selfMade = t.created_by === ctx.membership.id;
-    if (selfMade) return { kind: "completed" as const, result: await completeOwnTaskInternal(db, ctx, t, input.note || null, requestId) };
+    const checker = await checkerFor(db, ctx, t);
+    if (!checker) return { kind: "completed" as const, result: await completeOwnTaskInternal(db, ctx, t, input.note || null, requestId) };
     return { kind: "submit" as const, version: t.version };
   });
   if (decision.kind === "completed") return decision.result;

@@ -84,6 +84,16 @@ What changed (`docs/design-system.md` records the decisions; `.claude/skills/bor
 
 Verified: lint, typecheck, 47 Vitest tests, 3 Playwright tests; screenshots at 1360px and 400px widths.
 
+## Owner feedback round 4 (16 September 2026): tracking recordings, simpler staff page
+
+| Ask | Done |
+| --- | --- |
+| See every screen recording from the organisation and from each team; from a team, open a task, see who worked on it and watch the recording | New **Recordings** page (`/recordings`, in the menu for owners, HR and team leads): every recording the viewer may watch, newest first, with person, team, task, time, length, size, status and a **Watch** button (shared player, 60-second links, every play logged). Filters by team and person. Team boards show the team's latest recordings and a Recordings column on each task ("worked by" = the assignee; the task page lists every session, who ran it and its footage). The organisation dashboard has a "Recent recordings" panel. |
+| Supervisors should just be able to watch | Owner decision recorded here: team leads may watch recordings of the people on their teams and organisation accounts may watch any recording, without an explicit grant (`0014_supervisor_recording_access.sql`). Grants remain for anyone else. Playback is still logged and audited, flagged footage stays locked, and a person can always watch their own. This departs from the spec's "company role alone grants no playback"; the monitoring notice should say who can watch before a real pilot. |
+| Staff page: one simple "to-do for today" card | My Day is now one card: "Your to-dos for today". Type a to-do and press Enter (or dictate to the assistant; leads can hand one to a team member). Each row has a pencil to edit the title, due date and time and estimate. A row shows **Start** until it is finished; with recording on, Start asks "Start" or "Start and record screen". A started row shows **Done**; the running row shows Done, which stops the timer and hands the work over in one step. **Done sends the work to the person who checks it** (the task's reviewer, else the team lead, else the organisation account); the row then reads "Sent for check" with no Start, and "Completed" once approved. The separate "Today's plan / From your team lead / Your to-dos" sections, the ordering arrows and the full task form are gone from this page. |
+
+Tests: `recording.test.ts` (lead and HR play without a grant, colleague denied and logged, list visibility), `round3.test.ts` (Done sends for check; stop-with-Done). 47 Vitest tests, 3 Playwright tests.
+
 ## Milestone status
 
 | Milestone | Status | Evidence |

@@ -10,7 +10,10 @@ test("A24: employee plans, starts, pauses, stops and submits; manager reviews; r
   await expect(page.getByRole("heading", { name: /Good day/ })).toBeVisible();
   // Start the homepage task from the assigned list.
   const row = page.getByRole("listitem").filter({ hasText: "Homepage design" }).first();
-  await row.getByRole("button", { name: "Start" }).click();
+  await row.getByRole("button", { name: "Start", exact: true }).click();
+  // With recording on, Start asks whether to record the screen; start without recording.
+  const plain = row.getByRole("button", { name: "Start", exact: true });
+  if (await row.getByRole("button", { name: "Start and record screen" }).isVisible().catch(() => false)) await plain.click();
   await expect(page.getByText("Running", { exact: true })).toBeVisible();
   await expect(page.getByLabel(/Elapsed/)).toBeVisible();
   // The display counter is rebuilt from server state and advances while running.

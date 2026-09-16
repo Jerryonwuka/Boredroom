@@ -28,7 +28,7 @@ export default async function MyDayPage({ params }: { params: Promise<{ workspac
   return (
     <AppShell ctx={ctx} counts={counts} teams={teams}>
       <PageHeader overline={data.today} title={<>Good day, <span className="gradient-text">{ctx.user.displayName.split(" ")[0]}</span>.</>}
-        description={<>Time worked today: <strong className="text-fg">{formatDuration(data.todaySeconds)}</strong>. {data.report ? <Link className="underline" href={`/app/${ctx.org.slug}/timesheets?date=${data.today}`}>Today&apos;s report is {data.report.status.replace("_", " ")}.</Link> : null}</>} />
+        description={<>This is your to-do list for today. Time worked so far: <strong className="text-fg">{formatDuration(data.todaySeconds)}</strong>. {data.report ? <Link className="underline" href={`/app/${ctx.org.slug}/timesheets?date=${data.today}`}>Today&apos;s report is {data.report.status.replace("_", " ")}.</Link> : null}</>} />
       <MyDayBoard
         orgSlug={ctx.org.slug}
         today={data.today}

@@ -108,6 +108,10 @@ docs                 providers, runbooks, walkthrough
 - **Organisation account**: created at `/signup?intent=org`, then `/onboarding`. Owners and HR land on the organisation dashboard, create teams, appoint team leads and share the organisation's join code or link from People. Organisation accounts supervise only: they cannot hold tasks or run timers.
 - **Staff account**: can only be created on the way into an organisation, via `/join` (code), `/join/[code]` (link) or `/invite/[token]` (email invitation). Team leads land on their team board; staff land on My Day, where a to-do is one line of text and Start is one click.
 
+## Watching recordings
+
+Owners, HR and team leads open **Recordings** in the menu: every recording they may watch, filterable by team and person, with a Watch button. Team boards list the team's latest recordings and show a recordings count on each task; opening a task shows its sessions, who ran them and the footage. Team leads see their teams' people, organisation accounts see everyone, and every play is logged.
+
 ## The to-do assistant
 
 On My Day, **Assistant** turns a typed or dictated note ("finish the logo export by Friday, then ask Ada to update the brand deck") into proposed to-dos that the person reviews and confirms.
@@ -122,7 +126,7 @@ Recording is on (each person's choice) for new organisations; owners switch it u
 
 ## Product routes
 
-`/login`, `/signup`, `/join`, `/join/[code]`, `/recover`, `/verify`, `/invite/[token]`, `/onboarding`, `/app` (workspace picker), and under `/app/[workspace]`: `dashboard`, `my-day`, `teams/[id]`, `projects`, `projects/[id]`, `tasks/[id]`, `team` (activity), `reviews`, `timesheets`, `reports` (with period presets), `people` (tabs: teams, people, invitations), `policy`, `settings`, `notifications`, `audit`. `/dev/mail` shows the local mail sink in development.
+`/login`, `/signup`, `/join`, `/join/[code]`, `/recover`, `/verify`, `/invite/[token]`, `/onboarding`, `/app` (workspace picker), and under `/app/[workspace]`: `dashboard`, `my-day`, `teams/[id]`, `recordings`, `projects`, `projects/[id]`, `tasks/[id]`, `team` (activity), `reviews`, `timesheets`, `reports` (with period presets), `people` (tabs: teams, people, invitations), `policy`, `settings`, `notifications`, `audit`. `/dev/mail` shows the local mail sink in development.
 
 ## Security notes
 

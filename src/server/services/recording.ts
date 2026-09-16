@@ -292,3 +292,38 @@ export async function listSessionRecordings(ctx: OrgContext, sessionId: string) 
   return withUser(ctx.user.profileId, (db) => db.query<{ id: string; segment_index: number; source_type: string; capture_state: string; upload_state: string; received_bytes: number; capture_started_at: string | null; capture_ended_at: string | null; expires_at: string; restricted_at: string | null; deleted_at: string | null; failure_reason: string | null }>(
     `SELECT id, segment_index, source_type, capture_state, upload_state, received_bytes, capture_started_at, capture_ended_at, expires_at, restricted_at, deleted_at, failure_reason FROM recordings WHERE session_id = $1 AND organisation_id = $2 ORDER BY segment_index`, [sessionId, ctx.org.id]));
 }
+
+export type RecordingListRow = {
+  id: string; session_id: string; task_id: string; task_title: string; membership_id: string; display_name: string; team_names: string[];
+  segment_index: number; source_type: string; source_label: string | null; upload_state: string; received_bytes: number;
+  capture_started_at: string | null; capture_ended_at: string | null; duration_seconds: number; expires_at: string; restricted_at: string | null; deleted_at: string | null;
+};
+
+/**
+ * Recordings the caller may see (RLS: own, team members for leads, everyone for owner/HR, plus explicit grants),
+ * newest first, with the task and person they belong to. Used by the Recordings page, team boards and the dashboard.
+ */
+export async function listRecordings(ctx: OrgContext, filters: { teamId?: string | null; membershipId?: string | null; taskId?: string | null; limit?: number } = {}) {
+  return withUser(ctx.user.profileId, (db) => db.query<RecordingListRow>(
+    `SELECT r.id, r.session_id, s.task_id, t.title AS task_title, r.membership_id, pr.display_name,
+            COALESCE((SELECT array_agg(tm2.name ORDER BY tm2.name) FROM team_members tm JOIN teams tm2 ON tm2.id = tm.team_id WHERE tm.membership_id = r.membership_id AND tm2.archived_at IS NULL), '{}') AS team_names,
+            r.segment_index, r.source_type, r.source_label, r.upload_state, r.received_bytes, r.capture_started_at, r.capture_ended_at,
+            COALESCE(EXTRACT(EPOCH FROM (COALESCE(r.capture_ended_at, now()) - r.capture_started_at))::int, 0) AS duration_seconds,
+            r.expires_at, r.restricted_at, r.deleted_at
+     FROM recordings r JOIN work_sessions s ON s.id = r.session_id JOIN tasks t ON t.id = s.task_id
+     JOIN memberships m ON m.id = r.membership_id JOIN profiles pr ON pr.id = m.user_id
+     WHERE r.organisation_id = $1 AND r.deleted_at IS NULL
+       AND ($2::uuid IS NULL OR EXISTS (SELECT 1 FROM team_members tm WHERE tm.team_id = $2 AND tm.membership_id = r.membership_id))
+       AND ($3::uuid IS NULL OR r.membership_id = $3)
+       AND ($4::uuid IS NULL OR s.task_id = $4)
+     ORDER BY r.capture_started_at DESC NULLS LAST, r.segment_index LIMIT $5`,
+    [ctx.org.id, filters.teamId ?? null, filters.membershipId ?? null, filters.taskId ?? null, Math.min(filters.limit ?? 100, 500)]));
+}
+
+/** Number of visible, undeleted recordings per task (for task lists). */
+export async function recordingCountsByTask(ctx: OrgContext, taskIds: string[]): Promise<Record<string, number>> {
+  if (taskIds.length === 0) return {};
+  const rows = await withUser(ctx.user.profileId, (db) => db.query<{ task_id: string; n: number }>(
+    `SELECT s.task_id, count(*)::int AS n FROM recordings r JOIN work_sessions s ON s.id = r.session_id WHERE r.organisation_id = $1 AND r.deleted_at IS NULL AND s.task_id = ANY($2::uuid[]) GROUP BY s.task_id`, [ctx.org.id, taskIds]));
+  return Object.fromEntries(rows.map((r) => [r.task_id, r.n]));
+}

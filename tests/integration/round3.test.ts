@@ -41,12 +41,15 @@ describe("team leads hand out to-dos from their own list", () => {
 });
 
 describe("Done from My Day", () => {
-  it("completes an own to-do immediately, removes it from the plan, and lists it under done/past; clearing hides it", async () => {
+  it("sends an own to-do to the team lead for a check; once approved it leaves the plan and shows under done/past; clearing hides it", async () => {
     const todo = await quickTodo(a.employeeCtx, { title: "Export final logo files" });
     let day = await myDay(a.employeeCtx);
     expect(day.planned.map((t) => t.id)).toContain(todo.id);
     const r = await completeTask(a.employeeCtx, todo.id, { note: "" });
-    expect(r.completed).toBe(true);
+    expect(r.completed).toBe(false); // Ada has a team lead (David), so Done means "sent for check"
+    expect((await myDay(a.employeeCtx)).planned.find((t) => t.id === todo.id)?.status).toBe("in_review");
+    const q = await reviewQueue(a.managerCtx);
+    await reviewSubmission(a.managerCtx, q.submissions.find((s) => s.task_id === todo.id)!.submission_id, { decision: "approved", note: "" });
     day = await myDay(a.employeeCtx);
     expect(day.planned.map((t) => t.id)).not.toContain(todo.id); // no more Start button
     expect(day.ownTodos.map((t) => t.id)).not.toContain(todo.id);
@@ -82,15 +85,13 @@ describe("Done from My Day", () => {
     expect((await myDay(a.employeeCtx)).doneToday.map((t) => t.id)).toContain(fromLead.id);
   });
 
-  it("stopping a session with outcome 'completed' finishes an own to-do in the same step", async () => {
+  it("stopping a session with outcome 'completed' sends the task for its check in the same step", async () => {
     const todo = await quickTodo(a.employeeCtx, { title: "Write the release notes" });
     const s = await startSession(a.employeeCtx, { taskId: todo.id, captureMode: "none" });
     await stopSession(a.employeeCtx, s.id, { expectedVersion: s.version, note: "All sections written.", outcome: "completed" });
-    const row = (await adminQuery<{ status: string; completed_at: string | null }>("SELECT status, completed_at FROM tasks WHERE id = $1", [todo.id]))[0];
-    expect(row.status).toBe("completed");
-    expect(row.completed_at).not.toBeNull();
+    expect((await adminQuery<{ status: string }>("SELECT status FROM tasks WHERE id = $1", [todo.id]))[0].status).toBe("in_review");
     expect((await currentSession(a.employeeCtx)).session).toBeNull();
-    await expect(startSession(a.employeeCtx, { taskId: todo.id, captureMode: "none" })).rejects.toMatchObject({ code: "TASK_COMPLETED" });
+    await expect(startSession(a.employeeCtx, { taskId: todo.id, captureMode: "none" })).rejects.toMatchObject({ code: "TASK_IN_REVIEW" });
   });
 });
 

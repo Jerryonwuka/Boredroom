@@ -6,6 +6,7 @@ import { Badge, SESSION_STATE_TONE, label } from "@/components/ui/badge";
 import { DataTable } from "@/components/ui/table";
 import { PermissionDenied, EmptyState } from "@/components/ui/states";
 import { orgDashboard } from "@/server/services/views";
+import { listRecordings } from "@/server/services/recording";
 import { formatDuration, formatDateTime, relativeTime } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -15,7 +16,7 @@ export default async function DashboardPage({ params }: { params: Promise<{ work
   const { workspace } = await params;
   const { ctx, counts, teams } = await workspacePage(workspace, `/app/${workspace}/dashboard`);
   if (!["owner", "hr"].includes(ctx.membership.role)) return <AppShell ctx={ctx} counts={counts} teams={teams}><PermissionDenied description="The organisation dashboard is for the organisation account (owners and HR). Team leads use their team board; staff use My Day." /></AppShell>;
-  const d = await orgDashboard(ctx);
+  const [d, recentRecordings] = await Promise.all([orgDashboard(ctx), listRecordings(ctx, { limit: 6 })]);
   const base = `/app/${ctx.org.slug}`;
   const now = new Date(d.serverNow).getTime();
   const tiles = [
@@ -60,10 +61,16 @@ export default async function DashboardPage({ params }: { params: Promise<{ work
             </DataTable>
           )}
         </section>
+        <div className="space-y-6">
+        <Card>
+          <div className="flex items-center justify-between gap-2"><h2 className="font-display text-lg">Recent recordings</h2><Link href={`${base}/recordings`} className="text-sm underline">All recordings</Link></div>
+          <ul className="mt-2 space-y-2 text-sm">{recentRecordings.length === 0 ? <li className="text-fg-subtle">No screen recordings yet. They appear here when someone presses Record screen.</li> : recentRecordings.map((r) => <li key={r.id}><Link href={`${base}/tasks/${r.task_id}`} className="hover:underline">{r.task_title}</Link><p className="text-xs text-fg-subtle">{r.display_name} · {r.capture_started_at ? formatDateTime(r.capture_started_at, ctx.org.timezone) : "pending"} · {formatDuration(r.duration_seconds)} · {r.upload_state}</p></li>)}</ul>
+        </Card>
         <Card>
           <h2 className="font-display text-lg">Recently completed</h2>
           <ul className="mt-2 space-y-2 text-sm">{d.recentDone.length === 0 ? <li className="text-fg-subtle">Nothing approved yet.</li> : d.recentDone.map((t) => <li key={t.id}><Link href={`${base}/tasks/${t.id}`} className="hover:underline">{t.title}</Link><p className="text-xs text-fg-subtle">{t.assignee_name} · {formatDateTime(t.completed_at, ctx.org.timezone)}</p></li>)}</ul>
         </Card>
+        </div>
       </div>
     </AppShell>
   );

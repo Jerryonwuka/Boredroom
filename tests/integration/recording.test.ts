@@ -79,17 +79,28 @@ describe("A15 / A16 / A17 / A18 upload, playback, restriction, retention", () =>
     expect(await storage().size(state.assembled_key)).toBe(3 * 1000 + WEBM_HEAD.length);
     await stopSession(a.employeeCtx, s.id, { expectedVersion: s.version, note: "", outcome: "continue_later" });
 
-    // A17: HR without a grant is denied and logged; the employee can play their own; a scoped grant succeeds with an audit event.
-    await expect(authorisePlayback(a.hrCtx, rec.id)).rejects.toMatchObject({ status: 403 });
+    // A17 (owner decision, round 4): a colleague without a grant is denied and logged; the employee plays their own;
+    // the team lead and the organisation account (HR) play without a grant; every play is logged and audited.
+    await expect(authorisePlayback(a.employee2Ctx, rec.id)).rejects.toMatchObject({ status: 403 });
     const own = await authorisePlayback(a.employeeCtx, rec.id);
     expect(own.url.startsWith("/api/media/")).toBe(true);
+    const hr = await authorisePlayback(a.hrCtx, rec.id);
+    expect(hr.expiresInSeconds).toBe(60);
     await expect(grantRecordingAccess(a.hrCtx, { granteeMembershipId: a.managerCtx.membership.id, scopeType: "team", scopeId: a.teamId })).rejects.toMatchObject({ status: 403 });
-    await grantRecordingAccess(a.ownerCtx, { granteeMembershipId: a.managerCtx.membership.id, scopeType: "team", scopeId: a.teamId });
     const mgr = await authorisePlayback(a.managerCtx, rec.id);
     expect(mgr.expiresInSeconds).toBe(60);
     const log = await adminQuery<{ action: string }>("SELECT action FROM recording_access_log WHERE recording_id = $1 ORDER BY occurred_at", [rec.id]);
-    expect(log.map((l) => l.action)).toEqual(["playback_denied", "playback_authorised", "playback_authorised"]);
-    expect(await adminQuery("SELECT 1 FROM audit_events WHERE action = 'recording.playback' AND subject_id = $1", [rec.id])).toHaveLength(2);
+    expect(log.map((l) => l.action)).toEqual(["playback_denied", "playback_authorised", "playback_authorised", "playback_authorised"]);
+    expect(await adminQuery("SELECT 1 FROM audit_events WHERE action = 'recording.playback' AND subject_id = $1", [rec.id])).toHaveLength(3);
+    // The Recordings list follows the same visibility: lead and HR see it against the task and person; a colleague does not.
+    const { listRecordings } = await import("@/server/services/recording");
+    const forLead = await listRecordings(a.managerCtx, { teamId: a.teamId });
+    expect(forLead.find((r) => r.id === rec.id)).toMatchObject({ task_id: a.taskIds.homepage, display_name: "Ada Employee", upload_state: "ready" });
+    expect((await listRecordings(a.hrCtx)).some((r) => r.id === rec.id)).toBe(true);
+    expect((await listRecordings(a.employee2Ctx)).some((r) => r.id === rec.id)).toBe(false);
+    // An explicit grant still works for anyone else (owner grants; HR cannot).
+    await grantRecordingAccess(a.ownerCtx, { granteeMembershipId: a.employee2Ctx.membership.id, scopeType: "team", scopeId: a.teamId });
+    expect((await authorisePlayback(a.employee2Ctx, rec.id)).expiresInSeconds).toBe(60);
 
     // A18: employee flags footage → manager denied immediately; privacy admin resolves with deletion → objects gone, tombstone kept.
     await flagRecording(a.employeeCtx, rec.id, "Personal banking window was visible");

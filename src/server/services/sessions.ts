@@ -3,7 +3,7 @@ import { withUser, withWorker, isUniqueViolation, isExclusionViolation, type Db 
 import { conflict, forbidden, invalid, notFound } from "@/server/lib/errors";
 import { audit, notify, managersOf } from "@/server/services/common";
 import type { OrgContext } from "@/server/lib/api";
-import { completeOwnTaskInternal, type TaskStatus } from "@/server/services/tasks";
+import { completeOwnTaskInternal, checkerFor, type TaskStatus } from "@/server/services/tasks";
 import { submitInternal } from "@/server/services/evidence";
 
 export type SessionState = "running" | "paused" | "interrupted" | "stopped";
@@ -261,9 +261,9 @@ async function stopInternal(db: Db, ctx: OrgContext, s: { id: string; state: Ses
     [ctx.org.id, s.id, ctx.user.profileId, requestId ?? null, JSON.stringify({ outcome: input.outcome })]);
   const t = await db.one<{ status: TaskStatus; title: string; version: number; assignee_membership_id: string; created_by: string; reviewer_membership_id: string | null; archived_at: string | null }>(`SELECT status, title, version, assignee_membership_id, created_by, reviewer_membership_id, archived_at FROM tasks WHERE id = $1 FOR UPDATE`, [s.task_id]);
   if (input.outcome === "completed") {
-    // "Done" at the end of a session: own to-dos complete on the spot; work handed out by someone else goes to them for a check.
-    if (t.created_by === ctx.membership.id) await completeOwnTaskInternal(db, ctx, { id: s.task_id, ...t }, null, requestId);
-    else await submitInternal(db, ctx, s.task_id, { note: input.note || "Marked done at the end of a work session", links: [], fileIds: [] }, requestId);
+    // "Done" at the end of a session: the work goes to whoever checks it (reviewer, else team lead); with nobody to check, it completes.
+    if (await checkerFor(db, ctx, t)) await submitInternal(db, ctx, s.task_id, { note: input.note || "Marked done at the end of a work session", links: [], fileIds: [] }, requestId);
+    else await completeOwnTaskInternal(db, ctx, { id: s.task_id, ...t }, null, requestId);
   }
   if (input.outcome === "blocked" && t.status !== "blocked") {
     await db.query(`UPDATE tasks SET status = 'blocked', blocked_reason = $2, version = version + 1 WHERE id = $1`, [s.task_id, input.note || "Blocked at end of session"]);

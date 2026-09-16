@@ -19,6 +19,7 @@ export function navItems(ctx: OrgContext, counts: NavCounts, teams: { id: string
     items.push({ href: `${base}/people`, label: "People and teams", icon: "people" });
     items.push({ href: `${base}/team`, label: "Activity", icon: "team" });
     items.push({ href: `${base}/reviews`, label: "Reviews", icon: "reviews", badge: counts.attention || undefined });
+    items.push({ href: `${base}/recordings`, label: "Recordings", icon: "recordings" });
     // Records (timesheets, corrections, CSV export) are reached from Reports and from any person's row; not a top-level item.
     items.push({ href: `${base}/reports`, label: "Reports", icon: "reports" });
     items.push({ href: `${base}/projects`, label: "Projects", icon: "projects" });
@@ -33,6 +34,7 @@ export function navItems(ctx: OrgContext, counts: NavCounts, teams: { id: string
     items.push({ href: `${base}/my-day`, label: "My Day", icon: "myday" });
     items.push({ href: `${base}/team`, label: "Activity", icon: "team" });
     items.push({ href: `${base}/reviews`, label: "Reviews", icon: "reviews", badge: counts.attention || undefined });
+    items.push({ href: `${base}/recordings`, label: "Recordings", icon: "recordings" });
     items.push({ href: `${base}/timesheets`, label: "Timesheets", icon: "timesheets" });
     items.push({ href: `${base}/reports`, label: "Reports", icon: "reports" });
     items.push({ href: `${base}/projects`, label: "Projects", icon: "projects" });

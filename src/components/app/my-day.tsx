@@ -1,14 +1,19 @@
 "use client";
 
-import { useMemo, useState } from "react";
+/**
+ * The staff page: one card, "Your to-dos for today". Add a to-do, press Start (with or without screen
+ * recording), press Done when finished. Done sends the work to the person who checks it; it shows as
+ * "Sent for check" and then "Completed". A finished to-do never offers Start again.
+ */
+import { useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Plus, GripVertical, ArrowUp, ArrowDown, X, Check, Sparkles, ChevronDown } from "lucide-react";
+import { Plus, Check, Sparkles, ChevronDown, Pencil, Circle, X } from "lucide-react";
 import { SessionTimer, type CurrentSessionPayload, type StartableTask } from "@/components/app/session-timer";
-import { CaptureProvider, useCaptureGate } from "@/components/app/capture";
+import { CaptureProvider, useCaptureGate, useCaptureContext, captureSupport } from "@/components/app/capture";
 import { AssistantPanel } from "@/components/app/assistant-panel";
 import { Button } from "@/components/ui/button";
-import { Badge, TASK_STATUS_TONE, label } from "@/components/ui/badge";
+import { Badge, label } from "@/components/ui/badge";
 import { Input, Textarea, Select, Field } from "@/components/ui/input";
 import { Alert } from "@/components/ui/states";
 import { api, isApiFailure } from "@/lib/api-client";
@@ -18,6 +23,7 @@ import type { SessionView } from "@/server/services/sessions";
 
 type PastTask = { id: string; title: string; status: string; completed_at: string | null; archived_at: string | null; tracked_seconds: number; created_by_name: string; self_made: boolean };
 type Person = { id: string; display_name: string };
+type Row = TaskRow & { created_by_name?: string };
 
 type Props = {
   orgSlug: string; today: string; initialSession: CurrentSessionPayload;
@@ -36,120 +42,94 @@ export function MyDayBoard(props: Props) {
   );
 }
 
-function Board({ orgSlug, today, initialSession, planned, ownTodos, fromLeads, doneToday, pastTasks, projects, members, assignable, membershipId, recordingMode, reportStatus, assistantConfigured, policyAcknowledged }: Props) {
+const ORDER: Record<string, number> = { in_progress: 0, todo: 1, blocked: 2, in_review: 3, completed: 4 };
+
+function Board({ orgSlug, today, initialSession, planned, ownTodos, fromLeads, doneToday, pastTasks, assignable, membershipId, recordingMode, reportStatus, assistantConfigured, policyAcknowledged }: Props) {
   const router = useRouter();
+  const capture = useCaptureContext();
   const [session, setSession] = useState<SessionView | null>(initialSession.session);
-  const [showCreate, setShowCreate] = useState(false);
   const [showAssistant, setShowAssistant] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const { captureGate, onSession, dialogEl, recordingControls } = useCaptureGate();
-  const assigned = useMemo(() => [...fromLeads, ...ownTodos], [fromLeads, ownTodos]);
-  const all = useMemo(() => [...planned, ...assigned], [planned, assigned]);
-  const startable: StartableTask[] = useMemo(() => all.filter((t) => t.status !== "completed" && t.status !== "in_review" && !t.archived_at).map((t) => ({ id: t.id, title: t.title, project_name: t.project_name, status: t.status, capture_requirement: t.capture_requirement, estimate_minutes: t.estimate_minutes })), [all]);
+  const recordAfterStart = useRef(false);
 
-  async function savePlan(ids: string[]) {
-    setError(null);
-    try { await api(`/api/orgs/${orgSlug}/plan`, { method: "PUT", body: { localDate: today, taskIds: ids } }); router.refresh(); }
-    catch (err) { setError(isApiFailure(err) ? err.error.message : "Could not save your plan."); }
+  // One list: everything assigned to me that is not finished, running task first.
+  const rows: Row[] = useMemo(() => {
+    const seen = new Set<string>();
+    const all: Row[] = [];
+    for (const t of [...planned, ...fromLeads, ...ownTodos]) { if (!seen.has(t.id)) { seen.add(t.id); all.push(t); } }
+    return all.sort((a, b) => (session?.taskId === a.id ? -1 : session?.taskId === b.id ? 1 : (ORDER[a.status] ?? 9) - (ORDER[b.status] ?? 9)));
+  }, [planned, fromLeads, ownTodos, session?.taskId]);
+  const startable: StartableTask[] = useMemo(() => rows.filter((t) => t.status !== "completed" && t.status !== "in_review" && !t.archived_at).map((t) => ({ id: t.id, title: t.title, project_name: t.project_name, status: t.status, capture_requirement: t.capture_requirement, estimate_minutes: t.estimate_minutes })), [rows]);
+  const canRecord = recordingMode !== "disabled" && policyAcknowledged && captureSupport().supported;
+
+  function onSessionChange(s: SessionView | null) {
+    setSession(s);
+    onSession(s);
+    if (s && s.state === "running" && recordAfterStart.current) {
+      recordAfterStart.current = false;
+      if (s.captureMode !== "none" && capture) void capture.startCapture(s.id);
+    }
   }
-  async function markDone(t: TaskRow) {
+  function start(t: Row, record: boolean) {
+    setError(null); setNotice(null);
+    recordAfterStart.current = record;
+    window.dispatchEvent(new CustomEvent("boredroom:start-task", { detail: { taskId: t.id } }));
+  }
+  async function done(t: Row) {
     setError(null); setNotice(null);
     try {
-      const r = await api<{ completed: boolean }>(`/api/orgs/${orgSlug}/tasks/${t.id}/complete`, { method: "POST", body: {} });
-      setNotice(r.completed ? `“${t.title}” is completed.` : `“${t.title}” was sent to your team lead for a quick check. It shows as completed once they approve it.`);
+      let completed: boolean;
+      if (session && session.taskId === t.id) {
+        // Running on this task: stop the timer and hand the work over in one step.
+        await api(`/api/orgs/${orgSlug}/sessions/${session.id}/stop`, { method: "POST", body: { expectedVersion: session.version, note: "", outcome: "completed" } });
+        onSessionChange(null);
+        completed = false;
+      } else {
+        const r = await api<{ completed: boolean }>(`/api/orgs/${orgSlug}/tasks/${t.id}/complete`, { method: "POST", body: {} });
+        completed = r.completed;
+      }
+      setNotice(completed ? `“${t.title}” is completed.` : `“${t.title}” was sent for a check. It shows as Completed once it is approved.`);
       router.refresh();
     } catch (err) { setError(isApiFailure(err) ? err.error.message : "Cannot reach the server."); }
   }
-  const plannedIds = planned.map((t) => t.id);
-  const move = (id: string, dir: -1 | 1) => { const i = plannedIds.indexOf(id); const j = i + dir; if (i < 0 || j < 0 || j >= plannedIds.length) return; const next = [...plannedIds]; [next[i], next[j]] = [next[j], next[i]]; savePlan(next); };
-  const rowActions = (t: TaskRow) => <RowActions t={t} session={session} orgSlug={orgSlug} onDone={() => markDone(t)} self={membershipId} />;
-  const capture = recordingMode === "disabled" ? {} : { captureGate, onCaptureSession: onSession, recordingControls };
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[1fr_340px]">
+    <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
       <div className="space-y-6">
-        <SessionTimer orgSlug={orgSlug} initial={initialSession} tasks={startable} captureDialog={dialogEl} onSessionChange={setSession} {...capture} />
-        {recordingMode === "disabled" ? <Alert tone="info">Screen recording is switched off for this organisation. An organisation owner can turn it on under Settings → Screen recording; you then see a <strong>Record screen</strong> button here while a timer runs.</Alert> : !policyAcknowledged ? <Alert tone="warning">Screen recording is available once you <Link className="underline" href={`/app/${orgSlug}/policy?next=/app/${orgSlug}/my-day`}>read and acknowledge the monitoring notice</Link>. Sessions started before that cannot record.</Alert> : null}
+        <SessionTimer orgSlug={orgSlug} initial={initialSession} tasks={startable} captureDialog={dialogEl} onSessionChange={onSessionChange}
+          {...(recordingMode === "disabled" ? {} : { captureGate, recordingControls })} />
+        {recordingMode === "disabled" ? <Alert tone="info">Screen recording is switched off for this organisation. An owner can turn it on under Settings → Screen recording.</Alert> : !policyAcknowledged ? <Alert tone="warning">To record your screen, first <Link className="underline" href={`/app/${orgSlug}/policy?next=/app/${orgSlug}/my-day`}>read and acknowledge the monitoring notice</Link>.</Alert> : null}
         {error ? <Alert tone="danger">{error}</Alert> : null}
         {notice ? <Alert tone="success">{notice}</Alert> : null}
 
-        <QuickTodo orgSlug={orgSlug} assignable={assignable} onDone={(msg) => { setNotice(msg ?? null); router.refresh(); }} onAssistant={() => setShowAssistant((v) => !v)} assistantOpen={showAssistant} />
-        {showAssistant ? <div id="assistant-panel" className="rise-in"><AssistantPanel orgSlug={orgSlug} people={assignable} configured={assistantConfigured} onClose={() => setShowAssistant(false)} onCreated={(n) => { setNotice(`${n} to-do${n === 1 ? "" : "s"} added.`); router.refresh(); }} /></div> : null}
-
-        {planned.length ? (
-          <section aria-labelledby="plan-heading" className="space-y-3">
-            <h2 id="plan-heading" className="text-lg font-display">Today&apos;s plan</h2>
-            <ol className="space-y-2">
-              {planned.map((t, i) => (
-                <li key={t.id} className={`tile flex items-center gap-3 px-4 py-3 ${session?.taskId === t.id ? "tile-active" : ""}`}>
-                  <GripVertical className="h-4 w-4 shrink-0 text-fg-subtle" aria-hidden />
-                  <div className="min-w-0 flex-1">
-                    <Link href={`/app/${orgSlug}/tasks/${t.id}`} className="block truncate font-semibold hover:underline">{t.title}</Link>
-                    <TaskMeta t={t} />
-                  </div>
-                  <div className="flex shrink-0 items-center gap-1">
-                    <Button size="icon" variant="ghost" aria-label="Move up" disabled={i === 0} onClick={() => move(t.id, -1)}><ArrowUp className="h-4 w-4" /></Button>
-                    <Button size="icon" variant="ghost" aria-label="Move down" disabled={i === planned.length - 1} onClick={() => move(t.id, 1)}><ArrowDown className="h-4 w-4" /></Button>
-                    <Button size="icon" variant="ghost" aria-label="Remove from today" onClick={() => savePlan(plannedIds.filter((x) => x !== t.id))}><X className="h-4 w-4" /></Button>
-                    {rowActions(t)}
-                  </div>
-                </li>
-              ))}
-            </ol>
-          </section>
-        ) : null}
-
-        <section aria-labelledby="lead-heading" className="space-y-3">
-          <h2 id="lead-heading" className="text-lg font-display">From your team lead</h2>
-          {fromLeads.length === 0 ? <p className="tile p-4 text-sm text-fg-muted">Nothing assigned to you right now. Tasks your team lead gives you appear here, and you get a notification.</p> : (
-            <ul className="space-y-2">
-              {fromLeads.map((t) => (
-                <li key={t.id} className={`tile flex items-center gap-3 px-4 py-3 ${session?.taskId === t.id ? "tile-active" : ""}`}>
-                  <div className="min-w-0 flex-1">
-                    <Link href={`/app/${orgSlug}/tasks/${t.id}`} className="block truncate font-semibold hover:underline">{t.title}</Link>
-                    <TaskMeta t={t} by={t.created_by_name} />
-                  </div>
-                  <div className="flex shrink-0 items-center gap-2">
-                    {t.status !== "in_review" ? <Button size="sm" variant="ghost" onClick={() => savePlan([...plannedIds, t.id])}>Plan for today</Button> : null}
-                    {rowActions(t)}
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-
-        <section aria-labelledby="todo-heading" className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h2 id="todo-heading" className="text-lg font-display">Your to-dos</h2>
-            <Button size="sm" variant="ghost" aria-expanded={showCreate} aria-controls="full-task-form" onClick={() => setShowCreate((v) => !v)}><Plus className="h-4 w-4" aria-hidden />{showCreate ? "Hide full form" : "Full task form"}</Button>
+        <section aria-labelledby="todo-heading" className="tile p-4 md:p-5">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <h2 id="todo-heading" className="font-display text-xl">Your to-dos for today</h2>
+            <span className="text-sm text-fg-subtle tabular-nums">{rows.filter((r) => r.status !== "in_review").length} open · {doneToday.length} done</span>
           </div>
-          {showCreate ? <div id="full-task-form" className="rise-in"><CreateTaskForm orgSlug={orgSlug} projects={projects} members={members} onDone={() => { setShowCreate(false); router.refresh(); }} /></div> : null}
-          {ownTodos.length === 0 ? <p className="tile p-4 text-sm text-fg-muted">{planned.length ? "Everything you added is in today's plan above." : "Type a to-do above and press Enter. Then press Start when you begin, and Done when you finish."}</p> : (
-            <ul className="space-y-2">
-              {ownTodos.map((t) => (
-                <li key={t.id} className={`tile flex items-center gap-3 px-4 py-3 ${session?.taskId === t.id ? "tile-active" : ""}`}>
-                  <div className="min-w-0 flex-1">
-                    <Link href={`/app/${orgSlug}/tasks/${t.id}`} className="block truncate font-semibold hover:underline">{t.title}</Link>
-                    <TaskMeta t={t} />
-                  </div>
-                  <div className="flex shrink-0 items-center gap-2">
-                    {t.status !== "in_review" ? <Button size="sm" variant="ghost" onClick={() => savePlan([...plannedIds, t.id])}>Plan for today</Button> : null}
-                    {rowActions(t)}
-                  </div>
+          <QuickTodo orgSlug={orgSlug} assignable={assignable} onDone={(msg) => { setNotice(msg ?? null); router.refresh(); }} onAssistant={() => setShowAssistant((v) => !v)} assistantOpen={showAssistant} />
+          {showAssistant ? <div id="assistant-panel" className="rise-in mt-3"><AssistantPanel orgSlug={orgSlug} people={assignable} configured={assistantConfigured} onClose={() => setShowAssistant(false)} onCreated={(n) => { setNotice(`${n} to-do${n === 1 ? "" : "s"} added.`); router.refresh(); }} /></div> : null}
+
+          {rows.length === 0 && doneToday.length === 0 ? (
+            <p className="mt-4 rounded-[var(--radius-sm)] border border-dashed border-border-strong p-6 text-center text-sm text-fg-muted">Nothing on your list yet. Type your first to-do above and press Enter, then press Start when you begin.</p>
+          ) : (
+            <ul className="mt-4 divide-y divide-border-soft">
+              {rows.map((t) => (
+                <TodoRow key={t.id} t={t} orgSlug={orgSlug} self={membershipId} running={session?.taskId === t.id} anyRunning={!!session} canRecord={canRecord}
+                  onStart={(record) => start(t, record)} onDone={() => done(t)} onSaved={(msg) => { setNotice(msg); router.refresh(); }} />
+              ))}
+              {doneToday.map((t) => (
+                <li key={t.id} className="flex items-center gap-3 py-3 text-fg-muted">
+                  <Badge tone="success"><Check className="size-3" aria-hidden /> Completed</Badge>
+                  <Link href={`/app/${orgSlug}/tasks/${t.id}`} className="min-w-0 flex-1 truncate line-through decoration-fg-faint hover:underline">{t.title}</Link>
+                  <span className="text-xs text-fg-subtle">{formatDateTime(t.completed_at)}</span>
                 </li>
               ))}
             </ul>
           )}
         </section>
-
-        {doneToday.length ? (
-          <section aria-labelledby="done-heading" className="space-y-2">
-            <h2 id="done-heading" className="text-lg font-display">Done today</h2>
-            <ul className="space-y-1 text-sm text-fg-muted">{doneToday.map((t) => <li key={t.id} className="flex items-center gap-2"><Badge tone="success"><Check className="h-3 w-3" aria-hidden /> Completed</Badge><Link href={`/app/${orgSlug}/tasks/${t.id}`} className="hover:underline">{t.title}</Link></li>)}</ul>
-          </section>
-        ) : null}
 
         <PastTasks orgSlug={orgSlug} items={pastTasks} onCleared={(n) => { setNotice(`${n} past task${n === 1 ? "" : "s"} cleared from your list.`); router.refresh(); }} />
       </div>
@@ -157,16 +137,16 @@ function Board({ orgSlug, today, initialSession, planned, ownTodos, fromLeads, d
       <aside className="space-y-4">
         <div className="tile p-5">
           <h2 className="font-display text-lg">Daily report</h2>
-          <p className="mt-1 text-sm text-fg-muted">{reportStatus ? `Status: ${label(reportStatus)}.` : "Not started. It is generated from your sessions and notes; you add blockers and next priorities."}</p>
+          <p className="mt-1 text-sm text-fg-muted">{reportStatus ? `Status: ${label(reportStatus)}.` : "Built from your sessions and notes. Add blockers and next priorities, then submit."}</p>
           <Link href={`/app/${orgSlug}/timesheets?date=${today}`} className="mt-3 inline-block"><Button size="sm" variant={reportStatus === "approved" ? "subtle" : "primary"}>{reportStatus ? "Open report" : "Review and submit"}</Button></Link>
         </div>
         <div className="tile p-5 text-sm text-fg-muted">
           <h2 className="font-display text-lg text-fg">How it works</h2>
-          <ol className="mt-2 list-decimal space-y-1 pl-4">
-            <li>Add a to-do (type it, dictate it to the assistant, or pick one from your team lead).</li>
-            <li>Press Start when you begin{recordingMode === "disabled" ? "" : ", and Record screen if you want to"}. Stop when you pause.</li>
-            <li>Press Done when you finish. Work from your lead goes to them for a quick check.</li>
-            {assignable.length ? <li>As a team lead, use “For” to hand a to-do to someone on your team; they are notified.</li> : null}
+          <ol className="mt-2 list-decimal space-y-1.5 pl-4">
+            <li>Write your to-dos for today. Your team lead may add some too.</li>
+            <li>Press <strong className="text-fg">Start</strong> on the one you are working on{canRecord ? ", with or without screen recording" : ""}.</li>
+            <li>Press <strong className="text-fg">Done</strong> when you finish. It goes to your lead for a quick check, then shows as Completed.</li>
+            {assignable.length ? <li>As a team lead, use “For” to hand a to-do to someone on your team.</li> : null}
           </ol>
         </div>
       </aside>
@@ -174,41 +154,79 @@ function Board({ orgSlug, today, initialSession, planned, ownTodos, fromLeads, d
   );
 }
 
-function TaskMeta({ t, by }: { t: TaskRow; by?: string }) {
+function TodoRow({ t, orgSlug, self, running, anyRunning, canRecord, onStart, onDone, onSaved }: { t: Row; orgSlug: string; self: string; running: boolean; anyRunning: boolean; canRecord: boolean; onStart: (record: boolean) => void; onDone: () => void; onSaved: (msg: string) => void }) {
+  const [choosing, setChoosing] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [confirmDone, setConfirmDone] = useState(false);
   const overdue = t.due_at && new Date(t.due_at) < new Date() && t.status !== "completed";
+  const fromLead = t.created_by !== self;
+  const waiting = t.status === "in_review";
   return (
-    <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-fg-muted">
-      <Badge tone={TASK_STATUS_TONE[t.status]}>{t.status === "in_review" ? "Waiting for check" : label(t.status)}</Badge>
-      {by ? <span>from {by}</span> : null}
-      {t.due_at ? <span className={overdue ? "text-danger" : ""}>due {formatDateTime(t.due_at)}{overdue ? " · overdue" : ""}</span> : null}
-      {t.estimate_minutes ? <span>est. {formatDuration(t.estimate_minutes * 60)}</span> : null}
-      {t.tracked_seconds ? <span>tracked {formatDuration(t.tracked_seconds)}</span> : null}
-      {t.capture_requirement === "required" ? <Badge tone="warning">recording required</Badge> : null}
-      {t.blocked_reason ? <span className="text-danger">blocked: {t.blocked_reason}</span> : null}
-    </p>
+    <li className={`py-3 ${running ? "-mx-4 rounded-[var(--radius-sm)] bg-accent-soft/40 px-4 md:-mx-5 md:px-5" : ""}`}>
+      <div className="flex items-start gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <Link href={`/app/${orgSlug}/tasks/${t.id}`} className={`font-semibold hover:underline ${waiting ? "text-fg-muted" : ""}`}>{t.title}</Link>
+            {running ? <Badge tone="success" dot>Working now</Badge> : waiting ? <Badge tone="info">Sent for check</Badge> : t.status === "blocked" ? <Badge tone="danger">Blocked</Badge> : t.status === "in_progress" ? <Badge tone="accent">Started</Badge> : null}
+          </div>
+          <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-fg-subtle">
+            {fromLead ? <span>from {t.created_by_name ?? "your team lead"}</span> : null}
+            {t.due_at ? <span className={overdue ? "text-danger" : ""}>due {formatDateTime(t.due_at)}{overdue ? " · overdue" : ""}</span> : null}
+            {t.estimate_minutes ? <span>est. {formatDuration(t.estimate_minutes * 60)}</span> : null}
+            {t.tracked_seconds ? <span className="tabular-nums">tracked {formatDuration(t.tracked_seconds)}</span> : null}
+            {t.blocked_reason ? <span className="text-danger">blocked: {t.blocked_reason}</span> : null}
+            {t.capture_requirement === "required" ? <Badge tone="warning">recording required</Badge> : null}
+          </p>
+        </div>
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
+          {!waiting && !running ? <Button size="icon" variant="ghost" aria-label={`Edit ${t.title}`} aria-expanded={editing} onClick={() => { setEditing((v) => !v); setChoosing(false); }}><Pencil className="size-4" aria-hidden /></Button> : null}
+          {waiting ? <Link href={`/app/${orgSlug}/tasks/${t.id}`}><Button size="sm" variant="ghost">View</Button></Link> : running ? (
+            confirmDone ? <><Button size="sm" onClick={() => { setConfirmDone(false); onDone(); }}><Check className="size-4" aria-hidden />Yes, send for check</Button><Button size="sm" variant="ghost" onClick={() => setConfirmDone(false)}>Not yet</Button></>
+            : <Button size="sm" onClick={() => setConfirmDone(true)}><Check className="size-4" aria-hidden />Done</Button>
+          ) : choosing ? (
+            <>
+              <Button size="sm" onClick={() => { setChoosing(false); onStart(false); }}>Start</Button>
+              <Button size="sm" variant="outline" onClick={() => { setChoosing(false); onStart(true); }}><Circle className="size-3 fill-danger text-danger" aria-hidden />Start and record screen</Button>
+              <Button size="icon" variant="ghost" aria-label="Cancel" onClick={() => setChoosing(false)}><X className="size-4" aria-hidden /></Button>
+            </>
+          ) : (
+            <>
+              <Button size="sm" disabled={anyRunning} title={anyRunning ? "Stop or switch the running timer first" : undefined} onClick={() => (canRecord ? setChoosing(true) : onStart(false))}>{t.status === "in_progress" ? "Start" : "Start"}</Button>
+              {t.status === "in_progress" || t.status === "blocked" ? (confirmDone ? <><Button size="sm" variant="outline" onClick={() => { setConfirmDone(false); onDone(); }}><Check className="size-4" aria-hidden />Yes, send for check</Button><Button size="sm" variant="ghost" onClick={() => setConfirmDone(false)}>Not yet</Button></> : <Button size="sm" variant="outline" onClick={() => setConfirmDone(true)}><Check className="size-4" aria-hidden />Done</Button>) : null}
+            </>
+          )}
+        </div>
+      </div>
+      {editing ? <EditTodo orgSlug={orgSlug} t={t} onClose={() => setEditing(false)} onSaved={(m) => { setEditing(false); onSaved(m); }} /> : null}
+    </li>
   );
 }
 
-/** Start / Done on every open row; a finished row never offers Start again. */
-function RowActions({ t, session, orgSlug, onDone, self }: { t: TaskRow; session: SessionView | null; orgSlug: string; onDone: () => void; self: string }) {
-  const [confirm, setConfirm] = useState(false);
-  if (session?.taskId === t.id) return <Badge tone="success" dot>Active</Badge>;
-  if (t.status === "completed") return <Badge tone="success"><Check className="h-3 w-3" aria-hidden /> Completed</Badge>;
-  if (t.status === "in_review") return <Link href={`/app/${orgSlug}/tasks/${t.id}`}><Button size="sm" variant="subtle">Waiting for check</Button></Link>;
-  const ownTodo = t.created_by === self;
-  if (confirm) {
-    return (
-      <span className="flex items-center gap-1">
-        <Button size="sm" onClick={() => { setConfirm(false); onDone(); }}><Check className="h-4 w-4" aria-hidden />{ownTodo ? "Yes, done" : "Send for check"}</Button>
-        <Button size="sm" variant="ghost" onClick={() => setConfirm(false)}>Cancel</Button>
-      </span>
-    );
-  }
+function toLocalInput(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso); const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/** Inline edit of a to-do: title, deadline (date and time), estimate. */
+function EditTodo({ orgSlug, t, onClose, onSaved }: { orgSlug: string; t: Row; onClose: () => void; onSaved: (msg: string) => void }) {
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   return (
-    <span className="flex items-center gap-1">
-      <Button size="sm" onClick={() => window.dispatchEvent(new CustomEvent("boredroom:start-task", { detail: { taskId: t.id } }))}>Start</Button>
-      <Button size="sm" variant="outline" title={ownTodo ? "Mark this to-do completed" : "Send this to your team lead for a quick check"} onClick={() => setConfirm(true)}><Check className="h-4 w-4" aria-hidden />Done</Button>
-    </span>
+    <form className="rise-in mt-3 grid gap-2 rounded-[var(--radius-sm)] border border-border bg-inset p-3 md:grid-cols-[1fr_auto_auto_auto]" onSubmit={async (e) => {
+      e.preventDefault(); setPending(true); setError(null);
+      const f = new FormData(e.currentTarget);
+      try {
+        await api(`/api/orgs/${orgSlug}/tasks/${t.id}`, { method: "PATCH", body: { expectedVersion: t.version, title: f.get("title"), dueAt: f.get("dueAt") ? new Date(String(f.get("dueAt"))).toISOString() : null, estimateMinutes: f.get("estimate") ? Number(f.get("estimate")) : null } });
+        onSaved("To-do updated.");
+      } catch (err) { setError(isApiFailure(err) ? err.error.message : "Cannot reach the server."); } finally { setPending(false); }
+    }}>
+      {error ? <Alert tone="danger" className="md:col-span-4">{error}</Alert> : null}
+      <Field label="To-do" htmlFor={`title-${t.id}`}><Input id={`title-${t.id}`} name="title" defaultValue={t.title} required maxLength={200} /></Field>
+      <Field label="Due date and time" htmlFor={`due-${t.id}`} hint="optional"><Input id={`due-${t.id}`} name="dueAt" type="datetime-local" defaultValue={toLocalInput(t.due_at)} className="w-56" /></Field>
+      <Field label="Estimate (min)" htmlFor={`est-${t.id}`} hint="optional"><Input id={`est-${t.id}`} name="estimate" type="number" min={1} defaultValue={t.estimate_minutes ?? ""} className="w-28" /></Field>
+      <div className="flex items-end gap-1"><Button type="submit" size="sm" disabled={pending}>{pending ? "Saving…" : "Save"}</Button><Button type="button" size="sm" variant="ghost" onClick={onClose}>Cancel</Button></div>
+    </form>
   );
 }
 
@@ -220,7 +238,7 @@ function PastTasks({ orgSlug, items, onCleared }: { orgSlug: string; items: Past
   return (
     <details className="tile group p-4">
       <summary className="flex cursor-pointer list-none items-center justify-between">
-        <span className="flex items-center gap-2 font-display text-lg"><ChevronDown className="h-4 w-4 transition-transform group-open:rotate-180" aria-hidden />Past tasks <span className="text-sm text-fg-subtle">({items.length})</span></span>
+        <span className="flex items-center gap-2 font-display text-lg"><ChevronDown className="size-4 transition-transform duration-[var(--duration-fast)] group-open:rotate-180" aria-hidden />Past tasks <span className="text-sm text-fg-subtle tabular-nums">({items.length})</span></span>
         <span className="text-xs text-fg-subtle">completed or removed earlier</span>
       </summary>
       {error ? <Alert tone="danger" className="mt-3">{error}</Alert> : null}
@@ -242,42 +260,6 @@ function PastTasks({ orgSlug, items, onCleared }: { orgSlug: string; items: Past
   );
 }
 
-function CreateTaskForm({ orgSlug, projects, members, onDone }: { orgSlug: string; projects: { id: string; name: string }[]; members: { id: string; display_name: string }[]; onDone: () => void }) {
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
-  if (projects.length === 0) return <Alert tone="warning">You are not a member of any active project yet. Ask a manager to add you to one.</Alert>;
-  return (
-    <form className="tile grid gap-3 p-4" onSubmit={async (e) => {
-      e.preventDefault(); setPending(true); setError(null); setFieldErrors({});
-      const f = new FormData(e.currentTarget);
-      const est = f.get("estimateMinutes") ? Number(f.get("estimateMinutes")) : null;
-      const due = f.get("dueAt") ? new Date(String(f.get("dueAt"))).toISOString() : null;
-      try {
-        await api(`/api/orgs/${orgSlug}/tasks`, { method: "POST", body: { projectId: f.get("projectId"), title: f.get("title"), expectedOutput: f.get("expectedOutput"), reviewerMembershipId: f.get("reviewerMembershipId") || null, category: f.get("category"), priority: f.get("priority"), estimateMinutes: est, dueAt: due, addToMyDay: true } });
-        onDone();
-      } catch (err) { if (isApiFailure(err)) { setError(err.error.message); setFieldErrors(err.error.fieldErrors ?? {}); } else setError("Cannot reach the server."); }
-      finally { setPending(false); }
-    }}>
-      <h3 className="font-semibold">New task for today</h3>
-      {error ? <Alert tone="danger">{error}</Alert> : null}
-      <div className="grid gap-3 md:grid-cols-2">
-        <Field label="Title" htmlFor="title" error={fieldErrors.title}><Input id="title" name="title" required maxLength={200} /></Field>
-        <Field label="Project" htmlFor="projectId" error={fieldErrors.projectId}><Select id="projectId" name="projectId" required>{projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</Select></Field>
-      </div>
-      <Field label="Expected output" htmlFor="expectedOutput" hint="what 'done' looks like" error={fieldErrors.expectedOutput}><Textarea id="expectedOutput" name="expectedOutput" required maxLength={4000} /></Field>
-      <div className="grid gap-3 md:grid-cols-4">
-        <Field label="Reviewer" htmlFor="reviewerMembershipId" hint="required before submission" error={fieldErrors.reviewerMembershipId}><Select id="reviewerMembershipId" name="reviewerMembershipId" defaultValue=""><option value="">Choose later</option>{members.map((m) => <option key={m.id} value={m.id}>{m.display_name}</option>)}</Select></Field>
-        <Field label="Category" htmlFor="category"><Select id="category" name="category" defaultValue="work"><option value="work">Work</option><option value="meeting">Meeting</option><option value="offline">Offline work</option><option value="admin">Admin</option></Select></Field>
-        <Field label="Estimate (minutes)" htmlFor="estimateMinutes" hint="optional" error={fieldErrors.estimateMinutes}><Input id="estimateMinutes" name="estimateMinutes" type="number" min={1} /></Field>
-        <Field label="Due" htmlFor="dueAt" hint="optional" error={fieldErrors.dueAt}><Input id="dueAt" name="dueAt" type="datetime-local" /></Field>
-      </div>
-      <input type="hidden" name="priority" value="normal" />
-      <div className="flex gap-2"><Button type="submit" disabled={pending}>{pending ? "Creating…" : "Create and add to today"}</Button><Button variant="ghost" onClick={onDone}>Cancel</Button></div>
-    </form>
-  );
-}
-
 /**
  * The simplest entry point: a title, Enter, done. "Details" adds a description and a deadline;
  * team leads also get "For", which hands the to-do to someone on their team (they are notified).
@@ -293,7 +275,7 @@ function QuickTodo({ orgSlug, assignable, onDone, onAssistant, assistantOpen }: 
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
   const person = assignable.find((p) => p.id === assignee);
   return (
-    <form className="tile grid gap-2 p-3" onSubmit={async (e) => {
+    <form className="grid gap-2" onSubmit={async (e) => {
       e.preventDefault(); if (!title.trim()) return; setPending(true); setError(null); setFieldErrors({});
       try {
         await api(`/api/orgs/${orgSlug}/todos`, { method: "POST", body: { title: title.trim(), description: description.trim() || null, dueAt: dueAt ? new Date(dueAt).toISOString() : null, assigneeMembershipId: assignee || null } });
@@ -303,21 +285,21 @@ function QuickTodo({ orgSlug, assignable, onDone, onAssistant, assistantOpen }: 
       catch (err) { if (isApiFailure(err)) { setError(err.error.message); setFieldErrors(err.error.fieldErrors ?? {}); } else setError("Cannot reach the server."); } finally { setPending(false); }
     }}>
       <div className="flex flex-wrap items-center gap-2">
-        <label htmlFor="quick-todo" className="sr-only">New to-do</label>
-        <Input id="quick-todo" value={title} onChange={(e) => setTitle(e.target.value)} placeholder={assignable.length ? "What needs doing? Press Enter to add it (choose “For” to hand it to someone)." : "What do you need to do? Press Enter to add it."} maxLength={200} className="min-w-[240px] flex-1" autoComplete="off" />
+        <label htmlFor="quick-todo" className="sr-only">Add a to-do</label>
+        <Input id="quick-todo" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Add a to-do and press Enter…" maxLength={200} className="min-w-[240px] flex-1" autoComplete="off" />
         {assignable.length ? (
           <Select aria-label="For" className="h-11 w-44 py-1 text-sm" value={assignee} onChange={(e) => setAssignee(e.target.value)}>
             <option value="">For: me</option>{assignable.map((p) => <option key={p.id} value={p.id}>For: {p.display_name}</option>)}
           </Select>
         ) : null}
-        <Button type="submit" disabled={pending || !title.trim()}><Plus className="h-4 w-4" aria-hidden />{pending ? "Adding…" : person ? "Hand out" : "Add to-do"}</Button>
-        <Button type="button" variant="ghost" size="sm" aria-expanded={details} aria-controls="quick-details" onClick={() => setDetails((v) => !v)}>{details ? "Hide details" : "Details"}</Button>
-        <Button type="button" variant={assistantOpen ? "subtle" : "ghost"} size="sm" aria-expanded={assistantOpen} aria-controls="assistant-panel" onClick={onAssistant}><Sparkles className="h-4 w-4 text-accent" aria-hidden />Assistant</Button>
+        <Button type="submit" disabled={pending || !title.trim()}><Plus className="size-4" aria-hidden />{pending ? "Adding…" : person ? "Hand out" : "Add"}</Button>
+        <Button type="button" variant="ghost" size="sm" aria-expanded={details} aria-controls="quick-details" onClick={() => setDetails((v) => !v)}>{details ? "Hide details" : "Date and details"}</Button>
+        <Button type="button" variant={assistantOpen ? "subtle" : "ghost"} size="sm" aria-expanded={assistantOpen} aria-controls="assistant-panel" onClick={onAssistant}><Sparkles className="size-4 text-accent" aria-hidden />Assistant</Button>
       </div>
       {details ? (
         <div id="quick-details" className="rise-in grid gap-2 md:grid-cols-[1fr_auto]">
           <Field label="Description" htmlFor="quick-desc" hint="optional" error={fieldErrors.description}><Textarea id="quick-desc" value={description} onChange={(e) => setDescription(e.target.value)} rows={2} maxLength={4000} placeholder="What does done look like? Any links or context." /></Field>
-          <Field label="Deadline" htmlFor="quick-due" hint="optional" error={fieldErrors.dueAt}><Input id="quick-due" type="datetime-local" value={dueAt} onChange={(e) => setDueAt(e.target.value)} className="w-56" /></Field>
+          <Field label="Due date and time" htmlFor="quick-due" hint="optional" error={fieldErrors.dueAt}><Input id="quick-due" type="datetime-local" value={dueAt} onChange={(e) => setDueAt(e.target.value)} className="w-56" /></Field>
         </div>
       ) : null}
       {error ? <Alert tone="danger">{error}</Alert> : null}
