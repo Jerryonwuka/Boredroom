@@ -22,7 +22,7 @@ export default async function DashboardPage({ params }: { params: Promise<{ work
   const tiles = [
     { label: "Tasks done today", value: String(d.counts.tasks_done_today), note: `${d.counts.tasks_done_total} completed in total`, href: `${base}/reports` },
     { label: "People in organisation", value: String(d.counts.people), note: `${d.counts.teams} team${d.counts.teams === 1 ? "" : "s"}`, href: `${base}/people` },
-    { label: "Accounts connected now", value: String(d.counts.connected), note: `${d.counts.working} session${d.counts.working === 1 ? "" : "s"} open (running, paused or interrupted)`, href: `${base}/team` },
+    { label: "Accounts connected now", value: String(d.counts.connected), note: `${d.counts.working} session${d.counts.working === 1 ? "" : "s"} open (running, paused or interrupted)`, href: `${base}/workroom` },
     { label: "Total time today", value: formatDuration(d.counts.seconds_today), note: "confirmed timer time across everyone", href: `${base}/timesheets` },
   ];
   return (
@@ -39,7 +39,7 @@ export default async function DashboardPage({ params }: { params: Promise<{ work
       </div>
 
       <section className="mb-8">
-        <h2 className="mb-3 font-display text-lg">Working right now ({d.workingNow.length})</h2>
+        <div className="mb-3 flex items-center justify-between gap-2"><h2 className="font-display text-lg">Working right now ({d.workingNow.length})</h2><Link href={`${base}/workroom`} className="text-sm underline">Open the Workroom</Link></div>
         {d.workingNow.length === 0 ? <EmptyState title="Nobody has a session open" description="Open sessions appear here the moment someone presses Start." /> : (
           <DataTable caption="People with an open session">
             <thead><tr><th>Person</th><th>Team</th><th>State</th><th>Task</th><th>Since</th><th>Sync</th><th>Today</th></tr></thead>

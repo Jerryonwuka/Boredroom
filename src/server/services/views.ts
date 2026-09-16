@@ -325,3 +325,99 @@ export async function myTeams(ctx: OrgContext) {
   return withUser(ctx.user.profileId, (db) => db.query<{ id: string; name: string; is_manager: boolean }>(
     `SELECT t.id, t.name, tm.is_manager FROM team_members tm JOIN teams t ON t.id = tm.team_id WHERE tm.membership_id = $1 AND t.archived_at IS NULL ORDER BY t.name`, [ctx.membership.id]));
 }
+
+// ---------------------------------------------------------------------------
+// Workroom: who is at work right now, and what each person did today
+// ---------------------------------------------------------------------------
+export type WorkroomRow = {
+  membership_id: string; display_name: string; employee_code: string; role: string; teams: string[];
+  session_id: string | null; session_state: string | null; task_id: string | null; task_title: string | null; started_at: string | null; last_heartbeat_at: string | null;
+  /** Confirmed seconds on the current session (the task they are on now). */
+  session_seconds: number;
+  /** Confirmed seconds across all sessions today. */
+  today_seconds: number;
+  first_start_today: string | null; last_activity_at: string | null;
+  tasks_today: number; done_today: number; sent_for_check_today: number;
+  recording_live: boolean; recordings_today: number;
+};
+
+export type WorkroomStatus = "active" | "paused" | "clocked_out" | "not_started";
+
+/** Derived, honest status: sessions are the only signal there is. */
+export function workroomStatus(r: { session_state: string | null; first_start_today: string | null; last_heartbeat_at: string | null }, staleAfterSeconds: number, nowMs: number): WorkroomStatus {
+  if (r.session_state === "running") return nowMs - new Date(r.last_heartbeat_at ?? 0).getTime() > staleAfterSeconds * 1000 ? "paused" : "active";
+  if (r.session_state === "paused" || r.session_state === "interrupted") return "paused";
+  return r.first_start_today ? "clocked_out" : "not_started";
+}
+
+/** Everyone who holds tasks (staff and team leads) that the caller may supervise, with what they are doing right now. */
+export async function workroomView(ctx: OrgContext, filters: { teamId?: string | null } = {}) {
+  return withUser(ctx.user.profileId, async (db) => {
+    const today = todayLocal(ctx.org.timezone);
+    const dayStart = dayStartIso(today, ctx.org.timezone);
+    const rows = await db.query<WorkroomRow>(
+      `WITH day AS (SELECT $2::timestamptz AS start_at, $2::timestamptz + interval '1 day' AS end_at)
+       SELECT * FROM (
+       SELECT m.id AS membership_id, pr.display_name, m.employee_code, m.role,
+              COALESCE((SELECT array_agg(t.name ORDER BY t.name) FROM team_members tm JOIN teams t ON t.id = tm.team_id WHERE tm.membership_id = m.id AND t.archived_at IS NULL), '{}') AS teams,
+              s.id AS session_id, s.state AS session_state, s.task_id, tk.title AS task_title, s.started_at, s.last_heartbeat_at,
+              COALESCE((SELECT SUM(EXTRACT(EPOCH FROM (COALESCE(i.ended_at, now()) - i.started_at)))::int FROM session_intervals i WHERE i.session_id = s.id AND i.confirmation_status = 'confirmed'), 0) AS session_seconds,
+              COALESCE((SELECT SUM(EXTRACT(EPOCH FROM (LEAST(COALESCE(i.ended_at, now()), day.end_at) - GREATEST(i.started_at, day.start_at))))::int
+                        FROM session_intervals i, day WHERE i.membership_id = m.id AND i.confirmation_status = 'confirmed' AND i.started_at < day.end_at AND COALESCE(i.ended_at, now()) > day.start_at), 0) AS today_seconds,
+              (SELECT MIN(ws.started_at) FROM work_sessions ws, day WHERE ws.membership_id = m.id AND ws.started_at >= day.start_at AND ws.started_at < day.end_at) AS first_start_today,
+              (SELECT MAX(COALESCE(ws.ended_at, ws.last_heartbeat_at)) FROM work_sessions ws WHERE ws.membership_id = m.id) AS last_activity_at,
+              (SELECT count(DISTINCT ws.task_id) FROM work_sessions ws, day WHERE ws.membership_id = m.id AND ws.started_at >= day.start_at AND ws.started_at < day.end_at)::int AS tasks_today,
+              (SELECT count(*) FROM tasks x, day WHERE x.assignee_membership_id = m.id AND x.status = 'completed' AND x.completed_at >= day.start_at)::int AS done_today,
+              (SELECT count(*) FROM tasks x WHERE x.assignee_membership_id = m.id AND x.status = 'in_review' AND x.archived_at IS NULL)::int AS sent_for_check_today,
+              (s.id IS NOT NULL AND EXISTS (SELECT 1 FROM recordings r WHERE r.session_id = s.id AND r.capture_state = 'recording')) AS recording_live,
+              (SELECT count(*) FROM recordings r, day WHERE r.membership_id = m.id AND r.deleted_at IS NULL AND r.capture_started_at >= day.start_at)::int AS recordings_today
+       FROM memberships m JOIN profiles pr ON pr.id = m.user_id
+       LEFT JOIN work_sessions s ON s.membership_id = m.id AND s.state IN ('running','paused','interrupted')
+       LEFT JOIN tasks tk ON tk.id = s.task_id
+       WHERE m.organisation_id = $1 AND m.status = 'active' AND m.role IN ('employee','manager')
+         AND ($3::uuid IS NULL OR EXISTS (SELECT 1 FROM team_members tm WHERE tm.membership_id = m.id AND tm.team_id = $3))
+         AND app_can_view_records($1, m.id)) w
+       ORDER BY CASE w.session_state WHEN 'running' THEN 0 WHEN 'paused' THEN 1 WHEN 'interrupted' THEN 1 ELSE 2 END, (w.first_start_today IS NULL), w.display_name`,
+      [ctx.org.id, dayStart, filters.teamId ?? null]);
+    const teams = await db.query<{ id: string; name: string }>(`SELECT id, name FROM teams WHERE organisation_id = $1 AND archived_at IS NULL ORDER BY name`, [ctx.org.id]);
+    const timings = await db.maybeOne<{ stale_after_seconds: number }>(`SELECT stale_after_seconds FROM policies WHERE id = $1`, [ctx.org.current_policy_id]);
+    const now = await db.one<{ now: string }>(`SELECT now() AS now`);
+    return { rows, teams, staleAfterSeconds: timings?.stale_after_seconds ?? 90, serverNow: now.now, today };
+  });
+}
+
+export type WorkroomTaskRow = { id: string; title: string; status: string; project_name: string; due_at: string | null; completed_at: string | null; seconds_today: number; sessions_today: number; first_started_today: string | null; last_worked_at: string | null; created_by_name: string; recordings: number; current: boolean };
+
+/** One person's day: every task they touched, planned or finished today, their sessions, and today's recordings. */
+export async function workroomPerson(ctx: OrgContext, membershipId: string) {
+  return withUser(ctx.user.profileId, async (db) => {
+    const today = todayLocal(ctx.org.timezone);
+    const dayStart = dayStartIso(today, ctx.org.timezone);
+    const all = await workroomView(ctx);
+    const person = all.rows.find((r) => r.membership_id === membershipId);
+    if (!person) return null;
+    const tasks = await db.query<WorkroomTaskRow>(
+      `WITH day AS (SELECT $2::timestamptz AS start_at, $2::timestamptz + interval '1 day' AS end_at)
+       SELECT t.id, t.title, t.status, p.name AS project_name, t.due_at, t.completed_at, pc.display_name AS created_by_name,
+              COALESCE((SELECT SUM(EXTRACT(EPOCH FROM (LEAST(COALESCE(i.ended_at, now()), day.end_at) - GREATEST(i.started_at, day.start_at))))::int FROM session_intervals i, day WHERE i.task_id = t.id AND i.membership_id = $3 AND i.confirmation_status = 'confirmed' AND i.started_at < day.end_at AND COALESCE(i.ended_at, now()) > day.start_at), 0) AS seconds_today,
+              (SELECT count(*) FROM work_sessions ws, day WHERE ws.task_id = t.id AND ws.membership_id = $3 AND ws.started_at >= day.start_at AND ws.started_at < day.end_at)::int AS sessions_today,
+              (SELECT MIN(ws.started_at) FROM work_sessions ws, day WHERE ws.task_id = t.id AND ws.membership_id = $3 AND ws.started_at >= day.start_at) AS first_started_today,
+              (SELECT MAX(COALESCE(ws.ended_at, ws.last_heartbeat_at)) FROM work_sessions ws WHERE ws.task_id = t.id AND ws.membership_id = $3) AS last_worked_at,
+              (SELECT count(*) FROM recordings r JOIN work_sessions ws ON ws.id = r.session_id WHERE ws.task_id = t.id AND r.membership_id = $3 AND r.deleted_at IS NULL)::int AS recordings,
+              EXISTS (SELECT 1 FROM work_sessions ws WHERE ws.task_id = t.id AND ws.membership_id = $3 AND ws.state IN ('running','paused','interrupted')) AS current
+       FROM tasks t JOIN projects p ON p.id = t.project_id JOIN memberships mc ON mc.id = t.created_by JOIN profiles pc ON pc.id = mc.user_id, day
+       WHERE t.organisation_id = $1 AND t.assignee_membership_id = $3 AND t.archived_at IS NULL
+         AND (EXISTS (SELECT 1 FROM work_sessions ws WHERE ws.task_id = t.id AND ws.membership_id = $3 AND ws.started_at >= day.start_at)
+              OR (t.status = 'completed' AND t.completed_at >= day.start_at)
+              OR EXISTS (SELECT 1 FROM daily_plan_items d WHERE d.task_id = t.id AND d.membership_id = $3 AND d.local_date = $4::date)
+              OR t.status IN ('in_progress','blocked','in_review'))
+       ORDER BY current DESC, CASE t.status WHEN 'in_progress' THEN 0 WHEN 'blocked' THEN 1 WHEN 'todo' THEN 2 WHEN 'in_review' THEN 3 ELSE 4 END, seconds_today DESC, t.title`,
+      [ctx.org.id, dayStart, membershipId, today]);
+    const sessions = await db.query<{ id: string; task_id: string; task_title: string; state: string; started_at: string; ended_at: string | null; stop_outcome: string | null; stop_note: string | null; seconds: number; recordings: number }>(
+      `SELECT s.id, s.task_id, t.title AS task_title, s.state, s.started_at, s.ended_at, s.stop_outcome, s.stop_note,
+              COALESCE((SELECT SUM(EXTRACT(EPOCH FROM (COALESCE(i.ended_at, now()) - i.started_at)))::int FROM session_intervals i WHERE i.session_id = s.id AND i.confirmation_status = 'confirmed'), 0) AS seconds,
+              (SELECT count(*) FROM recordings r WHERE r.session_id = s.id AND r.deleted_at IS NULL)::int AS recordings
+       FROM work_sessions s JOIN tasks t ON t.id = s.task_id WHERE s.membership_id = $1 AND s.started_at >= $2::timestamptz ORDER BY s.started_at DESC`, [membershipId, dayStart]);
+    return { person, tasks, sessions, today, staleAfterSeconds: all.staleAfterSeconds, serverNow: all.serverNow };
+  });
+}

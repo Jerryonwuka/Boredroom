@@ -94,6 +94,16 @@ Verified: lint, typecheck, 47 Vitest tests, 3 Playwright tests; screenshots at 1
 
 Tests: `recording.test.ts` (lead and HR play without a grant, colleague denied and logged, list visibility), `round3.test.ts` (Done sends for check; stop-with-Done). 47 Vitest tests, 3 Playwright tests.
 
+## Owner feedback round 5 (16 September 2026): the Workroom
+
+| Ask | Done |
+| --- | --- |
+| A "Workroom" in the left bar showing everyone who clocked in today and is working: name, department, status, a live indicator when they are recording, the task and the time on it; click a person for their whole day | New **Workroom** (`/workroom`, menu item for owners, HR and team leads; the old Activity page redirects to it). A card per person: name, teams, Staff/Team lead, status (Active, Paused, Off the clock, Not started today), a pulsing **LIVE** badge while their screen is recording, the task they are on with a ticking clock and the start time, and a footer with time today, tasks worked, done and sent for check, recordings today. Filters by team; people who have not started are hidden until "Show everyone". Cards refresh live through the existing event stream. |
+| Click through to one person | `/workroom/[member]`: what they are on now (ticking), time today, task and recording counts; every task they touched, planned or finished today with time per task, sessions and recordings; each session with its length, times, outcome and note; today's recordings with Watch. |
+| "Clocked in" | There is no separate clock-in. Status is derived from timers only and the page says so: Active = running timer with a live heartbeat; Paused = paused, interrupted, or no heartbeat for the stale period; Off the clock = worked today, nothing running; Not started = no session today. |
+
+Scope: team leads see the people on their teams, organisation accounts see everyone who holds tasks; staff have no Workroom (their day is My Day). Test: `tests/integration/workroom.test.ts`.
+
 ## Milestone status
 
 | Milestone | Status | Evidence |

@@ -16,8 +16,8 @@ export function navItems(ctx: OrgContext, counts: NavCounts, teams: { id: string
   if (role === "owner" || role === "hr") {
     // Organisation account: supervision and management only.
     items.push({ href: `${base}/dashboard`, label: "Dashboard", icon: "dashboard" });
+    items.push({ href: `${base}/workroom`, label: "Workroom", icon: "team" });
     items.push({ href: `${base}/people`, label: "People and teams", icon: "people" });
-    items.push({ href: `${base}/team`, label: "Activity", icon: "team" });
     items.push({ href: `${base}/reviews`, label: "Reviews", icon: "reviews", badge: counts.attention || undefined });
     items.push({ href: `${base}/recordings`, label: "Recordings", icon: "recordings" });
     // Records (timesheets, corrections, CSV export) are reached from Reports and from any person's row; not a top-level item.
@@ -32,7 +32,7 @@ export function navItems(ctx: OrgContext, counts: NavCounts, teams: { id: string
   if (role === "manager") {
     for (const t of teams.filter((t) => t.is_manager)) items.push({ href: `${base}/teams/${t.id}`, label: `${t.name} board`, icon: "board" });
     items.push({ href: `${base}/my-day`, label: "My Day", icon: "myday" });
-    items.push({ href: `${base}/team`, label: "Activity", icon: "team" });
+    items.push({ href: `${base}/workroom`, label: "Workroom", icon: "team" });
     items.push({ href: `${base}/reviews`, label: "Reviews", icon: "reviews", badge: counts.attention || undefined });
     items.push({ href: `${base}/recordings`, label: "Recordings", icon: "recordings" });
     items.push({ href: `${base}/timesheets`, label: "Timesheets", icon: "timesheets" });
