@@ -68,6 +68,10 @@ pnpm db:migrate && pnpm db:seed
 
 All passwords: `correct-horse-battery`. Company A has a "Website relaunch" project with a homepage design task (Figma-link deliverable expected) and a client meeting task assigned to Ada, reviewed by David.
 
+### Where recordings live
+
+While a person records, the browser uploads ten-second chunks to `var/storage/org/<organisation>/recordings/<session>/<recording>/` (or the configured private bucket). The background worker then stitches them into one video file next to the chunks and marks the recording "Ready to watch". `pnpm dev` starts the worker with the app; on a server, run `pnpm worker` next to `pnpm start`, or recordings stay at "processing".
+
 ### After `git pull`
 
 Run `pnpm dev` as usual: it installs any packages a pull added and applies new database migrations before starting. If you start Next.js some other way and see "Module not found: Can't resolve …", run `pnpm install` first.

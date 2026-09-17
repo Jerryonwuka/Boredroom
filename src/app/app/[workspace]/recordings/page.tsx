@@ -6,7 +6,8 @@ import { Select } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { EmptyState, PermissionDenied } from "@/components/ui/states";
 import { RecordingsTable } from "@/components/app/recordings-table";
-import { listRecordings } from "@/server/services/recording";
+import { listRecordings, pendingAssembly } from "@/server/services/recording";
+import { Alert } from "@/components/ui/states";
 import { withUser } from "@/server/db";
 import { myTeams } from "@/server/services/views";
 
@@ -26,7 +27,7 @@ export default async function RecordingsPage({ params, searchParams }: { params:
     : (await myTeams(ctx)).filter((t) => t.is_manager);
   const members = await withUser(ctx.user.profileId, (db) => db.query<{ id: string; display_name: string }>(
     `SELECT m.id, pr.display_name FROM memberships m JOIN profiles pr ON pr.id = m.user_id WHERE m.organisation_id = $1 AND m.status = 'active' AND m.role IN ('employee','manager') AND app_can_view_records($1, m.id) ORDER BY pr.display_name`, [ctx.org.id]));
-  const rows = await listRecordings(ctx, { teamId: sp.team || null, membershipId: sp.member || null, limit: 200 });
+  const [rows, waiting] = await Promise.all([listRecordings(ctx, { teamId: sp.team || null, membershipId: sp.member || null, limit: 200 }), pendingAssembly(ctx)]);
   const base = `/app/${ctx.org.slug}`;
   return (
     <AppShell ctx={ctx} counts={counts} teams={navTeams}>
@@ -38,6 +39,7 @@ export default async function RecordingsPage({ params, searchParams }: { params:
         <Button type="submit" variant="outline" size="sm">Filter</Button>
         {sp.team || sp.member ? <Link href={`${base}/recordings`} className="text-sm underline">Clear</Link> : null}
       </form>
+      {waiting ? <Alert tone="warning" className="mb-4" title={`${waiting} recording${waiting === 1 ? " is" : "s are"} waiting to be assembled`}>Uploaded chunks become a watchable video only when the background worker runs. <code>pnpm dev</code> now starts it automatically; on a server run <code>pnpm worker</code> alongside <code>pnpm start</code>.</Alert> : null}
       {rows.length === 0 ? <EmptyState title="No recordings yet" description="A recording appears here as soon as someone presses Record screen while their timer runs. Recording must be on under Settings, and each person acknowledges the notice once." action={isOrg ? <Link href={`${base}/settings`} className="underline">Check the recording setting</Link> : undefined} /> : (
         <RecordingsTable orgSlug={ctx.org.slug} rows={rows} timeZone={ctx.org.timezone} />
       )}

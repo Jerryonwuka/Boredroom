@@ -1,6 +1,7 @@
 /**
- * `pnpm dev`: starts the app, and also the self-contained PostgreSQL when .env.local points at it
- * (i.e. the project was set up with `pnpm quickstart`). With your own PostgreSQL nothing changes.
+ * `pnpm dev`: starts the app, the background worker (which assembles screen recordings, runs retention and
+ * reminders), and the self-contained PostgreSQL when .env.local points at it (i.e. the project was set up with
+ * `pnpm quickstart`). With your own PostgreSQL nothing changes. `pnpm dev --no-worker` skips the worker.
  */
 import { config } from "dotenv";
 config({ path: [".env.local", ".env"], quiet: true });
@@ -33,7 +34,10 @@ async function main() {
   const npx = process.platform === "win32" ? "npx.cmd" : "npx";
   const port = process.env.PORT ?? "3000";
   const next = spawn(npx, ["next", "dev", "-p", port], { stdio: "inherit", env: process.env, shell: process.platform === "win32" });
-  const shutdown = async () => { if (stop) { console.log("\nStopping local PostgreSQL…"); await stop(); } process.exit(0); };
+  // Without the worker, recordings stay at "processing" forever and nothing expires. Run it alongside the app.
+  const worker = process.argv.includes("--no-worker") ? null : spawn(npx, ["tsx", "worker/index.ts"], { stdio: "inherit", env: process.env, shell: process.platform === "win32" });
+  if (worker) console.log("Background worker started (assembles recordings, retention, reminders).");
+  const shutdown = async () => { worker?.kill(); if (stop) { console.log("\nStopping local PostgreSQL…"); await stop(); } process.exit(0); };
   process.on("SIGINT", shutdown); process.on("SIGTERM", shutdown);
   next.on("exit", () => void shutdown());
 }

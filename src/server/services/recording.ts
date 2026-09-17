@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { randomUUID } from "node:crypto";
-import { withUser, withWorker, isUniqueViolation, type Db } from "@/server/db";
+import { withUser, withWorker, withSystem, isUniqueViolation, type Db } from "@/server/db";
 import { AppError, conflict, forbidden, invalid, notFound } from "@/server/lib/errors";
 import { storage, tenantKey } from "@/server/lib/storage";
 import { sha256, signPayload, verifyPayload } from "@/server/lib/crypto";
@@ -326,4 +326,12 @@ export async function recordingCountsByTask(ctx: OrgContext, taskIds: string[]):
   const rows = await withUser(ctx.user.profileId, (db) => db.query<{ task_id: string; n: number }>(
     `SELECT s.task_id, count(*)::int AS n FROM recordings r JOIN work_sessions s ON s.id = r.session_id WHERE r.organisation_id = $1 AND r.deleted_at IS NULL AND s.task_id = ANY($2::uuid[]) GROUP BY s.task_id`, [ctx.org.id, taskIds]));
   return Object.fromEntries(rows.map((r) => [r.task_id, r.n]));
+}
+
+/** Recordings of this organisation still waiting for the background worker to assemble them (older than a minute). */
+export async function pendingAssembly(ctx: OrgContext): Promise<number> {
+  const r = await withSystem((db) => db.one<{ n: number }>(
+    `SELECT count(*)::int AS n FROM jobs j JOIN recordings r ON r.id = (j.payload->>'recordingId')::uuid
+     WHERE j.type = 'recording.assemble' AND j.state IN ('pending','running') AND r.organisation_id = $1 AND j.created_at < now() - interval '1 minute'`, [ctx.org.id]));
+  return r.n;
 }
