@@ -298,3 +298,29 @@ test("Tasks: the owner adds a task from the Tasks page and assigns it to Ben", a
   await expect(page.getByText("Task created and assigned to Ben Employee.")).toBeVisible();
   await expect(page.getByRole("row").filter({ hasText: "Prepare the board pack" })).toContainText("Ben Employee");
 });
+
+test("Clocking: Ada clocks in from My Day, sees her status, and the owner sees her under Clocked in", async ({ page }) => {
+  await page.context().clearCookies();
+  await signIn(page, "ada@company-a.test");
+  await page.goto("/app/company-a/my-day");
+  await page.getByRole("button", { name: "Clock in" }).first().click();
+  await expect(page.getByRole("button", { name: "Clock in" })).toHaveCount(0);
+  await page.goto("/app/company-a/clock");
+  await expect(page.getByRole("heading", { name: "Your clock" })).toBeVisible();
+  await expect(page.getByText(/Clocked in \d\d:\d\d/)).toBeVisible();
+  await expect(page.getByText(/On time|Late by/).first()).toBeVisible();
+
+  await page.context().clearCookies();
+  await signIn(page, "owner@company-a.test");
+  await page.goto("/app/company-a/attendance");
+  await expect(page.getByRole("heading", { name: "Attendance" })).toBeVisible();
+  const row = page.getByRole("row").filter({ hasText: "Ada Employee" });
+  await expect(row).toContainText("Clocked in");
+  await page.getByRole("link", { name: /Not clocked in/ }).click();
+  await expect(page.getByRole("row").filter({ hasText: "Ben Employee" })).toBeVisible();
+  await expect(page.getByRole("row").filter({ hasText: "Ada Employee" })).toHaveCount(0);
+  // The owner clocks in as well.
+  await page.goto("/app/company-a/clock");
+  await page.getByRole("button", { name: "Clock in" }).click();
+  await expect(page.getByRole("button", { name: "Clock out" })).toBeVisible();
+});

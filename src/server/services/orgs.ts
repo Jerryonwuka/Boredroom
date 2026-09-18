@@ -272,8 +272,8 @@ export async function updateOrganisation(ctx: OrgContext, input: z.infer<typeof 
     await db.query(`UPDATE organisations SET name = COALESCE($2, name), timezone = COALESCE($3, timezone) WHERE id = $1`, [ctx.org.id, input.name ?? null, input.timezone ?? null]);
     if (input.timezone) {
       // Prospective change: a new schedule row from today; submitted reports keep their snapshot zone.
-      await db.query(`INSERT INTO schedules(organisation_id, timezone, working_days, start_local, end_local, effective_from)
-        SELECT organisation_id, $2, working_days, start_local, end_local, CURRENT_DATE FROM schedules WHERE organisation_id = $1 AND membership_id IS NULL ORDER BY effective_from DESC LIMIT 1`, [ctx.org.id, input.timezone]);
+      await db.query(`INSERT INTO schedules(organisation_id, timezone, working_days, start_local, end_local, clock_grace_minutes, effective_from)
+        SELECT organisation_id, $2, working_days, start_local, end_local, clock_grace_minutes, CURRENT_DATE FROM schedules WHERE organisation_id = $1 AND membership_id IS NULL ORDER BY effective_from DESC LIMIT 1`, [ctx.org.id, input.timezone]);
     }
     await audit(db, { organisationId: ctx.org.id, actorMembershipId: ctx.membership.id, action: "org.updated", subjectType: "organisation", subjectId: ctx.org.id, metadata: input });
   });
@@ -283,13 +283,15 @@ export const scheduleSchema = z.object({
   workingDays: z.array(z.number().int().min(0).max(6)).min(1).max(7),
   startLocal: z.string().regex(/^\d{2}:\d{2}$/),
   endLocal: z.string().regex(/^\d{2}:\d{2}$/),
+  /** Minutes after the start time before a clock-in counts as late. */
+  graceMinutes: z.number().int().min(0).max(180).default(0),
 });
 
 export async function updateSchedule(ctx: OrgContext, input: z.infer<typeof scheduleSchema>) {
   if (input.endLocal <= input.startLocal) throw invalid("End time must be after start time.", { endLocal: ["End time must be after start time."] });
   return withUser(ctx.user.profileId, async (db) => {
-    await db.query(`INSERT INTO schedules(organisation_id, timezone, working_days, start_local, end_local, effective_from) VALUES ($1, $2, $3, $4, $5, CURRENT_DATE)`,
-      [ctx.org.id, ctx.org.timezone, input.workingDays, input.startLocal, input.endLocal]);
+    await db.query(`INSERT INTO schedules(organisation_id, timezone, working_days, start_local, end_local, clock_grace_minutes, effective_from) VALUES ($1, $2, $3, $4, $5, $6, CURRENT_DATE)`,
+      [ctx.org.id, ctx.org.timezone, input.workingDays, input.startLocal, input.endLocal, input.graceMinutes ?? 0]);
     await audit(db, { organisationId: ctx.org.id, actorMembershipId: ctx.membership.id, action: "schedule.updated", subjectType: "organisation", subjectId: ctx.org.id, metadata: input });
   });
 }

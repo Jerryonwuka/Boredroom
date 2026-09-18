@@ -17,6 +17,8 @@ export function navItems(ctx: OrgContext, counts: NavCounts, teams: { id: string
   if (role === "owner" || role === "hr") {
     // Organisation account: supervision and management only.
     items.push({ href: `${base}/dashboard`, label: "Dashboard", icon: "dashboard" });
+    items.push({ href: `${base}/clock`, label: "Clock in", icon: "clock" });
+    items.push({ href: `${base}/attendance`, label: "Attendance", icon: "attendance" });
     items.push({ href: `${base}/workroom`, label: "Workroom", icon: "team" });
     items.push({ href: `${base}/messages`, label: "Messages", icon: "messages", badge: counts.messages || undefined });
     items.push({ href: `${base}/tasks`, label: "Tasks", icon: "tasks" });
@@ -35,7 +37,9 @@ export function navItems(ctx: OrgContext, counts: NavCounts, teams: { id: string
   if (role === "manager") {
     for (const t of teams.filter((t) => t.is_manager)) items.push({ href: `${base}/teams/${t.id}`, label: `${t.name} board`, icon: "board" });
     items.push({ href: `${base}/my-day`, label: "My Day", icon: "myday" });
+    items.push({ href: `${base}/clock`, label: "Clock in", icon: "clock" });
     items.push({ href: `${base}/tasks`, label: "Tasks", icon: "tasks" });
+    items.push({ href: `${base}/attendance`, label: "Attendance", icon: "attendance" });
     items.push({ href: `${base}/workroom`, label: "Workroom", icon: "team" });
     items.push({ href: `${base}/messages`, label: "Messages", icon: "messages", badge: counts.messages || undefined });
     items.push({ href: `${base}/reviews`, label: "Reviews", icon: "reviews", badge: counts.attention || undefined });
@@ -49,6 +53,7 @@ export function navItems(ctx: OrgContext, counts: NavCounts, teams: { id: string
   }
   // Staff: the smallest possible menu.
   items.push({ href: `${base}/my-day`, label: "My Day", icon: "myday" });
+  items.push({ href: `${base}/clock`, label: "Clock in", icon: "clock" });
   items.push({ href: `${base}/tasks`, label: "Tasks", icon: "tasks" });
   items.push({ href: `${base}/messages`, label: "Messages", icon: "messages", badge: counts.messages || undefined });
   items.push({ href: `${base}/timesheets`, label: "My timesheet", icon: "timesheets" });

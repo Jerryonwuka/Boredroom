@@ -6,6 +6,7 @@ import { Badge, SESSION_STATE_TONE, label } from "@/components/ui/badge";
 import { DataTable } from "@/components/ui/table";
 import { PermissionDenied, EmptyState } from "@/components/ui/states";
 import { orgDashboard } from "@/server/services/views";
+import { attendanceBoard } from "@/server/services/attendance";
 import { listRecordings } from "@/server/services/recording";
 import { formatDuration, formatDateTime, relativeTime, formatLongDate } from "@/lib/utils";
 
@@ -16,10 +17,11 @@ export default async function DashboardPage({ params }: { params: Promise<{ work
   const { workspace } = await params;
   const { ctx, counts, teams } = await workspacePage(workspace, `/app/${workspace}/dashboard`);
   if (!["owner", "hr"].includes(ctx.membership.role)) return <AppShell ctx={ctx} counts={counts} teams={teams}><PermissionDenied description="The organisation dashboard is for the organisation account (owners and HR). Team leads use their team board; staff use My Day." /></AppShell>;
-  const [d, recentRecordings] = await Promise.all([orgDashboard(ctx), listRecordings(ctx, { limit: 6 })]);
+  const [d, recentRecordings, att] = await Promise.all([orgDashboard(ctx), listRecordings(ctx, { limit: 6 }), attendanceBoard(ctx)]);
   const base = `/app/${ctx.org.slug}`;
   const now = new Date(d.serverNow).getTime();
   const ledger = [
+    { label: "Clocked in", value: att.counts.in + att.counts.out, note: att.counts.late ? `${att.counts.late} late, ${att.counts.not_in} not yet` : `${att.counts.not_in} not yet`, href: `${base}/attendance`, tone: att.counts.late ? ("danger" as const) : ("default" as const) },
     { label: "Working now", value: d.counts.working, note: `${d.counts.connected} connected`, href: `${base}/workroom`, tone: d.counts.working ? ("accent" as const) : ("default" as const) },
     { label: "Time today", value: formatDuration(d.counts.seconds_today), note: "confirmed timer time, everyone", href: `${base}/timesheets` },
     { label: "Done today", value: d.counts.tasks_done_today, note: `${d.counts.tasks_done_total} completed in total`, href: `${base}/reports` },
@@ -33,6 +35,23 @@ export default async function DashboardPage({ params }: { params: Promise<{ work
       <PageHeader overline={formatLongDate(d.today)} title={ctx.org.name} description={<>What is happening right now, from timers and tasks. Nothing here is a productivity score. Last sync {formatDateTime(d.serverNow, ctx.org.timezone)}.</>}
         actions={<><Link href={`${base}/people`}><span className="inline-flex h-11 items-center rounded-full bg-accent px-5 text-[15px] font-semibold text-accent-fg hover:bg-accent-hover">Add people and teams</span></Link><Link href={`${base}/reviews`}><span className="inline-flex h-11 items-center rounded-full border border-accent px-5 text-[15px] font-semibold hover:bg-accent-soft">Review queue{counts.attention ? ` (${counts.attention})` : ""}</span></Link></>} />
       <Ledger className="mb-8" items={ledger} />
+
+      <section className="mb-8">
+        <div className="mb-3 flex items-center justify-between gap-2"><h2 className="font-display text-lg">Clocked in today ({att.counts.in + att.counts.out} of {att.people.length})</h2><Link href={`${base}/attendance`} className="text-sm underline">Open Attendance</Link></div>
+        <div className="grid gap-3 md:grid-cols-3">
+          {([["in", "Clocked in", "success"], ["not_in", "Not clocked in", "neutral"], ["out", "Clocked out", "info"]] as const).map(([key, title, tone]) => {
+            const rows = att.people.filter((p) => p.status === key);
+            return (
+              <Card key={key}>
+                <div className="mb-2 flex items-center justify-between"><h3 className="font-semibold">{title}</h3><Badge tone={tone}>{rows.length}</Badge></div>
+                {rows.length === 0 ? <p className="text-sm text-fg-subtle">{key === "in" ? "Nobody yet." : key === "not_in" ? "Everyone is in." : "Nobody has left."}</p> : (
+                  <ul className="space-y-1 text-sm">{rows.slice(0, 6).map((p) => <li key={p.membership_id} className="flex items-center justify-between gap-2"><Link href={`${base}/attendance?tab=${key}`} className="truncate hover:underline">{p.display_name}</Link>{p.clock_in_at ? <span className={p.late_seconds ? "text-warning" : "text-fg-subtle"}>{new Intl.DateTimeFormat("en-GB", { timeZone: att.schedule.timezone, hour: "2-digit", minute: "2-digit" }).format(new Date(p.clock_in_at))}{p.late_seconds ? " late" : ""}</span> : null}</li>)}{rows.length > 6 ? <li><Link href={`${base}/attendance?tab=${key}`} className="text-xs underline">and {rows.length - 6} more</Link></li> : null}</ul>
+                )}
+              </Card>
+            );
+          })}
+        </div>
+      </section>
 
       <section className="mb-8">
         <div className="mb-3 flex items-center justify-between gap-2"><h2 className="font-display text-lg">Working right now ({d.workingNow.length})</h2><Link href={`${base}/workroom`} className="text-sm underline">Open the Workroom</Link></div>

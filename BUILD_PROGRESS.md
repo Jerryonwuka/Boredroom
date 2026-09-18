@@ -128,6 +128,10 @@ Two fixes. Dictation in the to-do assistant now restarts itself when the browser
 
 The owner hit "You cannot assign tasks to that person in this project" when handing a to-do to someone outside the lead's team. Cause: a hand-out was filed under the first team project the creator belonged to, which is not necessarily one they lead, so the assignment check (and row-level security) refused it. Hand-outs now pick a project the creator is allowed to assign in: a lead uses a team they lead (lead access synced first), an organisation account uses the assignee's team, and both fall back to the creator's own to-do project. Team leads by role see the lead view of Tasks even before they are marked lead of a team. Organisation accounts can now add and assign tasks from the Tasks page ("Add new task") to anyone; they still hold no tasks of their own. 64 Vitest tests and 8 Playwright tests pass.
 
+## Owner feedback round 10 (18 September 2026): clocking in and out
+
+The owner asked for a clocking feature: the organisation sets clock-in and clock-out times (for example 08:00 and 17:30 WAT), every person clocks in on or before the start or is flagged late, the dashboard shows who has and has not clocked in, and everyone (staff, leads, organisation accounts) has a tab to clock in and out. Shipped: migration `0016_attendance.sql` (one `attendance_days` row per person per local day, schedule and grace captured on the row, RLS: own row, or owner/HR, or your team lead; only you can clock yourself), `src/server/services/attendance.ts` (clockIn idempotent, clockOut refused while a timer runs, myClock, attendanceBoard scoped by role), the Clock in page, a My Day banner, the Attendance page with tabs, day navigation and a team filter, three lists on the dashboard, and a grace-minutes field on the schedule. Lateness is judged in the organisation time zone with a DST-safe local-time calculation. 68 Vitest tests (5 new) and 9 Playwright tests pass.
+
 ## Milestone status
 
 | Milestone | Status | Evidence |
@@ -174,11 +178,11 @@ The owner hit "You cannot assign tasks to that person in this project" when hand
 | --- | --- |
 | `pnpm lint` | clean (ESLint 9 with Next core-web-vitals, TypeScript and React compiler rules) |
 | `pnpm typecheck` | clean |
-| `pnpm test` (Vitest 4, embedded PostgreSQL 18, restricted `boardroom_app` role) | 11 files, 63 tests passed (18 September 2026): `tests/unit/{time,assistant}.test.ts`, `tests/integration/{tenancy,sessions,evidence-reports,recording,join-codes,round3,workroom,messaging,tasks-page}.test.ts` |
+| `pnpm test` (Vitest 4, embedded PostgreSQL 18, restricted `boardroom_app` role) | 12 files, 68 tests passed (18 September 2026): `tests/unit/{time,assistant}.test.ts`, `tests/integration/{tenancy,sessions,evidence-reports,recording,join-codes,round3,workroom,messaging,tasks-page,attendance}.test.ts` |
 | `pnpm build` (Next.js 16.3.4) | succeeds; all workspace routes are dynamic (server-rendered per request) |
 | `pnpm smoke` | every page read model executes for the seeded fixtures (15 checks) |
 | `pnpm worker` | job loop runs against the seeded database; housekeeping job succeeded; reminder scheduling deduplicated |
-| `pnpm test:e2e` (Playwright 1.63, Chromium 141 preinstalled, production build on port 3100) | 8 passed: A24 core workflow (plan, start, reload, pause/resume, switch, stop, submit, changes requested, resubmit, approve, report approval, CSV export), A01/A02 browser isolation, A03 invitation lifecycle through the mail sink, Messages (direct thread across the organisation, unread badge), Tasks (lead creates and assigns, staff starts it), Dictation (fake speech engine), Tasks handed up to the owner, owner adds a task for Ben |
+| `pnpm test:e2e` (Playwright 1.63, Chromium 141 preinstalled, production build on port 3100) | 9 passed: A24 core workflow (plan, start, reload, pause/resume, switch, stop, submit, changes requested, resubmit, approve, report approval, CSV export), A01/A02 browser isolation, A03 invitation lifecycle through the mail sink, Messages (direct thread across the organisation, unread badge), Tasks (lead creates and assigns, staff starts it), Dictation (fake speech engine), Tasks handed up to the owner, owner adds a task for Ben, Clocking (Ada clocks in, owner sees Attendance) |
 
 Environment notes: no Docker daemon, no Supabase CLI, no ffmpeg; Figma and most external hosts are blocked by the network policy. Nothing was sent to a real mailbox and no external service was configured.
 

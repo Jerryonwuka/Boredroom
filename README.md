@@ -116,6 +116,10 @@ docs                 providers, runbooks, walkthrough
 
 Owners, HR and team leads open **Workroom** to see everyone who has clocked in today: status (Active, Paused, Off the clock, Not started), the task they are on with a live clock, a LIVE badge while they record their screen, and today's totals. Click a person for every task, session and recording of their day. Status is derived from timers only.
 
+## Clocking in and out
+
+Everyone, staff, team leads, owner and HR, clocks in and out from **Clock in** in the sidebar (staff also get a one-line prompt at the top of My Day until they have clocked in). The organisation sets the day in Settings under Working schedule and clocking: clock-in time, clock-out time, a grace period in minutes, all in the organisation's time zone. A clock-in after the start plus grace is recorded as late by the difference; leaving before the end is noted, not penalised. Clocking out is refused while a task timer runs. Owners, HR and team leads open **Attendance** for any day: tabs for Clocked in, Not clocked in and Clocked out, a team filter, and late flags; the dashboard shows the same three lists for today. The schedule in force at clock-in is stored on the record, so changing the schedule later never rewrites history.
+
 ## Tasks
 
 **Tasks** in the sidebar is the assignment board. A team lead or an organisation account presses Add new task, writes what needs doing, picks someone on their team, themself, another team lead, or the owner or HR (work can be handed sideways or upwards), sets a priority, due date and estimate, and the person is notified. The lead's page lists every task on their teams with tabs for To do, Sent for check and Done, a person filter, and an "Ask for an update" link into Messages. Staff see "Your tasks": everything assigned to them, by their lead or by themselves; Start on a row starts the clock and opens My Day (or switches a running timer to that task). Organisation accounts see every task in the organisation; anything handed to them carries a Mark done button (they do not run timers), and Done goes back to the lead for a check.

@@ -40,16 +40,17 @@ export function OrgSettingsForm({ orgSlug, name, timezone }: { orgSlug: string; 
 }
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-export function ScheduleForm({ orgSlug, schedule }: { orgSlug: string; schedule: { working_days: number[]; start_local: string; end_local: string } | null }) {
+export function ScheduleForm({ orgSlug, schedule }: { orgSlug: string; schedule: { working_days: number[]; start_local: string; end_local: string; clock_grace_minutes?: number } | null }) {
   const { pending, error, ok, fieldErrors, submit } = useForm();
   const days = schedule?.working_days ?? [1, 2, 3, 4, 5];
   return (
-    <form className="grid gap-3" onSubmit={(e) => { e.preventDefault(); const f = new FormData(e.currentTarget); submit(() => api(`/api/orgs/${orgSlug}/settings/schedule`, { method: "PUT", body: { workingDays: f.getAll("days").map(Number), startLocal: f.get("start"), endLocal: f.get("end") } })); }}>
+    <form className="grid gap-3" onSubmit={(e) => { e.preventDefault(); const f = new FormData(e.currentTarget); submit(() => api(`/api/orgs/${orgSlug}/settings/schedule`, { method: "PUT", body: { workingDays: f.getAll("days").map(Number), startLocal: f.get("start"), endLocal: f.get("end"), graceMinutes: Number(f.get("grace") || 0) } })); }}>
       {error ? <Alert tone="danger">{error}</Alert> : null}{ok ? <Alert tone="success">{ok}</Alert> : null}
       <fieldset><legend className="mb-1 text-sm font-semibold text-fg-muted">Working days</legend><div className="flex flex-wrap gap-3 text-sm">{DAYS.map((d, i) => <label key={d} className="flex items-center gap-1"><input type="checkbox" name="days" value={i} defaultChecked={days.includes(i)} /> {d}</label>)}</div></fieldset>
-      <div className="grid grid-cols-2 gap-3 md:w-80">
-        <Field label="Start" htmlFor="s-start"><Input id="s-start" name="start" type="time" defaultValue={(schedule?.start_local ?? "09:00").slice(0, 5)} required /></Field>
-        <Field label="End" htmlFor="s-end" error={fieldErrors.endLocal}><Input id="s-end" name="end" type="time" defaultValue={(schedule?.end_local ?? "17:00").slice(0, 5)} required /></Field>
+      <div className="grid grid-cols-2 gap-3 md:w-[30rem] md:grid-cols-3">
+        <Field label="Clock in by" htmlFor="s-start" hint="start of the day"><Input id="s-start" name="start" type="time" defaultValue={(schedule?.start_local ?? "09:00").slice(0, 5)} required /></Field>
+        <Field label="Clock out at" htmlFor="s-end" hint="end of the day" error={fieldErrors.endLocal}><Input id="s-end" name="end" type="time" defaultValue={(schedule?.end_local ?? "17:00").slice(0, 5)} required /></Field>
+        <Field label="Late after (minutes)" htmlFor="s-grace" hint="grace period" error={fieldErrors.graceMinutes}><Input id="s-grace" name="grace" type="number" min={0} max={180} defaultValue={schedule?.clock_grace_minutes ?? 0} /></Field>
       </div>
       <div><Button type="submit" disabled={pending}>Save schedule</Button></div>
     </form>
