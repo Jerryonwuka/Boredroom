@@ -269,6 +269,7 @@ export const quickTodoSchema = z.object({
   /** Team leads may hand a to-do to someone on their team; staff can only add for themselves. */
   assigneeMembershipId: z.string().uuid().nullable().optional(),
   estimateMinutes: z.number().int().positive().nullable().optional(),
+  priority: z.enum(["low", "normal", "high", "urgent"]).optional(),
 });
 
 /**
@@ -282,7 +283,7 @@ export async function quickTodo(ctx: OrgContext, input: z.infer<typeof quickTodo
   const projectId = await withUser(ctx.user.profileId, (db) => todoProjectFor(db, ctx));
   // Own to-dos are checked by the team lead; a to-do handed out by a lead is checked by that lead.
   const reviewer = forSelf ? await withUser(ctx.user.profileId, (db) => defaultReviewerFor(db, ctx.org.id, ctx.membership.id)) : ctx.membership.id;
-  return createTask(ctx, { projectId, title: input.title, expectedOutput: input.description?.trim() || input.title, assigneeMembershipId: assignee, reviewerMembershipId: reviewer, category: "work", priority: "normal", estimateMinutes: input.estimateMinutes ?? null, dueAt: input.dueAt ?? null, captureRequirement: "none", addToMyDay: forSelf }, requestId);
+  return createTask(ctx, { projectId, title: input.title, expectedOutput: input.description?.trim() || input.title, assigneeMembershipId: assignee, reviewerMembershipId: reviewer, category: "work", priority: input.priority ?? "normal", estimateMinutes: input.estimateMinutes ?? null, dueAt: input.dueAt ?? null, captureRequirement: "none", addToMyDay: forSelf }, requestId);
 }
 
 /** People a member may hand to-dos to: everyone on the teams they lead (owner/HR see everyone who can hold tasks). */

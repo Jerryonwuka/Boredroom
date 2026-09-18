@@ -327,6 +327,44 @@ export async function myTeams(ctx: OrgContext) {
 }
 
 // ---------------------------------------------------------------------------
+// Tasks page: staff see everything assigned to them; team leads see their teams' tasks; organisation accounts see all
+// ---------------------------------------------------------------------------
+export type TaskListRow = TaskRow & { created_by_name: string; team_name: string | null; completed_at: string | null; overdue: boolean };
+export type TaskListFilter = { status?: "open" | "check" | "done" | "all"; who?: string | null };
+
+export async function tasksView(ctx: OrgContext, filter: TaskListFilter = {}) {
+  const status = filter.status ?? "open";
+  return withUser(ctx.user.profileId, async (db) => {
+    const scope: "org" | "lead" | "mine" = ctx.membership.role === "owner" || ctx.membership.role === "hr" ? "org"
+      : (await db.maybeOne(`SELECT 1 FROM team_members WHERE membership_id = $1 AND is_manager`, [ctx.membership.id])) ? "lead" : "mine";
+    // People whose tasks the viewer may list (and, for leads, hand tasks to).
+    const people = scope === "mine" ? [] : await db.query<{ id: string; display_name: string; team_name: string | null }>(
+      scope === "org"
+        ? `SELECT m.id, pr.display_name, (SELECT string_agg(t.name, ', ' ORDER BY t.name) FROM team_members tm JOIN teams t ON t.id = tm.team_id WHERE tm.membership_id = m.id AND t.archived_at IS NULL) AS team_name
+           FROM memberships m JOIN profiles pr ON pr.id = m.user_id WHERE m.organisation_id = $1 AND m.status = 'active' AND m.role IN ('employee','manager') ORDER BY pr.display_name`
+        : `SELECT DISTINCT ON (m.id) m.id, pr.display_name, t.name AS team_name
+           FROM team_members lead JOIN teams t ON t.id = lead.team_id AND t.archived_at IS NULL
+           JOIN team_members tm ON tm.team_id = lead.team_id JOIN memberships m ON m.id = tm.membership_id AND m.status = 'active'
+           JOIN profiles pr ON pr.id = m.user_id
+           WHERE lead.membership_id = $1 AND lead.is_manager ORDER BY m.id, t.name`, [scope === "org" ? ctx.org.id : ctx.membership.id]).then((rows) => rows.sort((a, b) => a.display_name.localeCompare(b.display_name)));
+    const ids = scope === "mine" ? [ctx.membership.id] : people.map((p) => p.id);
+    const who = filter.who && ids.includes(filter.who) ? [filter.who] : ids;
+    const statusSql = status === "open" ? `t.status IN ('todo','in_progress','blocked')` : status === "check" ? `t.status = 'in_review'` : status === "done" ? `t.status = 'completed'` : `true`;
+    const tasks = who.length ? await db.query<TaskListRow>(
+      `${TASK_SELECT.replace("SELECT t.id,", "SELECT pc.display_name AS created_by_name, t.completed_at, (t.due_at IS NOT NULL AND t.due_at < now() AND t.status <> 'completed') AS overdue, (SELECT string_agg(tt.name, ', ' ORDER BY tt.name) FROM team_members tm JOIN teams tt ON tt.id = tm.team_id WHERE tm.membership_id = t.assignee_membership_id AND tt.archived_at IS NULL) AS team_name, t.id,").replace("LEFT JOIN memberships mr", "JOIN memberships mc ON mc.id = t.created_by JOIN profiles pc ON pc.id = mc.user_id LEFT JOIN memberships mr")}
+       WHERE t.organisation_id = $1 AND t.assignee_membership_id = ANY($2::uuid[]) AND t.archived_at IS NULL AND ${statusSql}
+       ORDER BY CASE t.status WHEN 'blocked' THEN 0 WHEN 'in_progress' THEN 1 WHEN 'todo' THEN 2 WHEN 'in_review' THEN 3 ELSE 4 END,
+                CASE t.priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END,
+                t.due_at NULLS LAST, t.completed_at DESC NULLS LAST, t.created_at DESC LIMIT 300`, [ctx.org.id, who]) : [];
+    const c = ids.length ? await db.one<{ open: number; check: number; done: number }>(
+      `SELECT count(*) FILTER (WHERE status IN ('todo','in_progress','blocked'))::int AS open, count(*) FILTER (WHERE status = 'in_review')::int AS check, count(*) FILTER (WHERE status = 'completed')::int AS done
+       FROM tasks WHERE organisation_id = $1 AND assignee_membership_id = ANY($2::uuid[]) AND archived_at IS NULL`, [ctx.org.id, who]) : { open: 0, check: 0, done: 0 };
+    const running = scope === "mine" ? await db.maybeOne<{ task_id: string }>(`SELECT task_id FROM work_sessions WHERE membership_id = $1 AND state IN ('running','paused','interrupted')`, [ctx.membership.id]) : null;
+    return { scope, status, who: filter.who && ids.includes(filter.who) ? filter.who : null, people, tasks, counts: c, runningTaskId: running?.task_id ?? null };
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Workroom: who is at work right now, and what each person did today
 // ---------------------------------------------------------------------------
 export type WorkroomRow = {

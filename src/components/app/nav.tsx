@@ -2,12 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Activity, BarChart3, Bell, CalendarDays, ClipboardCheck, FolderKanban, History, LayoutDashboard, MessageSquare, Settings, ShieldCheck, Users, UsersRound, Kanban, Video } from "lucide-react";
+import { Activity, BarChart3, Bell, CalendarDays, ClipboardCheck, FolderKanban, History, LayoutDashboard, ListChecks, MessageSquare, Settings, ShieldCheck, Users, UsersRound, Kanban, Video } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SlidingMarker } from "@/components/ui/motion";
 
 export type NavItem = { href: string; label: string; icon: keyof typeof ICONS; badge?: number };
-const ICONS = { dashboard: LayoutDashboard, board: Kanban, myday: CalendarDays, projects: FolderKanban, team: Activity, reviews: ClipboardCheck, timesheets: History, reports: BarChart3, people: UsersRound, settings: Settings, audit: ShieldCheck, notifications: Bell, policy: Users, recordings: Video, messages: MessageSquare };
+const ICONS = { dashboard: LayoutDashboard, board: Kanban, myday: CalendarDays, projects: FolderKanban, team: Activity, reviews: ClipboardCheck, timesheets: History, reports: BarChart3, people: UsersRound, settings: Settings, audit: ShieldCheck, notifications: Bell, policy: Users, recordings: Video, messages: MessageSquare, tasks: ListChecks };
 
 export function WorkspaceNav({ items }: { items: NavItem[] }) {
   const pathname = usePathname();

@@ -116,6 +116,10 @@ docs                 providers, runbooks, walkthrough
 
 Owners, HR and team leads open **Workroom** to see everyone who has clocked in today: status (Active, Paused, Off the clock, Not started), the task they are on with a live clock, a LIVE badge while they record their screen, and today's totals. Click a person for every task, session and recording of their day. Status is derived from timers only.
 
+## Tasks
+
+**Tasks** in the sidebar is the assignment board. A team lead presses New task, writes what needs doing, picks someone on their team (or themself), sets a priority, due date and estimate, and the person is notified. The lead's page lists every task on their teams with tabs for To do, Sent for check and Done, a person filter, and an "Ask for an update" link into Messages. Staff see "Your tasks": everything assigned to them, by their lead or by themselves; Start on a row starts the clock and opens My Day (or switches a running timer to that task). Organisation accounts see every task in the organisation, read-only.
+
 ## Messages
 
 People in an organisation message each other from **Messages** in the sidebar: a direct thread with anyone (in your team or not), a channel per team, and an "Everyone" channel for the whole organisation. A message can point at a task: "Ask for an update" on a person's Workroom page, a task page or a People row opens the thread with the task attached and "How far with …?" ready to send. Threads update live over the existing event stream, the sidebar badge counts unread messages, and a direct message also lands in the recipient's notifications. Only the two people in a direct thread can read it (not the team lead, not the owner); team channels are readable by team members only; nothing crosses organisations. Senders can withdraw their own messages.

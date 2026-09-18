@@ -195,3 +195,35 @@ test("Messages: Ada asks David for an update across the organisation; David sees
   await expect(page.getByText("Hi David, how far with the homepage review?")).toBeVisible();
   await expect(nav.getByRole("link", { name: /Messages/ })).not.toContainText("1");
 });
+
+test("Tasks: David creates a task from the Tasks page and assigns it to Ada; Ada sees it under her tasks and starts it", async ({ page }) => {
+  await page.context().clearCookies();
+  await signIn(page, "david@company-a.test");
+  await page.goto("/app/company-a/tasks");
+  await expect(page.getByRole("heading", { name: "Tasks" })).toBeVisible();
+  await page.getByRole("button", { name: "New task" }).click();
+  await page.getByLabel("What needs doing").fill("Update the pricing table");
+  await page.getByLabel("Details").fill("Use the new tiers from finance.");
+  await page.getByLabel("Assign to").selectOption({ label: "Ada Employee (Design)" });
+  await page.getByLabel("Priority").selectOption("high");
+  await page.getByRole("button", { name: "Create and assign" }).click();
+  await expect(page.getByText("Task created and assigned to Ada Employee.")).toBeVisible();
+  const row = page.getByRole("row").filter({ hasText: "Update the pricing table" });
+  await expect(row).toContainText("Ada Employee");
+  await expect(row).toContainText("High");
+
+  await page.context().clearCookies();
+  await signIn(page, "ada@company-a.test");
+  await page.goto("/app/company-a/tasks");
+  await expect(page.getByRole("heading", { name: "Your tasks" })).toBeVisible();
+  const mine = page.getByRole("row").filter({ hasText: "Update the pricing table" });
+  await expect(mine).toContainText("from David Manager");
+  await mine.getByRole("button", { name: "Start" }).click();
+  await page.waitForURL(/my-day/);
+  await expect(page.getByText("Running", { exact: true })).toBeVisible();
+  await expect(page.getByText("Update the pricing table").first()).toBeVisible();
+  // Leave the clock stopped for any test that follows.
+  await page.getByRole("button", { name: "Stop" }).click();
+  const dialog = page.getByRole("dialog");
+  if (await dialog.isVisible().catch(() => false)) await dialog.getByRole("button", { name: /Stop/ }).click();
+});

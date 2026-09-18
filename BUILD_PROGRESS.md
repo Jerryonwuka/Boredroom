@@ -116,6 +116,10 @@ The owner asked for a more modern, polished feel like the Supabase dashboard and
 
 The owner asked for a communication feature: people in the organisation message each other, ask for updates, within teams and across them. Shipped as **Messages** (migration `0015_messaging.sql`, `src/server/services/messaging.ts`, `src/app/app/[workspace]/messages`): direct threads between any two members, one channel per team, one "Everyone" channel; a message can carry a task reference, and "Ask for an update" links on the Workroom person page, task page and People rows open the right thread with "How far with …?" pre-filled. Live updates reuse the LISTEN/NOTIFY event stream (the composer is marked refresh-safe so typing is never interrupted); unread counts show on the sidebar; a direct message also creates a notification. Access is row-level security: direct threads are readable only by their two participants (a team lead or owner cannot read staff DMs), team channels by team members, and nothing crosses organisations; only the sender can withdraw a message. Deliberately not built: file attachments (deliverables already live on tasks), @mentions, read receipts and message editing. 56 Vitest tests (8 new) and 4 Playwright tests pass.
 
+## Owner feedback round 7 (18 September 2026): the Tasks page
+
+The owner asked for a Tasks item in the sidebar: team leads create a task and assign it to someone on their team, who sees it and picks it up; staff see everything assigned to them. Shipped as `src/app/app/[workspace]/tasks/page.tsx` on a new `tasksView` read model (scope by role: staff see their own tasks, leads see their teams' with a person filter, organisation accounts see all). Leads create through the existing quick to-do service (now with a priority), so the assignee is notified and the lead is the checker; staff pick a task up with Start, which starts the clock (or switches a running one) and opens My Day. Tabs split To do, Sent for check and Done; overdue dates are flagged in the database query. 60 Vitest tests (4 new) and 5 Playwright tests pass.
+
 ## Milestone status
 
 | Milestone | Status | Evidence |
@@ -162,11 +166,11 @@ The owner asked for a communication feature: people in the organisation message 
 | --- | --- |
 | `pnpm lint` | clean (ESLint 9 with Next core-web-vitals, TypeScript and React compiler rules) |
 | `pnpm typecheck` | clean |
-| `pnpm test` (Vitest 4, embedded PostgreSQL 18, restricted `boardroom_app` role) | 10 files, 56 tests passed (18 September 2026): `tests/unit/{time,assistant}.test.ts`, `tests/integration/{tenancy,sessions,evidence-reports,recording,join-codes,round3,workroom,messaging}.test.ts` |
+| `pnpm test` (Vitest 4, embedded PostgreSQL 18, restricted `boardroom_app` role) | 11 files, 60 tests passed (18 September 2026): `tests/unit/{time,assistant}.test.ts`, `tests/integration/{tenancy,sessions,evidence-reports,recording,join-codes,round3,workroom,messaging,tasks-page}.test.ts` |
 | `pnpm build` (Next.js 16.3.4) | succeeds; all workspace routes are dynamic (server-rendered per request) |
 | `pnpm smoke` | every page read model executes for the seeded fixtures (15 checks) |
 | `pnpm worker` | job loop runs against the seeded database; housekeeping job succeeded; reminder scheduling deduplicated |
-| `pnpm test:e2e` (Playwright 1.63, Chromium 141 preinstalled, production build on port 3100) | 4 passed: A24 core workflow (plan, start, reload, pause/resume, switch, stop, submit, changes requested, resubmit, approve, report approval, CSV export), A01/A02 browser isolation, A03 invitation lifecycle through the mail sink, Messages (direct thread across the organisation, unread badge) |
+| `pnpm test:e2e` (Playwright 1.63, Chromium 141 preinstalled, production build on port 3100) | 5 passed: A24 core workflow (plan, start, reload, pause/resume, switch, stop, submit, changes requested, resubmit, approve, report approval, CSV export), A01/A02 browser isolation, A03 invitation lifecycle through the mail sink, Messages (direct thread across the organisation, unread badge), Tasks (lead creates and assigns, staff starts it) |
 
 Environment notes: no Docker daemon, no Supabase CLI, no ffmpeg; Figma and most external hosts are blocked by the network policy. Nothing was sent to a real mailbox and no external service was configured.
 
