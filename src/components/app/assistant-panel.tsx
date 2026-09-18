@@ -43,11 +43,57 @@ export function AssistantPanel({ orgSlug, people, configured, onCreated, onClose
   const [items, setItems] = useState<Proposal[]>([]);
   const rec = useRef<SpeechRecognitionLike | null>(null);
   const base = useRef("");
+  const wantListening = useRef(false);
+  const heard = useRef(0);
+  const silentRestarts = useRef(0);
+  const [heardWords, setHeardWords] = useState(0);
 
-  useEffect(() => () => { rec.current?.stop(); }, []);
+  useEffect(() => () => { wantListening.current = false; rec.current?.stop(); }, []);
+
+  function stopMic() {
+    wantListening.current = false;
+    rec.current?.stop();
+    setListening(false);
+  }
+
+  /** Chrome ends a recognition session after a few seconds of silence, so a session is restarted until Stop is pressed. */
+  function startRecognition(Ctor: new () => SpeechRecognitionLike) {
+    const r = new Ctor(); rec.current = r;
+    r.lang = navigator.language && /^[a-z]{2}(-[A-Za-z]{2,4})?$/.test(navigator.language) ? navigator.language : "en-US";
+    r.continuous = true; r.interimResults = true;
+    let sessionFinal = "";
+    r.onresult = (e) => {
+      // results holds every phrase of this session; rebuild from it each time so nothing is repeated.
+      let finalText = "", interim = "";
+      for (let i = 0; i < e.results.length; i++) { const res = e.results[i]; const t = res[0].transcript; if (res.isFinal) finalText += t + " "; else interim += t; }
+      sessionFinal = finalText;
+      const shown = (base.current + finalText + interim).replace(/\s+/g, " ").trimStart();
+      heard.current = shown.split(" ").filter(Boolean).length; setHeardWords(heard.current);
+      silentRestarts.current = 0;
+      setText(shown);
+    };
+    r.onerror = (e) => {
+      if (e.error === "no-speech" || e.error === "aborted") return; // onend restarts while listening is wanted
+      const why = e.error === "not-allowed" || e.error === "service-not-allowed" ? "Microphone access was declined for speech recognition. Allow the microphone in the address bar and try again. Brave blocks the speech service by default (enable it under brave://settings/privacy)."
+        : e.error === "network" ? "The browser's speech service could not be reached. Dictation needs an internet connection and works in Chrome, Edge or Safari; Brave and Firefox do not offer it. You can type the note instead."
+        : e.error === "audio-capture" ? "No microphone could be used. Check the input device in your system sound settings."
+        : e.error === "language-not-supported" ? "This browser cannot transcribe your language setting. Switch the browser language to English and try again."
+        : `Dictation stopped (${e.error}). You can type the note instead.`;
+      wantListening.current = false; setError(why); setListening(false);
+    };
+    r.onend = () => {
+      // Keep what this session heard, then carry on in a fresh session while listening is still wanted.
+      if (sessionFinal) base.current = (base.current + sessionFinal).replace(/\s+/g, " ");
+      if (!wantListening.current) { setListening(false); return; }
+      // Nothing heard across several silent sessions: stop and say so rather than spin forever.
+      if (heard.current === 0 && ++silentRestarts.current >= 4) { wantListening.current = false; setListening(false); setError("No speech was heard for a while. Check the microphone is not muted, then press Dictate again."); return; }
+      try { startRecognition(Ctor); } catch { wantListening.current = false; setListening(false); }
+    };
+    r.start();
+  }
 
   async function toggleMic() {
-    if (listening) { rec.current?.stop(); setListening(false); return; }
+    if (listening) { stopMic(); return; }
     const Ctor = speechCtor(); if (!Ctor) return;
     setError(null);
     if (!window.isSecureContext) { setError(`Dictation needs a secure address. Open the app at http://localhost:${window.location.port || "3000"} or an https:// address (you are on ${window.location.host}).`); return; }
@@ -60,24 +106,10 @@ export function AssistantPanel({ orgSlug, people, configured, onCreated, onClose
       else setError(`Could not open the microphone (${name ?? "unknown error"}). You can type the note instead.`);
       return;
     }
-    const r = new Ctor(); rec.current = r;
-    r.lang = navigator.language || "en-GB"; r.continuous = true; r.interimResults = true;
     base.current = text ? text.trimEnd() + " " : "";
-    r.onresult = (e) => {
-      let finalText = "", interim = "";
-      for (let i = 0; i < e.results.length; i++) { const res = e.results[i]; const t = res[0].transcript; if (res.isFinal) finalText += t + " "; else interim += t; }
-      setText(base.current + finalText + interim);
-    };
-    r.onerror = (e) => {
-      const why = e.error === "not-allowed" || e.error === "service-not-allowed" ? "Microphone access was declined for speech recognition. Allow the microphone in the address bar and try again."
-        : e.error === "network" ? "Dictation needs an internet connection (the browser's speech service is online)."
-        : e.error === "no-speech" ? "No speech was heard. Try again and speak after pressing Dictate."
-        : e.error === "audio-capture" ? "No microphone could be used."
-        : `Dictation stopped (${e.error}). You can type the note instead.`;
-      setError(why); setListening(false);
-    };
-    r.onend = () => setListening(false);
-    try { r.start(); setListening(true); setError(null); } catch { setError("Could not start dictation."); }
+    heard.current = 0; setHeardWords(0); silentRestarts.current = 0;
+    wantListening.current = true;
+    try { startRecognition(Ctor); setListening(true); setError(null); } catch { wantListening.current = false; setError("Could not start dictation. Reload the page and try again, or type the note."); }
   }
 
   async function plan() {
@@ -116,9 +148,9 @@ export function AssistantPanel({ orgSlug, people, configured, onCreated, onClose
       {!configured ? <Alert tone="warning">The AI is not connected yet, so a simple built-in parser makes these suggestions. {people.length ? "" : ""}An organisation owner connects Claude under Settings → AI assistant (an Anthropic API key).</Alert> : null}
       <Textarea aria-label="What are you working on?" value={text} onChange={(e) => setText(e.target.value)} rows={3} maxLength={4000} placeholder={people.length ? "e.g. Ask Ada to redo the homepage banner by Monday. Ben should fix the checkout bug today. I will prepare the sprint review." : "e.g. Finish the logo export by Friday, then update the brand deck. Also reply to the client email tomorrow morning."} />
       <div className="flex flex-wrap items-center gap-2">
-        {speechSupported ? <Button type="button" variant={listening ? "danger" : "outline"} onClick={toggleMic}>{listening ? <MicOff className="h-4 w-4" aria-hidden /> : <Mic className="h-4 w-4" aria-hidden />}{listening ? "Stop dictating" : "Dictate"}</Button> : speechSupported === false ? <span className="text-xs text-fg-subtle">Dictation needs Chrome, Edge or Safari; typing works everywhere.</span> : null}
+        {speechSupported ? <Button type="button" variant={listening ? "danger" : "outline"} onClick={toggleMic}>{listening ? <MicOff className="h-4 w-4" aria-hidden /> : <Mic className="h-4 w-4" aria-hidden />}{listening ? "Stop dictating" : "Dictate"}</Button> : speechSupported === false ? <span className="text-xs text-fg-subtle">This browser has no dictation (Firefox and Brave do not offer it). Use Chrome, Edge or Safari, or type the note.</span> : null}
         <Button type="button" disabled={pending !== null || !text.trim()} onClick={plan}>{pending === "plan" ? "Thinking…" : "Suggest to-dos"}</Button>
-        {listening ? <span className="text-xs text-danger">Listening… speak naturally, one task per sentence.</span> : null}
+        {listening ? <span role="status" className="flex items-center gap-1.5 text-xs text-danger"><span className="inline-block size-1.5 animate-pulse rounded-full bg-danger" aria-hidden />{heardWords ? `Listening… ${heardWords} word${heardWords === 1 ? "" : "s"} so far. Press Stop when you are done.` : "Listening… speak naturally, one task per sentence."}</span> : null}
       </div>
       {error ? <Alert tone="danger">{error}</Alert> : null}
       {result?.reply ? <div className="flex gap-2 rounded-xl border border-accent/30 bg-accent-soft/40 p-3 text-sm"><Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-accent" aria-hidden /><p>{result.reply}</p></div> : null}

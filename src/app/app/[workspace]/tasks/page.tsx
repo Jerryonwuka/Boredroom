@@ -6,7 +6,7 @@ import { Badge, TASK_STATUS_TONE, label } from "@/components/ui/badge";
 import { DataTable } from "@/components/ui/table";
 import { EmptyState } from "@/components/ui/states";
 import { SlidingMarker } from "@/components/ui/motion";
-import { NewAssignedTask, PickUpTask } from "@/components/app/tasks-page";
+import { NewAssignedTask, PickUpTask, MarkDone } from "@/components/app/tasks-page";
 import { tasksView, type TaskListFilter } from "@/server/services/views";
 import { formatDateTime, formatDuration, cn } from "@/lib/utils";
 
@@ -35,7 +35,7 @@ export default async function TasksPage({ params, searchParams }: { params: Prom
   return (
     <AppShell ctx={ctx} counts={counts} teams={teams}>
       <PageHeader title={mine ? "Your tasks" : "Tasks"}
-        description={mine ? "Everything assigned to you, by your team lead or by yourself. Press Start to pick one up; the clock opens on My Day." : lead ? "Create a task, hand it to someone on your team, and follow it here until it is done. They are notified and see it under Your tasks." : "Every task in the organisation and who holds it. Team leads create and assign; this page only watches."} />
+        description={mine ? "Everything assigned to you, by your team lead or by yourself. Press Start to pick one up; the clock opens on My Day." : lead ? "Create a task and hand it to someone on your team, to another team lead, or up to the owner or HR. They are notified and see it under their tasks; follow it here until it is done." : "Every task in the organisation and who holds it. Team leads create and assign; anything handed to you appears here with a Mark done button."} />
       {lead ? <NewAssignedTask orgSlug={ctx.org.slug} people={data.people} self={ctx.membership.id} selfName={ctx.user.displayName} /> : null}
 
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-border-soft">
@@ -52,8 +52,9 @@ export default async function TasksPage({ params, searchParams }: { params: Prom
             <input type="hidden" name="status" value={status} />
             <label htmlFor="who" className="text-fg-muted">Person</label>
             <select id="who" name="who" defaultValue={data.who ?? ""} className="h-9 rounded-[var(--radius-sm)] border border-border-strong bg-inset px-2 text-sm">
-              <option value="">Everyone{lead ? " on my teams" : ""}</option>
-              {data.people.map((p) => <option key={p.id} value={p.id}>{p.display_name}</option>)}
+              <option value="">Everyone{lead ? " on my teams, and anyone I handed a task to" : ""}</option>
+              {data.people.some((p) => p.group === "team") ? <optgroup label={lead ? "Your team" : "Staff and team leads"}>{data.people.filter((p) => p.group === "team").map((p) => <option key={p.id} value={p.id}>{p.display_name}</option>)}</optgroup> : null}
+              {data.people.some((p) => p.group === "organisation") ? <optgroup label={lead ? "Others in the organisation" : "Organisation accounts"}>{data.people.filter((p) => p.group === "organisation").map((p) => <option key={p.id} value={p.id}>{p.display_name}</option>)}</optgroup> : null}
             </select>
             <button type="submit" className="text-sm underline">Show</button>
           </form>
@@ -75,14 +76,15 @@ export default async function TasksPage({ params, searchParams }: { params: Prom
                   <Link href={`${base}/tasks/${t.id}`} className="font-semibold hover:underline">{t.title}</Link>
                   <p className="text-xs text-fg-subtle">{mine ? (t.created_by === ctx.membership.id ? "your own to-do" : `from ${t.created_by_name}`) : (t.created_by === t.assignee_membership_id ? "their own to-do" : `from ${t.created_by_name}`)}{t.estimate_minutes ? `, est. ${formatDuration(t.estimate_minutes * 60)}` : ""}{!mine ? <span className="md:hidden">, {t.assignee_name}</span> : null}{t.due_at ? <span className={cn("md:hidden", t.overdue ? "text-danger" : "")}>, due {formatDateTime(t.due_at, ctx.org.timezone)}</span> : null}</p>
                 </td>
-                {!mine ? <td className="hidden md:table-cell"><Link href={lead || ctx.membership.role !== "employee" ? `${base}/workroom/${t.assignee_membership_id}` : "#"} className="hover:underline">{t.assignee_name}</Link>{t.team_name ? <p className="text-xs text-fg-subtle">{t.team_name}</p> : null}</td> : null}
+                {!mine ? <td className="hidden md:table-cell">{t.assignee_membership_id === ctx.membership.id ? <span className="font-semibold text-accent">You</span> : <Link href={`${base}/workroom/${t.assignee_membership_id}`} className="hover:underline">{t.assignee_name}</Link>}{t.team_name ? <p className="text-xs text-fg-subtle">{t.team_name}</p> : null}</td> : null}
                 <td>{running ? <Badge tone="success" dot>Working now</Badge> : <Badge tone={TASK_STATUS_TONE[t.status]}>{t.status === "in_review" ? "Sent for check" : label(t.status)}</Badge>}{t.blocked_reason ? <p className="mt-1 max-w-[16rem] text-xs text-danger">{t.blocked_reason}</p> : null}</td>
                 <td className="hidden md:table-cell">{t.priority === "normal" ? <span className="text-sm text-fg-subtle">Normal</span> : <Badge tone={PRIORITY_TONE[t.priority as keyof typeof PRIORITY_TONE] ?? "neutral"}>{label(t.priority)}</Badge>}</td>
                 <td className={cn("hidden text-sm md:table-cell", t.overdue ? "text-danger" : "")}>{t.due_at ? formatDateTime(t.due_at, ctx.org.timezone) : <span className="text-fg-subtle">—</span>}</td>
                 <td className="hidden tabular-nums text-sm lg:table-cell">{t.tracked_seconds ? formatDuration(t.tracked_seconds) : <span className="text-fg-subtle">—</span>}</td>
                 <td className="text-right">
                   {mine && t.status !== "completed" && t.status !== "in_review" ? <PickUpTask orgSlug={ctx.org.slug} taskId={t.id} running={running} anyRunning={!!data.runningTaskId} /> : null}
-                  {!mine && t.status !== "completed" ? <Link href={`${base}/messages?to=${t.assignee_membership_id}&task=${t.id}`} className="whitespace-nowrap text-sm underline">Ask for an update</Link> : null}
+                  {!mine && t.assignee_membership_id === ctx.membership.id && ["todo", "in_progress", "blocked"].includes(t.status) ? <MarkDone orgSlug={ctx.org.slug} taskId={t.id} /> : null}
+                  {!mine && t.assignee_membership_id !== ctx.membership.id && t.status !== "completed" ? <Link href={`${base}/messages?to=${t.assignee_membership_id}&task=${t.id}`} className="whitespace-nowrap text-sm underline">Ask for an update</Link> : null}
                 </td>
               </tr>
             );

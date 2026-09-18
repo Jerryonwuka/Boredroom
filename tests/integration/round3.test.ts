@@ -21,7 +21,8 @@ beforeAll(async () => {
 describe("team leads hand out to-dos from their own list", () => {
   it("lead adds a to-do with description and deadline for a team member; the member is notified and sees it under 'From your team lead'", async () => {
     const people = await assignableMembers(a.managerCtx);
-    expect(people.map((p) => p.display_name).sort()).toEqual(["Ada Employee", "Ben Employee"]);
+    // The team first, then the rest of the organisation (work can be handed up to the owner or HR).
+    expect(people.map((p) => [p.display_name, p.group])).toEqual([["Ada Employee", "team"], ["Ben Employee", "team"], ["Mary HR", "organisation"], ["Olu Owner", "organisation"]]);
     expect(await assignableMembers(a.employeeCtx)).toEqual([]);
     const due = new Date(Date.now() + 2 * 86400000).toISOString();
     const t = await quickTodo(a.managerCtx, { title: "Redo the homepage banner", description: "Use the new brand colours; export at 2x.", dueAt: due, assigneeMembershipId: a.employeeCtx.membership.id });

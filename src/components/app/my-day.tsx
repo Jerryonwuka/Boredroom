@@ -23,7 +23,7 @@ import type { TaskRow } from "@/server/services/views";
 import type { SessionView } from "@/server/services/sessions";
 
 type PastTask = { id: string; title: string; status: string; completed_at: string | null; archived_at: string | null; tracked_seconds: number; created_by_name: string; self_made: boolean };
-type Person = { id: string; display_name: string };
+type Person = { id: string; display_name: string; team_name?: string; group?: "team" | "organisation" };
 type Row = TaskRow & { created_by_name?: string };
 
 type Props = {
@@ -149,7 +149,7 @@ function Board({ orgSlug, today, initialSession, planned, ownTodos, fromLeads, d
             <li>Write your to-dos for today. Your team lead may add some too.</li>
             <li>Press <strong className="text-fg">Start</strong> on the one you are working on{canRecord ? ", with or without screen recording" : ""}.</li>
             <li>Press <strong className="text-fg">Done</strong> when you finish. It goes to your lead for a quick check, then shows as Completed.</li>
-            {assignable.length ? <li>As a team lead, use “For” to hand a to-do to someone on your team.</li> : null}
+            {assignable.length ? <li>As a team lead, use “For” to hand a to-do to someone on your team, or to anyone else in the organisation.</li> : null}
           </ol>
         </div>
       </aside>
@@ -292,7 +292,9 @@ function QuickTodo({ orgSlug, assignable, onDone, onAssistant, assistantOpen }: 
         <Input id="quick-todo" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Add a to-do and press Enter…" maxLength={200} className="min-w-[240px] flex-1" autoComplete="off" />
         {assignable.length ? (
           <Select aria-label="For" className="h-11 w-44 py-1 text-sm" value={assignee} onChange={(e) => setAssignee(e.target.value)}>
-            <option value="">For: me</option>{assignable.map((p) => <option key={p.id} value={p.id}>For: {p.display_name}</option>)}
+            <option value="">For: me</option>
+            {assignable.some((p) => p.group === "team") ? <optgroup label="Your team">{assignable.filter((p) => p.group !== "organisation").map((p) => <option key={p.id} value={p.id}>For: {p.display_name}</option>)}</optgroup> : null}
+            {assignable.some((p) => p.group === "organisation") ? <optgroup label="Others in the organisation">{assignable.filter((p) => p.group === "organisation").map((p) => <option key={p.id} value={p.id}>For: {p.display_name}{p.team_name ? ` (${p.team_name})` : ""}</option>)}</optgroup> : null}
           </Select>
         ) : null}
         <Button type="submit" disabled={pending || !title.trim()}><Plus className="size-4" aria-hidden />{pending ? "Adding…" : person ? "Hand out" : "Add"}</Button>

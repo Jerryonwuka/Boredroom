@@ -227,3 +227,62 @@ test("Tasks: David creates a task from the Tasks page and assigns it to Ada; Ada
   const dialog = page.getByRole("dialog");
   if (await dialog.isVisible().catch(() => false)) await dialog.getByRole("button", { name: /Stop/ }).click();
 });
+
+test("Dictation: the assistant fills the note from speech, survives the browser ending a session, and Stop keeps the text", async ({ page }) => {
+  // Headless Chromium has no speech service, so a small fake stands in for window.SpeechRecognition.
+  await page.addInitScript(() => {
+    class FakeRecognition {
+      lang = ""; continuous = false; interimResults = false;
+      onresult: ((e: unknown) => void) | null = null; onend: (() => void) | null = null; onerror: ((e: unknown) => void) | null = null;
+      static sessions = 0;
+      start() {
+        FakeRecognition.sessions++;
+        const mk = (phrases: [string, boolean][]) => ({ resultIndex: 0, results: phrases.map(([transcript, isFinal]) => Object.assign([{ transcript }], { isFinal })) });
+        if (FakeRecognition.sessions === 1) {
+          setTimeout(() => this.onresult?.(mk([["finish the logo export by", false]])), 50);
+          setTimeout(() => this.onresult?.(mk([["finish the logo export by Friday.", true]])), 120);
+          setTimeout(() => this.onend?.(), 200); // Chrome ends after silence
+        } else {
+          setTimeout(() => this.onresult?.(mk([["reply to the client email tomorrow.", true]])), 80);
+        }
+      }
+      stop() { setTimeout(() => this.onend?.(), 10); }
+    }
+    (window as unknown as { SpeechRecognition: unknown }).SpeechRecognition = FakeRecognition;
+    Object.defineProperty(navigator, "mediaDevices", { value: { getUserMedia: async () => ({ getTracks: () => [] }) } });
+  });
+  await page.context().clearCookies();
+  await signIn(page, "ada@company-a.test");
+  await page.goto("/app/company-a/my-day");
+  await page.getByRole("button", { name: "Assistant" }).click();
+  await page.getByRole("button", { name: "Dictate" }).click();
+  await expect(page.getByText(/Listening…/)).toBeVisible();
+  const note = page.getByLabel("What are you working on?");
+  await expect(note).toHaveValue(/finish the logo export by Friday\. reply to the client email tomorrow\./, { timeout: 5000 });
+  await page.getByRole("button", { name: "Stop dictating" }).click();
+  await expect(page.getByRole("button", { name: "Dictate" })).toBeVisible();
+  await expect(note).toHaveValue(/finish the logo export by Friday\. reply to the client email tomorrow\./);
+  await page.getByRole("button", { name: "Suggest to-dos" }).click();
+  await expect(page.getByLabel("To-do 1 title")).toHaveValue(/logo export/i);
+});
+
+test("Tasks: a team lead hands a task up to the owner, who marks it done from the Tasks page", async ({ page }) => {
+  await page.context().clearCookies();
+  await signIn(page, "david@company-a.test");
+  await page.goto("/app/company-a/tasks");
+  await page.getByRole("button", { name: "New task" }).click();
+  await page.getByLabel("What needs doing").fill("Approve the Q4 design budget");
+  await page.getByLabel("Assign to").selectOption({ label: "Olu Owner (Organisation owner)" });
+  await page.getByRole("button", { name: "Create and assign" }).click();
+  await expect(page.getByText("Task created and assigned to Olu Owner.")).toBeVisible();
+
+  await page.context().clearCookies();
+  await signIn(page, "owner@company-a.test");
+  await page.goto("/app/company-a/tasks");
+  const row = page.getByRole("row").filter({ hasText: "Approve the Q4 design budget" });
+  await expect(row).toContainText("You");
+  await row.getByRole("button", { name: "Mark done" }).click();
+  await expect(row).toBeHidden();
+  await page.goto("/app/company-a/tasks?status=check");
+  await expect(page.getByRole("row").filter({ hasText: "Approve the Q4 design budget" })).toContainText("Sent for check");
+});

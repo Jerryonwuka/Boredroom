@@ -31,7 +31,7 @@ describe("tasks page", () => {
   it("the lead sees every task on their team, can narrow to one person, and the counts follow the filter", async () => {
     const lead = await tasksView(a.managerCtx);
     expect(lead.scope).toBe("lead");
-    expect(lead.people.map((p) => p.display_name)).toEqual(["Ada Employee", "Ben Employee", "David Manager"]);
+    expect(lead.people.map((p) => [p.display_name, p.group])).toEqual([["Ada Employee", "team"], ["Ben Employee", "team"], ["David Manager", "team"], ["Mary HR", "organisation"], ["Olu Owner", "organisation"]]);
     expect(lead.tasks.map((x) => x.title).sort()).toEqual(["Client kickoff meeting", "Homepage design", "Pricing page copy", "Update the pricing table"]);
     expect(lead.tasks.every((x) => x.team_name === "Design")).toBe(true);
     // Priority orders the open list (both high), then the sooner due date.
@@ -41,8 +41,8 @@ describe("tasks page", () => {
     expect(ben.who).toBe(a.employee2Ctx.membership.id);
     expect(ben.tasks.map((x) => x.title)).toEqual(["Pricing page copy"]);
     expect(ben.counts).toEqual({ open: 1, check: 0, done: 0 });
-    // An id outside the lead's teams is ignored rather than leaking.
-    const outside = await tasksView(a.managerCtx, { who: a.ownerCtx.membership.id });
+    // An unknown id is ignored rather than leaking.
+    const outside = await tasksView(a.managerCtx, { who: "00000000-0000-4000-8000-000000000000" });
     expect(outside.who).toBeNull();
     expect(outside.tasks.length).toBe(4);
   });
@@ -50,7 +50,7 @@ describe("tasks page", () => {
   it("organisation accounts see everything read-only; staff only ever see their own", async () => {
     const owner = await tasksView(a.ownerCtx, { status: "all" });
     expect(owner.scope).toBe("org");
-    expect(owner.people.map((p) => p.display_name)).toEqual(["Ada Employee", "Ben Employee", "David Manager"]);
+    expect(owner.people.map((p) => p.display_name)).toEqual(["Ada Employee", "Ben Employee", "David Manager", "Mary HR", "Olu Owner"]);
     expect(owner.tasks.length).toBe(4);
     const ben = await tasksView(a.employee2Ctx, { status: "all" });
     expect(ben.scope).toBe("mine");
@@ -68,5 +68,36 @@ describe("tasks page", () => {
     const open = await tasksView(a.employeeCtx, { status: "open" });
     expect(open.counts.open).toBe(open.tasks.length);
     expect(open.counts.open).toBe(3);
+  });
+});
+
+describe("handing tasks upwards", () => {
+  it("a team lead can assign a task to the owner, HR or another lead; the owner sees it, marks it done, and it goes back to the lead for a check", async () => {
+    const { assignableMembers, completeTask, createTask } = await import("@/server/services/tasks");
+    const people = await assignableMembers(a.managerCtx);
+    expect(people.map((p) => [p.display_name, p.group])).toEqual([["Ada Employee", "team"], ["Ben Employee", "team"], ["Mary HR", "organisation"], ["Olu Owner", "organisation"]]);
+    expect(people.find((p) => p.display_name === "Olu Owner")?.team_name).toBe("Organisation owner");
+    const t = await quickTodo(a.managerCtx, { title: "Approve the Q4 design budget", assigneeMembershipId: a.ownerCtx.membership.id, priority: "urgent" });
+    // The owner sees it on their Tasks page, assigned to themself, with the lead as checker.
+    const owner = await tasksView(a.ownerCtx);
+    const row = owner.tasks.find((x) => x.id === t.id)!;
+    expect(row).toMatchObject({ assignee_membership_id: a.ownerCtx.membership.id, reviewer_membership_id: a.managerCtx.membership.id, created_by_name: "David Manager", priority: "urgent" });
+    expect((await notificationsView(a.ownerCtx)).some((n) => n.type === "task.assigned" && n.title.includes("Approve the Q4 design budget"))).toBe(true);
+    // The lead's own list shows what they handed up, and the person filter can narrow to the owner.
+    const lead = await tasksView(a.managerCtx);
+    expect(lead.tasks.map((x) => x.title)).toContain("Approve the Q4 design budget");
+    expect(lead.people.map((p) => p.display_name)).toEqual(["Ada Employee", "Ben Employee", "David Manager", "Mary HR", "Olu Owner"]);
+    const onlyOwner = await tasksView(a.managerCtx, { who: a.ownerCtx.membership.id });
+    expect(onlyOwner.tasks.map((x) => x.title)).toEqual(["Approve the Q4 design budget"]);
+    // Owner marks it done without a timer: it goes to David for a check.
+    const done = await completeTask(a.ownerCtx, t.id, { note: "" });
+    expect(done.completed).toBe(false);
+    expect((await tasksView(a.managerCtx, { status: "check" })).tasks.map((x) => x.title)).toEqual(["Approve the Q4 design budget"]);
+    // HR and another lead can be assignees too; the owner still cannot give themself a task.
+    await quickTodo(a.managerCtx, { title: "Send the contract to legal", assigneeMembershipId: a.hrCtx.membership.id });
+    expect((await tasksView(a.hrCtx)).tasks.map((x) => x.title)).toContain("Send the contract to legal");
+    await expect(createTask(a.ownerCtx, { projectId: a.projectId, title: "Owner task", expectedOutput: "x", assigneeMembershipId: a.ownerCtx.membership.id, category: "work", priority: "normal", captureRequirement: "none", addToMyDay: false })).rejects.toMatchObject({ status: 422 });
+    // Staff still cannot hand tasks to anyone.
+    await expect(quickTodo(a.employeeCtx, { title: "Not allowed", assigneeMembershipId: a.ownerCtx.membership.id })).rejects.toMatchObject({ status: 403 });
   });
 });

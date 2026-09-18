@@ -118,7 +118,7 @@ Owners, HR and team leads open **Workroom** to see everyone who has clocked in t
 
 ## Tasks
 
-**Tasks** in the sidebar is the assignment board. A team lead presses New task, writes what needs doing, picks someone on their team (or themself), sets a priority, due date and estimate, and the person is notified. The lead's page lists every task on their teams with tabs for To do, Sent for check and Done, a person filter, and an "Ask for an update" link into Messages. Staff see "Your tasks": everything assigned to them, by their lead or by themselves; Start on a row starts the clock and opens My Day (or switches a running timer to that task). Organisation accounts see every task in the organisation, read-only.
+**Tasks** in the sidebar is the assignment board. A team lead presses New task, writes what needs doing, picks someone on their team, themself, another team lead, or the owner or HR (work can be handed sideways or upwards), sets a priority, due date and estimate, and the person is notified. The lead's page lists every task on their teams with tabs for To do, Sent for check and Done, a person filter, and an "Ask for an update" link into Messages. Staff see "Your tasks": everything assigned to them, by their lead or by themselves; Start on a row starts the clock and opens My Day (or switches a running timer to that task). Organisation accounts see every task in the organisation; anything handed to them carries a Mark done button (they do not run timers), and Done goes back to the lead for a check.
 
 ## Messages
 

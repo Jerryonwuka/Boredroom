@@ -10,7 +10,7 @@ import { Alert } from "@/components/ui/states";
 import { Expand, Presence } from "@/components/ui/motion";
 import { api, isApiFailure } from "@/lib/api-client";
 
-type Person = { id: string; display_name: string; team_name: string | null };
+type Person = { id: string; display_name: string; team_name: string | null; group: "team" | "organisation" };
 
 /** A team lead creates a task and hands it to someone on their team (or keeps it). The assignee is notified. */
 export function NewAssignedTask({ orgSlug, people, self, selfName }: { orgSlug: string; people: Person[]; self: string; selfName: string }) {
@@ -50,9 +50,12 @@ export function NewAssignedTask({ orgSlug, people, self, selfName }: { orgSlug: 
           <div className="md:col-span-2"><Field label="What needs doing" htmlFor="nt-title" error={fieldErrors.title}><Input id="nt-title" name="title" required maxLength={200} placeholder="e.g. Redo the homepage banner" autoFocus /></Field></div>
           <div className="md:col-span-2"><Field label="Details" htmlFor="nt-desc" hint="optional: what a finished result looks like" error={fieldErrors.description}><Textarea id="nt-desc" name="description" maxLength={4000} className="min-h-20" /></Field></div>
           <Field label="Assign to" htmlFor="nt-who" error={fieldErrors.assigneeMembershipId}>
-            <Select id="nt-who" name="assigneeMembershipId" defaultValue={others[0]?.id ?? self}>
-              {others.map((p) => <option key={p.id} value={p.id}>{p.display_name}{p.team_name ? ` (${p.team_name})` : ""}</option>)}
-              <option value={self}>{selfName} (me)</option>
+            <Select id="nt-who" name="assigneeMembershipId" defaultValue={others.find((p) => p.group === "team")?.id ?? self}>
+              <optgroup label="Your team">
+                {others.filter((p) => p.group === "team").map((p) => <option key={p.id} value={p.id}>{p.display_name}{p.team_name ? ` (${p.team_name})` : ""}</option>)}
+                <option value={self}>{selfName} (me)</option>
+              </optgroup>
+              {others.some((p) => p.group === "organisation") ? <optgroup label="Others in the organisation">{others.filter((p) => p.group === "organisation").map((p) => <option key={p.id} value={p.id}>{p.display_name}{p.team_name ? ` (${p.team_name})` : ""}</option>)}</optgroup> : null}
             </Select>
           </Field>
           <Field label="Priority" htmlFor="nt-pri"><Select id="nt-pri" name="priority" defaultValue="normal"><option value="low">Low</option><option value="normal">Normal</option><option value="high">High</option><option value="urgent">Urgent</option></Select></Field>
@@ -61,6 +64,19 @@ export function NewAssignedTask({ orgSlug, people, self, selfName }: { orgSlug: 
           <div className="flex gap-2 md:col-span-2"><Button type="submit" disabled={pending}>{pending ? "Creating…" : "Create and assign"}</Button><Button variant="ghost" type="button" onClick={() => setOpen(false)}>Cancel</Button></div>
         </form>
       </Expand>
+    </div>
+  );
+}
+
+/** Organisation accounts do not run timers; they finish a task handed to them with one press. */
+export function MarkDone({ orgSlug, taskId }: { orgSlug: string; taskId: string }) {
+  const router = useRouter();
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <div className="flex flex-col items-end gap-1">
+      <Button size="sm" variant="outline" disabled={pending} onClick={async () => { setPending(true); setError(null); try { await api(`/api/orgs/${orgSlug}/tasks/${taskId}/complete`, { method: "POST", body: { note: "" } }); router.refresh(); } catch (err) { setError(isApiFailure(err) ? err.error.message : "Cannot reach the server."); } finally { setPending(false); } }}>{pending ? "Saving…" : "Mark done"}</Button>
+      {error ? <p role="alert" className="max-w-xs text-right text-xs text-danger">{error}</p> : null}
     </div>
   );
 }

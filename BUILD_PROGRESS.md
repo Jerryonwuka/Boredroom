@@ -120,6 +120,10 @@ The owner asked for a communication feature: people in the organisation message 
 
 The owner asked for a Tasks item in the sidebar: team leads create a task and assign it to someone on their team, who sees it and picks it up; staff see everything assigned to them. Shipped as `src/app/app/[workspace]/tasks/page.tsx` on a new `tasksView` read model (scope by role: staff see their own tasks, leads see their teams' with a person filter, organisation accounts see all). Leads create through the existing quick to-do service (now with a priority), so the assignee is notified and the lead is the checker; staff pick a task up with Start, which starts the clock (or switches a running one) and opens My Day. Tabs split To do, Sent for check and Done; overdue dates are flagged in the database query. 60 Vitest tests (4 new) and 5 Playwright tests pass.
 
+## Owner feedback round 8 (18 September 2026): dictation and handing tasks upwards
+
+Two fixes. Dictation in the to-do assistant now restarts itself when the browser's speech service ends a session after a few seconds of silence (the usual reason it "stopped working"), shows a live word count while listening, keeps the text when Stop is pressed, and explains the exact reason when it cannot run (blocked microphone, no network to the speech service, Brave or Firefox, insecure address). A Playwright test drives it with a fake speech engine; real recognition needs Chrome, Edge or Safari on localhost or HTTPS. Team leads can now assign tasks to anyone in the organisation: their team first, then other leads, the owner and HR, from the Tasks page, My Day and the assistant. Organisation accounts still create no tasks for themselves and run no timers; a task handed to them shows on their Tasks page and the task page with Mark done, which sends it back to the lead for a check. 61 Vitest tests (1 new) and 7 Playwright tests pass.
+
 ## Milestone status
 
 | Milestone | Status | Evidence |
@@ -166,11 +170,11 @@ The owner asked for a Tasks item in the sidebar: team leads create a task and as
 | --- | --- |
 | `pnpm lint` | clean (ESLint 9 with Next core-web-vitals, TypeScript and React compiler rules) |
 | `pnpm typecheck` | clean |
-| `pnpm test` (Vitest 4, embedded PostgreSQL 18, restricted `boardroom_app` role) | 11 files, 60 tests passed (18 September 2026): `tests/unit/{time,assistant}.test.ts`, `tests/integration/{tenancy,sessions,evidence-reports,recording,join-codes,round3,workroom,messaging,tasks-page}.test.ts` |
+| `pnpm test` (Vitest 4, embedded PostgreSQL 18, restricted `boardroom_app` role) | 11 files, 61 tests passed (18 September 2026): `tests/unit/{time,assistant}.test.ts`, `tests/integration/{tenancy,sessions,evidence-reports,recording,join-codes,round3,workroom,messaging,tasks-page}.test.ts` |
 | `pnpm build` (Next.js 16.3.4) | succeeds; all workspace routes are dynamic (server-rendered per request) |
 | `pnpm smoke` | every page read model executes for the seeded fixtures (15 checks) |
 | `pnpm worker` | job loop runs against the seeded database; housekeeping job succeeded; reminder scheduling deduplicated |
-| `pnpm test:e2e` (Playwright 1.63, Chromium 141 preinstalled, production build on port 3100) | 5 passed: A24 core workflow (plan, start, reload, pause/resume, switch, stop, submit, changes requested, resubmit, approve, report approval, CSV export), A01/A02 browser isolation, A03 invitation lifecycle through the mail sink, Messages (direct thread across the organisation, unread badge), Tasks (lead creates and assigns, staff starts it) |
+| `pnpm test:e2e` (Playwright 1.63, Chromium 141 preinstalled, production build on port 3100) | 7 passed: A24 core workflow (plan, start, reload, pause/resume, switch, stop, submit, changes requested, resubmit, approve, report approval, CSV export), A01/A02 browser isolation, A03 invitation lifecycle through the mail sink, Messages (direct thread across the organisation, unread badge), Tasks (lead creates and assigns, staff starts it), Dictation (fake speech engine), Tasks handed up to the owner |
 
 Environment notes: no Docker daemon, no Supabase CLI, no ffmpeg; Figma and most external hosts are blocked by the network policy. Nothing was sent to a real mailbox and no external service was configured.
 

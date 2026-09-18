@@ -34,6 +34,7 @@ export function TaskActions({ orgSlug, task, isAssignee, canManage, members, rev
     <div className="flex flex-col items-end gap-2">
       {error ? <Alert tone="danger">{error}</Alert> : null}
       <div className="flex flex-wrap gap-2">
+        {isAssignee && ["todo", "in_progress", "blocked"].includes(task.status) ? <ConfirmButton size="sm" variant="primary" disabled={pending} tone="primary" title="Mark this task done?" description="If someone else handed it to you it goes to them for a quick check; your own to-dos complete at once." confirmLabel="Mark done" onConfirm={() => submit(() => api(`/api/orgs/${orgSlug}/tasks/${task.id}/complete`, { method: "POST", body: { note: "" } }))}>Mark done</ConfirmButton> : null}
         {isAssignee && task.status === "in_progress" ? <Button size="sm" variant="subtle" onClick={() => setMode("block")}>Mark blocked</Button> : null}
         {isAssignee && task.status === "blocked" ? <Button size="sm" variant="subtle" disabled={pending} onClick={() => patch({ status: "in_progress" })}>Unblock</Button> : null}
         {(isAssignee || canManage) && task.status !== "completed" ? <Button size="sm" variant="ghost" onClick={() => setMode("edit")}>Edit</Button> : null}
