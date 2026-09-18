@@ -22,7 +22,7 @@ export default async function DashboardPage({ params }: { params: Promise<{ work
   const now = new Date(d.serverNow).getTime();
   // Four figures only: the room, the timers, and the work. Everything else lives one click away.
   const ledger = [
-    { label: "Clocked in", value: att.counts.in + att.counts.out, note: `of ${att.people.length}${att.counts.late ? `, ${att.counts.late} late` : ""}${att.counts.not_in ? `, ${att.counts.not_in} not yet` : ""}`, href: `${base}/attendance`, tone: att.counts.late ? ("danger" as const) : ("accent" as const) },
+    { label: "Clocked in", value: att.counts.in + att.counts.out, note: att.counts.late ? `${att.counts.late} late` : att.counts.in + att.counts.out ? "everyone on time" : "nobody yet", href: `${base}/attendance`, tone: att.counts.late ? ("danger" as const) : ("accent" as const) },
     { label: "Working now", value: d.counts.working, note: d.counts.working ? `${d.counts.connected} connected` : "no timers running", href: `${base}/workroom`, tone: d.counts.working ? ("accent" as const) : ("default" as const) },
     { label: "Done today", value: d.counts.tasks_done_today, note: `${d.counts.tasks_done_total} completed in total`, href: `${base}/reports` },
     { label: "Open", value: d.counts.tasks_open, note: d.counts.tasks_blocked ? `${d.counts.tasks_blocked} blocked` : "to-dos not yet finished", href: `${base}/tasks`, tone: d.counts.tasks_blocked ? ("danger" as const) : ("default" as const) },
