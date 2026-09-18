@@ -1,7 +1,8 @@
 import { withUser } from "@/server/db";
 import type { OrgContext } from "@/server/lib/api";
+import { unreadMessageCount } from "@/server/services/messaging";
 
-export type NavCounts = { unread: number; attention: number };
+export type NavCounts = { unread: number; attention: number; messages: number };
 
 export async function navCounts(ctx: OrgContext): Promise<NavCounts> {
   return withUser(ctx.user.profileId, async (db) => {
@@ -15,7 +16,8 @@ export async function navCounts(ctx: OrgContext): Promise<NavCounts> {
               + (SELECT count(*) FROM capture_exceptions c WHERE c.organisation_id = $1 AND c.status = 'pending' AND c.membership_id <> $2) AS n`, [ctx.org.id, ctx.membership.id]);
       attention = Number(r.n);
     }
-    return { unread: unread.n, attention };
+    const messages = await unreadMessageCount(db, ctx);
+    return { unread: unread.n, attention, messages };
   });
 }
 

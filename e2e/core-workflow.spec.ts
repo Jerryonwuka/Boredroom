@@ -171,3 +171,27 @@ test("A03 invitation lifecycle in the browser with the local mail sink", async (
   await expect(np.getByText("already been used")).toBeVisible();
   await nb.close();
 });
+
+test("Messages: Ada asks David for an update across the organisation; David sees the unread badge and the message", async ({ page }) => {
+  await signIn(page, "ada@company-a.test");
+  await page.goto("/app/company-a/messages");
+  await expect(page.getByRole("heading", { name: "Messages" })).toBeVisible();
+  await page.getByRole("button", { name: "New message" }).click();
+  await page.getByLabel("Search people").fill("David");
+  await page.getByRole("button", { name: /David Manager/ }).click();
+  await expect(page.getByRole("heading", { name: "David Manager" })).toBeVisible();
+  await page.getByRole("textbox", { name: "Message" }).fill("Hi David, how far with the homepage review?");
+  await page.keyboard.press("Enter");
+  await expect(page.getByText("Hi David, how far with the homepage review?")).toBeVisible();
+  await expect(page.getByText("You", { exact: true })).toBeVisible();
+
+  await page.context().clearCookies();
+  await signIn(page, "david@company-a.test");
+  await page.goto("/app/company-a/my-day");
+  const nav = page.getByRole("navigation", { name: "Workspace" });
+  await expect(nav.getByRole("link", { name: /Messages/ })).toContainText("1");
+  await nav.getByRole("link", { name: /Messages/ }).click();
+  await page.getByRole("link", { name: /Ada Employee/ }).first().click();
+  await expect(page.getByText("Hi David, how far with the homepage review?")).toBeVisible();
+  await expect(nav.getByRole("link", { name: /Messages/ })).not.toContainText("1");
+});

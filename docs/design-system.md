@@ -51,6 +51,7 @@ Built on the `motion` library (the engine behind Framer), wrapped in `src/compon
 - **DataTable** — quiet header (medium weight, subtle colour, no all-caps), soft row dividers, hover tint, tabular numbers.
 - **EmptyState** — every empty state names one next action.
 - **Skeleton / loading.tsx** — structural skeleton while a workspace page renders.
+- **Messages** — two-pane inbox (list, thread) inside one bordered surface; linear Slack-style messages (name, time, body), never bubbles; the person's own name in the accent; unread counts as accent pills; a task reference is a quiet inset chip with its status badge; Enter sends. Below `md` the list and the thread take turns.
 
 ## Rules of thumb
 

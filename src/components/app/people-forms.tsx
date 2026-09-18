@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -76,7 +77,7 @@ export function MemberRow({ orgSlug, member, teams, isOwner, self }: { orgSlug: 
         ) : null}
       </td>
       <td>{member.acknowledged ? <Badge tone="success">acknowledged</Badge> : <Badge tone="warning">pending</Badge>}</td>
-      <td>{!revoked && !self ? (confirmRevoke ? <div className="flex gap-1"><Button size="sm" variant="danger" disabled={pending} onClick={() => submit(() => api(`/api/orgs/${orgSlug}/members/${member.id}`, { method: "DELETE" }), () => setConfirmRevoke(false))}>Confirm offboard</Button><Button size="sm" variant="ghost" onClick={() => setConfirmRevoke(false)}>Cancel</Button></div> : <Button size="sm" variant="ghost" onClick={() => setConfirmRevoke(true)}>Offboard</Button>) : null}</td>
+      <td className="whitespace-nowrap">{!revoked && !self ? <Link href={`/app/${orgSlug}/messages?to=${member.id}`} className="mr-2 text-sm underline">Message</Link> : null}{!revoked && !self ? (confirmRevoke ? <div className="flex gap-1"><Button size="sm" variant="danger" disabled={pending} onClick={() => submit(() => api(`/api/orgs/${orgSlug}/members/${member.id}`, { method: "DELETE" }), () => setConfirmRevoke(false))}>Confirm offboard</Button><Button size="sm" variant="ghost" onClick={() => setConfirmRevoke(false)}>Cancel</Button></div> : <Button size="sm" variant="ghost" onClick={() => setConfirmRevoke(true)}>Offboard</Button>) : null}</td>
     </tr>
   );
 }

@@ -14,8 +14,9 @@ export function RealtimeRefresher({ orgSlug }: { orgSlug: string }) {
     let es: EventSource | null = null;
     let closed = false;
     let backoff = 1000;
-    // Never refresh while the person is typing in a form; retry shortly after.
-    const editing = () => { const el = document.activeElement; return !!el && !!el.closest("form, [role=dialog]"); };
+    // Never refresh while the person is typing in a form; retry shortly after. Forms marked data-refresh-safe
+    // (the message composer) keep their own state across a refresh, so they do not hold it back.
+    const editing = () => { const el = document.activeElement; return !!el && !!el.closest("form:not([data-refresh-safe]), [role=dialog]"); };
     const schedule = () => {
       if (timer.current) return;
       timer.current = setTimeout(() => {

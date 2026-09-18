@@ -112,6 +112,10 @@ Plan reviewed against the skill's list of generated-design tells. The landing pa
 
 The owner asked for a more modern, polished feel like the Supabase dashboard and framer.com, with subtle micro-animations, using their library where sensible but keeping our colours. Added `motion` (the library behind Framer) behind a small set of primitives in `src/components/ui/motion.tsx`; the palette and type are unchanged. What moves now: one staggered rise per page load; the sidebar's active pill and the People tabs' underline slide between items; to-dos slide out when done and the list closes the gap; notices, the assistant and the edit panels expand and collapse; the clock crossfades between running and idle; dialogs scale in from 98%; cards lift 1px on hover; inputs take an accent ring on focus. All durations are 120–250ms, transform and opacity only, and `prefers-reduced-motion` switches movement off. Supabase-style details also landed: a denser 240px sidebar with soft borders, the stat ledger as an auto-fit row, and the recording-access copy now says who can already watch (owner, HR, team lead). `docs/design-system.md` has a Motion section. 48 Vitest and 3 Playwright tests pass; lint and typecheck clean.
 
+## Owner feedback round 6 (18 September 2026): messaging
+
+The owner asked for a communication feature: people in the organisation message each other, ask for updates, within teams and across them. Shipped as **Messages** (migration `0015_messaging.sql`, `src/server/services/messaging.ts`, `src/app/app/[workspace]/messages`): direct threads between any two members, one channel per team, one "Everyone" channel; a message can carry a task reference, and "Ask for an update" links on the Workroom person page, task page and People rows open the right thread with "How far with …?" pre-filled. Live updates reuse the LISTEN/NOTIFY event stream (the composer is marked refresh-safe so typing is never interrupted); unread counts show on the sidebar; a direct message also creates a notification. Access is row-level security: direct threads are readable only by their two participants (a team lead or owner cannot read staff DMs), team channels by team members, and nothing crosses organisations; only the sender can withdraw a message. Deliberately not built: file attachments (deliverables already live on tasks), @mentions, read receipts and message editing. 56 Vitest tests (8 new) and 4 Playwright tests pass.
+
 ## Milestone status
 
 | Milestone | Status | Evidence |
@@ -158,11 +162,11 @@ The owner asked for a more modern, polished feel like the Supabase dashboard and
 | --- | --- |
 | `pnpm lint` | clean (ESLint 9 with Next core-web-vitals, TypeScript and React compiler rules) |
 | `pnpm typecheck` | clean |
-| `pnpm test` (Vitest 4, embedded PostgreSQL 18, restricted `boardroom_app` role) | 9 files, 48 tests passed (18 September 2026): `tests/unit/{time,assistant}.test.ts`, `tests/integration/{tenancy,sessions,evidence-reports,recording,join-codes,round3}.test.ts` |
+| `pnpm test` (Vitest 4, embedded PostgreSQL 18, restricted `boardroom_app` role) | 10 files, 56 tests passed (18 September 2026): `tests/unit/{time,assistant}.test.ts`, `tests/integration/{tenancy,sessions,evidence-reports,recording,join-codes,round3,workroom,messaging}.test.ts` |
 | `pnpm build` (Next.js 16.3.4) | succeeds; all workspace routes are dynamic (server-rendered per request) |
 | `pnpm smoke` | every page read model executes for the seeded fixtures (15 checks) |
 | `pnpm worker` | job loop runs against the seeded database; housekeeping job succeeded; reminder scheduling deduplicated |
-| `pnpm test:e2e` (Playwright 1.63, Chromium 141 preinstalled, production build on port 3100) | 3 passed: A24 core workflow (plan, start, reload, pause/resume, switch, stop, submit, changes requested, resubmit, approve, report approval, CSV export), A01/A02 browser isolation, A03 invitation lifecycle through the mail sink |
+| `pnpm test:e2e` (Playwright 1.63, Chromium 141 preinstalled, production build on port 3100) | 4 passed: A24 core workflow (plan, start, reload, pause/resume, switch, stop, submit, changes requested, resubmit, approve, report approval, CSV export), A01/A02 browser isolation, A03 invitation lifecycle through the mail sink, Messages (direct thread across the organisation, unread badge) |
 
 Environment notes: no Docker daemon, no Supabase CLI, no ffmpeg; Figma and most external hosts are blocked by the network policy. Nothing was sent to a real mailbox and no external service was configured.
 

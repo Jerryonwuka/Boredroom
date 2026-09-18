@@ -4,6 +4,7 @@ import { Video } from "lucide-react";
 import { workspacePage } from "@/server/lib/workspace-page";
 import { AppShell } from "@/components/app/shell";
 import { PageHeader, Card } from "@/components/ui/card";
+import { buttonVariants } from "@/components/ui/button";
 import { Badge, TASK_STATUS_TONE, SESSION_STATE_TONE, label } from "@/components/ui/badge";
 import { DataTable } from "@/components/ui/table";
 import { EmptyState, PermissionDenied } from "@/components/ui/states";
@@ -38,7 +39,7 @@ export default async function WorkroomPersonPage({ params }: { params: Promise<{
     <AppShell ctx={ctx} counts={counts} teams={teams}>
       <PageHeader back={{ href: `${base}/workroom`, label: "Workroom" }} overline={`${formatLongDate(data.today)}, ${person.teams.join(", ") || "no team"}`} title={person.display_name}
         description={<span className="flex flex-wrap items-center gap-2"><Badge tone={STATUS[status].tone} dot={status === "active" || status === "paused"}>{STATUS[status].label}</Badge>{person.recording_live ? <LiveBadge /> : null}<span>{person.employee_code}, {person.role === "manager" ? "team lead" : "staff"}{person.last_activity_at ? `, last active ${relativeTime(person.last_activity_at, now)}` : ""}</span></span>}
-        actions={<Link href={`${base}/timesheets?member=${member}`} className="text-sm underline">Timesheet and records</Link>} />
+        actions={<span className="flex flex-wrap items-center gap-3"><Link href={`${base}/messages?to=${member}`} className={buttonVariants({ size: "sm" })}>Message {person.display_name.split(" ")[0]}</Link><Link href={`${base}/timesheets?member=${member}`} className="text-sm underline">Timesheet and records</Link></span>} />
 
       <div className="mb-6 grid gap-4 md:grid-cols-4">
         <Card className={status === "active" ? "tile-active" : ""}>
@@ -54,7 +55,7 @@ export default async function WorkroomPersonPage({ params }: { params: Promise<{
         <h2 className="mb-3 font-display text-lg">Today&apos;s tasks</h2>
         {tasks.length === 0 ? <EmptyState title="No tasks touched today" description="Tasks appear here when they are started, planned for today, or finished today." /> : (
           <DataTable caption="Tasks today">
-            <thead><tr><th>Task</th><th>Status</th><th>Time today</th><th>Sessions</th><th>First started</th><th>Recordings</th></tr></thead>
+            <thead><tr><th>Task</th><th>Status</th><th>Time today</th><th>Sessions</th><th>First started</th><th>Recordings</th><th><span className="sr-only">Actions</span></th></tr></thead>
             <tbody>{tasks.map((t) => (
               <tr key={t.id} className={t.current ? "bg-accent-soft/30" : ""}>
                 <td><Link href={`${base}/tasks/${t.id}`} className="font-semibold hover:underline">{t.title}</Link><p className="text-xs text-fg-subtle">{t.project_name}{t.created_by_name !== person.display_name ? `, from ${t.created_by_name}` : ""}{t.due_at ? `, due ${formatDateTime(t.due_at, ctx.org.timezone)}` : ""}</p></td>
@@ -63,6 +64,7 @@ export default async function WorkroomPersonPage({ params }: { params: Promise<{
                 <td className="tabular-nums">{t.sessions_today}</td>
                 <td className="text-sm">{t.first_started_today ? formatDateTime(t.first_started_today, ctx.org.timezone) : "—"}</td>
                 <td>{t.recordings ? <Link href={`${base}/tasks/${t.id}`} className="inline-flex items-center gap-1 hover:underline"><Video className="size-4 text-accent" aria-hidden />{t.recordings}</Link> : <span className="text-fg-subtle">—</span>}</td>
+                <td>{t.status !== "completed" ? <Link href={`${base}/messages?to=${member}&task=${t.id}`} className="whitespace-nowrap text-sm underline">Ask for an update</Link> : null}</td>
               </tr>
             ))}</tbody>
           </DataTable>
