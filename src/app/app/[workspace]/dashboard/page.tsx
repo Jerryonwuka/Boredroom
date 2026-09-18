@@ -20,15 +20,12 @@ export default async function DashboardPage({ params }: { params: Promise<{ work
   const [d, recentRecordings, att] = await Promise.all([orgDashboard(ctx), listRecordings(ctx, { limit: 6 }), attendanceBoard(ctx)]);
   const base = `/app/${ctx.org.slug}`;
   const now = new Date(d.serverNow).getTime();
+  // Four figures only: the room, the timers, and the work. Everything else lives one click away.
   const ledger = [
-    { label: "Clocked in", value: att.counts.in + att.counts.out, note: att.counts.late ? `${att.counts.late} late, ${att.counts.not_in} not yet` : `${att.counts.not_in} not yet`, href: `${base}/attendance`, tone: att.counts.late ? ("danger" as const) : ("default" as const) },
-    { label: "Working now", value: d.counts.working, note: `${d.counts.connected} connected`, href: `${base}/workroom`, tone: d.counts.working ? ("accent" as const) : ("default" as const) },
-    { label: "Time today", value: formatDuration(d.counts.seconds_today), note: "confirmed timer time, everyone", href: `${base}/timesheets` },
+    { label: "Clocked in", value: att.counts.in + att.counts.out, note: `of ${att.people.length}${att.counts.late ? `, ${att.counts.late} late` : ""}${att.counts.not_in ? `, ${att.counts.not_in} not yet` : ""}`, href: `${base}/attendance`, tone: att.counts.late ? ("danger" as const) : ("accent" as const) },
+    { label: "Working now", value: d.counts.working, note: d.counts.working ? `${d.counts.connected} connected` : "no timers running", href: `${base}/workroom`, tone: d.counts.working ? ("accent" as const) : ("default" as const) },
     { label: "Done today", value: d.counts.tasks_done_today, note: `${d.counts.tasks_done_total} completed in total`, href: `${base}/reports` },
-    { label: "Open", value: d.counts.tasks_open, note: "to-dos not yet finished" },
-    { label: "Blocked", value: d.counts.tasks_blocked, tone: d.counts.tasks_blocked ? ("danger" as const) : ("default" as const), note: d.counts.tasks_blocked ? "needs a decision" : "nothing stuck" },
-    { label: "Waiting for a check", value: d.counts.tasks_in_review, note: `${d.counts.reports_pending} report${d.counts.reports_pending === 1 ? "" : "s"} to approve`, href: `${base}/reviews` },
-    { label: "People", value: d.counts.people, note: `${d.counts.teams} team${d.counts.teams === 1 ? "" : "s"}`, href: `${base}/people` },
+    { label: "Open", value: d.counts.tasks_open, note: d.counts.tasks_blocked ? `${d.counts.tasks_blocked} blocked` : "to-dos not yet finished", href: `${base}/tasks`, tone: d.counts.tasks_blocked ? ("danger" as const) : ("default" as const) },
   ];
   return (
     <AppShell ctx={ctx} counts={counts} teams={teams}>

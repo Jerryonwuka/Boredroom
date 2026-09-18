@@ -30,10 +30,10 @@ export function Overline({ children, className }: { children: React.ReactNode; c
  */
 export function Ledger({ items, className }: { items: { label: string; value: React.ReactNode; note?: React.ReactNode; href?: string; tone?: "default" | "accent" | "danger" }[]; className?: string }) {
   return (
-    <dl className={cn("grid grid-cols-[repeat(auto-fit,minmax(6.5rem,1fr))] gap-x-4 gap-y-4 border-y border-border-soft py-5", className)}>
+    <dl className={cn("grid grid-cols-2 gap-x-8 gap-y-6 border-y border-border-soft py-6 md:grid-cols-4", className)}>
       {items.map((it) => {
-        const value = <dd className={cn("font-display text-3xl tabular-nums md:text-4xl", it.tone === "accent" ? "text-accent" : it.tone === "danger" ? "text-danger" : "text-fg")}>{it.value}</dd>;
-        const body = <><dt className="text-sm text-fg-muted">{it.label}</dt>{value}{it.note ? <dd className="text-xs text-fg-subtle">{it.note}</dd> : null}</>;
+        const value = <dd className={cn("mt-1 font-display text-4xl leading-none tabular-nums md:text-5xl", it.tone === "accent" ? "text-accent" : it.tone === "danger" ? "text-danger" : "text-fg")}>{it.value}</dd>;
+        const body = <><dt className="text-sm text-fg-muted">{it.label}</dt>{value}{it.note ? <dd className="mt-2 text-sm text-fg-subtle">{it.note}</dd> : null}</>;
         return <div key={it.label} className="min-w-0">{it.href ? <a href={it.href} className="block rounded-[var(--radius-sm)] hover:text-accent">{body}</a> : body}</div>;
       })}
     </dl>
