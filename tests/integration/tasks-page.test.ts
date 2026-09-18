@@ -2,9 +2,9 @@
  * Tasks page: team leads create and assign; staff see what is assigned to them; scope follows role.
  */
 import { beforeAll, describe, expect, it } from "vitest";
-import { resetTestDatabase } from "../helpers/db";
+import { resetTestDatabase, adminQuery } from "../helpers/db";
 import { buildCompany, type CompanyFixture } from "@/server/services/fixtures";
-import { quickTodo } from "@/server/services/tasks";
+import { quickTodo, assignableMembers } from "@/server/services/tasks";
 import { tasksView, notificationsView } from "@/server/services/views";
 
 let a: CompanyFixture;
@@ -99,5 +99,41 @@ describe("handing tasks upwards", () => {
     await expect(createTask(a.ownerCtx, { projectId: a.projectId, title: "Owner task", expectedOutput: "x", assigneeMembershipId: a.ownerCtx.membership.id, category: "work", priority: "normal", captureRequirement: "none", addToMyDay: false })).rejects.toMatchObject({ status: 422 });
     // Staff still cannot hand tasks to anyone.
     await expect(quickTodo(a.employeeCtx, { title: "Not allowed", assigneeMembershipId: a.ownerCtx.membership.id })).rejects.toMatchObject({ status: 403 });
+  });
+});
+
+describe("who can hand tasks to whom", () => {
+  it("a team lead who leads no team yet, or a lead handing to another team's member, is not blocked by the project check", async () => {
+    const { createVerifiedUser, joinViaInvitation } = await import("@/server/services/fixtures");
+    const { createTeam, setTeamMember } = await import("@/server/services/orgs");
+    // Fabro is a team lead by role but is only a member (not the lead) of a second team.
+    const marketing = await createTeam(a.ownerCtx, "Marketing");
+    const fabro = await joinViaInvitation(a.ownerCtx, await createVerifiedUser("fabro@company-a.test", "Fabro Fashion"), "manager", marketing.id, "MGR-002");
+    const people = await assignableMembers(fabro);
+    expect(people.every((p) => p.group === "organisation")).toBe(true);
+    expect(people.map((p) => p.display_name)).toContain("Ada Employee");
+    const t = await quickTodo(fabro, { title: "New videos", assigneeMembershipId: a.employeeCtx.membership.id });
+    expect((await tasksView(a.employeeCtx)).tasks.map((x) => x.id)).toContain(t.id);
+    expect((await tasksView(fabro)).tasks.map((x) => x.id)).toContain(t.id); // scope is lead by role, and hand-outs are listed
+    // Once Fabro leads Marketing, hand-outs to Ada (Design) still work and land in a project Fabro leads.
+    await setTeamMember(a.ownerCtx, marketing.id, fabro.membership.id, { isManager: true });
+    const t2 = await quickTodo(fabro, { title: "Shoot the launch video", assigneeMembershipId: a.employeeCtx.membership.id });
+    const row = (await adminQuery<{ project_id: string }>(`SELECT project_id FROM tasks WHERE id = $1`, [t2.id]))[0];
+    const lead = await adminQuery(`SELECT 1 FROM project_members WHERE project_id = $1 AND membership_id = $2 AND access_role = 'lead'`, [row.project_id, fabro.membership.id]);
+    expect(lead.length).toBe(1);
+  });
+
+  it("the owner adds a task for a staff member from the Tasks page; it is filed under the member's team project", async () => {
+    const people = await assignableMembers(a.ownerCtx);
+    expect(people.map((p) => [p.display_name, p.group])).toContainEqual(["Ada Employee", "team"]);
+    expect(people.map((p) => [p.display_name, p.group])).toContainEqual(["Mary HR", "organisation"]);
+    const t = await quickTodo(a.ownerCtx, { title: "Prepare the board pack", assigneeMembershipId: a.employee2Ctx.membership.id });
+    const row = (await adminQuery<{ project_id: string; reviewer_membership_id: string }>(`SELECT project_id, reviewer_membership_id FROM tasks WHERE id = $1`, [t.id]))[0];
+    const teamProject = (await adminQuery<{ project_id: string }>(`SELECT project_id FROM teams WHERE id = $1`, [a.teamId]))[0].project_id;
+    expect(row.project_id).toBe(teamProject);
+    expect(row.reviewer_membership_id).toBe(a.ownerCtx.membership.id);
+    expect((await tasksView(a.employee2Ctx)).tasks.map((x) => x.title)).toContain("Prepare the board pack");
+    // Still no tasks for themselves.
+    await expect(quickTodo(a.ownerCtx, { title: "Mine" })).rejects.toMatchObject({ status: 403 });
   });
 });

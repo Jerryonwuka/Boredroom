@@ -63,7 +63,7 @@ export async function createTask(ctx: OrgContext, input: z.infer<typeof createTa
     if (project.status !== "active") throw conflict("PROJECT_ARCHIVED", "Tasks cannot be created in an archived project.");
     if (project.requires_due_date && !input.dueAt) throw invalid("This project requires a due date.", { dueAt: ["Required by project policy."] });
     if (project.requires_estimate && !input.estimateMinutes) throw invalid("This project requires an effort estimate.", { estimateMinutes: ["Required by project policy."] });
-    if (!(await canManageAssignee(db, ctx, assignee, input.projectId))) throw forbidden("You cannot assign tasks to that person in this project.");
+    if (!(await canManageAssignee(db, ctx, assignee, input.projectId))) throw forbidden("You cannot assign tasks to that person in this project. Hand-outs from My Day or the Tasks page work for anyone in the organisation.");
     const assigneeRow = await db.maybeOne<{ role: string }>(`SELECT role FROM memberships WHERE id = $1 AND organisation_id = $2 AND status = 'active'`, [assignee, ctx.org.id]);
     if (!assigneeRow) throw invalid("Assignee is not an active member.", { assigneeMembershipId: ["Not an active member."] });
     // Organisation accounts supervise: they do not make tasks for themselves. A team lead may hand one up to them.
@@ -278,12 +278,42 @@ export const quickTodoSchema = z.object({
  * One-line to-do: title only, or title plus a description, deadline and (for team leads) an assignee.
  * Project, reviewer and today's plan are filled in automatically; an assignee who is not the creator is notified.
  */
+/**
+ * Where a to-do handed to someone else is filed, chosen so the creator is allowed to assign there:
+ * a team lead uses a team they lead (the lead access is synced first), an organisation account uses the
+ * assignee's team, and either falls back to the creator's own to-do project (which they lead).
+ */
+async function handoutProjectFor(db: Db, ctx: OrgContext, assigneeMembershipId: string): Promise<string> {
+  const isOrg = ctx.membership.role === "owner" || ctx.membership.role === "hr";
+  if (!isOrg) {
+    const led = await db.query<{ team_id: string; project_id: string | null }>(
+      `SELECT t.id AS team_id, t.project_id FROM team_members tm JOIN teams t ON t.id = tm.team_id LEFT JOIN projects p ON p.id = t.project_id
+       WHERE tm.membership_id = $1 AND tm.is_manager AND t.archived_at IS NULL AND (p.id IS NULL OR p.status = 'active') ORDER BY t.name`, [ctx.membership.id]);
+    for (const t of led) if (t.project_id) { await db.query(`SELECT app_sync_team_project_member($1, $2, $3, 'lead')`, [ctx.org.id, t.team_id, ctx.membership.id]); return t.project_id; }
+  } else {
+    const team = await db.maybeOne<{ project_id: string }>(
+      `SELECT t.project_id FROM team_members tm JOIN teams t ON t.id = tm.team_id JOIN projects p ON p.id = t.project_id
+       WHERE tm.membership_id = $1 AND t.archived_at IS NULL AND p.status = 'active' ORDER BY t.name LIMIT 1`, [assigneeMembershipId]);
+    if (team) return team.project_id;
+  }
+  const existing = await db.maybeOne<{ project_id: string }>(`SELECT pm.project_id FROM project_members pm JOIN projects p ON p.id = pm.project_id WHERE pm.membership_id = $1 AND pm.access_role = 'lead' AND p.status = 'active' AND p.name = $2`, [ctx.membership.id, `${ctx.user.displayName}'s to-dos`]);
+  if (existing) return existing.project_id;
+  return (await db.one<{ id: string }>(`SELECT app_create_personal_project($1, $2, $3) AS id`, [ctx.org.id, ctx.membership.id, `${ctx.user.displayName}'s to-dos`])).id;
+}
+
+/**
+ * One-line to-do: title only, or title plus a description, deadline, priority and an assignee.
+ * Team leads and organisation accounts may hand a to-do to anyone in the organisation; staff add for themselves.
+ * Project, reviewer and today's plan are filled in automatically; an assignee who is not the creator is notified.
+ */
 export async function quickTodo(ctx: OrgContext, input: z.infer<typeof quickTodoSchema>, requestId?: string) {
-  if (ctx.membership.role === "owner" || ctx.membership.role === "hr") throw forbidden("Organisation accounts supervise; they do not hold tasks.");
   const assignee = input.assigneeMembershipId ?? ctx.membership.id;
   const forSelf = assignee === ctx.membership.id;
-  const projectId = await withUser(ctx.user.profileId, (db) => todoProjectFor(db, ctx));
-  // Own to-dos are checked by the team lead; a to-do handed out by a lead is checked by that lead.
+  const isOrg = ctx.membership.role === "owner" || ctx.membership.role === "hr";
+  if (isOrg && forSelf) throw forbidden("Organisation accounts supervise; they do not hold tasks of their own. Pick who should do this.");
+  if (!forSelf && ctx.membership.role === "employee") throw forbidden("Only team leads and organisation accounts can hand tasks to others.");
+  const projectId = await withUser(ctx.user.profileId, (db) => (forSelf ? todoProjectFor(db, ctx) : handoutProjectFor(db, ctx, assignee)));
+  // Own to-dos are checked by the team lead; a to-do handed out is checked by whoever handed it out.
   const reviewer = forSelf ? await withUser(ctx.user.profileId, (db) => defaultReviewerFor(db, ctx.org.id, ctx.membership.id)) : ctx.membership.id;
   return createTask(ctx, { projectId, title: input.title, expectedOutput: input.description?.trim() || input.title, assigneeMembershipId: assignee, reviewerMembershipId: reviewer, category: "work", priority: input.priority ?? "normal", estimateMinutes: input.estimateMinutes ?? null, dueAt: input.dueAt ?? null, captureRequirement: "none", addToMyDay: forSelf }, requestId);
 }
@@ -296,7 +326,7 @@ export type AssignablePerson = { id: string; display_name: string; team_name: st
  * Staff (and organisation accounts) get an empty list.
  */
 export async function assignableMembers(ctx: OrgContext): Promise<AssignablePerson[]> {
-  if (ctx.membership.role !== "manager") return [];
+  if (ctx.membership.role === "employee") return [];
   return withUser(ctx.user.profileId, async (db) => {
     const rows = await db.query<AssignablePerson>(
       `WITH team AS (
@@ -311,10 +341,10 @@ export async function assignableMembers(ctx: OrgContext): Promise<AssignablePers
        SELECT m.id, pr.display_name,
               COALESCE(NULLIF(concat_ws(', ', CASE m.role WHEN 'owner' THEN 'Organisation owner' WHEN 'hr' THEN 'HR' WHEN 'manager' THEN 'Team lead' END,
                 (SELECT string_agg(t.name, ', ' ORDER BY t.name) FROM team_members tm JOIN teams t ON t.id = tm.team_id WHERE tm.membership_id = m.id AND t.archived_at IS NULL)), ''), 'No team') AS team_name,
-              'organisation' AS "group"
+              CASE WHEN $3::boolean AND m.role IN ('employee','manager') THEN 'team' ELSE 'organisation' END AS "group"
        FROM memberships m JOIN profiles pr ON pr.id = m.user_id
        WHERE m.organisation_id = $2 AND m.status = 'active' AND m.id <> $1 AND NOT EXISTS (SELECT 1 FROM team WHERE team.id = m.id)`,
-      [ctx.membership.id, ctx.org.id]);
+      [ctx.membership.id, ctx.org.id, ctx.membership.role === "owner" || ctx.membership.role === "hr"]);
     return rows.sort((a, b) => (a.group === b.group ? a.display_name.localeCompare(b.display_name) : a.group === "team" ? -1 : 1));
   });
 }

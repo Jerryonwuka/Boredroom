@@ -35,8 +35,8 @@ export default async function TasksPage({ params, searchParams }: { params: Prom
   return (
     <AppShell ctx={ctx} counts={counts} teams={teams}>
       <PageHeader title={mine ? "Your tasks" : "Tasks"}
-        description={mine ? "Everything assigned to you, by your team lead or by yourself. Press Start to pick one up; the clock opens on My Day." : lead ? "Create a task and hand it to someone on your team, to another team lead, or up to the owner or HR. They are notified and see it under their tasks; follow it here until it is done." : "Every task in the organisation and who holds it. Team leads create and assign; anything handed to you appears here with a Mark done button."} />
-      {lead ? <NewAssignedTask orgSlug={ctx.org.slug} people={data.people} self={ctx.membership.id} selfName={ctx.user.displayName} /> : null}
+        description={mine ? "Everything assigned to you, by your team lead or by yourself. Press Start to pick one up; the clock opens on My Day." : lead ? "Create a task and hand it to someone on your team, to another team lead, or up to the owner or HR. They are notified and see it under their tasks; follow it here until it is done." : "Every task in the organisation and who holds it. Add a task and assign it to anyone; anything handed to you appears here with a Mark done button."} />
+      {!mine ? <NewAssignedTask orgSlug={ctx.org.slug} people={data.people.filter((p) => p.id !== ctx.membership.id)} self={ctx.membership.id} selfName={ctx.user.displayName} canKeep={lead} /> : null}
 
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-border-soft">
         <nav aria-label="Task status" className="flex gap-1">

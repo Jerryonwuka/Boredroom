@@ -201,7 +201,7 @@ test("Tasks: David creates a task from the Tasks page and assigns it to Ada; Ada
   await signIn(page, "david@company-a.test");
   await page.goto("/app/company-a/tasks");
   await expect(page.getByRole("heading", { name: "Tasks" })).toBeVisible();
-  await page.getByRole("button", { name: "New task" }).click();
+  await page.getByRole("button", { name: "Add new task" }).click();
   await page.getByLabel("What needs doing").fill("Update the pricing table");
   await page.getByLabel("Details").fill("Use the new tiers from finance.");
   await page.getByLabel("Assign to").selectOption({ label: "Ada Employee (Design)" });
@@ -270,7 +270,7 @@ test("Tasks: a team lead hands a task up to the owner, who marks it done from th
   await page.context().clearCookies();
   await signIn(page, "david@company-a.test");
   await page.goto("/app/company-a/tasks");
-  await page.getByRole("button", { name: "New task" }).click();
+  await page.getByRole("button", { name: "Add new task" }).click();
   await page.getByLabel("What needs doing").fill("Approve the Q4 design budget");
   await page.getByLabel("Assign to").selectOption({ label: "Olu Owner (Organisation owner)" });
   await page.getByRole("button", { name: "Create and assign" }).click();
@@ -285,4 +285,16 @@ test("Tasks: a team lead hands a task up to the owner, who marks it done from th
   await expect(row).toBeHidden();
   await page.goto("/app/company-a/tasks?status=check");
   await expect(page.getByRole("row").filter({ hasText: "Approve the Q4 design budget" })).toContainText("Sent for check");
+});
+
+test("Tasks: the owner adds a task from the Tasks page and assigns it to Ben", async ({ page }) => {
+  await page.context().clearCookies();
+  await signIn(page, "owner@company-a.test");
+  await page.goto("/app/company-a/tasks");
+  await page.getByRole("button", { name: "Add new task" }).click();
+  await page.getByLabel("What needs doing").fill("Prepare the board pack");
+  await page.getByLabel("Assign to").selectOption({ label: "Ben Employee (Design)" });
+  await page.getByRole("button", { name: "Create and assign" }).click();
+  await expect(page.getByText("Task created and assigned to Ben Employee.")).toBeVisible();
+  await expect(page.getByRole("row").filter({ hasText: "Prepare the board pack" })).toContainText("Ben Employee");
 });

@@ -13,7 +13,7 @@ import { api, isApiFailure } from "@/lib/api-client";
 type Person = { id: string; display_name: string; team_name: string | null; group: "team" | "organisation" };
 
 /** A team lead creates a task and hands it to someone on their team (or keeps it). The assignee is notified. */
-export function NewAssignedTask({ orgSlug, people, self, selfName }: { orgSlug: string; people: Person[]; self: string; selfName: string }) {
+export function NewAssignedTask({ orgSlug, people, self, selfName, canKeep = true }: { orgSlug: string; people: Person[]; self: string; selfName: string; canKeep?: boolean }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(false);
@@ -24,7 +24,7 @@ export function NewAssignedTask({ orgSlug, people, self, selfName }: { orgSlug: 
   return (
     <div className="mb-6">
       <div className="flex flex-wrap items-center gap-3">
-        <Button onClick={() => { setOpen((o) => !o); setDone(null); }} aria-expanded={open} aria-controls="new-task-form"><Plus className="size-4" aria-hidden />{open ? "Close" : "New task"}</Button>
+        <Button onClick={() => { setOpen((o) => !o); setDone(null); }} aria-expanded={open} aria-controls="new-task-form"><Plus className="size-4" aria-hidden />{open ? "Close" : "Add new task"}</Button>
         <Presence show={!!done && !open}><p className="text-sm text-success">{done}</p></Presence>
       </div>
       <Expand show={open} id="new-task-form">
@@ -50,10 +50,10 @@ export function NewAssignedTask({ orgSlug, people, self, selfName }: { orgSlug: 
           <div className="md:col-span-2"><Field label="What needs doing" htmlFor="nt-title" error={fieldErrors.title}><Input id="nt-title" name="title" required maxLength={200} placeholder="e.g. Redo the homepage banner" autoFocus /></Field></div>
           <div className="md:col-span-2"><Field label="Details" htmlFor="nt-desc" hint="optional: what a finished result looks like" error={fieldErrors.description}><Textarea id="nt-desc" name="description" maxLength={4000} className="min-h-20" /></Field></div>
           <Field label="Assign to" htmlFor="nt-who" error={fieldErrors.assigneeMembershipId}>
-            <Select id="nt-who" name="assigneeMembershipId" defaultValue={others.find((p) => p.group === "team")?.id ?? self}>
-              <optgroup label="Your team">
+            <Select id="nt-who" name="assigneeMembershipId" defaultValue={others.find((p) => p.group === "team")?.id ?? (canKeep ? self : others[0]?.id)}>
+              <optgroup label={canKeep ? "Your team" : "Staff and team leads"}>
                 {others.filter((p) => p.group === "team").map((p) => <option key={p.id} value={p.id}>{p.display_name}{p.team_name ? ` (${p.team_name})` : ""}</option>)}
-                <option value={self}>{selfName} (me)</option>
+                {canKeep ? <option value={self}>{selfName} (me)</option> : null}
               </optgroup>
               {others.some((p) => p.group === "organisation") ? <optgroup label="Others in the organisation">{others.filter((p) => p.group === "organisation").map((p) => <option key={p.id} value={p.id}>{p.display_name}{p.team_name ? ` (${p.team_name})` : ""}</option>)}</optgroup> : null}
             </Select>

@@ -337,7 +337,7 @@ export async function tasksView(ctx: OrgContext, filter: TaskListFilter = {}) {
   const status = filter.status ?? "open";
   return withUser(ctx.user.profileId, async (db) => {
     const scope: "org" | "lead" | "mine" = ctx.membership.role === "owner" || ctx.membership.role === "hr" ? "org"
-      : (await db.maybeOne(`SELECT 1 FROM team_members WHERE membership_id = $1 AND is_manager`, [ctx.membership.id])) ? "lead" : "mine";
+      : ctx.membership.role === "manager" || (await db.maybeOne(`SELECT 1 FROM team_members WHERE membership_id = $1 AND is_manager`, [ctx.membership.id])) ? "lead" : "mine";
     // People whose tasks the viewer may list. Leads can hand tasks to anyone, so they see their team first and the rest of the organisation after.
     let people: { id: string; display_name: string; team_name: string | null; group: "team" | "organisation" }[] = [];
     if (scope === "org") {
