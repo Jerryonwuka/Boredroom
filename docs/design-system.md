@@ -10,6 +10,16 @@ The product keeps the landing page's identity (black surfaces, one orange accent
 - **Meta text reads as prose.** Commas and spaces, not middle dots; no arrows appended to links; no monospace for data labels.
 - **Colour restraint.** Ember only on the live thing, the primary action and the eyebrow; status colours only for status. The gradient word in the greeting is gone.
 
+## Motion (Supabase/Framer polish pass, 18 September 2026)
+
+Built on the `motion` library (the engine behind Framer), wrapped in `src/components/ui/motion.tsx` so pages never import it directly. The look stays ours (black surfaces, ember accent); the motion borrows Supabase's and Framer's restraint: short, eased, and always attached to something that changed.
+
+- **One entrance per page.** `MotionRoot` sets the default transition (220ms, `cubic-bezier(0.23,1,0.32,1)`) and `reducedMotion="user"`. `PageRise` around the main column rises its direct children 6px with a 40ms stagger; `PageHeader` is one of those children. Nothing else animates on load.
+- **Everything else answers an action.** `Presence` slides notices and errors in and out; `Expand` opens the assistant, details and edit panels; `AnimatedList`/`AnimatedRow` let a to-do slide out when it is done and the rows below close the gap (`layout="position"`); `Swap` crossfades the clock between its running and idle faces; dialogs scale from 98% (`sheet-in`).
+- **Shared-layout markers.** The sidebar's active pill and the People tabs' underline are `SlidingMarker`s (`layoutId`), so they glide to the new item instead of re-appearing.
+- **Hover is a hint, not a show.** `tile-link` lifts a card 1px and firms its border in 120ms; buttons press to 97%; inputs take an accent border and a 3px soft ring on focus. No hover motion on rows or tables.
+- **Budget.** 120–250ms, transform and opacity only, no springs with visible overshoot, no blur or size animation. `prefers-reduced-motion` turns movement off through `MotionConfig` and the global CSS rule.
+
 ## Direction
 
 - **Who**: a staff member with a timer running, a team lead checking the team, an owner supervising. Working tools, used many times a day.
@@ -26,7 +36,7 @@ The product keeps the landing page's identity (black surfaces, one orange accent
 | Accent | `--accent` orange, ~10% of any screen. Semantic: success, warning, danger, info, slightly desaturated. |
 | Radius | `--radius-sm` 8px controls · `--radius` 14px cards · `--radius-lg` 20px dialogs; pills for buttons |
 | Depth | Borders only. Lifted surfaces get a single 1px ring (`--ring-lift`). No drop shadows, no decorative gradients on tiles. The header glow and the running-session glow are the brand's two allowed lights. |
-| Motion | `--ease-out cubic-bezier(0.23,1,0.32,1)`, `--duration-fast 120ms`, `--duration 180ms`. Transform and opacity only. `prefers-reduced-motion` drops movement globally. |
+| Motion | `--ease-out cubic-bezier(0.23,1,0.32,1)`, `--duration-fast 120ms`, `--duration 180ms` in CSS; `motion` primitives in `ui/motion.tsx` (see Motion above). Transform and opacity only. `prefers-reduced-motion` drops movement globally. |
 | Z-index | `--z-raised 10 · --z-dropdown 20 · --z-sticky 30 · --z-overlay 40 · --z-dialog 50 · --z-toast 60` |
 | Type scale | 1.25 ratio from a 15/16px body: 12 · 13 · 15 · 16 · 18 · 22 · 28 · 36. Headings `text-wrap: balance`, paragraphs `text-wrap: pretty`, numbers `tabular-nums`. |
 | Spacing | 4px base. Component padding 12–20px, section gaps 24–32px. Symmetrical padding. |
@@ -36,7 +46,8 @@ The product keeps the landing page's identity (black surfaces, one orange accent
 - **Button** — pill; primary / outline / ghost / subtle / danger; `sm` 36px, `md` 44px, `lg` 56px, `icon` 40×40 (hit area). Press feedback `scale(0.97)`; named transitions only.
 - **Input / Select / Textarea** — inset surface, strong border, hover lightens, focus ring. `Field` links the error to the control (`aria-describedby`, `aria-invalid`).
 - **ConfirmDialog / ConfirmButton** — native `<dialog>` for every destructive or irreversible action (archive, disconnect, rotate code, publish policy, turn recording off). Focus trapped, Escape closes, specific action labels.
-- **Tile / Card** — flat elevated surface + border. `tile-active` marks the one live row (accent edge, no glow).
+- **Tile / Card** — flat elevated surface + border. `tile-active` marks the one live row (accent edge, no glow); `tile-link` is a clickable card with the hover lift.
+- **Motion primitives** — `MotionRoot`, `PageRise`, `Rise`, `Presence`, `Expand`, `AnimatedList`/`AnimatedRow`, `Swap`, `SlidingMarker` in `src/components/ui/motion.tsx`.
 - **DataTable** — quiet header (medium weight, subtle colour, no all-caps), soft row dividers, hover tint, tabular numbers.
 - **EmptyState** — every empty state names one next action.
 - **Skeleton / loading.tsx** — structural skeleton while a workspace page renders.

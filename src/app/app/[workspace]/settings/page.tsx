@@ -51,7 +51,7 @@ export default async function SettingsPage({ params, searchParams }: { params: P
           </Card>
           <Card>
             <h2 className="font-display text-lg">Recording access grants</h2>
-            <p className="mb-3 text-sm text-fg-muted">Company role alone grants no playback. Grants are explicit, scoped and logged. A privacy administrator resolves flagged footage.</p>
+            <p className="mb-3 text-sm text-fg-muted">Supervisors (the owner, HR and a person’s team lead) can watch their people’s recordings. Grants extend playback to anyone else; every grant and every play is logged.</p>
             <GrantsPanel orgSlug={ctx.org.slug} grants={grants} members={members} teams={teams} isOwner={isOwner} />
           </Card>
         </div>

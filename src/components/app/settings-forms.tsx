@@ -84,7 +84,7 @@ export function GrantsPanel({ orgSlug, grants, members, teams, isOwner }: { orgS
     <div>
       {error ? <Alert tone="danger" className="mb-2">{error}</Alert> : null}{ok ? <Alert tone="success" className="mb-2">{ok}</Alert> : null}
       <ul className="mb-3 divide-y divide-border">
-        {grants.length === 0 ? <li className="py-2 text-sm text-fg-muted">No grants. Nobody can play back recordings except the person recorded.</li> : grants.map((g) => (
+        {grants.length === 0 ? <li className="py-2 text-sm text-fg-muted">No extra grants. The person recorded, their team lead, HR and the owner can already watch; add a grant to let someone else.</li> : grants.map((g) => (
           <li key={g.id} className="flex items-center justify-between py-2 text-sm"><span>{g.grantee_name} <Badge tone="accent">{g.scope_type.replace("_", " ")}{g.scope_name ? `: ${g.scope_name}` : ""}</Badge> <span className="text-fg-subtle">by {g.granted_by_name}</span></span>{isOwner ? <Button size="sm" variant="ghost" disabled={pending} onClick={() => submit(() => api(`/api/orgs/${orgSlug}/grants/${g.id}`, { method: "DELETE" }), "Grant revoked.")}>Revoke</Button> : null}</li>
         ))}
       </ul>

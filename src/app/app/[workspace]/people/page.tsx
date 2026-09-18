@@ -8,6 +8,7 @@ import { PermissionDenied, EmptyState } from "@/components/ui/states";
 import { peopleView } from "@/server/services/views";
 import { formatDateTime } from "@/lib/utils";
 import { InviteForm, MemberRow, NewTeamForm, InvitationRow, JoinCodePanel } from "@/components/app/people-forms";
+import { SlidingMarker } from "@/components/ui/motion";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "People and teams" };
@@ -40,8 +41,9 @@ export default async function PeoplePage({ params, searchParams }: { params: Pro
       <nav aria-label="Sections" className="mb-6 flex gap-1 border-b border-border">
         {TABS.map((t) => (
           <Link key={t.key} href={`${base}/people?tab=${t.key}`} aria-current={tab === t.key ? "page" : undefined}
-            className={`-mb-px inline-flex items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-semibold ${tab === t.key ? "border-accent text-fg" : "border-transparent text-fg-muted hover:text-fg"}`}>
+            className={`relative -mb-px inline-flex items-center gap-2 px-4 py-2.5 text-sm font-semibold transition-[color] duration-[var(--duration-fast)] ${tab === t.key ? "text-fg" : "text-fg-muted hover:text-fg"}`}>
             {t.label}<span className={`rounded-full px-2 py-0.5 text-xs ${tab === t.key ? "bg-accent-soft text-accent" : "bg-inset text-fg-subtle"}`}>{countFor[t.key]}</span>
+            {tab === t.key ? <SlidingMarker layoutId="people-tab" className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-accent" /> : null}
           </Link>
         ))}
       </nav>

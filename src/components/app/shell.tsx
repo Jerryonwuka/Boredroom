@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import type { OrgContext } from "@/server/lib/api";
 import type { NavCounts } from "@/server/services/workspace";
 import { RealtimeRefresher } from "@/components/app/realtime";
+import { MotionRoot, PageRise } from "@/components/ui/motion";
 
 export const ROLE_LABEL: Record<string, string> = { owner: "Organisation owner", hr: "HR administrator", manager: "Team lead", employee: "Staff" };
 
@@ -52,12 +53,13 @@ export function navItems(ctx: OrgContext, counts: NavCounts, teams: { id: string
 
 export function AppShell({ ctx, counts, teams = [], children }: { ctx: OrgContext; counts: NavCounts; teams?: { id: string; name: string; is_manager: boolean }[]; children: React.ReactNode }) {
   return (
+    <MotionRoot>
     <div className="flex min-h-dvh">
-      <aside className="hidden w-64 shrink-0 flex-col border-r border-border px-4 py-5 md:flex">
+      <aside className="hidden w-60 shrink-0 flex-col border-r border-border-soft px-3 py-5 md:flex">
         <div className="mb-6 flex items-center justify-between px-2">
           <Logo href={`/app/${ctx.org.slug}`} />
         </div>
-        <Link href="/app" className="mb-5 block rounded-xl border border-border px-3 py-2 hover:border-border-strong" aria-label="Switch workspace">
+        <Link href="/app" className="mb-5 block rounded-[var(--radius-sm)] border border-border px-3 py-2 transition-[border-color,background-color] duration-[var(--duration-fast)] hover:border-border-strong hover:bg-white/[0.03]" aria-label="Switch workspace">
           <p className="truncate text-sm font-semibold">{ctx.org.name}</p>
           <p className="text-xs text-fg-subtle">Switch workspace</p>
         </Link>
@@ -65,8 +67,8 @@ export function AppShell({ ctx, counts, teams = [], children }: { ctx: OrgContex
         <div className="mt-auto border-t border-border pt-4 text-sm">
           <p className="truncate font-semibold">{ctx.user.displayName}</p>
           <p className="truncate text-xs text-fg-subtle">{ctx.user.email}</p>
-          <div className="mt-2 flex items-center justify-between">
-            <Badge tone="accent">{ROLE_LABEL[ctx.membership.role]}</Badge>
+          <div className="mt-2 flex items-center justify-between gap-2">
+            <Badge tone="accent" className="whitespace-nowrap">{ROLE_LABEL[ctx.membership.role]}</Badge>
             <SignOutButton />
           </div>
         </div>
@@ -83,9 +85,10 @@ export function AppShell({ ctx, counts, teams = [], children }: { ctx: OrgContex
             </div>
           </details>
         </header>
-        <main id="main" className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 md:px-8 md:py-8">{children}</main>
+        <main id="main" className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 md:px-8 md:py-8"><PageRise>{children}</PageRise></main>
         <RealtimeRefresher orgSlug={ctx.org.slug} />
       </div>
     </div>
+    </MotionRoot>
   );
 }

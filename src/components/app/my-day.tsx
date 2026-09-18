@@ -12,6 +12,7 @@ import { Plus, Check, Sparkles, ChevronDown, Pencil, Circle, X } from "lucide-re
 import { SessionTimer, type CurrentSessionPayload, type StartableTask } from "@/components/app/session-timer";
 import { CaptureProvider, useCaptureGate, useCaptureContext, captureSupport } from "@/components/app/capture";
 import { AssistantPanel } from "@/components/app/assistant-panel";
+import { AnimatedList, AnimatedRow, AnimatePresence, Presence, Expand } from "@/components/ui/motion";
 import { Button } from "@/components/ui/button";
 import { Badge, label } from "@/components/ui/badge";
 import { Input, Textarea, Select, Field } from "@/components/ui/input";
@@ -101,8 +102,8 @@ function Board({ orgSlug, today, initialSession, planned, ownTodos, fromLeads, d
         <SessionTimer orgSlug={orgSlug} initial={initialSession} tasks={startable} captureDialog={dialogEl} onSessionChange={onSessionChange} todaySeconds={todaySeconds}
           {...(recordingMode === "disabled" ? {} : { captureGate, recordingControls })} />
         {recordingMode === "disabled" ? <Alert tone="info">Screen recording is switched off for this organisation. An owner can turn it on under Settings → Screen recording.</Alert> : !policyAcknowledged ? <Alert tone="warning">To record your screen, first <Link className="underline" href={`/app/${orgSlug}/policy?next=/app/${orgSlug}/my-day`}>read and acknowledge the monitoring notice</Link>.</Alert> : null}
-        {error ? <Alert tone="danger">{error}</Alert> : null}
-        {notice ? <Alert tone="success">{notice}</Alert> : null}
+        <Presence show={!!error}><Alert tone="danger">{error}</Alert></Presence>
+        <Presence show={!!notice}><Alert tone="success">{notice}</Alert></Presence>
 
         <section aria-labelledby="todo-heading" className="tile p-4 md:p-5">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -110,24 +111,26 @@ function Board({ orgSlug, today, initialSession, planned, ownTodos, fromLeads, d
             <span className="text-sm text-fg-subtle tabular-nums">{rows.filter((r) => r.status !== "in_review").length} open, {doneToday.length} done</span>
           </div>
           <QuickTodo orgSlug={orgSlug} assignable={assignable} onDone={(msg) => { setNotice(msg ?? null); router.refresh(); }} onAssistant={() => setShowAssistant((v) => !v)} assistantOpen={showAssistant} />
-          {showAssistant ? <div id="assistant-panel" className="rise-in mt-3"><AssistantPanel orgSlug={orgSlug} people={assignable} configured={assistantConfigured} onClose={() => setShowAssistant(false)} onCreated={(n) => { setNotice(`${n} to-do${n === 1 ? "" : "s"} added.`); router.refresh(); }} /></div> : null}
+          <Expand show={showAssistant} id="assistant-panel"><div className="mt-3"><AssistantPanel orgSlug={orgSlug} people={assignable} configured={assistantConfigured} onClose={() => setShowAssistant(false)} onCreated={(n) => { setNotice(`${n} to-do${n === 1 ? "" : "s"} added.`); router.refresh(); }} /></div></Expand>
 
           {rows.length === 0 && doneToday.length === 0 ? (
             <p className="mt-4 rounded-[var(--radius-sm)] border border-dashed border-border-strong p-6 text-center text-sm text-fg-muted">Nothing on your list yet. Type your first to-do above and press Enter, then press Start when you begin.</p>
           ) : (
-            <ul className="mt-4 divide-y divide-border-soft">
+            <AnimatedList className="mt-4 divide-y divide-border-soft">
+              <AnimatePresence initial={false}>
               {rows.map((t) => (
                 <TodoRow key={t.id} t={t} orgSlug={orgSlug} self={membershipId} running={session?.taskId === t.id} anyRunning={!!session} canRecord={canRecord}
                   onStart={(record) => start(t, record)} onDone={() => done(t)} onSaved={(msg) => { setNotice(msg); router.refresh(); }} />
               ))}
               {doneToday.map((t) => (
-                <li key={t.id} className="flex items-center gap-3 py-3 text-fg-muted">
+                <AnimatedRow key={t.id} id={t.id} className="flex items-center gap-3 py-3 text-fg-muted">
                   <Badge tone="success"><Check className="size-3" aria-hidden /> Completed</Badge>
                   <Link href={`/app/${orgSlug}/tasks/${t.id}`} className="min-w-0 flex-1 truncate line-through decoration-fg-faint hover:underline">{t.title}</Link>
                   <span className="text-xs text-fg-subtle">{formatDateTime(t.completed_at)}</span>
-                </li>
+                </AnimatedRow>
               ))}
-            </ul>
+              </AnimatePresence>
+            </AnimatedList>
           )}
         </section>
 
@@ -162,7 +165,7 @@ function TodoRow({ t, orgSlug, self, running, anyRunning, canRecord, onStart, on
   const fromLead = t.created_by !== self;
   const waiting = t.status === "in_review";
   return (
-    <li className={`py-3 ${running ? "-mx-4 rounded-[var(--radius-sm)] bg-accent-soft/40 px-4 md:-mx-5 md:px-5" : ""}`}>
+    <AnimatedRow id={t.id} className={`py-3 transition-[background-color] duration-[var(--duration)] ${running ? "-mx-4 rounded-[var(--radius-sm)] bg-accent-soft/40 px-4 md:-mx-5 md:px-5" : ""}`}>
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -197,8 +200,8 @@ function TodoRow({ t, orgSlug, self, running, anyRunning, canRecord, onStart, on
           )}
         </div>
       </div>
-      {editing ? <EditTodo orgSlug={orgSlug} t={t} onClose={() => setEditing(false)} onSaved={(m) => { setEditing(false); onSaved(m); }} /> : null}
-    </li>
+      <Expand show={editing}><EditTodo orgSlug={orgSlug} t={t} onClose={() => setEditing(false)} onSaved={(m) => { setEditing(false); onSaved(m); }} /></Expand>
+    </AnimatedRow>
   );
 }
 
@@ -213,7 +216,7 @@ function EditTodo({ orgSlug, t, onClose, onSaved }: { orgSlug: string; t: Row; o
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   return (
-    <form className="rise-in mt-3 grid gap-2 rounded-[var(--radius-sm)] border border-border bg-inset p-3 md:grid-cols-[1fr_auto_auto_auto]" onSubmit={async (e) => {
+    <form className="mt-3 grid gap-2 rounded-[var(--radius-sm)] border border-border bg-inset p-3 md:grid-cols-[1fr_auto_auto_auto]" onSubmit={async (e) => {
       e.preventDefault(); setPending(true); setError(null);
       const f = new FormData(e.currentTarget);
       try {
@@ -296,12 +299,12 @@ function QuickTodo({ orgSlug, assignable, onDone, onAssistant, assistantOpen }: 
         <Button type="button" variant="ghost" size="sm" aria-expanded={details} aria-controls="quick-details" onClick={() => setDetails((v) => !v)}>{details ? "Hide details" : "Date and details"}</Button>
         <Button type="button" variant={assistantOpen ? "subtle" : "ghost"} size="sm" aria-expanded={assistantOpen} aria-controls="assistant-panel" onClick={onAssistant}><Sparkles className="size-4 text-accent" aria-hidden />Assistant</Button>
       </div>
-      {details ? (
-        <div id="quick-details" className="rise-in grid gap-2 md:grid-cols-[1fr_auto]">
+      <Expand show={details} id="quick-details">
+        <div className="grid gap-2 pt-1 md:grid-cols-[1fr_auto]">
           <Field label="Description" htmlFor="quick-desc" hint="optional" error={fieldErrors.description}><Textarea id="quick-desc" value={description} onChange={(e) => setDescription(e.target.value)} rows={2} maxLength={4000} placeholder="What does done look like? Any links or context." /></Field>
           <Field label="Due date and time" htmlFor="quick-due" hint="optional" error={fieldErrors.dueAt}><Input id="quick-due" type="datetime-local" value={dueAt} onChange={(e) => setDueAt(e.target.value)} className="w-56" /></Field>
         </div>
-      ) : null}
+      </Expand>
       {error ? <Alert tone="danger">{error}</Alert> : null}
     </form>
   );

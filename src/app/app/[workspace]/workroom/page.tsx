@@ -6,6 +6,7 @@ import { PageHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState, PermissionDenied } from "@/components/ui/states";
 import { LiveClock, LiveBadge } from "@/components/app/live";
+import { Rise } from "@/components/ui/motion";
 import { workroomView, workroomStatus, type WorkroomStatus } from "@/server/services/views";
 import { formatDuration, formatDateTime, relativeTime, formatLongDate } from "@/lib/utils";
 
@@ -52,8 +53,8 @@ export default async function WorkroomPage({ params, searchParams }: { params: P
           {shown.map((r) => {
             const st = STATUS[r.status];
             return (
-              <li key={r.membership_id}>
-                <Link href={`${base}/workroom/${r.membership_id}`} className={`tile block h-full p-4 transition-[border-color] duration-[var(--duration-fast)] hover:border-border-strong ${r.status === "active" ? "tile-active" : ""}`}>
+              <Rise as="li" key={r.membership_id}>
+                <Link href={`${base}/workroom/${r.membership_id}`} className={`tile tile-link block h-full p-4 ${r.status === "active" ? "tile-active" : ""}`}>
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <p className="truncate font-semibold">{r.display_name}</p>
@@ -82,7 +83,7 @@ export default async function WorkroomPage({ params, searchParams }: { params: P
                     {r.recordings_today ? <span className="inline-flex items-center gap-1"><Video className="size-3.5 text-accent" aria-hidden />{r.recordings_today}</span> : null}
                   </div>
                 </Link>
-              </li>
+              </Rise>
             );
           })}
         </ul>

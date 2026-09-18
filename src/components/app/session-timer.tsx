@@ -9,6 +9,7 @@ import { Badge, SESSION_STATE_TONE, label } from "@/components/ui/badge";
 import { Alert } from "@/components/ui/states";
 import { Textarea, Select, Field } from "@/components/ui/input";
 import { formatClock, formatDuration } from "@/lib/utils";
+import { Swap } from "@/components/ui/motion";
 import type { SessionView } from "@/server/services/sessions";
 
 export type CurrentSessionPayload = { session: SessionView | null; elsewhere: { organisationName: string; organisationSlug: string } | null };
@@ -170,7 +171,7 @@ export function SessionTimer({ orgSlug, initial, tasks, captureGate, onCaptureSe
 
   return (
     <section aria-labelledby="timer-heading" className={`tile relative overflow-hidden p-5 md:p-6 ${session?.state === "running" ? "tile-glow" : ""}`}>
-      <div className="flex flex-wrap items-end justify-between gap-x-8 gap-y-4">
+      <Swap id={session ? `s:${session.id}` : "idle"} className="flex flex-wrap items-end justify-between gap-x-8 gap-y-4">
         <div className="min-w-0 flex-1">
           <h2 id="timer-heading" className="text-sm text-fg-muted">{session ? (session.state === "running" ? "On the clock" : session.state === "paused" ? "Paused on the clock" : "Connection interrupted") : "Not on the clock"}</h2>
           {session ? (
@@ -193,7 +194,7 @@ export function SessionTimer({ orgSlug, initial, tasks, captureGate, onCaptureSe
             <p className="font-display text-5xl leading-none tabular-nums text-fg-muted md:text-6xl" aria-label={`Worked today ${formatDuration(todaySeconds)}`}>{formatClock(todaySeconds)}</p>
           )}
         </div>
-      </div>
+      </Swap>
       {session?.estimateMinutes ? (
         <div className="mt-4 h-px w-full bg-border" aria-hidden>
           <div className="h-px bg-accent transition-[width] duration-1000 ease-linear" style={{ width: `${Math.min(100, (elapsed / (session.estimateMinutes * 60)) * 100)}%` }} />

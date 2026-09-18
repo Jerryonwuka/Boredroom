@@ -60,7 +60,7 @@ export function MemberRow({ orgSlug, member, teams, isOwner, self }: { orgSlug: 
       <td><p className="font-semibold">{member.display_name}{self ? <span className="ml-2 text-xs text-fg-subtle">(you)</span> : null}</p><p className="text-xs text-fg-subtle">{member.email}</p>{error ? <p className="text-xs text-danger">{error}</p> : null}</td>
       <td>{member.employee_code}</td>
       <td>{revoked ? <Badge tone="danger">revoked</Badge> : self || (!isOwner && (member.role === "owner" || member.role === "hr")) ? <Badge tone="accent">{ROLE_LABEL[member.role]}</Badge> : (
-        <Select aria-label={`Role for ${member.display_name}`} className="h-9 w-36 py-1 text-sm" value={member.role} disabled={pending} onChange={(e) => submit(() => api(`/api/orgs/${orgSlug}/members/${member.id}`, { method: "PATCH", body: { role: e.target.value } }))}>
+        <Select aria-label={`Role for ${member.display_name}`} className="h-9 w-44 py-1 text-sm" value={member.role} disabled={pending} onChange={(e) => submit(() => api(`/api/orgs/${orgSlug}/members/${member.id}`, { method: "PATCH", body: { role: e.target.value } }))}>
           <option value="employee">Staff</option><option value="manager">Team lead</option>{isOwner ? <><option value="hr">HR administrator</option><option value="owner">Organisation owner</option></> : null}
         </Select>
       )}</td>

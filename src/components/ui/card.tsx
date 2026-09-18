@@ -1,6 +1,7 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
 import { BackLink } from "@/components/ui/back-link";
+import { Rise } from "@/components/ui/motion";
 
 export function Card({ className, glow, ...props }: React.HTMLAttributes<HTMLDivElement> & { glow?: boolean }) {
   return <div className={cn("tile p-5", glow && "tile-glow", className)} {...props} />;
@@ -29,11 +30,11 @@ export function Overline({ children, className }: { children: React.ReactNode; c
  */
 export function Ledger({ items, className }: { items: { label: string; value: React.ReactNode; note?: React.ReactNode; href?: string; tone?: "default" | "accent" | "danger" }[]; className?: string }) {
   return (
-    <dl className={cn("flex flex-wrap gap-x-10 gap-y-4 border-y border-border-soft py-5", className)}>
+    <dl className={cn("grid grid-cols-[repeat(auto-fit,minmax(7.5rem,1fr))] gap-x-5 gap-y-4 border-y border-border-soft py-5", className)}>
       {items.map((it) => {
         const value = <dd className={cn("font-display text-3xl tabular-nums md:text-4xl", it.tone === "accent" ? "text-accent" : it.tone === "danger" ? "text-danger" : "text-fg")}>{it.value}</dd>;
         const body = <><dt className="text-sm text-fg-muted">{it.label}</dt>{value}{it.note ? <dd className="text-xs text-fg-subtle">{it.note}</dd> : null}</>;
-        return <div key={it.label} className="min-w-[8rem]">{it.href ? <a href={it.href} className="block rounded-[var(--radius-sm)] hover:text-accent">{body}</a> : body}</div>;
+        return <div key={it.label} className="min-w-0">{it.href ? <a href={it.href} className="block rounded-[var(--radius-sm)] hover:text-accent">{body}</a> : body}</div>;
       })}
     </dl>
   );
@@ -41,7 +42,7 @@ export function Ledger({ items, className }: { items: { label: string; value: Re
 
 export function PageHeader({ overline, title, description, actions, back }: { overline?: React.ReactNode; title: React.ReactNode; description?: React.ReactNode; actions?: React.ReactNode; back?: { href: string; label: string } }) {
   return (
-    <div className="glow-header mb-8 flex flex-wrap items-end justify-between gap-4">
+    <Rise className="glow-header mb-8 flex flex-wrap items-end justify-between gap-4">
       <div>
         {back ? <BackLink href={back.href} label={back.label} /> : null}
         {overline ? <Overline className="mb-2">{overline}</Overline> : null}
@@ -49,6 +50,6 @@ export function PageHeader({ overline, title, description, actions, back }: { ov
         {description ? <p className="mt-2 max-w-2xl text-pretty text-fg-muted">{description}</p> : null}
       </div>
       {actions ? <div className="flex flex-wrap gap-2">{actions}</div> : null}
-    </div>
+    </Rise>
   );
 }

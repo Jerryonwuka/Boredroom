@@ -119,7 +119,9 @@ p { text-wrap: pretty; }
 /* Native dialogs: centred, own surface level, dimmed backdrop, no scroll chaining. */
 dialog.sheet { position: fixed; inset: 0; margin: auto; border: 1px solid var(--border-strong); background: var(--bg-popover); color: var(--fg); border-radius: var(--radius-lg); padding: 0; max-width: min(92vw, 30rem); width: 100%; height: fit-content; overscroll-behavior: contain; box-shadow: var(--ring-lift); }
 dialog.sheet::backdrop { background: rgba(0, 0, 0, 0.72); }
-dialog.sheet[open] { animation: rise-in var(--duration) var(--ease-out) both; }
+@keyframes sheet-in { from { opacity: 0; transform: scale(0.98) translateY(4px); } to { opacity: 1; transform: none; } }
+dialog.sheet[open] { animation: sheet-in var(--duration) var(--ease-out) both; }
+dialog.sheet[open]::backdrop { animation: rise-in var(--duration) var(--ease-out) both; }
 
 *:focus-visible {
   outline: 2px solid var(--ring);
@@ -156,6 +158,10 @@ dialog.sheet[open] { animation: rise-in var(--duration) var(--ease-out) both; }
   border-radius: var(--radius);
 }
 .tile-glow { box-shadow: inset 0 0 25px 0 var(--accent-glow); border-color: rgba(255, 108, 2, 0.35); }
+/* Tiles that are links lift by a pixel and sharpen their edge; nothing else on the page moves on hover. */
+.tile-link { transition: border-color var(--duration-fast) var(--ease-out), transform var(--duration-fast) var(--ease-out), background-color var(--duration-fast) var(--ease-out); }
+.tile-link:hover { border-color: var(--border-strong); background: var(--bg-surface); transform: translateY(-1px); }
+.tile-link:active { transform: translateY(0); }
 /* The active row: accent edge instead of a glow, so the affordance is structure, not light. */
 .tile-active { border-color: rgba(255, 108, 2, 0.45); box-shadow: inset 3px 0 0 0 var(--accent); }
 
