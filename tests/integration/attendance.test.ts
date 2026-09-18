@@ -4,7 +4,7 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { resetTestDatabase, adminQuery, appQueryAs } from "../helpers/db";
 import { buildCompany, type CompanyFixture } from "@/server/services/fixtures";
-import { clockIn, clockOut, myClock, attendanceBoard, instantOf } from "@/server/services/attendance";
+import { clockIn, clockOut, myClock, attendanceBoard, attendanceMonth, monthRange, daysOf, instantOf } from "@/server/services/attendance";
 import { updateSchedule } from "@/server/services/orgs";
 import { startSession, stopSession } from "@/server/services/sessions";
 import { todayLocal } from "@/server/lib/time";
@@ -87,5 +87,48 @@ describe("the attendance board", () => {
     expect(await appQueryAs(b.owner.profileId, `SELECT id FROM attendance_days WHERE organisation_id = $1`, [a.ownerCtx.org.id])).toEqual([]);
     // And nobody can clock someone else in.
     await expect(appQueryAs(a.manager.profileId, `INSERT INTO attendance_days(organisation_id, membership_id, local_date, timezone, scheduled_start, scheduled_end) VALUES ($1, $2, '2001-01-01', 'Africa/Lagos', '09:00', '17:00')`, [a.ownerCtx.org.id, a.employeeCtx.membership.id])).rejects.toThrow();
+  });
+});
+
+describe("browsing past days and months", () => {
+  it("the month view has a cell per day, counts present, late and missed days, and never shows other organisations", async () => {
+    const today = todayLocal("Africa/Lagos");
+    const month = today.slice(0, 7);
+    const range = monthRange(month);
+    expect(daysOf(range.from, range.to).length).toBeGreaterThanOrEqual(28);
+    // Backdate a record for Ada: on time three days ago, and one for Ben: late two days ago (working-day status does not matter for "present").
+    const threeAgo = new Date(Date.now() - 3 * 86400000).toISOString().slice(0, 10);
+    const twoAgo = new Date(Date.now() - 2 * 86400000).toISOString().slice(0, 10);
+    await adminQuery(`INSERT INTO attendance_days(organisation_id, membership_id, local_date, timezone, scheduled_start, scheduled_end, clock_in_at, clock_out_at, late_seconds)
+      VALUES ($1, $2, $3, 'Africa/Lagos', '09:00', '17:00', ($3::date::timestamp AT TIME ZONE 'Africa/Lagos') + interval '8 hours 50 minutes', ($3::date::timestamp AT TIME ZONE 'Africa/Lagos') + interval '17 hours', 0),
+             ($1, $4, $5, 'Africa/Lagos', '09:00', '17:00', ($5::date::timestamp AT TIME ZONE 'Africa/Lagos') + interval '9 hours 30 minutes', NULL, 1800)`,
+      [a.ownerCtx.org.id, a.employeeCtx.membership.id, threeAgo, a.employee2Ctx.membership.id, twoAgo]);
+    const m = await attendanceMonth(a.ownerCtx, { month });
+    expect(m.month).toBe(month);
+    expect(m.days[0]).toBe(range.from);
+    const ada = m.rows.find((r) => r.display_name === "Ada Employee")!;
+    const ben = m.rows.find((r) => r.display_name === "Ben Employee")!;
+    // Both dates may fall in the previous month early in a month; only assert when they are inside it.
+    if (threeAgo >= range.from) { expect(ada.days[threeAgo]).toMatchObject({ late: 0 }); expect(ada.total_seconds).toBe(8 * 3600 + 10 * 60); }
+    if (twoAgo >= range.from) { expect(ben.days[twoAgo]).toMatchObject({ late: 1800 }); expect(ben.late).toBe(1); }
+    expect(ada.present).toBe(threeAgo >= range.from ? 2 : 1); // plus today
+    // Missed days count only working days before today, after joining.
+    expect(ada.missed).toBeGreaterThanOrEqual(0);
+    expect(m.rows.every((r) => r.missed <= m.workingDays.filter((d) => d < today).length)).toBe(true);
+    // A team lead sees their team only; a past month is empty but well-formed.
+    const lead = await attendanceMonth(a.managerCtx, { month });
+    expect(lead.rows.map((r) => r.display_name).sort()).toEqual(["Ada Employee", "Ben Employee", "David Manager"]);
+    const lastMonth = new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)) - 2, 1)).toISOString().slice(0, 7);
+    const past = await attendanceMonth(a.ownerCtx, { month: lastMonth });
+    expect(past.rows.every((r) => r.present === 0)).toBe(true);
+    // Company B sees none of it.
+    expect((await attendanceMonth(b.ownerCtx, { month })).rows.every((r) => r.present === 0)).toBe(true);
+    // The personal clock browses months too.
+    const mine = await myClock(a.employeeCtx, { month });
+    expect(mine.month).toBe(month);
+    expect(mine.history.every((h) => h.local_date !== today && h.local_date.startsWith(month))).toBe(true);
+    const mineLast = await myClock(a.employeeCtx, { month: lastMonth });
+    expect(mineLast.history).toEqual([]);
+    expect(mineLast.record?.local_date).toBe(today); // today's record is always there for the buttons
   });
 });

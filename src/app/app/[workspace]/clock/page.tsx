@@ -15,10 +15,16 @@ const timeOf = (iso: string, tz: string) => new Intl.DateTimeFormat("en-GB", { t
 const hhmm = (t: string) => t.slice(0, 5);
 
 /** Everyone's clock: clock in before work, clock out when done, and see the last two weeks. */
-export default async function ClockPage({ params }: { params: Promise<{ workspace: string }> }) {
+const monthLabel = (m: string) => new Intl.DateTimeFormat("en-GB", { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(`${m}-01T00:00:00Z`));
+const shiftMonth = (m: string, by: number) => { const [y, mo] = m.split("-").map(Number); return new Date(Date.UTC(y, mo - 1 + by, 1)).toISOString().slice(0, 7); };
+
+export default async function ClockPage({ params, searchParams }: { params: Promise<{ workspace: string }>; searchParams: Promise<{ month?: string }> }) {
   const { workspace } = await params;
+  const sp = await searchParams;
   const { ctx, counts, teams } = await workspacePage(workspace, `/app/${workspace}/clock`);
-  const c = await myClock(ctx);
+  const c = await myClock(ctx, { month: sp.month });
+  const thisMonth = c.today.slice(0, 7);
+  const monthHref = (m: string) => `/app/${ctx.org.slug}/clock${m === thisMonth ? "" : `?month=${m}`}`;
   const tz = c.schedule.timezone;
   const zone = new Intl.DateTimeFormat("en-GB", { timeZone: tz, timeZoneName: "short" }).formatToParts(new Date()).find((p) => p.type === "timeZoneName")?.value ?? tz;
   const lateNow = c.status === "not_in" && Date.parse(c.serverNow) > Date.parse(c.scheduledStartAt) + c.schedule.clock_grace_minutes * 60_000;
@@ -56,9 +62,19 @@ export default async function ClockPage({ params }: { params: Promise<{ workspac
       </div>
 
       <section>
-        <h2 className="mb-3 font-display text-lg">Last two weeks</h2>
-        {c.history.length === 0 ? <p className="tile p-4 text-sm text-fg-muted">No earlier days yet. Each day you clock in appears here.</p> : (
-          <DataTable caption="Your attendance">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <h2 className="font-display text-lg">{c.month === thisMonth ? "Earlier this month" : monthLabel(c.month)}</h2>
+          <form className="flex items-center gap-2 text-sm" action={`/app/${ctx.org.slug}/clock`}>
+            <Link href={monthHref(shiftMonth(c.month, -1))} className="underline">Previous month</Link>
+            <label htmlFor="month" className="sr-only">Month</label>
+            <input id="month" type="month" name="month" defaultValue={c.month} max={thisMonth} className="h-9 rounded-[var(--radius-sm)] border border-border-strong bg-inset px-2 text-sm" />
+            <button type="submit" className="underline">Show</button>
+            {c.month < thisMonth ? <><Link href={monthHref(shiftMonth(c.month, 1))} className="underline">Next month</Link><Link href={monthHref(thisMonth)} className="underline">This month</Link></> : null}
+          </form>
+        </div>
+        <p className="mb-3 text-sm text-fg-muted">{c.summary.present} day{c.summary.present === 1 ? "" : "s"} clocked in{c.summary.late ? `, ${c.summary.late} late` : ""}{c.summary.missed ? `, ${c.summary.missed} working day${c.summary.missed === 1 ? "" : "s"} with no clock-in` : ""}{c.month === thisMonth ? " (not counting today)" : ""}.</p>
+        {c.history.length === 0 ? <p className="tile p-4 text-sm text-fg-muted">{c.month === thisMonth ? "No earlier days this month yet. Each day you clock in appears here." : `No clock-ins in ${monthLabel(c.month)}.`}</p> : (
+          <DataTable caption={`Your attendance, ${monthLabel(c.month)}`}>
             <thead><tr><th>Day</th><th>Clocked in</th><th>Clocked out</th><th>Status</th><th>On the clock</th></tr></thead>
             <tbody>{c.history.map((h) => (
               <tr key={h.id}>

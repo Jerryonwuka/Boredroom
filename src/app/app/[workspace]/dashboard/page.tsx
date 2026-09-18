@@ -34,20 +34,24 @@ export default async function DashboardPage({ params }: { params: Promise<{ work
       <Ledger className="mb-8" items={ledger} />
 
       <section className="mb-8">
-        <div className="mb-3 flex items-center justify-between gap-2"><h2 className="font-display text-lg">Clocked in today ({att.counts.in + att.counts.out} of {att.people.length})</h2><Link href={`${base}/attendance`} className="text-sm underline">Open Attendance</Link></div>
-        <div className="grid gap-3 md:grid-cols-3">
-          {([["in", "Clocked in", "success"], ["not_in", "Not clocked in", "neutral"], ["out", "Clocked out", "info"]] as const).map(([key, title, tone]) => {
-            const rows = att.people.filter((p) => p.status === key);
-            return (
-              <Card key={key}>
-                <div className="mb-2 flex items-center justify-between"><h3 className="font-semibold">{title}</h3><Badge tone={tone}>{rows.length}</Badge></div>
-                {rows.length === 0 ? <p className="text-sm text-fg-subtle">{key === "in" ? "Nobody yet." : key === "not_in" ? "Everyone is in." : "Nobody has left."}</p> : (
-                  <ul className="space-y-1 text-sm">{rows.slice(0, 6).map((p) => <li key={p.membership_id} className="flex items-center justify-between gap-2"><Link href={`${base}/attendance?tab=${key}`} className="truncate hover:underline">{p.display_name}</Link>{p.clock_in_at ? <span className={p.late_seconds ? "text-warning" : "text-fg-subtle"}>{new Intl.DateTimeFormat("en-GB", { timeZone: att.schedule.timezone, hour: "2-digit", minute: "2-digit" }).format(new Date(p.clock_in_at))}{p.late_seconds ? " late" : ""}</span> : null}</li>)}{rows.length > 6 ? <li><Link href={`${base}/attendance?tab=${key}`} className="text-xs underline">and {rows.length - 6} more</Link></li> : null}</ul>
-                )}
-              </Card>
-            );
-          })}
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="font-display text-lg">Clocked in today, {formatLongDate(att.today)} ({att.counts.in + att.counts.out})</h2>
+          <span className="flex items-center gap-3 text-sm">{att.counts.not_in ? <Link href={`${base}/attendance?tab=not_in`} className="text-fg-muted hover:underline">{att.counts.not_in} not clocked in yet</Link> : null}<Link href={`${base}/attendance`} className="underline">Open Attendance</Link></span>
         </div>
+        {att.counts.in + att.counts.out === 0 ? <EmptyState title="Nobody has clocked in yet today" description="People appear here the moment they press Clock in. This list starts empty every day." /> : (
+          <DataTable caption="People who clocked in today">
+            <thead><tr><th>Person</th><th className="hidden md:table-cell">Team</th><th>Clocked in</th><th>Status</th><th className="hidden md:table-cell">Clocked out</th></tr></thead>
+            <tbody>{att.people.filter((p) => p.clock_in_at).map((p) => (
+              <tr key={p.membership_id}>
+                <td><Link href={`${base}/workroom/${p.membership_id}`} className="font-semibold hover:underline">{p.display_name}</Link></td>
+                <td className="hidden text-fg-muted md:table-cell">{p.teams.join(", ") || "—"}</td>
+                <td className="tabular-nums">{new Intl.DateTimeFormat("en-GB", { timeZone: att.schedule.timezone, hour: "2-digit", minute: "2-digit" }).format(new Date(p.clock_in_at!))}</td>
+                <td>{(p.late_seconds ?? 0) > 0 ? <Badge tone="warning">Late by {formatDuration(p.late_seconds!)}</Badge> : <Badge tone="success">On time</Badge>}</td>
+                <td className="hidden tabular-nums md:table-cell">{p.clock_out_at ? new Intl.DateTimeFormat("en-GB", { timeZone: att.schedule.timezone, hour: "2-digit", minute: "2-digit" }).format(new Date(p.clock_out_at)) : <span className="text-fg-subtle">still in</span>}</td>
+              </tr>
+            ))}</tbody>
+          </DataTable>
+        )}
       </section>
 
       <section className="mb-8">

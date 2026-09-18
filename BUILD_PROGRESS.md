@@ -132,6 +132,10 @@ The owner hit "You cannot assign tasks to that person in this project" when hand
 
 The owner asked for a clocking feature: the organisation sets clock-in and clock-out times (for example 08:00 and 17:30 WAT), every person clocks in on or before the start or is flagged late, the dashboard shows who has and has not clocked in, and everyone (staff, leads, organisation accounts) has a tab to clock in and out. Shipped: migration `0016_attendance.sql` (one `attendance_days` row per person per local day, schedule and grace captured on the row, RLS: own row, or owner/HR, or your team lead; only you can clock yourself), `src/server/services/attendance.ts` (clockIn idempotent, clockOut refused while a timer runs, myClock, attendanceBoard scoped by role), the Clock in page, a My Day banner, the Attendance page with tabs, day navigation and a team filter, three lists on the dashboard, and a grace-minutes field on the schedule. Lateness is judged in the organisation time zone with a DST-safe local-time calculation. 68 Vitest tests (5 new) and 9 Playwright tests pass.
 
+## Owner feedback round 11 (18 September 2026): daily reset and history
+
+The owner asked that clocking reset every day, that the dashboard show only the people who clocked in that day, and that past days and months be browsable. The daily reset was already the model (one record per person per local date); the dashboard now shows a single "Clocked in today" list with the date in the heading and a "N not clocked in yet" link. Attendance gained a date picker for the day view and a Month view (`attendanceMonth`): a dot per calendar day per person, green on time and amber late, with days in, late arrivals, missed working days (up to yesterday, after the person joined) and hours. The personal Clock in page browses any month with a summary line. One integration test covers the month view and tenancy.
+
 ## Milestone status
 
 | Milestone | Status | Evidence |
@@ -178,7 +182,7 @@ The owner asked for a clocking feature: the organisation sets clock-in and clock
 | --- | --- |
 | `pnpm lint` | clean (ESLint 9 with Next core-web-vitals, TypeScript and React compiler rules) |
 | `pnpm typecheck` | clean |
-| `pnpm test` (Vitest 4, embedded PostgreSQL 18, restricted `boardroom_app` role) | 12 files, 68 tests passed (18 September 2026): `tests/unit/{time,assistant}.test.ts`, `tests/integration/{tenancy,sessions,evidence-reports,recording,join-codes,round3,workroom,messaging,tasks-page,attendance}.test.ts` |
+| `pnpm test` (Vitest 4, embedded PostgreSQL 18, restricted `boardroom_app` role) | 12 files, 69 tests passed (18 September 2026): `tests/unit/{time,assistant}.test.ts`, `tests/integration/{tenancy,sessions,evidence-reports,recording,join-codes,round3,workroom,messaging,tasks-page,attendance}.test.ts` |
 | `pnpm build` (Next.js 16.3.4) | succeeds; all workspace routes are dynamic (server-rendered per request) |
 | `pnpm smoke` | every page read model executes for the seeded fixtures (15 checks) |
 | `pnpm worker` | job loop runs against the seeded database; housekeeping job succeeded; reminder scheduling deduplicated |

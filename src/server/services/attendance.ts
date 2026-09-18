@@ -69,21 +69,41 @@ export async function clockOut(ctx: OrgContext, requestId?: string) {
   });
 }
 
-/** The caller's clock for today plus the last two weeks. */
-export async function myClock(ctx: OrgContext) {
+/** "YYYY-MM" → first and last local date of that month. */
+export function monthRange(month: string): { from: string; to: string } {
+  const [y, m] = month.split("-").map(Number);
+  const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  return { from: `${month}-01`, to: `${month}-${String(last).padStart(2, "0")}` };
+}
+export const isMonth = (v: string | undefined | null): v is string => !!v && /^\d{4}-(0[1-9]|1[0-2])$/.test(v);
+
+/** The caller's clock for today plus one month of history (the current month unless another is asked for). */
+export async function myClock(ctx: OrgContext, opts: { month?: string | null } = {}) {
   return withUser(ctx.user.profileId, async (db) => {
     const s = await scheduleFor(db, ctx.org.id, ctx.org.timezone);
     const now = new Date();
     const today = todayLocal(s.timezone, now);
-    const rows = await db.query<AttendanceRow>(`SELECT * FROM attendance_days WHERE membership_id = $1 AND local_date >= $2 ORDER BY local_date DESC`, [ctx.membership.id, addDays(today, -14)]);
+    const month = isMonth(opts.month) ? opts.month : today.slice(0, 7);
+    const range = monthRange(month);
+    const rows = await db.query<AttendanceRow>(`SELECT * FROM attendance_days WHERE membership_id = $1 AND (local_date = $2 OR local_date BETWEEN $3 AND $4) ORDER BY local_date DESC`, [ctx.membership.id, today, range.from, range.to]);
     const todayRow = rows.find((r) => r.local_date === today) ?? null;
     const running = await db.maybeOne(`SELECT 1 FROM work_sessions WHERE membership_id = $1 AND state IN ('running','paused','interrupted')`, [ctx.membership.id]);
+    const history = rows.filter((r) => r.local_date !== today && r.local_date >= range.from && r.local_date <= range.to);
+    const workingDaysSoFar = daysOf(range.from, month === today.slice(0, 7) ? addDays(today, -1) : range.to).filter((d) => s.working_days.includes(weekdayOf(d)));
     return {
-      today, schedule: s, workingDay: s.working_days.includes(weekdayOf(today)), record: todayRow, status: statusOf(todayRow),
-      history: rows.filter((r) => r.local_date !== today), serverNow: now.toISOString(), timerOpen: !!running,
+      today, month, schedule: s, workingDay: s.working_days.includes(weekdayOf(today)), record: todayRow, status: statusOf(todayRow),
+      history, summary: { present: history.length, late: history.filter((h) => h.late_seconds > 0).length, missed: workingDaysSoFar.filter((d) => !history.some((h) => h.local_date === d)).length },
+      serverNow: now.toISOString(), timerOpen: !!running,
       scheduledStartAt: instantOf(today, s.start_local, s.timezone).toISOString(), scheduledEndAt: instantOf(today, s.end_local, s.timezone).toISOString(),
     };
   });
+}
+
+/** Every local date from `from` to `to` inclusive (empty when `to` is before `from`). */
+export function daysOf(from: string, to: string): string[] {
+  const out: string[] = [];
+  for (let d = from; d <= to; d = addDays(d, 1)) out.push(d);
+  return out;
 }
 
 export type BoardRow = {
@@ -123,5 +143,50 @@ export async function attendanceBoard(ctx: OrgContext, opts: { date?: string; te
       out: people.filter((p) => p.status === "out").length,
     };
     return { date, today, schedule: s, workingDay: s.working_days.includes(weekdayOf(date)), people, counts, teams, serverNow: new Date().toISOString() };
+  });
+}
+
+export type MonthCell = { in: string; out: string | null; late: number };
+export type MonthRow = {
+  membership_id: string; display_name: string; employee_code: string; role: string; teams: string[];
+  days: Record<string, MonthCell>; present: number; late: number; missed: number; total_seconds: number;
+};
+
+/**
+ * One month at a glance for supervisors: a row per person, a cell per calendar day, and totals.
+ * "Missed" counts scheduled working days up to yesterday (or the month's end) with no clock-in.
+ */
+export async function attendanceMonth(ctx: OrgContext, opts: { month?: string | null; teamId?: string | null } = {}) {
+  if (ctx.membership.role === "employee") throw forbidden("Attendance boards are for team leads and organisation accounts.");
+  return withUser(ctx.user.profileId, async (db) => {
+    const s = await scheduleFor(db, ctx.org.id, ctx.org.timezone);
+    const today = todayLocal(s.timezone);
+    const month = isMonth(opts.month) ? opts.month : today.slice(0, 7);
+    const range = monthRange(month);
+    const isOrg = ctx.membership.role === "owner" || ctx.membership.role === "hr";
+    const people = await db.query<{ membership_id: string; display_name: string; employee_code: string; role: string; teams: string[]; joined: string }>(
+      `SELECT m.id AS membership_id, pr.display_name, m.employee_code, m.role, m.created_at::date::text AS joined,
+              COALESCE((SELECT array_agg(t.name ORDER BY t.name) FROM team_members tm JOIN teams t ON t.id = tm.team_id WHERE tm.membership_id = m.id AND t.archived_at IS NULL), '{}') AS teams
+       FROM memberships m JOIN profiles pr ON pr.id = m.user_id
+       WHERE m.organisation_id = $1 AND m.status = 'active' AND m.created_at < ($3::date + 1)::timestamptz
+         AND ($4::boolean OR m.id = $5 OR app_manages($1, m.id))
+         AND ($2::uuid IS NULL OR EXISTS (SELECT 1 FROM team_members tm WHERE tm.team_id = $2 AND tm.membership_id = m.id))
+       ORDER BY pr.display_name`, [ctx.org.id, opts.teamId ?? null, range.to, isOrg, ctx.membership.id]);
+    const ids = people.map((p) => p.membership_id);
+    const recs = ids.length ? await db.query<{ membership_id: string; local_date: string; clock_in_at: string; clock_out_at: string | null; late_seconds: number }>(
+      `SELECT membership_id, local_date::text, clock_in_at, clock_out_at, late_seconds FROM attendance_days WHERE membership_id = ANY($1::uuid[]) AND local_date BETWEEN $2 AND $3`, [ids, range.from, range.to]) : [];
+    const days = daysOf(range.from, range.to);
+    const countable = days.filter((d) => d < today && s.working_days.includes(weekdayOf(d)));
+    const rows: MonthRow[] = people.map((p) => {
+      const mine = recs.filter((r) => r.membership_id === p.membership_id);
+      const byDay: Record<string, MonthCell> = {};
+      for (const r of mine) byDay[r.local_date] = { in: r.clock_in_at, out: r.clock_out_at, late: r.late_seconds };
+      const total = mine.reduce((acc, r) => acc + (r.clock_out_at ? Math.round((Date.parse(r.clock_out_at) - Date.parse(r.clock_in_at)) / 1000) : 0), 0);
+      return { ...p, days: byDay, present: mine.length, late: mine.filter((r) => r.late_seconds > 0).length, missed: countable.filter((d) => d >= p.joined && !byDay[d]).length, total_seconds: total };
+    });
+    const teams = await db.query<{ id: string; name: string }>(
+      isOrg ? `SELECT id, name FROM teams WHERE organisation_id = $1 AND archived_at IS NULL ORDER BY name`
+            : `SELECT t.id, t.name FROM team_members tm JOIN teams t ON t.id = tm.team_id WHERE tm.membership_id = $1 AND tm.is_manager AND t.archived_at IS NULL ORDER BY t.name`, [isOrg ? ctx.org.id : ctx.membership.id]);
+    return { month, today, days, workingDays: days.filter((d) => s.working_days.includes(weekdayOf(d))), schedule: s, rows, teams, serverNow: new Date().toISOString() };
   });
 }
