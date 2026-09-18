@@ -148,7 +148,7 @@ export async function attendanceBoard(ctx: OrgContext, opts: { date?: string; te
 
 export type MonthCell = { in: string; out: string | null; late: number };
 export type MonthRow = {
-  membership_id: string; display_name: string; employee_code: string; role: string; teams: string[];
+  membership_id: string; display_name: string; employee_code: string; role: string; teams: string[]; joined: string;
   days: Record<string, MonthCell>; present: number; late: number; missed: number; total_seconds: number;
 };
 

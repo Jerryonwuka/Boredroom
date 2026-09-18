@@ -72,14 +72,14 @@ export default async function AttendancePage({ params, searchParams }: { params:
 
         {m.rows.length === 0 ? <EmptyState title="Nobody to show" description="Change the team or the month." /> : (
           <DataTable caption={`Attendance for ${monthLabel(m.month)}`}>
-            <thead><tr><th className="sticky left-0 bg-elevated">Person</th>{m.days.map((d) => <th key={d} className={cn("px-0.5 text-center text-[11px] font-normal", !m.workingDays.includes(d) && "text-fg-faint", d === m.today && "text-accent")}>{Number(d.slice(8))}</th>)}<th className="text-right">In</th><th className="text-right">Late</th><th className="text-right">Missed</th><th className="hidden text-right lg:table-cell">Hours</th></tr></thead>
+            <thead><tr><th className="sticky left-0 bg-elevated">Person</th>{m.days.map((d) => <th key={d} className={cn("day text-[11px] font-normal", !m.workingDays.includes(d) && "text-fg-faint", d === m.today && "text-accent")}>{Number(d.slice(8))}</th>)}<th className="text-right">In</th><th className="text-right">Late</th><th className="text-right">Missed</th><th className="hidden text-right lg:table-cell">Hours</th></tr></thead>
             <tbody>{m.rows.map((r) => (
               <tr key={r.membership_id}>
                 <td className="sticky left-0 bg-elevated"><Link href={`${base}/workroom/${r.membership_id}`} className="whitespace-nowrap font-semibold hover:underline">{r.display_name}</Link><p className="text-xs text-fg-subtle">{r.teams.join(", ") || (r.role === "owner" ? "owner" : r.role === "hr" ? "HR" : "—")}</p></td>
-                {m.days.map((d) => { const c = r.days[d]; const working = m.workingDays.includes(d); return (
-                  <td key={d} className="px-0.5 text-center">
-                    {c ? <span title={`${formatLongDate(d)}: in ${timeOf(c.in, tz)}${c.out ? `, out ${timeOf(c.out, tz)}` : ""}${c.late ? `, late by ${formatDuration(c.late)}` : ", on time"}`} className={cn("inline-block size-3 rounded-full", c.late ? "bg-warning" : "bg-success")} aria-label={`${d}: ${c.late ? "late" : "on time"}`} />
-                       : <span title={d} className={cn("inline-block size-3 rounded-full", d < m.today && working ? "border border-border-strong" : d > m.today ? "" : "bg-border-soft")} aria-hidden />}
+                {m.days.map((d) => { const c = r.days[d]; const working = m.workingDays.includes(d); const before = d < r.joined; return (
+                  <td key={d} className="day">
+                    {c ? <span title={`${formatLongDate(d)}: in ${timeOf(c.in, tz)}${c.out ? `, out ${timeOf(c.out, tz)}` : ""}${c.late ? `, late by ${formatDuration(c.late)}` : ", on time"}`} className={cn("inline-block size-2.5 rounded-full", c.late ? "bg-warning" : "bg-success")} aria-label={`${d}: ${c.late ? "late" : "on time"}`} />
+                       : before || d > m.today ? null : <span title={working ? `${formatLongDate(d)}: no clock-in` : formatLongDate(d)} className={cn("inline-block size-2.5 rounded-full", working ? "border border-border-strong" : "bg-border-soft")} aria-hidden />}
                   </td>
                 ); })}
                 <td className="text-right tabular-nums">{r.present}</td>
