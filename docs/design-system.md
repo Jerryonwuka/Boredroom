@@ -2,6 +2,14 @@
 
 The product keeps the landing page's identity (black surfaces, one orange accent `#FF6C02`, Cal Sans display, Manrope body, pill buttons) and applies the craft rules distilled from the UI Skills registry (ui-skills.com), chiefly `baseline-ui`, `interface-design`, `fixing-accessibility`, `fixing-motion-performance`, Anthropic's `frontend-design` and Vercel's Web Interface Guidelines. Decisions below are the ones the code holds to; `src/app/globals.css` is the source of truth for values.
 
+## Signature and restraint (frontend-design pass, 18 September 2026)
+
+- **The clock is the brand element.** Set in Cal Sans at display size, tabular, always the hero of My Day: the running task's elapsed time, or today's total when idle ("Not on the clock"). A hairline in the accent fills toward the estimate. Workroom cards carry the same clock.
+- **Eyebrows carry information, not category.** The small line above a title is the date or the scope in sentence case, in the accent. No tracked capitals, no "ORGANISATION" style labels. Pages whose title already says what they are have no eyebrow.
+- **Figures are a ledger line, not boxes.** `Ledger` renders one row of display numbers with sentence-case labels; the dashboard's first block is the room (who is working), then the ledger.
+- **Meta text reads as prose.** Commas and spaces, not middle dots; no arrows appended to links; no monospace for data labels.
+- **Colour restraint.** Ember only on the live thing, the primary action and the eyebrow; status colours only for status. The gradient word in the greeting is gone.
+
 ## Direction
 
 - **Who**: a staff member with a timer running, a team lead checking the team, an owner supervising. Working tools, used many times a day.

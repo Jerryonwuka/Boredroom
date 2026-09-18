@@ -36,7 +36,7 @@ test("A24: employee plans, starts, pauses, stops and submits; manager reviews; r
   await page.getByRole("button", { name: "Stop", exact: true }).click();
   await page.getByLabel(/Progress note/).fill("Agreed scope with client");
   await page.getByRole("button", { name: "Stop session" }).click();
-  await expect(page.getByText("No session running")).toBeVisible();
+  await expect(page.getByText("Not on the clock")).toBeVisible();
 
   // Submit the homepage task with a Figma link.
   await page.goto("/app/company-a/projects");
@@ -58,7 +58,9 @@ test("A24: employee plans, starts, pauses, stops and submits; manager reviews; r
   await page.getByLabel("Blockers").fill("Waiting on brand assets");
   await page.getByLabel("Next priorities").fill("Pricing page");
   await page.getByRole("button", { name: "Submit report" }).click();
-  await expect(page.getByText("Report submitted for review.")).toBeVisible();
+  // The success line is replaced by the submitted version once the page refreshes; assert the durable state.
+  await expect(page.getByRole("heading", { name: "Versions" })).toBeVisible();
+  await expect(page.getByText(/Version 1/).first()).toBeVisible();
 
   // David reviews: changes requested, then approve after resubmission; approve the report.
   const ctx2 = await browser.newContext();

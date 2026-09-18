@@ -104,6 +104,10 @@ Tests: `recording.test.ts` (lead and HR play without a grant, colleague denied a
 
 Scope: team leads see the people on their teams, organisation accounts see everyone who holds tasks; staff have no Workroom (their day is My Day). Test: `tests/integration/workroom.test.ts`.
 
+## Design pass with the frontend-design skill (18 September 2026)
+
+Plan reviewed against the skill's list of generated-design tells. The landing page pins the palette and type (black, one ember accent, Cal Sans and Manrope, pills), so those stayed. Everything the brief left free and that read as a template default changed: tracked-caps category eyebrows above titles, the grid of identical stat boxes, middle-dot meta strings, the arrow on "Open team", the monospace clock, and the one-word gradient in the greeting. Signature: the clock, in the display face, always the hero of My Day (today's total when idle, "Not on the clock") with an estimate hairline; the dashboard opens with who is working and shows its figures as one ledger line. `docs/design-system.md` records the rules. 48 Vitest and 3 Playwright tests pass.
+
 ## Milestone status
 
 | Milestone | Status | Evidence |

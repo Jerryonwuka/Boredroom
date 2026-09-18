@@ -31,7 +31,7 @@ export default async function RecordingsPage({ params, searchParams }: { params:
   const base = `/app/${ctx.org.slug}`;
   return (
     <AppShell ctx={ctx} counts={counts} teams={navTeams}>
-      <PageHeader back={{ href: isOrg ? `${base}/dashboard` : base, label: isOrg ? "Dashboard" : "Back" }} overline="Screen recordings" title="Recordings"
+      <PageHeader back={{ href: isOrg ? `${base}/dashboard` : base, label: isOrg ? "Dashboard" : "Back" }} title="Recordings"
         description={isOrg ? "Every screen recording in the organisation, newest first. Open a task to see who worked on it, the sessions, and the footage for each one." : "Screen recordings from the people on your teams, newest first. Open a task to see the full history."} />
       <form className="mb-4 flex flex-wrap items-end gap-2 text-sm">
         {teams.length > 1 || isOrg ? <label><span className="block text-xs text-fg-subtle">Team</span><Select name="team" defaultValue={sp.team ?? ""} className="h-10 w-48 py-1 text-sm"><option value="">All teams</option>{teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</Select></label> : null}

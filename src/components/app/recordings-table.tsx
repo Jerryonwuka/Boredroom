@@ -21,7 +21,7 @@ export function RecordingsTable({ orgSlug, rows, timeZone, showPerson = true, sh
   const [busy, setBusy] = useState<string | null>(null);
   async function play(r: RecordingListRow) {
     setError(null); setBusy(r.id);
-    try { const p = await api<{ url: string }>(`/api/orgs/${orgSlug}/recordings/${r.id}/playback`, { method: "POST" }); setPlaying({ id: r.id, url: p.url, title: `${r.display_name} · ${r.task_title}` }); }
+    try { const p = await api<{ url: string }>(`/api/orgs/${orgSlug}/recordings/${r.id}/playback`, { method: "POST" }); setPlaying({ id: r.id, url: p.url, title: `${r.display_name}, ${r.task_title}` }); }
     catch (err) { setError(isApiFailure(err) ? err.error.message : "Playback failed."); }
     finally { setBusy(null); }
   }
@@ -43,7 +43,7 @@ export function RecordingsTable({ orgSlug, rows, timeZone, showPerson = true, sh
             {showTask ? <td><Link href={`/app/${orgSlug}/tasks/${r.task_id}`} className="hover:underline">{r.task_title}</Link>{r.segment_index > 0 ? <span className="ml-1 text-xs text-fg-subtle">part {r.segment_index + 1}</span> : null}</td> : null}
             <td className="text-sm">{r.capture_started_at ? formatDateTime(r.capture_started_at, timeZone) : "—"}</td>
             <td className="tabular-nums">{formatDuration(r.duration_seconds)}</td>
-            {compact ? null : <td className="text-sm text-fg-muted">{r.source_label || r.source_type} · {(r.received_bytes / 1048576).toFixed(1)} MB</td>}
+            {compact ? null : <td className="text-sm text-fg-muted">{r.source_label || r.source_type}, {(r.received_bytes / 1048576).toFixed(1)}&nbsp;MB</td>}
             <td><Badge tone={r.restricted_at ? "danger" : TONE[r.upload_state] ?? "neutral"}>{r.restricted_at ? "Restricted" : STATE_LABEL[r.upload_state] ?? r.upload_state}</Badge></td>
             <td className="text-right">{r.upload_state === "ready" && !r.restricted_at ? <Button size="sm" variant={playing?.id === r.id ? "subtle" : "outline"} disabled={busy === r.id} onClick={() => play(r)}><Play className="size-4" aria-hidden />{busy === r.id ? "Opening…" : "Watch"}</Button> : <Link href={`/app/${orgSlug}/tasks/${r.task_id}`} className="text-xs underline">Details</Link>}</td>
           </tr>

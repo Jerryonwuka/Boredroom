@@ -12,7 +12,7 @@ import { RecordingsTable } from "@/components/app/recordings-table";
 import { workroomPerson, workroomStatus } from "@/server/services/views";
 import { listRecordings } from "@/server/services/recording";
 import { localMidnight } from "@/server/lib/time";
-import { formatDuration, formatDateTime, relativeTime } from "@/lib/utils";
+import { formatDuration, formatDateTime, relativeTime, formatLongDate } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Workroom" };
@@ -36,8 +36,8 @@ export default async function WorkroomPersonPage({ params }: { params: Promise<{
   const open = tasks.filter((t) => t.status !== "completed" && t.status !== "in_review");
   return (
     <AppShell ctx={ctx} counts={counts} teams={teams}>
-      <PageHeader back={{ href: `${base}/workroom`, label: "Workroom" }} overline={`${person.teams.join(", ") || "No team"} · ${data.today}`} title={person.display_name}
-        description={<span className="flex flex-wrap items-center gap-2"><Badge tone={STATUS[status].tone} dot={status === "active" || status === "paused"}>{STATUS[status].label}</Badge>{person.recording_live ? <LiveBadge /> : null}<span>{person.employee_code} · {person.role === "manager" ? "Team lead" : "Staff"}{person.last_activity_at ? ` · last active ${relativeTime(person.last_activity_at, now)}` : ""}</span></span>}
+      <PageHeader back={{ href: `${base}/workroom`, label: "Workroom" }} overline={`${formatLongDate(data.today)}, ${person.teams.join(", ") || "no team"}`} title={person.display_name}
+        description={<span className="flex flex-wrap items-center gap-2"><Badge tone={STATUS[status].tone} dot={status === "active" || status === "paused"}>{STATUS[status].label}</Badge>{person.recording_live ? <LiveBadge /> : null}<span>{person.employee_code}, {person.role === "manager" ? "team lead" : "staff"}{person.last_activity_at ? `, last active ${relativeTime(person.last_activity_at, now)}` : ""}</span></span>}
         actions={<Link href={`${base}/timesheets?member=${member}`} className="text-sm underline">Timesheet and records</Link>} />
 
       <div className="mb-6 grid gap-4 md:grid-cols-4">
@@ -46,7 +46,7 @@ export default async function WorkroomPersonPage({ params }: { params: Promise<{
           {person.task_title ? <><Link href={`${base}/tasks/${person.task_id}`} className="mt-1 block truncate font-semibold hover:underline">{person.task_title}</Link><p className="mt-1 font-display text-2xl"><LiveClock seconds={person.session_seconds} serverNow={data.serverNow} running={status === "active"} /></p><p className="text-xs text-fg-subtle">since {person.started_at ? formatDateTime(person.started_at, ctx.org.timezone) : "—"}</p></> : <p className="mt-1 font-semibold text-fg-muted">{status === "clocked_out" ? "Off the clock" : "No session yet"}</p>}
         </Card>
         <Card><p className="text-xs text-fg-subtle">Time today</p><p className="mt-1 font-display text-3xl tabular-nums">{formatDuration(person.today_seconds)}</p><p className="text-xs text-fg-subtle">first start {person.first_start_today ? formatDateTime(person.first_start_today, ctx.org.timezone) : "—"}</p></Card>
-        <Card><p className="text-xs text-fg-subtle">Tasks today</p><p className="mt-1 font-display text-3xl tabular-nums">{tasks.length}</p><p className="text-xs text-fg-subtle">{finished.length} done · {inCheck.length} sent for check · {open.length} open</p></Card>
+        <Card><p className="text-xs text-fg-subtle">Tasks today</p><p className="mt-1 font-display text-3xl tabular-nums">{tasks.length}</p><p className="text-xs text-fg-subtle">{finished.length} done, {inCheck.length} sent for check, {open.length} open</p></Card>
         <Card><p className="text-xs text-fg-subtle">Recordings today</p><p className="mt-1 font-display text-3xl tabular-nums">{recordings.length}</p><p className="text-xs text-fg-subtle">{person.recording_live ? "recording right now" : "none live"}</p></Card>
       </div>
 
@@ -57,7 +57,7 @@ export default async function WorkroomPersonPage({ params }: { params: Promise<{
             <thead><tr><th>Task</th><th>Status</th><th>Time today</th><th>Sessions</th><th>First started</th><th>Recordings</th></tr></thead>
             <tbody>{tasks.map((t) => (
               <tr key={t.id} className={t.current ? "bg-accent-soft/30" : ""}>
-                <td><Link href={`${base}/tasks/${t.id}`} className="font-semibold hover:underline">{t.title}</Link><p className="text-xs text-fg-subtle">{t.project_name}{t.created_by_name !== person.display_name ? ` · from ${t.created_by_name}` : ""}{t.due_at ? ` · due ${formatDateTime(t.due_at, ctx.org.timezone)}` : ""}</p></td>
+                <td><Link href={`${base}/tasks/${t.id}`} className="font-semibold hover:underline">{t.title}</Link><p className="text-xs text-fg-subtle">{t.project_name}{t.created_by_name !== person.display_name ? `, from ${t.created_by_name}` : ""}{t.due_at ? `, due ${formatDateTime(t.due_at, ctx.org.timezone)}` : ""}</p></td>
                 <td>{t.current ? <Badge tone="success" dot>Working now</Badge> : <Badge tone={TASK_STATUS_TONE[t.status]}>{t.status === "in_review" ? "Sent for check" : label(t.status)}</Badge>}</td>
                 <td className="tabular-nums">{formatDuration(t.seconds_today)}</td>
                 <td className="tabular-nums">{t.sessions_today}</td>
@@ -78,7 +78,7 @@ export default async function WorkroomPersonPage({ params }: { params: Promise<{
                 <Badge tone={SESSION_STATE_TONE[s.state]} dot={s.state === "running"}>{label(s.state)}</Badge>
                 <Link href={`${base}/tasks/${s.task_id}`} className="min-w-[10rem] flex-1 truncate font-medium hover:underline">{s.task_title}</Link>
                 <span className="tabular-nums text-fg-muted">{formatDuration(s.seconds)}</span>
-                <span className="text-xs text-fg-subtle">{formatDateTime(s.started_at, ctx.org.timezone)}{s.ended_at ? ` → ${formatDateTime(s.ended_at, ctx.org.timezone)}` : ""}{s.stop_outcome ? ` · ${label(s.stop_outcome)}` : ""}</span>
+                <span className="text-xs text-fg-subtle">{formatDateTime(s.started_at, ctx.org.timezone)}{s.ended_at ? ` to ${formatDateTime(s.ended_at, ctx.org.timezone)}` : ""}{s.stop_outcome ? `, ${label(s.stop_outcome)}` : ""}</span>
                 {s.recordings ? <span className="inline-flex items-center gap-1 text-xs"><Video className="size-3.5 text-accent" aria-hidden />{s.recordings}</span> : null}
                 {s.stop_note ? <p className="w-full text-xs text-fg-muted">“{s.stop_note}”</p> : null}
               </li>

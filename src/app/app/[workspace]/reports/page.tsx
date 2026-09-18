@@ -103,5 +103,5 @@ export default async function ReportsPage({ params, searchParams }: { params: Pr
 }
 
 function Stat({ label, value, note }: { label: string; value: string; note: string }) {
-  return <div className="tile p-4"><p className="text-xs font-semibold uppercase tracking-wider text-fg-subtle">{label}</p><p className="mt-1 font-display text-3xl">{value}</p><p className="mt-1 text-xs text-fg-muted">{note}</p></div>;
+  return <div className="tile p-4"><p className="text-sm text-fg-muted">{label}</p><p className="mt-1 font-display text-3xl tabular-nums">{value}</p><p className="mt-1 text-xs text-fg-muted">{note}</p></div>;
 }

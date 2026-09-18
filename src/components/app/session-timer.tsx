@@ -27,6 +27,8 @@ type Props = {
   captureDialog?: React.ReactNode;
   onSessionChange?: (s: SessionView | null) => void;
   recordingControls?: (session: SessionView) => React.ReactNode;
+  /** Confirmed seconds worked today; shown as the clock when no session runs. */
+  todaySeconds?: number;
 };
 
 type Conflict = { sessionId: string; taskId: string; state: string; sameTask: boolean; wantedTaskId: string };
@@ -40,7 +42,7 @@ function elapsedFor(session: SessionView | null, nowMs: number | null, offsetMs:
   return session.confirmedSeconds + Math.max(0, Math.floor((nowMs + offsetMs - serverNowAtFetch) / 1000));
 }
 
-export function SessionTimer({ orgSlug, initial, tasks, captureGate, onCaptureSession, captureDialog, onSessionChange, recordingControls }: Props) {
+export function SessionTimer({ orgSlug, initial, tasks, captureGate, onCaptureSession, captureDialog, onSessionChange, recordingControls, todaySeconds = 0 }: Props) {
   const router = useRouter();
   const [session, setSession] = useState<SessionView | null>(initial.session);
   const [nowMs, setNowMs] = useState<number | null>(null);
@@ -167,27 +169,36 @@ export function SessionTimer({ orgSlug, initial, tasks, captureGate, onCaptureSe
   const syncAgo = nowMs != null && lastHeartbeatOkMs != null ? Math.max(0, Math.round((nowMs - lastHeartbeatOkMs) / 1000)) : 0;
 
   return (
-    <section aria-labelledby="timer-heading" className={`tile p-5 ${session?.state === "running" ? "tile-glow" : ""}`}>
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="min-w-0">
-          <h2 id="timer-heading" className="text-sm font-semibold uppercase tracking-[0.2em] text-fg-subtle">Work session</h2>
+    <section aria-labelledby="timer-heading" className={`tile relative overflow-hidden p-5 md:p-6 ${session?.state === "running" ? "tile-glow" : ""}`}>
+      <div className="flex flex-wrap items-end justify-between gap-x-8 gap-y-4">
+        <div className="min-w-0 flex-1">
+          <h2 id="timer-heading" className="text-sm text-fg-muted">{session ? (session.state === "running" ? "On the clock" : session.state === "paused" ? "Paused on the clock" : "Connection interrupted") : "Not on the clock"}</h2>
           {session ? (
             <>
-              <p className="mt-1 truncate text-xl font-display">{session.taskTitle}</p>
-              <p className="text-sm text-fg-muted">{session.projectName}{session.estimateMinutes ? ` · estimate ${formatDuration(session.estimateMinutes * 60)}` : ""}</p>
+              <p className="mt-1 truncate font-display text-2xl md:text-3xl">{session.taskTitle}</p>
+              <p className="mt-1 text-sm text-fg-muted">{session.projectName}{session.estimateMinutes ? `, estimated ${formatDuration(session.estimateMinutes * 60)}` : ""}</p>
             </>
-          ) : <p className="mt-1 text-fg-muted">No session running. Pick a task below and press Start.</p>}
+          ) : <p className="mt-1 text-fg-muted">Press Start on a to-do below. {todaySeconds ? "The clock shows what you have worked today." : "The clock starts with your first task."}</p>}
         </div>
-        {session ? (
-          <div className="text-right">
-            <p className="font-mono text-4xl tabular-nums" aria-label={`Elapsed ${formatDuration(elapsed)}`}>{formatClock(elapsed)}</p>
-            <div className="mt-1 flex items-center justify-end gap-2 text-xs text-fg-subtle">
-              <Badge tone={SESSION_STATE_TONE[session.state]} dot>{label(session.state)}</Badge>
-              {session.state === "running" ? <span>synced {connectionLost ? "— connection lost" : `${syncAgo}s ago`}</span> : null}
-            </div>
-          </div>
-        ) : null}
+        <div className="text-right">
+          {session ? (
+            <>
+              <p className="font-display text-5xl leading-none tabular-nums md:text-6xl" aria-label={`Elapsed ${formatDuration(elapsed)}`}>{formatClock(elapsed)}</p>
+              <div className="mt-2 flex items-center justify-end gap-2 text-xs text-fg-subtle">
+                <Badge tone={SESSION_STATE_TONE[session.state]} dot>{label(session.state)}</Badge>
+                {session.state === "running" ? <span>synced {connectionLost ? "— connection lost" : `${syncAgo}s ago`}</span> : null}
+              </div>
+            </>
+          ) : (
+            <p className="font-display text-5xl leading-none tabular-nums text-fg-muted md:text-6xl" aria-label={`Worked today ${formatDuration(todaySeconds)}`}>{formatClock(todaySeconds)}</p>
+          )}
+        </div>
       </div>
+      {session?.estimateMinutes ? (
+        <div className="mt-4 h-px w-full bg-border" aria-hidden>
+          <div className="h-px bg-accent transition-[width] duration-1000 ease-linear" style={{ width: `${Math.min(100, (elapsed / (session.estimateMinutes * 60)) * 100)}%` }} />
+        </div>
+      ) : null}
 
       {elsewhere ? <Alert tone="warning" className="mt-4" title="Open session in another workspace">You have a session running in {elsewhere.organisationName}. Stop it there before starting work here. <a className="underline" href={`/app/${elsewhere.organisationSlug}/my-day`}>Open that workspace</a>.</Alert> : null}
       {connectionLost ? <Alert tone="danger" className="mt-4" title="Connection lost"><span className="inline-flex items-center gap-2"><WifiOff className="h-4 w-4" aria-hidden />Heartbeats are not reaching the server. Confirmed time stops at the last acknowledged heartbeat; when you reconnect you can resume and request a correction for the gap. Nothing is credited automatically.</span></Alert> : null}

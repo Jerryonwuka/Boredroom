@@ -7,7 +7,7 @@ import { myDay } from "@/server/services/views";
 import { currentSession } from "@/server/services/sessions";
 import { withUser } from "@/server/db";
 import { MyDayBoard } from "@/components/app/my-day";
-import { formatDuration } from "@/lib/utils";
+import { formatDuration, formatLongDate } from "@/lib/utils";
 import { assignableMembers } from "@/server/services/tasks";
 import { assistantConfigured } from "@/server/services/assistant";
 
@@ -27,11 +27,12 @@ export default async function MyDayPage({ params }: { params: Promise<{ workspac
   ]);
   return (
     <AppShell ctx={ctx} counts={counts} teams={teams}>
-      <PageHeader overline={data.today} title={<>Good day, <span className="gradient-text">{ctx.user.displayName.split(" ")[0]}</span>.</>}
-        description={<>This is your to-do list for today. Time worked so far: <strong className="text-fg">{formatDuration(data.todaySeconds)}</strong>. {data.report ? <Link className="underline" href={`/app/${ctx.org.slug}/timesheets?date=${data.today}`}>Today&apos;s report is {data.report.status.replace("_", " ")}.</Link> : null}</>} />
+      <PageHeader overline={formatLongDate(data.today)} title={<>Good day, {ctx.user.displayName.split(" ")[0]}.</>}
+        description={<>Your to-dos for today. {data.todaySeconds ? <>You have worked {formatDuration(data.todaySeconds)} so far.</> : "Press Start on the first one when you begin."} {data.report ? <Link className="underline" href={`/app/${ctx.org.slug}/timesheets?date=${data.today}`}>Today&apos;s report is {data.report.status.replace("_", " ")}.</Link> : null}</>} />
       <MyDayBoard
         orgSlug={ctx.org.slug}
         today={data.today}
+        todaySeconds={data.todaySeconds}
         initialSession={session}
         planned={data.planned}
         ownTodos={data.ownTodos}

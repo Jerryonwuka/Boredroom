@@ -23,6 +23,12 @@ export function formatClock(seconds: number): string {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
 }
 
+/** "Thursday 18 September" from a YYYY-MM-DD string; the date is a display element, so it reads as words. */
+export function formatLongDate(dateStr: string): string {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  return new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" }).format(new Date(Date.UTC(y, m - 1, d)));
+}
+
 export function formatDateTime(iso: string | Date | null | undefined, timeZone?: string): string {
   if (!iso) return "—";
   const d = typeof iso === "string" ? new Date(iso) : iso;

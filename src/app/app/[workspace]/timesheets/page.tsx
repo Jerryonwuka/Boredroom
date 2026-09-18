@@ -30,7 +30,7 @@ export default async function TimesheetsPage({ params, searchParams }: { params:
   const recent = await withUser(ctx.user.profileId, (db) => db.query<{ local_date: string; status: string; total_seconds: number | null }>(`SELECT r.local_date, r.status, v.total_seconds FROM daily_reports r LEFT JOIN report_versions v ON v.report_id = r.id AND v.version = r.current_version WHERE r.membership_id = $1 ORDER BY r.local_date DESC LIMIT 14`, [membershipId]));
   return (
     <AppShell ctx={ctx} counts={counts} teams={teams}>
-      <PageHeader back={{ href: `/app/${ctx.org.slug}`, label: "Home" }} overline="Records" title={ctx.membership.role === "employee" ? "My timesheet" : "Timesheets"} description="Daily reports are generated from work sessions and split at local midnight. Submitting creates an immutable versioned snapshot; corrections create a new version that needs fresh approval." actions={["owner", "hr", "manager"].includes(ctx.membership.role) ? <ExportForm orgSlug={ctx.org.slug} members={members} /> : null} />
+      <PageHeader back={{ href: `/app/${ctx.org.slug}`, label: "Home" }} title={ctx.membership.role === "employee" ? "My timesheet" : "Timesheets"} description="Daily reports are generated from work sessions and split at local midnight. Submitting creates an immutable versioned snapshot; corrections create a new version that needs fresh approval." actions={["owner", "hr", "manager"].includes(ctx.membership.role) ? <ExportForm orgSlug={ctx.org.slug} members={members} /> : null} />
       <MemberDatePicker orgSlug={ctx.org.slug} members={members} membershipId={membershipId} date={date} prev={addDays(date, -1)} next={addDays(date, 1)} />
       {denied || !data ? <Alert tone="danger">You cannot view that member&apos;s records.</Alert> : (
         <div className="mt-4 grid gap-6 lg:grid-cols-[1fr_320px]">
@@ -41,7 +41,7 @@ export default async function TimesheetsPage({ params, searchParams }: { params:
                 <span className="flex items-center gap-2">{data.report ? <Badge tone={REPORT_STATUS_TONE[data.report.status]}>{label(data.report.status)}{data.report.approved_version ? ` (v${data.report.approved_version} approved)` : ""}</Badge> : <Badge>not started</Badge>}<Badge tone="neutral">live total {formatDuration(data.live.totalSeconds)}</Badge></span>
               </div>
               {data.openSessionId ? <Alert tone="warning" className="mt-3">An open work session overlaps this day; stop it before submitting.</Alert> : null}
-              <h3 className="mt-4 text-sm font-semibold uppercase tracking-wider text-fg-subtle">Live entries (current ledger)</h3>
+              <h3 className="mt-4 text-sm font-semibold text-fg-muted">Live entries (current ledger)</h3>
               {data.live.entries.length === 0 && data.live.uncertain.length === 0 ? <p className="mt-2 text-sm text-fg-muted">No tracked time on this day.</p> : (
                 <DataTable className="mt-2" caption="Intervals">
                   <thead><tr><th>Task</th><th>From</th><th>To</th><th>Duration</th><th>Status</th></tr></thead>
@@ -53,8 +53,8 @@ export default async function TimesheetsPage({ params, searchParams }: { params:
                 </DataTable>
               )}
               {data.live.uncertain.length ? <p className="mt-2 text-xs text-warning">Uncertain time is never credited automatically. Use a correction to claim it.</p> : null}
-              {data.live.notes.length ? <div className="mt-4"><h3 className="text-sm font-semibold uppercase tracking-wider text-fg-subtle">Progress notes</h3><ul className="mt-1 space-y-1 text-sm text-fg-muted">{data.live.notes.map((n) => <li key={n.sessionId}>{formatDateTime(n.endedAt, tz)} · {n.outcome ? label(n.outcome) : ""} — {n.note}</li>)}</ul></div> : null}
-              <div className="mt-4"><h3 className="text-sm font-semibold uppercase tracking-wider text-fg-subtle">Totals by task</h3><ul className="mt-1 text-sm">{data.live.totalsByTask.map((t) => <li key={t.taskId}>{t.taskTitle} <span className="text-fg-subtle">({t.projectName})</span>: <strong>{formatDuration(t.seconds)}</strong></li>)}</ul></div>
+              {data.live.notes.length ? <div className="mt-4"><h3 className="text-sm font-semibold text-fg-muted">Progress notes</h3><ul className="mt-1 space-y-1 text-sm text-fg-muted">{data.live.notes.map((n) => <li key={n.sessionId}>{formatDateTime(n.endedAt, tz)} · {n.outcome ? label(n.outcome) : ""} — {n.note}</li>)}</ul></div> : null}
+              <div className="mt-4"><h3 className="text-sm font-semibold text-fg-muted">Totals by task</h3><ul className="mt-1 text-sm">{data.live.totalsByTask.map((t) => <li key={t.taskId}>{t.taskTitle} <span className="text-fg-subtle">({t.projectName})</span>: <strong>{formatDuration(t.seconds)}</strong></li>)}</ul></div>
             </Card>
 
             {own && (!data.report || ["draft", "changes_requested"].includes(data.report.status)) ? <SubmitReportForm orgSlug={ctx.org.slug} localDate={date} blockers={data.report?.blockers ?? ""} nextPriorities={data.report?.next_priorities ?? ""} disabled={!!data.openSessionId} /> : null}

@@ -31,7 +31,7 @@ type Props = {
   projects: { id: string; name: string }[]; members: Person[];
   /** People this member may hand to-dos to (team leads only; empty for staff). */
   assignable: Person[];
-  membershipId: string; recordingMode: string; reportStatus: string | null; assistantConfigured: boolean; policyAcknowledged: boolean;
+  membershipId: string; recordingMode: string; reportStatus: string | null; assistantConfigured: boolean; policyAcknowledged: boolean; todaySeconds: number;
 };
 
 export function MyDayBoard(props: Props) {
@@ -44,7 +44,7 @@ export function MyDayBoard(props: Props) {
 
 const ORDER: Record<string, number> = { in_progress: 0, todo: 1, blocked: 2, in_review: 3, completed: 4 };
 
-function Board({ orgSlug, today, initialSession, planned, ownTodos, fromLeads, doneToday, pastTasks, assignable, membershipId, recordingMode, reportStatus, assistantConfigured, policyAcknowledged }: Props) {
+function Board({ orgSlug, today, initialSession, planned, ownTodos, fromLeads, doneToday, pastTasks, assignable, membershipId, recordingMode, reportStatus, assistantConfigured, policyAcknowledged, todaySeconds }: Props) {
   const router = useRouter();
   const capture = useCaptureContext();
   const [session, setSession] = useState<SessionView | null>(initialSession.session);
@@ -98,7 +98,7 @@ function Board({ orgSlug, today, initialSession, planned, ownTodos, fromLeads, d
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
       <div className="space-y-6">
-        <SessionTimer orgSlug={orgSlug} initial={initialSession} tasks={startable} captureDialog={dialogEl} onSessionChange={onSessionChange}
+        <SessionTimer orgSlug={orgSlug} initial={initialSession} tasks={startable} captureDialog={dialogEl} onSessionChange={onSessionChange} todaySeconds={todaySeconds}
           {...(recordingMode === "disabled" ? {} : { captureGate, recordingControls })} />
         {recordingMode === "disabled" ? <Alert tone="info">Screen recording is switched off for this organisation. An owner can turn it on under Settings → Screen recording.</Alert> : !policyAcknowledged ? <Alert tone="warning">To record your screen, first <Link className="underline" href={`/app/${orgSlug}/policy?next=/app/${orgSlug}/my-day`}>read and acknowledge the monitoring notice</Link>.</Alert> : null}
         {error ? <Alert tone="danger">{error}</Alert> : null}
@@ -107,7 +107,7 @@ function Board({ orgSlug, today, initialSession, planned, ownTodos, fromLeads, d
         <section aria-labelledby="todo-heading" className="tile p-4 md:p-5">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <h2 id="todo-heading" className="font-display text-xl">Your to-dos for today</h2>
-            <span className="text-sm text-fg-subtle tabular-nums">{rows.filter((r) => r.status !== "in_review").length} open · {doneToday.length} done</span>
+            <span className="text-sm text-fg-subtle tabular-nums">{rows.filter((r) => r.status !== "in_review").length} open, {doneToday.length} done</span>
           </div>
           <QuickTodo orgSlug={orgSlug} assignable={assignable} onDone={(msg) => { setNotice(msg ?? null); router.refresh(); }} onAssistant={() => setShowAssistant((v) => !v)} assistantOpen={showAssistant} />
           {showAssistant ? <div id="assistant-panel" className="rise-in mt-3"><AssistantPanel orgSlug={orgSlug} people={assignable} configured={assistantConfigured} onClose={() => setShowAssistant(false)} onCreated={(n) => { setNotice(`${n} to-do${n === 1 ? "" : "s"} added.`); router.refresh(); }} /></div> : null}

@@ -33,7 +33,7 @@ export default async function PeoplePage({ params, searchParams }: { params: Pro
   const countFor: Record<TabKey, number> = { teams: teams.length, people: activeMembers.length, invitations: pendingInvites };
   return (
     <AppShell ctx={ctx} counts={counts} teams={navTeams}>
-      <PageHeader back={{ href: `${base}/dashboard`, label: "Dashboard" }} overline="People and teams" title="People and teams"
+      <PageHeader back={{ href: `${base}/dashboard`, label: "Dashboard" }} title="People and teams"
         description="Create teams and put a team lead on each. Add people with your join code or an invitation, then place them in a team."
         actions={tab === "teams" ? <NewTeamForm orgSlug={ctx.org.slug} /> : tab === "people" ? <InviteForm orgSlug={ctx.org.slug} teams={teams} isOwner={isOwner} label="Add new person" /> : <InviteForm orgSlug={ctx.org.slug} teams={teams} isOwner={isOwner} label="Send an invitation" />} />
 
@@ -61,7 +61,7 @@ export default async function PeoplePage({ params, searchParams }: { params: Pro
                       </div>
                       <Badge tone={t.leads.length ? "accent" : "warning"}>{t.leads.length ? `Lead: ${t.leads.join(", ")}` : "No lead yet"}</Badge>
                     </div>
-                    <p className="mt-3 text-sm text-accent">Open team → add people, choose the lead, see their tasks</p>
+                    <p className="mt-3 text-sm text-fg-muted">Open the team to add people, choose the lead and see its tasks.</p>
                   </Link>
                 </li>
               ))}

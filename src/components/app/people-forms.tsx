@@ -132,7 +132,7 @@ export function JoinCodePanel({ orgSlug, appOrigin, joinCode, teams }: { orgSlug
       ) : (
         <div className="grid gap-4 md:grid-cols-[auto_1fr]">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-fg-subtle">Organisation code</p>
+            <p className="text-sm text-fg-muted">Organisation code</p>
             <p className="mt-1 font-mono text-3xl tracking-widest">{joinCode.join_code}</p>
             <div className="mt-2 flex flex-wrap gap-2">
               <Button size="sm" variant="outline" onClick={() => copy(joinCode.join_code!, "code")}>{copied === "code" ? "Copied" : "Copy code"}</Button>

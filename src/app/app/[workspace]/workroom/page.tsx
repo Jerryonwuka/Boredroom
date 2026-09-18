@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { EmptyState, PermissionDenied } from "@/components/ui/states";
 import { LiveClock, LiveBadge } from "@/components/app/live";
 import { workroomView, workroomStatus, type WorkroomStatus } from "@/server/services/views";
-import { formatDuration, formatDateTime, relativeTime } from "@/lib/utils";
+import { formatDuration, formatDateTime, relativeTime, formatLongDate } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Workroom" };
@@ -35,7 +35,7 @@ export default async function WorkroomPage({ params, searchParams }: { params: P
   const q = (extra: Record<string, string | undefined>) => { const p = new URLSearchParams(); const merged = { team: sp.team, show: sp.show, ...extra }; for (const [k, v] of Object.entries(merged)) if (v) p.set(k, v); const s = p.toString(); return `${base}/workroom${s ? `?${s}` : ""}`; };
   return (
     <AppShell ctx={ctx} counts={counts} teams={navTeams}>
-      <PageHeader back={{ href: isOrg ? `${base}/dashboard` : base, label: isOrg ? "Dashboard" : "Back" }} overline={`Workroom · ${data.today}`} title="Who is working now"
+      <PageHeader back={{ href: isOrg ? `${base}/dashboard` : base, label: isOrg ? "Dashboard" : "Back" }} overline={formatLongDate(data.today)} title="Who is working now"
         description={<>Everyone who has clocked in today and what they are on. Updates live; last sync {formatDateTime(data.serverNow, ctx.org.timezone)}. Click a person to see their whole day.</>} />
       <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
         <span className="inline-flex items-center gap-1.5"><Badge tone="success" dot>{counts2.active}</Badge> active</span>
@@ -57,7 +57,7 @@ export default async function WorkroomPage({ params, searchParams }: { params: P
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <p className="truncate font-semibold">{r.display_name}</p>
-                      <p className="truncate text-xs text-fg-subtle">{r.teams.join(", ") || "No team"} · {r.role === "manager" ? "Team lead" : "Staff"}</p>
+                      <p className="truncate text-xs text-fg-subtle">{r.teams.join(", ") || "No team"}, {r.role === "manager" ? "team lead" : "staff"}</p>
                     </div>
                     <div className="flex shrink-0 items-center gap-1.5">
                       {r.recording_live ? <LiveBadge /> : null}
@@ -69,7 +69,7 @@ export default async function WorkroomPage({ params, searchParams }: { params: P
                       <>
                         <p className="text-xs text-fg-subtle">{r.status === "active" ? "Working on" : "Paused on"}</p>
                         <p className="truncate font-medium">{r.task_title}</p>
-                        <p className="mt-0.5 text-sm text-fg-muted">On this task: <LiveClock seconds={r.session_seconds} serverNow={data.serverNow} running={r.status === "active"} className="text-fg" />{r.started_at ? <span className="text-fg-subtle"> · since {formatDateTime(r.started_at, ctx.org.timezone)}</span> : null}</p>
+                        <p className="mt-0.5 text-sm text-fg-muted">On this task: <LiveClock seconds={r.session_seconds} serverNow={data.serverNow} running={r.status === "active"} className="text-fg" />{r.started_at ? <span className="text-fg-subtle"> since {formatDateTime(r.started_at, ctx.org.timezone)}</span> : null}</p>
                       </>
                     ) : r.status === "clocked_out" ? (
                       <p className="text-sm text-fg-muted">Last active {r.last_activity_at ? relativeTime(r.last_activity_at, now) : "earlier today"}. Started at {r.first_start_today ? formatDateTime(r.first_start_today, ctx.org.timezone) : "—"}.</p>
@@ -78,7 +78,7 @@ export default async function WorkroomPage({ params, searchParams }: { params: P
                   <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-border-soft pt-3 text-xs text-fg-subtle tabular-nums">
                     <span><strong className="font-semibold text-fg-muted">{formatDuration(r.today_seconds)}</strong> today</span>
                     <span>{r.tasks_today} task{r.tasks_today === 1 ? "" : "s"} worked</span>
-                    <span>{r.done_today} done{r.sent_for_check_today ? ` · ${r.sent_for_check_today} sent for check` : ""}</span>
+                    <span>{r.done_today} done{r.sent_for_check_today ? `, ${r.sent_for_check_today} sent for check` : ""}</span>
                     {r.recordings_today ? <span className="inline-flex items-center gap-1"><Video className="size-3.5 text-accent" aria-hidden />{r.recordings_today}</span> : null}
                   </div>
                 </Link>
