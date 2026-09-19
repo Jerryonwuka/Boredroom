@@ -48,7 +48,17 @@ People → Offboard. Effects: membership revoked (new requests and live channels
 
 ## Backup, and moving the database to Neon (or any hosted PostgreSQL)
 
-The database is plain PostgreSQL, so `pg_dump` and `pg_restore` are the tools. Two scripts wrap them so the result is Boredroom-ready.
+The database is plain PostgreSQL, so `pg_dump` and `pg_restore` are the tools. Scripts wrap them so the result is Boredroom-ready.
+
+### The one-step move
+
+With the local app running (`pnpm dev`) and the PostgreSQL client tools installed (see step 1 below for the version note):
+
+```
+pnpm db:move "<owner connection string from the Neon dashboard>" --write-env
+```
+
+This backs up the local database to `var/backups`, restores it into the target (switching a Neon `-pooler` host to the direct host for the restore), creates the restricted `boardroom_app` role with a generated password, re-applies its grants, saves the old `.env.local` beside it and rewrites `DATABASE_ADMIN_URL` and `DATABASE_URL`. Restart `pnpm dev` and the app runs on the new database; the local copy is untouched. Without `--write-env` the two lines are printed instead. Steps 1 to 3 below are the same thing done by hand.
 
 ### 1. Back up
 
@@ -66,7 +76,7 @@ The script checks the versions and tells you exactly what to install if they do 
 ### 2. Prepare Neon
 
 1. Create a Neon project and a database (any name).
-2. Copy the connection string from the dashboard; it looks like `postgres://<owner>:<password>@<host>.neon.tech/<db>?sslmode=require`. Use the direct (non-pooled) host for the restore.
+2. Copy the connection string from the dashboard; it looks like `postgres://<owner>:<password>@<host>.neon.tech/<db>?sslmode=require`. Either host works: the scripts switch a `-pooler` host to the direct one for the restore.
 
 ### 3. Restore
 
@@ -90,5 +100,6 @@ Copy those into `.env.local`, run `pnpm doctor`, then `pnpm dev`. Re-running the
 
 - Extensions used (`btree_gist`, `citext`, `pgcrypto`) are available on Neon.
 - Row-level security, `LISTEN/NOTIFY` (live updates) and the job queue work unchanged.
-- Neon's pooled connection string (`-pooler` host) is fine for `DATABASE_URL`; use the direct host for `DATABASE_ADMIN_URL` and for the restore.
+- Neon's pooled connection string (`-pooler` host) is fine for `DATABASE_URL`; the scripts use the direct host for `DATABASE_ADMIN_URL` and for the restore.
+- A connection string pasted into a chat, ticket or screenshot is a leaked password: reset it in the Neon dashboard afterwards and update `.env.local`.
 - Neon scales to zero when idle; the first request after a pause takes a second or two.

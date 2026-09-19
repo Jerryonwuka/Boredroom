@@ -24,6 +24,7 @@
     "db:bootstrap": "tsx db/scripts/bootstrap.ts",
     "db:dump": "tsx db/scripts/dump.ts",
     "db:restore": "tsx db/scripts/restore.ts",
+    "db:move": "tsx db/scripts/move.ts",
     "first-run": "pnpm setup:env && pnpm db:bootstrap && pnpm db:migrate && pnpm db:seed && pnpm doctor",
     "quickstart": "tsx scripts/quickstart.ts",
     "dev:next": "next dev"

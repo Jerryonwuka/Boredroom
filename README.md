@@ -89,6 +89,7 @@ Run `pnpm doctor` in the project folder, or open `http://localhost:3000/api/heal
 | `pnpm db:migrate`, `pnpm db:reset`, `pnpm db:seed`, `pnpm db:setup` | Database lifecycle (`--test` targets the test database) |
 | `pnpm test` | Unit + integration tests (rebuilds `boardroom_test` per file) |
 | `pnpm test:e2e` | Playwright end-to-end tests (starts a dev server on port 3100 against the test database) |
+| `pnpm db:dump`, `pnpm db:restore`, `pnpm db:move "<url>" --write-env` | Back up, restore, or move the database to a hosted PostgreSQL such as Neon in one step (see `docs/runbooks.md`) |
 | `pnpm lint`, `pnpm typecheck`, `pnpm check` | Static checks |
 
 ## Repository layout

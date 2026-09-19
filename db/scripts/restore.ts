@@ -30,7 +30,10 @@ function withUser(url: string, user: string, password: string) {
 }
 
 async function main() {
-  const [target, file] = process.argv.slice(2).filter((a) => !a.startsWith("--"));
+  const [rawTarget, file] = process.argv.slice(2).filter((a) => !a.startsWith("--"));
+  // pg_restore needs a direct connection; Neon's "-pooler" host is switched to the direct one.
+  const target = rawTarget ? (() => { const u = new URL(rawTarget); u.hostname = u.hostname.replace("-pooler", ""); return u.toString(); })() : rawTarget;
+  if (rawTarget && target !== rawTarget) console.log("Using the direct (non-pooled) host for the restore.");
   const pwIdx = process.argv.indexOf("--app-password");
   const appPassword = pwIdx > 0 ? process.argv[pwIdx + 1] : process.env.RESTORE_APP_PASSWORD || randomBytes(18).toString("base64url");
   if (!target || !file) { console.error('Usage: pnpm db:restore "<target connection url>" <backup file> [--app-password <password>]'); process.exit(1); }
