@@ -15,7 +15,7 @@ The product specification is in [`BOARDROOM_BUILD_SPEC.md`](./BOARDROOM_BUILD_SP
 | Auth | Local email/password adapter (scrypt, verification, recovery, server sessions). Supabase Auth adapter path documented in `docs/providers.md` |
 | Realtime | Server-sent events fed by PostgreSQL `LISTEN/NOTIFY` (`/api/orgs/:org/events`); reconnect triggers an authoritative refetch |
 | Storage | Private object storage behind an interface; local filesystem adapter under `var/storage`; files served only through 60-second signed URLs |
-| Mail | Interface with a local sink (`var/mail-outbox`, readable at `/dev/mail`) |
+| Mail | Interface with a local sink (`var/mail-outbox`, readable at `/dev/mail`) for development; SMTP via Nodemailer (`MAIL_PROVIDER=smtp`, set up for Brevo) or Resend (`MAIL_PROVIDER=resend`) for real delivery; `pnpm mail:test <address>` sends one test message |
 | Worker | Separate Node process (`pnpm worker`) on a PostgreSQL durable job queue (`SKIP LOCKED`, bounded exponential backoff, dead-letter state) |
 | Tests | Vitest unit + integration tests against a real PostgreSQL database using the restricted application role; Playwright end-to-end |
 

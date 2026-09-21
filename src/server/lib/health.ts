@@ -1,5 +1,6 @@
 import { accessSync, constants, mkdirSync } from "node:fs";
 import { getPool } from "@/server/db";
+import { mailConfigProblem } from "@/server/lib/mail";
 
 export type Check = { ok: boolean; detail?: string; fix?: string };
 
@@ -36,9 +37,16 @@ export async function runHealthChecks(): Promise<{ ok: boolean; checks: Record<s
     const why = explainInfraError(err);
     checks.database = { ok: false, detail: why ? `${why.message} [${(err as Error).message}]` : (err as Error).message, fix: why?.fix ?? "Check DATABASE_URL and that PostgreSQL is running." };
   }
-  for (const [name, dir] of [["storage", process.env.STORAGE_LOCAL_DIR ?? "./var/storage"], ["mailSink", process.env.MAIL_SINK_DIR ?? "./var/mail-outbox"]] as const) {
-    try { mkdirSync(dir, { recursive: true }); accessSync(dir, constants.W_OK); checks[name] = { ok: true, detail: dir }; }
-    catch (err) { checks[name] = { ok: false, detail: `${dir}: ${(err as Error).message}`, fix: "Use a writable directory or configure a storage/mail provider." }; }
-  }
+  const storageDir = process.env.STORAGE_LOCAL_DIR ?? "./var/storage";
+  try { mkdirSync(storageDir, { recursive: true }); accessSync(storageDir, constants.W_OK); checks.storage = { ok: true, detail: storageDir }; }
+  catch (err) { checks.storage = { ok: false, detail: `${storageDir}: ${(err as Error).message}`, fix: "Use a writable directory or configure a storage provider." }; }
+  const mailKind = process.env.MAIL_PROVIDER ?? "sink";
+  const mailProblem = mailConfigProblem();
+  if (mailProblem) checks.mail = { ok: false, detail: mailKind, fix: mailProblem };
+  else if (mailKind === "sink") {
+    const dir = process.env.MAIL_SINK_DIR ?? "./var/mail-outbox";
+    try { mkdirSync(dir, { recursive: true }); accessSync(dir, constants.W_OK); checks.mail = { ok: true, detail: `sink → ${dir} (nothing is delivered; read it at /dev/mail)` }; }
+    catch (err) { checks.mail = { ok: false, detail: `${dir}: ${(err as Error).message}`, fix: "Use a writable MAIL_SINK_DIR or set MAIL_PROVIDER=resend." }; }
+  } else checks.mail = { ok: true, detail: `${mailKind}${mailKind === "smtp" ? ` via ${new URL(process.env.SMTP_URL!).hostname}` : ""}, from ${process.env.MAIL_FROM}` };
   return { ok: Object.values(checks).every((c) => c.ok), checks, nodeEnv: process.env.NODE_ENV, mailProvider: process.env.MAIL_PROVIDER ?? "sink", storageProvider: process.env.STORAGE_PROVIDER ?? "local", assistantServerKey: !!process.env.ANTHROPIC_API_KEY };
 }

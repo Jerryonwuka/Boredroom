@@ -194,7 +194,7 @@ Environment notes: no Docker daemon, no Supabase CLI, no ffmpeg; Figma and most 
 
 - Browser screen-capture permission dialogs cannot be automated; the exception dialog, "Stop sharing" interruption, quota stop at 200 MB pending and IndexedDB recovery were implemented per spec but only the service side is covered by automated tests. A manual check on Chrome/Edge (localhost or HTTPS) is listed in `docs/walkthrough.md` step 12.
 - No ffmpeg: assembled recordings are WebM containers concatenated from one recorder instance; no MP4 derivative or thumbnail.
-- Email is only delivered to the local sink; SMTP provider must be implemented before production.
+- Email: the local sink for development; for real delivery either SMTP through Nodemailer (`MAIL_PROVIDER=smtp`, `SMTP_URL`, set up for Brevo's relay) or Resend (`MAIL_PROVIDER=resend`, `RESEND_API_KEY`), both with `MAIL_FROM` on a verified sender. `pnpm mail:test <address>` logs in and sends one test message; `pnpm run doctor` reports the mail configuration. Delivery from a real domain was not exercised in this environment.
 - MFA for owner/HR accounts is not implemented (production gate).
 - Leave/holiday support deferred; `workday_exemptions` exist so completeness is not knowingly wrong, but there is no UI to create exemptions yet (SQL or a small admin action).
 - Mobile: planning and review pages are responsive; recording is desktop-only by feature detection.
@@ -204,7 +204,7 @@ Environment notes: no Docker daemon, no Supabase CLI, no ffmpeg; Figma and most 
 ## Blockers and external prerequisites (before a real pilot)
 
 1. Supabase (or other) PostgreSQL project with separate dev/prod, backups and PITR.
-2. Auth provider decision (keep local adapter with MFA, or Supabase Auth) and SMTP credentials for verification/recovery/invitations.
+2. Auth provider decision (keep local adapter with MFA, or Supabase Auth); a Brevo SMTP key (or Resend API key) and a verified sender for verification/recovery/invitations.
 3. Private object storage bucket and lifecycle rules; malware scanning service.
 4. Hosting for web and worker (HTTPS domain).
 5. Error monitoring with PII scrubbing.
