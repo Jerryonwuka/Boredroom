@@ -45,9 +45,14 @@ async function main() {
   const server = (await admin.query("SHOW server_version")).rows[0].server_version as string;
   console.log(`Target: PostgreSQL ${server} at ${safe}`);
   for (const ext of ["btree_gist", "citext", "pgcrypto"]) await admin.query(`CREATE EXTENSION IF NOT EXISTS ${ext}`);
-  const role = await admin.query("SELECT 1 FROM pg_roles WHERE rolname = 'boardroom_app'");
-  if (role.rows.length) { await admin.query(`ALTER ROLE boardroom_app WITH LOGIN PASSWORD '${appPassword.replace(/'/g, "''")}' NOSUPERUSER NOBYPASSRLS`); console.log("Updated the boardroom_app role password."); }
-  else { await admin.query(`CREATE ROLE boardroom_app LOGIN PASSWORD '${appPassword.replace(/'/g, "''")}' NOSUPERUSER NOBYPASSRLS`); console.log("Created the boardroom_app role."); }
+  const role = await admin.query("SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = 'boardroom_app'");
+  if (role.rows.length) {
+    // Only a superuser may mention SUPERUSER/BYPASSRLS in ALTER ROLE (even as a no-op), and hosts like Neon give the
+    // database owner no superuser. So just set the password, then check the attributes the app relies on.
+    if (role.rows[0].rolsuper || role.rows[0].rolbypassrls) { console.error("The existing boardroom_app role is SUPERUSER or BYPASSRLS; row-level security would not apply. Fix the role (or drop it) and run again."); process.exit(1); }
+    await admin.query(`ALTER ROLE boardroom_app WITH LOGIN PASSWORD '${appPassword.replace(/'/g, "''")}'`);
+    console.log("Updated the boardroom_app role password.");
+  } else { await admin.query(`CREATE ROLE boardroom_app LOGIN PASSWORD '${appPassword.replace(/'/g, "''")}' NOSUPERUSER NOBYPASSRLS`); console.log("Created the boardroom_app role."); }
   await admin.end();
 
   const ver = spawnSync("pg_restore", ["--version"], { encoding: "utf8" });
