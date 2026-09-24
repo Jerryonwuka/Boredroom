@@ -4,6 +4,7 @@ import { AppShell, ROLE_LABEL } from "@/components/app/shell";
 import { PageHeader, Card, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ProfileForm } from "@/components/app/profile-form";
+import { PresencePicker } from "@/components/app/topbar";
 import { myProfile } from "@/server/services/profile";
 import { formatLongDate } from "@/lib/utils";
 
@@ -23,6 +24,10 @@ export default async function ProfilePage({ params }: { params: Promise<{ worksp
           <ProfileForm profileId={me.id} displayName={me.displayName} title={me.title} statusText={me.statusText} avatarKey={me.avatarKey} />
         </Card>
         <aside className="space-y-4">
+          <Card>
+            <CardHeader title="Work status" description="Shown as the dot on your picture wherever your name appears." className="mb-1" />
+            <PresencePicker value={me.presence} className="border-0 px-0 pb-0" />
+          </Card>
           <Card>
             <CardHeader title="Account" className="mb-2" />
             <dl className="space-y-2 text-sm">

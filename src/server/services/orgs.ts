@@ -5,6 +5,7 @@ import { AppError, conflict, forbidden, invalid, notFound } from "@/server/lib/e
 import { randomToken, sha256 } from "@/server/lib/crypto";
 import { isValidTimeZone } from "@/server/lib/time";
 import { mail } from "@/server/lib/mail";
+import { invitationMail } from "@/server/lib/emails";
 import { audit, notify } from "@/server/services/common";
 import type { OrgContext } from "@/server/lib/api";
 
@@ -93,10 +94,11 @@ export async function createInvitation(ctx: OrgContext, input: z.infer<typeof in
     await audit(db, { organisationId: ctx.org.id, actorMembershipId: ctx.membership.id, action: "invitation.created", subjectType: "invitation", subjectId: inv.id, metadata: { email: input.email, role: input.role } });
     if (opts.send) {
       const url = `${process.env.APP_ORIGIN ?? "http://localhost:3000"}/invite/${token}`;
+      const team = input.teamId ? await db.maybeOne<{ name: string }>(`SELECT name FROM teams WHERE id = $1 AND organisation_id = $2`, [input.teamId, ctx.org.id]) : null;
       await mail().send({
         to: input.email, category: "invitation",
         subject: `You're invited to ${ctx.org.name} on Boredroom`,
-        text: `${ctx.user.displayName} invited you to join ${ctx.org.name} as ${input.role}.\n\nAccept the invitation (signed in with ${input.email}):\n${url}\n\nThis link is single-use and expires ${new Date(inv.expires_at).toUTCString()}.`,
+        ...invitationMail({ inviter: ctx.user.displayName, org: ctx.org.name, role: input.role, team: team?.name ?? null, email: input.email, url, expiresAt: new Date(inv.expires_at) }),
       });
       await db.query(`UPDATE invitations SET sent_at = now() WHERE id = $1`, [inv.id]);
     }

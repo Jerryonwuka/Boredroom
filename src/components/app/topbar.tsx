@@ -13,14 +13,37 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ICON_BUTTON } from "@/components/ui/icon-button";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
+import { WorkspaceSearch } from "@/components/app/workspace-search";
+import { PresenceDot } from "@/components/ui/presence";
+import { PRESENCE, PRESENCES, type Presence } from "@/lib/presence";
 import { api } from "@/lib/api-client";
 import { relativeTime, cn } from "@/lib/utils";
 import type { RecentNotification } from "@/server/services/workspace";
 
 type Panel = "notifications" | "settings" | "profile";
-export type TopBarUser = { profileId: string; displayName: string; email: string; avatarKey?: string | null; title?: string | null; statusText?: string | null };
+export type TopBarUser = { profileId: string; displayName: string; email: string; avatarKey?: string | null; title?: string | null; statusText?: string | null; presence?: Presence | null };
 
-export function TopBar({ orgSlug, user, roleLabel, isOrg, unread, attention, recent, className }: { orgSlug: string; user: TopBarUser; roleLabel: string; isOrg: boolean; unread: number; attention: number; recent: RecentNotification[]; className?: string }) {
+/** The work status: four choices, saved at once, shown as the dot on the avatar everywhere. */
+export function PresencePicker({ value, className }: { value: Presence; className?: string }) {
+  const router = useRouter();
+  const [current, setCurrent] = useState<Presence>(value);
+  const [pending, setPending] = useState(false);
+  return (
+    <div className={cn("border-t border-border-soft px-2 pb-2 pt-2", className)}>
+      <p className="eyebrow mb-1.5">Work status</p>
+      <div role="radiogroup" aria-label="Work status" className="grid grid-cols-2 gap-1">
+        {PRESENCES.map((p) => (
+          <button key={p} type="button" role="radio" aria-checked={current === p} disabled={pending} onClick={async () => { if (p === current) return; setPending(true); setCurrent(p); try { await api("/api/me/presence", { method: "PATCH", body: { presence: p } }); router.refresh(); } catch { setCurrent(current); } finally { setPending(false); } }}
+            className={cn("flex items-center gap-2 rounded-[var(--radius-sm)] border px-2.5 py-1.5 text-left text-sm transition-colors duration-[var(--duration-fast)]", current === p ? "border-border bg-wash-strong text-fg" : "border-transparent text-fg-muted hover:bg-wash hover:text-fg")}>
+            <PresenceDot presence={p} size={9} withRing={false} /><span className="truncate">{PRESENCE[p].label}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export function TopBar({ orgSlug, user, roleLabel, isOrg, unread, attention, recent, pages, className }: { orgSlug: string; user: TopBarUser; roleLabel: string; isOrg: boolean; unread: number; attention: number; recent: RecentNotification[]; pages: { label: string; href: string }[]; className?: string }) {
   const [open, setOpen] = useState<Panel | null>(null);
   const ref = useRef<HTMLDivElement>(null);
   const router = useRouter();
@@ -38,6 +61,7 @@ export function TopBar({ orgSlug, user, roleLabel, isOrg, unread, attention, rec
 
   return (
     <div ref={ref} className={cn("relative flex items-center gap-2", className)}>
+      <WorkspaceSearch orgSlug={orgSlug} pages={pages} className="hidden sm:block" />
       <ThemeToggle />
       <div className="relative">
         <button type="button" className={iconBtn} aria-label={unread ? `Notifications, ${unread} unread` : "Notifications"} aria-expanded={open === "notifications"} aria-controls="topbar-notifications" onClick={() => toggle("notifications")}>
@@ -92,13 +116,13 @@ export function TopBar({ orgSlug, user, roleLabel, isOrg, unread, attention, rec
       ) : null}
 
       <div className="relative">
-        <button type="button" className={cn(iconBtn, "overflow-hidden p-0")} aria-label={`Your account, ${user.displayName}`} aria-expanded={open === "profile"} aria-controls="topbar-profile" onClick={() => toggle("profile")}>
-          <Avatar profileId={user.profileId} name={user.displayName} avatarKey={user.avatarKey} size={38} className="border-0" />
+        <button type="button" className={cn(iconBtn, "p-0")} aria-label={`Your account, ${user.displayName}`} aria-expanded={open === "profile"} aria-controls="topbar-profile" onClick={() => toggle("profile")}>
+          <Avatar profileId={user.profileId} name={user.displayName} avatarKey={user.avatarKey} presence={user.presence ?? "active"} size={38} className="border-0" />
         </button>
         {open === "profile" ? (
           <div id="topbar-profile" role="dialog" aria-label="Your account" className={panel}>
             <div className="flex items-center gap-3 px-2 py-2">
-              <Avatar profileId={user.profileId} name={user.displayName} avatarKey={user.avatarKey} size={48} />
+              <Avatar profileId={user.profileId} name={user.displayName} avatarKey={user.avatarKey} presence={user.presence ?? "active"} size={48} />
               <div className="min-w-0">
                 <p className="truncate font-semibold">{user.displayName}</p>
                 {user.title ? <p className="truncate text-xs text-fg-muted">{user.title}</p> : null}
@@ -106,6 +130,7 @@ export function TopBar({ orgSlug, user, roleLabel, isOrg, unread, attention, rec
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2 px-2 pb-2"><Badge tone="accent">{roleLabel}</Badge>{user.statusText ? <span className="truncate text-xs text-fg-muted">“{user.statusText}”</span> : <span className="text-xs text-fg-subtle">No status set</span>}</div>
+            <PresencePicker value={user.presence ?? "active"} />
             <ul className="border-t border-border-soft pt-1 text-sm">
               <li><Link href={`${base}/profile`} onClick={() => setOpen(null)} className="block rounded-[var(--radius-sm)] px-2 py-2 hover:bg-wash">Your profile</Link></li>
               <li><Link href="/app" onClick={() => setOpen(null)} className="block rounded-[var(--radius-sm)] px-2 py-2 hover:bg-wash">Switch workspace</Link></li>

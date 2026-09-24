@@ -12,7 +12,7 @@ const DOT: Record<NonNullable<StatRow["tone"]>, string> = { success: "bg-success
 export function StatCard({ label, verdict, tone = "default", rows = [], href, className }: { label: string; verdict: React.ReactNode; tone?: "default" | "accent" | "danger" | "warning"; rows?: StatRow[]; href?: string; className?: string }) {
   const body = (
     <>
-      <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-fg-subtle">{label}</p>
+      <p className="eyebrow">{label}</p>
       <p className={cn("mt-1.5 font-display text-[28px] leading-none tracking-[-0.01em]", tone === "accent" && "text-accent", tone === "danger" && "text-danger", tone === "warning" && "text-warning")}>{verdict}</p>
       {rows.length ? (
         <ul className="mt-5 divide-y divide-border-soft text-sm">

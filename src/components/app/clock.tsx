@@ -31,13 +31,30 @@ export function ClockButtons({ orgSlug, status, timerOpen, size = "lg" }: { orgS
   );
 }
 
-/** One line at the top of My Day until the person has clocked in. */
-export function ClockBanner({ orgSlug, status, startLabel, late }: { orgSlug: string; status: Status; startLabel: string; late: boolean }) {
-  if (status !== "not_in") return null;
+/**
+ * The first thing on My Day until the person has clocked in: the day's start time, whether they are late, and one
+ * big Clock in. Once they are in it shrinks to a line with the time and a Clock out; after clocking out it says so.
+ */
+export function ClockCard({ orgSlug, status, startLabel, endLabel, late, clockedInAt, lateBy, timerOpen }: { orgSlug: string; status: Status; startLabel: string; endLabel: string; late: boolean; clockedInAt?: string | null; lateBy?: string | null; timerOpen: boolean }) {
+  if (status === "not_in") {
+    return (
+      <section aria-labelledby="clock-card" className={`tile mb-6 flex flex-wrap items-center justify-between gap-5 p-5 md:p-6 ${late ? "border-warning/50" : "tile-active"}`}>
+        <div className="flex items-center gap-4">
+          <span aria-hidden className="icon-tile size-14 rounded-[14px]"><LogIn className={`size-6 ${late ? "text-warning" : "text-accent"}`} /></span>
+          <div>
+            <p className="eyebrow">{late ? "The day started at " + startLabel : "Work starts at " + startLabel}</p>
+            <h2 id="clock-card" className="mt-1 font-display text-2xl leading-tight md:text-[28px]">{late ? "You have not clocked in yet" : "Clock in to start your day"}</h2>
+            <p className="mt-1 text-sm text-fg-muted">{late ? "Clocking in now is recorded as late; the record shows by how much." : `Clock in on or before ${startLabel} to be on time. The day ends at ${endLabel}.`}</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-3"><ClockButtons orgSlug={orgSlug} status={status} timerOpen={false} size="lg" /><Link href={`/app/${orgSlug}/clock`} className="text-sm text-fg-muted hover:text-fg">Your clock</Link></div>
+      </section>
+    );
+  }
   return (
-    <div className={`mb-6 flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius)] border px-4 py-3 ${late ? "border-warning/40 bg-warning/10" : "border-accent/40 bg-accent-soft/40"}`}>
-      <p className="text-sm"><span className="font-semibold">{late ? "You have not clocked in yet, and the day started at " : "Clock in to start your day. Work starts at "}{startLabel}.</span> <span className="text-fg-muted">{late ? "Clocking in now will be recorded as late." : "Clock in on or before then to be on time."}</span></p>
-      <div className="flex items-center gap-3"><ClockButtons orgSlug={orgSlug} status={status} timerOpen={false} size="md" /><Link href={`/app/${orgSlug}/clock`} className="text-sm underline">Your clock</Link></div>
+    <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius)] border border-border-soft bg-wash-soft px-4 py-3">
+      <p className="text-sm"><span className="font-semibold">{status === "in" ? `Clocked in${clockedInAt ? ` at ${clockedInAt}` : ""}.` : "You have clocked out for today."}</span> <span className="text-fg-muted">{status === "in" ? (lateBy ? `Late by ${lateBy}.` : "On time.") : ""}</span></p>
+      <div className="flex items-center gap-3">{status === "in" ? <ClockButtons orgSlug={orgSlug} status={status} timerOpen={timerOpen} size="md" /> : null}<Link href={`/app/${orgSlug}/clock`} className="text-sm text-fg-muted hover:text-fg">Your clock</Link></div>
     </div>
   );
 }

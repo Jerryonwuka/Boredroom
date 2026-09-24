@@ -30,8 +30,8 @@ export default async function ProjectPage({ params, searchParams }: { params: Pr
         actions={<>{canCreate && project.status === "active" ? <NewTaskForm orgSlug={ctx.org.slug} projectId={project.id} members={allMembers} self={ctx.membership.id} canAssignOthers={canManage || ctx.membership.role === "manager"} requiresDueDate={project.requires_due_date} requiresEstimate={project.requires_estimate} /> : null}{canManage && project.status === "active" ? <ArchiveProjectButton orgSlug={ctx.org.slug} projectId={project.id} /> : null}</>} />
       <div className="mb-4 flex flex-wrap items-center gap-2 text-sm">
         <span className="text-fg-subtle">Filter:</span>
-        <Link href={`?`} className={`chip chip-link rounded-full px-3 py-1 ${!sp.status ? "border-accent/60 text-fg" : "text-fg-muted"}`}>All</Link>
-        {statuses.map((s) => <Link key={s} href={`?status=${s}${sp.assignee ? `&assignee=${sp.assignee}` : ""}`} className={`chip chip-link rounded-full px-3 py-1 ${sp.status === s ? "border-accent/60 text-fg" : "text-fg-muted"}`}>{label(s)}</Link>)}
+        <Link href={`?`} className={`chip chip-link whitespace-nowrap rounded-full px-3 py-1 ${!sp.status ? "border-accent/60 text-fg" : "text-fg-muted"}`}>All</Link>
+        {statuses.map((s) => <Link key={s} href={`?status=${s}${sp.assignee ? `&assignee=${sp.assignee}` : ""}`} className={`chip chip-link whitespace-nowrap rounded-full px-3 py-1 ${sp.status === s ? "border-accent/60 text-fg" : "text-fg-muted"}`}>{label(s)}</Link>)}
       </div>
       {visible.length === 0 ? <EmptyState icon3d="card-check" title="No tasks match" description={tasks.length === 0 ? "Create the first task with a clear expected output." : "Try another filter."} /> : (
         <DataTable caption={`Tasks in ${project.name}`}>

@@ -1,29 +1,25 @@
 "use client";
 
 /**
- * The to-do assistant: type or dictate what you are working on; it proposes to-dos (and, for team leads,
+ * The to-do assistant on My Day: type or dictate what you are working on; it proposes to-dos (and, for team leads,
  * who each one is for). Nothing is created until the member confirms; each accepted item then goes through
  * the normal to-do endpoint, so assignees are notified the usual way.
  *
- * Dictation uses the browser's own speech recognition (Chrome, Edge and Safari have it). No audio is uploaded.
+ * Dictation uses the browser's own speech recognition (see `hooks/use-dictation`); while listening, the orb turns
+ * and ripples with the voice so the person can see they are being heard. No audio is uploaded.
  */
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useState } from "react";
 import { Mic, MicOff, Sparkles, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input, Textarea, Select } from "@/components/ui/input";
 import { Alert } from "@/components/ui/states";
+import { VoicePoweredOrb } from "@/components/ui/voice-powered-orb";
+import { useDictation } from "@/hooks/use-dictation";
 import { api, isApiFailure } from "@/lib/api-client";
 
 type Person = { id: string; display_name: string };
 type Proposal = { title: string; description: string | null; dueAt: string | null; assigneeMembershipId: string | null; assigneeName: string | null; unmatchedAssignee: string | null; estimateMinutes: number | null };
 type PlanResult = { items: Proposal[]; engine: "claude" | "builtin"; reply: string | null; note: string | null; people: Person[] };
-
-type SpeechRecognitionLike = { lang: string; continuous: boolean; interimResults: boolean; start: () => void; stop: () => void; onresult: ((e: { resultIndex: number; results: ArrayLike<ArrayLike<{ transcript: string }> & { isFinal: boolean }> }) => void) | null; onend: (() => void) | null; onerror: ((e: { error: string }) => void) | null };
-function speechCtor(): (new () => SpeechRecognitionLike) | null {
-  if (typeof window === "undefined") return null;
-  const w = window as unknown as { SpeechRecognition?: new () => SpeechRecognitionLike; webkitSpeechRecognition?: new () => SpeechRecognitionLike };
-  return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
-}
 
 function toLocalInput(iso: string | null): string {
   if (!iso) return "";
@@ -34,86 +30,16 @@ function toLocalInput(iso: string | null): string {
 
 export function AssistantPanel({ orgSlug, people, configured, onCreated, onClose }: { orgSlug: string; people: Person[]; configured: boolean; onCreated: (count: number) => void; onClose: () => void }) {
   const [text, setText] = useState("");
-  const [listening, setListening] = useState(false);
-  // null during server render / hydration, then the browser's real answer.
-  const speechSupported = useSyncExternalStore(() => () => undefined, () => !!speechCtor(), () => null);
   const [pending, setPending] = useState<"plan" | "create" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<PlanResult | null>(null);
   const [items, setItems] = useState<Proposal[]>([]);
-  const rec = useRef<SpeechRecognitionLike | null>(null);
-  const base = useRef("");
-  const wantListening = useRef(false);
-  const heard = useRef(0);
-  const silentRestarts = useRef(0);
-  const [heardWords, setHeardWords] = useState(0);
-
-  useEffect(() => () => { wantListening.current = false; rec.current?.stop(); }, []);
-
-  function stopMic() {
-    wantListening.current = false;
-    rec.current?.stop();
-    setListening(false);
-  }
-
-  /** Chrome ends a recognition session after a few seconds of silence, so a session is restarted until Stop is pressed. */
-  function startRecognition(Ctor: new () => SpeechRecognitionLike) {
-    const r = new Ctor(); rec.current = r;
-    r.lang = navigator.language && /^[a-z]{2}(-[A-Za-z]{2,4})?$/.test(navigator.language) ? navigator.language : "en-US";
-    r.continuous = true; r.interimResults = true;
-    let sessionFinal = "";
-    r.onresult = (e) => {
-      // results holds every phrase of this session; rebuild from it each time so nothing is repeated.
-      let finalText = "", interim = "";
-      for (let i = 0; i < e.results.length; i++) { const res = e.results[i]; const t = res[0].transcript; if (res.isFinal) finalText += t + " "; else interim += t; }
-      sessionFinal = finalText;
-      const shown = (base.current + finalText + interim).replace(/\s+/g, " ").trimStart();
-      heard.current = shown.split(" ").filter(Boolean).length; setHeardWords(heard.current);
-      silentRestarts.current = 0;
-      setText(shown);
-    };
-    r.onerror = (e) => {
-      if (e.error === "no-speech" || e.error === "aborted") return; // onend restarts while listening is wanted
-      const why = e.error === "not-allowed" || e.error === "service-not-allowed" ? "Microphone access was declined for speech recognition. Allow the microphone in the address bar and try again. Brave blocks the speech service by default (enable it under brave://settings/privacy)."
-        : e.error === "network" ? "The browser's speech service could not be reached. Dictation needs an internet connection and works in Chrome, Edge or Safari; Brave and Firefox do not offer it. You can type the note instead."
-        : e.error === "audio-capture" ? "No microphone could be used. Check the input device in your system sound settings."
-        : e.error === "language-not-supported" ? "This browser cannot transcribe your language setting. Switch the browser language to English and try again."
-        : `Dictation stopped (${e.error}). You can type the note instead.`;
-      wantListening.current = false; setError(why); setListening(false);
-    };
-    r.onend = () => {
-      // Keep what this session heard, then carry on in a fresh session while listening is still wanted.
-      if (sessionFinal) base.current = (base.current + sessionFinal).replace(/\s+/g, " ");
-      if (!wantListening.current) { setListening(false); return; }
-      // Nothing heard across several silent sessions: stop and say so rather than spin forever.
-      if (heard.current === 0 && ++silentRestarts.current >= 4) { wantListening.current = false; setListening(false); setError("No speech was heard for a while. Check the microphone is not muted, then press Dictate again."); return; }
-      try { startRecognition(Ctor); } catch { wantListening.current = false; setListening(false); }
-    };
-    r.start();
-  }
-
-  async function toggleMic() {
-    if (listening) { stopMic(); return; }
-    const Ctor = speechCtor(); if (!Ctor) return;
-    setError(null);
-    if (!window.isSecureContext) { setError(`Dictation needs a secure address. Open the app at http://localhost:${window.location.port || "3000"} or an https:// address (you are on ${window.location.host}).`); return; }
-    // Ask for the microphone explicitly first: the browser's own prompt is clearer, and a refusal gives a precise reason.
-    try { const stream = await navigator.mediaDevices.getUserMedia({ audio: true }); stream.getTracks().forEach((t) => t.stop()); }
-    catch (err) {
-      const name = (err as { name?: string })?.name;
-      if (name === "NotAllowedError" || name === "SecurityError") setError("Microphone access is blocked. Click the lock or camera icon in the address bar, allow the microphone for this site, then try again. On a Mac also check System Settings, Privacy and Security, Microphone for your browser.");
-      else if (name === "NotFoundError") setError("No microphone was found on this device.");
-      else setError(`Could not open the microphone (${name ?? "unknown error"}). You can type the note instead.`);
-      return;
-    }
-    base.current = text ? text.trimEnd() + " " : "";
-    heard.current = 0; setHeardWords(0); silentRestarts.current = 0;
-    wantListening.current = true;
-    try { startRecognition(Ctor); setListening(true); setError(null); } catch { wantListening.current = false; setError("Could not start dictation. Reload the page and try again, or type the note."); }
-  }
+  const [voiceActive, setVoiceActive] = useState(false);
+  const dictation = useDictation(text, setText);
 
   async function plan() {
     if (!text.trim()) return;
+    if (dictation.listening) dictation.stop();
     setPending("plan"); setError(null);
     try { const r = await api<PlanResult>(`/api/orgs/${orgSlug}/assistant/plan`, { method: "POST", body: { text: text.trim() } }); setResult(r); setItems(r.items); if (r.items.length === 0) setError("No to-dos found in that note. Try one action per sentence, e.g. “Finish the logo export by Friday.”"); }
     catch (err) { setError(isApiFailure(err) ? err.error.message : "Cannot reach the server."); }
@@ -135,6 +61,7 @@ export function AssistantPanel({ orgSlug, people, configured, onCreated, onClose
   }
 
   const update = (i: number, patch: Partial<Proposal>) => setItems((cur) => cur.map((it, j) => (j === i ? { ...it, ...patch } : it)));
+  const shownError = error ?? dictation.error;
 
   return (
     <section aria-labelledby="assistant-heading" className="tile space-y-3 border-accent/40 p-4">
@@ -143,18 +70,27 @@ export function AssistantPanel({ orgSlug, people, configured, onCreated, onClose
           <h2 id="assistant-heading" className="flex items-center gap-2 font-display text-lg"><Sparkles className="h-4 w-4 text-accent" aria-hidden />Assistant</h2>
           <p className="text-sm text-fg-muted">{people.length ? "Say or type what needs doing and who should do it. It drafts the to-dos; you confirm." : "Say or type what you are working on. It drafts your to-dos; you confirm."}</p>
         </div>
-        <Button size="icon" variant="ghost" aria-label="Close assistant" onClick={onClose}><X className="h-4 w-4" /></Button>
+        <Button size="icon" variant="ghost" aria-label="Close assistant" onClick={() => { dictation.stop(); onClose(); }}><X className="h-4 w-4" /></Button>
       </div>
-      {!configured ? <Alert tone="warning">The AI is not connected yet, so a simple built-in parser makes these suggestions. {people.length ? "" : ""}An organisation owner connects Claude under Settings, AI assistant (an Anthropic API key).</Alert> : null}
+      {!configured ? <Alert tone="warning">The AI is not connected yet, so a simple built-in parser makes these suggestions. An organisation owner connects Claude under Settings, AI assistant (an Anthropic API key).</Alert> : null}
+      {dictation.listening ? (
+        <div className="flex items-center gap-4 rounded-[var(--radius)] border border-accent/40 bg-accent-soft/40 p-3">
+          <div className="size-24 shrink-0"><VoicePoweredOrb enableVoiceControl onVoiceDetected={setVoiceActive} className="rounded-full" /></div>
+          <div className="min-w-0 flex-1">
+            <p className="eyebrow eyebrow-accent">Listening</p>
+            <p role="status" className="mt-1 text-sm text-fg-muted">{voiceActive ? "Hearing you. Keep going, one task per sentence." : dictation.heardWords ? `${dictation.heardWords} word${dictation.heardWords === 1 ? "" : "s"} so far. Press Stop when you are done.` : "Speak naturally, one task per sentence."}</p>
+          </div>
+          <Button type="button" variant="danger" onClick={() => dictation.stop()}><MicOff className="h-4 w-4" aria-hidden />Stop</Button>
+        </div>
+      ) : null}
       <Textarea aria-label="What are you working on?" value={text} onChange={(e) => setText(e.target.value)} rows={3} maxLength={4000} placeholder={people.length ? "e.g. Ask Ada to redo the homepage banner by Monday. Ben should fix the checkout bug today. I will prepare the sprint review." : "e.g. Finish the logo export by Friday, then update the brand deck. Also reply to the client email tomorrow morning."} />
       <div className="flex flex-wrap items-center gap-2">
-        {speechSupported ? <Button type="button" variant={listening ? "danger" : "outline"} onClick={toggleMic}>{listening ? <MicOff className="h-4 w-4" aria-hidden /> : <Mic className="h-4 w-4" aria-hidden />}{listening ? "Stop dictating" : "Dictate"}</Button> : speechSupported === false ? <span className="text-xs text-fg-subtle">This browser has no dictation (Firefox and Brave do not offer it). Use Chrome, Edge or Safari, or type the note.</span> : null}
+        {dictation.supported ? (dictation.listening ? null : <Button type="button" variant="outline" onClick={() => void dictation.toggle()}><Mic className="h-4 w-4" aria-hidden />Dictate</Button>) : dictation.supported === false ? <span className="text-xs text-fg-subtle">This browser has no dictation (Firefox and Brave do not offer it). Use Chrome, Edge or Safari, or type the note.</span> : null}
         <Button type="button" disabled={pending !== null || !text.trim()} onClick={plan}>{pending === "plan" ? "Thinking…" : "Suggest to-dos"}</Button>
-        {listening ? <span role="status" className="flex items-center gap-1.5 text-xs text-danger"><span className="inline-block size-1.5 animate-pulse rounded-full bg-danger" aria-hidden />{heardWords ? `Listening… ${heardWords} word${heardWords === 1 ? "" : "s"} so far. Press Stop when you are done.` : "Listening… speak naturally, one task per sentence."}</span> : null}
       </div>
-      {error ? <Alert tone="danger">{error}</Alert> : null}
+      {shownError ? <Alert tone="danger">{shownError}</Alert> : null}
       {result?.reply ? <div className="flex gap-2 rounded-xl border border-accent/30 bg-accent-soft/40 p-3 text-sm"><Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-accent" aria-hidden /><p>{result.reply}</p></div> : null}
-      {result ? <p className="text-xs text-fg-subtle">{result.engine === "claude" ? "Suggested by Claude. Check the details, then add." : "Suggested by the built-in parser."}{result.note ? ` ${result.note}` : ""}</p> : null}
+      {result ? <p className="eyebrow">{result.engine === "claude" ? "Suggested by Claude. Check the details, then add." : "Suggested by the built-in parser."}{result.note ? ` ${result.note}` : ""}</p> : null}
       {result && items.length === 0 && !error ? <p className="text-sm text-fg-muted">No to-dos to add from that note.</p> : null}
       {items.length ? (
         <div className="space-y-2">

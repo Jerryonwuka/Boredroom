@@ -23,7 +23,7 @@ export function Tabs({ tabs, value, onChange, param = "tab", className, label = 
           <>
             {active ? <SlidingMarker layoutId="tabs-active" className="absolute inset-0 rounded-full bg-wash-active" /> : null}
             <span className="relative">{t.label}</span>
-            {t.count ? <span className={cn("relative ml-2 rounded-full px-1.5 py-px text-[11px] font-bold tabular-nums", active ? "bg-accent text-accent-fg" : "bg-wash-active text-fg-muted")}>{t.count}</span> : null}
+            {t.count ? <span className={cn("relative ml-2 whitespace-nowrap rounded-full px-1.5 py-px text-[11px] font-bold tabular-nums", active ? "bg-accent text-accent-fg" : "bg-wash-active text-fg-muted")}>{t.count}</span> : null}
           </>
         );
         const cls = cn("relative whitespace-nowrap rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors duration-[var(--duration-fast)]", active ? "text-fg" : "text-fg-muted hover:text-fg");

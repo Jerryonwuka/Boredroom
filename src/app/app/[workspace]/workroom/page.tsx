@@ -38,7 +38,7 @@ export default async function WorkroomPage({ params, searchParams }: { params: P
   const totalToday = rows.reduce((a, r) => a + r.today_seconds, 0);
   const live = rows.filter((r) => r.recording_live).length;
   const q = (extra: Record<string, string | undefined>) => { const p = new URLSearchParams(); const merged = { team: sp.team, show: sp.show, ...extra }; for (const [k, v] of Object.entries(merged)) if (v) p.set(k, v); const s = p.toString(); return `${base}/workroom${s ? `?${s}` : ""}`; };
-  const chip = (active: boolean) => cn("chip chip-link rounded-full px-3 py-1 text-sm", active ? "border-accent/60 text-fg" : "text-fg-muted");
+  const chip = (active: boolean) => cn("chip chip-link whitespace-nowrap rounded-full px-3 py-1 text-sm", active ? "border-accent/60 text-fg" : "text-fg-muted");
   return (
     <AppShell ctx={ctx} counts={counts} teams={navTeams}>
       <PageHeader icon="eye-dashboard" back={{ href: isOrg ? `${base}/dashboard` : base, label: isOrg ? "Dashboard" : "Back" }} overline={formatLongDate(data.today)} title="Who is working now"

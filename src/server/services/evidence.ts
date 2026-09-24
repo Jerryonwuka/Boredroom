@@ -97,6 +97,7 @@ export const reviewSchema = z.object({ decision: z.enum(["approved", "changes_re
 
 /** Reviewer decision on the latest revision. Self-review is rejected here and by the database. */
 export async function reviewSubmission(ctx: OrgContext, submissionId: string, input: z.infer<typeof reviewSchema>, requestId?: string) {
+  if (ctx.membership.role === "owner" || ctx.membership.role === "hr") throw forbidden("Organisation accounts see reviews; the team lead gives the decision.");
   if (input.decision !== "approved" && !input.note) throw invalid("Explain what needs to change or what you are asking.", { note: ["Required for this decision."] });
   return withUser(ctx.user.profileId, async (db) => {
     const s = await db.maybeOne<{ id: string; task_id: string; revision: number; submitted_by: string; title: string; status: string; reviewer_membership_id: string | null; assignee_membership_id: string; project_id: string }>(

@@ -102,6 +102,7 @@ export async function submitReport(ctx: OrgContext, input: z.infer<typeof submit
 export const reviewReportSchema = z.object({ decision: z.enum(["approved", "changes_requested"]), note: z.string().trim().max(4000).default(""), version: z.number().int().positive() });
 
 async function assertReviewScope(db: Db, ctx: OrgContext, membershipId: string) {
+  if (ctx.membership.role === "owner" || ctx.membership.role === "hr") throw forbidden("Organisation accounts see reviews; the team lead gives the decision.");
   if (membershipId === ctx.membership.id) throw forbidden("You cannot approve your own records.");
   const r = await db.one<{ v: boolean }>(`SELECT (app_has_role($1, 'owner', 'hr') OR app_manages($1, $2)) AS v`, [ctx.org.id, membershipId]);
   if (!r.v) throw forbidden("This record is outside your review scope.");

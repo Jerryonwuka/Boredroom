@@ -10,6 +10,7 @@
 import { config } from "dotenv";
 config({ path: [".env.local", ".env"], quiet: true });
 import { mail, mailConfigProblem } from "../src/server/lib/mail";
+import { testMail } from "../src/server/lib/emails";
 
 async function main() {
   const to = process.argv[2];
@@ -20,12 +21,7 @@ async function main() {
   const provider = mail();
   if (provider.verify) { await provider.verify(); if (kind !== "sink") console.log("Logged in to the mail relay."); }
   console.log(`Sending a test message to ${to} via ${kind} from ${process.env.MAIL_FROM ?? "(default sender)"}…`);
-  const { id } = await provider.send({
-    to,
-    category: "test",
-    subject: "Boredroom mail test",
-    text: `This is a test message from Boredroom.\n\nIf you can read it, real email delivery is working (provider: ${kind}).\nSent ${new Date().toUTCString()}.`,
-  });
+  const { id } = await provider.send({ to, category: "test", subject: "Boredroom mail test", ...testMail(kind) });
   console.log(kind === "sink" ? `Written to the local sink (id ${id}); read it at ${process.env.APP_ORIGIN ?? "http://localhost:3000"}/dev/mail.` : `Accepted by the ${kind} provider (message id ${id}). Check the inbox, and the spam folder the first time.`);
 }
 main().catch((err) => { console.error((err as Error).message); process.exit(1); });

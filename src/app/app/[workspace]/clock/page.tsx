@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { workspacePage } from "@/server/lib/workspace-page";
 import { AppShell } from "@/components/app/shell";
 import { PageHeader, Card } from "@/components/ui/card";
@@ -23,6 +24,8 @@ export default async function ClockPage({ params, searchParams }: { params: Prom
   const { workspace } = await params;
   const sp = await searchParams;
   const { ctx, counts, teams } = await workspacePage(workspace, `/app/${workspace}/clock`);
+  // The organisation account supervises; it does not clock in. Its view of the clock is Attendance.
+  if (ctx.membership.role === "owner" || ctx.membership.role === "hr") redirect(`/app/${ctx.org.slug}/attendance`);
   const c = await myClock(ctx, { month: sp.month });
   const thisMonth = c.today.slice(0, 7);
   const monthHref = (m: string) => `/app/${ctx.org.slug}/clock${m === thisMonth ? "" : `?month=${m}`}`;
@@ -40,7 +43,7 @@ export default async function ClockPage({ params, searchParams }: { params: Prom
 
       <div className="mb-8 grid gap-4 md:grid-cols-[1fr_20rem]">
         <Card className={c.status === "in" ? "tile-active" : ""}>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-fg-subtle">{c.workingDay ? "Today" : "Not a scheduled working day"}</p>
+          <p className="eyebrow">{c.workingDay ? "Today" : "Not a scheduled working day"}</p>
           <div className="mt-2 flex flex-wrap items-end justify-between gap-4">
             <div>
               {c.status === "not_in" ? <><p className="font-display text-3xl">Not clocked in</p><p className="mt-1 text-sm text-fg-muted">{lateNow ? `The day started at ${hhmm(c.schedule.start_local)}. Clocking in now counts as late.` : `Clock in by ${hhmm(c.schedule.start_local)} to be on time.`}</p></> : null}
@@ -52,7 +55,7 @@ export default async function ClockPage({ params, searchParams }: { params: Prom
           {c.timerOpen && c.status === "in" ? <p className="mt-3 text-xs text-fg-subtle">A task timer is running; stop it on My Day before clocking out.</p> : null}
         </Card>
         <Card>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-fg-subtle">How it is judged</p>
+          <p className="eyebrow">How it is judged</p>
           <ul className="mt-2 space-y-1.5 text-sm text-fg-muted">
             <li><span className="font-semibold text-fg">On time</span>: clocked in at or before {hhmm(c.schedule.start_local)}{c.schedule.clock_grace_minutes ? ` (plus ${c.schedule.clock_grace_minutes} min grace)` : ""}.</li>
             <li><span className="font-semibold text-fg">Late</span>: clocked in after that; the record shows by how much.</li>
@@ -88,7 +91,7 @@ export default async function ClockPage({ params, searchParams }: { params: Prom
             ))}</tbody>
           </DataTable>
         )}
-        <p className="mt-2 text-xs text-fg-subtle">{formatDateTime(c.serverNow, tz)} now in {zone}.</p>
+        <p className="eyebrow mt-3">{formatDateTime(c.serverNow, tz)} now in {zone}</p>
       </section>
     </AppShell>
   );

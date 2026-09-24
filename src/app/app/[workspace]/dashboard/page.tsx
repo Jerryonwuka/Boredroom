@@ -35,7 +35,7 @@ export default async function DashboardPage({ params }: { params: Promise<{ work
 
   return (
     <AppShell ctx={ctx} counts={counts} teams={teams}>
-      <PageHeader icon="eye-dashboard" overline={formatLongDate(d.today)} title={ctx.org.name} description={<>What is happening right now, from timers and tasks. Nothing here is a productivity score. Last sync {formatDateTime(d.serverNow, ctx.org.timezone)}.</>}
+      <PageHeader icon="eye-dashboard" overline={formatLongDate(d.today)} title={<>Welcome, {ctx.user.displayName.split(" ")[0]}.</>} description={<>Here is {ctx.org.name} right now, from clocks, timers and tasks. Nothing here is a productivity score.</>} meta={<>Last sync {formatDateTime(d.serverNow, ctx.org.timezone)}</>}
         actions={<><Link href={`${base}/people`}><Button>Add people and teams</Button></Link><Link href={`${base}/reviews`}><Button variant="outline">Review queue{counts.attention ? ` (${counts.attention})` : ""}</Button></Link></>} />
 
       <div className="mb-8 grid gap-4 md:grid-cols-3">
@@ -61,7 +61,7 @@ export default async function DashboardPage({ params }: { params: Promise<{ work
       </section>
 
       <section className="mb-8">
-        <CardHeader title={`Clocked in today (${clockedIn})`} description={formatLongDate(att.today)} action={<span className="flex items-center gap-4 text-sm">{att.counts.not_in ? <Link href={`${base}/attendance?tab=not_in`} className="text-fg-muted hover:text-fg">{att.counts.not_in} not clocked in yet</Link> : null}<Link href={`${base}/attendance`} className="text-fg-muted hover:text-fg">Open Attendance</Link></span>} />
+        <CardHeader title={`Clocked in today (${clockedIn})`} description={<span className="eyebrow">{formatLongDate(att.today)}</span>} action={<span className="flex items-center gap-4 text-sm">{att.counts.not_in ? <Link href={`${base}/attendance?tab=not_in`} className="text-fg-muted hover:text-fg">{att.counts.not_in} not clocked in yet</Link> : null}<Link href={`${base}/attendance`} className="text-fg-muted hover:text-fg">Open Attendance</Link></span>} />
         {clockedIn === 0 ? <EmptyState icon3d="clock-in" title="Nobody has clocked in yet today" description="People appear here the moment they press Clock in. This list starts empty every day." /> : (
           <DataTable caption="People who clocked in today">
             <thead><tr><th>Person</th><th className="hidden md:table-cell">Team</th><th>Clocked in</th><th>Status</th><th className="hidden md:table-cell">Clocked out</th></tr></thead>

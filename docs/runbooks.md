@@ -45,6 +45,13 @@ Restore drill status: `pnpm db:dump` → `pnpm db:restore` into a fresh database
 
 People → Offboard. Effects: membership revoked (new requests and live channels denied), open session interrupted at its last confirmed boundary, recording grants revoked, sign-in sessions revoked if the person has no other active workspace, audit event written. Historical work is retained.
 
+## Sign in with Google
+
+1. In Google Cloud Console, create an OAuth client of type "Web application" (APIs and Services, Credentials). Under "Authorised redirect URIs" add `<APP_ORIGIN>/api/auth/google/callback`, for example `http://localhost:3000/api/auth/google/callback` locally and the https address in production. Under "Authorised JavaScript origins" add the origin itself.
+2. Put the client id and secret in `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` and restart the server. `pnpm run doctor` reports "Sign in with Google is on".
+3. The buttons appear on the sign-in and sign-up pages. A person who signs up with Google gets an account with no password and a verified email; their Google picture becomes their avatar. Someone who already has a password account with the same address is linked, not duplicated, and can use either from then on. A Google-only account can add a password through "Forgot your password?".
+4. Sessions, audit and rate limits are the same as for passwords; `audit_events` records `method: google`.
+
 ## Secret rotation
 
 - `APP_SECRET` signs cookies indirectly (session tokens are random and hashed in the DB) and signs short-lived media/file URLs. Rotating it invalidates outstanding 60-second URLs only.

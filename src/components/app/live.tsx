@@ -18,7 +18,7 @@ export function LiveClock({ seconds, serverNow, running, className }: { seconds:
 
 export function LiveBadge({ label = "Recording" }: { label?: string }) {
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-full border border-danger/40 bg-danger/10 px-2.5 py-0.5 text-xs font-semibold text-danger" aria-label={`${label} live`}>
+    <span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-danger/40 bg-danger/10 px-2.5 py-0.5 text-xs font-semibold text-danger" aria-label={`${label} live`}>
       <span className="rec-dot size-2 rounded-full bg-danger" aria-hidden />
       LIVE
     </span>

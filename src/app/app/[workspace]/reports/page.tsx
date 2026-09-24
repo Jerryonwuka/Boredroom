@@ -59,7 +59,7 @@ export default async function ReportsPage({ params, searchParams }: { params: Pr
         actions={<Link href={`/app/${ctx.org.slug}/timesheets`}><Button variant="outline" size="sm">{isEmployee ? "My timesheet" : "Timesheets, corrections and CSV export"}</Button></Link>} />
       <div className="mb-3 flex flex-wrap items-center gap-2 text-sm">
         <span className="text-xs text-fg-subtle">Period:</span>
-        {periods.map((p) => <Link key={p.key} href={`/app/${ctx.org.slug}/reports?period=${p.key}${keep}`} aria-current={activePreset === p.key ? "page" : undefined} className={`chip chip-link rounded-full px-3 py-1 ${activePreset === p.key ? "border-accent/60 text-fg" : "text-fg-muted"}`}>{p.label}</Link>)}
+        {periods.map((p) => <Link key={p.key} href={`/app/${ctx.org.slug}/reports?period=${p.key}${keep}`} aria-current={activePreset === p.key ? "page" : undefined} className={`chip chip-link whitespace-nowrap rounded-full px-3 py-1 ${activePreset === p.key ? "border-accent/60 text-fg" : "text-fg-muted"}`}>{p.label}</Link>)}
         <span className="text-xs text-fg-subtle">or pick dates below. Nothing resets month to month; every period is a filter over the same records.</span>
       </div>
       <form className="mb-6 flex flex-wrap items-end gap-2 text-sm">

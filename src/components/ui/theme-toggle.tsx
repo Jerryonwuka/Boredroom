@@ -27,8 +27,11 @@ function subscribe(onChange: () => void) {
 const readTheme = (): Theme => (document.documentElement.dataset.theme === "light" ? "light" : "dark");
 const serverTheme = (): Theme => "dark";
 
+/** The current theme, following the toggle. */
+export function useTheme(): Theme { return useSyncExternalStore(subscribe, readTheme, serverTheme); }
+
 export function ThemeToggle({ className }: { className?: string }) {
-  const theme = useSyncExternalStore(subscribe, readTheme, serverTheme);
+  const theme = useTheme();
   const next: Theme = theme === "dark" ? "light" : "dark";
   return (
     <IconButton className={className} aria-label={next === "light" ? "Switch to light mode" : "Switch to dark mode"} title={next === "light" ? "Light mode" : "Dark mode"} onClick={() => applyTheme(next)}>

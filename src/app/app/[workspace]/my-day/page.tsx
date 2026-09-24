@@ -11,7 +11,7 @@ import { formatDuration, formatLongDate } from "@/lib/utils";
 import { assignableMembers } from "@/server/services/tasks";
 import { assistantConfigured } from "@/server/services/assistant";
 import { myClock } from "@/server/services/attendance";
-import { ClockBanner } from "@/components/app/clock";
+import { ClockCard } from "@/components/app/clock";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "My Day" };
@@ -29,11 +29,14 @@ export default async function MyDayPage({ params }: { params: Promise<{ workspac
     myClock(ctx),
   ]);
   const lateNow = Date.parse(clock.serverNow) > Date.parse(clock.scheduledStartAt) + clock.schedule.clock_grace_minutes * 60_000;
+  const tz = clock.schedule.timezone;
+  const timeOf = (iso: string) => new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
+  const first = ctx.user.displayName.split(" ")[0];
   return (
     <AppShell ctx={ctx} counts={counts} teams={teams}>
-      <PageHeader icon="day-checklist" overline={formatLongDate(data.today)} title={<>Good day, {ctx.user.displayName.split(" ")[0]}.</>}
-        description={<>Your to-dos for today. {data.todaySeconds ? <>You have worked {formatDuration(data.todaySeconds)} so far.</> : "Press Start on the first one when you begin."} {data.report ? <Link className="underline" href={`/app/${ctx.org.slug}/timesheets?date=${data.today}`}>Today&apos;s report is {data.report.status.replace("_", " ")}.</Link> : null}</>} />
-      {clock.workingDay ? <ClockBanner orgSlug={ctx.org.slug} status={clock.status} startLabel={clock.schedule.start_local.slice(0, 5)} late={lateNow} /> : null}
+      <PageHeader icon="day-checklist" overline={formatLongDate(data.today)} title={<>Welcome, {first}.</>}
+        description={<>What are you doing today? {data.todaySeconds ? <>You have worked {formatDuration(data.todaySeconds)} so far.</> : "Tell the assistant, or add a to-do and press Start when you begin."} {data.report ? <Link className="underline" href={`/app/${ctx.org.slug}/timesheets?date=${data.today}`}>Today&apos;s report is {data.report.status.replace("_", " ")}.</Link> : null}</>} />
+      {clock.workingDay ? <ClockCard orgSlug={ctx.org.slug} status={clock.status} startLabel={clock.schedule.start_local.slice(0, 5)} endLabel={clock.schedule.end_local.slice(0, 5)} late={lateNow} clockedInAt={clock.record ? timeOf(clock.record.clock_in_at) : null} lateBy={clock.record && clock.record.late_seconds > 0 ? formatDuration(clock.record.late_seconds) : null} timerOpen={clock.timerOpen} /> : null}
       <MyDayBoard
         orgSlug={ctx.org.slug}
         today={data.today}

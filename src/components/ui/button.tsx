@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
  * `outline` and `subtle` are the plain surface, `ghost` is text only, `danger` reads red. Nothing animates on its own.
  */
 const buttonVariants = cva(
-  "btn inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[var(--radius)] font-semibold transition-[background-color,border-color,color,transform,opacity,box-shadow] duration-[var(--duration-fast)] ease-[var(--ease-out)] active:scale-[0.97] disabled:pointer-events-none disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2",
+  "btn inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[var(--radius)] font-semibold transition-[background-color,border-color,color,transform,opacity,box-shadow] duration-[var(--duration-fast)] ease-[var(--ease-out)] active:scale-[0.97] disabled:pointer-events-none disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-[var(--border-strong)] focus-visible:outline-offset-2",
   {
     variants: {
       variant: {

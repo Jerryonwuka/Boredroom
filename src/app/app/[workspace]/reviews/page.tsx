@@ -17,10 +17,13 @@ export default async function ReviewsPage({ params }: { params: Promise<{ worksp
   const q = await reviewQueue(ctx);
   const tz = ctx.org.timezone;
   const base = `/app/${ctx.org.slug}`;
+  // Organisation accounts see the whole queue; team leads give the decisions.
+  const decides = ctx.membership.role === "manager";
+  const leadDecides = <p className="eyebrow mt-3 normal-case tracking-normal">Waiting for the team lead&apos;s decision.</p>;
   const total = q.submissions.length + q.reports.length + q.adjustments.length + q.exceptions.length + q.incidents.length;
   return (
     <AppShell ctx={ctx} counts={counts} teams={teams}>
-      <PageHeader icon="eye-checklist" back={{ href: `/app/${ctx.org.slug}`, label: "Home" }} title="Reviews" description="Submitted work, daily reports, time corrections, capture exceptions and privacy incidents waiting for a decision. You never see your own submissions here." />
+      <PageHeader icon="eye-checklist" back={{ href: `/app/${ctx.org.slug}`, label: "Home" }} title="Reviews" description={decides ? "Submitted work, daily reports, time corrections, capture exceptions and privacy incidents waiting for a decision. You never see your own submissions here." : "Everything waiting for a decision across the organisation. Team leads give the decisions; you can see where each one stands."} />
       {total === 0 && q.overdue.length === 0 && q.missing.length === 0 ? <EmptyState icon3d="shield-check" title="Queue is clear" description="Nothing is waiting for you." /> : null}
       <div className="space-y-8">
         <Section title="Task submissions" count={q.submissions.length}>
@@ -34,7 +37,7 @@ export default async function ReviewsPage({ params }: { params: Promise<{ worksp
               <div className="flex flex-wrap items-center justify-between gap-2"><span className="font-semibold">{r.display_name}, {r.local_date}</span><span className="text-sm text-fg-subtle">version {r.current_version}, {formatDuration(r.total_seconds)}, submitted {formatDateTime(r.submitted_at, tz)}{r.has_adjustment ? ", includes a correction" : ""}</span></div>
               {r.blockers ? <p className="mt-1 text-sm"><strong>Blockers:</strong> {r.blockers}</p> : null}{r.next_priorities ? <p className="text-sm"><strong>Next:</strong> {r.next_priorities}</p> : null}
               <Link href={`${base}/timesheets?member=${r.membership_id}&date=${r.local_date}`} className="mt-1 inline-block text-sm text-accent hover:underline">Open full report</Link>
-              {r.has_adjustment ? <p className="mt-1 text-xs text-fg-subtle">Decide this one under Time corrections; approving the correction approves this version.</p> : <DecisionForm path={`/api/orgs/${ctx.org.slug}/reports/${r.id}/review`} extra={{ version: r.current_version }} options={[{ value: "approved", label: "Approve" }, { value: "changes_requested", label: "Request changes" }]} />}
+              {!decides ? leadDecides : r.has_adjustment ? <p className="mt-1 text-xs text-fg-subtle">Decide this one under Time corrections; approving the correction approves this version.</p> : <DecisionForm path={`/api/orgs/${ctx.org.slug}/reports/${r.id}/review`} extra={{ version: r.current_version }} options={[{ value: "approved", label: "Approve" }, { value: "changes_requested", label: "Request changes" }]} />}
             </li>
           ))}
         </Section>
@@ -44,13 +47,13 @@ export default async function ReviewsPage({ params }: { params: Promise<{ worksp
               <div className="flex flex-wrap items-center justify-between gap-2"><span className="font-semibold">{a.display_name}, {a.task_title}</span><span className="text-sm text-fg-subtle">{formatDateTime(a.created_at, tz)}</span></div>
               <p className="mt-1 text-sm">{a.reason}</p>{a.evidence_note ? <p className="text-sm text-fg-muted">Evidence: {a.evidence_note}</p> : null}
               <p className="mt-1 text-sm text-fg-muted">Replaces {a.original_count} interval(s) with: {a.proposed_intervals.map((p, i) => <span key={i} className="mr-2">{formatDateTime(p.startedAt, tz)} → {formatDateTime(p.endedAt, tz)}</span>)}</p>
-              <DecisionForm path={`/api/orgs/${ctx.org.slug}/time-adjustments/${a.id}/review`} options={[{ value: "approved", label: "Approve" }, { value: "rejected", label: "Reject" }]} />
+              {decides ? <DecisionForm path={`/api/orgs/${ctx.org.slug}/time-adjustments/${a.id}/review`} options={[{ value: "approved", label: "Approve" }, { value: "rejected", label: "Reject" }]} /> : leadDecides}
             </li>
           ))}
         </Section>
         <Section title="Capture exceptions" count={q.exceptions.length}>
           {q.exceptions.map((c) => (
-            <li key={c.id} className="tile p-4"><div className="flex flex-wrap items-center justify-between gap-2"><span className="font-semibold">{c.display_name}{c.task_title ? `, ${c.task_title}` : ""}</span><span className="text-sm text-fg-subtle"><Badge tone="warning">{c.reason_code.replace(/_/g, " ")}</Badge> {formatDateTime(c.created_at, tz)}</span></div><p className="mt-1 text-sm">{c.reason}</p><DecisionForm path={`/api/orgs/${ctx.org.slug}/capture-exceptions/${c.id}/review`} options={[{ value: "accepted", label: "Accept" }, { value: "rejected", label: "Reject" }]} /></li>
+            <li key={c.id} className="tile p-4"><div className="flex flex-wrap items-center justify-between gap-2"><span className="font-semibold">{c.display_name}{c.task_title ? `, ${c.task_title}` : ""}</span><span className="text-sm text-fg-subtle"><Badge tone="warning">{c.reason_code.replace(/_/g, " ")}</Badge> {formatDateTime(c.created_at, tz)}</span></div><p className="mt-1 text-sm">{c.reason}</p>{decides ? <DecisionForm path={`/api/orgs/${ctx.org.slug}/capture-exceptions/${c.id}/review`} options={[{ value: "accepted", label: "Accept" }, { value: "rejected", label: "Reject" }]} /> : leadDecides}</li>
           ))}
         </Section>
         {q.incidents.length ? (

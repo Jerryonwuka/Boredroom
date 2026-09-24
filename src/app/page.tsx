@@ -12,7 +12,7 @@ import { LitTile } from "@/components/landing/lit-tile";
 import { Reveal, RevealGroup, RevealItem } from "@/components/landing/reveal";
 import { SectionTitle } from "@/components/landing/section-title";
 import { GlassCard } from "@/components/landing/glass-card";
-import { ThemeToggle } from "@/components/ui/theme-toggle";
+import { SiteNav } from "@/components/landing/site-nav";
 import { SiteBackground } from "@/components/landing/site-background";
 import { getCurrentUser } from "@/server/auth";
 
@@ -52,21 +52,7 @@ export default async function LandingPage() {
     <MotionRoot>
       <SiteBackground />
       <div className="lp relative z-[1]">
-        <header className="lp-glass sticky top-0 z-[var(--z-sticky)] rounded-none border-x-0 border-t-0 backdrop-blur-md">
-          <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
-            <Logo />
-            <nav aria-label="Primary" className="hidden items-center gap-8 text-sm lp-muted md:flex">
-              <a href="#how" className="transition-colors hover:text-fg">How it works</a>
-              <a href="#product" className="transition-colors hover:text-fg">Product</a>
-              <a href="#fair" className="transition-colors hover:text-fg">Fairness</a>
-              <a href="#faq" className="transition-colors hover:text-fg">FAQ</a>
-            </nav>
-            <div className="flex items-center gap-3 text-sm">
-              <ThemeToggle />
-              {user ? <Link href="/app" className="lp-btn lp-btn-primary lp-btn-sm">Open workspace</Link> : <><Link href="/login" className="lp-muted transition-colors hover:text-fg">Log in</Link><Link href="/signup" className="lp-btn lp-btn-primary lp-btn-sm">Get started</Link></>}
-            </div>
-          </div>
-        </header>
+        <SiteNav signedIn={!!user} />
 
         <main id="main">
           <Hero signedIn={!!user} />

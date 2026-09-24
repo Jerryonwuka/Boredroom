@@ -8,18 +8,24 @@ import { withUser, type Db } from "@/server/db";
 import type { OrgContext } from "@/server/lib/api";
 import { invalid, notFound } from "@/server/lib/errors";
 import { notify } from "@/server/services/common";
+import { storage, tenantKey } from "@/server/lib/storage";
+import type { Presence } from "@/lib/presence";
+
+export type Participant = { membership_id: string; display_name: string; role: string; profile_id: string; avatar_key: string | null; presence: Presence };
 
 export type ConversationKind = "direct" | "team" | "organisation";
 export type ConversationSummary = {
   id: string; kind: ConversationKind; title: string; subtitle: string | null; team_id: string | null; other_membership_id: string | null;
+  other_profile_id: string | null; other_avatar_key: string | null; other_presence: Presence | null;
   last_message_at: string | null; last_body: string | null; last_sender_name: string | null; unread: number;
 };
 export type MessageRow = {
-  id: string; sender_membership_id: string; sender_name: string; body: string; created_at: string; deleted_at: string | null;
+  id: string; sender_membership_id: string; sender_name: string; sender_profile_id: string; sender_avatar_key: string | null; body: string; created_at: string; deleted_at: string | null;
   task_id: string | null; task_title: string | null; task_status: string | null; mine: boolean;
+  voice_key: string | null; voice_mime: string | null; voice_seconds: number | null;
 };
 export type Thread = {
-  conversation: ConversationSummary & { people: { membership_id: string; display_name: string; role: string }[] };
+  conversation: ConversationSummary & { people: Participant[] };
   messages: MessageRow[];
 };
 
@@ -46,7 +52,7 @@ const SUMMARY_SQL = `
   SELECT c.id, c.kind, c.team_id, c.last_message_at,
          CASE c.kind WHEN 'organisation' THEN 'Everyone' WHEN 'team' THEN t.name ELSE po.display_name END AS title,
          CASE c.kind WHEN 'organisation' THEN o.name WHEN 'team' THEN 'Team channel' ELSE NULLIF(concat_ws(', ', CASE mo.role WHEN 'manager' THEN 'Team lead' WHEN 'owner' THEN 'Organisation owner' WHEN 'hr' THEN 'HR' ELSE 'Staff' END, ot.teams), '') END AS subtitle,
-         mo.id AS other_membership_id,
+         mo.id AS other_membership_id, po.id AS other_profile_id, po.avatar_key AS other_avatar_key, po.presence AS other_presence,
          lm.body AS last_body, lp.display_name AS last_sender_name,
          (SELECT count(*)::int FROM messages m
             WHERE m.conversation_id = c.id AND m.deleted_at IS NULL AND m.sender_membership_id <> $2
@@ -77,8 +83,8 @@ export async function inbox(ctx: OrgContext): Promise<{ channels: ConversationSu
 
 /** Everyone the person could start a direct thread with (all active members except themself). */
 export async function peopleToMessage(ctx: OrgContext) {
-  return withUser(ctx.user.profileId, (db) => db.query<{ membership_id: string; display_name: string; role: string; teams: string | null }>(
-    `SELECT m.id AS membership_id, p.display_name, m.role,
+  return withUser(ctx.user.profileId, (db) => db.query<{ membership_id: string; display_name: string; role: string; teams: string | null; profile_id: string; avatar_key: string | null; presence: Presence }>(
+    `SELECT m.id AS membership_id, p.display_name, m.role, p.id AS profile_id, p.avatar_key, p.presence,
             (SELECT string_agg(t.name, ', ' ORDER BY t.name) FROM team_members tm JOIN teams t ON t.id = tm.team_id WHERE tm.membership_id = m.id AND t.archived_at IS NULL) AS teams
      FROM memberships m JOIN profiles p ON p.id = m.user_id
      WHERE m.organisation_id = $1 AND m.status = 'active' AND m.id <> $2
@@ -110,17 +116,18 @@ export async function thread(ctx: OrgContext, conversationId: string): Promise<T
   return withUser(ctx.user.profileId, async (db) => {
     const conv = await db.maybeOne<ConversationSummary>(`${SUMMARY_SQL} AND c.id = $3`, [ctx.org.id, ctx.membership.id, conversationId]);
     if (!conv) return null;
-    const people = await db.query<{ membership_id: string; display_name: string; role: string }>(
+    const people = await db.query<Participant>(
       conv.kind === "direct"
-        ? `SELECT m.id AS membership_id, p.display_name, m.role FROM conversation_participants cp JOIN memberships m ON m.id = cp.membership_id JOIN profiles p ON p.id = m.user_id WHERE cp.conversation_id = $1 ORDER BY p.display_name`
+        ? `SELECT m.id AS membership_id, p.display_name, m.role, p.id AS profile_id, p.avatar_key, p.presence FROM conversation_participants cp JOIN memberships m ON m.id = cp.membership_id JOIN profiles p ON p.id = m.user_id WHERE cp.conversation_id = $1 ORDER BY p.display_name`
         : conv.kind === "team"
-          ? `SELECT m.id AS membership_id, p.display_name, m.role FROM team_members tm JOIN memberships m ON m.id = tm.membership_id AND m.status = 'active' JOIN profiles p ON p.id = m.user_id WHERE tm.team_id = (SELECT team_id FROM conversations WHERE id = $1) ORDER BY p.display_name`
-          : `SELECT m.id AS membership_id, p.display_name, m.role FROM memberships m JOIN profiles p ON p.id = m.user_id WHERE m.organisation_id = (SELECT organisation_id FROM conversations WHERE id = $1) AND m.status = 'active' ORDER BY p.display_name`,
+          ? `SELECT m.id AS membership_id, p.display_name, m.role, p.id AS profile_id, p.avatar_key, p.presence FROM team_members tm JOIN memberships m ON m.id = tm.membership_id AND m.status = 'active' JOIN profiles p ON p.id = m.user_id WHERE tm.team_id = (SELECT team_id FROM conversations WHERE id = $1) ORDER BY p.display_name`
+          : `SELECT m.id AS membership_id, p.display_name, m.role, p.id AS profile_id, p.avatar_key, p.presence FROM memberships m JOIN profiles p ON p.id = m.user_id WHERE m.organisation_id = (SELECT organisation_id FROM conversations WHERE id = $1) AND m.status = 'active' ORDER BY p.display_name`,
       [conversationId]);
     const messages = await db.query<MessageRow>(
       `SELECT * FROM (
-         SELECT m.id, m.sender_membership_id, p.display_name AS sender_name, CASE WHEN m.deleted_at IS NULL THEN m.body ELSE '' END AS body, m.created_at, m.deleted_at,
-                m.task_id, t.title AS task_title, t.status AS task_status, (m.sender_membership_id = $2) AS mine
+         SELECT m.id, m.sender_membership_id, p.display_name AS sender_name, p.id AS sender_profile_id, p.avatar_key AS sender_avatar_key, CASE WHEN m.deleted_at IS NULL THEN m.body ELSE '' END AS body, m.created_at, m.deleted_at,
+                m.task_id, t.title AS task_title, t.status AS task_status, (m.sender_membership_id = $2) AS mine,
+                m.voice_key, m.voice_mime, m.voice_seconds
          FROM messages m
          JOIN memberships sm ON sm.id = m.sender_membership_id
          JOIN profiles p ON p.id = sm.user_id
@@ -173,11 +180,71 @@ export async function sendMessage(ctx: OrgContext, input: SendInput) {
   });
 }
 
+export type IncomingMessage = { id: string; conversation_id: string; kind: ConversationKind; conversation_title: string; sender_name: string; sender_profile_id: string; sender_avatar_key: string | null; body: string; created_at: string };
+
+/** Messages from other people since `after`, in conversations the caller can read; feeds the toast. Withdrawn ones are left out. */
+export async function incomingMessages(ctx: OrgContext, after: string): Promise<IncomingMessage[]> {
+  return withUser(ctx.user.profileId, (db) => db.query<IncomingMessage>(
+    `SELECT m.id, m.conversation_id, c.kind, CASE c.kind WHEN 'organisation' THEN 'Everyone' WHEN 'team' THEN t.name ELSE p.display_name END AS conversation_title,
+            p.display_name AS sender_name, p.id AS sender_profile_id, p.avatar_key AS sender_avatar_key, m.body, m.created_at
+     FROM messages m
+     JOIN conversations c ON c.id = m.conversation_id
+     LEFT JOIN teams t ON t.id = c.team_id
+     JOIN memberships sm ON sm.id = m.sender_membership_id JOIN profiles p ON p.id = sm.user_id
+     WHERE m.organisation_id = $1 AND m.sender_membership_id <> $2 AND m.deleted_at IS NULL AND m.created_at > $3::timestamptz
+     ORDER BY m.created_at DESC LIMIT 10`, [ctx.org.id, ctx.membership.id, after]));
+}
+
+// ---- Voice notes ----------------------------------------------------------------
+
+const VOICE_MAX_BYTES = 10 * 1024 * 1024;
+const VOICE_TYPES: Record<string, string> = { "audio/webm": "webm", "audio/ogg": "ogg", "audio/mp4": "m4a", "audio/mpeg": "mp3", "audio/wav": "wav" };
+
+export function voiceLabel(seconds: number) {
+  return `Voice note (${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")})`;
+}
+
+/** Stores a recorded note under the tenant prefix and posts it as a message; the body carries a readable label. */
+export async function sendVoiceMessage(ctx: OrgContext, input: { conversationId: string; type: string; bytes: Buffer; seconds: number }) {
+  const type = input.type.split(";")[0].trim().toLowerCase();
+  if (!VOICE_TYPES[type]) throw invalid("That audio format is not supported.");
+  if (input.bytes.length === 0) throw invalid("The recording is empty.");
+  if (input.bytes.length > VOICE_MAX_BYTES) throw invalid("Voice notes must be 10 MB or smaller.");
+  const seconds = Math.min(600, Math.max(1, Math.round(input.seconds)));
+  return withUser(ctx.user.profileId, async (db) => {
+    const conv = await db.maybeOne<{ id: string; kind: ConversationKind }>(`SELECT id, kind FROM conversations WHERE id = $1 AND organisation_id = $2`, [input.conversationId, ctx.org.id]);
+    if (!conv) throw notFound("That conversation does not exist or you are not part of it.");
+    const key = tenantKey(ctx.org.id, "voice", conv.id.replace(/-/g, ""), `${crypto.randomUUID()}.${VOICE_TYPES[type]}`);
+    await storage().put(key, input.bytes, type);
+    const m = await db.one<{ id: string; created_at: string }>(
+      `INSERT INTO messages(organisation_id, conversation_id, sender_membership_id, body, voice_key, voice_mime, voice_seconds) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, created_at`,
+      [ctx.org.id, conv.id, ctx.membership.id, voiceLabel(seconds), key, type, seconds]);
+    await db.query(
+      `INSERT INTO conversation_reads(conversation_id, organisation_id, membership_id, last_read_at) VALUES ($1, $2, $3, now())
+       ON CONFLICT (conversation_id, membership_id) DO UPDATE SET last_read_at = now()`, [conv.id, ctx.org.id, ctx.membership.id]);
+    if (conv.kind === "direct") {
+      const others = await db.query<{ membership_id: string }>(`SELECT membership_id FROM conversation_participants WHERE conversation_id = $1 AND membership_id <> $2`, [conv.id, ctx.membership.id]);
+      for (const o of others) {
+        await notify(db, { organisationId: ctx.org.id, recipientMembershipId: o.membership_id, type: "message.direct", title: `${ctx.user.displayName} sent you a voice note`, body: voiceLabel(seconds), resourceType: "conversation", resourceId: conv.id, href: `/app/${ctx.org.slug}/messages?c=${conv.id}`, dedupKey: `message:${m.id}` });
+      }
+    }
+    return { id: m.id, createdAt: m.created_at };
+  });
+}
+
+/** The audio of a voice note the caller may read (row-level security on the message decides). */
+export async function voiceFor(ctx: OrgContext, messageId: string) {
+  const row = await withUser(ctx.user.profileId, (db) => db.maybeOne<{ voice_key: string | null; voice_mime: string | null; deleted_at: string | null }>(`SELECT voice_key, voice_mime, deleted_at FROM messages WHERE id = $1 AND organisation_id = $2`, [messageId, ctx.org.id]));
+  if (!row || !row.voice_key || !row.voice_mime || row.deleted_at) throw notFound("No voice note.");
+  return { key: row.voice_key, mime: row.voice_mime };
+}
+
 /** Withdraws one of the caller's own messages. The row stays (with an empty body) so the thread keeps its shape. */
 export async function withdrawMessage(ctx: OrgContext, messageId: string) {
   return withUser(ctx.user.profileId, async (db) => {
-    const r = await db.query<{ id: string }>(`UPDATE messages SET deleted_at = now() WHERE id = $1 AND organisation_id = $2 AND sender_membership_id = $3 AND deleted_at IS NULL RETURNING id`, [messageId, ctx.org.id, ctx.membership.id]);
+    const r = await db.query<{ id: string; voice_key: string | null }>(`UPDATE messages SET deleted_at = now() WHERE id = $1 AND organisation_id = $2 AND sender_membership_id = $3 AND deleted_at IS NULL RETURNING id, voice_key`, [messageId, ctx.org.id, ctx.membership.id]);
     if (r.length === 0) throw notFound("That message is not yours or was already withdrawn.");
+    if (r[0].voice_key) await storage().delete(r[0].voice_key).catch(() => undefined);
     return { id: messageId };
   });
 }

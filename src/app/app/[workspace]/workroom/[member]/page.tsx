@@ -44,7 +44,7 @@ export default async function WorkroomPersonPage({ params }: { params: Promise<{
 
       <div className="mb-6 grid gap-4 md:grid-cols-[1.2fr_1fr_1fr]">
         <Card className={status === "active" ? "tile-active" : ""}>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-fg-subtle">{person.task_title ? (status === "active" ? "Working on now" : "Paused on") : "Right now"}</p>
+          <p className="eyebrow">{person.task_title ? (status === "active" ? "Working on now" : "Paused on") : "Right now"}</p>
           {person.task_title ? <><p className="mt-2 font-display text-4xl leading-none"><LiveClock seconds={person.session_seconds} serverNow={data.serverNow} running={status === "active"} className={status === "active" ? "text-accent" : "text-fg-muted"} /></p><Link href={`${base}/tasks/${person.task_id}`} className="mt-3 block truncate font-semibold hover:underline">{person.task_title}</Link><p className="text-xs text-fg-subtle">since {person.started_at ? formatDateTime(person.started_at, ctx.org.timezone) : "—"}</p></> : <p className="mt-2 font-display text-2xl text-fg-muted">{status === "clocked_out" ? "Off the clock" : "No session yet"}</p>}
         </Card>
         <StatCard label="Time today" verdict={formatDuration(person.today_seconds)} rows={[{ label: "First start", value: person.first_start_today ? formatDateTime(person.first_start_today, ctx.org.timezone) : "—", tone: "neutral" }, { label: "Sessions", value: sessions.length, tone: "info" }]} />

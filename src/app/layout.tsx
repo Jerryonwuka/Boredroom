@@ -8,8 +8,8 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = { themeColor: "#000000", width: "device-width", initialScale: 1 };
 
-/** Applies the saved theme before first paint. Dark unless the person chose light (see ThemeToggle). */
-const THEME_SCRIPT = `(function(){try{var t=localStorage.getItem("boredroom-theme");if(t!=="light"&&t!=="dark")t="dark";document.documentElement.dataset.theme=t;if(t==="light"){var m=document.querySelector('meta[name="theme-color"]');if(m)m.setAttribute("content","#f4f4f2")}}catch(e){}})();`;
+/** Applies the saved theme and sidebar state before first paint. Dark unless the person chose light (see ThemeToggle). */
+const THEME_SCRIPT = `(function(){try{var t=localStorage.getItem("boredroom-theme");if(t!=="light"&&t!=="dark")t="dark";document.documentElement.dataset.theme=t;if(localStorage.getItem("boredroom-sidebar")==="collapsed")document.documentElement.dataset.sidebar="collapsed";if(t==="light"){var m=document.querySelector('meta[name="theme-color"]');if(m)m.setAttribute("content","#f4f4f2")}}catch(e){}})();`;
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (

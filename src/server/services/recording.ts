@@ -280,6 +280,7 @@ export async function reviewCaptureException(ctx: OrgContext, id: string, input:
   return withUser(ctx.user.profileId, async (db) => {
     const ex = await db.maybeOne<{ id: string; membership_id: string; status: string }>(`SELECT id, membership_id, status FROM capture_exceptions WHERE id = $1 AND organisation_id = $2 FOR UPDATE`, [id, ctx.org.id]);
     if (!ex) throw notFound("Exception not found.");
+    if (ctx.membership.role === "owner" || ctx.membership.role === "hr") throw forbidden("Organisation accounts see reviews; the team lead gives the decision.");
     if (ex.membership_id === ctx.membership.id) throw forbidden("You cannot review your own exception.");
     if (ex.status !== "pending") throw conflict("BAD_STATE", "Already decided.");
     await db.query(`UPDATE capture_exceptions SET status = $2, reviewer_membership_id = $3, decision_note = $4, reviewed_at = now() WHERE id = $1`, [id, input.decision, ctx.membership.id, input.note]);

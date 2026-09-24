@@ -78,6 +78,10 @@
   --highlight-strong: rgba(255, 255, 255, 0.1);
   --overlay: rgba(0, 0, 0, 0.72);
   --media: #000;                            /* video letterboxing stays black in both themes */
+  --bubble-mine: #3d2412;                   /* own chat messages: a dark shade of the orange, white text */
+  --bubble-mine-border: rgba(255, 108, 2, 0.35);
+  --bubble-theirs: #1f1f1f;                 /* other people's messages: grey */
+  --bubble-theirs-border: rgba(255, 255, 255, 0.1);
 }
 
 /* Light theme: the same system on paper white. Orange stays; status colours darken to keep contrast. */
@@ -126,6 +130,10 @@
   --highlight: rgba(255, 255, 255, 0.9);
   --highlight-strong: rgba(255, 255, 255, 1);
   --overlay: rgba(20, 20, 20, 0.45);
+  --bubble-mine: #ffe4d1;
+  --bubble-mine-border: rgba(255, 108, 2, 0.35);
+  --bubble-theirs: #ebebe9;
+  --bubble-theirs-border: rgba(0, 0, 0, 0.08);
 }
 
 @theme inline {
@@ -204,11 +212,11 @@ dialog.sheet::backdrop { background: var(--overlay); }
 dialog.sheet[open] { animation: sheet-in var(--duration) var(--ease-out) both; }
 dialog.sheet[open]::backdrop { animation: rise-in var(--duration) var(--ease-out) both; }
 
-*:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
-  border-radius: 6px;
-}
+/* Focus (owner decision, 24 September 2026): nothing orange, and nothing on a click. Text fields only brighten their
+   hairline; buttons and links get a quiet grey ring, and only when focus arrives from the keyboard. */
+:focus { outline: none; }
+:focus-visible { outline: 2px solid var(--border-strong); outline-offset: 2px; border-radius: 6px; }
+input:focus-visible, textarea:focus-visible, select:focus-visible, [contenteditable]:focus-visible { outline: none; border-color: var(--border-strong); }
 
 .glow-header {
   position: relative;
@@ -273,6 +281,18 @@ dialog.sheet[open]::backdrop { animation: rise-in var(--duration) var(--ease-out
 .tile-link:active { transform: translateY(0); }
 /* The active row: accent edge instead of a glow, so the affordance is structure, not light. */
 .tile-active { border-color: rgba(255, 108, 2, 0.45); box-shadow: var(--card-shadow), inset 3px 0 0 0 var(--accent); }
+
+/* Eyebrow: micro information (dates, sync times, section labels) is small, spaced and quiet, never body-sized. */
+.eyebrow { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--fg-subtle); }
+.eyebrow-accent { color: var(--accent); }
+
+/* The live status dot: a ring that swells and fades from the green dot, twice a cycle. */
+.presence-live { animation: presence-ping 2s cubic-bezier(0, 0, 0.2, 1) infinite; opacity: 0.6; }
+@keyframes presence-ping { 0% { transform: scale(1); opacity: 0.6; } 75%, 100% { transform: scale(2.2); opacity: 0; } }
+/* The assistant's prompt box textarea keeps a thin scrollbar. */
+.prompt-scroll::-webkit-scrollbar { width: 6px; }
+.prompt-scroll::-webkit-scrollbar-track { background: transparent; }
+.prompt-scroll::-webkit-scrollbar-thumb { background-color: var(--border-strong); border-radius: 3px; }
 
 .rec-dot { animation: rec-pulse 1.4s ease-in-out infinite; }
 @keyframes rec-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
@@ -340,7 +360,7 @@ dialog.sheet[open]::backdrop { animation: rise-in var(--duration) var(--ease-out
 .lp-faq summary::-webkit-details-marker { display: none; }
 
 @media (prefers-reduced-motion: reduce) {
-  .rec-dot { animation: none; }
+  .rec-dot, .presence-live { animation: none; }
   .marquee-track, .lp-mq-y-track, .lp-aurora { animation: none; }
   .lp-cell img, .hairline-cell img { transition: none; }
 }
@@ -350,6 +370,8 @@ table.data th { text-align: left; font-weight: 600; color: var(--fg-subtle); fon
 table.data td { padding: 0.8125rem 0.875rem; border-bottom: 1px solid var(--border-soft); vertical-align: top; }
 table.data tbody tr:hover td { background: var(--wash-soft); }
 table.data tr:last-child td { border-bottom: 0; }
+/* A cell that is only a pill, a figure or a time never breaks it over two lines. */
+table.data td:has(> .badge:only-child), table.data td.tabular-nums, table.data td:has(> time:only-child) { white-space: nowrap; }
 
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
 

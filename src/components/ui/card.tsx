@@ -22,7 +22,12 @@ export function CardHeader({ title, description, action, className }: { title: R
 
 /** Small line above a title. Use it for information (a date, a scope), not for a category label. */
 export function Overline({ children, className }: { children: React.ReactNode; className?: string }) {
-  return <p className={cn("text-sm font-medium text-accent", className)}>{children}</p>;
+  return <p className={cn("eyebrow eyebrow-accent", className)}>{children}</p>;
+}
+
+/** Micro information: a sync time, a date, a count of things. Small, spaced and quiet. */
+export function Eyebrow({ children, className, as: Tag = "p" }: { children: React.ReactNode; className?: string; as?: "p" | "span" | "div" }) {
+  return <Tag className={cn("eyebrow", className)}>{children}</Tag>;
 }
 
 /**
@@ -48,7 +53,7 @@ export function Ledger({ items, className }: { items: { label: string; value: Re
  * Page opener: an optional 3D icon in its lit tile, the title in the display face, one grey line beneath, actions
  * on the right. Same anatomy as a landing section title, left aligned and one size down.
  */
-export function PageHeader({ overline, title, description, actions, back, icon }: { overline?: React.ReactNode; title: React.ReactNode; description?: React.ReactNode; actions?: React.ReactNode; back?: { href: string; label: string }; icon?: Icon3DName }) {
+export function PageHeader({ overline, title, description, meta, actions, back, icon }: { overline?: React.ReactNode; title: React.ReactNode; description?: React.ReactNode; /** Micro information under the description (sync time, zone), set as an eyebrow. */ meta?: React.ReactNode; actions?: React.ReactNode; back?: { href: string; label: string }; icon?: Icon3DName }) {
   return (
     <Rise className="mb-8 flex flex-wrap items-end justify-between gap-4">
       <div className="flex items-start gap-4">
@@ -58,6 +63,7 @@ export function PageHeader({ overline, title, description, actions, back, icon }
           {overline ? <Overline className="mb-2">{overline}</Overline> : null}
           <h1 className="text-balance font-display text-[30px] leading-[1.1] tracking-[-0.02em] text-fg md:text-[38px]">{title}</h1>
           {description ? <p className="mt-2 max-w-2xl text-pretty text-fg-muted">{description}</p> : null}
+          {meta ? <Eyebrow className="mt-3">{meta}</Eyebrow> : null}
         </div>
       </div>
       {actions ? <div className="flex flex-wrap gap-2">{actions}</div> : null}

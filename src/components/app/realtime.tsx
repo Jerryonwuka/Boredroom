@@ -3,9 +3,13 @@
 import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 
+export type ChangeEvent = { table: string; op: string; id: string; at: string };
+export const CHANGE_EVENT = "boredroom:change";
+
 /**
- * Subscribes to the workspace event stream and refreshes server components when
- * something changes. Reconnect triggers a full authoritative refetch (router.refresh).
+ * Subscribes to the workspace event stream and refreshes server components when something changes. Reconnect
+ * triggers a full authoritative refetch (router.refresh). Every payload is also re-broadcast on `window` as a
+ * `boredroom:change` CustomEvent, so other components (the message toasts) can react without a second stream.
  */
 export function RealtimeRefresher({ orgSlug }: { orgSlug: string }) {
   const router = useRouter();
@@ -16,7 +20,7 @@ export function RealtimeRefresher({ orgSlug }: { orgSlug: string }) {
     let backoff = 1000;
     // Never refresh while the person is typing in a form; retry shortly after. Forms marked data-refresh-safe
     // (the message composer) keep their own state across a refresh, so they do not hold it back.
-    const editing = () => { const el = document.activeElement; return !!el && !!el.closest("form:not([data-refresh-safe]), [role=dialog]"); };
+    const editing = () => { const el = document.activeElement; return !!el && !!el.closest("form:not([data-refresh-safe]), [role=dialog]:not([data-refresh-safe])"); };
     const schedule = () => {
       if (timer.current) return;
       timer.current = setTimeout(() => {
@@ -28,7 +32,11 @@ export function RealtimeRefresher({ orgSlug }: { orgSlug: string }) {
     const connect = () => {
       if (closed) return;
       es = new EventSource(`/api/orgs/${orgSlug}/events`);
-      es.onmessage = () => { backoff = 1000; schedule(); };
+      es.onmessage = (e) => {
+        backoff = 1000;
+        try { const payload = JSON.parse(e.data) as ChangeEvent; window.dispatchEvent(new CustomEvent<ChangeEvent>(CHANGE_EVENT, { detail: payload })); } catch { /* keepalive or malformed */ }
+        schedule();
+      };
       es.onopen = () => { backoff = 1000; };
       es.onerror = () => {
         es?.close();

@@ -24,7 +24,7 @@ export async function contextFor(user: FixtureUser, orgSlug: string): Promise<Or
     `SELECT o.id AS org_id, o.slug, o.name, o.timezone, o.current_policy_id, o.status, m.id AS membership_id, m.role, m.employee_code
      FROM organisations o JOIN memberships m ON m.organisation_id = o.id WHERE o.slug = $1 AND m.user_id = $2 AND m.status = 'active'`, [orgSlug, user.profileId]));
   return {
-    user: { profileId: user.profileId, authUserId: user.authUserId, email: user.email, displayName: user.displayName, emailVerified: true, sessionId: "fixture", avatarKey: null, title: null, statusText: null },
+    user: { profileId: user.profileId, authUserId: user.authUserId, email: user.email, displayName: user.displayName, emailVerified: true, sessionId: "fixture", avatarKey: null, title: null, statusText: null, presence: "active" },
     org: { id: row.org_id, slug: row.slug, name: row.name, timezone: row.timezone, current_policy_id: row.current_policy_id, status: row.status },
     membership: { id: row.membership_id, role: row.role, employee_code: row.employee_code },
   };

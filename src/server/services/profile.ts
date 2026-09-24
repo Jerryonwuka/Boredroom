@@ -4,6 +4,15 @@ import { storage } from "@/server/lib/storage";
 import { invalid, notFound } from "@/server/lib/errors";
 import type { CurrentUser } from "@/server/auth";
 export { avatarUrl } from "@/lib/avatar";
+import { PRESENCES, type Presence } from "@/lib/presence";
+
+export const presenceSchema = z.object({ presence: z.enum(PRESENCES) });
+
+/** Sets the person's work status; shown as the dot on their avatar everywhere. */
+export async function setMyPresence(user: CurrentUser, presence: Presence) {
+  await withUser(user.profileId, (db) => db.query(`UPDATE profiles SET presence = $2, presence_set_at = now(), updated_at = now() WHERE id = $1`, [user.profileId, presence]));
+  return { presence };
+}
 
 export const profileSchema = z.object({
   displayName: z.string().trim().min(1, "Name is required.").max(120),
@@ -13,20 +22,20 @@ export const profileSchema = z.object({
 
 export type MyProfile = {
   id: string; email: string; displayName: string; title: string | null; statusText: string | null; statusSetAt: string | null;
-  avatarKey: string | null; createdAt: string;
+  avatarKey: string | null; presence: Presence; createdAt: string;
   workspaces: { id: string; slug: string; name: string; role: string; employeeCode: string; teams: string[] }[];
 };
 
 /** The caller's own profile and every workspace they belong to. */
 export async function myProfile(user: CurrentUser): Promise<MyProfile> {
   return withUser(user.profileId, async (db) => {
-    const p = await db.one<{ id: string; email: string; display_name: string; title: string | null; status_text: string | null; status_set_at: string | null; avatar_key: string | null; created_at: string; workspaces: MyProfile["workspaces"] | null }>(
-      `SELECT p.id, p.email, p.display_name, p.title, p.status_text, p.status_set_at, p.avatar_key, p.created_at,
+    const p = await db.one<{ id: string; email: string; display_name: string; title: string | null; status_text: string | null; status_set_at: string | null; avatar_key: string | null; presence: Presence; created_at: string; workspaces: MyProfile["workspaces"] | null }>(
+      `SELECT p.id, p.email, p.display_name, p.title, p.status_text, p.status_set_at, p.avatar_key, p.presence, p.created_at,
               (SELECT json_agg(json_build_object('id', o.id, 'slug', o.slug, 'name', o.name, 'role', m.role, 'employeeCode', m.employee_code,
                  'teams', COALESCE((SELECT json_agg(t.name ORDER BY t.name) FROM team_members tm JOIN teams t ON t.id = tm.team_id WHERE tm.membership_id = m.id AND t.archived_at IS NULL), '[]'::json)) ORDER BY o.name)
                FROM memberships m JOIN organisations o ON o.id = m.organisation_id WHERE m.user_id = p.id AND m.status = 'active') AS workspaces
        FROM profiles p WHERE p.id = $1`, [user.profileId]);
-    return { id: p.id, email: p.email, displayName: p.display_name, title: p.title, statusText: p.status_text, statusSetAt: p.status_set_at, avatarKey: p.avatar_key, createdAt: p.created_at, workspaces: p.workspaces ?? [] };
+    return { id: p.id, email: p.email, displayName: p.display_name, title: p.title, statusText: p.status_text, statusSetAt: p.status_set_at, avatarKey: p.avatar_key, presence: p.presence, createdAt: p.created_at, workspaces: p.workspaces ?? [] };
   });
 }
 

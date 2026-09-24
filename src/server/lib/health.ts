@@ -1,6 +1,7 @@
 import { accessSync, constants, mkdirSync } from "node:fs";
 import { getPool } from "@/server/db";
 import { mailConfigProblem } from "@/server/lib/mail";
+import { googleConfigured } from "@/server/auth/google";
 
 export type Check = { ok: boolean; detail?: string; fix?: string };
 
@@ -41,6 +42,8 @@ export async function runHealthChecks(): Promise<{ ok: boolean; checks: Record<s
   try { mkdirSync(storageDir, { recursive: true }); accessSync(storageDir, constants.W_OK); checks.storage = { ok: true, detail: storageDir }; }
   catch (err) { checks.storage = { ok: false, detail: `${storageDir}: ${(err as Error).message}`, fix: "Use a writable directory or configure a storage provider." }; }
   const mailKind = process.env.MAIL_PROVIDER ?? "sink";
+  const g = process.env.GOOGLE_CLIENT_ID || process.env.GOOGLE_CLIENT_SECRET;
+  checks.google = googleConfigured() ? { ok: true, detail: "Sign in with Google is on" } : g ? { ok: false, detail: "half configured", fix: "Set both GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET (see .env.example)." } : { ok: true, detail: "Sign in with Google is off (optional; set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET)" };
   const mailProblem = mailConfigProblem();
   if (mailProblem) checks.mail = { ok: false, detail: mailKind, fix: mailProblem };
   else if (mailKind === "sink") {

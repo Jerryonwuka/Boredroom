@@ -31,7 +31,7 @@ export default async function AttendancePage({ params, searchParams }: { params:
   const back = { href: ctx.membership.role === "manager" ? `${base}/my-day` : `${base}/dashboard`, label: ctx.membership.role === "manager" ? "My Day" : "Dashboard" };
   const teamId = sp.team || null;
   const viewSwitch = (view: "day" | "month", active: boolean) => (
-    <Link href={`${base}/attendance?view=${view}${teamId ? `&team=${teamId}` : ""}`} aria-current={active ? "page" : undefined} className={cn("rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors duration-[var(--duration-fast)]", active ? "bg-wash-active text-fg" : "text-fg-muted hover:text-fg")}>{view === "day" ? "Day" : "Month"}</Link>
+    <Link href={`${base}/attendance?view=${view}${teamId ? `&team=${teamId}` : ""}`} aria-current={active ? "page" : undefined} className={cn("whitespace-nowrap rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors duration-[var(--duration-fast)]", active ? "bg-wash-active text-fg" : "text-fg-muted hover:text-fg")}>{view === "day" ? "Day" : "Month"}</Link>
   );
 
   // ---- Month view --------------------------------------------------------

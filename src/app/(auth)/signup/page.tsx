@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { Building2, Users } from "lucide-react";
 import { AuthShell } from "@/components/auth/auth-shell";
 import { SignupForm } from "@/components/auth/forms";
+import { GoogleSignIn } from "@/components/auth/google-button";
 import { getCurrentUser } from "@/server/auth";
 
 export const metadata = { title: "Create account" };
@@ -30,6 +31,7 @@ export default async function SignupPage({ searchParams }: { searchParams: Promi
   const next = creatingOrg ? "/onboarding" : sp.next;
   return (
     <AuthShell title={creatingOrg ? "Create your organisation account" : "Create your staff account"} subtitle={creatingOrg ? "You will be the owner of the workspace you create next." : "Your account will be linked to the organisation that gave you this link."} footer={<>Already have an account? <Link className="text-fg underline" href={next ? `/login?next=${encodeURIComponent(next)}` : "/login"}>Sign in</Link></>}>
+      <GoogleSignIn next={next ?? "/app"} label="Sign up with Google" />
       <SignupForm next={next} />
     </AuthShell>
   );

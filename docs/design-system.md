@@ -103,20 +103,37 @@ Two sets with two jobs. The 3D orange-glass set in `public/icons/` (typed in `IC
 | `PageHeader` | Optional 3D `icon` in a tile, title, description, actions, back link. |
 | `StatCard` | The verdict card: label, verdict word or figure, rows of dot, label, count, share. Three across the top of a page. |
 | `Ledger` | A strip of display figures when there is no verdict to give. |
-| `Badge` | Status pills; `TASK_STATUS_TONE`, `SESSION_STATE_TONE`, `REPORT_STATUS_TONE` map states to tones. |
+| `Badge` | Status pills; `TASK_STATUS_TONE`, `SESSION_STATE_TONE`, `REPORT_STATUS_TONE` map states to tones. A pill is always one line (`whitespace-nowrap`), as is every chip and tab; a table cell that holds only a badge, a figure or a time does not wrap either. |
 | `DataTable` | Hairline table inside a tile; quiet 12px header, 13px dividers, hover tint. |
 | `Tabs` | Pill tabs with a sliding active pill; link tabs by URL or value tabs by state; counts in small pills. |
 | `HairlineGrid`, `GridCell` | Equal things in a hairline grid with a 3D icon each. |
-| `Input`, `Select`, `Textarea`, `Label`, `Field` | Inset controls with an accent ring on focus; `Field` links errors to controls. |
+| `Input`, `Select`, `Textarea`, `Label`, `Field` | Inset controls; on focus the hairline brightens and nothing else happens (no orange, no glow). `Field` links errors to controls. |
 | `EmptyState`, `ErrorState`, `PermissionDenied`, `OfflineState`, `Alert`, `Skeleton` | Every empty state names one next action and may carry a 3D icon (`icon3d`). |
 | `ConfirmDialog`, `ConfirmButton` | Native `<dialog>` for every destructive or irreversible action. |
 | `Icon3D`, `IconTile` | The 3D icon set, bare or in its lit tile. |
+| `Eyebrow` (`.eyebrow`) | Micro information: dates, sync times, zones, section labels, engine notes. 11px, semibold, spaced 0.08em, uppercase, `--fg-subtle`. Never body-sized. `Overline` is the accent version above a page title; `PageHeader meta=` sets one under the description. |
+| `VoicePoweredOrb` | The dictation orb (OGL shader, orange by default): shown while the microphone is open in the assistant and the My Day panel; it turns and ripples with the voice. Opens its own microphone; nothing is recorded. |
+| `Sidebar` (`components/app`) | Expanded: the list with the sliding pill. Collapsed: a dock of 44px icon tiles that lift and scale on hover, each with its label beside it. The state lives on `<html data-sidebar>` and in `localStorage` (`boredroom-sidebar`), applied before first paint. Icons everywhere lift a pixel on hover, as in the dock reference in `ui/dock.tsx`. |
+| `TopBar` search and assistant | The gooey search input (Aceternity) opens to 260px and lists pages at once, then tasks, people, projects and teams from `/api/orgs/:org/search`. The sparkle opens the assistant drawer (`AssistantDrawer`): a side panel to ask for anything; with Claude connected the assistant does the work and replies list what it did as green check lines (with Open links); the built-in helper offers buttons instead. |
+| `PresenceDot`, `PresenceLabel`, `Avatar presence=` | Work status: active (live green, a ring that swells and fades), away (amber), do not disturb (red), offline (grey). The dot sits on the avatar's bottom-right edge with a ring in the surface colour. Set from the top-bar profile panel or the profile page (`PresencePicker`). |
+| `MessageBubble`, `TypingIndicator` (`ui/chat-messages`) | Chat bubbles: the person's own on the right in a dark shade of the orange (`--bubble-mine`, `#3d2412`, with an orange hairline) and white text; other people's on the left in grey (`--bubble-theirs`, `#1f1f1f`) with the avatar beside the last bubble of a run. Light theme: pale orange and light grey. Runs within five minutes group. Withdrawn is a dashed empty bubble. |
+| `PromptInputBox` (`ui/ai-prompt-box`) | The assistant's composer: a 22px-rounded surface with a growing textarea, a microphone that hands over to dictation (the orb appears above), and a round send button that turns orange when there is text. Tooltips from Radix. |
+| Message toasts (`app/message-toasts`, sonner) | Bottom left: the sender's picture, "New message from …", two lines of the message, Reply and Later. Never for the thread on screen. Follows the theme. |
+| `VoiceNote` (`components/app`) | A voice note in a bubble: an orange play button, a thin progress bar that seeks, the time. The composer records one with the microphone button: the orb, a timer, Cancel or Send. |
 | `IconButton`, `ThemeToggle` | The round 40px icon button on the button surface; the toggle flips `data-theme` and remembers it. |
 | `Avatar` | A person: their picture from `/api/avatars/:id`, else initials on a dark disc. 32px in lists, 38px in the top bar, 96px on the profile page. |
 | `TopBar` (`components/app`) | The top-right cluster on every workspace page: round 40px icon buttons for notifications (unread count in an orange pill), settings (organisation accounts) and the person. Each opens a `.tile` panel below it; one open at a time. Notifications and settings live here, not in the sidebar. |
 | Motion primitives | `MotionRoot`, `PageRise`, `Rise`, `Presence`, `Expand`, `AnimatedList`, `AnimatedRow`, `Swap`, `SlidingMarker`. |
 
 Aceternity pieces (`src/components/aceternity/`, vendored) that belong to the system: `moving-border` (through `LitTile`, the travelling light on a feature card), `flip-words`, `typewriter-effect`, `container-scroll-animation`, `background-ripple-effect`, `3d-card` and `glowing-effect` (through `GlassCard`, landing only, tilt kept subtle). The rest of the pack is available but not part of the system until a screen needs it.
+
+## The frame
+
+The sidebar is sticky and the full viewport tall; its list scrolls inside it, so every page is one click away without scrolling. The top bar is a 64px rectangle on the sidebar surface, sticky, with the workspace name on the left and search, theme, notifications, settings and the person on the right. The assistant is a floating orange-ringed sparkle bottom right on every page (`AssistantDrawer floating`). Messages is a `bleed` page: it fills the area under the top bar with the conversation list on the left and the thread on the right, and the page itself does not scroll.
+
+## Email
+
+One template for every email (`src/server/lib/emails.ts`, `renderEmail`): the black canvas, the wordmark, a 560px card (`#121212`, 1px `#2a2a2a`, 20px corners) with an orange eyebrow, a 28px display title, 16px grey body (`#a1a1a1`), one orange button (`#ff6c02` on `#140700`, 14px corners) with the link repeated beneath it, an inset facts table (label as eyebrow, value in white), a subtle note and a footer with the reason. Tables and inline styles only; no CSS variables, no images that need the app's origin. Every email has a plain-text twin. Add a new email as a builder in that file and preview it on `/dev/emails`.
 
 ## Page anatomy
 
@@ -134,7 +151,7 @@ Sentence case. Plain verbs on buttons that say what happens (Save changes, Send 
 
 ## Accessibility floor
 
-Every control has a name. Toggles carry `aria-expanded` and `aria-controls`. Errors are linked to their field. Everything is keyboard reachable with a visible ring. Colour never carries meaning alone: a badge has a word, a dot has a label. Body text 15px or larger, 4.5:1 or better on black.
+Every control has a name. Toggles carry `aria-expanded` and `aria-controls`. Errors are linked to their field. Everything is keyboard reachable: buttons and links show a quiet grey ring when focus arrives from the keyboard, never from a click, and text fields only brighten their hairline (owner decision, 24 September 2026: no orange focus rectangles anywhere). Colour never carries meaning alone: a badge has a word, a dot has a label. Body text 15px or larger, 4.5:1 or better on black.
 
 ## Landing page
 

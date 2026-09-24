@@ -25,7 +25,9 @@ export default async function TaskPage({ params, searchParams }: { params: Promi
   const isReviewer = task.reviewer_membership_id === ctx.membership.id;
   const latest = submissions[0];
   const latestDecided = latest ? reviews.some((r) => r.submission_id === latest.id && r.decision !== "question") : false;
-  const canReview = task.status === "in_review" && latest && !latestDecided && !isAssignee && (isReviewer || canManage);
+  // Organisation accounts see the review; the team lead gives the decision.
+  const isOrgAccount = ctx.membership.role === "owner" || ctx.membership.role === "hr";
+  const canReview = task.status === "in_review" && latest && !latestDecided && !isAssignee && (isReviewer || canManage) && !isOrgAccount;
   const recordingsBySession = Object.fromEntries(await Promise.all(sessions.slice(0, 10).map(async (s) => [s.id, await listSessionRecordings(ctx, s.id)] as const)));
   return (
     <AppShell ctx={ctx} counts={counts} teams={teams}>

@@ -2,9 +2,14 @@ import Link from "next/link";
 import { Logo } from "@/components/logo";
 import { TopBar } from "@/components/app/topbar";
 import { WorkspaceNav, type NavItem } from "@/components/app/nav";
+import { Sidebar } from "@/components/app/sidebar";
 import type { OrgContext } from "@/server/lib/api";
 import type { NavCounts } from "@/server/services/workspace";
 import { RealtimeRefresher } from "@/components/app/realtime";
+import { MessageToasts } from "@/components/app/message-toasts";
+import { AssistantDrawer } from "@/components/app/assistant-drawer";
+import { Suspense } from "react";
+import { cn } from "@/lib/utils";
 import { MotionRoot, PageRise } from "@/components/ui/motion";
 
 export const ROLE_LABEL: Record<string, string> = { owner: "Organisation owner", hr: "HR administrator", manager: "Team lead", employee: "Staff" };
@@ -16,7 +21,7 @@ export function navItems(ctx: OrgContext, counts: NavCounts, teams: { id: string
   if (role === "owner" || role === "hr") {
     // Organisation account: supervision and management only.
     items.push({ href: `${base}/dashboard`, label: "Dashboard", icon: "dashboard" });
-    items.push({ href: `${base}/clock`, label: "Clock in", icon: "clock" });
+    // No Clock in: the organisation account supervises; it sees who has clocked in on the dashboard and Attendance.
     items.push({ href: `${base}/attendance`, label: "Attendance", icon: "attendance" });
     items.push({ href: `${base}/workroom`, label: "Workroom", icon: "team" });
     items.push({ href: `${base}/messages`, label: "Messages", icon: "messages", badge: counts.messages || undefined });
@@ -57,39 +62,43 @@ export function navItems(ctx: OrgContext, counts: NavCounts, teams: { id: string
   return items;
 }
 
-export function AppShell({ ctx, counts, teams = [], children }: { ctx: OrgContext; counts: NavCounts; teams?: { id: string; name: string; is_manager: boolean }[]; children: React.ReactNode }) {
+/** `bleed` pages (Messages) take the whole area under the top bar with no padding and no width cap, and do not scroll the page. */
+export function AppShell({ ctx, counts, teams = [], children, bleed = false }: { ctx: OrgContext; counts: NavCounts; teams?: { id: string; name: string; is_manager: boolean }[]; children: React.ReactNode; bleed?: boolean }) {
   const isOrg = ctx.membership.role === "owner" || ctx.membership.role === "hr";
-  const topbar = <TopBar orgSlug={ctx.org.slug} user={{ profileId: ctx.user.profileId, displayName: ctx.user.displayName, email: ctx.user.email, avatarKey: ctx.user.avatarKey, title: ctx.user.title, statusText: ctx.user.statusText }} roleLabel={ROLE_LABEL[ctx.membership.role]} isOrg={isOrg} unread={counts.unread} attention={counts.attention} recent={counts.recent ?? []} />;
+  const items = navItems(ctx, counts, teams);
+  const pages = [...items.map((i) => ({ label: i.label, href: i.href })), { label: "Notifications", href: `/app/${ctx.org.slug}/notifications` }, { label: "Your profile", href: `/app/${ctx.org.slug}/profile` }, ...(isOrg ? [{ label: "Settings", href: `/app/${ctx.org.slug}/settings` }] : [])];
+  const topbar = <TopBar orgSlug={ctx.org.slug} user={{ profileId: ctx.user.profileId, displayName: ctx.user.displayName, email: ctx.user.email, avatarKey: ctx.user.avatarKey, title: ctx.user.title, statusText: ctx.user.statusText, presence: ctx.user.presence }} roleLabel={ROLE_LABEL[ctx.membership.role]} isOrg={isOrg} unread={counts.unread} attention={counts.attention} recent={counts.recent ?? []} pages={pages} />;
   return (
     <MotionRoot>
-    <div className="flex min-h-dvh">
-      <aside className="hidden w-60 shrink-0 flex-col border-r border-border-soft bg-sidebar px-3 py-5 md:flex">
-        <div className="mb-6 flex items-center justify-between px-2">
-          <Logo href={`/app/${ctx.org.slug}`} />
-        </div>
-        <Link href="/app" className="chip chip-link mb-5 block px-3 py-2" aria-label="Switch workspace">
-          <p className="truncate text-sm font-semibold">{ctx.org.name}</p>
-          <p className="text-xs text-fg-subtle">Switch workspace</p>
-        </Link>
-        <WorkspaceNav items={navItems(ctx, counts, teams)} />
-      </aside>
+    <div className={cn("flex min-h-dvh", bleed && "md:h-dvh md:overflow-hidden")}>
+      <Sidebar items={items} orgSlug={ctx.org.slug} orgName={ctx.org.name} />
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex items-center justify-between gap-3 border-b border-border-soft bg-sidebar px-4 py-3 md:hidden">
           <Logo href={`/app/${ctx.org.slug}`} />
           <div className="flex items-center gap-2">
             {topbar}
             <details className="relative">
-              <summary className="chip chip-link cursor-pointer rounded-full px-3 py-1.5 text-sm">Menu</summary>
+              <summary className="chip chip-link cursor-pointer whitespace-nowrap rounded-full px-3 py-1.5 text-sm">Menu</summary>
               <div className="absolute right-0 z-[var(--z-dropdown)] mt-2 w-64 rounded-[var(--radius)] border border-border-strong bg-popover p-3">
-                <WorkspaceNav items={navItems(ctx, counts, teams)} />
+                <WorkspaceNav items={items} />
                 <div className="mt-3 border-t border-border pt-3"><Link href="/app" className="text-sm text-fg-muted">Switch workspace</Link></div>
               </div>
             </details>
           </div>
         </header>
-        <div className="mx-auto hidden w-full max-w-6xl items-center justify-end px-8 pt-5 md:flex">{topbar}</div>
-        <main id="main" className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 md:px-8 md:py-8"><PageRise>{children}</PageRise></main>
+        <header className="sticky top-0 z-[var(--z-sticky)] hidden h-16 shrink-0 items-center justify-between gap-4 border-b border-border-soft bg-sidebar px-6 md:flex">
+          <div className="min-w-0">
+            <p className="eyebrow">Workspace</p>
+            <p className="truncate text-sm font-semibold leading-tight">{ctx.org.name}</p>
+          </div>
+          {topbar}
+        </header>
+        {bleed
+          ? <main id="main" className="flex min-h-0 flex-1 flex-col md:h-[calc(100dvh-4rem)]">{children}</main>
+          : <main id="main" className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 md:px-8 md:py-8"><PageRise>{children}</PageRise></main>}
+        <AssistantDrawer orgSlug={ctx.org.slug} isOrg={isOrg} firstName={ctx.user.displayName.split(" ")[0]} floating />
         <RealtimeRefresher orgSlug={ctx.org.slug} />
+        <Suspense fallback={null}><MessageToasts orgSlug={ctx.org.slug} /></Suspense>
       </div>
     </div>
     </MotionRoot>
