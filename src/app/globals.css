@@ -13,20 +13,20 @@
 */
 :root {
   /* Surfaces: one hue, lightness steps only (base → +7% → +9% → +12%). Sidebars share the canvas colour. */
-  --bg: #0b0b0b;
-  --bg-elevated: #131313;
-  --bg-surface: #181818;
-  --bg-popover: #1f1f1f;
-  --bg-inset: #0e0e0e;          /* inputs sit slightly darker than their surroundings: they receive content */
+  --bg: #000000;                /* true black canvas, as on the landing page */
+  --bg-elevated: #121212;       /* cards (the .tile gradient runs #151515 to #0f0f0f around this) */
+  --bg-surface: #181818;        /* small surfaces inside cards */
+  --bg-popover: #1a1a1a;
+  --bg-inset: #0a0a0a;          /* inputs sit darker than their surroundings: they receive content */
   /* Borders: low-opacity white so edges blend; a progression from soft to emphasis. */
-  --border-soft: rgba(255, 255, 255, 0.05);
-  --border: rgba(255, 255, 255, 0.08);
-  --border-strong: rgba(255, 255, 255, 0.14);
+  --border-soft: rgba(255, 255, 255, 0.07);
+  --border: rgba(255, 255, 255, 0.12);
+  --border-strong: rgba(255, 255, 255, 0.18);
   /* Text: four tiers (primary, secondary, tertiary, disabled). Weight and colour carry hierarchy before size. */
-  --fg: #f5f5f5;
-  --fg-muted: #b3b3b3;
-  --fg-subtle: #7a7a7a;
-  --fg-faint: #525252;
+  --fg: #ffffff;
+  --fg-muted: #a1a1a1;
+  --fg-subtle: #6b6b6b;
+  --fg-faint: #4a4a4a;
   /* One accent, used with intention. Semantic colours slightly desaturated for dark surfaces. */
   --accent: #ff6c02;
   --accent-hover: #ff8226;
@@ -39,12 +39,13 @@
   --info: #7fb2ff;
   --ring: #ff9a4d;
   /* Radius scale: small controls, medium cards, large dialogs. Nested radius = outer − padding. */
-  --radius-sm: 8px;
-  --radius: 14px;
-  --radius-lg: 20px;
+  --radius-sm: 10px;
+  --radius: 16px;
+  --radius-lg: 24px;
   --radius-pill: 999px;
   /* Depth strategy: borders only (dark mode); a single 1px ring for lifted surfaces. No drop shadows. */
-  --ring-lift: 0 0 0 1px rgba(255, 255, 255, 0.08);
+  --ring-lift: 0 0 0 1px rgba(255, 255, 255, 0.1);
+  --card-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 20px 60px -30px rgba(0, 0, 0, 0.8);
   /* Motion: felt, not watched. Custom ease-out on entrances; under 200ms for feedback. */
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --duration-fast: 120ms;
@@ -150,31 +151,123 @@ dialog.sheet[open]::backdrop { animation: rise-in var(--duration) var(--ease-out
   color: transparent;
 }
 
-/* Tiles: flat elevated surface plus a quiet border. The glow from the landing page is reserved for page headers and
-   the one live element on a screen (the running session), where it means something. */
+/* Tiles (cards): a solid dark gradient, a hairline and a top highlight. The same surface as the landing page cards.
+   No blur, no glow wash; the glow is reserved for page headers and the one live element on a screen. */
 .tile {
-  background: var(--bg-elevated);
+  background: linear-gradient(180deg, #151515, #0f0f0f);
   border: 1px solid var(--border);
   border-radius: var(--radius);
+  box-shadow: var(--card-shadow);
 }
-.tile-glow { box-shadow: inset 0 0 25px 0 var(--accent-glow); border-color: rgba(255, 108, 2, 0.35); }
+/* Small surfaces inside a card: rows, chips, inner panels. */
+.chip { background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: var(--radius-sm); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08); }
+.chip-link { transition: background-color var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out); }
+.chip-link:hover { background: rgba(255, 255, 255, 0.08); border-color: rgba(255, 255, 255, 0.16); }
+.panel { background: var(--bg-surface); border: 1px solid var(--border-soft); border-radius: 12px; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06); }
+/* The lit square that holds a 3D icon (page headers, section openers, empty states). */
+.icon-tile { position: relative; display: inline-grid; place-items: center; flex-shrink: 0; border: 1px solid var(--border); background: radial-gradient(120% 120% at 50% 0%, rgba(255, 108, 2, 0.18), rgba(255, 255, 255, 0.04) 60%); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1); }
+.icon-tile::after { content: ""; position: absolute; left: 12%; right: 12%; bottom: -10px; height: 10px; border-radius: 50%; background: radial-gradient(closest-side, rgba(255, 108, 2, 0.7), transparent); filter: blur(6px); }
+/* Hairline grid: cells split by 1px lines drawn from the gap, one rounded border around the set. */
+.hairline-grid { display: grid; gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
+.hairline-cell { position: relative; display: block; background: #0f0f0f; padding: 28px; transition: background-color 250ms var(--ease-out); }
+.hairline-cell::before { content: ""; position: absolute; inset: 0; background: radial-gradient(60% 50% at 50% 0%, rgba(255, 108, 2, 0.16), transparent 70%); opacity: 0; transition: opacity 300ms var(--ease-out); pointer-events: none; }
+.hairline-cell:hover { background: rgba(255, 255, 255, 0.04); }
+.hairline-cell:hover::before { opacity: 1; }
+.hairline-cell img { transition: transform 350ms var(--ease-out), filter 350ms var(--ease-out); }
+.hairline-cell:hover img { transform: translateY(-6px) scale(1.08) rotate(-3deg); filter: drop-shadow(0 12px 18px rgba(255, 108, 2, 0.35)); }
+.hairline-cell:hover h3 { color: var(--accent-hover); }
+/* Buttons: one surface for every button (owner decision, 24 September 2026): a dark fill one step above the card,
+   a hairline, a top highlight, 16px corners, white text. Variants change only the text and border colour. */
+.btn { background: linear-gradient(180deg, #1d1d1d, #141414); border: 1px solid rgba(255, 255, 255, 0.12); color: var(--fg); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 8px 20px -14px rgba(0, 0, 0, 0.9); }
+.btn:hover { background: linear-gradient(180deg, #262626, #1a1a1a); border-color: rgba(255, 255, 255, 0.2); }
+.btn-primary { border-color: rgba(255, 108, 2, 0.55); }
+.btn.btn-primary:hover { background: linear-gradient(180deg, var(--accent-hover), var(--accent)); border-color: var(--accent-hover); color: var(--accent-fg); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), 0 0 0 1px rgba(255, 108, 2, 0.35), 0 8px 24px -6px rgba(255, 108, 2, 0.55); }
+.btn-danger { color: var(--danger); border-color: rgba(255, 92, 92, 0.45); }
+.btn.btn-danger:hover { border-color: var(--danger); background: rgba(255, 92, 92, 0.1); }
+.btn-ghost { background: transparent; border-color: transparent; box-shadow: none; color: var(--fg-muted); }
+.btn.btn-ghost:hover { background: rgba(255, 255, 255, 0.05); border-color: transparent; color: var(--fg); }
+.tile-glow { box-shadow: var(--card-shadow), inset 0 0 25px 0 var(--accent-glow); border-color: rgba(255, 108, 2, 0.35); }
 /* Tiles that are links lift by a pixel and sharpen their edge; nothing else on the page moves on hover. */
 .tile-link { transition: border-color var(--duration-fast) var(--ease-out), transform var(--duration-fast) var(--ease-out), background-color var(--duration-fast) var(--ease-out); }
-.tile-link:hover { border-color: var(--border-strong); background: var(--bg-surface); transform: translateY(-1px); }
+.tile-link:hover { border-color: var(--border-strong); background: linear-gradient(180deg, #1a1a1a, #131313); transform: translateY(-1px); }
 .tile-link:active { transform: translateY(0); }
 /* The active row: accent edge instead of a glow, so the affordance is structure, not light. */
-.tile-active { border-color: rgba(255, 108, 2, 0.45); box-shadow: inset 3px 0 0 0 var(--accent); }
+.tile-active { border-color: rgba(255, 108, 2, 0.45); box-shadow: var(--card-shadow), inset 3px 0 0 0 var(--accent); }
 
 .rec-dot { animation: rec-pulse 1.4s ease-in-out infinite; }
 @keyframes rec-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
 
+/* ---------------------------------------------------------------------------------------------
+   Landing page (`.lp`). Its own layer, modelled on resend.com: true black, white and grey type,
+   hairline borders, glass cards, 3D icons and one orange. The product's design system does not apply here.
+   --------------------------------------------------------------------------------------------- */
+.lp { --lp-line: rgba(255, 255, 255, 0.12); --lp-line-soft: rgba(255, 255, 255, 0.07); --lp-muted: #a1a1a1; --lp-faint: #6b6b6b; background: transparent; color: #fff; }
+.lp .lp-muted { color: var(--lp-muted); }
+.lp .lp-faint { color: var(--lp-faint); }
+/* Cards: a solid dark surface, a hairline and a top highlight. No blur, by the owner's decision. */
+.lp-card { background: linear-gradient(180deg, #151515, #0f0f0f); border: 1px solid var(--lp-line); border-radius: 16px; box-shadow: var(--card-shadow); }
+.lp-card-sm { background: #181818; border: 1px solid var(--lp-line-soft); border-radius: 12px; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06); }
+/* Rows, chips, inputs, tab strips, pills, the header and the footer: a flat translucent wash, no blur. */
+.lp-glass { background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08); }
+.lp-glass:is(li, a):hover { background: rgba(255, 255, 255, 0.08); border-color: rgba(255, 255, 255, 0.16); }
+/* The fairness table: hairline dividers from a 1px gap over the line colour; each cell lifts its icon on hover. */
+.lp-table { display: grid; gap: 1px; background: var(--lp-line); border: 1px solid var(--lp-line); border-radius: 20px; overflow: hidden; }
+.lp-cell { position: relative; background: #0f0f0f; padding: 32px; transition: background-color 250ms var(--ease-out); }
+.lp-cell::before { content: ""; position: absolute; inset: 0; background: radial-gradient(60% 50% at 50% 0%, rgba(255, 108, 2, 0.16), transparent 70%); opacity: 0; transition: opacity 300ms var(--ease-out); pointer-events: none; }
+.lp-cell:hover { background: rgba(255, 255, 255, 0.04); }
+.lp-cell:hover::before { opacity: 1; }
+.lp-cell img { transition: transform 350ms var(--ease-out), filter 350ms var(--ease-out); }
+.lp-cell:hover img { transform: translateY(-6px) scale(1.08) rotate(-3deg); filter: drop-shadow(0 12px 18px rgba(255, 108, 2, 0.35)); }
+.lp-cell h3 { font-family: var(--font-sans); letter-spacing: 0; font-weight: 600; transition: color 250ms var(--ease-out); }
+.lp-cell:hover h3 { color: var(--accent-hover); }
+/* Ripple grid cells (background-ripple-effect). */
+.animate-cell-ripple { animation: cell-ripple var(--duration, 200ms) ease-out var(--delay, 0ms) 1; }
+@keyframes cell-ripple { 0% { opacity: 0.4; } 30% { opacity: 1; background-color: rgba(255, 108, 2, 0.35); } 60% { opacity: 0.4; } 100% { opacity: 0.4; } }
+/* Sky: a slow orange aurora drifting behind the stars. */
+.lp-aurora { background: radial-gradient(closest-side, rgba(255, 108, 2, 0.16), transparent 70%); filter: blur(60px); animation: aurora 26s ease-in-out infinite alternate; }
+@keyframes aurora { from { transform: translate(-12%, -6%) scale(1); } to { transform: translate(14%, 10%) scale(1.25); } }
+.lp-line { border-color: var(--lp-line); }
+.lp-line-soft { border-color: var(--lp-line-soft); }
+/* The small lit square that sits above every section title. */
+.lp-icon { position: relative; display: grid; place-items: center; width: 64px; height: 64px; border-radius: 16px; border: 1px solid var(--lp-line); background: radial-gradient(120% 120% at 50% 0%, rgba(255, 108, 2, 0.18), rgba(255, 255, 255, 0.04) 60%); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1); }
+.lp-icon::after { content: ""; position: absolute; left: 12%; right: 12%; bottom: -12px; height: 12px; border-radius: 50%; background: radial-gradient(closest-side, rgba(255, 108, 2, 0.7), transparent); filter: blur(6px); }
+.lp-icon img { width: 44px; height: 44px; object-fit: contain; }
+/* Buttons on the landing page share the product surface (.btn), 44px tall, 16px corners. */
+.lp-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 44px; padding: 0 22px; border-radius: var(--radius); font-weight: 600; font-size: 15px; white-space: nowrap; transition: transform 120ms var(--ease-out), background-color 120ms var(--ease-out), border-color 120ms var(--ease-out), box-shadow 120ms var(--ease-out); background: linear-gradient(180deg, #1d1d1d, #141414); border: 1px solid rgba(255, 255, 255, 0.12); color: #fff; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 8px 20px -14px rgba(0, 0, 0, 0.9); }
+.lp-btn:hover { background: linear-gradient(180deg, #262626, #1a1a1a); border-color: rgba(255, 255, 255, 0.2); }
+.lp-btn:active { transform: scale(0.97); }
+/* Primary carries an orange hairline and fills orange with a soft glow on hover; secondary is the plain surface. */
+.lp-btn-primary { border-color: rgba(255, 108, 2, 0.55); }
+.lp-btn.lp-btn-primary:hover { background: linear-gradient(180deg, var(--accent-hover), var(--accent)); border-color: var(--accent-hover); color: var(--accent-fg); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), 0 0 0 1px rgba(255, 108, 2, 0.35), 0 8px 24px -6px rgba(255, 108, 2, 0.55); }
+/* .lp-btn-secondary is the plain surface; nothing to add. */
+.lp-btn-sm { height: 36px; padding: 0 16px; font-size: 14px; border-radius: 10px; }
+/* Hero backdrop: a faint grid that fades out, with a warm glow behind the headline. */
+.lp-grid { background-image: linear-gradient(var(--lp-line-soft) 1px, transparent 1px), linear-gradient(90deg, var(--lp-line-soft) 1px, transparent 1px); background-size: 64px 64px; mask-image: radial-gradient(ellipse 70% 60% at 50% 30%, #000 20%, transparent 75%); }
+.lp-glow { background: radial-gradient(closest-side, rgba(255, 108, 2, 0.35), rgba(255, 108, 2, 0.08) 55%, transparent 80%); filter: blur(40px); }
+/* Marquees: horizontal for the strip, vertical for the moments columns. Tracks hold their list twice. */
+.marquee { mask-image: linear-gradient(to right, transparent, #000 12%, #000 88%, transparent); }
+.marquee-track { animation: marquee var(--marquee-duration, 70s) linear infinite; }
+.marquee:hover .marquee-track { animation-play-state: paused; }
+@keyframes marquee { to { transform: translateX(-50%); } }
+.lp-mq-y { mask-image: linear-gradient(to bottom, transparent, #000 15%, #000 85%, transparent); }
+.lp-mq-y-track { animation: marquee-y var(--marquee-duration, 40s) linear infinite; }
+.lp-mq-y-track.reverse { animation-direction: reverse; }
+.lp-mq-y:hover .lp-mq-y-track { animation-play-state: paused; }
+@keyframes marquee-y { to { transform: translateY(-50%); } }
+/* Hatched fill for the "uncertain" interval. */
+.hatched { background-image: repeating-linear-gradient(135deg, rgba(255, 200, 87, 0.55) 0 4px, transparent 4px 9px); }
+/* Native details: the plus turns into a cross when open. */
+.lp-faq summary::-webkit-details-marker { display: none; }
+
 @media (prefers-reduced-motion: reduce) {
   .rec-dot { animation: none; }
+  .marquee-track, .lp-mq-y-track, .lp-aurora { animation: none; }
+  .lp-cell img, .hairline-cell img { transition: none; }
 }
 
 table.data { width: 100%; border-collapse: collapse; font-size: 0.9375rem; }
-table.data th { text-align: left; font-weight: 500; color: var(--fg-subtle); font-size: 0.8125rem; padding: 0.625rem 0.75rem; border-bottom: 1px solid var(--border-strong); white-space: nowrap; }
-table.data td { padding: 0.75rem; border-bottom: 1px solid var(--border-soft); vertical-align: top; }
+table.data th { text-align: left; font-weight: 600; color: var(--fg-subtle); font-size: 0.75rem; letter-spacing: 0.04em; padding: 0.75rem 0.875rem; border-bottom: 1px solid var(--border); white-space: nowrap; }
+table.data td { padding: 0.8125rem 0.875rem; border-bottom: 1px solid var(--border-soft); vertical-align: top; }
 table.data tbody tr:hover td { background: rgba(255, 255, 255, 0.02); }
 table.data tr:last-child td { border-bottom: 0; }
 
