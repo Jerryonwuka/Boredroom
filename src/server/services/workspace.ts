@@ -2,7 +2,8 @@ import { withUser } from "@/server/db";
 import type { OrgContext } from "@/server/lib/api";
 import { unreadMessageCount } from "@/server/services/messaging";
 
-export type NavCounts = { unread: number; attention: number; messages: number };
+export type RecentNotification = { id: string; type: string; title: string; body: string | null; href: string | null; read_at: string | null; created_at: string };
+export type NavCounts = { unread: number; attention: number; messages: number; recent?: RecentNotification[] };
 
 export async function navCounts(ctx: OrgContext): Promise<NavCounts> {
   return withUser(ctx.user.profileId, async (db) => {
@@ -36,7 +37,7 @@ export type WorkspaceShell = { counts: NavCounts; teams: { id: string; name: str
 export async function workspaceShell(ctx: OrgContext, opts: { checkPolicy?: boolean } = {}): Promise<WorkspaceShell> {
   const supervisor = ctx.membership.role !== "employee";
   return withUser(ctx.user.profileId, async (db) => {
-    const r = await db.one<{ unread: number; attention: number; messages: number; teams: { id: string; name: string; is_manager: boolean }[] | null; acknowledged: boolean }>(
+    const r = await db.one<{ unread: number; attention: number; messages: number; teams: { id: string; name: string; is_manager: boolean }[] | null; acknowledged: boolean; recent: RecentNotification[] | null }>(
       `SELECT
          (SELECT count(*)::int FROM notifications WHERE recipient_membership_id = $2 AND read_at IS NULL) AS unread,
          CASE WHEN $4::boolean THEN
@@ -52,8 +53,9 @@ export async function workspaceShell(ctx: OrgContext, opts: { checkPolicy?: bool
               AND m.created_at > COALESCE(r.last_read_at, (SELECT created_at FROM memberships WHERE id = $2))) AS messages,
          (SELECT json_agg(json_build_object('id', t.id, 'name', t.name, 'is_manager', tm.is_manager) ORDER BY t.name)
             FROM team_members tm JOIN teams t ON t.id = tm.team_id WHERE tm.membership_id = $2 AND t.archived_at IS NULL) AS teams,
-         ($3::uuid IS NULL OR EXISTS (SELECT 1 FROM policy_acknowledgements WHERE membership_id = $2 AND policy_id = $3)) AS acknowledged`,
+         ($3::uuid IS NULL OR EXISTS (SELECT 1 FROM policy_acknowledgements WHERE membership_id = $2 AND policy_id = $3)) AS acknowledged,
+         (SELECT json_agg(n) FROM (SELECT id, type, title, body, href, read_at, created_at::text AS created_at FROM notifications WHERE recipient_membership_id = $2 ORDER BY created_at DESC LIMIT 6) n) AS recent`,
       [ctx.org.id, ctx.membership.id, opts.checkPolicy === false ? null : ctx.org.current_policy_id, supervisor]);
-    return { counts: { unread: r.unread, attention: r.attention, messages: r.messages }, teams: r.teams ?? [], acknowledged: r.acknowledged };
+    return { counts: { unread: r.unread, attention: r.attention, messages: r.messages, recent: r.recent ?? [] }, teams: r.teams ?? [], acknowledged: r.acknowledged };
   });
 }

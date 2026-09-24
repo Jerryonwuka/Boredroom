@@ -105,6 +105,8 @@ Two sets with two jobs. The 3D orange-glass set in `public/icons/` (typed in `IC
 | `EmptyState`, `ErrorState`, `PermissionDenied`, `OfflineState`, `Alert`, `Skeleton` | Every empty state names one next action and may carry a 3D icon (`icon3d`). |
 | `ConfirmDialog`, `ConfirmButton` | Native `<dialog>` for every destructive or irreversible action. |
 | `Icon3D`, `IconTile` | The 3D icon set, bare or in its lit tile. |
+| `Avatar` | A person: their picture from `/api/avatars/:id`, else initials on a dark disc. 32px in lists, 38px in the top bar, 96px on the profile page. |
+| `TopBar` (`components/app`) | The top-right cluster on every workspace page: round 40px icon buttons for notifications (unread count in an orange pill), settings (organisation accounts) and the person. Each opens a `.tile` panel below it; one open at a time. Notifications and settings live here, not in the sidebar. |
 | Motion primitives | `MotionRoot`, `PageRise`, `Rise`, `Presence`, `Expand`, `AnimatedList`, `AnimatedRow`, `Swap`, `SlidingMarker`. |
 
 Aceternity pieces (`src/components/aceternity/`, vendored) that belong to the system: `moving-border` (through `LitTile`, the travelling light on a feature card), `flip-words`, `typewriter-effect`, `container-scroll-animation`, `background-ripple-effect`, `3d-card` and `glowing-effect` (through `GlassCard`, landing only, tilt kept subtle). The rest of the pack is available but not part of the system until a screen needs it.

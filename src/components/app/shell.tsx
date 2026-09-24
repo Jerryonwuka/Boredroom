@@ -1,8 +1,7 @@
 import Link from "next/link";
 import { Logo } from "@/components/logo";
-import { SignOutButton } from "@/components/auth/forms";
+import { TopBar } from "@/components/app/topbar";
 import { WorkspaceNav, type NavItem } from "@/components/app/nav";
-import { Badge } from "@/components/ui/badge";
 import type { OrgContext } from "@/server/lib/api";
 import type { NavCounts } from "@/server/services/workspace";
 import { RealtimeRefresher } from "@/components/app/realtime";
@@ -28,9 +27,7 @@ export function navItems(ctx: OrgContext, counts: NavCounts, teams: { id: string
     // Records (timesheets, corrections, CSV export) are reached from Reports and from any person's row; not a top-level item.
     items.push({ href: `${base}/reports`, label: "Reports", icon: "reports" });
     items.push({ href: `${base}/projects`, label: "Projects", icon: "projects" });
-    items.push({ href: `${base}/notifications`, label: "Notifications", icon: "notifications", badge: counts.unread || undefined });
     items.push({ href: `${base}/policy`, label: "Policy", icon: "policy" });
-    items.push({ href: `${base}/settings`, label: "Settings", icon: "settings" });
     items.push({ href: `${base}/audit`, label: "Audit", icon: "audit" });
     return items;
   }
@@ -47,7 +44,6 @@ export function navItems(ctx: OrgContext, counts: NavCounts, teams: { id: string
     items.push({ href: `${base}/timesheets`, label: "Timesheets", icon: "timesheets" });
     items.push({ href: `${base}/reports`, label: "Reports", icon: "reports" });
     items.push({ href: `${base}/projects`, label: "Projects", icon: "projects" });
-    items.push({ href: `${base}/notifications`, label: "Notifications", icon: "notifications", badge: counts.unread || undefined });
     items.push({ href: `${base}/policy`, label: "Policy", icon: "policy" });
     return items;
   }
@@ -57,12 +53,13 @@ export function navItems(ctx: OrgContext, counts: NavCounts, teams: { id: string
   items.push({ href: `${base}/tasks`, label: "Tasks", icon: "tasks" });
   items.push({ href: `${base}/messages`, label: "Messages", icon: "messages", badge: counts.messages || undefined });
   items.push({ href: `${base}/timesheets`, label: "My timesheet", icon: "timesheets" });
-  items.push({ href: `${base}/notifications`, label: "Notifications", icon: "notifications", badge: counts.unread || undefined });
   items.push({ href: `${base}/policy`, label: "Policy", icon: "policy" });
   return items;
 }
 
 export function AppShell({ ctx, counts, teams = [], children }: { ctx: OrgContext; counts: NavCounts; teams?: { id: string; name: string; is_manager: boolean }[]; children: React.ReactNode }) {
+  const isOrg = ctx.membership.role === "owner" || ctx.membership.role === "hr";
+  const topbar = <TopBar orgSlug={ctx.org.slug} user={{ profileId: ctx.user.profileId, displayName: ctx.user.displayName, email: ctx.user.email, avatarKey: ctx.user.avatarKey, title: ctx.user.title, statusText: ctx.user.statusText }} roleLabel={ROLE_LABEL[ctx.membership.role]} isOrg={isOrg} unread={counts.unread} attention={counts.attention} recent={counts.recent ?? []} />;
   return (
     <MotionRoot>
     <div className="flex min-h-dvh">
@@ -75,27 +72,22 @@ export function AppShell({ ctx, counts, teams = [], children }: { ctx: OrgContex
           <p className="text-xs text-fg-subtle">Switch workspace</p>
         </Link>
         <WorkspaceNav items={navItems(ctx, counts, teams)} />
-        <div className="mt-auto border-t border-border pt-4 text-sm">
-          <p className="truncate font-semibold">{ctx.user.displayName}</p>
-          <p className="truncate text-xs text-fg-subtle">{ctx.user.email}</p>
-          <div className="mt-2 flex items-center justify-between gap-2">
-            <Badge tone="accent" className="whitespace-nowrap">{ROLE_LABEL[ctx.membership.role]}</Badge>
-            <SignOutButton />
-          </div>
-        </div>
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex items-center justify-between border-b border-border-soft bg-[#050505] px-4 py-3 md:hidden">
+        <header className="flex items-center justify-between gap-3 border-b border-border-soft bg-[#050505] px-4 py-3 md:hidden">
           <Logo href={`/app/${ctx.org.slug}`} />
-          <details className="relative">
-            <summary className="chip chip-link cursor-pointer rounded-full px-3 py-1.5 text-sm">Menu</summary>
-            <div className="absolute right-0 z-[var(--z-dropdown)] mt-2 w-64 rounded-[var(--radius)] border border-border-strong bg-popover p-3">
-              <WorkspaceNav items={navItems(ctx, counts, teams)} />
-              <div className="mt-3 border-t border-border pt-3"><Link href="/app" className="text-sm text-fg-muted">Switch workspace</Link></div>
-              <div className="mt-2"><SignOutButton /></div>
-            </div>
-          </details>
+          <div className="flex items-center gap-2">
+            {topbar}
+            <details className="relative">
+              <summary className="chip chip-link cursor-pointer rounded-full px-3 py-1.5 text-sm">Menu</summary>
+              <div className="absolute right-0 z-[var(--z-dropdown)] mt-2 w-64 rounded-[var(--radius)] border border-border-strong bg-popover p-3">
+                <WorkspaceNav items={navItems(ctx, counts, teams)} />
+                <div className="mt-3 border-t border-border pt-3"><Link href="/app" className="text-sm text-fg-muted">Switch workspace</Link></div>
+              </div>
+            </details>
+          </div>
         </header>
+        <div className="mx-auto hidden w-full max-w-6xl items-center justify-end px-8 pt-5 md:flex">{topbar}</div>
         <main id="main" className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 md:px-8 md:py-8"><PageRise>{children}</PageRise></main>
         <RealtimeRefresher orgSlug={ctx.org.slug} />
       </div>
