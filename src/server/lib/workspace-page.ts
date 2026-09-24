@@ -1,7 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { orgContext, type OrgContext } from "@/server/lib/api";
 import { AppError } from "@/server/lib/errors";
-import { navCounts, policyAcknowledged } from "@/server/services/workspace";
+import { navCounts, workspaceShell } from "@/server/services/workspace";
 import { myTeams } from "@/server/services/views";
 
 /** Role-based landing page: organisation account → dashboard, team lead → first team board, staff → My Day. */
@@ -23,7 +23,8 @@ export async function workspacePage(slug: string, currentPath: string): Promise<
     throw err;
   }
   if (!ctx.user.emailVerified) redirect(`/verify/pending?next=${encodeURIComponent(currentPath)}`);
-  const [counts, teams] = await Promise.all([navCounts(ctx), myTeams(ctx)]);
-  if (!currentPath.endsWith("/policy") && !(await policyAcknowledged(ctx))) redirect(`/app/${slug}/policy?required=1&next=${encodeURIComponent(currentPath)}`);
+  // One statement for counts, teams and the policy check: on a distant database every round trip shows.
+  const { counts, teams, acknowledged } = await workspaceShell(ctx, { checkPolicy: !currentPath.endsWith("/policy") });
+  if (!acknowledged) redirect(`/app/${slug}/policy?required=1&next=${encodeURIComponent(currentPath)}`);
   return { ctx, counts, teams };
 }

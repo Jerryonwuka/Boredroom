@@ -1,5 +1,15 @@
 # Runbooks
 
+## Slow pages
+
+Page time is almost all database round trips, not rendering (the dev log prints both: `next.js` is render, `application-code` is data). Every transaction costs one round trip to open (BEGIN plus the identity settings, sent as one statement), one per query, one to commit. Measure the round trip first:
+
+```bash
+node -e 'const{Client}=require("pg");const c=new Client({connectionString:process.env.DATABASE_URL});(async()=>{await c.connect();for(let i=0;i<3;i++){const t=Date.now();await c.query("select 1");console.log(Date.now()-t,"ms")}await c.end()})()'
+```
+
+Under 5 ms means the app and database share a region and pages should render in well under a second. Around 200 ms or more means they are far apart (for example a laptop in Lagos against Neon in US East): a page that makes ten round trips takes two seconds before any work happens. The fix for that is placement, not code: host the app in the database's region, or choose a Neon region near the people who use it. The code keeps round trips low (the shell is one statement, the dashboard two, the attendance board one), and `keepAlive` on the pool stops idle connections being dropped, which otherwise shows up as `read ETIMEDOUT` in the log and a slow reconnect on the next page.
+
 ## Backup and restore
 
 Use the scripts: `pnpm db:dump` to back up, `pnpm db:restore "<url>" <file>` to restore anywhere (see "Backup, and moving the database to Neon" below for the full procedure and the version requirement for `pg_dump`).
@@ -103,4 +113,4 @@ Copy those into `.env.local`, run `pnpm doctor`, then `pnpm dev`. Re-running the
 - Neon's pooled connection string (`-pooler` host) is fine for `DATABASE_URL`; the scripts use the direct host for `DATABASE_ADMIN_URL` and for the restore.
 - A connection string pasted into a chat, ticket or screenshot is a leaked password: reset it in the Neon dashboard afterwards and update `.env.local`.
 - Neon scales to zero when idle; the first request after a pause takes a second or two.
-- If `boardroom_app` already existed on Neon before the restore (created in the Neon console rather than by the restore script), Neon manages its password: a password set with `ALTER ROLE` works until the compute restarts after idling, then Neon re-applies the console password and the app fails with "password authentication failed for user 'boardroom_app'". Durable fix: reset that role's password in the Neon dashboard (Roles), put the new password in `DATABASE_URL`, and never set it by SQL again. A role the script creates itself does not have this problem.
+- If `boardroom_app` already existed on Neon before the restore (created in the Neon console rather than by the restore script), Neon manages its password: a password set with `ALTER ROLE` works until the compute restarts after idling, then Neon re-applies the console password and the app fails with "password authentication failed for user 'boardroom_app'". Durable fix: set the role's password in the Neon dashboard (Roles), put it in both `DATABASE_URL` and `RESTORE_APP_PASSWORD` in `.env.local`, and never set it by SQL again. With `RESTORE_APP_PASSWORD` set, `pnpm db:restore` and `pnpm db:move` leave an existing role's password alone and only re-apply the grants. A role the script creates itself does not have this problem.

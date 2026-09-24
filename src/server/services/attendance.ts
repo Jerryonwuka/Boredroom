@@ -117,32 +117,50 @@ export type BoardRow = {
  */
 export async function attendanceBoard(ctx: OrgContext, opts: { date?: string; teamId?: string | null } = {}) {
   if (ctx.membership.role === "employee") throw forbidden("Attendance boards are for team leads and organisation accounts.");
+  const isOrg = ctx.membership.role === "owner" || ctx.membership.role === "hr";
+  const wanted = opts.date && /^\d{4}-\d{2}-\d{2}$/.test(opts.date) ? opts.date : null;
   return withUser(ctx.user.profileId, async (db) => {
-    const s = await scheduleFor(db, ctx.org.id, ctx.org.timezone);
-    const today = todayLocal(s.timezone);
-    const date = opts.date && /^\d{4}-\d{2}-\d{2}$/.test(opts.date) ? opts.date : today;
-    const isOrg = ctx.membership.role === "owner" || ctx.membership.role === "hr";
-    const rows = await db.query<BoardRow & { status: never }>(
-      `SELECT m.id AS membership_id, pr.display_name, m.employee_code, m.role,
-              COALESCE((SELECT array_agg(t.name ORDER BY t.name) FROM team_members tm JOIN teams t ON t.id = tm.team_id WHERE tm.membership_id = m.id AND t.archived_at IS NULL), '{}') AS teams,
-              a.clock_in_at, a.clock_out_at, a.late_seconds, a.left_early_seconds
-       FROM memberships m JOIN profiles pr ON pr.id = m.user_id
-       LEFT JOIN attendance_days a ON a.membership_id = m.id AND a.local_date = $2
-       WHERE m.organisation_id = $1 AND m.status = 'active' AND m.created_at < ($2::date + 1)::timestamptz
-         AND ($3::boolean OR m.id = $4 OR app_manages($1, m.id))
-         AND ($5::uuid IS NULL OR EXISTS (SELECT 1 FROM team_members tm WHERE tm.team_id = $5 AND tm.membership_id = m.id))
-       ORDER BY a.clock_in_at NULLS LAST, pr.display_name`, [ctx.org.id, date, isOrg, ctx.membership.id, opts.teamId ?? null]);
-    const people: BoardRow[] = rows.map((r) => ({ ...r, status: statusOf(r.clock_in_at ? { clock_in_at: r.clock_in_at, clock_out_at: r.clock_out_at } : null) }));
-    const teams = await db.query<{ id: string; name: string }>(
-      isOrg ? `SELECT id, name FROM teams WHERE organisation_id = $1 AND archived_at IS NULL ORDER BY name`
-            : `SELECT t.id, t.name FROM team_members tm JOIN teams t ON t.id = tm.team_id WHERE tm.membership_id = $1 AND tm.is_manager AND t.archived_at IS NULL ORDER BY t.name`, [isOrg ? ctx.org.id : ctx.membership.id]);
+    // One statement: the schedule in force, the local date it implies, the people and the team filter list, as JSON.
+    // The board runs on every dashboard load and the database may be far away, so round trips are the cost that matters.
+    const r = await db.one<{ schedule: Schedule; date: string; today: string; people: (Omit<BoardRow, "status">)[] | null; teams: { id: string; name: string }[] | null }>(
+      `WITH sched AS (
+         SELECT timezone, working_days, start_local, end_local, clock_grace_minutes FROM schedules
+         WHERE organisation_id = $1 AND membership_id IS NULL ORDER BY effective_from DESC, created_at DESC LIMIT 1
+       ), s AS (
+         SELECT COALESCE((SELECT timezone FROM sched), $6::text) AS timezone,
+                COALESCE((SELECT working_days FROM sched), '{1,2,3,4,5}'::int[]) AS working_days,
+                COALESCE((SELECT start_local FROM sched), '09:00:00'::time)::text AS start_local,
+                COALESCE((SELECT end_local FROM sched), '17:00:00'::time)::text AS end_local,
+                COALESCE((SELECT clock_grace_minutes FROM sched), 0)::int AS clock_grace_minutes
+       ), d AS (
+         SELECT (now() AT TIME ZONE (SELECT timezone FROM s))::date AS today,
+                COALESCE($2::date, (now() AT TIME ZONE (SELECT timezone FROM s))::date) AS date
+       )
+       SELECT (SELECT row_to_json(s) FROM s) AS schedule, (SELECT date::text FROM d) AS date, (SELECT today::text FROM d) AS today,
+         (SELECT json_agg(p ORDER BY p.clock_in_at NULLS LAST, p.display_name) FROM (
+            SELECT m.id AS membership_id, pr.display_name, m.employee_code, m.role,
+                   COALESCE((SELECT array_agg(t.name ORDER BY t.name) FROM team_members tm JOIN teams t ON t.id = tm.team_id WHERE tm.membership_id = m.id AND t.archived_at IS NULL), '{}') AS teams,
+                   a.clock_in_at, a.clock_out_at, a.late_seconds, a.left_early_seconds
+            FROM memberships m JOIN profiles pr ON pr.id = m.user_id
+            LEFT JOIN attendance_days a ON a.membership_id = m.id AND a.local_date = (SELECT date FROM d)
+            WHERE m.organisation_id = $1 AND m.status = 'active' AND m.created_at < ((SELECT date FROM d) + 1)::timestamptz
+              AND ($3::boolean OR m.id = $4 OR app_manages($1, m.id))
+              AND ($5::uuid IS NULL OR EXISTS (SELECT 1 FROM team_members tm WHERE tm.team_id = $5 AND tm.membership_id = m.id))) p) AS people,
+         (SELECT json_agg(t ORDER BY t.name) FROM (
+            SELECT t.id, t.name FROM teams t
+            WHERE t.organisation_id = $1 AND t.archived_at IS NULL
+              AND ($3::boolean OR EXISTS (SELECT 1 FROM team_members tm WHERE tm.team_id = t.id AND tm.membership_id = $4 AND tm.is_manager))) t) AS teams`,
+      [ctx.org.id, wanted, isOrg, ctx.membership.id, opts.teamId ?? null, ctx.org.timezone]);
+    const iso = (v: string | null) => (v ? new Date(v).toISOString() : v);
+    const people: BoardRow[] = (r.people ?? []).map((p) => ({ ...p, clock_in_at: iso(p.clock_in_at), clock_out_at: iso(p.clock_out_at), status: statusOf(p.clock_in_at ? { clock_in_at: p.clock_in_at, clock_out_at: p.clock_out_at } : null) }));
+    const s = r.schedule;
     const counts = {
       in: people.filter((p) => p.status === "in").length,
       late: people.filter((p) => (p.late_seconds ?? 0) > 0).length,
       not_in: people.filter((p) => p.status === "not_in").length,
       out: people.filter((p) => p.status === "out").length,
     };
-    return { date, today, schedule: s, workingDay: s.working_days.includes(weekdayOf(date)), people, counts, teams, serverNow: new Date().toISOString() };
+    return { date: r.date, today: r.today, schedule: s, workingDay: s.working_days.includes(weekdayOf(r.date)), people, counts, teams: r.teams ?? [], serverNow: new Date().toISOString() };
   });
 }
 

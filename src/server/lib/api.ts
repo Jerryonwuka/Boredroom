@@ -3,7 +3,9 @@ import { z, type ZodType } from "zod";
 import { randomUUID } from "node:crypto";
 import { AppError, invalid, unauthenticated, forbidden, notFound } from "@/server/lib/errors";
 import { getCurrentUser, type CurrentUser } from "@/server/auth";
+import { cache } from "react";
 import { withUser, withSystem, type Db } from "@/server/db";
+import { currentUserIn } from "@/server/auth";
 import { sha256 } from "@/server/lib/crypto";
 import { explainInfraError } from "@/server/lib/health";
 
@@ -94,17 +96,27 @@ export async function requireAuth(): Promise<CurrentUser> {
   return user;
 }
 
-/** Resolves the organisation from its slug through the caller's active membership (RLS hides other orgs). */
-export async function orgContext(orgSlug: string): Promise<OrgContext> {
-  const user = await requireAuth();
-  const row = await withUser(user.profileId, (db) => db.maybeOne<{
-    org_id: string; slug: string; name: string; timezone: string; current_policy_id: string | null; status: string;
-    membership_id: string; role: OrgContext["membership"]["role"]; employee_code: string;
-  }>(
-    `SELECT o.id AS org_id, o.slug, o.name, o.timezone, o.current_policy_id, o.status,
+type OrgRow = { org_id: string; slug: string; name: string; timezone: string; current_policy_id: string | null; status: string; membership_id: string; role: OrgContext["membership"]["role"]; employee_code: string };
+const ORG_SQL = `SELECT o.id AS org_id, o.slug, o.name, o.timezone, o.current_policy_id, o.status,
             m.id AS membership_id, m.role, m.employee_code
      FROM organisations o JOIN memberships m ON m.organisation_id = o.id
-     WHERE (o.slug = $1 OR o.id::text = $1) AND m.user_id = $2 AND m.status = 'active'`, [orgSlug, user.profileId]));
+     WHERE (o.slug = $1 OR o.id::text = $1) AND m.user_id = $2 AND m.status = 'active'`;
+
+/**
+ * Resolves the organisation from its slug through the caller's active membership (RLS hides other orgs).
+ * The session lookup and the membership lookup run in one transaction: on a distant database each transaction is
+ * several round trips, and this pair runs before every page. Deduplicated per request with React's cache.
+ */
+export const orgContext = cache(async function orgContext(orgSlug: string): Promise<OrgContext> {
+  const found = await withSystem(async (db) => {
+    const user = await currentUserIn(db);
+    if (!user) return { user: null, row: null };
+    // The membership query binds the user id itself, so the system role sees exactly what RLS would show this user.
+    const row = await db.maybeOne<OrgRow>(ORG_SQL, [orgSlug, user.profileId]);
+    return { user, row };
+  });
+  const { user, row } = found;
+  if (!user) throw unauthenticated();
   if (!row) throw notFound("Workspace not found.");
   if (row.status !== "active") throw forbidden("This workspace is not active.");
   return {
@@ -112,7 +124,7 @@ export async function orgContext(orgSlug: string): Promise<OrgContext> {
     org: { id: row.org_id, slug: row.slug, name: row.name, timezone: row.timezone, current_policy_id: row.current_policy_id, status: row.status },
     membership: { id: row.membership_id, role: row.role, employee_code: row.employee_code },
   };
-}
+});
 
 export function requireRole(ctx: OrgContext, ...roles: OrgContext["membership"]["role"][]) {
   if (!roles.includes(ctx.membership.role)) throw forbidden();

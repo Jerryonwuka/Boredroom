@@ -259,13 +259,15 @@ export async function orgDashboard(ctx: OrgContext) {
   return withUser(ctx.user.profileId, async (db) => {
     const today = todayLocal(ctx.org.timezone);
     const dayStart = dayStartIso(today, ctx.org.timezone);
-    const timings = await db.maybeOne<{ stale_after_seconds: number }>(`SELECT stale_after_seconds FROM policies WHERE id = $1`, [ctx.org.current_policy_id]);
-    const stale = timings?.stale_after_seconds ?? 90;
-    const counts = await db.one<{ people: number; teams: number; connected: number; working: number; tasks_done_today: number; tasks_done_total: number; tasks_open: number; tasks_blocked: number; tasks_in_review: number; seconds_today: number; reports_pending: number }>(
-      `SELECT
+    // Two statements: the figures (with the policy timing and the server clock folded in), then the three lists as JSON.
+    // Each statement is a round trip to the database, and the database may be far away.
+    const counts = await db.one<{ people: number; teams: number; connected: number; working: number; tasks_done_today: number; tasks_done_total: number; tasks_open: number; tasks_blocked: number; tasks_in_review: number; seconds_today: number; reports_pending: number; stale: number; server_now: string }>(
+      `WITH pol AS (SELECT COALESCE((SELECT stale_after_seconds FROM policies WHERE id = $3::uuid), 90)::int AS stale)
+       SELECT
+         (SELECT stale FROM pol) AS stale, now()::text AS server_now,
          (SELECT count(*) FROM memberships m WHERE m.organisation_id = $1 AND m.status = 'active')::int AS people,
          (SELECT count(*) FROM teams t WHERE t.organisation_id = $1 AND t.archived_at IS NULL)::int AS teams,
-         (SELECT count(*) FROM work_sessions s WHERE s.organisation_id = $1 AND s.state = 'running' AND s.last_heartbeat_at > now() - make_interval(secs => $3))::int AS connected,
+         (SELECT count(*) FROM work_sessions s WHERE s.organisation_id = $1 AND s.state = 'running' AND s.last_heartbeat_at > now() - make_interval(secs => (SELECT stale FROM pol)))::int AS connected,
          (SELECT count(*) FROM work_sessions s WHERE s.organisation_id = $1 AND s.state IN ('running','paused','interrupted'))::int AS working,
          (SELECT count(*) FROM tasks t WHERE t.organisation_id = $1 AND t.status = 'completed' AND t.completed_at >= $2::timestamptz)::int AS tasks_done_today,
          (SELECT count(*) FROM tasks t WHERE t.organisation_id = $1 AND t.status = 'completed')::int AS tasks_done_total,
@@ -275,27 +277,37 @@ export async function orgDashboard(ctx: OrgContext) {
          COALESCE((SELECT SUM(EXTRACT(EPOCH FROM (LEAST(COALESCE(i.ended_at, now()), $2::timestamptz + interval '1 day') - GREATEST(i.started_at, $2::timestamptz))))::int
                    FROM session_intervals i WHERE i.organisation_id = $1 AND i.confirmation_status = 'confirmed' AND i.started_at < $2::timestamptz + interval '1 day' AND COALESCE(i.ended_at, now()) > $2::timestamptz), 0) AS seconds_today,
          (SELECT count(*) FROM daily_reports r WHERE r.organisation_id = $1 AND r.status = 'submitted')::int AS reports_pending`,
-      [ctx.org.id, dayStart, stale]);
-    const workingNow = await db.query<{ membership_id: string; display_name: string; team_names: string[]; state: string; task_id: string; task_title: string; started_at: string; last_heartbeat_at: string; today_seconds: number }>(
-      `SELECT m.id AS membership_id, pr.display_name,
+      [ctx.org.id, dayStart, ctx.org.current_policy_id]);
+    const stale = counts.stale;
+    type WorkingNow = { membership_id: string; display_name: string; team_names: string[]; state: string; task_id: string; task_title: string; started_at: string; last_heartbeat_at: string; today_seconds: number };
+    type TeamRow = { id: string; name: string; members: number; leads: string[]; open_tasks: number; blocked: number; working: number; project_id: string | null };
+    type DoneRow = { id: string; title: string; assignee_name: string; completed_at: string };
+    const lists = await db.one<{ working_now: WorkingNow[] | null; teams: TeamRow[] | null; recent_done: DoneRow[] | null }>(
+      `SELECT
+       (SELECT json_agg(w) FROM (
+        SELECT m.id AS membership_id, pr.display_name,
               COALESCE((SELECT array_agg(t.name ORDER BY t.name) FROM team_members tm JOIN teams t ON t.id = tm.team_id WHERE tm.membership_id = m.id), '{}') AS team_names,
               s.state, s.task_id, tk.title AS task_title, s.started_at, s.last_heartbeat_at,
               COALESCE((SELECT SUM(EXTRACT(EPOCH FROM (LEAST(COALESCE(i.ended_at, now()), $2::timestamptz + interval '1 day') - GREATEST(i.started_at, $2::timestamptz))))::int FROM session_intervals i WHERE i.membership_id = m.id AND i.confirmation_status = 'confirmed' AND i.started_at < $2::timestamptz + interval '1 day' AND COALESCE(i.ended_at, now()) > $2::timestamptz), 0) AS today_seconds
        FROM work_sessions s JOIN memberships m ON m.id = s.membership_id JOIN profiles pr ON pr.id = m.user_id JOIN tasks tk ON tk.id = s.task_id
-       WHERE s.organisation_id = $1 AND s.state IN ('running','paused','interrupted') ORDER BY s.started_at`, [ctx.org.id, dayStart]);
-    const teams = await db.query<{ id: string; name: string; members: number; leads: string[]; open_tasks: number; blocked: number; working: number; project_id: string | null }>(
-      `SELECT t.id, t.name, t.project_id,
+       WHERE s.organisation_id = $1 AND s.state IN ('running','paused','interrupted') ORDER BY s.started_at) w) AS working_now,
+       (SELECT json_agg(t2) FROM (
+        SELECT t.id, t.name, t.project_id,
               (SELECT count(*) FROM team_members tm WHERE tm.team_id = t.id)::int AS members,
               COALESCE((SELECT array_agg(pr.display_name ORDER BY pr.display_name) FROM team_members tm JOIN memberships m ON m.id = tm.membership_id JOIN profiles pr ON pr.id = m.user_id WHERE tm.team_id = t.id AND tm.is_manager), '{}') AS leads,
               (SELECT count(*) FROM tasks x JOIN team_members tm ON tm.membership_id = x.assignee_membership_id AND tm.team_id = t.id WHERE x.status IN ('todo','in_progress') AND x.archived_at IS NULL)::int AS open_tasks,
               (SELECT count(*) FROM tasks x JOIN team_members tm ON tm.membership_id = x.assignee_membership_id AND tm.team_id = t.id WHERE x.status = 'blocked' AND x.archived_at IS NULL)::int AS blocked,
               (SELECT count(*) FROM work_sessions s JOIN team_members tm ON tm.membership_id = s.membership_id AND tm.team_id = t.id WHERE s.state IN ('running','paused','interrupted'))::int AS working
-       FROM teams t WHERE t.organisation_id = $1 AND t.archived_at IS NULL ORDER BY t.name`, [ctx.org.id]);
-    const recentDone = await db.query<{ id: string; title: string; assignee_name: string; completed_at: string }>(
-      `SELECT t.id, t.title, pr.display_name AS assignee_name, t.completed_at FROM tasks t JOIN memberships m ON m.id = t.assignee_membership_id JOIN profiles pr ON pr.id = m.user_id
-       WHERE t.organisation_id = $1 AND t.status = 'completed' ORDER BY t.completed_at DESC LIMIT 8`, [ctx.org.id]);
-    const now = await db.one<{ now: string }>(`SELECT now() AS now`);
-    return { today, counts, workingNow, teams, recentDone, staleAfterSeconds: stale, serverNow: now.now };
+       FROM teams t WHERE t.organisation_id = $1 AND t.archived_at IS NULL ORDER BY t.name) t2) AS teams,
+       (SELECT json_agg(d) FROM (
+        SELECT t.id, t.title, pr.display_name AS assignee_name, t.completed_at FROM tasks t JOIN memberships m ON m.id = t.assignee_membership_id JOIN profiles pr ON pr.id = m.user_id
+        WHERE t.organisation_id = $1 AND t.status = 'completed' ORDER BY t.completed_at DESC LIMIT 8) d) AS recent_done`, [ctx.org.id, dayStart]);
+    // Timestamps inside json come back as ISO strings with an offset; normalise them to the same UTC form the type parsers produce.
+    const iso = (s: string | null) => (s ? new Date(s).toISOString() : s);
+    const workingNow = (lists.working_now ?? []).map((r) => ({ ...r, started_at: iso(r.started_at)!, last_heartbeat_at: iso(r.last_heartbeat_at)! }));
+    const teams = lists.teams ?? [];
+    const recentDone = (lists.recent_done ?? []).map((r) => ({ ...r, completed_at: iso(r.completed_at)! }));
+    return { today, counts, workingNow, teams, recentDone, staleAfterSeconds: stale, serverNow: new Date(counts.server_now).toISOString() };
   });
 }
 

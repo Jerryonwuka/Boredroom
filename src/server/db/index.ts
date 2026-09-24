@@ -20,7 +20,11 @@ function connectionString() {
 export function getPool(): Pool {
   if (!globalThis.__boredroomPool) {
     // connectionTimeoutMillis turns an exhausted pool into a clear error instead of a page that never loads.
-    globalThis.__boredroomPool = new Pool({ connectionString: connectionString(), max: 20, connectionTimeoutMillis: 10_000, idleTimeoutMillis: 30_000 });
+    // keepAlive stops idle pooled sockets being silently dropped by NATs and the hosted pooler (seen as "read ETIMEDOUT"
+    // storms and 1.8s reconnects on the next page). The error handler keeps a dead idle client from crashing the process.
+    const pool = new Pool({ connectionString: connectionString(), max: 20, connectionTimeoutMillis: 10_000, idleTimeoutMillis: 60_000, keepAlive: true, keepAliveInitialDelayMillis: 10_000 });
+    pool.on("error", (err) => { console.warn(`[db] idle connection dropped: ${err.message}`); });
+    globalThis.__boredroomPool = pool;
   }
   return globalThis.__boredroomPool;
 }
@@ -69,12 +73,19 @@ export type Ctx = { userId: string | null; role?: "user" | "worker" | "system" }
  * Runs `fn` inside one transaction with the caller's identity bound for RLS.
  * `userId` is the internal profile id. Nothing client-supplied reaches this setting.
  */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const ROLES = new Set(["worker", "system"]);
+
 export async function withCtx<T>(ctx: Ctx, fn: (db: Db) => Promise<T>): Promise<T> {
+  // BEGIN and the identity settings go in one multi-statement query: one round trip instead of two or three.
+  // Values are validated (a UUID, a role from a fixed set) before being inlined, since a multi-statement query cannot
+  // take parameters. Against a distant database each round trip is a large share of a page load.
+  if (ctx.userId && !UUID.test(ctx.userId)) throw new Error("withCtx: userId is not a UUID");
+  if (ctx.role && ctx.role !== "user" && !ROLES.has(ctx.role)) throw new Error("withCtx: unknown role");
+  const setup = ["BEGIN", ...(ctx.userId ? [`SELECT set_config('app.user_id', '${ctx.userId}', true)`] : []), ...(ctx.role && ctx.role !== "user" ? [`SELECT set_config('app.role', '${ctx.role}', true)`] : [])].join("; ");
   const client = await getPool().connect();
   try {
-    await client.query("BEGIN");
-    if (ctx.userId) await client.query("SELECT set_config('app.user_id', $1, true)", [ctx.userId]);
-    if (ctx.role && ctx.role !== "user") await client.query("SELECT set_config('app.role', $1, true)", [ctx.role]);
+    await client.query(setup);
     const result = await fn(wrap(client));
     await client.query("COMMIT");
     return result;

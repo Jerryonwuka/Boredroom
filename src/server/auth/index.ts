@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { cookies, headers } from "next/headers";
 import { withSystem, isUniqueViolation, type Db } from "@/server/db";
 import { hashPassword, verifyPassword, randomToken, sha256 } from "@/server/lib/crypto";
@@ -142,20 +143,33 @@ export async function signOut(token: string | undefined) {
   await withSystem((db) => db.query(`UPDATE auth_sessions SET revoked_at = now() WHERE token_hash = $1 AND revoked_at IS NULL`, [sha256(token)]));
 }
 
+/** The session row for a token, inside a caller-provided system transaction. Touches last_seen_at at most every five minutes, in the same statement, to save a round trip. */
+export async function userFromSessionTokenIn(db: Db, token: string | undefined): Promise<CurrentUser | null> {
+  if (!token) return null;
+  const row = await db.maybeOne<{ session_id: string; auth_user_id: string; profile_id: string; email: string; display_name: string; email_verified_at: string | null }>(
+    `WITH s AS (
+       SELECT s.id, s.user_id FROM auth_sessions s WHERE s.token_hash = $1 AND s.revoked_at IS NULL AND s.expires_at > now()
+     ), touched AS (
+       UPDATE auth_sessions a SET last_seen_at = now() FROM s WHERE a.id = s.id AND a.last_seen_at < now() - interval '5 minutes'
+     )
+     SELECT s.id AS session_id, u.id AS auth_user_id, p.id AS profile_id, u.email, p.display_name, u.email_verified_at
+     FROM s JOIN auth_users u ON u.id = s.user_id JOIN profiles p ON p.auth_user_id = u.id`, [sha256(token)]);
+  if (!row) return null;
+  return {
+    profileId: row.profile_id, authUserId: row.auth_user_id, email: row.email, displayName: row.display_name,
+    emailVerified: !!row.email_verified_at, sessionId: row.session_id,
+  };
+}
+
+/** The current user from the request cookie, inside a caller-provided system transaction. */
+export async function currentUserIn(db: Db): Promise<CurrentUser | null> {
+  const jar = await cookies();
+  return userFromSessionTokenIn(db, jar.get(SESSION_COOKIE)?.value);
+}
+
 export async function userFromSessionToken(token: string | undefined): Promise<CurrentUser | null> {
   if (!token) return null;
-  return withSystem(async (db) => {
-    const row = await db.maybeOne<{ session_id: string; auth_user_id: string; profile_id: string; email: string; display_name: string; email_verified_at: string | null }>(
-      `SELECT s.id AS session_id, u.id AS auth_user_id, p.id AS profile_id, u.email, p.display_name, u.email_verified_at
-       FROM auth_sessions s JOIN auth_users u ON u.id = s.user_id JOIN profiles p ON p.auth_user_id = u.id
-       WHERE s.token_hash = $1 AND s.revoked_at IS NULL AND s.expires_at > now()`, [sha256(token)]);
-    if (!row) return null;
-    await db.query(`UPDATE auth_sessions SET last_seen_at = now() WHERE id = $1 AND last_seen_at < now() - interval '5 minutes'`, [row.session_id]);
-    return {
-      profileId: row.profile_id, authUserId: row.auth_user_id, email: row.email, displayName: row.display_name,
-      emailVerified: !!row.email_verified_at, sessionId: row.session_id,
-    };
-  });
+  return withSystem((db) => userFromSessionTokenIn(db, token));
 }
 
 export async function sessionCookieOptions() {
@@ -165,10 +179,11 @@ export async function sessionCookieOptions() {
   };
 }
 
-export async function getCurrentUser(): Promise<CurrentUser | null> {
+/** Deduplicated per request: layouts, pages and helpers that all ask for the user share one lookup. */
+export const getCurrentUser = cache(async function getCurrentUser(): Promise<CurrentUser | null> {
   const jar = await cookies();
   return userFromSessionToken(jar.get(SESSION_COOKIE)?.value);
-}
+});
 
 export async function requireUser(): Promise<CurrentUser> {
   const u = await getCurrentUser();
