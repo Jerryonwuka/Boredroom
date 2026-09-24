@@ -89,8 +89,8 @@ export function SubmissionForm({ orgSlug, taskId, hasReviewer, autoOpen, nextRev
         <Button variant="outline" size="sm" onClick={() => setLinks([...links, { url: "", notes: "" }])}>Add link</Button>
       </div>
       <div>
-        <p className="mb-1 text-sm font-semibold text-fg-muted">Files <span className="font-normal text-fg-subtle">(PDF, PNG, JPEG, WebP, TXT · up to 20 MB · stored privately, scanned before download)</span></p>
-        <ul className="mb-2 text-sm">{files.map((f) => <li key={f.id}>{f.fileName} · {(f.size / 1024).toFixed(0)} KB <Button variant="ghost" size="sm" onClick={() => setFiles(files.filter((x) => x.id !== f.id))}>Remove</Button></li>)}</ul>
+        <p className="mb-1 text-sm font-semibold text-fg-muted">Files <span className="font-normal text-fg-subtle">(PDF, PNG, JPEG, WebP, TXT, up to 20 MB, stored privately, scanned before download)</span></p>
+        <ul className="mb-2 text-sm">{files.map((f) => <li key={f.id}>{f.fileName}, {(f.size / 1024).toFixed(0)} KB <Button variant="ghost" size="sm" onClick={() => setFiles(files.filter((x) => x.id !== f.id))}>Remove</Button></li>)}</ul>
         <input aria-label="Choose file" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.txt" disabled={uploading} onChange={async (e) => {
           const file = e.target.files?.[0]; if (!file) return; setUploading(true); setUploadError(null);
           try {

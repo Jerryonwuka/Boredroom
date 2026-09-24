@@ -2,6 +2,7 @@ import * as React from "react";
 import { cn } from "@/lib/utils";
 import { BackLink } from "@/components/ui/back-link";
 import { Rise } from "@/components/ui/motion";
+import { IconTile, type Icon3DName } from "@/components/ui/icon";
 
 export function Card({ className, glow, ...props }: React.HTMLAttributes<HTMLDivElement> & { glow?: boolean }) {
   return <div className={cn("tile p-5", glow && "tile-glow", className)} {...props} />;
@@ -27,6 +28,7 @@ export function Overline({ children, className }: { children: React.ReactNode; c
 /**
  * A ledger line: figures in a row, each a display number with a sentence-case label beneath.
  * One strip of facts reads faster than a grid of identical boxes and keeps the page's real hero on top.
+ * For a verdict per figure (Good, Late, Needs a look) use StatCard instead.
  */
 export function Ledger({ items, className }: { items: { label: string; value: React.ReactNode; note?: React.ReactNode; href?: string; tone?: "default" | "accent" | "danger" }[]; className?: string }) {
   return (
@@ -42,14 +44,21 @@ export function Ledger({ items, className }: { items: { label: string; value: Re
   );
 }
 
-export function PageHeader({ overline, title, description, actions, back }: { overline?: React.ReactNode; title: React.ReactNode; description?: React.ReactNode; actions?: React.ReactNode; back?: { href: string; label: string } }) {
+/**
+ * Page opener: an optional 3D icon in its lit tile, the title in the display face, one grey line beneath, actions
+ * on the right. Same anatomy as a landing section title, left aligned and one size down.
+ */
+export function PageHeader({ overline, title, description, actions, back, icon }: { overline?: React.ReactNode; title: React.ReactNode; description?: React.ReactNode; actions?: React.ReactNode; back?: { href: string; label: string }; icon?: Icon3DName }) {
   return (
-    <Rise className="glow-header mb-8 flex flex-wrap items-end justify-between gap-4">
-      <div>
-        {back ? <BackLink href={back.href} label={back.label} /> : null}
-        {overline ? <Overline className="mb-2">{overline}</Overline> : null}
-        <h1 className="text-balance text-3xl md:text-4xl font-display text-fg">{title}</h1>
-        {description ? <p className="mt-2 max-w-2xl text-pretty text-fg-muted">{description}</p> : null}
+    <Rise className="mb-8 flex flex-wrap items-end justify-between gap-4">
+      <div className="flex items-start gap-4">
+        {icon ? <IconTile name={icon} className="mt-1" /> : null}
+        <div>
+          {back ? <BackLink href={back.href} label={back.label} /> : null}
+          {overline ? <Overline className="mb-2">{overline}</Overline> : null}
+          <h1 className="text-balance font-display text-[30px] leading-[1.1] tracking-[-0.02em] text-fg md:text-[38px]">{title}</h1>
+          {description ? <p className="mt-2 max-w-2xl text-pretty text-fg-muted">{description}</p> : null}
+        </div>
       </div>
       {actions ? <div className="flex flex-wrap gap-2">{actions}</div> : null}
     </Rise>

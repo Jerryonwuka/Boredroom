@@ -1,10 +1,12 @@
 import { cn } from "@/lib/utils";
 import { AlertTriangle, Inbox, Lock, WifiOff } from "lucide-react";
+import { Icon3D, type Icon3DName } from "@/components/ui/icon";
 
-export function EmptyState({ title, description, action, icon: Icon = Inbox, className }: { title: string; description?: string; action?: React.ReactNode; icon?: React.ComponentType<{ className?: string }>; className?: string }) {
+/** An empty state names one next action. Give it a 3D icon when the empty thing has one (tasks, messages, recordings); the lucide inbox otherwise. */
+export function EmptyState({ title, description, action, icon: Icon = Inbox, icon3d, className }: { title: string; description?: string; action?: React.ReactNode; icon?: React.ComponentType<{ className?: string }>; icon3d?: Icon3DName; className?: string }) {
   return (
     <div className={cn("tile flex flex-col items-center justify-center px-6 py-12 text-center", className)}>
-      <Icon className="mb-3 h-8 w-8 text-fg-subtle" aria-hidden />
+      {icon3d ? <Icon3D name={icon3d} size={64} className="mb-4" /> : <Icon className="mb-3 h-8 w-8 text-fg-subtle" aria-hidden />}
       <p className="font-semibold text-fg">{title}</p>
       {description ? <p className="mt-1 max-w-md text-sm text-fg-muted">{description}</p> : null}
       {action ? <div className="mt-4">{action}</div> : null}
@@ -17,7 +19,7 @@ export function ErrorState({ title = "Something went wrong", description, action
 }
 
 export function PermissionDenied({ description = "You do not have access to this area. Ask a workspace owner if you think you should." }: { description?: string }) {
-  return <EmptyState icon={Lock} title="Permission denied" description={description} />;
+  return <EmptyState icon={Lock} icon3d="shield-check" title="Permission denied" description={description} />;
 }
 
 export function OfflineState() {
@@ -32,7 +34,7 @@ export function Alert({ tone = "info", title, children, className }: { tone?: "i
     success: "border-success/40 bg-success/10 text-fg",
   };
   return (
-    <div role={tone === "danger" ? "alert" : "status"} className={cn("rounded-xl border px-4 py-3 text-sm", tones[tone], className)}>
+    <div role={tone === "danger" ? "alert" : "status"} className={cn("rounded-[var(--radius-sm)] border px-4 py-3 text-sm", tones[tone], className)}>
       {title ? <p className="font-semibold">{title}</p> : null}
       {children ? <div className={title ? "mt-1 text-fg-muted" : ""}>{children}</div> : null}
     </div>

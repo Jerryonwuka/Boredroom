@@ -49,7 +49,7 @@ export default async function MessagesPage({ params, searchParams }: { params: P
     return (
       <li>
         <Link href={`${base}/messages?c=${c.id}`} aria-current={active ? "page" : undefined}
-          className={cn("flex items-center gap-2.5 rounded-[var(--radius-sm)] px-2.5 py-2 transition-colors duration-[var(--duration-fast)] hover:bg-accent-soft/50", active && "bg-accent-soft")}>
+          className={cn("flex items-center gap-2.5 rounded-[var(--radius-sm)] px-2.5 py-2 transition-colors duration-[var(--duration-fast)] hover:bg-white/[0.05]", active && "bg-white/[0.08] shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]")}>
           {Icon ? <Icon className={cn("size-4 shrink-0", active ? "text-accent" : "text-fg-subtle")} aria-hidden /> : <span aria-hidden className={cn("flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-bold", active ? "bg-accent text-accent-fg" : "bg-surface text-fg-muted")}>{initials(c.title)}</span>}
           <span className="min-w-0 flex-1">
             <span className="flex items-baseline justify-between gap-2"><span className={cn("truncate text-sm", c.unread ? "font-semibold" : "font-medium")}>{c.title}</span>{c.last_message_at ? <span className="shrink-0 text-[11px] text-fg-subtle">{relativeTime(c.last_message_at)}</span> : null}</span>
@@ -63,8 +63,8 @@ export default async function MessagesPage({ params, searchParams }: { params: P
 
   return (
     <AppShell ctx={ctx} counts={counts} teams={teams}>
-      <PageHeader title="Messages" description={`Message anyone at ${ctx.org.name}, in your team or not. Ask how far a task is, share a link, sort something out.`} actions={<NewMessage orgSlug={ctx.org.slug} people={people} />} />
-      <div className="grid min-h-[60dvh] overflow-hidden rounded-[var(--radius)] border border-border bg-elevated md:h-[calc(100dvh-14rem)] md:grid-cols-[18rem_1fr]">
+      <PageHeader icon="chat" title="Messages" description={`Message anyone at ${ctx.org.name}, in your team or not. Ask how far a task is, share a link, sort something out.`} actions={<NewMessage orgSlug={ctx.org.slug} people={people} />} />
+      <div className="tile grid min-h-[60dvh] overflow-hidden p-0 md:h-[calc(100dvh-14rem)] md:grid-cols-[18rem_1fr]">
         <aside aria-label="Conversations" className={cn("flex-col overflow-y-auto border-border-soft p-2 md:flex md:border-r", selected ? "hidden" : "flex")}>
           <p className="px-2.5 pb-1 pt-2 text-xs font-medium text-fg-subtle">Channels</p>
           <ul className="space-y-0.5">{channels.map((c) => <Item key={c.id} c={c} />)}</ul>
@@ -74,7 +74,7 @@ export default async function MessagesPage({ params, searchParams }: { params: P
         <section aria-label={title ? `Conversation with ${title}` : "Conversation"} className={cn("min-w-0 flex-col md:flex", selected ? "flex" : "hidden")}>
           {!selected ? (
             <div className="flex flex-1 items-center justify-center p-6">
-              <EmptyState title="Pick a conversation" description="Choose a channel or a person on the left, or use “New message” above to start one." />
+              <EmptyState icon3d="chat" className="border-0 bg-transparent shadow-none" title="Pick a conversation" description="Choose a channel or a person on the left, or use “New message” above to start one." />
             </div>
           ) : (
             <>
@@ -84,7 +84,7 @@ export default async function MessagesPage({ params, searchParams }: { params: P
                   <h2 className="truncate font-display text-lg leading-tight">{selected.conversation.kind === "team" ? `# ${title}` : title}</h2>
                   <p className="truncate text-xs text-fg-subtle">{selected.conversation.kind === "direct" ? selected.conversation.subtitle : `${selected.conversation.people.length} people, ${selected.conversation.kind === "team" ? "team channel" : "everyone in the organisation"}`}</p>
                 </div>
-                {selected.conversation.kind === "direct" && selected.conversation.other_membership_id && ctx.membership.role !== "employee" ? <Link href={`${base}/workroom/${selected.conversation.other_membership_id}`} className="text-sm underline">Their day</Link> : null}
+                {selected.conversation.kind === "direct" && selected.conversation.other_membership_id && ctx.membership.role !== "employee" ? <Link href={`${base}/workroom/${selected.conversation.other_membership_id}`} className="text-sm text-fg-muted hover:text-fg">Their day</Link> : null}
               </header>
               <div className="flex-1 overflow-y-auto px-4 py-3">
                 {selected.messages.length === 0 ? <p className="py-10 text-center text-sm text-fg-muted">No messages yet. Say hello, or ask how something is going.</p> : (
@@ -128,7 +128,7 @@ function Message({ m, grouped, orgSlug, timeZone }: { m: MessageRow; grouped: bo
         <div className="min-w-0 flex-1">
           {m.deleted_at ? <p className="text-sm italic text-fg-subtle">Message withdrawn</p> : <p className="whitespace-pre-wrap break-words text-[15px] leading-relaxed">{m.body}</p>}
           {m.task_id && !m.deleted_at ? (
-            <Link href={`/app/${orgSlug}/tasks/${m.task_id}`} className="mt-1 inline-flex max-w-full items-center gap-2 rounded-[var(--radius-sm)] border border-border bg-inset px-2.5 py-1.5 text-sm hover:border-border-strong">
+            <Link href={`/app/${orgSlug}/tasks/${m.task_id}`} className="chip chip-link mt-1 inline-flex max-w-full items-center gap-2 px-2.5 py-1.5 text-sm">
               <span className="truncate font-medium">{m.task_title}</span>{m.task_status ? <Badge tone={TASK_STATUS_TONE[m.task_status] ?? "neutral"}>{m.task_status === "in_review" ? "Sent for check" : label(m.task_status)}</Badge> : null}
             </Link>
           ) : null}

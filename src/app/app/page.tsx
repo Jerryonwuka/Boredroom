@@ -21,19 +21,19 @@ export default async function WorkspacesPage({ searchParams }: { searchParams: P
     <main id="main" className="mx-auto w-full max-w-2xl px-4 py-12">
       <div className="mb-8 flex items-center justify-between"><Logo /><SignOutButton /></div>
       {sp.verified ? <Alert tone="success" className="mb-6">Your email is verified.</Alert> : null}
-      <h1 className="text-3xl font-display">Your workspaces</h1>
+      <h1 className="font-display text-[30px] leading-[1.1] tracking-[-0.02em] md:text-[38px]">Your workspaces</h1>
       <p className="mt-1 text-fg-muted">Signed in as {user.email}</p>
       <div className="mt-6 grid gap-3">
         {workspaces.length === 0 ? (
           <EmptyState title="You are not in a workspace yet" description="Create an organisation account for your company, or join your organisation with the code or link it gave you." action={<div className="flex gap-2"><Link href="/onboarding"><Button>Create an organisation</Button></Link><Link href="/join"><Button variant="outline">Join with a code</Button></Link></div>} />
         ) : workspaces.map((w) => (
-          <Link key={w.id} href={`/app/${w.slug}`} className="tile flex items-center justify-between px-5 py-4 hover:border-border-strong">
+          <Link key={w.id} href={`/app/${w.slug}`} className="tile tile-link flex items-center justify-between px-5 py-4">
             <div><p className="font-semibold">{w.name}</p><p className="text-sm text-fg-subtle">{w.timezone}</p></div>
             <Badge tone="accent">{{ owner: "Organisation owner", hr: "HR administrator", manager: "Team lead", employee: "Staff" }[w.role]}</Badge>
           </Link>
         ))}
       </div>
-      {workspaces.length > 0 ? <div className="mt-6"><Link href="/onboarding" className="text-sm text-fg-muted underline hover:text-fg">Create another workspace</Link></div> : null}
+      {workspaces.length > 0 ? <div className="mt-6"><Link href="/onboarding" className="text-sm text-fg-muted hover:text-fg">Create another workspace</Link></div> : null}
     </main>
   );
 }

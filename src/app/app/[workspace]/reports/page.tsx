@@ -1,6 +1,7 @@
 import { workspacePage } from "@/server/lib/workspace-page";
 import { AppShell } from "@/components/app/shell";
-import { PageHeader, Card } from "@/components/ui/card";
+import { PageHeader, Card, CardHeader } from "@/components/ui/card";
+import { StatCard } from "@/components/ui/stat-card";
 import { DataTable } from "@/components/ui/table";
 import { Input, Select } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -54,11 +55,11 @@ export default async function ReportsPage({ params, searchParams }: { params: Pr
   const onTime = m.delivery.with_due ? Math.round((m.delivery.on_time / m.delivery.with_due) * 100) : null;
   return (
     <AppShell ctx={ctx} counts={counts} teams={navTeams}>
-      <PageHeader back={{ href: `/app/${ctx.org.slug}`, label: "Home" }} overline={`${from} → ${to}`} title="Reports" description="Transparent measures at employee, team and project scope. No composite score, no ranking by hours. Approved and provisional data are shown separately."
+      <PageHeader icon="chart-ring" back={{ href: `/app/${ctx.org.slug}`, label: "Home" }} overline={`${from} to ${to}`} title="Reports" description="Transparent measures at employee, team and project scope. No composite score, no ranking by hours. Approved and provisional data are shown separately."
         actions={<Link href={`/app/${ctx.org.slug}/timesheets`}><Button variant="outline" size="sm">{isEmployee ? "My timesheet" : "Timesheets, corrections and CSV export"}</Button></Link>} />
       <div className="mb-3 flex flex-wrap items-center gap-2 text-sm">
         <span className="text-xs text-fg-subtle">Period:</span>
-        {periods.map((p) => <Link key={p.key} href={`/app/${ctx.org.slug}/reports?period=${p.key}${keep}`} aria-current={activePreset === p.key ? "page" : undefined} className={`rounded-full border px-3 py-1 ${activePreset === p.key ? "border-accent bg-accent-soft text-accent" : "border-border text-fg-muted hover:border-border-strong"}`}>{p.label}</Link>)}
+        {periods.map((p) => <Link key={p.key} href={`/app/${ctx.org.slug}/reports?period=${p.key}${keep}`} aria-current={activePreset === p.key ? "page" : undefined} className={`chip chip-link rounded-full px-3 py-1 ${activePreset === p.key ? "border-accent/60 text-fg" : "text-fg-muted"}`}>{p.label}</Link>)}
         <span className="text-xs text-fg-subtle">or pick dates below. Nothing resets month to month; every period is a filter over the same records.</span>
       </div>
       <form className="mb-6 flex flex-wrap items-end gap-2 text-sm">
@@ -70,15 +71,15 @@ export default async function ReportsPage({ params, searchParams }: { params: Pr
         <Button type="submit" variant="outline" size="sm">Apply</Button>
       </form>
 
-      <div className="mb-6 grid gap-4 md:grid-cols-4">
-        <Stat label="Delivery count" value={String(m.delivery.approved)} note="tasks approved in period (by approval date)" />
-        <Stat label="On-time delivery" value={onTime == null ? "n/a" : `${onTime}%`} note={`${m.delivery.on_time} of ${m.delivery.with_due} dated tasks; undated excluded`} />
-        <Stat label="Estimate variance" value={m.delivery.est_count ? `${m.delivery.est_variance >= 0 ? "+" : "−"}${formatDuration(Math.abs(m.delivery.est_variance))}` : "n/a"} note={`${m.delivery.est_count} approved tasks with estimates; tasks without estimates excluded`} />
-        <Stat label="Capture coverage" value={m.capture.tracked ? `${Math.min(100, Math.round((m.capture.recorded / m.capture.tracked) * 100))}%` : "n/a"} note={`recording-required sessions only${m.capture.pending ? ` · ${m.capture.pending} recording(s) pending, so provisional` : ""}. Not a productivity measure.`} />
+      <div className="mb-6 grid gap-4 md:grid-cols-3">
+        <StatCard label="Delivery" verdict={`${m.delivery.approved} approved`} rows={[{ label: "On time", value: m.delivery.on_time, share: onTime == null ? "n/a" : `${onTime}%`, tone: "success" }, { label: "With a due date", value: m.delivery.with_due, tone: "neutral" }]} />
+        <StatCard label="Estimates" verdict={m.delivery.est_count ? `${m.delivery.est_variance >= 0 ? "+" : "−"}${formatDuration(Math.abs(m.delivery.est_variance))}` : "n/a"} tone={m.delivery.est_count && m.delivery.est_variance > 0 ? "warning" : "default"} rows={[{ label: "Approved tasks with an estimate", value: m.delivery.est_count, tone: "info" }]} />
+        <StatCard label="Capture coverage" verdict={m.capture.tracked ? `${Math.min(100, Math.round((m.capture.recorded / m.capture.tracked) * 100))}%` : "n/a"} rows={[{ label: "Recording-required sessions", value: m.capture.tracked, tone: "neutral" }, { label: "Recorded", value: m.capture.recorded, tone: "success" }, ...(m.capture.pending ? [{ label: "Pending, so provisional", value: m.capture.pending, tone: "warning" as const }] : [])]} />
       </div>
+      <p className="-mt-3 mb-6 text-xs text-fg-subtle">Delivery counts tasks by approval date; undated tasks are left out of the on-time share; tasks without estimates are left out of the variance. None of this is a productivity measure.</p>
 
       <section className="mb-8">
-        <h2 className="mb-2 font-display text-lg">Time allocation</h2>
+        <CardHeader title="Time allocation" description="Approved and provisional time per member." />
         <DataTable caption="Approved and provisional time per member">
           <thead><tr><th>Member</th><th>Approved tracked time</th><th>Approved days</th><th>Provisional (unapproved confirmed intervals)</th></tr></thead>
           <tbody>{m.approvedTime.map((r) => <tr key={r.membership_id}><td>{r.display_name}</td><td className="font-semibold">{formatDuration(r.seconds)}</td><td>{r.days}</td><td className="text-fg-muted">{formatDuration(provisionalBy.get(r.membership_id) ?? 0)}</td></tr>)}</tbody>
@@ -87,12 +88,12 @@ export default async function ReportsPage({ params, searchParams }: { params: Pr
 
       <div className="grid gap-6 md:grid-cols-2">
         <Card>
-          <h2 className="font-display text-lg">Open blockers ({m.blockers.length})</h2>
+          <CardHeader title={`Open blockers (${m.blockers.length})`} />
           <p className="text-xs text-fg-subtle">Age is elapsed wall-clock time since the task was marked blocked, not labour hours.</p>
-          <ul className="mt-2 space-y-1 text-sm">{m.blockers.length === 0 ? <li className="text-fg-subtle">None.</li> : m.blockers.map((b) => <li key={b.id}><strong>{b.title}</strong> · {b.display_name} · since {formatDateTime(b.since, ctx.org.timezone)}{b.blocked_reason ? <p className="text-fg-muted">{b.blocked_reason}</p> : null}</li>)}</ul>
+          <ul className="mt-2 space-y-1 text-sm">{m.blockers.length === 0 ? <li className="text-fg-subtle">None.</li> : m.blockers.map((b) => <li key={b.id}><strong>{b.title}</strong>, {b.display_name}, since {formatDateTime(b.since, ctx.org.timezone)}{b.blocked_reason ? <p className="text-fg-muted">{b.blocked_reason}</p> : null}</li>)}</ul>
         </Card>
         <Card>
-          <h2 className="font-display text-lg">Report completeness</h2>
+          <CardHeader title="Report completeness" />
           <p className="text-xs text-fg-subtle">Submitted reports ÷ expected workdays ({m.expectedDays}) under the saved schedule, minus authorised exemptions.</p>
           <ul className="mt-2 space-y-1 text-sm">{m.completeness.map((c) => { const expected = Math.max(0, m.expectedDays - c.exempt); return <li key={c.membership_id} className="flex justify-between"><span>{c.display_name}</span><span>{c.submitted} / {expected}{expected ? ` (${Math.round((c.submitted / expected) * 100)}%)` : ""}</span></li>; })}</ul>
           {!isEmployee && members.length ? <div className="mt-3"><ExemptionForm orgSlug={ctx.org.slug} members={members} /></div> : null}
@@ -100,8 +101,4 @@ export default async function ReportsPage({ params, searchParams }: { params: Pr
       </div>
     </AppShell>
   );
-}
-
-function Stat({ label, value, note }: { label: string; value: string; note: string }) {
-  return <div className="tile p-4"><p className="text-sm text-fg-muted">{label}</p><p className="mt-1 font-display text-3xl tabular-nums">{value}</p><p className="mt-1 text-xs text-fg-muted">{note}</p></div>;
 }

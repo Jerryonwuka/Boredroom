@@ -220,7 +220,7 @@ function RecordingIndicator() {
       {c.state.status === "recording" ? <Circle className="rec-dot h-3 w-3 fill-danger text-danger" aria-hidden /> : <AlertTriangle className="h-4 w-4 text-warning" aria-hidden />}
       <div className="text-sm">
         <p className="font-semibold">{c.state.status === "recording" ? "Recording screen" : c.state.status === "uploading" ? "Uploading recording" : c.state.status === "requesting" ? "Choose what to share" : "Capture problem"}</p>
-        <p className="text-xs text-fg-muted">{c.state.sourceLabel ? `${c.state.sourceLabel} · ` : ""}{c.state.uploadedChunks} chunks sent · {mb} MB pending{c.state.pendingBytes > WARN_BYTES ? " · high" : ""}</p>
+        <p className="text-xs text-fg-muted">{c.state.sourceLabel ? `${c.state.sourceLabel}, ` : ""}{c.state.uploadedChunks} chunks sent, {mb} MB pending{c.state.pendingBytes > WARN_BYTES ? ", high" : ""}</p>
       </div>
       {c.state.status === "recording" ? <Button size="sm" variant="danger" onClick={() => c.stopCapture("stopped")}><Square className="h-3 w-3" aria-hidden />Stop</Button> : null}
     </div>

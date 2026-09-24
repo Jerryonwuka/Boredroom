@@ -3,7 +3,8 @@ import { Video } from "lucide-react";
 import { notFound } from "next/navigation";
 import { workspacePage } from "@/server/lib/workspace-page";
 import { AppShell } from "@/components/app/shell";
-import { PageHeader } from "@/components/ui/card";
+import { PageHeader, CardHeader } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Badge, TASK_STATUS_TONE, SESSION_STATE_TONE, label } from "@/components/ui/badge";
 import { DataTable } from "@/components/ui/table";
 import { EmptyState } from "@/components/ui/states";
@@ -28,12 +29,12 @@ export default async function TeamBoardPage({ params }: { params: Promise<{ work
   const memberOptions = members.map((m) => ({ id: m.membership_id, display_name: m.display_name }));
   return (
     <AppShell ctx={ctx} counts={counts} teams={teams}>
-      <PageHeader back={{ href: isOrgAdmin ? `/app/${ctx.org.slug}/people` : `/app/${ctx.org.slug}`, label: isOrgAdmin ? "People and teams" : "Back" }} title={team.name}
+      <PageHeader icon="people" back={{ href: isOrgAdmin ? `/app/${ctx.org.slug}/people` : `/app/${ctx.org.slug}`, label: isOrgAdmin ? "People and teams" : "Back" }} title={team.name}
         description={isLead ? "Your team's work in one place. Create tasks, assign them to your people, and remove what is no longer needed." : "Tasks assigned to the people in this team."}
         actions={isLead && (team.project_id ?? projects[0]?.id) ? <NewTaskForm orgSlug={ctx.org.slug} projectId={team.project_id ?? projects[0].id} members={memberOptions} self={ctx.membership.id} canAssignOthers requiresDueDate={false} requiresEstimate={false} /> : null} />
       <section className="mb-8">
-        <h2 className="mb-3 font-display text-lg">Members ({members.length})</h2>
-        {members.length === 0 ? <EmptyState title="No members yet" description={isOrgAdmin ? "Add someone with the form below, or from the People page." : "Your organisation adds people to this team from the People page."} action={isOrgAdmin ? <Link href={`${base}/people?tab=people`} className="underline">Open People</Link> : undefined} /> : (
+        <CardHeader title={`Members (${members.length})`} className="mb-3" />
+        {members.length === 0 ? <EmptyState icon3d="people" title="No members yet" description={isOrgAdmin ? "Add someone with the form below, or from the People page." : "Your organisation adds people to this team from the People page."} action={isOrgAdmin ? <Link href={`${base}/people?tab=people`}><Button size="sm" variant="outline">Open People</Button></Link> : undefined} /> : (
           <DataTable caption="Team members">
             <thead><tr><th>Person</th><th>Role in team</th><th>Now</th><th>Open</th><th>Blocked</th><th>In review</th>{isOrgAdmin ? <th></th> : null}</tr></thead>
             <tbody>{members.map((m) => (
@@ -50,8 +51,8 @@ export default async function TeamBoardPage({ params }: { params: Promise<{ work
         {isOrgAdmin && others.length ? <div className="mt-3"><TeamMemberActions orgSlug={ctx.org.slug} teamId={team.id} addCandidates={others} /></div> : null}
       </section>
       <section>
-        <h2 className="mb-3 font-display text-lg">Tasks ({tasks.length})</h2>
-        {tasks.length === 0 ? <EmptyState title="No tasks for this team yet" description={isLead ? "Create the first task and assign it to someone on the team." : "Your team lead has not assigned tasks yet."} /> : (
+        <CardHeader title={`Tasks (${tasks.length})`} className="mb-3" />
+        {tasks.length === 0 ? <EmptyState icon3d="card-check" title="No tasks for this team yet" description={isLead ? "Create the first task and assign it to someone on the team." : "Your team lead has not assigned tasks yet."} /> : (
           <DataTable caption="Team tasks">
             <thead><tr><th>Task</th><th>Status</th><th>Worked by</th><th>Project</th><th>Due</th><th>Tracked</th><th>Recordings</th>{isLead ? <th></th> : null}</tr></thead>
             <tbody>{tasks.map((t) => (
@@ -73,9 +74,9 @@ export default async function TeamBoardPage({ params }: { params: Promise<{ work
       <section className="mt-8">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <h2 className="font-display text-lg">Screen recordings</h2>
-          <Link href={`${base}/recordings?team=${team.id}`} className="text-sm underline">All recordings for this team</Link>
+          <Link href={`${base}/recordings?team=${team.id}`} className="text-sm text-fg-muted hover:text-fg">All recordings for this team</Link>
         </div>
-        {recordings.length === 0 ? <EmptyState title="No recordings from this team yet" description="When someone on the team presses Record screen while their timer runs, the footage appears here against their task." /> : (
+        {recordings.length === 0 ? <EmptyState icon3d="screen-record" title="No recordings from this team yet" description="When someone on the team presses Record screen while their timer runs, the footage appears here against their task." /> : (
           <RecordingsTable orgSlug={ctx.org.slug} rows={recordings} timeZone={ctx.org.timezone} compact />
         )}
       </section>

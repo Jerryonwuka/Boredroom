@@ -8,7 +8,7 @@ import { PermissionDenied, EmptyState } from "@/components/ui/states";
 import { peopleView } from "@/server/services/views";
 import { formatDateTime } from "@/lib/utils";
 import { InviteForm, MemberRow, NewTeamForm, InvitationRow, JoinCodePanel } from "@/components/app/people-forms";
-import { SlidingMarker } from "@/components/ui/motion";
+import { Tabs } from "@/components/ui/tabs";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "People and teams" };
@@ -34,28 +34,20 @@ export default async function PeoplePage({ params, searchParams }: { params: Pro
   const countFor: Record<TabKey, number> = { teams: teams.length, people: activeMembers.length, invitations: pendingInvites };
   return (
     <AppShell ctx={ctx} counts={counts} teams={navTeams}>
-      <PageHeader back={{ href: `${base}/dashboard`, label: "Dashboard" }} title="People and teams"
+      <PageHeader icon="people" back={{ href: `${base}/dashboard`, label: "Dashboard" }} title="People and teams"
         description="Create teams and put a team lead on each. Add people with your join code or an invitation, then place them in a team."
         actions={tab === "teams" ? <NewTeamForm orgSlug={ctx.org.slug} /> : tab === "people" ? <InviteForm orgSlug={ctx.org.slug} teams={teams} isOwner={isOwner} label="Add new person" /> : <InviteForm orgSlug={ctx.org.slug} teams={teams} isOwner={isOwner} label="Send an invitation" />} />
 
-      <nav aria-label="Sections" className="mb-6 flex gap-1 border-b border-border">
-        {TABS.map((t) => (
-          <Link key={t.key} href={`${base}/people?tab=${t.key}`} aria-current={tab === t.key ? "page" : undefined}
-            className={`relative -mb-px inline-flex items-center gap-2 px-4 py-2.5 text-sm font-semibold transition-[color] duration-[var(--duration-fast)] ${tab === t.key ? "text-fg" : "text-fg-muted hover:text-fg"}`}>
-            {t.label}<span className={`rounded-full px-2 py-0.5 text-xs ${tab === t.key ? "bg-accent-soft text-accent" : "bg-inset text-fg-subtle"}`}>{countFor[t.key]}</span>
-            {tab === t.key ? <SlidingMarker layoutId="people-tab" className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-accent" /> : null}
-          </Link>
-        ))}
-      </nav>
+      <div className="mb-6"><Tabs label="Sections" value={tab} tabs={TABS.map((t) => ({ value: t.key, label: t.label, count: countFor[t.key], href: `${base}/people?tab=${t.key}` }))} /></div>
 
       {tab === "teams" ? (
         <section aria-labelledby="teams-heading">
           <h2 id="teams-heading" className="sr-only">Teams</h2>
-          {teams.length === 0 ? <EmptyState title="No teams yet" description="Create teams such as Design, Tech or Branding with “Add new team”. Then open a team to add people and choose its lead." /> : (
+          {teams.length === 0 ? <EmptyState icon3d="people" title="No teams yet" description="Create teams such as Design, Tech or Branding with “Add new team”. Then open a team to add people and choose its lead." /> : (
             <ul className="grid gap-3 md:grid-cols-2">
               {teams.map((t) => (
                 <li key={t.id}>
-                  <Link href={`${base}/teams/${t.id}`} className="tile block p-5 hover:border-border-strong">
+                  <Link href={`${base}/teams/${t.id}`} className="tile tile-link block p-5">
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <p className="font-display text-xl">{t.name}</p>
@@ -96,7 +88,7 @@ export default async function PeoplePage({ params, searchParams }: { params: Pro
       {tab === "invitations" ? (
         <section aria-labelledby="inv-heading">
           <h2 id="inv-heading" className="sr-only">Invitations</h2>
-          {invitations.length === 0 ? <EmptyState title="No invitations yet" description="Invitations are email links for people who should join with a specific role or team. Most staff can simply use the join code on the People tab." /> : (
+          {invitations.length === 0 ? <EmptyState icon3d="doc-link-check" title="No invitations yet" description="Invitations are email links for people who should join with a specific role or team. Most staff can simply use the join code on the People tab." /> : (
             <DataTable caption="Invitations">
               <thead><tr><th>Email</th><th>Role</th><th>Team</th><th>State</th><th>Expires</th><th></th></tr></thead>
               <tbody>{invitations.map((i) => {

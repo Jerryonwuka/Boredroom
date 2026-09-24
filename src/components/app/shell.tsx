@@ -66,11 +66,11 @@ export function AppShell({ ctx, counts, teams = [], children }: { ctx: OrgContex
   return (
     <MotionRoot>
     <div className="flex min-h-dvh">
-      <aside className="hidden w-60 shrink-0 flex-col border-r border-border-soft px-3 py-5 md:flex">
+      <aside className="hidden w-60 shrink-0 flex-col border-r border-border-soft bg-[#050505] px-3 py-5 md:flex">
         <div className="mb-6 flex items-center justify-between px-2">
           <Logo href={`/app/${ctx.org.slug}`} />
         </div>
-        <Link href="/app" className="mb-5 block rounded-[var(--radius-sm)] border border-border px-3 py-2 transition-[border-color,background-color] duration-[var(--duration-fast)] hover:border-border-strong hover:bg-white/[0.03]" aria-label="Switch workspace">
+        <Link href="/app" className="chip chip-link mb-5 block px-3 py-2" aria-label="Switch workspace">
           <p className="truncate text-sm font-semibold">{ctx.org.name}</p>
           <p className="text-xs text-fg-subtle">Switch workspace</p>
         </Link>
@@ -85,10 +85,10 @@ export function AppShell({ ctx, counts, teams = [], children }: { ctx: OrgContex
         </div>
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex items-center justify-between border-b border-border px-4 py-3 md:hidden">
+        <header className="flex items-center justify-between border-b border-border-soft bg-[#050505] px-4 py-3 md:hidden">
           <Logo href={`/app/${ctx.org.slug}`} />
           <details className="relative">
-            <summary className="cursor-pointer rounded-full border border-border px-3 py-1.5 text-sm">Menu</summary>
+            <summary className="chip chip-link cursor-pointer rounded-full px-3 py-1.5 text-sm">Menu</summary>
             <div className="absolute right-0 z-[var(--z-dropdown)] mt-2 w-64 rounded-[var(--radius)] border border-border-strong bg-popover p-3">
               <WorkspaceNav items={navItems(ctx, counts, teams)} />
               <div className="mt-3 border-t border-border pt-3"><Link href="/app" className="text-sm text-fg-muted">Switch workspace</Link></div>

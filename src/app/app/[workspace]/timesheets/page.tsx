@@ -30,14 +30,14 @@ export default async function TimesheetsPage({ params, searchParams }: { params:
   const recent = await withUser(ctx.user.profileId, (db) => db.query<{ local_date: string; status: string; total_seconds: number | null }>(`SELECT r.local_date, r.status, v.total_seconds FROM daily_reports r LEFT JOIN report_versions v ON v.report_id = r.id AND v.version = r.current_version WHERE r.membership_id = $1 ORDER BY r.local_date DESC LIMIT 14`, [membershipId]));
   return (
     <AppShell ctx={ctx} counts={counts} teams={teams}>
-      <PageHeader back={{ href: `/app/${ctx.org.slug}`, label: "Home" }} title={ctx.membership.role === "employee" ? "My timesheet" : "Timesheets"} description="Daily reports are generated from work sessions and split at local midnight. Submitting creates an immutable versioned snapshot; corrections create a new version that needs fresh approval." actions={["owner", "hr", "manager"].includes(ctx.membership.role) ? <ExportForm orgSlug={ctx.org.slug} members={members} /> : null} />
+      <PageHeader icon="chart-ring" back={{ href: `/app/${ctx.org.slug}`, label: "Home" }} title={ctx.membership.role === "employee" ? "My timesheet" : "Timesheets"} description="Daily reports are generated from work sessions and split at local midnight. Submitting creates an immutable versioned snapshot; corrections create a new version that needs fresh approval." actions={["owner", "hr", "manager"].includes(ctx.membership.role) ? <ExportForm orgSlug={ctx.org.slug} members={members} /> : null} />
       <MemberDatePicker orgSlug={ctx.org.slug} members={members} membershipId={membershipId} date={date} prev={addDays(date, -1)} next={addDays(date, 1)} />
       {denied || !data ? <Alert tone="danger">You cannot view that member&apos;s records.</Alert> : (
         <div className="mt-4 grid gap-6 lg:grid-cols-[1fr_320px]">
           <div className="space-y-6">
             <Card>
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <h2 className="font-display text-lg">{memberName} · {date}</h2>
+                <h2 className="font-display text-lg">{memberName}, {date}</h2>
                 <span className="flex items-center gap-2">{data.report ? <Badge tone={REPORT_STATUS_TONE[data.report.status]}>{label(data.report.status)}{data.report.approved_version ? ` (v${data.report.approved_version} approved)` : ""}</Badge> : <Badge>not started</Badge>}<Badge tone="neutral">live total {formatDuration(data.live.totalSeconds)}</Badge></span>
               </div>
               {data.openSessionId ? <Alert tone="warning" className="mt-3">An open work session overlaps this day; stop it before submitting.</Alert> : null}
@@ -47,13 +47,13 @@ export default async function TimesheetsPage({ params, searchParams }: { params:
                   <thead><tr><th>Task</th><th>From</th><th>To</th><th>Duration</th><th>Status</th></tr></thead>
                   <tbody>
                     {[...data.live.entries, ...data.live.uncertain].sort((a, b) => a.startedAt.localeCompare(b.startedAt)).map((e, i) => (
-                      <tr key={`${e.intervalId}-${i}`}><td>{e.taskTitle}<p className="text-xs text-fg-subtle">{e.projectName} · {e.category}</p></td><td>{formatDateTime(e.startedAt, tz)}</td><td>{formatDateTime(e.endedAt, tz)}</td><td>{formatDuration(e.seconds)}</td><td><Badge tone={e.status === "confirmed" ? "success" : "warning"}>{e.status}{e.source !== "timer" ? ` · ${e.source}` : ""}</Badge></td></tr>
+                      <tr key={`${e.intervalId}-${i}`}><td>{e.taskTitle}<p className="text-xs text-fg-subtle">{e.projectName}, {e.category}</p></td><td>{formatDateTime(e.startedAt, tz)}</td><td>{formatDateTime(e.endedAt, tz)}</td><td>{formatDuration(e.seconds)}</td><td><Badge tone={e.status === "confirmed" ? "success" : "warning"}>{e.status}{e.source !== "timer" ? `, ${e.source}` : ""}</Badge></td></tr>
                     ))}
                   </tbody>
                 </DataTable>
               )}
               {data.live.uncertain.length ? <p className="mt-2 text-xs text-warning">Uncertain time is never credited automatically. Use a correction to claim it.</p> : null}
-              {data.live.notes.length ? <div className="mt-4"><h3 className="text-sm font-semibold text-fg-muted">Progress notes</h3><ul className="mt-1 space-y-1 text-sm text-fg-muted">{data.live.notes.map((n) => <li key={n.sessionId}>{formatDateTime(n.endedAt, tz)} · {n.outcome ? label(n.outcome) : ""} — {n.note}</li>)}</ul></div> : null}
+              {data.live.notes.length ? <div className="mt-4"><h3 className="text-sm font-semibold text-fg-muted">Progress notes</h3><ul className="mt-1 space-y-1 text-sm text-fg-muted">{data.live.notes.map((n) => <li key={n.sessionId}>{formatDateTime(n.endedAt, tz)}, {n.outcome ? label(n.outcome) : ""}: {n.note}</li>)}</ul></div> : null}
               <div className="mt-4"><h3 className="text-sm font-semibold text-fg-muted">Totals by task</h3><ul className="mt-1 text-sm">{data.live.totalsByTask.map((t) => <li key={t.taskId}>{t.taskTitle} <span className="text-fg-subtle">({t.projectName})</span>: <strong>{formatDuration(t.seconds)}</strong></li>)}</ul></div>
             </Card>
 
@@ -64,7 +64,7 @@ export default async function TimesheetsPage({ params, searchParams }: { params:
               <h2 className="mb-3 font-display text-lg">Versions</h2>
               {data.versions.length === 0 ? <p className="tile p-4 text-sm text-fg-muted">No submitted versions yet.</p> : data.versions.map((v) => (
                 <details key={v.id} className="tile mb-2 p-4" open={v.version === data.report?.current_version}>
-                  <summary className="flex cursor-pointer flex-wrap items-center justify-between gap-2"><span className="font-semibold">Version {v.version} <Badge tone={REPORT_STATUS_TONE[v.status]}>{label(v.status)}</Badge></span><span className="text-sm text-fg-subtle">{formatDuration(v.total_seconds)} · submitted {formatDateTime(v.submitted_at, tz)} · zone {v.timezone_snapshot}{v.reviewer_name ? ` · reviewed by ${v.reviewer_name} ${formatDateTime(v.reviewed_at, tz)}` : ""}</span></summary>
+                  <summary className="flex cursor-pointer flex-wrap items-center justify-between gap-2"><span className="font-semibold">Version {v.version} <Badge tone={REPORT_STATUS_TONE[v.status]}>{label(v.status)}</Badge></span><span className="text-sm text-fg-subtle">{formatDuration(v.total_seconds)}, submitted {formatDateTime(v.submitted_at, tz)}, zone {v.timezone_snapshot}{v.reviewer_name ? `, reviewed by ${v.reviewer_name} ${formatDateTime(v.reviewed_at, tz)}` : ""}</span></summary>
                   {v.review_note ? <p className="mt-2 text-sm"><strong>Review note:</strong> {v.review_note}</p> : null}
                   {v.blockers ? <p className="mt-1 text-sm"><strong>Blockers:</strong> {v.blockers}</p> : null}{v.next_priorities ? <p className="text-sm"><strong>Next:</strong> {v.next_priorities}</p> : null}
                   <ul className="mt-2 text-sm text-fg-muted">{v.snapshot.totalsByTask.map((t) => <li key={t.taskId}>{t.taskTitle}: {formatDuration(t.seconds)}</li>)}</ul>

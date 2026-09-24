@@ -1,6 +1,6 @@
 import { workspacePage } from "@/server/lib/workspace-page";
 import { AppShell } from "@/components/app/shell";
-import { PageHeader, Card } from "@/components/ui/card";
+import { PageHeader, Card, CardHeader } from "@/components/ui/card";
 import { Alert } from "@/components/ui/states";
 import { Badge } from "@/components/ui/badge";
 import { policyView } from "@/server/services/views";
@@ -17,7 +17,7 @@ export default async function PolicyPage({ params, searchParams }: { params: Pro
   const { policy, acknowledgedAt, history } = await policyView(ctx);
   return (
     <AppShell ctx={ctx} counts={counts} teams={teams}>
-      <PageHeader back={{ href: `/app/${ctx.org.slug}`, label: "Home" }} title="What Boredroom records about you" description="Read the current notice. Material changes create a new version that must be acknowledged before recorded work starts." />
+      <PageHeader icon="shield-check" back={{ href: `/app/${ctx.org.slug}`, label: "Home" }} title="What Boredroom records about you" description="Read the current notice. Material changes create a new version that must be acknowledged before recorded work starts." />
       {sp.welcome ? <Alert tone="success" className="mb-4" title={`Welcome to ${ctx.org.name}`}>Your employee ID is {ctx.membership.employee_code}. Review the notice below to continue.</Alert> : null}
       {sp.required ? <Alert tone="warning" className="mb-4">Acknowledge the current policy version to continue.</Alert> : null}
       {!policy ? <Alert tone="info">No policy is configured yet.</Alert> : (
@@ -30,9 +30,9 @@ export default async function PolicyPage({ params, searchParams }: { params: Pro
             </div>
           </Card>
           <Card>
-            <h2 className="font-display text-lg">Your acknowledgements</h2>
-            <ul className="mt-2 space-y-1 text-sm text-fg-muted">{history.length === 0 ? <li>None yet.</li> : history.map((h) => <li key={h.policy_id}>Version {h.version} · {formatDateTime(h.acknowledged_at, ctx.org.timezone)}</li>)}</ul>
-            <h2 className="mt-6 font-display text-lg">What is never recorded</h2>
+            <CardHeader title="Your acknowledgements" className="mb-1" />
+            <ul className="mt-2 space-y-1 text-sm text-fg-muted">{history.length === 0 ? <li>None yet.</li> : history.map((h) => <li key={h.policy_id}>Version {h.version}, {formatDateTime(h.acknowledged_at, ctx.org.timezone)}</li>)}</ul>
+            <h2 className="mt-6 font-display text-lg text-fg">What is never recorded</h2>
             <ul className="mt-2 list-disc space-y-1 pl-4 text-sm text-fg-muted"><li>Audio or microphone</li><li>Keystrokes or mouse movement</li><li>Screens you did not choose to share</li><li>Anything while no session is running</li></ul>
           </Card>
         </div>

@@ -31,7 +31,7 @@ export default async function MyDayPage({ params }: { params: Promise<{ workspac
   const lateNow = Date.parse(clock.serverNow) > Date.parse(clock.scheduledStartAt) + clock.schedule.clock_grace_minutes * 60_000;
   return (
     <AppShell ctx={ctx} counts={counts} teams={teams}>
-      <PageHeader overline={formatLongDate(data.today)} title={<>Good day, {ctx.user.displayName.split(" ")[0]}.</>}
+      <PageHeader icon="day-checklist" overline={formatLongDate(data.today)} title={<>Good day, {ctx.user.displayName.split(" ")[0]}.</>}
         description={<>Your to-dos for today. {data.todaySeconds ? <>You have worked {formatDuration(data.todaySeconds)} so far.</> : "Press Start on the first one when you begin."} {data.report ? <Link className="underline" href={`/app/${ctx.org.slug}/timesheets?date=${data.today}`}>Today&apos;s report is {data.report.status.replace("_", " ")}.</Link> : null}</>} />
       {clock.workingDay ? <ClockBanner orgSlug={ctx.org.slug} status={clock.status} startLabel={clock.schedule.start_local.slice(0, 5)} late={lateNow} /> : null}
       <MyDayBoard

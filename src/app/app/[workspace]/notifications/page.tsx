@@ -3,6 +3,7 @@ import { workspacePage } from "@/server/lib/workspace-page";
 import { AppShell } from "@/components/app/shell";
 import { PageHeader } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/states";
+import { Button } from "@/components/ui/button";
 import { notificationsView } from "@/server/services/views";
 import { formatDateTime } from "@/lib/utils";
 import { MarkRead } from "@/components/app/small-actions";
@@ -16,15 +17,15 @@ export default async function NotificationsPage({ params }: { params: Promise<{ 
   const items = await notificationsView(ctx);
   return (
     <AppShell ctx={ctx} counts={counts} teams={teams}>
-      <PageHeader back={{ href: `/app/${ctx.org.slug}`, label: "Home" }} title="Notifications" description="Assignments, review requests, decisions, blockers and reminders. Email delivery is optional and off in the pilot." />
-      {items.length === 0 ? <EmptyState title="No notifications yet" description="Assignments, review requests and decisions land here as they happen." action={<Link href={`/app/${ctx.org.slug}`} className="underline">Back to your home page</Link>} /> : (
+      <PageHeader icon="flag-alert" back={{ href: `/app/${ctx.org.slug}`, label: "Home" }} title="Notifications" description="Assignments, review requests, decisions, blockers and reminders. Email delivery is optional and off in the pilot." />
+      {items.length === 0 ? <EmptyState icon3d="flag-alert" title="No notifications yet" description="Assignments, review requests and decisions land here as they happen." action={<Link href={`/app/${ctx.org.slug}`}><Button size="sm" variant="outline">Back to your home page</Button></Link>} /> : (
         <ul className="space-y-2">
           {items.map((n) => (
             <li key={n.id} className={`tile flex items-start justify-between gap-3 px-4 py-3 ${n.read_at ? "opacity-70" : "tile-active"}`}>
               <div className="min-w-0">
                 {n.href ? <Link href={n.href} className="font-semibold hover:underline">{n.title}</Link> : <p className="font-semibold">{n.title}</p>}
                 {n.body ? <p className="text-sm text-fg-muted">{n.body}</p> : null}
-                <p className="text-xs text-fg-subtle">{formatDateTime(n.created_at, ctx.org.timezone)} · {n.type}</p>
+                <p className="text-xs text-fg-subtle">{formatDateTime(n.created_at, ctx.org.timezone)}, {n.type.replace(/[._]/g, " ")}</p>
               </div>
               {!n.read_at ? <MarkRead orgSlug={ctx.org.slug} id={n.id} /> : null}
             </li>

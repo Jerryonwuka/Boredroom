@@ -1,10 +1,12 @@
 import Link from "next/link";
 import { workspacePage } from "@/server/lib/workspace-page";
 import { AppShell } from "@/components/app/shell";
-import { PageHeader, Card, Ledger } from "@/components/ui/card";
+import { PageHeader, Card, CardHeader } from "@/components/ui/card";
+import { StatCard } from "@/components/ui/stat-card";
 import { Badge, SESSION_STATE_TONE, label } from "@/components/ui/badge";
 import { DataTable } from "@/components/ui/table";
 import { PermissionDenied, EmptyState } from "@/components/ui/states";
+import { Button } from "@/components/ui/button";
 import { orgDashboard } from "@/server/services/views";
 import { attendanceBoard } from "@/server/services/attendance";
 import { listRecordings } from "@/server/services/recording";
@@ -13,6 +15,8 @@ import { formatDuration, formatDateTime, relativeTime, formatLongDate } from "@/
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Dashboard" };
 
+function pct(n: number, of: number) { return of ? `${Math.round((n / of) * 100)}%` : ""; }
+
 export default async function DashboardPage({ params }: { params: Promise<{ workspace: string }> }) {
   const { workspace } = await params;
   const { ctx, counts, teams } = await workspacePage(workspace, `/app/${workspace}/dashboard`);
@@ -20,72 +24,79 @@ export default async function DashboardPage({ params }: { params: Promise<{ work
   const [d, recentRecordings, att] = await Promise.all([orgDashboard(ctx), listRecordings(ctx, { limit: 6 }), attendanceBoard(ctx)]);
   const base = `/app/${ctx.org.slug}`;
   const now = new Date(d.serverNow).getTime();
-  // Four figures only: the room, the timers, and the work. Everything else lives one click away.
-  const ledger = [
-    { label: "Clocked in", value: att.counts.in + att.counts.out, note: att.counts.late ? `${att.counts.late} late` : att.counts.in + att.counts.out ? "everyone on time" : "nobody yet", href: `${base}/attendance`, tone: att.counts.late ? ("danger" as const) : ("accent" as const) },
-    { label: "Working now", value: d.counts.working, note: d.counts.working ? `${d.counts.connected} connected` : "no timers running", href: `${base}/workroom`, tone: d.counts.working ? ("accent" as const) : ("default" as const) },
-    { label: "Done today", value: d.counts.tasks_done_today, note: `${d.counts.tasks_done_total} completed in total`, href: `${base}/reports` },
-    { label: "Open", value: d.counts.tasks_open, note: d.counts.tasks_blocked ? `${d.counts.tasks_blocked} blocked` : "to-dos not yet finished", href: `${base}/tasks`, tone: d.counts.tasks_blocked ? ("danger" as const) : ("default" as const) },
-  ];
+  const fmtTime = (iso: string) => new Intl.DateTimeFormat("en-GB", { timeZone: att.schedule.timezone, hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
+  const clockedIn = att.counts.in + att.counts.out;
+  const people = clockedIn + att.counts.not_in;
+
+  // Three verdicts: the room, the day and the work. Each row beneath is a fact with its share.
+  const attendanceVerdict = clockedIn === 0 ? "Nobody yet" : att.counts.late ? `${att.counts.late} late` : "On time";
+  const focusVerdict = d.counts.working === 0 ? "Quiet" : `${d.counts.working} working`;
+  const deliveryVerdict = d.counts.tasks_blocked ? "Needs a look" : d.counts.tasks_done_today ? "Moving" : "Nothing done yet";
+
   return (
     <AppShell ctx={ctx} counts={counts} teams={teams}>
-      <PageHeader overline={formatLongDate(d.today)} title={ctx.org.name} description={<>What is happening right now, from timers and tasks. Nothing here is a productivity score. Last sync {formatDateTime(d.serverNow, ctx.org.timezone)}.</>}
-        actions={<><Link href={`${base}/people`}><span className="inline-flex h-11 items-center rounded-full bg-accent px-5 text-[15px] font-semibold text-accent-fg hover:bg-accent-hover">Add people and teams</span></Link><Link href={`${base}/reviews`}><span className="inline-flex h-11 items-center rounded-full border border-accent px-5 text-[15px] font-semibold hover:bg-accent-soft">Review queue{counts.attention ? ` (${counts.attention})` : ""}</span></Link></>} />
-      <Ledger className="mb-8" items={ledger} />
+      <PageHeader icon="eye-dashboard" overline={formatLongDate(d.today)} title={ctx.org.name} description={<>What is happening right now, from timers and tasks. Nothing here is a productivity score. Last sync {formatDateTime(d.serverNow, ctx.org.timezone)}.</>}
+        actions={<><Link href={`${base}/people`}><Button>Add people and teams</Button></Link><Link href={`${base}/reviews`}><Button variant="outline">Review queue{counts.attention ? ` (${counts.attention})` : ""}</Button></Link></>} />
+
+      <div className="mb-8 grid gap-4 md:grid-cols-3">
+        <StatCard label="Attendance" verdict={attendanceVerdict} tone={att.counts.late ? "warning" : "default"} href={`${base}/attendance`}
+          rows={[{ label: "Clocked in", value: clockedIn, share: pct(clockedIn, people), tone: "success" }, { label: "Late", value: att.counts.late, share: pct(att.counts.late, people), tone: "warning" }, { label: "Not clocked in", value: att.counts.not_in, share: pct(att.counts.not_in, people), tone: "neutral" }]} />
+        <StatCard label="Focus" verdict={focusVerdict} tone={d.counts.working ? "accent" : "default"} href={`${base}/workroom`}
+          rows={[{ label: "Working now", value: d.counts.working, share: pct(d.counts.working, people), tone: "accent" }, { label: "Connected", value: d.counts.connected, share: pct(d.counts.connected, people), tone: "info" }]} />
+        <StatCard label="Delivery" verdict={deliveryVerdict} tone={d.counts.tasks_blocked ? "danger" : "default"} href={`${base}/tasks`}
+          rows={[{ label: "Done today", value: d.counts.tasks_done_today, tone: "success" }, { label: "Open", value: d.counts.tasks_open, tone: "neutral" }, { label: "Blocked", value: d.counts.tasks_blocked, tone: "danger" }]} />
+      </div>
 
       <section className="mb-8">
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <h2 className="font-display text-lg">Clocked in today, {formatLongDate(att.today)} ({att.counts.in + att.counts.out})</h2>
-          <span className="flex items-center gap-3 text-sm">{att.counts.not_in ? <Link href={`${base}/attendance?tab=not_in`} className="text-fg-muted hover:underline">{att.counts.not_in} not clocked in yet</Link> : null}<Link href={`${base}/attendance`} className="underline">Open Attendance</Link></span>
-        </div>
-        {att.counts.in + att.counts.out === 0 ? <EmptyState title="Nobody has clocked in yet today" description="People appear here the moment they press Clock in. This list starts empty every day." /> : (
+        <CardHeader title={`Working right now (${d.workingNow.length})`} action={<Link href={`${base}/workroom`} className="text-sm text-fg-muted hover:text-fg">Open the Workroom</Link>} />
+        {d.workingNow.length === 0 ? <EmptyState icon3d="stopwatch" title="Nobody has a session open" description="Open sessions appear here the moment someone presses Start." /> : (
+          <DataTable caption="People with an open session">
+            <thead><tr><th>Person</th><th>Team</th><th>State</th><th>Task</th><th>Since</th><th>Sync</th><th>Today</th></tr></thead>
+            <tbody>{d.workingNow.map((w) => {
+              const stale = w.state === "running" && now - new Date(w.last_heartbeat_at).getTime() > d.staleAfterSeconds * 1000;
+              return <tr key={w.membership_id}><td><Link href={`${base}/workroom/${w.membership_id}`} className="font-semibold hover:underline">{w.display_name}</Link></td><td className="text-fg-muted">{w.team_names.join(", ") || "—"}</td><td><Badge tone={stale ? "danger" : SESSION_STATE_TONE[w.state]} dot>{stale ? "stale" : label(w.state)}</Badge></td><td><Link href={`${base}/tasks/${w.task_id}`} className="hover:underline">{w.task_title}</Link></td><td className="text-sm">{formatDateTime(w.started_at, ctx.org.timezone)}</td><td className="text-sm text-fg-muted">{relativeTime(w.last_heartbeat_at, now)}</td><td className="tabular-nums">{formatDuration(w.today_seconds)}</td></tr>;
+            })}</tbody>
+          </DataTable>
+        )}
+      </section>
+
+      <section className="mb-8">
+        <CardHeader title={`Clocked in today (${clockedIn})`} description={formatLongDate(att.today)} action={<span className="flex items-center gap-4 text-sm">{att.counts.not_in ? <Link href={`${base}/attendance?tab=not_in`} className="text-fg-muted hover:text-fg">{att.counts.not_in} not clocked in yet</Link> : null}<Link href={`${base}/attendance`} className="text-fg-muted hover:text-fg">Open Attendance</Link></span>} />
+        {clockedIn === 0 ? <EmptyState icon3d="clock-in" title="Nobody has clocked in yet today" description="People appear here the moment they press Clock in. This list starts empty every day." /> : (
           <DataTable caption="People who clocked in today">
             <thead><tr><th>Person</th><th className="hidden md:table-cell">Team</th><th>Clocked in</th><th>Status</th><th className="hidden md:table-cell">Clocked out</th></tr></thead>
             <tbody>{att.people.filter((p) => p.clock_in_at).map((p) => (
               <tr key={p.membership_id}>
                 <td><Link href={`${base}/workroom/${p.membership_id}`} className="font-semibold hover:underline">{p.display_name}</Link></td>
                 <td className="hidden text-fg-muted md:table-cell">{p.teams.join(", ") || "—"}</td>
-                <td className="tabular-nums">{new Intl.DateTimeFormat("en-GB", { timeZone: att.schedule.timezone, hour: "2-digit", minute: "2-digit" }).format(new Date(p.clock_in_at!))}</td>
+                <td className="tabular-nums">{fmtTime(p.clock_in_at!)}</td>
                 <td>{(p.late_seconds ?? 0) > 0 ? <Badge tone="warning">Late by {formatDuration(p.late_seconds!)}</Badge> : <Badge tone="success">On time</Badge>}</td>
-                <td className="hidden tabular-nums md:table-cell">{p.clock_out_at ? new Intl.DateTimeFormat("en-GB", { timeZone: att.schedule.timezone, hour: "2-digit", minute: "2-digit" }).format(new Date(p.clock_out_at)) : <span className="text-fg-subtle">still in</span>}</td>
+                <td className="hidden tabular-nums md:table-cell">{p.clock_out_at ? fmtTime(p.clock_out_at) : <span className="text-fg-subtle">still in</span>}</td>
               </tr>
             ))}</tbody>
           </DataTable>
         )}
       </section>
 
-      <section className="mb-8">
-        <div className="mb-3 flex items-center justify-between gap-2"><h2 className="font-display text-lg">Working right now ({d.workingNow.length})</h2><Link href={`${base}/workroom`} className="text-sm underline">Open the Workroom</Link></div>
-        {d.workingNow.length === 0 ? <EmptyState title="Nobody has a session open" description="Open sessions appear here the moment someone presses Start." /> : (
-          <DataTable caption="People with an open session">
-            <thead><tr><th>Person</th><th>Team</th><th>State</th><th>Task</th><th>Since</th><th>Sync</th><th>Today</th></tr></thead>
-            <tbody>{d.workingNow.map((w) => {
-              const stale = w.state === "running" && now - new Date(w.last_heartbeat_at).getTime() > d.staleAfterSeconds * 1000;
-              return <tr key={w.membership_id}><td><Link href={`${base}/timesheets?member=${w.membership_id}`} className="font-semibold hover:underline">{w.display_name}</Link></td><td className="text-fg-muted">{w.team_names.join(", ") || "—"}</td><td><Badge tone={stale ? "danger" : SESSION_STATE_TONE[w.state]} dot>{stale ? "stale" : label(w.state)}</Badge></td><td><Link href={`${base}/tasks/${w.task_id}`} className="hover:underline">{w.task_title}</Link></td><td className="text-sm">{formatDateTime(w.started_at, ctx.org.timezone)}</td><td className="text-sm text-fg-muted">{relativeTime(w.last_heartbeat_at, now)}</td><td>{formatDuration(w.today_seconds)}</td></tr>;
-            })}</tbody>
-          </DataTable>
-        )}
-      </section>
-
       <div className="grid gap-6 md:grid-cols-[1fr_360px]">
         <section>
-          <h2 className="mb-3 font-display text-lg">Teams</h2>
-          {d.teams.length === 0 ? <EmptyState title="No teams yet" description="Create teams such as Design, Tech or Branding, then put a team lead on each." action={<Link href={`${base}/people`} className="underline">Go to People</Link>} /> : (
+          <CardHeader title="Teams" action={<Link href={`${base}/people?tab=teams`} className="text-sm text-fg-muted hover:text-fg">Manage teams</Link>} />
+          {d.teams.length === 0 ? <EmptyState icon3d="people" title="No teams yet" description="Create teams such as Design, Tech or Branding, then put a team lead on each." action={<Link href={`${base}/people`}><Button size="sm">Go to People</Button></Link>} /> : (
             <DataTable caption="Teams">
               <thead><tr><th>Team</th><th>Lead</th><th>Members</th><th>Open</th><th>Blocked</th><th>Working now</th></tr></thead>
-              <tbody>{d.teams.map((t) => <tr key={t.id}><td><Link href={`${base}/teams/${t.id}`} className="font-semibold hover:underline">{t.name}</Link></td><td>{t.leads.length ? t.leads.join(", ") : <span className="text-warning">no lead yet</span>}</td><td>{t.members}</td><td>{t.open_tasks}</td><td>{t.blocked ? <span className="text-danger">{t.blocked}</span> : 0}</td><td>{t.working}</td></tr>)}</tbody>
+              <tbody>{d.teams.map((t) => <tr key={t.id}><td><Link href={`${base}/teams/${t.id}`} className="font-semibold hover:underline">{t.name}</Link></td><td>{t.leads.length ? t.leads.join(", ") : <span className="text-warning">no lead yet</span>}</td><td className="tabular-nums">{t.members}</td><td className="tabular-nums">{t.open_tasks}</td><td className="tabular-nums">{t.blocked ? <span className="text-danger">{t.blocked}</span> : 0}</td><td className="tabular-nums">{t.working}</td></tr>)}</tbody>
             </DataTable>
           )}
         </section>
-        <div className="space-y-6">
-        <Card>
-          <div className="flex items-center justify-between gap-2"><h2 className="font-display text-lg">Recent recordings</h2><Link href={`${base}/recordings`} className="text-sm underline">All recordings</Link></div>
-          <ul className="mt-2 space-y-2 text-sm">{recentRecordings.length === 0 ? <li className="text-fg-subtle">No screen recordings yet. They appear here when someone presses Record screen.</li> : recentRecordings.map((r) => <li key={r.id}><Link href={`${base}/tasks/${r.task_id}`} className="hover:underline">{r.task_title}</Link><p className="text-xs text-fg-subtle">{r.display_name}, {r.capture_started_at ? formatDateTime(r.capture_started_at, ctx.org.timezone) : "pending"}, {formatDuration(r.duration_seconds)}, {r.upload_state}</p></li>)}</ul>
-        </Card>
-        <Card>
-          <h2 className="font-display text-lg">Recently completed</h2>
-          <ul className="mt-2 space-y-2 text-sm">{d.recentDone.length === 0 ? <li className="text-fg-subtle">Nothing approved yet.</li> : d.recentDone.map((t) => <li key={t.id}><Link href={`${base}/tasks/${t.id}`} className="hover:underline">{t.title}</Link><p className="text-xs text-fg-subtle">{t.assignee_name}, {formatDateTime(t.completed_at, ctx.org.timezone)}</p></li>)}</ul>
-        </Card>
+        <div className="space-y-4">
+          <Card>
+            <CardHeader title="Recent recordings" action={<Link href={`${base}/recordings`} className="text-sm text-fg-muted hover:text-fg">All</Link>} />
+            <ul className="space-y-2 text-sm">{recentRecordings.length === 0 ? <li className="text-fg-subtle">No screen recordings yet. They appear here when someone presses Record screen.</li> : recentRecordings.map((r) => <li key={r.id} className="chip chip-link px-3 py-2"><Link href={`${base}/tasks/${r.task_id}`} className="block font-medium hover:underline">{r.task_title}</Link><p className="text-xs text-fg-subtle">{r.display_name}, {r.capture_started_at ? formatDateTime(r.capture_started_at, ctx.org.timezone) : "pending"}, {formatDuration(r.duration_seconds)}, {r.upload_state}</p></li>)}</ul>
+          </Card>
+          <Card>
+            <CardHeader title="Recently completed" />
+            <ul className="space-y-2 text-sm">{d.recentDone.length === 0 ? <li className="text-fg-subtle">Nothing approved yet.</li> : d.recentDone.map((t) => <li key={t.id} className="chip chip-link px-3 py-2"><Link href={`${base}/tasks/${t.id}`} className="block font-medium hover:underline">{t.title}</Link><p className="text-xs text-fg-subtle">{t.assignee_name}, {formatDateTime(t.completed_at, ctx.org.timezone)}</p></li>)}</ul>
+          </Card>
         </div>
       </div>
     </AppShell>

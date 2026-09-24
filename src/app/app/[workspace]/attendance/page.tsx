@@ -1,11 +1,13 @@
 import Link from "next/link";
 import { workspacePage } from "@/server/lib/workspace-page";
 import { AppShell } from "@/components/app/shell";
-import { PageHeader, Ledger } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/card";
+import { StatCard } from "@/components/ui/stat-card";
+import { Tabs } from "@/components/ui/tabs";
+import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { DataTable } from "@/components/ui/table";
 import { EmptyState, PermissionDenied } from "@/components/ui/states";
-import { SlidingMarker } from "@/components/ui/motion";
 import { attendanceBoard, attendanceMonth, type ClockStatus } from "@/server/services/attendance";
 import { addDays } from "@/server/lib/time";
 import { formatDuration, formatLongDate, cn } from "@/lib/utils";
@@ -29,7 +31,7 @@ export default async function AttendancePage({ params, searchParams }: { params:
   const back = { href: ctx.membership.role === "manager" ? `${base}/my-day` : `${base}/dashboard`, label: ctx.membership.role === "manager" ? "My Day" : "Dashboard" };
   const teamId = sp.team || null;
   const viewSwitch = (view: "day" | "month", active: boolean) => (
-    <Link href={`${base}/attendance?view=${view}${teamId ? `&team=${teamId}` : ""}`} aria-current={active ? "page" : undefined} className={cn("rounded-full px-3 py-1.5 text-sm font-medium transition-colors duration-[var(--duration-fast)]", active ? "bg-accent text-accent-fg" : "text-fg-muted hover:text-fg")}>{view === "day" ? "Day" : "Month"}</Link>
+    <Link href={`${base}/attendance?view=${view}${teamId ? `&team=${teamId}` : ""}`} aria-current={active ? "page" : undefined} className={cn("rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors duration-[var(--duration-fast)]", active ? "bg-white/10 text-fg" : "text-fg-muted hover:text-fg")}>{view === "day" ? "Day" : "Month"}</Link>
   );
 
   // ---- Month view --------------------------------------------------------
@@ -40,42 +42,41 @@ export default async function AttendancePage({ params, searchParams }: { params:
     const totals = { present: m.rows.reduce((a, r) => a + r.present, 0), late: m.rows.reduce((a, r) => a + r.late, 0), missed: m.rows.reduce((a, r) => a + r.missed, 0) };
     return (
       <AppShell ctx={ctx} counts={counts} teams={teams}>
-        <PageHeader back={back} overline={monthLabel(m.month)} title="Attendance"
+        <PageHeader icon="calendar-clock" back={back} overline={monthLabel(m.month)} title="Attendance"
           description={`A cell per day for everyone you supervise: green is on time, amber is late, empty is no clock-in. Work starts at ${hhmm(m.schedule.start_local)}.`}
-          actions={<span className="flex items-center gap-1 rounded-full border border-border p-1">{viewSwitch("day", false)}{viewSwitch("month", true)}</span>} />
+          actions={<span className="inline-flex items-center gap-1 rounded-full border border-border bg-white/[0.03] p-1">{viewSwitch("day", false)}{viewSwitch("month", true)}</span>} />
 
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <form className="flex items-center gap-2 text-sm" action={`${base}/attendance`}>
             <input type="hidden" name="view" value="month" />{teamId ? <input type="hidden" name="team" value={teamId} /> : null}
-            <Link href={nav(shiftMonth(m.month, -1))} className="underline">Previous month</Link>
+            <Link href={nav(shiftMonth(m.month, -1))} className="text-fg-muted hover:text-fg">Previous month</Link>
             <label htmlFor="month" className="sr-only">Month</label>
-            <input id="month" type="month" name="month" defaultValue={m.month} max={m.today.slice(0, 7)} className="h-9 rounded-[var(--radius-sm)] border border-border-strong bg-inset px-2 text-sm" />
-            <button type="submit" className="underline">Show</button>
-            {m.month < m.today.slice(0, 7) ? <Link href={nav(shiftMonth(m.month, 1))} className="underline">Next month</Link> : null}
+            <input id="month" type="month" name="month" defaultValue={m.month} max={m.today.slice(0, 7)} className="h-9 rounded-full border border-border-strong bg-inset px-3 text-sm" />
+            <Button type="submit" size="sm" variant="subtle">Show</Button>
+            {m.month < m.today.slice(0, 7) ? <Link href={nav(shiftMonth(m.month, 1))} className="text-fg-muted hover:text-fg">Next month</Link> : null}
           </form>
           {m.teams.length > 1 ? (
             <form className="flex items-center gap-2 text-sm" action={`${base}/attendance`}>
               <input type="hidden" name="view" value="month" /><input type="hidden" name="month" value={m.month} />
               <label htmlFor="team" className="text-fg-muted">Team</label>
-              <select id="team" name="team" defaultValue={teamId ?? ""} className="h-9 rounded-[var(--radius-sm)] border border-border-strong bg-inset px-2 text-sm"><option value="">All teams</option>{m.teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select>
-              <button type="submit" className="underline">Show</button>
+              <select id="team" name="team" defaultValue={teamId ?? ""} className="h-9 rounded-full border border-border-strong bg-inset px-3 text-sm"><option value="">All teams</option>{m.teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select>
+              <Button type="submit" size="sm" variant="subtle">Show</Button>
             </form>
           ) : null}
         </div>
 
-        <Ledger className="mb-6" items={[
-          { label: "Days clocked in", value: totals.present, note: `${m.workingDays.length} working days in the month` },
-          { label: "Late arrivals", value: totals.late, note: totals.late ? `after ${hhmm(m.schedule.start_local)}` : "none", tone: totals.late ? "danger" : "default" },
-          { label: "Missed days", value: totals.missed, note: "working days with no clock-in" },
-          { label: "People", value: m.rows.length, note: teamId ? "in this team" : "you supervise" },
-        ]} />
+        <div className="mb-6 grid gap-4 md:grid-cols-3">
+          <StatCard label="Days in" verdict={totals.present} rows={[{ label: "Working days this month", value: m.workingDays.length, tone: "neutral" }, { label: "People", value: m.rows.length, tone: "info" }]} />
+          <StatCard label="Late arrivals" verdict={totals.late ? `${totals.late} late` : "None"} tone={totals.late ? "warning" : "default"} rows={[{ label: `After ${hhmm(m.schedule.start_local)}`, value: totals.late, tone: "warning" }]} />
+          <StatCard label="Missed days" verdict={totals.missed ? `${totals.missed} missed` : "None"} tone={totals.missed ? "danger" : "default"} rows={[{ label: "Working days with no clock-in", value: totals.missed, tone: "danger" }]} />
+        </div>
 
-        {m.rows.length === 0 ? <EmptyState title="Nobody to show" description="Change the team or the month." /> : (
+        {m.rows.length === 0 ? <EmptyState icon3d="calendar-clock" title="Nobody to show" description="Change the team or the month." /> : (
           <DataTable caption={`Attendance for ${monthLabel(m.month)}`}>
-            <thead><tr><th className="sticky left-0 bg-elevated">Person</th>{m.days.map((d) => <th key={d} className={cn("day text-[11px] font-normal", !m.workingDays.includes(d) && "text-fg-faint", d === m.today && "text-accent")}>{Number(d.slice(8))}</th>)}<th className="text-right">In</th><th className="text-right">Late</th><th className="text-right">Missed</th><th className="hidden text-right lg:table-cell">Hours</th></tr></thead>
+            <thead><tr><th className="sticky left-0 bg-[#121212]">Person</th>{m.days.map((d) => <th key={d} className={cn("day text-[11px] font-normal", !m.workingDays.includes(d) && "text-fg-faint", d === m.today && "text-accent")}>{Number(d.slice(8))}</th>)}<th className="text-right">In</th><th className="text-right">Late</th><th className="text-right">Missed</th><th className="hidden text-right lg:table-cell">Hours</th></tr></thead>
             <tbody>{m.rows.map((r) => (
               <tr key={r.membership_id}>
-                <td className="sticky left-0 bg-elevated"><Link href={`${base}/workroom/${r.membership_id}`} className="whitespace-nowrap font-semibold hover:underline">{r.display_name}</Link><p className="text-xs text-fg-subtle">{r.teams.join(", ") || (r.role === "owner" ? "owner" : r.role === "hr" ? "HR" : "—")}</p></td>
+                <td className="sticky left-0 bg-[#121212]"><Link href={`${base}/workroom/${r.membership_id}`} className="whitespace-nowrap font-semibold hover:underline">{r.display_name}</Link><p className="text-xs text-fg-subtle">{r.teams.join(", ") || (r.role === "owner" ? "owner" : r.role === "hr" ? "HR" : "—")}</p></td>
                 {m.days.map((d) => { const c = r.days[d]; const working = m.workingDays.includes(d); const before = d < r.joined; return (
                   <td key={d} className="day">
                     {c ? <span title={`${formatLongDate(d)}: in ${timeOf(c.in, tz)}${c.out ? `, out ${timeOf(c.out, tz)}` : ""}${c.late ? `, late by ${formatDuration(c.late)}` : ", on time"}`} className={cn("inline-block size-2.5 rounded-full", c.late ? "bg-warning" : "bg-success")} aria-label={`${d}: ${c.late ? "late" : "on time"}`} />
@@ -111,49 +112,39 @@ export default async function AttendancePage({ params, searchParams }: { params:
   const STATUS: Record<ClockStatus, { label: string; tone: "success" | "neutral" | "info" }> = { in: { label: "Clocked in", tone: "success" }, not_in: { label: "Not clocked in", tone: "neutral" }, out: { label: "Clocked out", tone: "info" } };
   return (
     <AppShell ctx={ctx} counts={counts} teams={teams}>
-      <PageHeader back={back} overline={b.date === b.today ? `Today, ${formatLongDate(b.date)}` : formatLongDate(b.date)} title="Attendance"
+      <PageHeader icon="calendar-clock" back={back} overline={b.date === b.today ? `Today, ${formatLongDate(b.date)}` : formatLongDate(b.date)} title="Attendance"
         description={`Work starts at ${hhmm(b.schedule.start_local)} and ends at ${hhmm(b.schedule.end_local)} ${zone}${b.schedule.clock_grace_minutes ? `, ${b.schedule.clock_grace_minutes} minutes' grace` : ""}. Anyone clocking in after that is flagged late. The board starts empty every day.${b.workingDay ? "" : " This is not a scheduled working day."}`}
-        actions={<span className="flex items-center gap-1 rounded-full border border-border p-1">{viewSwitch("day", true)}{viewSwitch("month", false)}</span>} />
+        actions={<span className="inline-flex items-center gap-1 rounded-full border border-border bg-white/[0.03] p-1">{viewSwitch("day", true)}{viewSwitch("month", false)}</span>} />
 
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <form className="flex flex-wrap items-center gap-2 text-sm" action={`${base}/attendance`}>
           <input type="hidden" name="tab" value={tab} />{teamId ? <input type="hidden" name="team" value={teamId} /> : null}
-          <Link href={q({ date: addDays(b.date, -1) })} className="underline">Previous day</Link>
+          <Link href={q({ date: addDays(b.date, -1) })} className="text-fg-muted hover:text-fg">Previous day</Link>
           <label htmlFor="date" className="sr-only">Day</label>
-          <input id="date" type="date" name="date" defaultValue={b.date} max={b.today} className="h-9 rounded-[var(--radius-sm)] border border-border-strong bg-inset px-2 text-sm" />
-          <button type="submit" className="underline">Show</button>
-          {b.date < b.today ? <><Link href={q({ date: addDays(b.date, 1) })} className="underline">Next day</Link><Link href={q({ date: undefined })} className="underline">Today</Link></> : null}
+          <input id="date" type="date" name="date" defaultValue={b.date} max={b.today} className="h-9 rounded-full border border-border-strong bg-inset px-3 text-sm" />
+          <Button type="submit" size="sm" variant="subtle">Show</Button>
+          {b.date < b.today ? <><Link href={q({ date: addDays(b.date, 1) })} className="text-fg-muted hover:text-fg">Next day</Link><Link href={q({ date: undefined })} className="text-fg-muted hover:text-fg">Today</Link></> : null}
         </form>
         {b.teams.length > 1 ? (
           <form className="flex items-center gap-2 text-sm" action={`${base}/attendance`}>
             <input type="hidden" name="tab" value={tab} />{b.date !== b.today ? <input type="hidden" name="date" value={b.date} /> : null}
             <label htmlFor="team" className="text-fg-muted">Team</label>
-            <select id="team" name="team" defaultValue={teamId ?? ""} className="h-9 rounded-[var(--radius-sm)] border border-border-strong bg-inset px-2 text-sm"><option value="">All teams</option>{b.teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select>
-            <button type="submit" className="underline">Show</button>
+            <select id="team" name="team" defaultValue={teamId ?? ""} className="h-9 rounded-full border border-border-strong bg-inset px-3 text-sm"><option value="">All teams</option>{b.teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select>
+            <Button type="submit" size="sm" variant="subtle">Show</Button>
           </form>
         ) : null}
       </div>
 
-      <Ledger className="mb-6" items={[
-        { label: "Clocked in", value: b.counts.in + b.counts.out, note: b.counts.late ? `${b.counts.late} late` : b.counts.in + b.counts.out ? "everyone on time" : "nobody yet", tone: b.counts.late ? "danger" : "accent" },
-        { label: "Not clocked in", value: b.counts.not_in, note: b.date === b.today ? "so far today" : "that day" },
-        { label: "Clocked out", value: b.counts.out, note: "done for the day" },
-        { label: "People", value: b.people.length, note: teamId ? "in this team" : "you supervise" },
-      ]} />
-
-      <div className="mb-4 border-b border-border-soft">
-        <nav aria-label="Attendance status" className="flex gap-1">
-          {tabs.map((t) => (
-            <Link key={t.key} href={q({ tab: t.key })} aria-current={tab === t.key ? "page" : undefined} className={cn("relative px-3 py-2 text-sm font-medium transition-[color] duration-[var(--duration-fast)]", tab === t.key ? "text-fg" : "text-fg-muted hover:text-fg")}>
-              {t.label} <span className={cn("ml-1 text-xs tabular-nums", tab === t.key ? "text-accent" : "text-fg-subtle")}>{t.n}</span>
-              {tab === t.key ? <SlidingMarker layoutId="attendance-tab" className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-accent" /> : null}
-            </Link>
-          ))}
-        </nav>
+      <div className="mb-6 grid gap-4 md:grid-cols-3">
+        <StatCard label="Clocked in" verdict={b.counts.in + b.counts.out === 0 ? "Nobody yet" : b.counts.late ? `${b.counts.late} late` : "On time"} tone={b.counts.late ? "warning" : b.counts.in + b.counts.out ? "accent" : "default"} rows={[{ label: "Clocked in", value: b.counts.in + b.counts.out, tone: "success" }, { label: "Late", value: b.counts.late, tone: "warning" }]} />
+        <StatCard label="Not clocked in" verdict={b.counts.not_in} tone={b.counts.not_in ? "warning" : "default"} rows={[{ label: b.date === b.today ? "So far today" : "That day", value: b.counts.not_in, tone: "neutral" }, { label: "People", value: b.people.length, tone: "info" }]} />
+        <StatCard label="Clocked out" verdict={b.counts.out} rows={[{ label: "Done for the day", value: b.counts.out, tone: "info" }, { label: "Still in", value: b.counts.in, tone: "success" }]} />
       </div>
 
+      <div className="mb-4"><Tabs label="Attendance status" value={tab} tabs={tabs.map((t) => ({ value: t.key, label: t.label, count: t.n, href: q({ tab: t.key }) }))} /></div>
+
       {shown.length === 0 ? (
-        <EmptyState title={tab === "in" ? "Nobody is clocked in" : tab === "not_in" ? "Everyone has clocked in" : tab === "out" ? "Nobody has clocked out yet" : "Nobody to show"} description={tab === "in" && b.date === b.today ? "People appear here the moment they press Clock in." : "Change the tab or the day."} />
+        <EmptyState icon3d="clock-in" title={tab === "in" ? "Nobody is clocked in" : tab === "not_in" ? "Everyone has clocked in" : tab === "out" ? "Nobody has clocked out yet" : "Nobody to show"} description={tab === "in" && b.date === b.today ? "People appear here the moment they press Clock in." : "Change the tab or the day."} />
       ) : (
         <DataTable caption="Attendance">
           <thead><tr><th>Person</th><th className="hidden md:table-cell">Team</th><th>Clocked in</th><th>Status</th><th className="hidden md:table-cell">Clocked out</th><th className="hidden lg:table-cell">On the clock</th></tr></thead>

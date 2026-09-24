@@ -31,7 +31,7 @@ export function MemberDatePicker({ orgSlug, members, membershipId, date, prev, n
       <Field label="Date" htmlFor="ts-date"><Input id="ts-date" name="date" type="date" defaultValue={date} /></Field>
       <Button type="submit" variant="outline">Show</Button>
       <Button variant="ghost" onClick={() => router.push(`/app/${orgSlug}/timesheets?member=${membershipId}&date=${prev}`)}>← {prev}</Button>
-      <Button variant="ghost" onClick={() => router.push(`/app/${orgSlug}/timesheets?member=${membershipId}&date=${next}`)}>{next} →</Button>
+      <Button variant="ghost" onClick={() => router.push(`/app/${orgSlug}/timesheets?member=${membershipId}&date=${next}`)}>{next}</Button>
     </form>
   );
 }
@@ -70,13 +70,13 @@ export function AdjustmentForm({ orgSlug, localDate, entries }: { orgSlug: strin
       <Field label="Task" htmlFor="adj-task" error={fieldErrors.taskId}>
         {tasks.length ? <Select id="adj-task" name="taskId">{tasks.map(([id, title]) => <option key={id} value={id}>{title}</option>)}</Select> : <Input id="adj-task" name="taskId" placeholder="Task id (no tracked tasks on this day)" required />}
       </Field>
-      {uniqueIntervals.length ? <fieldset><legend className="mb-1 text-sm font-semibold text-fg-muted">Replace these intervals</legend><div className="space-y-1 text-sm">{uniqueIntervals.map((e) => <label key={e.intervalId} className="flex items-center gap-2"><input type="checkbox" checked={selected.includes(e.intervalId)} onChange={(ev) => setSelected(ev.target.checked ? [...selected, e.intervalId] : selected.filter((x) => x !== e.intervalId))} /> {e.taskTitle}: {new Date(e.startedAt).toLocaleTimeString()} → {new Date(e.endedAt).toLocaleTimeString()} ({e.status})</label>)}</div></fieldset> : null}
+      {uniqueIntervals.length ? <fieldset><legend className="mb-1 text-sm font-semibold text-fg-muted">Replace these intervals</legend><div className="space-y-1 text-sm">{uniqueIntervals.map((e) => <label key={e.intervalId} className="flex items-center gap-2"><input type="checkbox" checked={selected.includes(e.intervalId)} onChange={(ev) => setSelected(ev.target.checked ? [...selected, e.intervalId] : selected.filter((x) => x !== e.intervalId))} /> {e.taskTitle}: {new Date(e.startedAt).toLocaleTimeString()} to {new Date(e.endedAt).toLocaleTimeString()} ({e.status})</label>)}</div></fieldset> : null}
       <div>
         <p className="mb-1 text-sm font-semibold text-fg-muted">Proposed intervals (local time)</p>
         {rows.map((r, i) => (
           <div key={i} className="mb-2 flex flex-wrap items-center gap-2">
             <Input aria-label="Start" type="datetime-local" value={r.startedAt} onChange={(e) => setRows(rows.map((x, j) => (j === i ? { ...x, startedAt: e.target.value } : x)))} className="w-56" />
-            <span className="text-fg-subtle">→</span>
+            <span className="text-fg-subtle">to</span>
             <Input aria-label="End" type="datetime-local" value={r.endedAt} onChange={(e) => setRows(rows.map((x, j) => (j === i ? { ...x, endedAt: e.target.value } : x)))} className="w-56" />
             <Button size="sm" variant="ghost" onClick={() => setRows(rows.filter((_, j) => j !== i))}>Remove</Button>
           </div>

@@ -128,11 +128,11 @@ export function AssistantConnectionForm({ orgSlug, status }: { orgSlug: string; 
     <div className="grid gap-3">
       {error ? <Alert tone="danger">{error}</Alert> : null}
       {ok ? <Alert tone="success">{ok}{reply ? <span className="mt-1 block text-fg-muted">Claude says: “{reply}”</span> : null}</Alert> : null}
-      {status.source === "organisation" ? <p className="text-sm text-fg-muted">Key ending {status.hint} · model {status.model}{status.connectedAt ? ` · connected ${new Date(status.connectedAt).toLocaleDateString()}` : ""}</p> : null}
+      {status.source === "organisation" ? <p className="text-sm text-fg-muted">Key ending {status.hint}, model {status.model}{status.connectedAt ? `, connected ${new Date(status.connectedAt).toLocaleDateString()}` : ""}</p> : null}
       {status.source === "environment" ? <p className="text-sm text-fg-muted">Using the server&apos;s ANTHROPIC_API_KEY. Add an organisation key below to override it.</p> : null}
       {open ? (
         <form className="grid gap-3 md:grid-cols-[1fr_220px_auto]" onSubmit={(e) => { e.preventDefault(); const f = new FormData(e.currentTarget); const form = e.currentTarget; submit(async () => { const r = await api<{ model: string; reply: string }>(`/api/orgs/${orgSlug}/settings/assistant`, { method: "POST", body: { apiKey: f.get("apiKey"), model: f.get("model") || undefined } }); setReply(r.reply); form.reset(); setOpen(false); return r; }, "Connected. The assistant on My Day now runs on Claude."); }}>
-          <Field label="Anthropic API key" htmlFor="ai-key" hint="from console.anthropic.com → API keys; starts with sk-ant-" error={fieldErrors.apiKey}><Input id="ai-key" name="apiKey" type="password" autoComplete="off" required minLength={20} placeholder="sk-ant-…" /></Field>
+          <Field label="Anthropic API key" htmlFor="ai-key" hint="from console.anthropic.com under API keys; starts with sk-ant-" error={fieldErrors.apiKey}><Input id="ai-key" name="apiKey" type="password" autoComplete="off" required minLength={20} placeholder="sk-ant-…" /></Field>
           <Field label="Model" htmlFor="ai-model" hint="optional" error={fieldErrors.model}><Select id="ai-model" name="model" defaultValue=""><option value="">Claude Opus 5 (default)</option><option value="claude-sonnet-5">Claude Sonnet 5 (faster, cheaper)</option><option value="claude-opus-5">Claude Opus 5</option></Select></Field>
           <div className="flex items-end gap-2"><Button type="submit" disabled={pending}>{pending ? "Testing…" : "Connect and test"}</Button>{status.source === "organisation" ? <Button type="button" variant="ghost" onClick={() => setOpen(false)}>Cancel</Button> : null}</div>
         </form>

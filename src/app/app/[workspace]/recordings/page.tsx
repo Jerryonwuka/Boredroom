@@ -31,16 +31,16 @@ export default async function RecordingsPage({ params, searchParams }: { params:
   const base = `/app/${ctx.org.slug}`;
   return (
     <AppShell ctx={ctx} counts={counts} teams={navTeams}>
-      <PageHeader back={{ href: isOrg ? `${base}/dashboard` : base, label: isOrg ? "Dashboard" : "Back" }} title="Recordings"
+      <PageHeader icon="video-people" back={{ href: isOrg ? `${base}/dashboard` : base, label: isOrg ? "Dashboard" : "Back" }} title="Recordings"
         description={isOrg ? "Every screen recording in the organisation, newest first. Open a task to see who worked on it, the sessions, and the footage for each one." : "Screen recordings from the people on your teams, newest first. Open a task to see the full history."} />
       <form className="mb-4 flex flex-wrap items-end gap-2 text-sm">
         {teams.length > 1 || isOrg ? <label><span className="block text-xs text-fg-subtle">Team</span><Select name="team" defaultValue={sp.team ?? ""} className="h-10 w-48 py-1 text-sm"><option value="">All teams</option>{teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</Select></label> : null}
         <label><span className="block text-xs text-fg-subtle">Person</span><Select name="member" defaultValue={sp.member ?? ""} className="h-10 w-56 py-1 text-sm"><option value="">Everyone</option>{members.map((m) => <option key={m.id} value={m.id}>{m.display_name}</option>)}</Select></label>
         <Button type="submit" variant="outline" size="sm">Filter</Button>
-        {sp.team || sp.member ? <Link href={`${base}/recordings`} className="text-sm underline">Clear</Link> : null}
+        {sp.team || sp.member ? <Link href={`${base}/recordings`} className="text-sm text-fg-muted hover:text-fg">Clear</Link> : null}
       </form>
       {waiting ? <Alert tone="warning" className="mb-4" title={`${waiting} recording${waiting === 1 ? " is" : "s are"} waiting to be assembled`}>Uploaded chunks become a watchable video only when the background worker runs. <code>pnpm dev</code> now starts it automatically; on a server run <code>pnpm worker</code> alongside <code>pnpm start</code>.</Alert> : null}
-      {rows.length === 0 ? <EmptyState title="No recordings yet" description="A recording appears here as soon as someone presses Record screen while their timer runs. Recording must be on under Settings, and each person acknowledges the notice once." action={isOrg ? <Link href={`${base}/settings`} className="underline">Check the recording setting</Link> : undefined} /> : (
+      {rows.length === 0 ? <EmptyState icon3d="screen-record" title="No recordings yet" description="A recording appears here as soon as someone presses Record screen while their timer runs. Recording must be on under Settings, and each person acknowledges the notice once." action={isOrg ? <Link href={`${base}/settings`}><Button size="sm" variant="outline">Check the recording setting</Button></Link> : undefined} /> : (
         <RecordingsTable orgSlug={ctx.org.slug} rows={rows} timeZone={ctx.org.timezone} />
       )}
       <p className="mt-4 text-xs text-fg-subtle">Recordings are video only, started by the person, and kept for the retention period in the monitoring policy. Footage a person flags as sensitive is locked until a privacy administrator reviews it.</p>

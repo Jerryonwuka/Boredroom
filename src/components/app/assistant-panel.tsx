@@ -101,7 +101,7 @@ export function AssistantPanel({ orgSlug, people, configured, onCreated, onClose
     try { const stream = await navigator.mediaDevices.getUserMedia({ audio: true }); stream.getTracks().forEach((t) => t.stop()); }
     catch (err) {
       const name = (err as { name?: string })?.name;
-      if (name === "NotAllowedError" || name === "SecurityError") setError("Microphone access is blocked. Click the lock or camera icon in the address bar, allow the microphone for this site, then try again. On a Mac also check System Settings → Privacy & Security → Microphone for your browser.");
+      if (name === "NotAllowedError" || name === "SecurityError") setError("Microphone access is blocked. Click the lock or camera icon in the address bar, allow the microphone for this site, then try again. On a Mac also check System Settings, Privacy and Security, Microphone for your browser.");
       else if (name === "NotFoundError") setError("No microphone was found on this device.");
       else setError(`Could not open the microphone (${name ?? "unknown error"}). You can type the note instead.`);
       return;
@@ -145,7 +145,7 @@ export function AssistantPanel({ orgSlug, people, configured, onCreated, onClose
         </div>
         <Button size="icon" variant="ghost" aria-label="Close assistant" onClick={onClose}><X className="h-4 w-4" /></Button>
       </div>
-      {!configured ? <Alert tone="warning">The AI is not connected yet, so a simple built-in parser makes these suggestions. {people.length ? "" : ""}An organisation owner connects Claude under Settings → AI assistant (an Anthropic API key).</Alert> : null}
+      {!configured ? <Alert tone="warning">The AI is not connected yet, so a simple built-in parser makes these suggestions. {people.length ? "" : ""}An organisation owner connects Claude under Settings, AI assistant (an Anthropic API key).</Alert> : null}
       <Textarea aria-label="What are you working on?" value={text} onChange={(e) => setText(e.target.value)} rows={3} maxLength={4000} placeholder={people.length ? "e.g. Ask Ada to redo the homepage banner by Monday. Ben should fix the checkout bug today. I will prepare the sprint review." : "e.g. Finish the logo export by Friday, then update the brand deck. Also reply to the client email tomorrow morning."} />
       <div className="flex flex-wrap items-center gap-2">
         {speechSupported ? <Button type="button" variant={listening ? "danger" : "outline"} onClick={toggleMic}>{listening ? <MicOff className="h-4 w-4" aria-hidden /> : <Mic className="h-4 w-4" aria-hidden />}{listening ? "Stop dictating" : "Dictate"}</Button> : speechSupported === false ? <span className="text-xs text-fg-subtle">This browser has no dictation (Firefox and Brave do not offer it). Use Chrome, Edge or Safari, or type the note.</span> : null}

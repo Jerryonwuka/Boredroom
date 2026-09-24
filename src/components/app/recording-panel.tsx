@@ -23,9 +23,9 @@ export function SessionRecordings({ orgSlug, recordings, own }: { orgSlug: strin
       {error ? <Alert tone="danger">{error}</Alert> : null}
       {recordings.map((r) => (
         <div key={r.id} className="flex flex-wrap items-center gap-2">
-          <span>Segment {r.segment_index + 1} · {r.source_type}</span>
+          <span>Segment {r.segment_index + 1}, {r.source_type}</span>
           <Badge tone={TONE[r.upload_state] ?? "neutral"}>{r.upload_state}</Badge>
-          <span className="text-fg-subtle">{(r.received_bytes / 1048576).toFixed(1)} MB · expires {formatDateTime(r.expires_at)}</span>
+          <span className="text-fg-subtle">{(r.received_bytes / 1048576).toFixed(1)} MB, expires {formatDateTime(r.expires_at)}</span>
           {r.failure_reason ? <span className="text-warning">{r.failure_reason}</span> : null}
           {r.upload_state === "ready" ? <Button size="sm" variant="ghost" onClick={async () => { setError(null); try { const p = await api<{ url: string }>(`/api/orgs/${orgSlug}/recordings/${r.id}/playback`, { method: "POST" }); setPlaying({ id: r.id, url: p.url, mime: "video/webm" }); } catch (err) { setError(isApiFailure(err) ? err.error.message : "Playback failed"); } }}>Play</Button> : null}
           {own && !r.restricted_at && !r.deleted_at ? <Button size="sm" variant="ghost" onClick={() => setFlagging(r.id)}>Flag sensitive</Button> : null}

@@ -7,7 +7,7 @@ export function AuthShell({ title, subtitle, children, footer }: { title: string
       <div className="relative w-full max-w-md">
         <div className="mb-8 text-center">
           <Logo className="text-2xl" />
-          <h1 className="mt-6 text-3xl font-display">{title}</h1>
+          <h1 className="mt-6 font-display text-[30px] leading-[1.1] tracking-[-0.02em] md:text-[36px]">{title}</h1>
           {subtitle ? <p className="mt-2 text-fg-muted">{subtitle}</p> : null}
         </div>
         <div className="tile p-6 md:p-8">{children}</div>

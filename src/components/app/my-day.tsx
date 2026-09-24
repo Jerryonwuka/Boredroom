@@ -101,7 +101,7 @@ function Board({ orgSlug, today, initialSession, planned, ownTodos, fromLeads, d
       <div className="space-y-6">
         <SessionTimer orgSlug={orgSlug} initial={initialSession} tasks={startable} captureDialog={dialogEl} onSessionChange={onSessionChange} todaySeconds={todaySeconds}
           {...(recordingMode === "disabled" ? {} : { captureGate, recordingControls })} />
-        {recordingMode === "disabled" ? <Alert tone="info">Screen recording is switched off for this organisation. An owner can turn it on under Settings → Screen recording.</Alert> : !policyAcknowledged ? <Alert tone="warning">To record your screen, first <Link className="underline" href={`/app/${orgSlug}/policy?next=/app/${orgSlug}/my-day`}>read and acknowledge the monitoring notice</Link>.</Alert> : null}
+        {recordingMode === "disabled" ? <Alert tone="info">Screen recording is switched off for this organisation. An owner can turn it on under Settings, Screen recording.</Alert> : !policyAcknowledged ? <Alert tone="warning">To record your screen, first <Link className="underline" href={`/app/${orgSlug}/policy?next=/app/${orgSlug}/my-day`}>read and acknowledge the monitoring notice</Link>.</Alert> : null}
         <Presence show={!!error}><Alert tone="danger">{error}</Alert></Presence>
         <Presence show={!!notice}><Alert tone="success">{notice}</Alert></Presence>
 
@@ -174,7 +174,7 @@ function TodoRow({ t, orgSlug, self, running, anyRunning, canRecord, onStart, on
           </div>
           <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-fg-subtle">
             {fromLead ? <span>from {t.created_by_name ?? "your team lead"}</span> : null}
-            {t.due_at ? <span className={overdue ? "text-danger" : ""}>due {formatDateTime(t.due_at)}{overdue ? " · overdue" : ""}</span> : null}
+            {t.due_at ? <span className={overdue ? "text-danger" : ""}>due {formatDateTime(t.due_at)}{overdue ? ", overdue" : ""}</span> : null}
             {t.estimate_minutes ? <span>est. {formatDuration(t.estimate_minutes * 60)}</span> : null}
             {t.tracked_seconds ? <span className="tabular-nums">tracked {formatDuration(t.tracked_seconds)}</span> : null}
             {t.blocked_reason ? <span className="text-danger">blocked: {t.blocked_reason}</span> : null}
@@ -249,7 +249,7 @@ function PastTasks({ orgSlug, items, onCleared }: { orgSlug: string; items: Past
         <li key={t.id} className="flex flex-wrap items-center gap-2 text-fg-muted">
           {t.status === "completed" ? <Badge tone="success">Completed</Badge> : <Badge tone="neutral">Removed</Badge>}
           <Link href={`/app/${orgSlug}/tasks/${t.id}`} className="text-fg hover:underline">{t.title}</Link>
-          <span className="text-xs text-fg-subtle">{t.completed_at ? formatDateTime(t.completed_at) : t.archived_at ? formatDateTime(t.archived_at) : ""}{t.tracked_seconds ? ` · ${formatDuration(t.tracked_seconds)}` : ""}{t.self_made ? "" : ` · from ${t.created_by_name}`}</span>
+          <span className="text-xs text-fg-subtle">{t.completed_at ? formatDateTime(t.completed_at) : t.archived_at ? formatDateTime(t.archived_at) : ""}{t.tracked_seconds ? `, ${formatDuration(t.tracked_seconds)}` : ""}{t.self_made ? "" : `, from ${t.created_by_name}`}</span>
         </li>
       ))}</ul>
       <div className="mt-3 flex flex-wrap items-center gap-2">

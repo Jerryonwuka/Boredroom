@@ -3,7 +3,8 @@ import { notFound } from "next/navigation";
 import { Video } from "lucide-react";
 import { workspacePage } from "@/server/lib/workspace-page";
 import { AppShell } from "@/components/app/shell";
-import { PageHeader, Card } from "@/components/ui/card";
+import { PageHeader, Card, CardHeader } from "@/components/ui/card";
+import { StatCard } from "@/components/ui/stat-card";
 import { buttonVariants } from "@/components/ui/button";
 import { Badge, TASK_STATUS_TONE, SESSION_STATE_TONE, label } from "@/components/ui/badge";
 import { DataTable } from "@/components/ui/table";
@@ -37,23 +38,22 @@ export default async function WorkroomPersonPage({ params }: { params: Promise<{
   const open = tasks.filter((t) => t.status !== "completed" && t.status !== "in_review");
   return (
     <AppShell ctx={ctx} counts={counts} teams={teams}>
-      <PageHeader back={{ href: `${base}/workroom`, label: "Workroom" }} overline={`${formatLongDate(data.today)}, ${person.teams.join(", ") || "no team"}`} title={person.display_name}
+      <PageHeader icon="person-laptop" back={{ href: `${base}/workroom`, label: "Workroom" }} overline={`${formatLongDate(data.today)}, ${person.teams.join(", ") || "no team"}`} title={person.display_name}
         description={<span className="flex flex-wrap items-center gap-2"><Badge tone={STATUS[status].tone} dot={status === "active" || status === "paused"}>{STATUS[status].label}</Badge>{person.recording_live ? <LiveBadge /> : null}<span>{person.employee_code}, {person.role === "manager" ? "team lead" : "staff"}{person.last_activity_at ? `, last active ${relativeTime(person.last_activity_at, now)}` : ""}</span></span>}
-        actions={<span className="flex flex-wrap items-center gap-3"><Link href={`${base}/messages?to=${member}`} className={buttonVariants({ size: "sm" })}>Message {person.display_name.split(" ")[0]}</Link><Link href={`${base}/timesheets?member=${member}`} className="text-sm underline">Timesheet and records</Link></span>} />
+        actions={<span className="flex flex-wrap items-center gap-3"><Link href={`${base}/messages?to=${member}`} className={buttonVariants({ size: "sm" })}>Message {person.display_name.split(" ")[0]}</Link><Link href={`${base}/timesheets?member=${member}`} className={buttonVariants({ size: "sm", variant: "outline" })}>Timesheet and records</Link></span>} />
 
-      <div className="mb-6 grid gap-4 md:grid-cols-4">
+      <div className="mb-6 grid gap-4 md:grid-cols-[1.2fr_1fr_1fr]">
         <Card className={status === "active" ? "tile-active" : ""}>
-          <p className="text-xs text-fg-subtle">{person.task_title ? (status === "active" ? "Working on now" : "Paused on") : "Right now"}</p>
-          {person.task_title ? <><Link href={`${base}/tasks/${person.task_id}`} className="mt-1 block truncate font-semibold hover:underline">{person.task_title}</Link><p className="mt-1 font-display text-2xl"><LiveClock seconds={person.session_seconds} serverNow={data.serverNow} running={status === "active"} /></p><p className="text-xs text-fg-subtle">since {person.started_at ? formatDateTime(person.started_at, ctx.org.timezone) : "—"}</p></> : <p className="mt-1 font-semibold text-fg-muted">{status === "clocked_out" ? "Off the clock" : "No session yet"}</p>}
+          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-fg-subtle">{person.task_title ? (status === "active" ? "Working on now" : "Paused on") : "Right now"}</p>
+          {person.task_title ? <><p className="mt-2 font-display text-4xl leading-none"><LiveClock seconds={person.session_seconds} serverNow={data.serverNow} running={status === "active"} className={status === "active" ? "text-accent" : "text-fg-muted"} /></p><Link href={`${base}/tasks/${person.task_id}`} className="mt-3 block truncate font-semibold hover:underline">{person.task_title}</Link><p className="text-xs text-fg-subtle">since {person.started_at ? formatDateTime(person.started_at, ctx.org.timezone) : "—"}</p></> : <p className="mt-2 font-display text-2xl text-fg-muted">{status === "clocked_out" ? "Off the clock" : "No session yet"}</p>}
         </Card>
-        <Card><p className="text-xs text-fg-subtle">Time today</p><p className="mt-1 font-display text-3xl tabular-nums">{formatDuration(person.today_seconds)}</p><p className="text-xs text-fg-subtle">first start {person.first_start_today ? formatDateTime(person.first_start_today, ctx.org.timezone) : "—"}</p></Card>
-        <Card><p className="text-xs text-fg-subtle">Tasks today</p><p className="mt-1 font-display text-3xl tabular-nums">{tasks.length}</p><p className="text-xs text-fg-subtle">{finished.length} done, {inCheck.length} sent for check, {open.length} open</p></Card>
-        <Card><p className="text-xs text-fg-subtle">Recordings today</p><p className="mt-1 font-display text-3xl tabular-nums">{recordings.length}</p><p className="text-xs text-fg-subtle">{person.recording_live ? "recording right now" : "none live"}</p></Card>
+        <StatCard label="Time today" verdict={formatDuration(person.today_seconds)} rows={[{ label: "First start", value: person.first_start_today ? formatDateTime(person.first_start_today, ctx.org.timezone) : "—", tone: "neutral" }, { label: "Sessions", value: sessions.length, tone: "info" }]} />
+        <StatCard label="Tasks today" verdict={tasks.length} rows={[{ label: "Done", value: finished.length, tone: "success" }, { label: "Sent for check", value: inCheck.length, tone: "info" }, { label: "Open", value: open.length, tone: "neutral" }, { label: "Recordings", value: recordings.length, tone: person.recording_live ? "danger" : "neutral" }]} />
       </div>
 
       <section className="mb-8">
-        <h2 className="mb-3 font-display text-lg">Today&apos;s tasks</h2>
-        {tasks.length === 0 ? <EmptyState title="No tasks touched today" description="Tasks appear here when they are started, planned for today, or finished today." /> : (
+        <CardHeader title="Today&apos;s tasks" className="mb-3" />
+        {tasks.length === 0 ? <EmptyState icon3d="card-check" title="No tasks touched today" description="Tasks appear here when they are started, planned for today, or finished today." /> : (
           <DataTable caption="Tasks today">
             <thead><tr><th>Task</th><th>Status</th><th>Time today</th><th>Sessions</th><th>First started</th><th>Recordings</th><th><span className="sr-only">Actions</span></th></tr></thead>
             <tbody>{tasks.map((t) => (
@@ -64,7 +64,7 @@ export default async function WorkroomPersonPage({ params }: { params: Promise<{
                 <td className="tabular-nums">{t.sessions_today}</td>
                 <td className="text-sm">{t.first_started_today ? formatDateTime(t.first_started_today, ctx.org.timezone) : "—"}</td>
                 <td>{t.recordings ? <Link href={`${base}/tasks/${t.id}`} className="inline-flex items-center gap-1 hover:underline"><Video className="size-4 text-accent" aria-hidden />{t.recordings}</Link> : <span className="text-fg-subtle">—</span>}</td>
-                <td>{t.status !== "completed" ? <Link href={`${base}/messages?to=${member}&task=${t.id}`} className="whitespace-nowrap text-sm underline">Ask for an update</Link> : null}</td>
+                <td>{t.status !== "completed" ? <Link href={`${base}/messages?to=${member}&task=${t.id}`} className="whitespace-nowrap text-sm text-fg-muted hover:text-fg">Ask for an update</Link> : null}</td>
               </tr>
             ))}</tbody>
           </DataTable>
@@ -73,7 +73,7 @@ export default async function WorkroomPersonPage({ params }: { params: Promise<{
 
       <div className="grid gap-6 lg:grid-cols-2">
         <section>
-          <h2 className="mb-3 font-display text-lg">Sessions today</h2>
+          <CardHeader title="Sessions today" className="mb-3" />
           {sessions.length === 0 ? <p className="tile p-4 text-sm text-fg-muted">No sessions yet today.</p> : (
             <ul className="space-y-2">{sessions.map((s) => (
               <li key={s.id} className="tile flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 text-sm">
@@ -88,7 +88,7 @@ export default async function WorkroomPersonPage({ params }: { params: Promise<{
           )}
         </section>
         <section>
-          <h2 className="mb-3 font-display text-lg">Recordings today</h2>
+          <CardHeader title="Recordings today" className="mb-3" />
           {recordings.length === 0 ? <p className="tile p-4 text-sm text-fg-muted">No screen recordings today.</p> : <RecordingsTable orgSlug={ctx.org.slug} rows={recordings} timeZone={ctx.org.timezone} showPerson={false} compact />}
         </section>
       </div>

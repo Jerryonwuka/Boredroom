@@ -13,7 +13,7 @@ export function LiveClock({ seconds, serverNow, running, className }: { seconds:
     return () => clearInterval(id);
   }, [running]);
   const extra = running && now ? Math.max(0, Math.floor((now - new Date(serverNow).getTime()) / 1000)) : 0;
-  return <span className={`font-mono tabular-nums ${className ?? ""}`} aria-live="off">{formatClock(seconds + extra)}</span>;
+  return <span className={`tabular-nums ${className ?? ""}`} aria-live="off">{formatClock(seconds + extra)}</span>;
 }
 
 export function LiveBadge({ label = "Recording" }: { label?: string }) {

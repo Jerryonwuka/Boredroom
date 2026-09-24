@@ -66,7 +66,7 @@ export function MemberRow({ orgSlug, member, teams, isOwner, self }: { orgSlug: 
         </Select>
       )}</td>
       <td>
-        <div className="flex flex-wrap gap-1">{member.teams.map((t) => <Badge key={t.id} tone={t.is_manager ? "accent" : "neutral"}>{t.name}{t.is_manager ? " · Team lead" : ""}</Badge>)}</div>
+        <div className="flex flex-wrap gap-1">{member.teams.map((t) => <Badge key={t.id} tone={t.is_manager ? "accent" : "neutral"}>{t.name}{t.is_manager ? ", team lead" : ""}</Badge>)}</div>
         {!revoked ? (
           <form className="mt-1 flex flex-wrap items-center gap-1" onSubmit={(e) => { e.preventDefault(); const f = new FormData(e.currentTarget); const teamId = String(f.get("teamId")); if (!teamId) return; submit(() => api(`/api/orgs/${orgSlug}/teams/${teamId}/members`, { method: "POST", body: { membershipId: member.id, isManager: f.get("isManager") === "on" } })); }}>
             <select aria-label="Team" name="teamId" className="h-8 rounded-lg border border-border bg-inset px-2 text-xs"><option value="">Add to team…</option>{teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select>

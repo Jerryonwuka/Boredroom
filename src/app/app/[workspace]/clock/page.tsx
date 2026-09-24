@@ -2,6 +2,7 @@ import Link from "next/link";
 import { workspacePage } from "@/server/lib/workspace-page";
 import { AppShell } from "@/components/app/shell";
 import { PageHeader, Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { DataTable } from "@/components/ui/table";
 import { ClockButtons } from "@/components/app/clock";
@@ -33,13 +34,13 @@ export default async function ClockPage({ params, searchParams }: { params: Prom
   const supervisor = ctx.membership.role !== "employee";
   return (
     <AppShell ctx={ctx} counts={counts} teams={teams}>
-      <PageHeader overline={formatLongDate(c.today)} title="Your clock"
+      <PageHeader icon="clock-in" overline={formatLongDate(c.today)} title="Your clock"
         description={`Work starts at ${hhmm(c.schedule.start_local)} and ends at ${hhmm(c.schedule.end_local)} ${zone}${c.schedule.clock_grace_minutes ? `, with ${c.schedule.clock_grace_minutes} minutes' grace` : ""}. Clock in on or before the start to be on time; clock out when you are done for the day.`}
-        actions={supervisor ? <Link href={`/app/${ctx.org.slug}/attendance`} className="text-sm underline">Who has clocked in</Link> : undefined} />
+        actions={supervisor ? <Link href={`/app/${ctx.org.slug}/attendance`}><Button variant="outline" size="sm">Who has clocked in</Button></Link> : undefined} />
 
       <div className="mb-8 grid gap-4 md:grid-cols-[1fr_20rem]">
         <Card className={c.status === "in" ? "tile-active" : ""}>
-          <p className="text-xs text-fg-subtle">{c.workingDay ? "Today" : "Today is not a scheduled working day"}</p>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-fg-subtle">{c.workingDay ? "Today" : "Not a scheduled working day"}</p>
           <div className="mt-2 flex flex-wrap items-end justify-between gap-4">
             <div>
               {c.status === "not_in" ? <><p className="font-display text-3xl">Not clocked in</p><p className="mt-1 text-sm text-fg-muted">{lateNow ? `The day started at ${hhmm(c.schedule.start_local)}. Clocking in now counts as late.` : `Clock in by ${hhmm(c.schedule.start_local)} to be on time.`}</p></> : null}
@@ -51,7 +52,7 @@ export default async function ClockPage({ params, searchParams }: { params: Prom
           {c.timerOpen && c.status === "in" ? <p className="mt-3 text-xs text-fg-subtle">A task timer is running; stop it on My Day before clocking out.</p> : null}
         </Card>
         <Card>
-          <p className="text-xs text-fg-subtle">How it is judged</p>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-fg-subtle">How it is judged</p>
           <ul className="mt-2 space-y-1.5 text-sm text-fg-muted">
             <li><span className="font-semibold text-fg">On time</span>: clocked in at or before {hhmm(c.schedule.start_local)}{c.schedule.clock_grace_minutes ? ` (plus ${c.schedule.clock_grace_minutes} min grace)` : ""}.</li>
             <li><span className="font-semibold text-fg">Late</span>: clocked in after that; the record shows by how much.</li>
@@ -65,11 +66,11 @@ export default async function ClockPage({ params, searchParams }: { params: Prom
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
           <h2 className="font-display text-lg">{c.month === thisMonth ? "Earlier this month" : monthLabel(c.month)}</h2>
           <form className="flex items-center gap-2 text-sm" action={`/app/${ctx.org.slug}/clock`}>
-            <Link href={monthHref(shiftMonth(c.month, -1))} className="underline">Previous month</Link>
+            <Link href={monthHref(shiftMonth(c.month, -1))} className="text-fg-muted hover:text-fg">Previous month</Link>
             <label htmlFor="month" className="sr-only">Month</label>
-            <input id="month" type="month" name="month" defaultValue={c.month} max={thisMonth} className="h-9 rounded-[var(--radius-sm)] border border-border-strong bg-inset px-2 text-sm" />
-            <button type="submit" className="underline">Show</button>
-            {c.month < thisMonth ? <><Link href={monthHref(shiftMonth(c.month, 1))} className="underline">Next month</Link><Link href={monthHref(thisMonth)} className="underline">This month</Link></> : null}
+            <input id="month" type="month" name="month" defaultValue={c.month} max={thisMonth} className="h-9 rounded-full border border-border-strong bg-inset px-3 text-sm" />
+            <Button type="submit" size="sm" variant="subtle">Show</Button>
+            {c.month < thisMonth ? <><Link href={monthHref(shiftMonth(c.month, 1))} className="text-fg-muted hover:text-fg">Next month</Link><Link href={monthHref(thisMonth)} className="text-fg-muted hover:text-fg">This month</Link></> : null}
           </form>
         </div>
         <p className="mb-3 text-sm text-fg-muted">{c.summary.present} day{c.summary.present === 1 ? "" : "s"} clocked in{c.summary.late ? `, ${c.summary.late} late` : ""}{c.summary.missed ? `, ${c.summary.missed} working day${c.summary.missed === 1 ? "" : "s"} with no clock-in` : ""}{c.month === thisMonth ? " (not counting today)" : ""}.</p>

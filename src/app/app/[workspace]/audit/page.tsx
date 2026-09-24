@@ -19,14 +19,14 @@ export default async function AuditPage({ params, searchParams }: { params: Prom
   const scope = { owner: "the whole organisation", hr: "operational events across the organisation", manager: "your own actions and your teams' review events", employee: "events about your own records" }[ctx.membership.role];
   return (
     <AppShell ctx={ctx} counts={counts} teams={teams}>
-      <PageHeader back={{ href: `/app/${ctx.org.slug}`, label: "Home" }} title="Audit" description={`Who did what and when. You can see ${scope}. Entries cannot be edited or deleted from the application.`} />
+      <PageHeader icon="eye-checklist" back={{ href: `/app/${ctx.org.slug}`, label: "Home" }} title="Audit" description={`Who did what and when. You can see ${scope}. Entries cannot be edited or deleted from the application.`} />
       <form className="mb-4 flex flex-wrap items-end gap-2">
         <label className="text-sm"><span className="block text-xs text-fg-subtle">Action prefix</span><Input name="action" defaultValue={sp.action ?? ""} placeholder="e.g. session., review., invitation." className="w-56" /></label>
         <label className="text-sm"><span className="block text-xs text-fg-subtle">From</span><Input name="from" type="date" defaultValue={sp.from ?? ""} /></label>
         <label className="text-sm"><span className="block text-xs text-fg-subtle">To</span><Input name="to" type="date" defaultValue={sp.to ?? ""} /></label>
         <Button type="submit" variant="outline" size="sm">Filter</Button>
       </form>
-      {rows.length === 0 ? <EmptyState title="No events match" /> : (
+      {rows.length === 0 ? <EmptyState icon3d="eye-checklist" title="No events match" description="Widen the dates or clear the action prefix." /> : (
         <DataTable caption="Audit events">
           <thead><tr><th>When</th><th>Action</th><th>Actor</th><th>Subject</th><th>Details</th></tr></thead>
           <tbody>{rows.map((r) => (
@@ -35,7 +35,7 @@ export default async function AuditPage({ params, searchParams }: { params: Prom
               <td><code className="text-xs">{r.action}</code></td>
               <td>{r.actor_name ?? <span className="text-fg-subtle">system</span>}</td>
               <td>{r.subject_name ?? r.subject_type}</td>
-              <td className="max-w-md truncate text-xs text-fg-muted" title={JSON.stringify(r.metadata)}>{Object.entries(r.metadata).filter(([, v]) => v != null && typeof v !== "object").map(([k, v]) => `${k}=${String(v)}`).join(" · ")}</td>
+              <td className="max-w-md truncate text-xs text-fg-muted" title={JSON.stringify(r.metadata)}>{Object.entries(r.metadata).filter(([, v]) => v != null && typeof v !== "object").map(([k, v]) => `${k}=${String(v)}`).join(", ")}</td>
             </tr>
           ))}</tbody>
         </DataTable>
