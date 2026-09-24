@@ -11,6 +11,8 @@ import { Bell, Settings, ChevronRight } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ICON_BUTTON } from "@/components/ui/icon-button";
+import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { api } from "@/lib/api-client";
 import { relativeTime, cn } from "@/lib/utils";
 import type { RecentNotification } from "@/server/services/workspace";
@@ -31,11 +33,12 @@ export function TopBar({ orgSlug, user, roleLabel, isOrg, unread, attention, rec
     return () => { document.removeEventListener("mousedown", onDown); document.removeEventListener("keydown", onKey); };
   }, [open]);
   const toggle = (p: Panel) => setOpen((o) => (o === p ? null : p));
-  const iconBtn = "relative inline-flex size-10 items-center justify-center rounded-full border border-border bg-[linear-gradient(180deg,#1d1d1d,#141414)] text-fg-muted transition-[color,border-color,background-color] duration-[var(--duration-fast)] hover:border-border-strong hover:text-fg focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2";
+  const iconBtn = ICON_BUTTON;
   const panel = "absolute right-0 top-[calc(100%+8px)] z-[var(--z-dropdown)] w-[22rem] max-w-[calc(100vw-2rem)] tile p-2 text-left";
 
   return (
     <div ref={ref} className={cn("relative flex items-center gap-2", className)}>
+      <ThemeToggle />
       <div className="relative">
         <button type="button" className={iconBtn} aria-label={unread ? `Notifications, ${unread} unread` : "Notifications"} aria-expanded={open === "notifications"} aria-controls="topbar-notifications" onClick={() => toggle("notifications")}>
           <Bell className="size-[18px]" aria-hidden />
@@ -47,7 +50,7 @@ export function TopBar({ orgSlug, user, roleLabel, isOrg, unread, attention, rec
             {recent.length === 0 ? <p className="px-2 py-6 text-center text-sm text-fg-muted">Nothing yet. Assignments, review requests and decisions land here as they happen.</p> : (
               <ul className="max-h-[22rem] divide-y divide-border-soft overflow-y-auto">
                 {recent.map((n) => (
-                  <li key={n.id} className={cn("flex items-start gap-2.5 px-2 py-2.5", !n.read_at && "bg-white/[0.03]")}>
+                  <li key={n.id} className={cn("flex items-start gap-2.5 px-2 py-2.5", !n.read_at && "bg-wash-soft")}>
                     <span aria-hidden className={cn("mt-1.5 size-2 shrink-0 rounded-full", n.read_at ? "bg-transparent" : "bg-accent")} />
                     <div className="min-w-0 flex-1">
                       {n.href ? <Link href={n.href} onClick={() => setOpen(null)} className="block text-sm font-medium hover:underline">{n.title}</Link> : <p className="text-sm font-medium">{n.title}</p>}
@@ -80,7 +83,7 @@ export function TopBar({ orgSlug, user, roleLabel, isOrg, unread, attention, rec
                   [`${base}/policy`, "Monitoring notice", "What is recorded, and who has acknowledged it"],
                   [`${base}/audit`, "Audit log", "Who did what and when"],
                 ].map(([href, label, hint]) => (
-                  <li key={href}><Link href={href} onClick={() => setOpen(null)} className="flex items-center gap-3 rounded-[var(--radius-sm)] px-2 py-2 hover:bg-white/[0.05]"><span className="min-w-0 flex-1"><span className="block font-medium">{label}</span><span className="block truncate text-xs text-fg-subtle">{hint}</span></span><ChevronRight className="size-4 text-fg-subtle" aria-hidden /></Link></li>
+                  <li key={href}><Link href={href} onClick={() => setOpen(null)} className="flex items-center gap-3 rounded-[var(--radius-sm)] px-2 py-2 hover:bg-wash"><span className="min-w-0 flex-1"><span className="block font-medium">{label}</span><span className="block truncate text-xs text-fg-subtle">{hint}</span></span><ChevronRight className="size-4 text-fg-subtle" aria-hidden /></Link></li>
                 ))}
               </ul>
             </div>
@@ -104,9 +107,9 @@ export function TopBar({ orgSlug, user, roleLabel, isOrg, unread, attention, rec
             </div>
             <div className="flex flex-wrap items-center gap-2 px-2 pb-2"><Badge tone="accent">{roleLabel}</Badge>{user.statusText ? <span className="truncate text-xs text-fg-muted">“{user.statusText}”</span> : <span className="text-xs text-fg-subtle">No status set</span>}</div>
             <ul className="border-t border-border-soft pt-1 text-sm">
-              <li><Link href={`${base}/profile`} onClick={() => setOpen(null)} className="block rounded-[var(--radius-sm)] px-2 py-2 hover:bg-white/[0.05]">Your profile</Link></li>
-              <li><Link href="/app" onClick={() => setOpen(null)} className="block rounded-[var(--radius-sm)] px-2 py-2 hover:bg-white/[0.05]">Switch workspace</Link></li>
-              <li><button type="button" className="block w-full rounded-[var(--radius-sm)] px-2 py-2 text-left hover:bg-white/[0.05]" onClick={async () => { await api("/api/auth/logout", { method: "POST", retries: 0 }); router.push("/login"); router.refresh(); }}>Sign out</button></li>
+              <li><Link href={`${base}/profile`} onClick={() => setOpen(null)} className="block rounded-[var(--radius-sm)] px-2 py-2 hover:bg-wash">Your profile</Link></li>
+              <li><Link href="/app" onClick={() => setOpen(null)} className="block rounded-[var(--radius-sm)] px-2 py-2 hover:bg-wash">Switch workspace</Link></li>
+              <li><button type="button" className="block w-full rounded-[var(--radius-sm)] px-2 py-2 text-left hover:bg-wash" onClick={async () => { await api("/api/auth/logout", { method: "POST", retries: 0 }); router.push("/login"); router.refresh(); }}>Sign out</button></li>
             </ul>
           </div>
         ) : null}

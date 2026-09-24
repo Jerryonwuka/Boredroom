@@ -31,7 +31,7 @@ export default async function AttendancePage({ params, searchParams }: { params:
   const back = { href: ctx.membership.role === "manager" ? `${base}/my-day` : `${base}/dashboard`, label: ctx.membership.role === "manager" ? "My Day" : "Dashboard" };
   const teamId = sp.team || null;
   const viewSwitch = (view: "day" | "month", active: boolean) => (
-    <Link href={`${base}/attendance?view=${view}${teamId ? `&team=${teamId}` : ""}`} aria-current={active ? "page" : undefined} className={cn("rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors duration-[var(--duration-fast)]", active ? "bg-white/10 text-fg" : "text-fg-muted hover:text-fg")}>{view === "day" ? "Day" : "Month"}</Link>
+    <Link href={`${base}/attendance?view=${view}${teamId ? `&team=${teamId}` : ""}`} aria-current={active ? "page" : undefined} className={cn("rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors duration-[var(--duration-fast)]", active ? "bg-wash-active text-fg" : "text-fg-muted hover:text-fg")}>{view === "day" ? "Day" : "Month"}</Link>
   );
 
   // ---- Month view --------------------------------------------------------
@@ -44,7 +44,7 @@ export default async function AttendancePage({ params, searchParams }: { params:
       <AppShell ctx={ctx} counts={counts} teams={teams}>
         <PageHeader icon="calendar-clock" back={back} overline={monthLabel(m.month)} title="Attendance"
           description={`A cell per day for everyone you supervise: green is on time, amber is late, empty is no clock-in. Work starts at ${hhmm(m.schedule.start_local)}.`}
-          actions={<span className="inline-flex items-center gap-1 rounded-full border border-border bg-white/[0.03] p-1">{viewSwitch("day", false)}{viewSwitch("month", true)}</span>} />
+          actions={<span className="inline-flex items-center gap-1 rounded-full border border-border bg-wash-soft p-1">{viewSwitch("day", false)}{viewSwitch("month", true)}</span>} />
 
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <form className="flex items-center gap-2 text-sm" action={`${base}/attendance`}>
@@ -73,10 +73,10 @@ export default async function AttendancePage({ params, searchParams }: { params:
 
         {m.rows.length === 0 ? <EmptyState icon3d="calendar-clock" title="Nobody to show" description="Change the team or the month." /> : (
           <DataTable caption={`Attendance for ${monthLabel(m.month)}`}>
-            <thead><tr><th className="sticky left-0 bg-[#121212]">Person</th>{m.days.map((d) => <th key={d} className={cn("day text-[11px] font-normal", !m.workingDays.includes(d) && "text-fg-faint", d === m.today && "text-accent")}>{Number(d.slice(8))}</th>)}<th className="text-right">In</th><th className="text-right">Late</th><th className="text-right">Missed</th><th className="hidden text-right lg:table-cell">Hours</th></tr></thead>
+            <thead><tr><th className="sticky left-0 bg-bg-elevated">Person</th>{m.days.map((d) => <th key={d} className={cn("day text-[11px] font-normal", !m.workingDays.includes(d) && "text-fg-faint", d === m.today && "text-accent")}>{Number(d.slice(8))}</th>)}<th className="text-right">In</th><th className="text-right">Late</th><th className="text-right">Missed</th><th className="hidden text-right lg:table-cell">Hours</th></tr></thead>
             <tbody>{m.rows.map((r) => (
               <tr key={r.membership_id}>
-                <td className="sticky left-0 bg-[#121212]"><Link href={`${base}/workroom/${r.membership_id}`} className="whitespace-nowrap font-semibold hover:underline">{r.display_name}</Link><p className="text-xs text-fg-subtle">{r.teams.join(", ") || (r.role === "owner" ? "owner" : r.role === "hr" ? "HR" : "—")}</p></td>
+                <td className="sticky left-0 bg-bg-elevated"><Link href={`${base}/workroom/${r.membership_id}`} className="whitespace-nowrap font-semibold hover:underline">{r.display_name}</Link><p className="text-xs text-fg-subtle">{r.teams.join(", ") || (r.role === "owner" ? "owner" : r.role === "hr" ? "HR" : "—")}</p></td>
                 {m.days.map((d) => { const c = r.days[d]; const working = m.workingDays.includes(d); const before = d < r.joined; return (
                   <td key={d} className="day">
                     {c ? <span title={`${formatLongDate(d)}: in ${timeOf(c.in, tz)}${c.out ? `, out ${timeOf(c.out, tz)}` : ""}${c.late ? `, late by ${formatDuration(c.late)}` : ", on time"}`} className={cn("inline-block size-2.5 rounded-full", c.late ? "bg-warning" : "bg-success")} aria-label={`${d}: ${c.late ? "late" : "on time"}`} />
@@ -114,7 +114,7 @@ export default async function AttendancePage({ params, searchParams }: { params:
     <AppShell ctx={ctx} counts={counts} teams={teams}>
       <PageHeader icon="calendar-clock" back={back} overline={b.date === b.today ? `Today, ${formatLongDate(b.date)}` : formatLongDate(b.date)} title="Attendance"
         description={`Work starts at ${hhmm(b.schedule.start_local)} and ends at ${hhmm(b.schedule.end_local)} ${zone}${b.schedule.clock_grace_minutes ? `, ${b.schedule.clock_grace_minutes} minutes' grace` : ""}. Anyone clocking in after that is flagged late. The board starts empty every day.${b.workingDay ? "" : " This is not a scheduled working day."}`}
-        actions={<span className="inline-flex items-center gap-1 rounded-full border border-border bg-white/[0.03] p-1">{viewSwitch("day", true)}{viewSwitch("month", false)}</span>} />
+        actions={<span className="inline-flex items-center gap-1 rounded-full border border-border bg-wash-soft p-1">{viewSwitch("day", true)}{viewSwitch("month", false)}</span>} />
 
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <form className="flex flex-wrap items-center gap-2 text-sm" action={`${base}/attendance`}>

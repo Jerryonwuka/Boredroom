@@ -40,7 +40,7 @@ export function SessionRecordings({ orgSlug, recordings, own }: { orgSlug: strin
       {playing ? (
         <div className="mt-2">
           <p className="mb-1 text-fg-subtle">Playback link valid for 60 seconds; access is logged.</p>
-          <video controls src={playing.url} className="max-h-80 w-full rounded-lg border border-border bg-black" onError={() => setError("The media could not be played in this browser.")} />
+          <video controls src={playing.url} className="max-h-80 w-full rounded-lg border border-border bg-media" onError={() => setError("The media could not be played in this browser.")} />
           <Button size="sm" variant="ghost" onClick={() => setPlaying(null)}>Close</Button>
         </div>
       ) : null}

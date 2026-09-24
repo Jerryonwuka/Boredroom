@@ -18,7 +18,13 @@ The look the landing page arrived at on 23 and 24 September 2026, made into the 
 | `--accent` / `--accent-hover` / `--accent-fg` | `#ff6c02` / `#ff8226` / `#140700` | The one orange. On the live thing, the primary action, the active nav icon, a verdict that needs eyes. About 10% of any screen. |
 | `--success` `--warning` `--danger` `--info` | green, amber, red, blue, slightly desaturated | Status only. Never decoration. |
 
-Sidebar and mobile header sit on `#050505`, one step off the canvas, so the content column reads as the page.
+Sidebar and mobile header sit on `--sidebar` (`#050505`), one step off the canvas, so the content column reads as the page.
+
+Surfaces bind to tokens too, so a theme changes values and nothing else: `--surface-top/-bottom` (the `.tile` gradient), `--surface-hover-*`, `--btn-*` and `--btn-hover-*` (the button gradient), `--avatar-*`, four washes (`--wash-soft`, `--wash`, `--wash-strong`, `--wash-active`, white at 3/5/8/10% in dark, black at 2.5/4/6/8% in light; utilities `bg-wash-*`), `--highlight` (the 1px top highlight inside surfaces), `--overlay` (dialog backdrops) and `--media` (video letterboxing, black in both themes). Never write `bg-white/10` or a hex in a component; pick the token.
+
+### Light theme
+
+`:root[data-theme="light"]` restates the same tokens on paper white: canvas `#f4f4f2`, cards white, inputs `#f1f1ef`, hairlines black at 6/10/18%, text `#111` / `#5a5a5a` / `#8a8a8a` / `#b4b4b4`. Orange is unchanged; the four status colours darken (`#178f5d`, `#a86d0f`, `#d23c3c`, `#2b6cd9`) so they keep contrast on white. The `dark:` variant follows `data-theme`, not the operating system, so vendored components switch with the page. Dark is the default; the choice is stored in `localStorage` under `boredroom-theme`, applied by an inline script in the root layout before first paint, and changed with `ThemeToggle` (a sun or moon `IconButton`), which sits in the workspace top bar, the landing header, the auth pages and the workspace picker.
 
 ### Type
 
@@ -105,6 +111,7 @@ Two sets with two jobs. The 3D orange-glass set in `public/icons/` (typed in `IC
 | `EmptyState`, `ErrorState`, `PermissionDenied`, `OfflineState`, `Alert`, `Skeleton` | Every empty state names one next action and may carry a 3D icon (`icon3d`). |
 | `ConfirmDialog`, `ConfirmButton` | Native `<dialog>` for every destructive or irreversible action. |
 | `Icon3D`, `IconTile` | The 3D icon set, bare or in its lit tile. |
+| `IconButton`, `ThemeToggle` | The round 40px icon button on the button surface; the toggle flips `data-theme` and remembers it. |
 | `Avatar` | A person: their picture from `/api/avatars/:id`, else initials on a dark disc. 32px in lists, 38px in the top bar, 96px on the profile page. |
 | `TopBar` (`components/app`) | The top-right cluster on every workspace page: round 40px icon buttons for notifications (unread count in an orange pill), settings (organisation accounts) and the person. Each opens a `.tile` panel below it; one open at a time. Notifications and settings live here, not in the sidebar. |
 | Motion primitives | `MotionRoot`, `PageRise`, `Rise`, `Presence`, `Expand`, `AnimatedList`, `AnimatedRow`, `Swap`, `SlidingMarker`. |

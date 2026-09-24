@@ -6,6 +6,7 @@ import { Logo } from "@/components/logo";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { SignOutButton } from "@/components/auth/forms";
+import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { EmptyState, Alert } from "@/components/ui/states";
 
 export const metadata = { title: "Workspaces" };
@@ -19,7 +20,7 @@ export default async function WorkspacesPage({ searchParams }: { searchParams: P
   if (workspaces.length === 1 && !sp.verified) redirect(`/app/${workspaces[0].slug}`);
   return (
     <main id="main" className="mx-auto w-full max-w-2xl px-4 py-12">
-      <div className="mb-8 flex items-center justify-between"><Logo /><SignOutButton /></div>
+      <div className="mb-8 flex items-center justify-between"><Logo /><div className="flex items-center gap-2"><ThemeToggle /><SignOutButton /></div></div>
       {sp.verified ? <Alert tone="success" className="mb-6">Your email is verified.</Alert> : null}
       <h1 className="font-display text-[30px] leading-[1.1] tracking-[-0.02em] md:text-[38px]">Your workspaces</h1>
       <p className="mt-1 text-fg-muted">Signed in as {user.email}</p>

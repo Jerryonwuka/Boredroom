@@ -31,7 +31,7 @@ export function RecordingsTable({ orgSlug, rows, timeZone, showPerson = true, sh
       {playing ? (
         <div className="tile p-3">
           <div className="mb-2 flex items-center justify-between gap-2"><p className="text-sm font-semibold">{playing.title}</p><Button size="sm" variant="ghost" aria-label="Close player" onClick={() => setPlaying(null)}><X className="size-4" aria-hidden />Close</Button></div>
-          <video controls autoPlay src={playing.url} className="max-h-[60vh] w-full rounded-[var(--radius-sm)] border border-border bg-black" onError={() => setError("The video could not be played in this browser.")} />
+          <video controls autoPlay src={playing.url} className="max-h-[60vh] w-full rounded-[var(--radius-sm)] border border-border bg-media" onError={() => setError("The video could not be played in this browser.")} />
           <p className="mt-1 text-xs text-fg-subtle">This link works for 60 seconds. Every play is written to the access log.</p>
         </div>
       ) : null}

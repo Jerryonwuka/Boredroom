@@ -19,7 +19,7 @@ export function JoinDemo() {
     <GlassCard className="overflow-hidden">
       <div className="flex gap-1 border-b p-2 lp-line" role="tablist" aria-label="Ways to join">
         {TABS.map((t, n) => (
-          <button key={t} role="tab" aria-selected={i === n} onClick={() => { setI(n); setHeld(true); }} className={cn("rounded-full px-3.5 py-1.5 text-sm transition-colors", i === n ? "bg-white/10 text-white" : "lp-muted hover:text-white")}>{t}</button>
+          <button key={t} role="tab" aria-selected={i === n} onClick={() => { setI(n); setHeld(true); }} className={cn("rounded-full px-3.5 py-1.5 text-sm transition-colors", i === n ? "bg-wash-active text-fg" : "lp-muted hover:text-fg")}>{t}</button>
         ))}
       </div>
       <div className="relative min-h-[260px] p-6">
@@ -29,7 +29,7 @@ export function JoinDemo() {
               <div>
                 <p className="lp-muted text-sm">Your organisation&apos;s join code</p>
                 <p className="mt-3 font-display text-5xl tracking-[0.12em] text-accent md:text-6xl">K7QM-3XNA</p>
-                <p className="lp-muted mt-3 text-sm">New joiners land in <span className="text-white">Design</span> as <span className="text-white">Staff</span>. Pause it and it stops working that second.</p>
+                <p className="lp-muted mt-3 text-sm">New joiners land in <span className="text-fg">Design</span> as <span className="text-fg">Staff</span>. Pause it and it stops working that second.</p>
                 <div className="mt-5 flex gap-2"><span className="lp-btn lp-btn-secondary lp-btn-sm">Pause code</span><span className="lp-btn lp-btn-secondary lp-btn-sm">Rotate</span></div>
               </div>
             ) : i === 1 ? (

@@ -32,7 +32,7 @@ export function DayDemo() {
       <GlassCard tilt={false} bodyClassName="p-6">
         <p className="lp-muted text-sm">What do you need to do?</p>
         <div className="mt-2 min-h-12 lp-glass rounded-xl px-4 py-3">
-          <TypewriterEffect words={"Finish the homepage design by Friday".split(" ").map((text) => ({ text, className: "text-white" }))} className={TYPE} cursorClassName="h-5 bg-accent" />
+          <TypewriterEffect words={"Finish the homepage design by Friday".split(" ").map((text) => ({ text, className: "text-fg" }))} className={TYPE} cursorClassName="h-5 bg-accent" />
         </div>
         <ul className="mt-4 space-y-2">
           {[["Homepage design", "Fri, 2h 30m", true], ["Client kickoff notes", "today", false], ["Brand deck, revision 2", "Thu", false]].map(([t, m, live]) => (

@@ -42,5 +42,5 @@ export function Alert({ tone = "info", title, children, className }: { tone?: "i
 }
 
 export function Skeleton({ className }: { className?: string }) {
-  return <div className={cn("animate-pulse rounded-lg bg-white/6", className)} aria-hidden />;
+  return <div className={cn("animate-pulse rounded-lg bg-wash-strong", className)} aria-hidden />;
 }

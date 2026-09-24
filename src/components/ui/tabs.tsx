@@ -15,15 +15,15 @@ export function Tabs({ tabs, value, onChange, param = "tab", className, label = 
   const sp = useSearchParams();
   const current = value ?? sp.get(param) ?? tabs[0]?.value ?? tabs[0]?.href;
   return (
-    <div role="tablist" aria-label={label} className={cn("inline-flex max-w-full gap-1 overflow-x-auto rounded-full border border-border bg-white/[0.03] p-1", className)}>
+    <div role="tablist" aria-label={label} className={cn("inline-flex max-w-full gap-1 overflow-x-auto rounded-full border border-border bg-wash-soft p-1", className)}>
       {tabs.map((t) => {
         const key = t.value ?? t.href ?? t.label;
         const active = t.href ? pathname === t.href || (sp.get(param) ?? "") === (t.value ?? "") && !!t.value : current === key;
         const inner = (
           <>
-            {active ? <SlidingMarker layoutId="tabs-active" className="absolute inset-0 rounded-full bg-white/10" /> : null}
+            {active ? <SlidingMarker layoutId="tabs-active" className="absolute inset-0 rounded-full bg-wash-active" /> : null}
             <span className="relative">{t.label}</span>
-            {t.count ? <span className={cn("relative ml-2 rounded-full px-1.5 py-px text-[11px] font-bold tabular-nums", active ? "bg-accent text-accent-fg" : "bg-white/10 text-fg-muted")}>{t.count}</span> : null}
+            {t.count ? <span className={cn("relative ml-2 rounded-full px-1.5 py-px text-[11px] font-bold tabular-nums", active ? "bg-accent text-accent-fg" : "bg-wash-active text-fg-muted")}>{t.count}</span> : null}
           </>
         );
         const cls = cn("relative whitespace-nowrap rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors duration-[var(--duration-fast)]", active ? "text-fg" : "text-fg-muted hover:text-fg");

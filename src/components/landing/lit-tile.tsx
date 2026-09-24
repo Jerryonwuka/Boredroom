@@ -11,7 +11,7 @@ import { cn } from "@/lib/utils";
 export function LitTile({ children, className, duration = 6000 }: { children: React.ReactNode; className?: string; duration?: number }) {
   const reduced = useReducedMotion();
   return (
-    <div className={cn("relative overflow-hidden rounded-2xl p-px", className)} style={{ background: "rgba(255,255,255,0.1)" }}>
+    <div className={cn("relative overflow-hidden rounded-2xl p-px", className)} style={{ background: "var(--border)" }}>
       {reduced ? null : (
         <div aria-hidden className="absolute inset-0 rounded-2xl">
           <MovingBorder duration={duration} rx="16" ry="16">
@@ -19,7 +19,7 @@ export function LitTile({ children, className, duration = 6000 }: { children: Re
           </MovingBorder>
         </div>
       )}
-      <div className="relative h-full rounded-[15px] bg-[#0a0a0a]">{children}</div>
+      <div className="relative h-full rounded-[15px] bg-[var(--surface-bottom)]">{children}</div>
     </div>
   );
 }

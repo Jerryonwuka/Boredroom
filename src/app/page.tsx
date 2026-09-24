@@ -12,6 +12,7 @@ import { LitTile } from "@/components/landing/lit-tile";
 import { Reveal, RevealGroup, RevealItem } from "@/components/landing/reveal";
 import { SectionTitle } from "@/components/landing/section-title";
 import { GlassCard } from "@/components/landing/glass-card";
+import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { SiteBackground } from "@/components/landing/site-background";
 import { getCurrentUser } from "@/server/auth";
 
@@ -55,13 +56,14 @@ export default async function LandingPage() {
           <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
             <Logo />
             <nav aria-label="Primary" className="hidden items-center gap-8 text-sm lp-muted md:flex">
-              <a href="#how" className="transition-colors hover:text-white">How it works</a>
-              <a href="#product" className="transition-colors hover:text-white">Product</a>
-              <a href="#fair" className="transition-colors hover:text-white">Fairness</a>
-              <a href="#faq" className="transition-colors hover:text-white">FAQ</a>
+              <a href="#how" className="transition-colors hover:text-fg">How it works</a>
+              <a href="#product" className="transition-colors hover:text-fg">Product</a>
+              <a href="#fair" className="transition-colors hover:text-fg">Fairness</a>
+              <a href="#faq" className="transition-colors hover:text-fg">FAQ</a>
             </nav>
-            <div className="flex items-center gap-4 text-sm">
-              {user ? <Link href="/app" className="lp-btn lp-btn-primary lp-btn-sm">Open workspace</Link> : <><Link href="/login" className="lp-muted transition-colors hover:text-white">Log in</Link><Link href="/signup" className="lp-btn lp-btn-primary lp-btn-sm">Get started</Link></>}
+            <div className="flex items-center gap-3 text-sm">
+              <ThemeToggle />
+              {user ? <Link href="/app" className="lp-btn lp-btn-primary lp-btn-sm">Open workspace</Link> : <><Link href="/login" className="lp-muted transition-colors hover:text-fg">Log in</Link><Link href="/signup" className="lp-btn lp-btn-primary lp-btn-sm">Get started</Link></>}
             </div>
           </div>
         </header>
@@ -227,9 +229,9 @@ export default async function LandingPage() {
               <p className="lp-muted mt-4 text-pretty leading-relaxed">A live view of what your remote team plans, works on and delivers. No status meeting required.</p>
               <p className="mt-6 inline-flex items-center gap-2 lp-glass rounded-full px-3 py-1.5 text-xs lp-muted"><span className="h-1.5 w-1.5 rounded-full bg-success" aria-hidden />Private pilot, accepting workspaces</p>
             </div>
-            <nav aria-label="Product" className="space-y-3"><p className="font-semibold">Product</p><a href="#how" className="lp-muted block hover:text-white">How it works</a><a href="#product" className="lp-muted block hover:text-white">The day</a><a href="#control" className="lp-muted block hover:text-white">Everything in view</a><a href="#fair" className="lp-muted block hover:text-white">Fairness</a></nav>
-            <nav aria-label="Account" className="space-y-3"><p className="font-semibold">Account</p><Link href="/login" className="lp-muted block hover:text-white">Log in</Link><Link href="/signup?intent=org" className="lp-muted block hover:text-white">Create an organisation</Link><Link href="/join" className="lp-muted block hover:text-white">Join with a code</Link><Link href="/recover" className="lp-muted block hover:text-white">Recover a password</Link></nav>
-            <nav aria-label="Help" className="space-y-3"><p className="font-semibold">Help</p><a href="#faq" className="lp-muted block hover:text-white">FAQ</a><a href="#fair" className="lp-muted block hover:text-white">What is recorded</a><a href="mailto:jonwuka@xsitecapital.com" className="lp-muted block hover:text-white">Contact</a></nav>
+            <nav aria-label="Product" className="space-y-3"><p className="font-semibold">Product</p><a href="#how" className="lp-muted block hover:text-fg">How it works</a><a href="#product" className="lp-muted block hover:text-fg">The day</a><a href="#control" className="lp-muted block hover:text-fg">Everything in view</a><a href="#fair" className="lp-muted block hover:text-fg">Fairness</a></nav>
+            <nav aria-label="Account" className="space-y-3"><p className="font-semibold">Account</p><Link href="/login" className="lp-muted block hover:text-fg">Log in</Link><Link href="/signup?intent=org" className="lp-muted block hover:text-fg">Create an organisation</Link><Link href="/join" className="lp-muted block hover:text-fg">Join with a code</Link><Link href="/recover" className="lp-muted block hover:text-fg">Recover a password</Link></nav>
+            <nav aria-label="Help" className="space-y-3"><p className="font-semibold">Help</p><a href="#faq" className="lp-muted block hover:text-fg">FAQ</a><a href="#fair" className="lp-muted block hover:text-fg">What is recorded</a><a href="mailto:jonwuka@xsitecapital.com" className="lp-muted block hover:text-fg">Contact</a></nav>
           </div>
           <div className="border-t lp-line-soft"><p className="lp-faint mx-auto max-w-6xl px-6 py-6 text-xs">Boredroom, 2026. Built for teams that are out of sight, not out of the loop.</p></div>
         </footer>

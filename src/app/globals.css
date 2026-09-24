@@ -57,6 +57,75 @@
   --z-overlay: 40;
   --z-dialog: 50;
   --z-toast: 60;
+
+  /* Surfaces and washes. Classes bind to these so a theme only changes values. */
+  --surface-top: #151515;        /* .tile gradient */
+  --surface-bottom: #0f0f0f;
+  --surface-hover-top: #1a1a1a;
+  --surface-hover-bottom: #131313;
+  --btn-top: #1d1d1d;            /* .btn gradient, one step above the card */
+  --btn-bottom: #141414;
+  --btn-hover-top: #262626;
+  --btn-hover-bottom: #1a1a1a;
+  --avatar-top: #242424;
+  --avatar-bottom: #161616;
+  --sidebar: #050505;
+  --wash-soft: rgba(255, 255, 255, 0.03);   /* tab strips, unread rows */
+  --wash: rgba(255, 255, 255, 0.05);        /* chips, hover rows */
+  --wash-strong: rgba(255, 255, 255, 0.08); /* active nav, hover chips */
+  --wash-active: rgba(255, 255, 255, 0.1);  /* active pill */
+  --highlight: rgba(255, 255, 255, 0.08);   /* the 1px top highlight inside surfaces */
+  --highlight-strong: rgba(255, 255, 255, 0.1);
+  --overlay: rgba(0, 0, 0, 0.72);
+  --media: #000;                            /* video letterboxing stays black in both themes */
+}
+
+/* Light theme: the same system on paper white. Orange stays; status colours darken to keep contrast. */
+:root[data-theme="light"] {
+  --bg: #f4f4f2;
+  --bg-elevated: #ffffff;
+  --bg-surface: #f6f6f4;
+  --bg-popover: #ffffff;
+  --bg-inset: #f1f1ef;
+
+  --border-soft: rgba(0, 0, 0, 0.06);
+  --border: rgba(0, 0, 0, 0.1);
+  --border-strong: rgba(0, 0, 0, 0.18);
+
+  --fg: #111111;
+  --fg-muted: #5a5a5a;
+  --fg-subtle: #8a8a8a;
+  --fg-faint: #b4b4b4;
+
+  --accent-soft: rgba(255, 108, 2, 0.12);
+  --accent-glow: rgba(252, 56, 13, 0.18);
+  --success: #178f5d;
+  --warning: #a86d0f;
+  --danger: #d23c3c;
+  --info: #2b6cd9;
+  --ring: #ff6c02;
+
+  --ring-lift: 0 0 0 1px rgba(0, 0, 0, 0.05);
+  --card-shadow: inset 0 1px 0 rgba(255, 255, 255, 1), 0 16px 40px -28px rgba(0, 0, 0, 0.35);
+
+  --surface-top: #ffffff;
+  --surface-bottom: #fafafa;
+  --surface-hover-top: #ffffff;
+  --surface-hover-bottom: #f4f4f4;
+  --btn-top: #ffffff;
+  --btn-bottom: #f2f2f0;
+  --btn-hover-top: #fbfbfa;
+  --btn-hover-bottom: #ebebe9;
+  --avatar-top: #e9e9e7;
+  --avatar-bottom: #d6d6d3;
+  --sidebar: #fafaf8;
+  --wash-soft: rgba(0, 0, 0, 0.025);
+  --wash: rgba(0, 0, 0, 0.04);
+  --wash-strong: rgba(0, 0, 0, 0.06);
+  --wash-active: rgba(0, 0, 0, 0.08);
+  --highlight: rgba(255, 255, 255, 0.9);
+  --highlight-strong: rgba(255, 255, 255, 1);
+  --overlay: rgba(20, 20, 20, 0.45);
 }
 
 @theme inline {
@@ -81,6 +150,12 @@
   --color-danger: var(--danger);
   --color-info: var(--info);
   --color-ring: var(--ring);
+  --color-wash-soft: var(--wash-soft);
+  --color-wash: var(--wash);
+  --color-wash-strong: var(--wash-strong);
+  --color-wash-active: var(--wash-active);
+  --color-sidebar: var(--sidebar);
+  --color-media: var(--media);
   --font-sans: "Manrope", ui-sans-serif, system-ui, sans-serif;
   --font-display: "Cal Sans", "Manrope", ui-sans-serif, system-ui, sans-serif;
   --radius-card: var(--radius);
@@ -89,7 +164,12 @@
   --ease-out: var(--ease-out);
 }
 
+/* `dark:` utilities follow the toggle, not the OS, so vendored components switch with the rest of the page. */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
 html { color-scheme: dark; }
+html[data-theme="light"] { color-scheme: light; }
+html, body { transition: background-color var(--duration) var(--ease-out), color var(--duration) var(--ease-out); }
 body {
   background: var(--bg);
   color: var(--fg);
@@ -119,7 +199,7 @@ p { text-wrap: pretty; }
 
 /* Native dialogs: centred, own surface level, dimmed backdrop, no scroll chaining. */
 dialog.sheet { position: fixed; inset: 0; margin: auto; border: 1px solid var(--border-strong); background: var(--bg-popover); color: var(--fg); border-radius: var(--radius-lg); padding: 0; max-width: min(92vw, 30rem); width: 100%; height: fit-content; overscroll-behavior: contain; box-shadow: var(--ring-lift); }
-dialog.sheet::backdrop { background: rgba(0, 0, 0, 0.72); }
+dialog.sheet::backdrop { background: var(--overlay); }
 @keyframes sheet-in { from { opacity: 0; transform: scale(0.98) translateY(4px); } to { opacity: 1; transform: none; } }
 dialog.sheet[open] { animation: sheet-in var(--duration) var(--ease-out) both; }
 dialog.sheet[open]::backdrop { animation: rise-in var(--duration) var(--ease-out) both; }
@@ -145,7 +225,7 @@ dialog.sheet[open]::backdrop { animation: rise-in var(--duration) var(--ease-out
 }
 
 .gradient-text {
-  background: linear-gradient(90deg, var(--accent) 0%, #fff 100%);
+  background: linear-gradient(90deg, var(--accent) 0%, var(--fg) 100%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
@@ -154,42 +234,42 @@ dialog.sheet[open]::backdrop { animation: rise-in var(--duration) var(--ease-out
 /* Tiles (cards): a solid dark gradient, a hairline and a top highlight. The same surface as the landing page cards.
    No blur, no glow wash; the glow is reserved for page headers and the one live element on a screen. */
 .tile {
-  background: linear-gradient(180deg, #151515, #0f0f0f);
+  background: linear-gradient(180deg, var(--surface-top), var(--surface-bottom));
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--card-shadow);
 }
 /* Small surfaces inside a card: rows, chips, inner panels. */
-.chip { background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: var(--radius-sm); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08); }
+.chip { background: var(--wash); border: 1px solid var(--border); border-radius: var(--radius-sm); box-shadow: inset 0 1px 0 var(--highlight); }
 .chip-link { transition: background-color var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out); }
-.chip-link:hover { background: rgba(255, 255, 255, 0.08); border-color: rgba(255, 255, 255, 0.16); }
-.panel { background: var(--bg-surface); border: 1px solid var(--border-soft); border-radius: 12px; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06); }
+.chip-link:hover { background: var(--wash-strong); border-color: var(--border-strong); }
+.panel { background: var(--bg-surface); border: 1px solid var(--border-soft); border-radius: 12px; box-shadow: inset 0 1px 0 var(--highlight); }
 /* The lit square that holds a 3D icon (page headers, section openers, empty states). */
-.icon-tile { position: relative; display: inline-grid; place-items: center; flex-shrink: 0; border: 1px solid var(--border); background: radial-gradient(120% 120% at 50% 0%, rgba(255, 108, 2, 0.18), rgba(255, 255, 255, 0.04) 60%); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1); }
+.icon-tile { position: relative; display: inline-grid; place-items: center; flex-shrink: 0; border: 1px solid var(--border); background: radial-gradient(120% 120% at 50% 0%, rgba(255, 108, 2, 0.18), var(--wash) 60%); box-shadow: inset 0 1px 0 var(--highlight-strong); }
 .icon-tile::after { content: ""; position: absolute; left: 12%; right: 12%; bottom: -10px; height: 10px; border-radius: 50%; background: radial-gradient(closest-side, rgba(255, 108, 2, 0.7), transparent); filter: blur(6px); }
 /* Hairline grid: cells split by 1px lines drawn from the gap, one rounded border around the set. */
 .hairline-grid { display: grid; gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
-.hairline-cell { position: relative; display: block; background: #0f0f0f; padding: 28px; transition: background-color 250ms var(--ease-out); }
+.hairline-cell { position: relative; display: block; background: var(--surface-bottom); padding: 28px; transition: background-color 250ms var(--ease-out); }
 .hairline-cell::before { content: ""; position: absolute; inset: 0; background: radial-gradient(60% 50% at 50% 0%, rgba(255, 108, 2, 0.16), transparent 70%); opacity: 0; transition: opacity 300ms var(--ease-out); pointer-events: none; }
-.hairline-cell:hover { background: rgba(255, 255, 255, 0.04); }
+.hairline-cell:hover { background: var(--wash); }
 .hairline-cell:hover::before { opacity: 1; }
 .hairline-cell img { transition: transform 350ms var(--ease-out), filter 350ms var(--ease-out); }
 .hairline-cell:hover img { transform: translateY(-6px) scale(1.08) rotate(-3deg); filter: drop-shadow(0 12px 18px rgba(255, 108, 2, 0.35)); }
 .hairline-cell:hover h3 { color: var(--accent-hover); }
 /* Buttons: one surface for every button (owner decision, 24 September 2026): a dark fill one step above the card,
    a hairline, a top highlight, 16px corners, white text. Variants change only the text and border colour. */
-.btn { background: linear-gradient(180deg, #1d1d1d, #141414); border: 1px solid rgba(255, 255, 255, 0.12); color: var(--fg); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 8px 20px -14px rgba(0, 0, 0, 0.9); }
-.btn:hover { background: linear-gradient(180deg, #262626, #1a1a1a); border-color: rgba(255, 255, 255, 0.2); }
+.btn { background: linear-gradient(180deg, var(--btn-top), var(--btn-bottom)); border: 1px solid var(--border); color: var(--fg); box-shadow: inset 0 1px 0 var(--highlight), 0 8px 20px -14px rgba(0, 0, 0, 0.9); }
+.btn:hover { background: linear-gradient(180deg, var(--btn-hover-top), var(--btn-hover-bottom)); border-color: var(--border-strong); }
 .btn-primary { border-color: rgba(255, 108, 2, 0.55); }
 .btn.btn-primary:hover { background: linear-gradient(180deg, var(--accent-hover), var(--accent)); border-color: var(--accent-hover); color: var(--accent-fg); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), 0 0 0 1px rgba(255, 108, 2, 0.35), 0 8px 24px -6px rgba(255, 108, 2, 0.55); }
 .btn-danger { color: var(--danger); border-color: rgba(255, 92, 92, 0.45); }
 .btn.btn-danger:hover { border-color: var(--danger); background: rgba(255, 92, 92, 0.1); }
 .btn-ghost { background: transparent; border-color: transparent; box-shadow: none; color: var(--fg-muted); }
-.btn.btn-ghost:hover { background: rgba(255, 255, 255, 0.05); border-color: transparent; color: var(--fg); }
+.btn.btn-ghost:hover { background: var(--wash); border-color: transparent; color: var(--fg); }
 .tile-glow { box-shadow: var(--card-shadow), inset 0 0 25px 0 var(--accent-glow); border-color: rgba(255, 108, 2, 0.35); }
 /* Tiles that are links lift by a pixel and sharpen their edge; nothing else on the page moves on hover. */
 .tile-link { transition: border-color var(--duration-fast) var(--ease-out), transform var(--duration-fast) var(--ease-out), background-color var(--duration-fast) var(--ease-out); }
-.tile-link:hover { border-color: var(--border-strong); background: linear-gradient(180deg, #1a1a1a, #131313); transform: translateY(-1px); }
+.tile-link:hover { border-color: var(--border-strong); background: linear-gradient(180deg, var(--surface-hover-top), var(--surface-hover-bottom)); transform: translateY(-1px); }
 .tile-link:active { transform: translateY(0); }
 /* The active row: accent edge instead of a glow, so the affordance is structure, not light. */
 .tile-active { border-color: rgba(255, 108, 2, 0.45); box-shadow: var(--card-shadow), inset 3px 0 0 0 var(--accent); }
@@ -201,20 +281,20 @@ dialog.sheet[open]::backdrop { animation: rise-in var(--duration) var(--ease-out
    Landing page (`.lp`). Its own layer, modelled on resend.com: true black, white and grey type,
    hairline borders, glass cards, 3D icons and one orange. The product's design system does not apply here.
    --------------------------------------------------------------------------------------------- */
-.lp { --lp-line: rgba(255, 255, 255, 0.12); --lp-line-soft: rgba(255, 255, 255, 0.07); --lp-muted: #a1a1a1; --lp-faint: #6b6b6b; background: transparent; color: #fff; }
+.lp { --lp-line: var(--border); --lp-line-soft: var(--border-soft); --lp-muted: var(--fg-muted); --lp-faint: var(--fg-subtle); background: transparent; color: var(--fg); }
 .lp .lp-muted { color: var(--lp-muted); }
 .lp .lp-faint { color: var(--lp-faint); }
 /* Cards: a solid dark surface, a hairline and a top highlight. No blur, by the owner's decision. */
-.lp-card { background: linear-gradient(180deg, #151515, #0f0f0f); border: 1px solid var(--lp-line); border-radius: 16px; box-shadow: var(--card-shadow); }
-.lp-card-sm { background: #181818; border: 1px solid var(--lp-line-soft); border-radius: 12px; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06); }
+.lp-card { background: linear-gradient(180deg, var(--surface-top), var(--surface-bottom)); border: 1px solid var(--lp-line); border-radius: 16px; box-shadow: var(--card-shadow); }
+.lp-card-sm { background: var(--bg-surface); border: 1px solid var(--lp-line-soft); border-radius: 12px; box-shadow: inset 0 1px 0 var(--highlight); }
 /* Rows, chips, inputs, tab strips, pills, the header and the footer: a flat translucent wash, no blur. */
-.lp-glass { background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08); }
-.lp-glass:is(li, a):hover { background: rgba(255, 255, 255, 0.08); border-color: rgba(255, 255, 255, 0.16); }
+.lp-glass { background: var(--wash); border: 1px solid var(--border); box-shadow: inset 0 1px 0 var(--highlight); }
+.lp-glass:is(li, a):hover { background: var(--wash-strong); border-color: var(--border-strong); }
 /* The fairness table: hairline dividers from a 1px gap over the line colour; each cell lifts its icon on hover. */
 .lp-table { display: grid; gap: 1px; background: var(--lp-line); border: 1px solid var(--lp-line); border-radius: 20px; overflow: hidden; }
-.lp-cell { position: relative; background: #0f0f0f; padding: 32px; transition: background-color 250ms var(--ease-out); }
+.lp-cell { position: relative; background: var(--surface-bottom); padding: 32px; transition: background-color 250ms var(--ease-out); }
 .lp-cell::before { content: ""; position: absolute; inset: 0; background: radial-gradient(60% 50% at 50% 0%, rgba(255, 108, 2, 0.16), transparent 70%); opacity: 0; transition: opacity 300ms var(--ease-out); pointer-events: none; }
-.lp-cell:hover { background: rgba(255, 255, 255, 0.04); }
+.lp-cell:hover { background: var(--wash); }
 .lp-cell:hover::before { opacity: 1; }
 .lp-cell img { transition: transform 350ms var(--ease-out), filter 350ms var(--ease-out); }
 .lp-cell:hover img { transform: translateY(-6px) scale(1.08) rotate(-3deg); filter: drop-shadow(0 12px 18px rgba(255, 108, 2, 0.35)); }
@@ -229,12 +309,12 @@ dialog.sheet[open]::backdrop { animation: rise-in var(--duration) var(--ease-out
 .lp-line { border-color: var(--lp-line); }
 .lp-line-soft { border-color: var(--lp-line-soft); }
 /* The small lit square that sits above every section title. */
-.lp-icon { position: relative; display: grid; place-items: center; width: 64px; height: 64px; border-radius: 16px; border: 1px solid var(--lp-line); background: radial-gradient(120% 120% at 50% 0%, rgba(255, 108, 2, 0.18), rgba(255, 255, 255, 0.04) 60%); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1); }
+.lp-icon { position: relative; display: grid; place-items: center; width: 64px; height: 64px; border-radius: 16px; border: 1px solid var(--lp-line); background: radial-gradient(120% 120% at 50% 0%, rgba(255, 108, 2, 0.18), var(--wash) 60%); box-shadow: inset 0 1px 0 var(--highlight-strong); }
 .lp-icon::after { content: ""; position: absolute; left: 12%; right: 12%; bottom: -12px; height: 12px; border-radius: 50%; background: radial-gradient(closest-side, rgba(255, 108, 2, 0.7), transparent); filter: blur(6px); }
 .lp-icon img { width: 44px; height: 44px; object-fit: contain; }
 /* Buttons on the landing page share the product surface (.btn), 44px tall, 16px corners. */
-.lp-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 44px; padding: 0 22px; border-radius: var(--radius); font-weight: 600; font-size: 15px; white-space: nowrap; transition: transform 120ms var(--ease-out), background-color 120ms var(--ease-out), border-color 120ms var(--ease-out), box-shadow 120ms var(--ease-out); background: linear-gradient(180deg, #1d1d1d, #141414); border: 1px solid rgba(255, 255, 255, 0.12); color: #fff; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 8px 20px -14px rgba(0, 0, 0, 0.9); }
-.lp-btn:hover { background: linear-gradient(180deg, #262626, #1a1a1a); border-color: rgba(255, 255, 255, 0.2); }
+.lp-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 44px; padding: 0 22px; border-radius: var(--radius); font-weight: 600; font-size: 15px; white-space: nowrap; transition: transform 120ms var(--ease-out), background-color 120ms var(--ease-out), border-color 120ms var(--ease-out), box-shadow 120ms var(--ease-out); background: linear-gradient(180deg, var(--btn-top), var(--btn-bottom)); border: 1px solid var(--border); color: var(--fg); box-shadow: inset 0 1px 0 var(--highlight), 0 8px 20px -14px rgba(0, 0, 0, 0.9); }
+.lp-btn:hover { background: linear-gradient(180deg, var(--btn-hover-top), var(--btn-hover-bottom)); border-color: var(--border-strong); }
 .lp-btn:active { transform: scale(0.97); }
 /* Primary carries an orange hairline and fills orange with a soft glow on hover; secondary is the plain surface. */
 .lp-btn-primary { border-color: rgba(255, 108, 2, 0.55); }
@@ -268,7 +348,7 @@ dialog.sheet[open]::backdrop { animation: rise-in var(--duration) var(--ease-out
 table.data { width: 100%; border-collapse: collapse; font-size: 0.9375rem; }
 table.data th { text-align: left; font-weight: 600; color: var(--fg-subtle); font-size: 0.75rem; letter-spacing: 0.04em; padding: 0.75rem 0.875rem; border-bottom: 1px solid var(--border); white-space: nowrap; }
 table.data td { padding: 0.8125rem 0.875rem; border-bottom: 1px solid var(--border-soft); vertical-align: top; }
-table.data tbody tr:hover td { background: rgba(255, 255, 255, 0.02); }
+table.data tbody tr:hover td { background: var(--wash-soft); }
 table.data tr:last-child td { border-bottom: 0; }
 
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }

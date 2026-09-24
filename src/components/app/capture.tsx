@@ -281,7 +281,7 @@ function ExceptionDialog({ orgSlug, task, reason, onResolve, onRetry }: { orgSlu
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   return (
-    <div role="dialog" aria-modal="true" aria-labelledby="cex-title" className="fixed inset-0 z-[var(--z-dialog)] flex items-center justify-center bg-black/70 p-4 overscroll-contain">
+    <div role="dialog" aria-modal="true" aria-labelledby="cex-title" className="fixed inset-0 z-[var(--z-dialog)] flex items-center justify-center bg-[var(--overlay)] p-4 overscroll-contain">
       <form className="tile w-full max-w-lg p-6" onSubmit={async (e) => {
         e.preventDefault(); setPending(true); setError(null);
         const f = new FormData(e.currentTarget);

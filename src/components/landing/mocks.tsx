@@ -19,7 +19,7 @@ export function MyDayMock() {
       <div className="flex items-center justify-between border-b px-5 py-3 text-sm lp-line"><span className="font-semibold">Your to-dos for today</span><span className="lp-muted">Tuesday 23 September</span></div>
       <div className="p-5">
         <p className="font-display text-6xl leading-none tabular-nums text-accent">1:42:07</p>
-        <div className="mt-2 h-px w-full bg-white/10"><div className="h-px w-2/3 bg-accent" /></div>
+        <div className="mt-2 h-px w-full bg-border-strong"><div className="h-px w-2/3 bg-accent" /></div>
         <p className="lp-muted mt-1 text-xs">Homepage design, estimate 2h 30m</p>
         <ul className="mt-5 space-y-2">
           {rows.map((r) => (
@@ -81,7 +81,7 @@ export function MessagesMock() {
   return (
     <GlassCard className="overflow-hidden">
       <div className="flex gap-1 border-b p-2 lp-line" role="tablist" aria-label="Threads">
-        {tabs.map((t, i) => <button key={t} role="tab" aria-selected={tab === i} onClick={() => setTab(i)} className={cn("rounded-full px-3.5 py-1.5 text-sm transition-colors", tab === i ? "bg-white/10 text-white" : "lp-muted hover:text-white")}>{t}</button>)}
+        {tabs.map((t, i) => <button key={t} role="tab" aria-selected={tab === i} onClick={() => setTab(i)} className={cn("rounded-full px-3.5 py-1.5 text-sm transition-colors", tab === i ? "bg-wash-active text-fg" : "lp-muted hover:text-fg")}>{t}</button>)}
       </div>
       <ul className="min-h-[230px] space-y-4 p-5">
         {threads[tab].map((m) => (
@@ -101,7 +101,7 @@ export function DashboardMock() {
   const nav = ["Dashboard", "Clock in", "Attendance", "Workroom", "Messages", "Tasks", "People and teams", "Reviews", "Recordings", "Reports"];
   const cards = [
     { k: "Attendance", v: "Good", rows: [["Clocked in", "12", "100%", "bg-success"], ["Late", "1", "8%", "bg-warning"]] },
-    { k: "Focus", v: "Good", rows: [["Working now", "9", "75%", "bg-accent"], ["Paused", "2", "17%", "bg-white/40"]] },
+    { k: "Focus", v: "Good", rows: [["Working now", "9", "75%", "bg-accent"], ["Paused", "2", "17%", "bg-fg-subtle"]] },
     { k: "Delivery", v: "Needs a look", rows: [["Sent for check", "4", "", "bg-info"], ["Blocked", "2", "", "bg-danger"]] },
   ];
   const pts = [30, 44, 38, 52, 60, 55, 70, 64, 78, 72, 86, 80];
@@ -110,9 +110,9 @@ export function DashboardMock() {
   return (
     <div className="h-full overflow-hidden">
       <div className="grid md:grid-cols-[200px_1fr]">
-        <aside className="hidden border-r bg-white/[0.03] p-4 lp-line md:block">
+        <aside className="hidden border-r bg-wash-soft p-4 lp-line md:block">
           <p className="mb-4 font-display text-sm">BOREDROOM<span className="text-accent">.</span></p>
-          <ul className="space-y-1 text-sm">{nav.map((n, i) => <li key={n} className={cn("rounded-lg px-3 py-1.5", i === 0 ? "bg-white/10 text-white" : "lp-muted")}>{n}</li>)}</ul>
+          <ul className="space-y-1 text-sm">{nav.map((n, i) => <li key={n} className={cn("rounded-lg px-3 py-1.5", i === 0 ? "bg-wash-active text-fg" : "lp-muted")}>{n}</li>)}</ul>
         </aside>
         <div className="p-5 md:p-7">
           <p className="font-display text-xl">Dashboard</p>
@@ -121,7 +121,7 @@ export function DashboardMock() {
               <div key={c.k} className="lp-card-sm p-4">
                 <p className="lp-muted text-[11px] uppercase tracking-wider">{c.k}</p>
                 <p className="mt-1 font-display text-2xl">{c.v}</p>
-                <ul className="mt-4 divide-y divide-white/5 text-sm">
+                <ul className="mt-4 divide-y divide-border-soft text-sm">
                   {c.rows.map(([l, n, pct, dot]) => <li key={l} className="flex items-center gap-2 py-2"><span className={cn("h-2 w-2 shrink-0 rounded-full", dot)} /><span className="flex-1 truncate">{l}</span><span className="lp-muted tabular-nums">{n}</span><span className="w-10 text-right tabular-nums">{pct}</span></li>)}
                 </ul>
               </div>

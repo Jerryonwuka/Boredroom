@@ -14,7 +14,7 @@ function HeroCopy({ signedIn }: { signedIn: boolean }) {
   return (
     <div className="pointer-events-none relative mx-auto max-w-6xl px-6 pt-8 text-center md:pt-14">
       <motion.div {...rise(0)} className="pointer-events-auto">
-        <Link href="/signup?intent=org" className="lp-muted inline-flex items-center gap-2 lp-glass rounded-full px-4 py-1.5 text-sm transition-colors hover:text-white">
+        <Link href="/signup?intent=org" className="lp-muted inline-flex items-center gap-2 lp-glass rounded-full px-4 py-1.5 text-sm transition-colors hover:text-fg">
           <span className="h-1.5 w-1.5 rounded-full bg-accent" aria-hidden />Boredroom is in private pilot. Bring your team.
         </Link>
       </motion.div>

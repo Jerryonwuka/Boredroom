@@ -63,7 +63,7 @@ export function AppShell({ ctx, counts, teams = [], children }: { ctx: OrgContex
   return (
     <MotionRoot>
     <div className="flex min-h-dvh">
-      <aside className="hidden w-60 shrink-0 flex-col border-r border-border-soft bg-[#050505] px-3 py-5 md:flex">
+      <aside className="hidden w-60 shrink-0 flex-col border-r border-border-soft bg-sidebar px-3 py-5 md:flex">
         <div className="mb-6 flex items-center justify-between px-2">
           <Logo href={`/app/${ctx.org.slug}`} />
         </div>
@@ -74,7 +74,7 @@ export function AppShell({ ctx, counts, teams = [], children }: { ctx: OrgContex
         <WorkspaceNav items={navItems(ctx, counts, teams)} />
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex items-center justify-between gap-3 border-b border-border-soft bg-[#050505] px-4 py-3 md:hidden">
+        <header className="flex items-center justify-between gap-3 border-b border-border-soft bg-sidebar px-4 py-3 md:hidden">
           <Logo href={`/app/${ctx.org.slug}`} />
           <div className="flex items-center gap-2">
             {topbar}

@@ -20,7 +20,7 @@ export function WorkspaceNav({ items }: { items: NavItem[] }) {
         return (
           <Link key={it.href} href={it.href} aria-current={active ? "page" : undefined}
             className={cn("relative flex min-h-9 items-center gap-2.5 rounded-[var(--radius-sm)] px-2.5 py-1.5 text-[14px] font-medium text-fg-muted transition-[color] duration-[var(--duration-fast)] hover:text-fg", active && "text-fg")}>
-            {active ? <SlidingMarker layoutId="nav-active" className="absolute inset-0 rounded-[var(--radius-sm)] bg-white/[0.08] shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" /> : null}
+            {active ? <SlidingMarker layoutId="nav-active" className="absolute inset-0 rounded-[var(--radius-sm)] bg-wash-strong shadow-[inset_0_1px_0_var(--highlight)]" /> : null}
             <Icon className={cn("relative size-4", active ? "text-accent" : "text-fg-subtle")} aria-hidden />
             <span className="relative flex-1">{it.label}</span>
             {it.badge ? <span className="relative rounded-full bg-accent px-1.5 py-px text-[11px] font-bold tabular-nums text-accent-fg">{it.badge}</span> : null}
