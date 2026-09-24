@@ -35,7 +35,8 @@ async function main() {
   const target = rawTarget ? (() => { const u = new URL(rawTarget); u.hostname = u.hostname.replace("-pooler", ""); return u.toString(); })() : rawTarget;
   if (rawTarget && target !== rawTarget) console.log("Using the direct (non-pooled) host for the restore.");
   const pwIdx = process.argv.indexOf("--app-password");
-  const appPassword = pwIdx > 0 ? process.argv[pwIdx + 1] : process.env.RESTORE_APP_PASSWORD || randomBytes(18).toString("base64url");
+  const providedPassword = pwIdx > 0 ? process.argv[pwIdx + 1] : process.env.RESTORE_APP_PASSWORD || undefined;
+  const appPassword = providedPassword ?? randomBytes(18).toString("base64url");
   if (!target || !file) { console.error('Usage: pnpm db:restore "<target connection url>" <backup file> [--app-password <password>]'); process.exit(1); }
   if (!existsSync(file)) { console.error(`Backup file not found: ${file}`); process.exit(1); }
   const safe = target.replace(/:[^:@/]+@/, ":***@");
@@ -50,8 +51,13 @@ async function main() {
     // Only a superuser may mention SUPERUSER/BYPASSRLS in ALTER ROLE (even as a no-op), and hosts like Neon give the
     // database owner no superuser. So just set the password, then check the attributes the app relies on.
     if (role.rows[0].rolsuper || role.rows[0].rolbypassrls) { console.error("The existing boardroom_app role is SUPERUSER or BYPASSRLS; row-level security would not apply. Fix the role (or drop it) and run again."); process.exit(1); }
-    await admin.query(`ALTER ROLE boardroom_app WITH LOGIN PASSWORD '${appPassword.replace(/'/g, "''")}'`);
-    console.log("Updated the boardroom_app role password.");
+    if (providedPassword) {
+      // The owner manages this role (for example in the Neon dashboard): use the password as given and never change it.
+      console.log("boardroom_app already exists; using the password from RESTORE_APP_PASSWORD / --app-password without changing the role.");
+    } else {
+      await admin.query(`ALTER ROLE boardroom_app WITH LOGIN PASSWORD '${appPassword.replace(/'/g, "''")}'`);
+      console.log("Updated the boardroom_app role password.");
+    }
   } else { await admin.query(`CREATE ROLE boardroom_app LOGIN PASSWORD '${appPassword.replace(/'/g, "''")}' NOSUPERUSER NOBYPASSRLS`); console.log("Created the boardroom_app role."); }
   await admin.end();
 
