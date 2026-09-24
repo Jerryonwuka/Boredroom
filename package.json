@@ -20,6 +20,8 @@
     "check": "pnpm lint && pnpm typecheck && pnpm test",
     "smoke": "tsx scripts/smoke-views.ts",
     "smoke:assistant": "tsx scripts/smoke-assistant.ts",
+    "smoke:admin": "tsx scripts/smoke-admin.ts",
+    "admin:grant": "tsx scripts/admin-grant.ts",
     "doctor": "tsx scripts/doctor.ts",
     "mail:test": "tsx scripts/mail-test.ts",
     "setup:env": "tsx scripts/setup-env.ts",

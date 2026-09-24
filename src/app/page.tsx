@@ -15,6 +15,7 @@ import { GlassCard } from "@/components/landing/glass-card";
 import { SiteNav } from "@/components/landing/site-nav";
 import { SiteBackground } from "@/components/landing/site-background";
 import { getCurrentUser } from "@/server/auth";
+import { launchSettings, landingSettings } from "@/server/admin/settings";
 
 export const metadata = { title: "Boredroom · Know what your remote team is doing" };
 
@@ -47,15 +48,17 @@ const FAQ = [
 ];
 
 export default async function LandingPage() {
-  const user = await getCurrentUser().catch(() => null);
+  // The public page never fails over the database: a slow or absent connection means the defaults (live mode).
+  const [user, launch, copy] = await Promise.all([getCurrentUser().catch(() => null), launchSettings().catch(() => ({ mode: "live" as const, waitlist_open: true, app_access: true })), landingSettings().catch(() => ({ headline: "", subheadline: "", cta: "" }))]);
+  const waitlist = launch.mode === "waitlist";
   return (
     <MotionRoot>
       <SiteBackground />
       <div className="lp relative z-[1]">
-        <SiteNav signedIn={!!user} />
+        <SiteNav signedIn={!!user} waitlist={waitlist} />
 
         <main id="main">
-          <Hero signedIn={!!user} />
+          <Hero signedIn={!!user} waitlist={waitlist} copy={copy} />
 
           <section aria-labelledby="questions" className="py-10 md:py-14">
             <Reveal><p id="questions" className="lp-muted mb-8 text-center text-[15px]">Questions leads stop sending once the room is visible.</p></Reveal>
@@ -201,7 +204,7 @@ export default async function LandingPage() {
               <p className="text-balance font-display text-[52px] leading-[0.98] tracking-[-0.03em] md:text-[96px]">Know what your<br />remote team is doing</p>
               <p className="lp-muted mx-auto mt-7 max-w-xl text-pretty text-lg leading-relaxed">Create a workspace, add your team with one code, and watch the room fill up the first morning.</p>
               <div className="mt-9 flex flex-wrap justify-center gap-3">
-                <Link href="/signup?intent=org" className="lp-btn lp-btn-primary">Get started</Link>
+                {waitlist ? <a href="#waitlist" className="lp-btn lp-btn-primary">Join the waitlist</a> : <Link href="/signup?intent=org" className="lp-btn lp-btn-primary">Get started</Link>}
                 <Link href="/join" className="lp-btn lp-btn-secondary">Join with a code</Link>
               </div>
             </Reveal>

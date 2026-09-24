@@ -21,7 +21,7 @@ import { relativeTime, cn } from "@/lib/utils";
 import type { RecentNotification } from "@/server/services/workspace";
 
 type Panel = "notifications" | "settings" | "profile";
-export type TopBarUser = { profileId: string; displayName: string; email: string; avatarKey?: string | null; title?: string | null; statusText?: string | null; presence?: Presence | null };
+export type TopBarUser = { profileId: string; displayName: string; email: string; avatarKey?: string | null; title?: string | null; statusText?: string | null; presence?: Presence | null; isAdmin?: boolean };
 
 /** The work status: four choices, saved at once, shown as the dot on the avatar everywhere. */
 export function PresencePicker({ value, className }: { value: Presence; className?: string }) {
@@ -134,6 +134,7 @@ export function TopBar({ orgSlug, user, roleLabel, isOrg, unread, attention, rec
             <ul className="border-t border-border-soft pt-1 text-sm">
               <li><Link href={`${base}/profile`} onClick={() => setOpen(null)} className="block rounded-[var(--radius-sm)] px-2 py-2 hover:bg-wash">Your profile</Link></li>
               <li><Link href="/app" onClick={() => setOpen(null)} className="block rounded-[var(--radius-sm)] px-2 py-2 hover:bg-wash">Switch workspace</Link></li>
+              {user.isAdmin ? <li><Link href="/admin" onClick={() => setOpen(null)} className="block rounded-[var(--radius-sm)] px-2 py-2 text-accent hover:bg-wash">Control Center</Link></li> : null}
               <li><button type="button" className="block w-full rounded-[var(--radius-sm)] px-2 py-2 text-left hover:bg-wash" onClick={async () => { await api("/api/auth/logout", { method: "POST", retries: 0 }); router.push("/login"); router.refresh(); }}>Sign out</button></li>
             </ul>
           </div>

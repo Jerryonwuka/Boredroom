@@ -5,6 +5,8 @@ import { AppError, conflict, forbidden, invalid, notFound } from "@/server/lib/e
 import { randomToken, sha256 } from "@/server/lib/crypto";
 import { isValidTimeZone } from "@/server/lib/time";
 import { mail } from "@/server/lib/mail";
+import { registrationOpen } from "@/server/admin/settings";
+import { emitEvent } from "@/server/admin/events";
 import { invitationMail } from "@/server/lib/emails";
 import { audit, notify } from "@/server/services/common";
 import type { OrgContext } from "@/server/lib/api";
@@ -26,6 +28,7 @@ export const createOrgSchema = z.object({
 });
 
 export async function createOrganisation(userId: string, input: z.infer<typeof createOrgSchema>) {
+  if (!(await registrationOpen())) throw forbidden("Boredroom is not open for new organisations yet. Join the waitlist and we will email you when it is.");
   if (!isValidTimeZone(input.timezone)) throw invalid("Unknown time zone.", { timezone: ["Choose a valid IANA time zone."] });
   return withUser(userId, async (db) => {
     // The id is generated here: RETURNING would need SELECT rights the creator only gains once their membership exists.
@@ -48,6 +51,7 @@ export async function createOrganisation(userId: string, input: z.infer<typeof c
     await db.query(`INSERT INTO policy_acknowledgements(organisation_id, membership_id, policy_id, shown_notice_text) VALUES ($1, $2, $3, $4)`,
       [org.id, membership.id, policy.id, DEFAULT_NOTICE]);
     await audit(db, { organisationId: org.id, actorMembershipId: membership.id, actorUserId: userId, action: "org.created", subjectType: "organisation", subjectId: org.id });
+    await emitEvent(db, "ORGANIZATION_CREATED", { organisationId: org.id, name: input.name, byProfile: userId }).catch(() => undefined);
     return { orgId: org.id, slug: org.slug, membershipId: membership.id };
   });
 }

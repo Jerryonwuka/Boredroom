@@ -135,6 +135,10 @@ The sidebar is sticky and the full viewport tall; its list scrolls inside it, so
 
 One template for every email (`src/server/lib/emails.ts`, `renderEmail`): the black canvas, the wordmark, a 560px card (`#121212`, 1px `#2a2a2a`, 20px corners) with an orange eyebrow, a 28px display title, 16px grey body (`#a1a1a1`), one orange button (`#ff6c02` on `#140700`, 14px corners) with the link repeated beneath it, an inset facts table (label as eyebrow, value in white), a subtle note and a footer with the reason. Tables and inline styles only; no CSS variables, no images that need the app's origin. Every email has a plain-text twin. Add a new email as a builder in that file and preview it on `/dev/emails`.
 
+## Control Center
+
+The internal console at `/admin` is the same system on the same tokens: a fixed sidebar of sections grouped by purpose (Overview, Money, Product, Growth, Platform), a 64px top bar with global search and the launch state as a badge, and pages built from `PageHeader`, `StatCard`, `Ledger`, `DataTable`, `Tabs` and `Card`. Filters are a row of small labelled controls with one Apply button; lists page server-side; every mutation is an `AdminAction` (a button, a confirmation dialog for anything that changes a tenant, and a reason field for anything audited) or a `JsonForm`. Nothing in the console is a ranking of people or organisations; health profiles read as operational facts.
+
 ## Page anatomy
 
 1. `PageHeader` with the page's 3D icon, title and one line. Actions on the right: one primary at most.

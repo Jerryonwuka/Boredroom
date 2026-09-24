@@ -11,6 +11,8 @@ import { withSystem, isUniqueViolation, type Db } from "@/server/db";
 import { AppError } from "@/server/lib/errors";
 import { issueSession } from "@/server/auth";
 import { storage } from "@/server/lib/storage";
+import { contactRegistered } from "@/server/admin/marketing";
+import { registrationOpen } from "@/server/admin/settings";
 
 export const OAUTH_COOKIE = "boredroom_oauth";
 const AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
@@ -98,12 +100,16 @@ export async function signInWithGoogle(c: Claims, meta: { ip?: string; userAgent
   if (!email || !c.email_verified) throw new AppError(401, "GOOGLE_EMAIL", "Google did not confirm an email address for this account.");
   return withSystem(async (db) => {
     let user = await db.maybeOne<{ id: string }>(`SELECT user_id AS id FROM auth_identities WHERE provider = 'google' AND subject = $1`, [c.sub]);
+    const st = user ? await db.maybeOne<{ status: string }>(`SELECT status FROM auth_users WHERE id = $1`, [user.id]) : null;
+    if (st && st.status !== "active") throw new AppError(403, "ACCOUNT_" + st.status.toUpperCase(), "This account is suspended. Contact support if you think this is a mistake.");
     let created = false;
     if (!user) {
       user = await db.maybeOne<{ id: string }>(`SELECT id FROM auth_users WHERE email = $1`, [email]);
       if (!user) {
+        if (!(await registrationOpen())) throw new AppError(403, "REGISTRATION_CLOSED", "Boredroom is not open for new accounts yet. Join the waitlist and we will email you when it is.");
         user = await db.one<{ id: string }>(`INSERT INTO auth_users(email, password_hash, email_verified_at) VALUES ($1, NULL, now()) RETURNING id`, [email]);
         await db.query(`INSERT INTO profiles(auth_user_id, display_name, email) VALUES ($1, $2, $3)`, [user.id, (c.name?.trim() || email.split("@")[0]).slice(0, 120), email]);
+        await contactRegistered(db, user.id, email, c.name?.trim() || "").catch(() => undefined);
         created = true;
       } else {
         // Same address, existing account: Google has verified it, so the account is verified too.

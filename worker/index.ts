@@ -9,6 +9,7 @@ import { getPool, withWorker } from "../src/server/db";
 import { interruptStaleSessions } from "../src/server/services/sessions";
 import { handlers } from "./handlers";
 import { scheduleMaintenance } from "./schedule";
+import { scheduleControlCenter } from "./control-center";
 
 const WORKER_ID = `${hostname()}:${process.pid}`;
 const POLL_MS = Number(process.env.WORKER_POLL_INTERVAL_MS ?? 2000);
@@ -49,6 +50,7 @@ async function loop() {
         const n = await interruptStaleSessions();
         if (n) console.log(`[worker] interrupted ${n} stale session(s)`);
         await scheduleMaintenance();
+        await scheduleControlCenter().catch((err) => console.error("[worker] control center schedule", (err as Error).message));
         await withWorker((db) => db.query(`UPDATE jobs SET state = 'pending', locked_at = NULL, locked_by = NULL WHERE state = 'running' AND locked_at < now() - interval '15 minutes'`));
       }
       let ran = 0;

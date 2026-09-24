@@ -10,6 +10,10 @@ import { MessageToasts } from "@/components/app/message-toasts";
 import { AssistantDrawer } from "@/components/app/assistant-drawer";
 import { Suspense } from "react";
 import { cn } from "@/lib/utils";
+import { ImpersonationBanner } from "@/components/app/impersonation-banner";
+import { getAdmin } from "@/server/admin/auth";
+import { launchSettings } from "@/server/admin/settings";
+import { Logo as BrandLogo } from "@/components/logo";
 import { MotionRoot, PageRise } from "@/components/ui/motion";
 
 export const ROLE_LABEL: Record<string, string> = { owner: "Organisation owner", hr: "HR administrator", manager: "Team lead", employee: "Staff" };
@@ -63,13 +67,27 @@ export function navItems(ctx: OrgContext, counts: NavCounts, teams: { id: string
 }
 
 /** `bleed` pages (Messages) take the whole area under the top bar with no padding and no width cap, and do not scroll the page. */
-export function AppShell({ ctx, counts, teams = [], children, bleed = false }: { ctx: OrgContext; counts: NavCounts; teams?: { id: string; name: string; is_manager: boolean }[]; children: React.ReactNode; bleed?: boolean }) {
+export async function AppShell({ ctx, counts, teams = [], children, bleed = false }: { ctx: OrgContext; counts: NavCounts; teams?: { id: string; name: string; is_manager: boolean }[]; children: React.ReactNode; bleed?: boolean }) {
   const isOrg = ctx.membership.role === "owner" || ctx.membership.role === "hr";
+  const [launch, admin] = await Promise.all([launchSettings(), getAdmin()]);
+  // Maintenance: administrators pass; everyone else sees the notice (unless app access was left on).
+  if (launch.mode === "maintenance" && !launch.app_access && !admin) {
+    return (
+      <main className="mx-auto flex min-h-dvh max-w-lg flex-col items-center justify-center px-4 py-24 text-center">
+        <BrandLogo />
+        <p className="eyebrow eyebrow-accent mt-8">Maintenance</p>
+        <h1 className="mt-2 font-display text-2xl">Boredroom is being looked after</h1>
+        <p className="mt-2 text-fg-muted">{launch.message || "We are doing some maintenance and will be back shortly. Your records are safe."}</p>
+      </main>
+    );
+  }
   const items = navItems(ctx, counts, teams);
   const pages = [...items.map((i) => ({ label: i.label, href: i.href })), { label: "Notifications", href: `/app/${ctx.org.slug}/notifications` }, { label: "Your profile", href: `/app/${ctx.org.slug}/profile` }, ...(isOrg ? [{ label: "Settings", href: `/app/${ctx.org.slug}/settings` }] : [])];
-  const topbar = <TopBar orgSlug={ctx.org.slug} user={{ profileId: ctx.user.profileId, displayName: ctx.user.displayName, email: ctx.user.email, avatarKey: ctx.user.avatarKey, title: ctx.user.title, statusText: ctx.user.statusText, presence: ctx.user.presence }} roleLabel={ROLE_LABEL[ctx.membership.role]} isOrg={isOrg} unread={counts.unread} attention={counts.attention} recent={counts.recent ?? []} pages={pages} />;
+  const topbar = <TopBar orgSlug={ctx.org.slug} user={{ profileId: ctx.user.profileId, displayName: ctx.user.displayName, email: ctx.user.email, avatarKey: ctx.user.avatarKey, title: ctx.user.title, statusText: ctx.user.statusText, presence: ctx.user.presence, isAdmin: !!admin }} roleLabel={ROLE_LABEL[ctx.membership.role]} isOrg={isOrg} unread={counts.unread} attention={counts.attention} recent={counts.recent ?? []} pages={pages} />;
   return (
     <MotionRoot>
+    {ctx.user.impersonation ? <ImpersonationBanner name={ctx.user.displayName} adminEmail={ctx.user.impersonation.adminEmail} /> : null}
+    {launch.mode === "maintenance" && launch.app_access ? <p className="border-b border-warning/40 bg-warning/10 px-4 py-2 text-center text-sm">{launch.message || "Maintenance is under way; some things may be slow for a while."}</p> : null}
     <div className={cn("flex min-h-dvh", bleed && "md:h-dvh md:overflow-hidden")}>
       <Sidebar items={items} orgSlug={ctx.org.slug} orgName={ctx.org.name} />
       <div className="flex min-w-0 flex-1 flex-col">

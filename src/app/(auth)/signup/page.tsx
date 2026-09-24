@@ -5,6 +5,7 @@ import { AuthShell } from "@/components/auth/auth-shell";
 import { SignupForm } from "@/components/auth/forms";
 import { GoogleSignIn } from "@/components/auth/google-button";
 import { getCurrentUser } from "@/server/auth";
+import { registrationOpen } from "@/server/admin/settings";
 
 export const metadata = { title: "Create account" };
 
@@ -16,6 +17,13 @@ export default async function SignupPage({ searchParams }: { searchParams: Promi
   const sp = await searchParams;
   const user = await getCurrentUser();
   if (user) redirect(sp.next && sp.next.startsWith("/") ? sp.next : "/app");
+  if (!(await registrationOpen())) {
+    return (
+      <AuthShell title="Boredroom is not open yet" subtitle="We are letting people in from the waitlist. Leave your details and we will email you the moment it opens." footer={<>Already have an account? <Link className="text-fg underline" href="/login">Sign in</Link></>}>
+        <Link href="/#waitlist" className="btn inline-flex h-12 w-full items-center justify-center rounded-[var(--radius)] px-5 text-base font-semibold">Join the waitlist</Link>
+      </AuthShell>
+    );
+  }
   const joining = !!sp.next && (sp.next.startsWith("/join/") || sp.next.startsWith("/invite/"));
   const creatingOrg = sp.intent === "org";
   if (!joining && !creatingOrg) {

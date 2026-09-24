@@ -45,6 +45,18 @@ Restore drill status: `pnpm db:dump` → `pnpm db:restore` into a fresh database
 
 People → Offboard. Effects: membership revoked (new requests and live channels denied), open session interrupted at its last confirmed boundary, recording grants revoked, sign-in sessions revoked if the person has no other active workspace, audit event written. Historical work is retained.
 
+## Control Center (super admin)
+
+The internal console lives at `/admin`. It is a separate area of the same app with its own role-based permissions, enforced on the server for every page and action, and every action is written to `platform_audit_events` with the admin, target, reason, before and after.
+
+1. **First super admin.** Put the account's email in `PLATFORM_SUPER_ADMINS` (comma-separated) and restart. The first visit to `/admin` by that account creates its `platform_admins` row (recorded as `admin.bootstrap`). After that, Admins and permissions manages roles: super admin, operations, support, billing, marketing, technical, read-only.
+2. **Paystack.** Set `PAYSTACK_SECRET_KEY` (and `PAYSTACK_PUBLIC_KEY`). In Paystack, Settings, API Keys and Webhooks, add `<APP_ORIGIN>/api/billing/paystack/webhook`. Organisation owners pay from Settings, Plan and billing; the callback verifies the reference with Paystack before anything is recorded; webhooks are verified with the HMAC and recorded once by event key, so redelivery is a no-op.
+3. **Brevo.** Delivery already runs through the SMTP relay. `BREVO_API_KEY` (and optionally `BREVO_LIST_ID`) adds contact synchronisation with attributes (create them once in Brevo: FIRSTNAME, LASTNAME, ORGANIZATION, PLAN, SUBSCRIPTION_STATUS, SUBSCRIPTION_EXPIRY, SIGNUP_DATE, LAST_ACTIVITY, COUNTRY, STATUS, WAITLIST). Settings, Brevo shows whether the key works.
+4. **Launch mode.** Waitlist and launch, Launch settings: WAITLIST (landing page shows the waitlist form, sign-up and organisation creation refuse, existing users unaffected), LIVE (registration open), MAINTENANCE (registration closed, app optionally closed to non-admins with a notice). Needs a reason and confirmation; audited; the public site follows within fifteen seconds (settings cache).
+5. **Impersonation.** From a user or organisation page, "View as". The admin's session cookie is parked in `boredroom_admin_return`, a two-hour session for the target is issued and marked with the impersonation id, the app shows a banner, and "Return to admin" ends it. Administrators cannot be impersonated. Everything is in `admin_impersonations` and the audit log.
+6. **Jobs.** The worker runs `platform.event` (automations and Brevo sync per event), `campaign.send` (batches of 40), `brevo.sync_contact`, and `automations.scheduled` once a day (expires lapsed subscriptions after the grace period, then runs account-age, inactivity and expiry-reminder automations). System, Jobs shows and retries them.
+7. **Checks.** `pnpm smoke:admin` runs every Control Center read model and the safe write paths against the database.
+
 ## Sign in with Google
 
 1. In Google Cloud Console, create an OAuth client of type "Web application" (APIs and Services, Credentials). Under "Authorised redirect URIs" add `<APP_ORIGIN>/api/auth/google/callback`, for example `http://localhost:3000/api/auth/google/callback` locally and the https address in production. Under "Authorised JavaScript origins" add the origin itself.

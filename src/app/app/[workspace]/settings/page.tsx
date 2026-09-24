@@ -7,17 +7,19 @@ import { Badge } from "@/components/ui/badge";
 import { settingsView } from "@/server/services/views";
 import { OrgSettingsForm, ScheduleForm, PolicyForm, GrantsPanel, AssistantConnectionForm, RecordingSwitch } from "@/components/app/settings-forms";
 import { assistantStatus } from "@/server/services/orgs";
+import { orgBilling } from "@/server/admin/billing";
+import { BillingCard } from "@/components/app/billing-card";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Settings" };
 
-export default async function SettingsPage({ params, searchParams }: { params: Promise<{ workspace: string }>; searchParams: Promise<{ setup?: string }> }) {
+export default async function SettingsPage({ params, searchParams }: { params: Promise<{ workspace: string }>; searchParams: Promise<{ setup?: string; billing?: string }> }) {
   const { workspace } = await params;
   const sp = await searchParams;
   const { ctx, counts, teams: navTeams } = await workspacePage(workspace, `/app/${workspace}/settings`);
   if (!["owner", "hr"].includes(ctx.membership.role)) return <AppShell ctx={ctx} counts={counts} teams={navTeams}><PermissionDenied /></AppShell>;
-  const [{ policy, schedule, grants, members, teams, counts: c }, ai] = await Promise.all([settingsView(ctx), assistantStatus(ctx)]);
+  const [{ policy, schedule, grants, members, teams, counts: c }, ai, billing] = await Promise.all([settingsView(ctx), assistantStatus(ctx), orgBilling(ctx)]);
   const isOwner = ctx.membership.role === "owner";
   const checklist = [
     { label: "Workspace created", done: true },
@@ -43,6 +45,7 @@ export default async function SettingsPage({ params, searchParams }: { params: P
             <p className="mb-3 text-sm text-fg-muted">The assistant on My Day turns typed or dictated notes into to-dos. Connect an Anthropic API key so it runs on Claude; without one a simple built-in parser is used and the page says so. The key is tested with one request, then stored encrypted and never shown again.</p>
             {isOwner ? <AssistantConnectionForm orgSlug={ctx.org.slug} status={ai} /> : <Alert tone="info">Only owners can connect the assistant.</Alert>}
           </Card>
+          <Card id="billing"><CardHeader title="Plan and billing" description="What the organisation is on, and the other plans. Paid plans are billed through Paystack." /><BillingCard orgSlug={ctx.org.slug} data={billing} notice={sp.billing} /></Card>
           <Card><CardHeader title="Organisation" /><OrgSettingsForm orgSlug={ctx.org.slug} name={ctx.org.name} timezone={ctx.org.timezone} /></Card>
           <Card><CardHeader title="Working schedule and clocking" /><p className="mb-3 text-sm text-fg-muted">Everyone clocks in and out against these times, in the organisation&apos;s time zone. A clock-in after the start (plus any grace) is flagged late on the Attendance page. Also used for the end-of-day reminder; never an automatic pay rule.</p><ScheduleForm orgSlug={ctx.org.slug} schedule={schedule} /></Card>
           <Card>

@@ -42,7 +42,10 @@ const purgeExpired: Handler = async () => {
   });
 };
 
+import { controlCenterHandlers } from "./control-center";
+
 export const handlers: Record<string, Handler> = {
+  ...controlCenterHandlers,
   "report.reminder": reportReminder,
   "recording.retention_delete": retentionDelete,
   "recording.assemble": assembleRecording,
