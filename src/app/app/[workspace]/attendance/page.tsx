@@ -51,7 +51,7 @@ export default async function AttendancePage({ params, searchParams }: { params:
             <input type="hidden" name="view" value="month" />{teamId ? <input type="hidden" name="team" value={teamId} /> : null}
             <Link href={nav(shiftMonth(m.month, -1))} className="text-fg-muted hover:text-fg">Previous month</Link>
             <label htmlFor="month" className="sr-only">Month</label>
-            <input id="month" type="month" name="month" defaultValue={m.month} max={m.today.slice(0, 7)} className="h-9 rounded-full border border-border-strong bg-inset px-3 text-sm" />
+            <input id="month" type="month" name="month" defaultValue={m.month} max={m.today.slice(0, 7)} className="field field-sm" />
             <Button type="submit" size="sm" variant="subtle">Show</Button>
             {m.month < m.today.slice(0, 7) ? <Link href={nav(shiftMonth(m.month, 1))} className="text-fg-muted hover:text-fg">Next month</Link> : null}
           </form>
@@ -59,7 +59,7 @@ export default async function AttendancePage({ params, searchParams }: { params:
             <form className="flex items-center gap-2 text-sm" action={`${base}/attendance`}>
               <input type="hidden" name="view" value="month" /><input type="hidden" name="month" value={m.month} />
               <label htmlFor="team" className="text-fg-muted">Team</label>
-              <select id="team" name="team" defaultValue={teamId ?? ""} className="h-9 rounded-full border border-border-strong bg-inset px-3 text-sm"><option value="">All teams</option>{m.teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select>
+              <select id="team" name="team" defaultValue={teamId ?? ""} className="field field-sm"><option value="">All teams</option>{m.teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select>
               <Button type="submit" size="sm" variant="subtle">Show</Button>
             </form>
           ) : null}
@@ -121,7 +121,7 @@ export default async function AttendancePage({ params, searchParams }: { params:
           <input type="hidden" name="tab" value={tab} />{teamId ? <input type="hidden" name="team" value={teamId} /> : null}
           <Link href={q({ date: addDays(b.date, -1) })} className="text-fg-muted hover:text-fg">Previous day</Link>
           <label htmlFor="date" className="sr-only">Day</label>
-          <input id="date" type="date" name="date" defaultValue={b.date} max={b.today} className="h-9 rounded-full border border-border-strong bg-inset px-3 text-sm" />
+          <input id="date" type="date" name="date" defaultValue={b.date} max={b.today} className="field field-sm" />
           <Button type="submit" size="sm" variant="subtle">Show</Button>
           {b.date < b.today ? <><Link href={q({ date: addDays(b.date, 1) })} className="text-fg-muted hover:text-fg">Next day</Link><Link href={q({ date: undefined })} className="text-fg-muted hover:text-fg">Today</Link></> : null}
         </form>
@@ -129,7 +129,7 @@ export default async function AttendancePage({ params, searchParams }: { params:
           <form className="flex items-center gap-2 text-sm" action={`${base}/attendance`}>
             <input type="hidden" name="tab" value={tab} />{b.date !== b.today ? <input type="hidden" name="date" value={b.date} /> : null}
             <label htmlFor="team" className="text-fg-muted">Team</label>
-            <select id="team" name="team" defaultValue={teamId ?? ""} className="h-9 rounded-full border border-border-strong bg-inset px-3 text-sm"><option value="">All teams</option>{b.teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select>
+            <select id="team" name="team" defaultValue={teamId ?? ""} className="field field-sm"><option value="">All teams</option>{b.teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select>
             <Button type="submit" size="sm" variant="subtle">Show</Button>
           </form>
         ) : null}

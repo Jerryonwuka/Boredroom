@@ -5,7 +5,8 @@ import { listUsers } from "@/server/admin/users";
 import { PageHeader, Card, CardHeader } from "@/components/ui/card";
 import { DataTable } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Filters, F, inputCls } from "@/components/admin/actions";
+import { Filters } from "@/components/admin/actions";
+import { F, inputCls } from "@/components/admin/fields";
 import { ImpersonateButton } from "@/components/admin/impersonate";
 import { formatDateTime, relativeTime } from "@/lib/utils";
 

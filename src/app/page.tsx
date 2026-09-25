@@ -10,6 +10,7 @@ import { AttendanceMock, MessagesMock, MyDayMock, ReportsMock } from "@/componen
 import { Moments } from "@/components/landing/moments";
 import { LitTile } from "@/components/landing/lit-tile";
 import { Reveal, RevealGroup, RevealItem } from "@/components/landing/reveal";
+import { WaitlistForm } from "@/components/landing/waitlist-form";
 import { SectionTitle } from "@/components/landing/section-title";
 import { GlassCard } from "@/components/landing/glass-card";
 import { SiteNav } from "@/components/landing/site-nav";
@@ -200,14 +201,26 @@ export default async function LandingPage() {
           <section className="relative isolate overflow-hidden py-32 md:py-44">
             <div aria-hidden className="lp-grid absolute inset-0 opacity-70" />
             <div aria-hidden className="lp-glow absolute left-1/2 top-full h-[600px] w-[1100px] -translate-x-1/2 -translate-y-1/2 rounded-full" />
-            <Reveal className="relative mx-auto max-w-5xl px-6 text-center">
-              <p className="text-balance font-display text-[52px] leading-[0.98] tracking-[-0.03em] md:text-[96px]">Know what your<br />remote team is doing</p>
-              <p className="lp-muted mx-auto mt-7 max-w-xl text-pretty text-lg leading-relaxed">Create a workspace, add your team with one code, and watch the room fill up the first morning.</p>
-              <div className="mt-9 flex flex-wrap justify-center gap-3">
-                {waitlist ? <a href="#waitlist" className="lp-btn lp-btn-primary">Join the waitlist</a> : <Link href="/signup?intent=org" className="lp-btn lp-btn-primary">Get started</Link>}
-                <Link href="/join" className="lp-btn lp-btn-secondary">Join with a code</Link>
-              </div>
-            </Reveal>
+            {waitlist && !user ? (
+              /* Waitlist mode (owner decision, 25 September 2026): the closing section carries the form, copy on the left, form on the right. */
+              <Reveal className="relative mx-auto grid max-w-6xl items-center gap-10 px-6 md:grid-cols-[1.05fr_0.95fr] md:gap-14">
+                <div className="text-left">
+                  <p className="text-balance font-display text-[48px] leading-[0.98] tracking-[-0.03em] md:text-[72px]">{copy.headline || <>Know what your<br />remote team is doing</>}</p>
+                  <p className="lp-muted mt-7 max-w-lg text-pretty text-lg leading-relaxed">{copy.subheadline || "Boredroom is opening soon. Leave your details and you get one email the morning it opens, with a code for your team."}</p>
+                  <p className="lp-faint mt-6 inline-flex items-center gap-2 lp-glass rounded-full px-3 py-1.5 text-xs"><span className="h-1.5 w-1.5 rounded-full bg-accent" aria-hidden />Opening soon</p>
+                </div>
+                <div className="w-full md:max-w-md md:justify-self-end"><WaitlistForm cta={copy.cta || "Join the waitlist"} /></div>
+              </Reveal>
+            ) : (
+              <Reveal className="relative mx-auto max-w-5xl px-6 text-center">
+                <p className="text-balance font-display text-[52px] leading-[0.98] tracking-[-0.03em] md:text-[96px]">Know what your<br />remote team is doing</p>
+                <p className="lp-muted mx-auto mt-7 max-w-xl text-pretty text-lg leading-relaxed">Create a workspace, add your team with one code, and watch the room fill up the first morning.</p>
+                <div className="mt-9 flex flex-wrap justify-center gap-3">
+                  {waitlist ? <Link href="/app" className="lp-btn lp-btn-primary">Open your workspace</Link> : <Link href="/signup?intent=org" className="lp-btn lp-btn-primary">Get started</Link>}
+                  <Link href="/join" className="lp-btn lp-btn-secondary">Join with a code</Link>
+                </div>
+              </Reveal>
+            )}
           </section>
         </main>
 

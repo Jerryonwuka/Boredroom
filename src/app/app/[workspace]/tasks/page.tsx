@@ -45,7 +45,7 @@ export default async function TasksPage({ params, searchParams }: { params: Prom
           <form className="flex items-center gap-2 text-sm" action={`${base}/tasks`}>
             <input type="hidden" name="status" value={status} />
             <label htmlFor="who" className="text-fg-muted">Person</label>
-            <select id="who" name="who" defaultValue={data.who ?? ""} className="h-9 rounded-full border border-border-strong bg-inset px-3 text-sm">
+            <select id="who" name="who" defaultValue={data.who ?? ""} className="field field-sm">
               <option value="">Everyone{lead ? " on my teams, and anyone I handed a task to" : ""}</option>
               {data.people.some((p) => p.group === "team") ? <optgroup label={lead ? "Your team" : "Staff and team leads"}>{data.people.filter((p) => p.group === "team").map((p) => <option key={p.id} value={p.id}>{p.display_name}</option>)}</optgroup> : null}
               {data.people.some((p) => p.group === "organisation") ? <optgroup label={lead ? "Others in the organisation" : "Organisation accounts"}>{data.people.filter((p) => p.group === "organisation").map((p) => <option key={p.id} value={p.id}>{p.display_name}</option>)}</optgroup> : null}

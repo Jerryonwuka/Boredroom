@@ -107,7 +107,7 @@ Two sets with two jobs. The 3D orange-glass set in `public/icons/` (typed in `IC
 | `DataTable` | Hairline table inside a tile; quiet 12px header, 13px dividers, hover tint. |
 | `Tabs` | Pill tabs with a sliding active pill; link tabs by URL or value tabs by state; counts in small pills. |
 | `HairlineGrid`, `GridCell` | Equal things in a hairline grid with a 3D icon each. |
-| `Input`, `Select`, `Textarea`, `Label`, `Field` | Inset controls; on focus the hairline brightens and nothing else happens (no orange, no glow). `Field` links errors to controls. |
+| `Input`, `Select`, `Textarea`, `Label`, `Field` | Every control is a `.field` (globals.css, owner decision 25 September 2026): 40px, 10px corners, inset with a 1px inner shadow and the same top highlight the search bar and buttons carry, hairline brightens on hover, a soft grey ring on focus (no orange, no glow), custom chevron on selects, accent on native pickers. `.field-sm` is the 36px pill for filter bars (`inputCls` in `components/admin/fields.tsx`; filter bars sit on a `.chip` strip). Checkboxes and radios are drawn globally: 18px, inset, orange when checked. A bare `<input>` anywhere takes `className="field"`; never restyle one by hand. `Field` links errors to controls. |
 | `EmptyState`, `ErrorState`, `PermissionDenied`, `OfflineState`, `Alert`, `Skeleton` | Every empty state names one next action and may carry a 3D icon (`icon3d`). |
 | `ConfirmDialog`, `ConfirmButton` | Native `<dialog>` for every destructive or irreversible action. |
 | `Icon3D`, `IconTile` | The 3D icon set, bare or in its lit tile. |

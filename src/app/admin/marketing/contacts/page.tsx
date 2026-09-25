@@ -4,7 +4,8 @@ import { PageHeader, Card, CardHeader } from "@/components/ui/card";
 import { DataTable } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/states";
-import { Filters, Pager, CsvLink, F, inputCls, AdminAction } from "@/components/admin/actions";
+import { Filters, Pager, CsvLink, AdminAction } from "@/components/admin/actions";
+import { F, inputCls } from "@/components/admin/fields";
 import { ContactImportForm } from "@/components/admin/marketing-forms";
 import { dateOnly } from "@/lib/format";
 

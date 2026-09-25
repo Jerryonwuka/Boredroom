@@ -8,6 +8,7 @@ import { Input, Textarea, Select, Field } from "@/components/ui/input";
 import { Alert } from "@/components/ui/states";
 import { Badge } from "@/components/ui/badge";
 import { api, isApiFailure } from "@/lib/api-client";
+import { dateOnly } from "@/lib/format";
 
 function useForm() {
   const router = useRouter();
@@ -62,8 +63,10 @@ export function PolicyForm({ orgSlug, policy }: { orgSlug: string; policy: { rec
   const [draft, setDraft] = useState<FormData | null>(null);
   const publish = (f: FormData) => submit(() => api(`/api/orgs/${orgSlug}/settings/policy`, { method: "POST", body: { recordingMode: f.get("recordingMode"), retentionDays: Number(f.get("retentionDays")), noticeText: f.get("noticeText"), reminderMinutesBeforeEnd: Number(f.get("reminder")) } }), "New policy version published.");
   return (
+    <>
+    {/* The dialog sits outside the form: a <form> inside a <form> is invalid HTML and breaks hydration. */}
+    <ConfirmDialog open={!!draft} onClose={() => setDraft(null)} tone="primary" title="Publish a new policy version?" description="Every member sees the new notice once and acknowledges it before their next recorded session. Nothing else changes for them." confirmLabel="Publish version" onConfirm={async () => { if (draft) await publish(draft); }} />
     <form className="grid gap-3" onSubmit={(e) => { e.preventDefault(); setDraft(new FormData(e.currentTarget)); }}>
-      <ConfirmDialog open={!!draft} onClose={() => setDraft(null)} tone="primary" title="Publish a new policy version?" description="Every member sees the new notice once and acknowledges it before their next recorded session. Nothing else changes for them." confirmLabel="Publish version" onConfirm={async () => { if (draft) await publish(draft); }} />
       {error ? <Alert tone="danger">{error}</Alert> : null}{ok ? <Alert tone="success">{ok}</Alert> : null}
       <div className="grid gap-3 md:grid-cols-3">
         <Field label="Recording" htmlFor="p-mode"><Select id="p-mode" name="recordingMode" defaultValue={policy?.recording_mode ?? "disabled"}><option value="disabled">Off — nobody can record</option><option value="optional">On — staff and team leads get a “Record screen” button while a timer runs (their choice)</option><option value="required_on_designated_tasks">On, and required on tasks marked “recording required”</option></Select></Field>
@@ -75,6 +78,7 @@ export function PolicyForm({ orgSlug, policy }: { orgSlug: string; policy: { rec
       <p className="text-xs text-fg-subtle">Audio capture is permanently disabled. Get the notice reviewed for your jurisdiction before a real employee pilot.</p>
       <div><Button type="submit" disabled={pending}>Publish new version</Button></div>
     </form>
+    </>
   );
 }
 
@@ -128,7 +132,7 @@ export function AssistantConnectionForm({ orgSlug, status }: { orgSlug: string; 
     <div className="grid gap-3">
       {error ? <Alert tone="danger">{error}</Alert> : null}
       {ok ? <Alert tone="success">{ok}{reply ? <span className="mt-1 block text-fg-muted">Claude says: “{reply}”</span> : null}</Alert> : null}
-      {status.source === "organisation" ? <p className="text-sm text-fg-muted">Key ending {status.hint}, model {status.model}{status.connectedAt ? `, connected ${new Date(status.connectedAt).toLocaleDateString()}` : ""}</p> : null}
+      {status.source === "organisation" ? <p className="text-sm text-fg-muted">Key ending {status.hint}, model {status.model}{status.connectedAt ? `, connected ${dateOnly(status.connectedAt)}` : ""}</p> : null}
       {status.source === "environment" ? <p className="text-sm text-fg-muted">Using the server&apos;s ANTHROPIC_API_KEY. Add an organisation key below to override it.</p> : null}
       {open ? (
         <form className="grid gap-3 md:grid-cols-[1fr_220px_auto]" onSubmit={(e) => { e.preventDefault(); const f = new FormData(e.currentTarget); const form = e.currentTarget; submit(async () => { const r = await api<{ model: string; reply: string }>(`/api/orgs/${orgSlug}/settings/assistant`, { method: "POST", body: { apiKey: f.get("apiKey"), model: f.get("model") || undefined } }); setReply(r.reply); form.reset(); setOpen(false); return r; }, "Connected. The assistant on My Day now runs on Claude."); }}>

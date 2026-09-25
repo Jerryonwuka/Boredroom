@@ -218,6 +218,47 @@ dialog.sheet[open]::backdrop { animation: rise-in var(--duration) var(--ease-out
 :focus-visible { outline: 2px solid var(--border-strong); outline-offset: 2px; border-radius: 6px; }
 input:focus-visible, textarea:focus-visible, select:focus-visible, [contenteditable]:focus-visible { outline: none; border-color: var(--border-strong); }
 
+/* Fields (owner decision, 25 September 2026): every text box, select, date and number control on the platform is a
+   `.field`: inset like the search bar's surface is raised, a hairline that brightens on hover, and a soft grey ring
+   on focus. `.field-sm` is the 36px pill for filter bars. Checkboxes and radios are drawn here too, so a bare
+   <input type="checkbox"> anywhere matches. Native pickers (date, month, colour) take the accent through accent-color. */
+@layer components {
+:root { accent-color: var(--accent); --field-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.45), 0 1px 0 var(--highlight); --field-ring: 0 0 0 3px var(--wash-strong); --field-chevron: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23b5b5b5' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='m6 9 6 6 6-6'/></svg>"); --field-picker-filter: invert(1); }
+:root[data-theme="light"] { --field-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.06), 0 1px 0 var(--highlight); --field-ring: 0 0 0 3px var(--wash-active); --field-chevron: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%235a5a5a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='m6 9 6 6 6-6'/></svg>"); --field-picker-filter: none; }
+.field { width: 100%; min-height: 40px; padding: 0 14px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-inset); color: var(--fg); font-size: 15px; line-height: 1.4; box-shadow: var(--field-shadow); transition: border-color var(--duration-fast) var(--ease-out), box-shadow var(--duration-fast) var(--ease-out); }
+.field::placeholder { color: var(--fg-subtle); }
+.field:hover:not(:disabled) { border-color: var(--border-strong); }
+.field:focus, .field:focus-visible { outline: none; border-color: var(--border-strong); box-shadow: var(--field-shadow), var(--field-ring); }
+.field:disabled { opacity: 0.5; cursor: not-allowed; }
+.field[aria-invalid="true"] { border-color: var(--danger); }
+.field[type="number"], .field[type="date"], .field[type="month"], .field[type="time"] { font-variant-numeric: tabular-nums; }
+textarea.field { min-height: 6rem; padding: 10px 14px; resize: vertical; }
+select.field { appearance: none; padding-right: 38px; background-image: var(--field-chevron); background-repeat: no-repeat; background-position: right 12px center; cursor: pointer; text-overflow: ellipsis; }
+select.field[multiple] { height: auto; padding: 6px; background-image: none; }
+select.field[multiple] option { padding: 6px 8px; border-radius: 6px; }
+select.field option { background: var(--bg-popover); color: var(--fg); }
+.field-sm { min-height: 36px; height: 36px; padding: 0 14px; border-radius: var(--radius-pill); font-size: 14px; }
+select.field-sm { padding-right: 34px; }
+.field::-webkit-calendar-picker-indicator { margin-left: 6px; cursor: pointer; opacity: 0.55; filter: var(--field-picker-filter); transition: opacity var(--duration-fast) var(--ease-out); }
+.field::-webkit-calendar-picker-indicator:hover { opacity: 1; }
+.field::-webkit-search-cancel-button { appearance: none; }
+.field:-webkit-autofill, .field:-webkit-autofill:focus { -webkit-text-fill-color: var(--fg); box-shadow: 0 0 0 1000px var(--bg-inset) inset, var(--field-shadow); }
+
+input[type="checkbox"], input[type="radio"] { appearance: none; display: inline-grid; place-content: center; flex-shrink: 0; width: 18px; height: 18px; margin: 0; border: 1px solid var(--border-strong); border-radius: 5px; background: var(--bg-inset); box-shadow: var(--field-shadow); vertical-align: -3px; cursor: pointer; transition: background-color var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out), box-shadow var(--duration-fast) var(--ease-out); }
+input[type="radio"] { border-radius: 50%; }
+input[type="checkbox"]::before, input[type="radio"]::before { content: ""; width: 10px; height: 10px; transform: scale(0); transition: transform var(--duration-fast) var(--ease-out); }
+input[type="checkbox"]::before { background: var(--accent-fg); mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'><path d='M20 6 9 17l-5-5'/></svg>") center / contain no-repeat; }
+input[type="radio"]::before { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+input[type="checkbox"]:checked { background: var(--accent); border-color: var(--accent); box-shadow: 0 1px 0 var(--highlight); }
+input[type="radio"]:checked { border-color: var(--accent); }
+input[type="checkbox"]:checked::before, input[type="radio"]:checked::before { transform: scale(1); }
+input[type="checkbox"]:hover:not(:disabled), input[type="radio"]:hover:not(:disabled) { border-color: var(--fg-subtle); }
+input[type="checkbox"]:checked:hover:not(:disabled) { border-color: var(--accent); }
+input[type="checkbox"]:focus-visible, input[type="radio"]:focus-visible { outline: none; box-shadow: var(--field-shadow), var(--field-ring); }
+input[type="checkbox"]:disabled, input[type="radio"]:disabled { opacity: 0.5; cursor: not-allowed; }
+@media (prefers-reduced-motion: reduce) { input[type="checkbox"]::before, input[type="radio"]::before, .field { transition: none; } }
+}
+
 .glow-header {
   position: relative;
   isolation: isolate;
@@ -344,6 +385,17 @@ input:focus-visible, textarea:focus-visible, select:focus-visible, [contentedita
 /* Hero backdrop: a faint grid that fades out, with a warm glow behind the headline. */
 .lp-grid { background-image: linear-gradient(var(--lp-line-soft) 1px, transparent 1px), linear-gradient(90deg, var(--lp-line-soft) 1px, transparent 1px); background-size: 64px 64px; mask-image: radial-gradient(ellipse 70% 60% at 50% 30%, #000 20%, transparent 75%); }
 .lp-glow { background: radial-gradient(closest-side, rgba(255, 108, 2, 0.35), rgba(255, 108, 2, 0.08) 55%, transparent 80%); filter: blur(40px); }
+
+/* The hero's dashboard frame (owner decision, 25 September 2026): a slim orange border, an orange glow behind the
+   frame, and under the mouse the glow and the border brighten where the pointer is. --mx/--my are set by the frame
+   from the mouse; the layers only fade in (opacity), so reduced motion is respected by default. */
+.lp-frame { --mx: 50%; --my: 40%; --ease-in-out: cubic-bezier(0.45, 0, 0.2, 1); border-color: rgba(255, 108, 2, 0.45); box-shadow: 0 0 0 1px rgba(255, 108, 2, 0.08), 0 0 80px -20px rgba(255, 108, 2, 0.45), 0 9px 20px #0000004a, 0 37px 37px #00000042, 0 84px 50px #00000026, 0 149px 60px #0000000a; }
+.lp-frame-glow { position: absolute; inset: -48px; border-radius: 64px; pointer-events: none; background: radial-gradient(60% 55% at 50% 35%, rgba(255, 108, 2, 0.34), rgba(255, 108, 2, 0.08) 60%, transparent 78%); filter: blur(44px); }
+.lp-frame-spot { position: absolute; inset: -64px; border-radius: 80px; pointer-events: none; opacity: 0; background: radial-gradient(360px circle at calc(var(--mx) + 64px) calc(var(--my) + 64px), rgba(255, 120, 20, 0.62), rgba(255, 108, 2, 0.18) 45%, transparent 70%); filter: blur(36px); transition: opacity 700ms var(--ease-in-out); }
+.lp-frame-ring { position: absolute; inset: -1px; border-radius: inherit; padding: 1px; pointer-events: none; opacity: 0; background: radial-gradient(280px circle at calc(var(--mx) + 1px) calc(var(--my) + 1px), rgba(255, 160, 80, 0.95), rgba(255, 108, 2, 0.35) 45%, transparent 70%); -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; transition: opacity 700ms var(--ease-in-out); }
+.lp-frame:hover .lp-frame-spot, .lp-frame:hover .lp-frame-ring { opacity: 1; }
+:root[data-theme="light"] .lp-frame { box-shadow: 0 0 0 1px rgba(255, 108, 2, 0.06), 0 0 70px -24px rgba(255, 108, 2, 0.4), 0 20px 50px -30px rgba(0, 0, 0, 0.35); }
+:root[data-theme="light"] .lp-frame-glow { opacity: 0.55; }
 /* Marquees: horizontal for the strip, vertical for the moments columns. Tracks hold their list twice. */
 .marquee { mask-image: linear-gradient(to right, transparent, #000 12%, #000 88%, transparent); }
 .marquee-track { animation: marquee var(--marquee-duration, 70s) linear infinite; }

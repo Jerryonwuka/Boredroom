@@ -44,7 +44,7 @@ export function AdminAction({ path, method = "POST", body, children, confirm, re
             <div><h2 id={titleId} className="font-display text-xl">{confirm?.title ?? String(children)}</h2>{confirm?.description ? <p className="mt-1 text-sm text-fg-muted">{confirm.description}</p> : null}</div>
             <Button type="button" variant="ghost" size="icon" aria-label="Close" onClick={() => ref.current?.close()}><X className="size-4" aria-hidden /></Button>
           </div>
-          {reason ? <label className="grid gap-1 text-sm"><span className="font-medium">Reason <span className="text-fg-subtle">(written to the audit trail)</span></span><Textarea value={why} onChange={(e) => setWhy(e.target.value)} rows={3} maxLength={1000} required minLength={3} placeholder="Why this is being done" /></label> : null}
+          {reason ? <label className="grid gap-1.5 text-sm font-medium text-fg-muted"><span className="font-medium">Reason <span className="text-fg-subtle">(written to the audit trail)</span></span><Textarea value={why} onChange={(e) => setWhy(e.target.value)} rows={3} maxLength={1000} required minLength={3} placeholder="Why this is being done" /></label> : null}
           {error ? <Alert tone="danger">{error}</Alert> : null}
           <div className="flex justify-end gap-2"><Button type="button" variant="ghost" onClick={() => ref.current?.close()}>Cancel</Button><Button type="submit" variant={danger ? "danger" : "primary"} disabled={pending || (reason && why.trim().length < 3)}>{pending ? "Working…" : confirm?.label ?? "Confirm"}</Button></div>
         </form>
@@ -81,9 +81,9 @@ export function Filters({ children, className }: { children: ReactNode; classNam
   const router = useRouter();
   const pathname = usePathname();
   return (
-    <form className={cn("mb-4 flex flex-wrap items-end gap-2", className)} onSubmit={(e) => { e.preventDefault(); const p = new URLSearchParams(); for (const [k, v] of new FormData(e.currentTarget).entries()) if (typeof v === "string" && v) p.set(k, v); router.push(`${pathname}?${p}`); }}>
+    <form className={cn("chip mb-4 flex flex-wrap items-end gap-2 px-3 py-2.5", className)} onSubmit={(e) => { e.preventDefault(); const p = new URLSearchParams(); for (const [k, v] of new FormData(e.currentTarget).entries()) if (typeof v === "string" && v) p.set(k, v); router.push(`${pathname}?${p}`); }}>
       {children}
-      <Button type="submit" size="sm" variant="subtle">Apply</Button>
+      <Button type="submit" size="sm" variant="subtle" className="rounded-full">Apply</Button>
     </form>
   );
 }
@@ -106,10 +106,4 @@ export function CsvLink({ href, children = "Export CSV" }: { href: string; child
   return <a href={href} className="btn inline-flex h-9 items-center gap-2 rounded-[10px] px-3 text-sm font-medium"><Download className="size-4" aria-hidden />{children}</a>;
 }
 
-/** A small labelled control for filter bars. */
-export function F({ label, children }: { label: string; children: ReactNode }) {
-  return <label className="grid gap-1 text-xs text-fg-subtle"><span>{label}</span>{children}</label>;
-}
-
-export const inputCls = "h-9 rounded-full border border-border-strong bg-inset px-3 text-sm text-fg";
 export { Input };

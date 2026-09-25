@@ -6,7 +6,8 @@ import { Tabs } from "@/components/ui/tabs";
 import { DataTable } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/states";
-import { Filters, Pager, CsvLink, F, inputCls } from "@/components/admin/actions";
+import { Filters, Pager, CsvLink } from "@/components/admin/actions";
+import { F, inputCls } from "@/components/admin/fields";
 import { SubscriptionEditForm } from "@/components/admin/billing-forms";
 import { money, dateOnly, num } from "@/lib/format";
 

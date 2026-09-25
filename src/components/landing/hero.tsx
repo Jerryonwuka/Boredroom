@@ -6,7 +6,6 @@ import { BackgroundRippleEffect } from "@/components/aceternity/background-rippl
 import { ContainerScroll } from "@/components/aceternity/container-scroll-animation";
 import { FlipWords } from "@/components/aceternity/flip-words";
 import { DashboardMock } from "@/components/landing/mocks";
-import { WaitlistForm } from "@/components/landing/waitlist-form";
 
 export type LandingCopy = { headline: string; subheadline: string; cta: string };
 
@@ -24,7 +23,7 @@ function HeroCopy({ signedIn, waitlist, copy }: { signedIn: boolean; waitlist: b
           <span className="flex -space-x-2.5" aria-hidden>
             {USERS.map((src, i) => <Image key={src} src={src} alt="" width={28} height={28} priority className="h-7 w-7 rounded-full border-2 border-bg object-cover" style={{ zIndex: USERS.length - i }} />)}
           </span>
-          <span>{waitlist ? "Join the waitlist." : <>Trusted by <strong className="font-semibold text-fg">10k+</strong> users.</>}</span>
+          <span>{waitlist ? "Opening soon. Join the waitlist." : <>Trusted by <strong className="font-semibold text-fg">10k+</strong> users.</>}</span>
         </Link>
       </motion.div>
       <motion.h1 {...rise(0.1)} className="mx-auto mt-8 max-w-5xl font-display text-[52px] leading-[1.02] tracking-[-0.03em] md:text-[96px]">
@@ -33,14 +32,13 @@ function HeroCopy({ signedIn, waitlist, copy }: { signedIn: boolean; waitlist: b
       <motion.p {...rise(0.2)} className="lp-muted mx-auto mt-7 max-w-2xl text-pretty text-lg leading-relaxed md:text-xl">
         {waitlist && copy.subheadline ? copy.subheadline : "What people plan, the time they put in, what they deliver and what their lead accepts, in one place, live. Without check-in calls, and without a productivity score."}
       </motion.p>
-      {waitlist && !signedIn ? (
-        <motion.div {...rise(0.3)} className="pointer-events-auto mx-auto mt-9 max-w-xl"><WaitlistForm cta={copy.cta || "Join the waitlist"} /></motion.div>
-      ) : (
-        <motion.div {...rise(0.3)} className="pointer-events-auto mt-9 flex flex-wrap justify-center gap-3">
-          {signedIn ? <Link href="/app" className="lp-btn lp-btn-primary">Open your workspace</Link> : <Link href="/signup?intent=org" className="lp-btn lp-btn-primary">Get started</Link>}
-          <a href="#how" className="lp-btn lp-btn-secondary">How it works</a>
-        </motion.div>
-      )}
+      {/* In waitlist mode the form lives in the closing section (#waitlist); the hero only points there. */}
+      <motion.div {...rise(0.3)} className="pointer-events-auto mt-9 flex flex-wrap justify-center gap-3">
+        {signedIn ? <Link href="/app" className="lp-btn lp-btn-primary">Open your workspace</Link>
+          : waitlist ? <a href="#waitlist" className="lp-btn lp-btn-primary">{copy.cta || "Join the waitlist"}</a>
+          : <Link href="/signup?intent=org" className="lp-btn lp-btn-primary">Get started</Link>}
+        <a href="#how" className="lp-btn lp-btn-secondary">How it works</a>
+      </motion.div>
     </div>
   );
 }

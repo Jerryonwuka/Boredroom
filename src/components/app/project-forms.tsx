@@ -37,7 +37,7 @@ export function NewProjectForm({ orgSlug, members }: { orgSlug: string; members:
       <Field label="Name" htmlFor="p-name" error={fieldErrors.name}><Input id="p-name" name="name" required maxLength={160} /></Field>
       <Field label="Description" htmlFor="p-desc" hint="optional"><Textarea id="p-desc" name="description" maxLength={4000} /></Field>
       <div className="flex gap-4 text-sm"><label className="flex items-center gap-2"><input type="checkbox" name="requiresDueDate" /> Tasks need a due date</label><label className="flex items-center gap-2"><input type="checkbox" name="requiresEstimate" /> Tasks need an estimate</label></div>
-      <Field label="Members" htmlFor="p-members" hint="you are added as lead"><select id="p-members" name="memberIds" multiple className="w-full rounded-xl border border-border-strong bg-inset p-2 text-sm" size={Math.min(6, Math.max(2, members.length))}>{members.map((m) => <option key={m.id} value={m.id}>{m.display_name}</option>)}</select></Field>
+      <Field label="Members" htmlFor="p-members" hint="you are added as lead"><select id="p-members" name="memberIds" multiple className="field" size={Math.min(6, Math.max(2, members.length))}>{members.map((m) => <option key={m.id} value={m.id}>{m.display_name}</option>)}</select></Field>
       <div className="flex gap-2"><Button type="submit" disabled={pending}>{pending ? "Creating…" : "Create project"}</Button><Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button></div>
     </form>
   );

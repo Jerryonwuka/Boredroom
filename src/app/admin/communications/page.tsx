@@ -5,7 +5,8 @@ import { Tabs } from "@/components/ui/tabs";
 import { DataTable } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState, Alert } from "@/components/ui/states";
-import { Filters, Pager, F, inputCls } from "@/components/admin/actions";
+import { Filters, Pager } from "@/components/admin/actions";
+import { F, inputCls } from "@/components/admin/fields";
 import { ComposeForm } from "@/components/admin/marketing-forms";
 import { formatDateTime } from "@/lib/utils";
 

@@ -3,7 +3,8 @@ import { auditLog } from "@/server/admin/ops";
 import { PageHeader } from "@/components/ui/card";
 import { DataTable } from "@/components/ui/table";
 import { EmptyState } from "@/components/ui/states";
-import { Filters, Pager, CsvLink, F, inputCls } from "@/components/admin/actions";
+import { Filters, Pager, CsvLink } from "@/components/admin/actions";
+import { F, inputCls } from "@/components/admin/fields";
 import { formatDateTime } from "@/lib/utils";
 
 export const metadata = { title: "Audit log" };

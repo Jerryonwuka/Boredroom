@@ -59,7 +59,7 @@ export function AdminShell({ admin, launch, children, title }: { admin: Admin; l
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-[var(--z-sticky)] flex h-16 shrink-0 items-center justify-between gap-4 border-b border-border-soft bg-sidebar px-4 md:px-6">
           <div className="flex min-w-0 items-center gap-3">
-            <Link href="/admin" className="md:hidden"><Logo /></Link>
+            <Logo href="/admin" className="md:hidden" />
             <div className="hidden min-w-0 md:block"><p className="eyebrow">Boredroom</p><p className="truncate text-sm font-semibold leading-tight">{title ?? "Control Center"}</p></div>
             <Link href="/admin/launch" title="Launch state" className="hidden sm:block"><Badge tone={MODE_TONE[launch.mode]} dot>{launch.mode.toUpperCase()}</Badge></Link>
           </div>

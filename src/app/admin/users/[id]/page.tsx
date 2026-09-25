@@ -7,7 +7,8 @@ import { PageHeader, Card, CardHeader, Ledger } from "@/components/ui/card";
 import { DataTable } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
-import { AdminAction, JsonForm, inputCls } from "@/components/admin/actions";
+import { AdminAction, JsonForm } from "@/components/admin/actions";
+import { inputCls } from "@/components/admin/fields";
 import { ImpersonateButton } from "@/components/admin/impersonate";
 import { bytes, dateOnly, num, hours } from "@/lib/format";
 import { formatDateTime, formatDuration, relativeTime } from "@/lib/utils";
@@ -59,9 +60,9 @@ export default async function UserPage({ params }: { params: Promise<{ id: strin
           {can(admin, "user.edit") && u.orgs?.length ? (
             <Card><CardHeader title="Change role" className="mb-2" />
               <JsonForm path={act} transform={(d) => ({ action: "change_role", membershipId: String(d.membershipId), role: String(d.role), reason: String(d.reason) })} submitLabel="Change role">
-                <label className="grid gap-1 text-sm"><span>Organisation</span><select name="membershipId" className={inputCls} required>{d.memberships.map((m) => <option key={m.id} value={m.id}>{m.org_name} ({m.role})</option>)}</select></label>
-                <label className="grid gap-1 text-sm"><span>New role</span><select name="role" className={inputCls}><option value="employee">Staff</option><option value="manager">Team lead</option><option value="hr">HR administrator</option><option value="owner">Organisation owner</option></select></label>
-                <label className="grid gap-1 text-sm"><span>Reason</span><input name="reason" className={inputCls} required minLength={3} /></label>
+                <label className="grid gap-1.5 text-sm font-medium text-fg-muted"><span>Organisation</span><select name="membershipId" className={inputCls} required>{d.memberships.map((m) => <option key={m.id} value={m.id}>{m.org_name} ({m.role})</option>)}</select></label>
+                <label className="grid gap-1.5 text-sm font-medium text-fg-muted"><span>New role</span><select name="role" className={inputCls}><option value="employee">Staff</option><option value="manager">Team lead</option><option value="hr">HR administrator</option><option value="owner">Organisation owner</option></select></label>
+                <label className="grid gap-1.5 text-sm font-medium text-fg-muted"><span>Reason</span><input name="reason" className={inputCls} required minLength={3} /></label>
               </JsonForm>
             </Card>
           ) : null}

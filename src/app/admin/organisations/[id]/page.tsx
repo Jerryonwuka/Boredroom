@@ -8,7 +8,8 @@ import { Tabs } from "@/components/ui/tabs";
 import { DataTable } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/states";
-import { AdminAction, JsonForm, inputCls } from "@/components/admin/actions";
+import { AdminAction, JsonForm } from "@/components/admin/actions";
+import { inputCls } from "@/components/admin/fields";
 import { OrgPlanForm, FeatureOverridesForm } from "@/components/admin/org-forms";
 import { ImpersonateButton } from "@/components/admin/impersonate";
 import { bytes, dateOnly, num, hours, money } from "@/lib/format";
@@ -96,7 +97,7 @@ export default async function OrganisationPage({ params, searchParams }: { param
             <Card><CardHeader title="Payments" action={<Link href={`/admin/billing/payments?org=${id}`} className="text-sm text-fg-muted hover:text-fg">All</Link>} />
               {d.payments.length === 0 ? <p className="text-sm text-fg-subtle">No payments yet.</p> : <DataTable caption="Payments"><thead><tr><th>Reference</th><th>Plan</th><th>Amount</th><th>Status</th><th>Date</th></tr></thead><tbody>{d.payments.map((p) => <tr key={p.id}><td><Link href={`/admin/billing/payments/${p.id}`} className="font-mono text-xs hover:underline">{p.reference}</Link></td><td>{p.plan_name ?? "—"}</td><td className="tabular-nums">{money(p.amount, p.currency)}</td><td><Badge tone={p.status === "success" ? "success" : p.status === "failed" ? "danger" : "neutral"}>{p.status}</Badge></td><td className="text-sm">{dateOnly(p.paid_at ?? p.created_at)}</td></tr>)}</tbody></DataTable>}</Card>
           </div>
-          {can(admin, "subscription.edit") ? <div className="space-y-4"><Card><CardHeader title="Change plan" className="mb-2" /><OrgPlanForm orgId={id} plans={d.plans} current={{ planId: org.sub_id ? d.plans.find((p) => p.code === org.plan_code)?.id ?? "" : "", interval: org.billing_interval ?? "monthly" }} /></Card><Card><CardHeader title="Extend trial" description="Adds days to the current period and puts an expired subscription back on trial." className="mb-2" /><JsonForm path={`/api/admin/organisations/${id}/actions`} transform={(d) => ({ action: "extend_trial", days: Number(d.days), reason: String(d.reason) })} submitLabel="Extend"><label className="grid gap-1 text-sm"><span>Days</span><input name="days" type="number" min={1} max={365} defaultValue={14} className={inputCls} required /></label><label className="grid gap-1 text-sm"><span>Reason</span><input name="reason" className={inputCls} required minLength={3} /></label></JsonForm></Card></div> : null}
+          {can(admin, "subscription.edit") ? <div className="space-y-4"><Card><CardHeader title="Change plan" className="mb-2" /><OrgPlanForm orgId={id} plans={d.plans} current={{ planId: org.sub_id ? d.plans.find((p) => p.code === org.plan_code)?.id ?? "" : "", interval: org.billing_interval ?? "monthly" }} /></Card><Card><CardHeader title="Extend trial" description="Adds days to the current period and puts an expired subscription back on trial." className="mb-2" /><JsonForm path={`/api/admin/organisations/${id}/actions`} transform={(d) => ({ action: "extend_trial", days: Number(d.days), reason: String(d.reason) })} submitLabel="Extend"><label className="grid gap-1.5 text-sm font-medium text-fg-muted"><span>Days</span><input name="days" type="number" min={1} max={365} defaultValue={14} className={inputCls} required /></label><label className="grid gap-1.5 text-sm font-medium text-fg-muted"><span>Reason</span><input name="reason" className={inputCls} required minLength={3} /></label></JsonForm></Card></div> : null}
         </div>
       ) : null}
 
