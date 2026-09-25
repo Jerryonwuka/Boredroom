@@ -53,6 +53,23 @@ export function AdminAction({ path, method = "POST", body, children, confirm, re
   );
 }
 
+/** An Edit link that opens its form in a sheet, so a table row never has to grow to hold a form. */
+export function EditSheet({ title, label = "Edit", children }: { title: string; label?: string; children: ReactNode }) {
+  const ref = useRef<HTMLDialogElement>(null);
+  const titleId = useId();
+  return (
+    <>
+      <button type="button" className="text-sm text-fg-muted hover:text-fg" onClick={() => ref.current?.showModal()}>{label}</button>
+      <dialog ref={ref} className="sheet" aria-labelledby={titleId} onCancel={(e) => { e.preventDefault(); ref.current?.close(); }}>
+        <div className="grid gap-4 p-5">
+          <div className="flex items-start justify-between gap-3"><h2 id={titleId} className="font-display text-xl">{title}</h2><Button type="button" variant="ghost" size="icon" aria-label="Close" onClick={() => ref.current?.close()}><X className="size-4" aria-hidden /></Button></div>
+          {children}
+        </div>
+      </dialog>
+    </>
+  );
+}
+
 /** A form whose fields become one JSON body. Field values are read from the form; numbers and booleans by `type`. */
 export function JsonForm({ path, method = "POST", transform, children, submitLabel = "Save", onDone, className, successMessage = "Saved." }: { path: string; method?: Method; transform?: (data: Record<string, FormDataEntryValue>) => Record<string, unknown>; children: ReactNode; submitLabel?: string; onDone?: (r: unknown) => void; className?: string; successMessage?: string | null }) {
   const router = useRouter();

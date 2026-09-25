@@ -39,7 +39,7 @@ export function Ledger({ items, className }: { items: { label: string; value: Re
   return (
     <dl className={cn("grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-4", className)}>
       {items.map((it) => {
-        const value = <dd className={cn("mt-2 font-display text-4xl leading-none tabular-nums md:text-5xl", it.tone === "accent" ? "text-accent" : it.tone === "danger" ? "text-danger" : "text-fg")}>{it.value}</dd>;
+        const value = <dd className={cn("mt-2 font-display text-3xl leading-none tabular-nums md:text-4xl", it.tone === "accent" ? "text-accent" : it.tone === "danger" ? "text-danger" : "text-fg")}>{it.value}</dd>;
         const body = <><dt className="text-sm text-fg-muted">{it.label}</dt>{value}{it.note ? <dd className="mt-2 truncate text-sm text-fg-subtle">{it.note}</dd> : null}</>;
         return it.href
           ? <a key={it.label} href={it.href} className="tile tile-link block min-w-0 p-4 md:p-5">{body}</a>

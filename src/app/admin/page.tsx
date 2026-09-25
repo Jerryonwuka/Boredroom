@@ -1,11 +1,12 @@
 import Link from "next/link";
 import { requireAdmin } from "@/server/admin/auth";
-import { dashboardMetrics } from "@/server/admin/ops";
+import { dashboardMetrics, activityByDay } from "@/server/admin/ops";
 import { paymentMetrics } from "@/server/admin/billing";
-import { marketingMetrics } from "@/server/admin/marketing";
+import { marketingMetrics, waitlistByDay } from "@/server/admin/marketing";
 import { launchSettings } from "@/server/admin/settings";
-import { PageHeader, Card, CardHeader, Ledger } from "@/components/ui/card";
+import { PageHeader, Card, CardHeader } from "@/components/ui/card";
 import { StatCard } from "@/components/ui/stat-card";
+import { AreaChart, BarChart, Donut, SegmentBar } from "@/components/ui/charts";
 import { Badge } from "@/components/ui/badge";
 import { bytes, num, money, dateOnly } from "@/lib/format";
 import { formatDateTime } from "@/lib/utils";
@@ -14,7 +15,10 @@ export const metadata = { title: "Dashboard" };
 
 export default async function AdminDashboard() {
   const admin = await requireAdmin("dashboard.view");
-  const [m, pay, mk, launch] = await Promise.all([dashboardMetrics(), paymentMetrics(), marketingMetrics(), launchSettings(true)]);
+  const [m, pay, mk, launch, activity, signups] = await Promise.all([dashboardMetrics(), paymentMetrics(), marketingMetrics(), launchSettings(true), activityByDay(30), waitlistByDay(30)]);
+  // Twelve months ending now, with zero for months that had no payment, so the bars keep their place.
+  const months = Array.from({ length: 12 }, (_, i) => { const d = new Date(); d.setUTCDate(1); d.setUTCMonth(d.getUTCMonth() - (11 - i)); const key = d.toISOString().slice(0, 7); return { key, label: d.toLocaleDateString("en-GB", { month: "short", timeZone: "UTC" }), amount: Number(pay.by_month?.find((x) => x.month === key)?.amount ?? 0) }; });
+  const dayLabel = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
   const alerts: { tone: "danger" | "warning" | "info"; text: string; href: string }[] = [];
   if (m.subs.failed) alerts.push({ tone: "danger", text: `${m.subs.failed} subscription${m.subs.failed === 1 ? "" : "s"} with a failed or overdue payment`, href: "/admin/billing/subscriptions?status=past_due" });
   if (m.alerts.failed_payments_7d) alerts.push({ tone: "danger", text: `${m.alerts.failed_payments_7d} failed payment${m.alerts.failed_payments_7d === 1 ? "" : "s"} in the last 7 days`, href: "/admin/billing/payments?status=failed" });
@@ -46,22 +50,25 @@ export default async function AdminDashboard() {
 
       <div className="mb-8 grid gap-6 lg:grid-cols-2">
         <Card>
-          <CardHeader title="Subscriptions" action={<Link href="/admin/billing/subscriptions" className="text-sm text-fg-muted hover:text-fg">All</Link>} />
-          <Ledger items={[{ label: "Free", value: num(m.subs.free) }, { label: "Trial", value: num(m.subs.trial) }, { label: "Paid", value: num(m.subs.paid), tone: "accent" }, { label: "Expiring soon", value: num(m.subs.expiring), tone: m.subs.expiring ? "danger" : "default" }]} />
-          <p className="eyebrow mt-4">Expired {num(m.subs.expired)} · Cancelled {num(m.subs.cancelled)} · Payment failed {num(m.subs.failed)}</p>
+          <CardHeader title="Subscriptions" description="Every organisation by what it pays." action={<Link href="/admin/billing/subscriptions" className="text-sm text-fg-muted hover:text-fg">All</Link>} />
+          <Donut title="Subscriptions by kind" items={[{ label: "Free", value: m.subs.free, tone: "info" }, { label: "Trial", value: m.subs.trial, tone: "warning" }, { label: "Paid", value: m.subs.paid, tone: "accent" }]} format={num} centre={{ value: num(m.subs.free + m.subs.trial + m.subs.paid), label: "live" }} />
+          <SegmentBar className="mt-5" title="Subscriptions needing attention" items={[{ label: "Expiring in 14 days", value: m.subs.expiring, tone: "warning" }, { label: "Payment failed", value: m.subs.failed, tone: "danger" }, { label: "Expired", value: m.subs.expired, tone: "neutral" }, { label: "Cancelled", value: m.subs.cancelled, tone: "neutral" }]} format={num} />
         </Card>
         <Card>
-          <CardHeader title="Payments" action={<Link href="/admin/billing/payments" className="text-sm text-fg-muted hover:text-fg">All</Link>} />
-          <Ledger items={[{ label: "Successful", value: num(pay.success), tone: "accent" }, { label: "Failed", value: num(pay.failed), tone: pay.failed ? "danger" : "default" }, { label: "Pending", value: num(pay.pending) }, { label: "Refunded", value: num(pay.refunded) }]} />
-          {pay.by_plan?.length ? <p className="eyebrow mt-4">By plan: {pay.by_plan.map((p) => `${p.plan} ${money(p.amount, pay.currency)}`).join(" · ")}</p> : null}
+          <CardHeader title="Revenue" description="Successful payments by month, last 12 months." action={<Link href="/admin/billing/payments" className="text-sm text-fg-muted hover:text-fg">All</Link>} />
+          <BarChart title="Revenue by month" labels={months.map((x) => x.label)} values={months.map((x) => x.amount)} format={(n) => money(n, pay.currency)} empty="No payments yet." />
+          <SegmentBar className="mt-4" title="Payments by outcome" items={[{ label: "Successful", value: pay.success, tone: "success" }, { label: "Pending", value: pay.pending, tone: "info" }, { label: "Failed", value: pay.failed, tone: "danger" }, { label: "Refunded", value: pay.refunded, tone: "neutral" }]} format={num} />
         </Card>
         <Card>
-          <CardHeader title="Usage" action={<Link href="/admin/usage" className="text-sm text-fg-muted hover:text-fg">Detail</Link>} />
-          <Ledger items={[{ label: "Tasks", value: num(m.usage.tasks), note: `${num(m.usage.tasks_done)} completed` }, { label: "Clock-ins", value: num(m.usage.clock_ins) }, { label: "Sessions", value: num(m.usage.heartbeats), note: `${num(m.usage.active_sessions)} open now` }, { label: "Storage", value: bytes(m.usage.storage), note: `${num(m.usage.videos)} recordings` }]} />
+          <CardHeader title="Activity" description="What happened on the platform each day, last 30 days." action={<Link href="/admin/usage" className="text-sm text-fg-muted hover:text-fg">Detail</Link>} />
+          <AreaChart title="Daily activity" labels={activity.map((d) => dayLabel(d.day))} series={[{ label: "Sessions", values: activity.map((d) => d.sessions), tone: "accent" }, { label: "Clock-ins", values: activity.map((d) => d.clock_ins), tone: "info" }, { label: "Tasks completed", values: activity.map((d) => d.tasks_completed), tone: "success" }]} format={num} />
+          <p className="eyebrow mt-4">{num(m.usage.tasks)} tasks open · {num(m.usage.active_sessions)} sessions open now · {bytes(m.usage.storage)} stored in {num(m.usage.videos)} recordings</p>
         </Card>
         <Card>
-          <CardHeader title="Marketing" action={<Link href="/admin/marketing" className="text-sm text-fg-muted hover:text-fg">Detail</Link>} />
-          <Ledger items={[{ label: "Contacts", value: num(mk.contacts) }, { label: "Waitlist", value: num(mk.waitlist), tone: "accent" }, { label: "Campaigns sent", value: num(mk.campaigns_sent) }, { label: "Emails sent", value: num(mk.emails_sent), note: mk.emails_failed ? `${num(mk.emails_failed)} failed` : undefined }]} />
+          <CardHeader title="Waitlist" description="Sign-ups per day and where every contact is in the funnel." action={<Link href="/admin/marketing" className="text-sm text-fg-muted hover:text-fg">Detail</Link>} />
+          <AreaChart title="Waitlist sign-ups" labels={signups.map((d) => dayLabel(d.day))} series={[{ label: "Sign-ups", values: signups.map((d) => d.signups), tone: "accent" }]} format={num} empty="No sign-ups in the last 30 days." />
+          <SegmentBar className="mt-4" title="Waitlist funnel" items={[{ label: "Waiting", value: mk.waiting, tone: "neutral" }, { label: "Invited", value: mk.invited, tone: "info" }, { label: "Registered", value: mk.registered - mk.activated, tone: "success" }, { label: "Activated", value: mk.activated - mk.paid, tone: "accent" }, { label: "Paid", value: mk.paid, tone: "warning" }]} format={num} />
+          <p className="eyebrow mt-4">{num(mk.contacts)} contacts · {num(mk.campaigns_sent)} campaigns sent · {num(mk.emails_sent)} emails sent{mk.emails_failed ? ` · ${num(mk.emails_failed)} failed` : ""}</p>
         </Card>
       </div>
 

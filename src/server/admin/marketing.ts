@@ -118,6 +118,14 @@ export async function marketingMetrics() {
             (SELECT count(*)::int FROM email_log WHERE status = 'failed') AS emails_failed`));
 }
 
+/** Waitlist sign-ups per day and the running total, for the dashboard chart. */
+export async function waitlistByDay(days = 30) {
+  return withSystem((db) => db.query<{ day: string; signups: number; total: number }>(
+    `SELECT day, signups, SUM(signups) OVER (ORDER BY day)::int + (SELECT count(*)::int FROM marketing_contacts WHERE is_waitlist AND created_at::date < CURRENT_DATE - ($1::int - 1)) AS total
+     FROM (SELECT d::date::text AS day, (SELECT count(*)::int FROM marketing_contacts WHERE is_waitlist AND created_at::date = d::date) AS signups
+           FROM generate_series(CURRENT_DATE - ($1::int - 1), CURRENT_DATE, interval '1 day') d) x ORDER BY day`, [days]));
+}
+
 // ---- Segments ---------------------------------------------------------------------------------------------------
 
 /** A segment is a list of conditions, all of which must hold. Evaluated in SQL against contacts joined to their account. */

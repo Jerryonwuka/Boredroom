@@ -57,6 +57,16 @@ export async function dashboardMetrics() {
 
 // ---- Usage and live activity -------------------------------------------------------------------------------------------
 
+/** Sessions, clock-ins and completed tasks per day for the dashboard charts. The lighter sibling of usageOverview. */
+export async function activityByDay(days = 30) {
+  return withSystem((db) => db.query<{ day: string; sessions: number; clock_ins: number; tasks_completed: number }>(
+    `SELECT d::date::text AS day,
+            (SELECT count(*)::int FROM work_sessions WHERE started_at::date = d::date) AS sessions,
+            (SELECT count(*)::int FROM attendance_days WHERE local_date = d::date) AS clock_ins,
+            (SELECT count(*)::int FROM tasks WHERE completed_at::date = d::date) AS tasks_completed
+     FROM generate_series(CURRENT_DATE - ($1::int - 1), CURRENT_DATE, interval '1 day') d ORDER BY d`, [days]));
+}
+
 export async function usageOverview(days = 30) {
   return withSystem(async (db) => {
     const totals = await db.one<{ active_users: number; mau: number; clock_ins: number; clock_outs: number; sessions: number; tasks_created: number; tasks_completed: number; videos: number; hours: number }>(

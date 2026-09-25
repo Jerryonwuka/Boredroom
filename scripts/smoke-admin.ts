@@ -12,7 +12,7 @@ import { allSettings } from "../src/server/admin/settings";
 async function main() {
   const checks: [string, () => Promise<unknown>][] = [
     ["settings", () => allSettings(true)], ["launchState", () => launchState()],
-    ["dashboardMetrics", () => ops.dashboardMetrics()], ["usageOverview", () => ops.usageOverview(30)], ["liveActivity", () => ops.liveActivity()], ["storageOverview", () => ops.storageOverview()],
+    ["dashboardMetrics", () => ops.dashboardMetrics()], ["activityByDay", () => ops.activityByDay(30)], ["waitlistByDay", () => marketing.waitlistByDay(30)], ["usageOverview", () => ops.usageOverview(30)], ["liveActivity", () => ops.liveActivity()], ["storageOverview", () => ops.storageOverview()],
     ["systemOverview", () => ops.systemOverview()], ["auditLog", () => ops.auditLog()], ["listAdmins", () => ops.listAdmins()], ["globalSearch", () => ops.globalSearch("a")], ["impersonations", () => ops.impersonations()],
     ["listOrganisations", () => orgs.listOrganisations({ status: "all" })], ["listOrganisations expiring", () => orgs.listOrganisations({ status: "expiring", q: "co" })],
     ["organisationDetail", async () => orgs.organisationDetail((await orgs.listOrganisations()).rows[0].id)],

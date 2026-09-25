@@ -14,7 +14,7 @@ export function PlanForm({ plan, featureKeys }: { plan?: PlanRow; featureKeys: r
       features: Object.fromEntries(featureKeys.map((k) => [k, d[`f_${k}`] === "on"])), status: String(d.status), sortOrder: Number(d.sortOrder ?? 0),
     })} submitLabel={plan ? "Save plan" : "Create plan"}>
       <div className="grid gap-3 sm:grid-cols-2">
-        <label className="grid gap-1.5 text-sm font-medium text-fg-muted"><span>Code</span><input name="code" defaultValue={plan?.code ?? ""} pattern="[a-z0-9-]{2,40}" className={inputCls} required /></label>
+        <label className="grid gap-1.5 text-sm font-medium text-fg-muted"><span>Code</span><input name="code" defaultValue={plan?.code ?? ""} pattern="[a-z0-9\-]{2,40}" className={inputCls} required /></label>
         <label className="grid gap-1.5 text-sm font-medium text-fg-muted"><span>Name</span><input name="name" defaultValue={plan?.name ?? ""} className={inputCls} required /></label>
         <label className="grid gap-1.5 text-sm font-medium text-fg-muted sm:col-span-2"><span>Description</span><input name="description" defaultValue={plan?.description ?? ""} className={inputCls} /></label>
         <label className="grid gap-1.5 text-sm font-medium text-fg-muted"><span>Currency</span><input name="currency" defaultValue={plan?.currency ?? "NGN"} maxLength={3} className={inputCls} required /></label>

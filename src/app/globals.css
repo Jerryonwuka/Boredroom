@@ -225,7 +225,7 @@ input:focus-visible, textarea:focus-visible, select:focus-visible, [contentedita
 @layer components {
 :root { accent-color: var(--accent); --field-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.45), 0 1px 0 var(--highlight); --field-ring: 0 0 0 3px var(--wash-strong); --field-chevron: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23b5b5b5' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='m6 9 6 6 6-6'/></svg>"); --field-picker-filter: invert(1); }
 :root[data-theme="light"] { --field-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.06), 0 1px 0 var(--highlight); --field-ring: 0 0 0 3px var(--wash-active); --field-chevron: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%235a5a5a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='m6 9 6 6 6-6'/></svg>"); --field-picker-filter: none; }
-.field { width: 100%; min-height: 40px; padding: 0 14px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-inset); color: var(--fg); font-size: 15px; line-height: 1.4; box-shadow: var(--field-shadow); transition: border-color var(--duration-fast) var(--ease-out), box-shadow var(--duration-fast) var(--ease-out); }
+.field { width: 100%; min-width: 0; min-height: 40px; padding: 0 14px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-inset); color: var(--fg); font-size: 15px; line-height: 1.4; box-shadow: var(--field-shadow); transition: border-color var(--duration-fast) var(--ease-out), box-shadow var(--duration-fast) var(--ease-out); }
 .field::placeholder { color: var(--fg-subtle); }
 .field:hover:not(:disabled) { border-color: var(--border-strong); }
 .field:focus, .field:focus-visible { outline: none; border-color: var(--border-strong); box-shadow: var(--field-shadow), var(--field-ring); }
@@ -419,7 +419,7 @@ input[type="checkbox"]:disabled, input[type="radio"]:disabled { opacity: 0.5; cu
 
 table.data { width: 100%; border-collapse: collapse; font-size: 0.9375rem; }
 table.data th { text-align: left; font-weight: 600; color: var(--fg-subtle); font-size: 0.75rem; letter-spacing: 0.04em; padding: 0.75rem 0.875rem; border-bottom: 1px solid var(--border); white-space: nowrap; }
-table.data td { padding: 0.8125rem 0.875rem; border-bottom: 1px solid var(--border-soft); vertical-align: top; }
+table.data td { padding: 0.8125rem 0.875rem; border-bottom: 1px solid var(--border-soft); vertical-align: top; overflow-wrap: anywhere; } /* long ids, emails and references wrap rather than widen the table */
 table.data tbody tr:hover td { background: var(--wash-soft); }
 table.data tr:last-child td { border-bottom: 0; }
 /* A cell that is only a pill, a figure or a time never breaks it over two lines. */

@@ -7,6 +7,7 @@ import { DataTable } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/states";
 import { Filters, Pager, CsvLink } from "@/components/admin/actions";
+import { EditSheet } from "@/components/admin/actions";
 import { F, inputCls } from "@/components/admin/fields";
 import { SubscriptionEditForm } from "@/components/admin/billing-forms";
 import { money, dateOnly, num } from "@/lib/format";
@@ -44,7 +45,7 @@ export default async function SubscriptionsPage({ searchParams }: { searchParams
               <td className="text-sm">{s.current_period_end ? dateOnly(s.current_period_end) : "—"}</td>
               <td className="text-sm">{s.auto_renew ? "On" : "Off"}</td>
               <td className="text-sm text-fg-muted">{s.last_payment_at ? dateOnly(s.last_payment_at) : "none"}</td>
-              {can(admin, "subscription.edit") ? <td><details><summary className="cursor-pointer text-sm text-fg-muted">Edit</summary><div className="mt-2 w-[28rem] max-w-[70vw]"><SubscriptionEditForm id={s.id} current={{ status: s.status, periodEnd: s.current_period_end, autoRenew: s.auto_renew, notes: null }} /></div></details></td> : null}
+              {can(admin, "subscription.edit") ? <td><EditSheet title="Edit subscription"><SubscriptionEditForm id={s.id} current={{ status: s.status, periodEnd: s.current_period_end, autoRenew: s.auto_renew, notes: null }} /></EditSheet></td> : null}
             </tr>
           ))}</tbody>
         </DataTable>
