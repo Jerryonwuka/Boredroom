@@ -1,15 +1,24 @@
 "use client";
 
+import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Search } from "lucide-react";
+import { GooeyInput } from "@/components/aceternity/gooey-input";
+import { cn } from "@/lib/utils";
 
-/** Global search: users, organisations, payments, contacts, subscriptions, campaigns. Enter opens the results page. */
+const SURFACE = "border border-border bg-[linear-gradient(180deg,var(--btn-top),var(--btn-bottom))] text-fg shadow-[inset_0_1px_0_var(--highlight)] ring-0";
+
+/**
+ * Global search: users, organisations, payments, contacts, subscriptions, campaigns. The same collapsing gooey
+ * input as the workspace top bar (owner decision, 25 September 2026): a round button that opens into a field when
+ * clicked and folds away when it loses focus. Enter opens the results page.
+ */
 export function AdminSearch() {
   const router = useRouter();
+  const [q, setQ] = useState("");
   return (
-    <form role="search" className="relative hidden sm:block" onSubmit={(e) => { e.preventDefault(); const q = new FormData(e.currentTarget).get("q"); if (typeof q === "string" && q.trim()) router.push(`/admin/search?q=${encodeURIComponent(q.trim())}`); }}>
-      <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-fg-subtle" aria-hidden />
-      <input name="q" type="search" placeholder="Search users, organisations, payments…" aria-label="Search the platform" className="field field-sm h-10 min-h-10 w-72 pl-9" />
-    </form>
+    <div role="search" className="relative" onKeyDown={(e) => { if (e.key === "Enter" && q.trim()) { e.preventDefault(); router.push(`/admin/search?q=${encodeURIComponent(q.trim())}`); setQ(""); } }}>
+      <GooeyInput placeholder="Search users, organisations…" value={q} onValueChange={setQ} onOpenChange={(o) => { if (!o) setQ(""); }} collapsedWidth={44} expandedWidth={260} expandedOffset={48}
+        classNames={{ trigger: cn(SURFACE, "px-3"), input: "text-fg placeholder:text-fg-subtle", bubbleSurface: SURFACE }} />
+    </div>
   );
 }

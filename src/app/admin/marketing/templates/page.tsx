@@ -3,6 +3,7 @@ import { listTemplates } from "@/server/admin/marketing";
 import { PageHeader, Card, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { TemplateForm, TemplatePreview } from "@/components/admin/marketing-forms";
+import { EditSheet } from "@/components/admin/actions";
 
 export const metadata = { title: "Email templates" };
 
@@ -21,7 +22,7 @@ export default async function TemplatesPage() {
             <Card key={t.id}><CardHeader title={<span className="flex items-center gap-2">{t.name}<Badge tone="neutral">{t.code}</Badge></span>} description={t.subject} />
               <p className="line-clamp-3 text-sm text-fg-muted">{t.body}</p>
               <div className="mt-3 flex flex-wrap gap-2"><TemplatePreview id={t.id} /></div>
-              {editable ? <details className="mt-3"><summary className="cursor-pointer text-sm text-fg-muted">Edit</summary><div className="mt-3"><TemplateForm template={t} /></div></details> : null}
+              {editable ? <div className="mt-3"><EditSheet title={`Edit ${t.name}`}><TemplateForm template={t} /></EditSheet></div> : null}
             </Card>
           ))}</div>
         </section>

@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Logo } from "@/components/logo";
 import { Badge } from "@/components/ui/badge";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
-import { AdminNav, type AdminNavGroup } from "@/components/admin/nav";
+import { AdminNav, AdminMobileMenu, type AdminNavGroup } from "@/components/admin/nav";
 import { AdminSearch } from "@/components/admin/search";
 import { ROLE_LABEL, type Permission } from "@/server/admin/permissions";
 import type { Admin } from "@/server/admin/auth";
@@ -66,12 +66,9 @@ export function AdminShell({ admin, launch, children, title }: { admin: Admin; l
           <div className="flex items-center gap-2">
             <AdminSearch />
             <ThemeToggle />
+            <div className="md:hidden"><AdminMobileMenu groups={groups} footer={<><p className="font-semibold">{admin.user.displayName}</p><p className="text-fg-subtle">{ROLE_LABEL[admin.role]}</p><Link href="/app" className="mt-2 inline-block text-fg-muted hover:text-fg">Back to the app</Link></>} /></div>
           </div>
         </header>
-        <details className="border-b border-border-soft bg-sidebar px-4 py-2 md:hidden">
-          <summary className="cursor-pointer text-sm text-fg-muted">Sections</summary>
-          <div className="pt-2"><AdminNav groups={groups} /></div>
-        </details>
         <main id="main" className="mx-auto w-full max-w-7xl flex-1 px-4 py-6 md:px-8 md:py-8"><PageRise>{children}</PageRise></main>
       </div>
     </div>

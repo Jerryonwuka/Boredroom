@@ -7,6 +7,7 @@ import { Input, Textarea, Select, Field } from "@/components/ui/input";
 import { Alert } from "@/components/ui/states";
 import { api, isApiFailure } from "@/lib/api-client";
 import type { ReportSnapshotEntry } from "@/server/services/reports";
+import { DatePicker } from "@/components/ui/date-picker";
 
 function useForm() {
   const router = useRouter();
@@ -28,7 +29,7 @@ export function MemberDatePicker({ orgSlug, members, membershipId, date, prev, n
   return (
     <form className="flex flex-wrap items-end gap-2" onSubmit={(e) => { e.preventDefault(); const f = new FormData(e.currentTarget); router.push(`/app/${orgSlug}/timesheets?member=${f.get("member") ?? membershipId}&date=${f.get("date")}`); }}>
       {members.length ? <Field label="Member" htmlFor="ts-member"><Select id="ts-member" name="member" defaultValue={membershipId}>{members.map((m) => <option key={m.id} value={m.id}>{m.display_name}</option>)}</Select></Field> : null}
-      <Field label="Date" htmlFor="ts-date"><Input id="ts-date" name="date" type="date" defaultValue={date} /></Field>
+      <Field label="Date" htmlFor="ts-date"><DatePicker id="ts-date" name="date" defaultValue={date} /></Field>
       <Button type="submit" variant="outline">Show</Button>
       <Button variant="ghost" onClick={() => router.push(`/app/${orgSlug}/timesheets?member=${membershipId}&date=${prev}`)}>← {prev}</Button>
       <Button variant="ghost" onClick={() => router.push(`/app/${orgSlug}/timesheets?member=${membershipId}&date=${next}`)}>{next}</Button>
@@ -75,9 +76,9 @@ export function AdjustmentForm({ orgSlug, localDate, entries }: { orgSlug: strin
         <p className="mb-1 text-sm font-semibold text-fg-muted">Proposed intervals (local time)</p>
         {rows.map((r, i) => (
           <div key={i} className="mb-2 flex flex-wrap items-center gap-2">
-            <Input aria-label="Start" type="datetime-local" value={r.startedAt} onChange={(e) => setRows(rows.map((x, j) => (j === i ? { ...x, startedAt: e.target.value } : x)))} className="w-56" />
+            <DatePicker mode="datetime" aria-label="Start" value={r.startedAt} onChange={(v) => setRows(rows.map((x, j) => (j === i ? { ...x, startedAt: v } : x)))} className="w-56" />
             <span className="text-fg-subtle">to</span>
-            <Input aria-label="End" type="datetime-local" value={r.endedAt} onChange={(e) => setRows(rows.map((x, j) => (j === i ? { ...x, endedAt: e.target.value } : x)))} className="w-56" />
+            <DatePicker mode="datetime" aria-label="End" value={r.endedAt} onChange={(v) => setRows(rows.map((x, j) => (j === i ? { ...x, endedAt: v } : x)))} className="w-56" />
             <Button size="sm" variant="ghost" onClick={() => setRows(rows.filter((_, j) => j !== i))}>Remove</Button>
           </div>
         ))}
@@ -98,8 +99,8 @@ export function ExportForm({ orgSlug, members }: { orgSlug: string; members: { i
   if (!open) return <Button variant="outline" onClick={() => setOpen(true)}>Export CSV</Button>;
   return (
     <form className="tile flex flex-wrap items-end gap-2 p-3" method="get" action={`/api/orgs/${orgSlug}/exports/timesheets`}>
-      <Field label="From" htmlFor="x-from"><Input id="x-from" name="from" type="date" defaultValue={monthStart} required /></Field>
-      <Field label="To" htmlFor="x-to"><Input id="x-to" name="to" type="date" defaultValue={today} required /></Field>
+      <Field label="From" htmlFor="x-from"><DatePicker id="x-from" name="from" defaultValue={monthStart} required /></Field>
+      <Field label="To" htmlFor="x-to"><DatePicker id="x-to" name="to" defaultValue={today} required /></Field>
       <Field label="Member" htmlFor="x-member"><Select id="x-member" name="membershipId" defaultValue=""><option value="">Everyone in scope</option>{members.map((m) => <option key={m.id} value={m.id}>{m.display_name}</option>)}</Select></Field>
       <Button type="submit">Download approved records</Button>
       <p className="w-full text-xs text-fg-subtle">Approved report versions only; totals reconcile with the approved snapshots. Text is formula-safe.</p>

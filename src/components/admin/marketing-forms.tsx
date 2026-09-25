@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { AdminAction, JsonForm } from "@/components/admin/actions";
 import { inputCls } from "@/components/admin/fields";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Button } from "@/components/ui/button";
 import { api, isApiFailure } from "@/lib/api-client";
 import type { SegmentRule, TemplateRow, CampaignRow, AutomationRow } from "@/server/admin/marketing";
@@ -100,7 +101,7 @@ export function CampaignControls({ campaign, audienceSize, unsubscribed, canSend
       {draft && canSend ? (
         <div className="chip flex flex-wrap items-end gap-3 p-3">
           <div className="text-sm"><p className="font-semibold">{audienceSize.toLocaleString()} recipient{audienceSize === 1 ? "" : "s"}</p><p className="text-xs text-fg-subtle">{unsubscribed.toLocaleString()} unsubscribed contacts are excluded automatically; invalid addresses are skipped at send time.</p></div>
-          <label className="grid gap-1 text-xs text-fg-subtle"><span>Schedule (optional)</span><input type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} className={inputCls} /></label>
+          <label className="grid gap-1 text-xs text-fg-subtle"><span>Schedule (optional)</span><DatePicker mode="datetime" value={when} onChange={(v) => setWhen(v)} size="sm" aria-label="Schedule" /></label>
           <AdminAction path={base} body={{ action: "send", confirm: true, scheduledAt: when ? new Date(when).toISOString() : null }} variant="primary" confirm={{ title: when ? `Schedule for ${new Date(when).toLocaleString()}?` : `Send to ${audienceSize.toLocaleString()} people now?`, description: audienceSize > 500 ? "This is a large send. The worker delivers it in batches of 40; you can watch progress on this page." : "The worker delivers it in batches; you can watch progress on this page.", label: when ? "Schedule" : "Send now" }}>{when ? "Schedule" : "Send now"}</AdminAction>
         </div>
       ) : null}

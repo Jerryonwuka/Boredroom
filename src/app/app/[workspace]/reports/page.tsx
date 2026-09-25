@@ -11,6 +11,7 @@ import { todayLocal, addDays } from "@/server/lib/time";
 import { formatDuration, formatDateTime } from "@/lib/utils";
 import { ExemptionForm } from "@/components/app/exemption-form";
 import Link from "next/link";
+import { DatePicker } from "@/components/ui/date-picker";
 
 /** Quick periods. They are filters, not resets: monthly views never wipe anything. */
 function periodPresets(today: string) {
@@ -63,8 +64,8 @@ export default async function ReportsPage({ params, searchParams }: { params: Pr
         <span className="text-xs text-fg-subtle">or pick dates below. Nothing resets month to month; every period is a filter over the same records.</span>
       </div>
       <form className="mb-6 flex flex-wrap items-end gap-2 text-sm">
-        <label><span className="block text-xs text-fg-subtle">From</span><Input name="from" type="date" defaultValue={from} /></label>
-        <label><span className="block text-xs text-fg-subtle">To</span><Input name="to" type="date" defaultValue={to} /></label>
+        <label><span className="block text-xs text-fg-subtle">From</span><DatePicker name="from" defaultValue={from} /></label>
+        <label><span className="block text-xs text-fg-subtle">To</span><DatePicker name="to" defaultValue={to} /></label>
         {!isEmployee ? <label><span className="block text-xs text-fg-subtle">Member</span><Select name="member" defaultValue={sp.member ?? ""}><option value="">All in scope</option>{members.map((x) => <option key={x.id} value={x.id}>{x.display_name}</option>)}</Select></label> : null}
         {!isEmployee ? <label><span className="block text-xs text-fg-subtle">Team</span><Select name="team" defaultValue={sp.team ?? ""}><option value="">All</option>{teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</Select></label> : null}
         <label><span className="block text-xs text-fg-subtle">Project</span><Select name="project" defaultValue={sp.project ?? ""}><option value="">All</option>{projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</Select></label>

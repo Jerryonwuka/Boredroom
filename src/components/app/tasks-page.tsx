@@ -9,6 +9,7 @@ import { Input, Select, Textarea, Field } from "@/components/ui/input";
 import { Alert } from "@/components/ui/states";
 import { Expand, Presence } from "@/components/ui/motion";
 import { api, isApiFailure } from "@/lib/api-client";
+import { DatePicker } from "@/components/ui/date-picker";
 
 type Person = { id: string; display_name: string; team_name: string | null; group: "team" | "organisation" };
 
@@ -59,7 +60,7 @@ export function NewAssignedTask({ orgSlug, people, self, selfName, canKeep = tru
             </Select>
           </Field>
           <Field label="Priority" htmlFor="nt-pri"><Select id="nt-pri" name="priority" defaultValue="normal"><option value="low">Low</option><option value="normal">Normal</option><option value="high">High</option><option value="urgent">Urgent</option></Select></Field>
-          <Field label="Due" htmlFor="nt-due" hint="optional" error={fieldErrors.dueAt}><Input id="nt-due" name="dueAt" type="datetime-local" /></Field>
+          <Field label="Due" htmlFor="nt-due" hint="optional" error={fieldErrors.dueAt}><DatePicker mode="datetime" id="nt-due" name="dueAt" /></Field>
           <Field label="Estimate (minutes)" htmlFor="nt-est" hint="optional" error={fieldErrors.estimateMinutes}><Input id="nt-est" name="estimateMinutes" type="number" min={1} /></Field>
           <div className="flex gap-2 md:col-span-2"><Button type="submit" disabled={pending}>{pending ? "Creating…" : "Create and assign"}</Button><Button variant="ghost" type="button" onClick={() => setOpen(false)}>Cancel</Button></div>
         </form>

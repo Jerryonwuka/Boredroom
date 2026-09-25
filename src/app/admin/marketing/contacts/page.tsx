@@ -8,6 +8,7 @@ import { Filters, Pager, CsvLink, AdminAction } from "@/components/admin/actions
 import { F, inputCls } from "@/components/admin/fields";
 import { ContactImportForm } from "@/components/admin/marketing-forms";
 import { dateOnly } from "@/lib/format";
+import { DatePicker } from "@/components/ui/date-picker";
 
 export const metadata = { title: "Contacts" };
 const TONE: Record<string, "success" | "warning" | "danger" | "neutral" | "info" | "accent"> = { waiting: "warning", invited: "info", registered: "accent", activated: "success", trial: "info", paid: "success", unsubscribed: "danger" };
@@ -26,8 +27,8 @@ export default async function ContactsPage({ searchParams }: { searchParams: Pro
         <F label="Waitlist"><select name="waitlist" defaultValue={sp.waitlist ?? ""} className={inputCls}><option value="">Everyone</option><option value="1">Waitlist only</option></select></F>
         <F label="Company size"><input name="companySize" defaultValue={sp.companySize ?? ""} className={`${inputCls} w-28`} /></F>
         <F label="Country"><input name="country" defaultValue={sp.country ?? ""} className={`${inputCls} w-28`} /></F>
-        <F label="From"><input name="from" type="date" defaultValue={sp.from ?? ""} className={inputCls} /></F>
-        <F label="To"><input name="to" type="date" defaultValue={sp.to ?? ""} className={inputCls} /></F>
+        <F label="From"><DatePicker name="from" defaultValue={sp.from ?? ""} size="sm" /></F>
+        <F label="To"><DatePicker name="to" defaultValue={sp.to ?? ""} size="sm" /></F>
       </Filters>
       {r.rows.length === 0 ? <EmptyState icon3d="people" title="No contacts match" /> : (
         <DataTable caption="Contacts">

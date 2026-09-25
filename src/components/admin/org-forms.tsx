@@ -4,17 +4,18 @@ import { useState } from "react";
 import { JsonForm } from "@/components/admin/actions";
 import { inputCls } from "@/components/admin/fields";
 import { cn } from "@/lib/utils";
+import { DatePicker } from "@/components/ui/date-picker";
 
 export function OrgPlanForm({ orgId, plans, current }: { orgId: string; plans: { id: string; code: string; name: string }[]; current: { planId: string; interval: string } }) {
   return (
     <JsonForm path={`/api/admin/organisations/${orgId}/actions`} transform={(d) => ({ action: "change_plan", planId: String(d.planId), interval: String(d.interval), status: d.status ? String(d.status) : undefined, periodEnd: d.periodEnd ? new Date(String(d.periodEnd)).toISOString() : undefined, reason: String(d.reason) })} submitLabel="Change plan">
-      <label className="grid gap-1.5 text-sm font-medium text-fg-muted"><span>Plan</span><select name="planId" defaultValue={current.planId} className={inputCls} required>{plans.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
+      <label className="grid gap-1.5 text-sm font-medium text-fg-muted"><span>Plan</span><select name="planId" defaultValue={current.planId} required>{plans.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
       <div className="grid grid-cols-2 gap-2">
         <label className="grid gap-1.5 text-sm font-medium text-fg-muted"><span>Interval</span><select name="interval" defaultValue={current.interval} className={inputCls}><option value="monthly">Monthly</option><option value="annual">Annual</option></select></label>
         <label className="grid gap-1.5 text-sm font-medium text-fg-muted"><span>Status</span><select name="status" defaultValue="" className={inputCls}><option value="">Keep</option><option value="trial">Trial</option><option value="active">Active</option><option value="past_due">Past due</option><option value="cancelled">Cancelled</option><option value="expired">Expired</option><option value="suspended">Suspended</option></select></label>
       </div>
-      <label className="grid gap-1.5 text-sm font-medium text-fg-muted"><span>Period end <span className="text-fg-subtle">(optional)</span></span><input name="periodEnd" type="date" className={inputCls} /></label>
-      <label className="grid gap-1.5 text-sm font-medium text-fg-muted"><span>Reason</span><input name="reason" className={inputCls} required minLength={3} placeholder="Written to the audit trail" /></label>
+      <label className="grid gap-1.5 text-sm font-medium text-fg-muted"><span>Period end <span className="text-fg-subtle">(optional)</span></span><DatePicker name="periodEnd" size="sm" /></label>
+      <label className="grid gap-1.5 text-sm font-medium text-fg-muted"><span>Reason</span><input name="reason" required minLength={3} placeholder="Written to the audit trail" /></label>
     </JsonForm>
   );
 }
@@ -34,7 +35,7 @@ export function FeatureOverridesForm({ orgId, keys, overrides, plan }: { orgId: 
           </li>
         ))}
       </ul>
-      <label className="grid gap-1.5 text-sm font-medium text-fg-muted"><span>Reason <span className="text-fg-subtle">(optional)</span></span><input name="reason" className={inputCls} /></label>
+      <label className="grid gap-1.5 text-sm font-medium text-fg-muted"><span>Reason <span className="text-fg-subtle">(optional)</span></span><input name="reason" /></label>
     </JsonForm>
   );
 }

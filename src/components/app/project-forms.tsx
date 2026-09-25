@@ -7,6 +7,7 @@ import { Input, Textarea, Select, Field } from "@/components/ui/input";
 import { Alert } from "@/components/ui/states";
 import { Badge } from "@/components/ui/badge";
 import { api, isApiFailure } from "@/lib/api-client";
+import { DatePicker } from "@/components/ui/date-picker";
 
 function useForm() {
   const [pending, setPending] = useState(false);
@@ -67,7 +68,7 @@ export function NewTaskForm({ orgSlug, projectId, members, self, canAssignOthers
         <Field label="Category" htmlFor="t-cat"><Select id="t-cat" name="category" defaultValue="work"><option value="work">Work</option><option value="meeting">Meeting</option><option value="offline">Offline work</option><option value="admin">Admin</option></Select></Field>
         <Field label="Priority" htmlFor="t-pri"><Select id="t-pri" name="priority" defaultValue="normal"><option value="low">Low</option><option value="normal">Normal</option><option value="high">High</option><option value="urgent">Urgent</option></Select></Field>
         <Field label="Estimate (minutes)" htmlFor="t-est" hint={requiresEstimate ? "required" : "optional"} error={fieldErrors.estimateMinutes}><Input id="t-est" name="estimateMinutes" type="number" min={1} required={requiresEstimate} /></Field>
-        <Field label="Due" htmlFor="t-due" hint={requiresDueDate ? "required" : "optional"} error={fieldErrors.dueAt}><Input id="t-due" name="dueAt" type="datetime-local" required={requiresDueDate} /></Field>
+        <Field label="Due" htmlFor="t-due" hint={requiresDueDate ? "required" : "optional"} error={fieldErrors.dueAt}><DatePicker mode="datetime" id="t-due" name="dueAt" required={requiresDueDate} /></Field>
         {canAssignOthers ? <Field label="Screen capture" htmlFor="t-cap" hint="only applies if policy enables recording"><Select id="t-cap" name="captureRequirement" defaultValue="none"><option value="none">Not requested</option><option value="optional">Optional</option><option value="required">Required on this task</option></Select></Field> : null}
       </div>
       <div className="flex gap-2"><Button type="submit" disabled={pending}>{pending ? "Creating…" : "Create task"}</Button><Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button></div>

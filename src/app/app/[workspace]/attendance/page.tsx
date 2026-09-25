@@ -11,6 +11,7 @@ import { EmptyState, PermissionDenied } from "@/components/ui/states";
 import { attendanceBoard, attendanceMonth, type ClockStatus } from "@/server/services/attendance";
 import { addDays } from "@/server/lib/time";
 import { formatDuration, formatLongDate, cn } from "@/lib/utils";
+import { DatePicker } from "@/components/ui/date-picker";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Attendance" };
@@ -51,7 +52,7 @@ export default async function AttendancePage({ params, searchParams }: { params:
             <input type="hidden" name="view" value="month" />{teamId ? <input type="hidden" name="team" value={teamId} /> : null}
             <Link href={nav(shiftMonth(m.month, -1))} className="text-fg-muted hover:text-fg">Previous month</Link>
             <label htmlFor="month" className="sr-only">Month</label>
-            <input id="month" type="month" name="month" defaultValue={m.month} max={m.today.slice(0, 7)} className="field field-sm" />
+            <DatePicker mode="month" id="month" name="month" defaultValue={m.month} max={m.today.slice(0, 7)} size="sm" />
             <Button type="submit" size="sm" variant="subtle">Show</Button>
             {m.month < m.today.slice(0, 7) ? <Link href={nav(shiftMonth(m.month, 1))} className="text-fg-muted hover:text-fg">Next month</Link> : null}
           </form>
@@ -121,7 +122,7 @@ export default async function AttendancePage({ params, searchParams }: { params:
           <input type="hidden" name="tab" value={tab} />{teamId ? <input type="hidden" name="team" value={teamId} /> : null}
           <Link href={q({ date: addDays(b.date, -1) })} className="text-fg-muted hover:text-fg">Previous day</Link>
           <label htmlFor="date" className="sr-only">Day</label>
-          <input id="date" type="date" name="date" defaultValue={b.date} max={b.today} className="field field-sm" />
+          <DatePicker id="date" name="date" defaultValue={b.date} max={b.today} size="sm" />
           <Button type="submit" size="sm" variant="subtle">Show</Button>
           {b.date < b.today ? <><Link href={q({ date: addDays(b.date, 1) })} className="text-fg-muted hover:text-fg">Next day</Link><Link href={q({ date: undefined })} className="text-fg-muted hover:text-fg">Today</Link></> : null}
         </form>

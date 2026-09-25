@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input, Select, Field } from "@/components/ui/input";
 import { Alert } from "@/components/ui/states";
 import { api, isApiFailure } from "@/lib/api-client";
+import { DatePicker } from "@/components/ui/date-picker";
 
 export function ExemptionForm({ orgSlug, members }: { orgSlug: string; members: { id: string; display_name: string }[] }) {
   const router = useRouter();
@@ -22,7 +23,7 @@ export function ExemptionForm({ orgSlug, members }: { orgSlug: string; members: 
       finally { setPending(false); }
     }}>
       <Field label="Member" htmlFor="ex-member"><Select id="ex-member" name="membershipId">{members.map((m) => <option key={m.id} value={m.id}>{m.display_name}</option>)}</Select></Field>
-      <Field label="Date" htmlFor="ex-date"><Input id="ex-date" name="localDate" type="date" required /></Field>
+      <Field label="Date" htmlFor="ex-date"><DatePicker id="ex-date" name="localDate" required /></Field>
       <Field label="Reason" htmlFor="ex-reason"><Input id="ex-reason" name="reason" placeholder="Annual leave" required maxLength={500} /></Field>
       <Button type="submit" size="md" variant="outline" disabled={pending}>Save</Button>
       <Button variant="ghost" onClick={() => setOpen(false)}>Close</Button>

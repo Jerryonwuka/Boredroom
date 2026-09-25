@@ -9,6 +9,7 @@ import { DataTable } from "@/components/ui/table";
 import { ClockButtons } from "@/components/app/clock";
 import { myClock } from "@/server/services/attendance";
 import { formatDuration, formatLongDate, formatDateTime } from "@/lib/utils";
+import { DatePicker } from "@/components/ui/date-picker";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Clock in" };
@@ -71,7 +72,7 @@ export default async function ClockPage({ params, searchParams }: { params: Prom
           <form className="flex items-center gap-2 text-sm" action={`/app/${ctx.org.slug}/clock`}>
             <Link href={monthHref(shiftMonth(c.month, -1))} className="text-fg-muted hover:text-fg">Previous month</Link>
             <label htmlFor="month" className="sr-only">Month</label>
-            <input id="month" type="month" name="month" defaultValue={c.month} max={thisMonth} className="field field-sm" />
+            <DatePicker mode="month" id="month" name="month" defaultValue={c.month} max={thisMonth} size="sm" />
             <Button type="submit" size="sm" variant="subtle">Show</Button>
             {c.month < thisMonth ? <><Link href={monthHref(shiftMonth(c.month, 1))} className="text-fg-muted hover:text-fg">Next month</Link><Link href={monthHref(thisMonth)} className="text-fg-muted hover:text-fg">This month</Link></> : null}
           </form>

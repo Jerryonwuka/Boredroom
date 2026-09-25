@@ -8,6 +8,7 @@ import { Input, Textarea, Select, Field } from "@/components/ui/input";
 import { Alert } from "@/components/ui/states";
 import { Badge } from "@/components/ui/badge";
 import { api, isApiFailure } from "@/lib/api-client";
+import { DatePicker } from "@/components/ui/date-picker";
 
 function useForm() {
   const router = useRouter();
@@ -52,7 +53,7 @@ export function TaskActions({ orgSlug, task, isAssignee, canManage, members, rev
           {canManage ? <Field label="Assignee" htmlFor="e-asg" hint="blocked while a session is open"><Select id="e-asg" name="assigneeMembershipId" defaultValue={assigneeId}>{members.map((m) => <option key={m.id} value={m.id}>{m.display_name}</option>)}</Select></Field> : null}
           <div className="grid grid-cols-2 gap-2">
             <Field label="Estimate (min)" htmlFor="e-est"><Input id="e-est" name="estimateMinutes" type="number" min={1} /></Field>
-            <Field label="Due" htmlFor="e-due"><Input id="e-due" name="dueAt" type="datetime-local" /></Field>
+            <Field label="Due" htmlFor="e-due"><DatePicker mode="datetime" id="e-due" name="dueAt" /></Field>
           </div>
           <Field label="Priority" htmlFor="e-pri"><Select id="e-pri" name="priority" defaultValue="normal"><option value="low">Low</option><option value="normal">Normal</option><option value="high">High</option><option value="urgent">Urgent</option></Select></Field>
           {canManage ? <Field label="Capture" htmlFor="e-cap"><Select id="e-cap" name="captureRequirement" defaultValue="none"><option value="none">Not requested</option><option value="optional">Optional</option><option value="required">Required</option></Select></Field> : null}

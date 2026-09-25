@@ -21,6 +21,7 @@ import { api, isApiFailure } from "@/lib/api-client";
 import { formatDuration, formatDateTime } from "@/lib/utils";
 import type { TaskRow } from "@/server/services/views";
 import type { SessionView } from "@/server/services/sessions";
+import { DatePicker } from "@/components/ui/date-picker";
 
 type PastTask = { id: string; title: string; status: string; completed_at: string | null; archived_at: string | null; tracked_seconds: number; created_by_name: string; self_made: boolean };
 type Person = { id: string; display_name: string; team_name?: string; group?: "team" | "organisation" };
@@ -226,7 +227,7 @@ function EditTodo({ orgSlug, t, onClose, onSaved }: { orgSlug: string; t: Row; o
     }}>
       {error ? <Alert tone="danger" className="md:col-span-4">{error}</Alert> : null}
       <Field label="To-do" htmlFor={`title-${t.id}`}><Input id={`title-${t.id}`} name="title" defaultValue={t.title} required maxLength={200} /></Field>
-      <Field label="Due date and time" htmlFor={`due-${t.id}`} hint="optional"><Input id={`due-${t.id}`} name="dueAt" type="datetime-local" defaultValue={toLocalInput(t.due_at)} className="w-56" /></Field>
+      <Field label="Due date and time" htmlFor={`due-${t.id}`} hint="optional"><DatePicker mode="datetime" id={`due-${t.id}`} name="dueAt" defaultValue={toLocalInput(t.due_at)} className="w-56" /></Field>
       <Field label="Estimate (min)" htmlFor={`est-${t.id}`} hint="optional"><Input id={`est-${t.id}`} name="estimate" type="number" min={1} defaultValue={t.estimate_minutes ?? ""} className="w-28" /></Field>
       <div className="flex items-end gap-1"><Button type="submit" size="sm" disabled={pending}>{pending ? "Saving…" : "Save"}</Button><Button type="button" size="sm" variant="ghost" onClick={onClose}>Cancel</Button></div>
     </form>
@@ -304,7 +305,7 @@ function QuickTodo({ orgSlug, assignable, onDone, onAssistant, assistantOpen }: 
       <Expand show={details} id="quick-details">
         <div className="grid gap-2 pt-1 md:grid-cols-[1fr_auto]">
           <Field label="Description" htmlFor="quick-desc" hint="optional" error={fieldErrors.description}><Textarea id="quick-desc" value={description} onChange={(e) => setDescription(e.target.value)} rows={2} maxLength={4000} placeholder="What does done look like? Any links or context." /></Field>
-          <Field label="Due date and time" htmlFor="quick-due" hint="optional" error={fieldErrors.dueAt}><Input id="quick-due" type="datetime-local" value={dueAt} onChange={(e) => setDueAt(e.target.value)} className="w-56" /></Field>
+          <Field label="Due date and time" htmlFor="quick-due" hint="optional" error={fieldErrors.dueAt}><DatePicker mode="datetime" id="quick-due" value={dueAt} onChange={(v) => setDueAt(v)} className="w-56" /></Field>
         </div>
       </Expand>
       {error ? <Alert tone="danger">{error}</Alert> : null}

@@ -6,6 +6,7 @@ import { EmptyState } from "@/components/ui/states";
 import { Filters, Pager, CsvLink } from "@/components/admin/actions";
 import { F, inputCls } from "@/components/admin/fields";
 import { formatDateTime } from "@/lib/utils";
+import { DatePicker } from "@/components/ui/date-picker";
 
 export const metadata = { title: "Audit log" };
 
@@ -20,13 +21,13 @@ export default async function AuditPage({ searchParams }: { searchParams: Promis
         <F label="Search"><input name="q" defaultValue={sp.q ?? ""} placeholder="Target, action, reason" className={`${inputCls} w-64`} /></F>
         <F label="Area"><select name="action" defaultValue={sp.action ?? ""} className={inputCls}><option value="">Any</option>{r.actions.map((a) => <option key={a} value={a}>{a}</option>)}</select></F>
         <F label="Admin"><select name="admin" defaultValue={sp.admin ?? ""} className={inputCls}><option value="">Anyone</option>{r.admins.map((a) => <option key={a.id} value={a.id}>{a.email}</option>)}</select></F>
-        <F label="From"><input name="from" type="date" defaultValue={sp.from ?? ""} className={inputCls} /></F>
-        <F label="To"><input name="to" type="date" defaultValue={sp.to ?? ""} className={inputCls} /></F>
+        <F label="From"><DatePicker name="from" defaultValue={sp.from ?? ""} size="sm" /></F>
+        <F label="To"><DatePicker name="to" defaultValue={sp.to ?? ""} size="sm" /></F>
         {sp.org ? <input type="hidden" name="org" value={sp.org} /> : null}
       </Filters>
       {r.rows.length === 0 ? <EmptyState icon3d="shield-check" title="No entries match" /> : (
         <DataTable caption="Audit log"><thead><tr><th>When</th><th>Admin</th><th>Action</th><th>Target</th><th>Reason</th><th>Change</th></tr></thead>
-          <tbody>{r.rows.map((a) => <tr key={a.id}><td className="text-sm">{formatDateTime(a.occurred_at)}</td><td className="text-sm">{a.admin_name ?? a.admin_email ?? "system"}{a.ip ? <span className="block text-xs text-fg-subtle">{a.ip}</span> : null}</td><td className="font-mono text-xs">{a.action}</td><td className="text-sm">{a.target_label ?? a.target_id ?? "—"}{a.org_name ? <span className="block text-xs text-fg-subtle">{a.org_name}</span> : null}</td><td className="max-w-[240px] text-sm text-fg-muted">{a.reason ?? "—"}</td><td className="max-w-[320px] break-all text-xs text-fg-subtle">{a.before != null || a.after != null ? <details><summary className="cursor-pointer">before / after</summary><pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap">{JSON.stringify({ before: a.before, after: a.after }, null, 1)}</pre></details> : Object.keys(a.metadata ?? {}).length ? <span className="block max-w-full truncate">{JSON.stringify(a.metadata)}</span> : "—"}</td></tr>)}</tbody>
+          <tbody>{r.rows.map((a) => <tr key={a.id}><td className="nowrap text-sm">{formatDateTime(a.occurred_at).split(", ")[0]}<span className="block text-xs text-fg-subtle">{formatDateTime(a.occurred_at).split(", ")[1]}</span></td><td className="nowrap text-sm">{a.admin_name ?? a.admin_email ?? "system"}{a.ip ? <span className="block text-xs text-fg-subtle">{a.ip}</span> : null}</td><td className="nowrap font-mono text-xs">{a.action}</td><td className="nowrap text-sm">{a.target_label ?? a.target_id ?? "—"}{a.org_name ? <span className="block text-xs text-fg-subtle">{a.org_name}</span> : null}</td><td className="max-w-[240px] text-sm text-fg-muted">{a.reason ?? "—"}</td><td className="wrap max-w-[320px] text-xs text-fg-subtle">{a.before != null || a.after != null ? <details><summary className="cursor-pointer">before / after</summary><pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-all">{JSON.stringify({ before: a.before, after: a.after }, null, 1)}</pre></details> : Object.keys(a.metadata ?? {}).length ? <span className="block max-w-[220px] truncate">{JSON.stringify(a.metadata)}</span> : "—"}</td></tr>)}</tbody>
         </DataTable>
       )}
       <Pager page={r.page} pageSize={r.pageSize} total={r.total} />

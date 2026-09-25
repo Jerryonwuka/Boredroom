@@ -61,7 +61,7 @@ export function EditSheet({ title, label = "Edit", children }: { title: string; 
     <>
       <button type="button" className="text-sm text-fg-muted hover:text-fg" onClick={() => ref.current?.showModal()}>{label}</button>
       <dialog ref={ref} className="sheet" aria-labelledby={titleId} onCancel={(e) => { e.preventDefault(); ref.current?.close(); }}>
-        <div className="grid gap-4 p-5">
+        <div className="grid max-h-[85vh] gap-4 overflow-y-auto p-5">
           <div className="flex items-start justify-between gap-3"><h2 id={titleId} className="font-display text-xl">{title}</h2><Button type="button" variant="ghost" size="icon" aria-label="Close" onClick={() => ref.current?.close()}><X className="size-4" aria-hidden /></Button></div>
           {children}
         </div>

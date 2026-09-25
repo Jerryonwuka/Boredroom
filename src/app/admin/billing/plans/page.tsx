@@ -4,6 +4,7 @@ import { FEATURE_KEYS } from "@/server/admin/settings";
 import { PageHeader, Card, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { PlanForm } from "@/components/admin/billing-forms";
+import { EditSheet } from "@/components/admin/actions";
 import { bytes, money, num } from "@/lib/format";
 
 export const metadata = { title: "Plans" };
@@ -23,7 +24,7 @@ export default async function PlansPage() {
             <p className="eyebrow mt-1">{money(p.annual_price, p.currency)} a year · {p.max_users ? `${p.max_users} people` : "unlimited people"} · {p.max_storage_bytes ? bytes(p.max_storage_bytes) : "unlimited storage"} · {p.trial_days ? `${p.trial_days}-day trial` : "no trial"}</p>
             <p className="mt-2 text-xs text-fg-subtle">{num(p.subscribers)} organisation{p.subscribers === 1 ? "" : "s"} on it</p>
             <ul className="mt-3 flex flex-wrap gap-1">{Object.entries(p.features).filter(([, v]) => v).map(([k]) => <li key={k}><Badge tone="accent">{k.replace(/_/g, " ").toLowerCase()}</Badge></li>)}</ul>
-            {editable ? <details className="mt-4"><summary className="cursor-pointer text-sm text-fg-muted">Edit</summary><div className="mt-3"><PlanForm plan={p} featureKeys={FEATURE_KEYS} /></div></details> : null}
+            {editable ? <div className="mt-4"><EditSheet title={`Edit the ${p.name} plan`}><PlanForm plan={p} featureKeys={FEATURE_KEYS} /></EditSheet></div> : null}
           </Card>
         ))}
       </div>

@@ -12,6 +12,7 @@ import { useState } from "react";
 import { Mic, MicOff, Sparkles, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input, Textarea, Select } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Alert } from "@/components/ui/states";
 import { VoicePoweredOrb } from "@/components/ui/voice-powered-orb";
 import { useDictation } from "@/hooks/use-dictation";
@@ -101,7 +102,7 @@ export function AssistantPanel({ orgSlug, people, configured, onCreated, onClose
                 {it.unmatchedAssignee ? <p className="text-xs text-warning">“{it.unmatchedAssignee}” is not on your team; choose who this is for.</p> : null}
               </div>
               {people.length ? <Select aria-label={`To-do ${i + 1} assignee`} className="h-10 w-44 py-1 text-sm" value={it.assigneeMembershipId ?? ""} onChange={(e) => update(i, { assigneeMembershipId: e.target.value || null, unmatchedAssignee: null })}><option value="">Me</option>{people.map((p) => <option key={p.id} value={p.id}>{p.display_name}</option>)}</Select> : null}
-              <Input aria-label={`To-do ${i + 1} due`} type="datetime-local" className="h-10 w-48 py-1 text-sm" value={toLocalInput(it.dueAt)} onChange={(e) => update(i, { dueAt: e.target.value ? new Date(e.target.value).toISOString() : null })} />
+              <DatePicker aria-label={`To-do ${i + 1} due`} mode="datetime" className="w-52" value={toLocalInput(it.dueAt)} onChange={(v) => update(i, { dueAt: v ? new Date(v).toISOString() : null })} />
               <Button size="icon" variant="ghost" aria-label="Remove suggestion" onClick={() => setItems((cur) => cur.filter((_, j) => j !== i))}><X className="h-4 w-4" /></Button>
             </li>
           ))}</ul>

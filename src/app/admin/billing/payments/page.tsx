@@ -9,6 +9,7 @@ import { EmptyState, Alert } from "@/components/ui/states";
 import { Filters, Pager, CsvLink } from "@/components/admin/actions";
 import { F, inputCls } from "@/components/admin/fields";
 import { money, dateOnly, num } from "@/lib/format";
+import { DatePicker } from "@/components/ui/date-picker";
 
 export const metadata = { title: "Payments" };
 
@@ -29,8 +30,8 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
       <Tabs tabs={tabs} value={status} param="status" className="mb-4" label="Payment status" />
       <Filters>
         <F label="Search"><input name="q" defaultValue={sp.q ?? ""} placeholder="Reference, email, organisation" className={`${inputCls} w-72`} /></F>
-        <F label="From"><input name="from" type="date" defaultValue={sp.from ?? ""} className={inputCls} /></F>
-        <F label="To"><input name="to" type="date" defaultValue={sp.to ?? ""} className={inputCls} /></F>
+        <F label="From"><DatePicker name="from" defaultValue={sp.from ?? ""} size="sm" /></F>
+        <F label="To"><DatePicker name="to" defaultValue={sp.to ?? ""} size="sm" /></F>
         {status !== "all" ? <input type="hidden" name="status" value={status} /> : null}
         {sp.org ? <input type="hidden" name="org" value={sp.org} /> : null}
       </Filters>
