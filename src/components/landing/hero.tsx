@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import Image from "next/image";
 import { motion } from "motion/react";
 import { BackgroundRippleEffect } from "@/components/aceternity/background-ripple-effect";
 import { ContainerScroll } from "@/components/aceternity/container-scroll-animation";
@@ -10,6 +11,8 @@ import { WaitlistForm } from "@/components/landing/waitlist-form";
 export type LandingCopy = { headline: string; subheadline: string; cta: string };
 
 const EASE = [0.23, 1, 0.32, 1] as const;
+/** The faces in the trust pill above the headline; served from public/users. */
+const USERS = [1, 2, 3, 4, 5].map((n) => `/users/user-${n}.jpg`);
 const rise = (delay: number) => ({ initial: { opacity: 0, y: 24, filter: "blur(10px)" }, animate: { opacity: 1, y: 0, filter: "blur(0px)" }, transition: { duration: 0.9, ease: EASE, delay } });
 
 /** The hero copy. It is the scroll container's title, so it drifts up as the dashboard rises to meet the header. */
@@ -17,8 +20,11 @@ function HeroCopy({ signedIn, waitlist, copy }: { signedIn: boolean; waitlist: b
   return (
     <div className="pointer-events-none relative mx-auto max-w-6xl px-6 pt-8 text-center md:pt-14">
       <motion.div {...rise(0)} className="pointer-events-auto">
-        <Link href={waitlist ? "#waitlist" : "/signup?intent=org"} className="lp-muted inline-flex items-center gap-2 lp-glass rounded-full px-4 py-1.5 text-sm transition-colors hover:text-fg">
-          <span className="h-1.5 w-1.5 rounded-full bg-accent" aria-hidden />{waitlist ? "Boredroom is opening soon. Join the waitlist." : "Boredroom is in private pilot. Bring your team."}
+        <Link href={waitlist ? "#waitlist" : "/signup?intent=org"} className="lp-muted inline-flex items-center gap-3 lp-glass rounded-full py-1.5 pl-2 pr-4 text-sm transition-colors hover:text-fg">
+          <span className="flex -space-x-2.5" aria-hidden>
+            {USERS.map((src, i) => <Image key={src} src={src} alt="" width={28} height={28} priority className="h-7 w-7 rounded-full border-2 border-bg object-cover" style={{ zIndex: USERS.length - i }} />)}
+          </span>
+          <span>{waitlist ? "Join the waitlist." : <>Trusted by <strong className="font-semibold text-fg">10k+</strong> users.</>}</span>
         </Link>
       </motion.div>
       <motion.h1 {...rise(0.1)} className="mx-auto mt-8 max-w-5xl font-display text-[52px] leading-[1.02] tracking-[-0.03em] md:text-[96px]">
