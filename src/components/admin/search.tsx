@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { GooeyInput } from "@/components/aceternity/gooey-input";
 import { cn } from "@/lib/utils";
 
-const SURFACE = "border border-border bg-[linear-gradient(180deg,var(--btn-top),var(--btn-bottom))] text-fg shadow-[inset_0_1px_0_var(--highlight)] ring-0";
+const SURFACE = "border border-border bg-[var(--btn-bg)] text-fg ring-0";
 
 /**
  * Global search: users, organisations, payments, contacts, subscriptions, campaigns. The same collapsing gooey

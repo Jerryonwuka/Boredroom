@@ -19,27 +19,36 @@ export type ConversationSummary = {
   other_profile_id: string | null; other_avatar_key: string | null; other_presence: Presence | null;
   archived_at: string | null; created_by: string | null; can_manage: boolean;
   last_message_at: string | null; last_body: string | null; last_sender_name: string | null; unread: number;
+  muted: boolean; marked_unread: boolean;
 };
 export type MessageRow = {
   id: string; sender_membership_id: string; sender_name: string; sender_profile_id: string; sender_avatar_key: string | null; body: string; created_at: string; deleted_at: string | null; edited_at: string | null;
   task_id: string | null; task_title: string | null; task_status: string | null; mine: boolean;
   voice_key: string | null; voice_mime: string | null; voice_seconds: number | null;
+  reply_to_id: string | null; reply_body: string | null; reply_sender_name: string | null; reply_mine: boolean | null;
 };
 export type Thread = {
   conversation: ConversationSummary & { people: Participant[] };
   messages: MessageRow[];
 };
 
-/** Unread messages across every conversation the person can read; used for the sidebar badge. */
+/** Unread messages across every conversation the person can read, muted ones left out, plus conversations they marked unread; used for the sidebar badge. */
 export async function unreadMessageCount(db: Db, ctx: OrgContext): Promise<number> {
   const r = await db.one<{ n: number }>(
-    `SELECT count(*)::int AS n
-     FROM messages m
-     JOIN conversations c ON c.id = m.conversation_id
-     LEFT JOIN conversation_reads r ON r.conversation_id = c.id AND r.membership_id = $2
-     WHERE c.organisation_id = $1 AND m.deleted_at IS NULL AND m.sender_membership_id <> $2 AND c.archived_at IS NULL
-       AND NOT EXISTS (SELECT 1 FROM conversation_hides h WHERE h.conversation_id = c.id AND h.membership_id = $2)
-       AND m.created_at > COALESCE(r.last_read_at, (SELECT created_at FROM memberships WHERE id = $2))`, [ctx.org.id, ctx.membership.id]);
+    `SELECT (
+       (SELECT count(*)::int
+          FROM messages m
+          JOIN conversations c ON c.id = m.conversation_id
+          LEFT JOIN conversation_reads r ON r.conversation_id = c.id AND r.membership_id = $2
+          WHERE c.organisation_id = $1 AND m.deleted_at IS NULL AND m.sender_membership_id <> $2 AND c.archived_at IS NULL AND r.muted_at IS NULL
+            AND NOT EXISTS (SELECT 1 FROM conversation_hides h WHERE h.conversation_id = c.id AND h.membership_id = $2)
+            AND m.created_at > COALESCE(r.last_read_at, (SELECT created_at FROM memberships WHERE id = $2)))
+       + (SELECT count(*)::int
+            FROM conversation_reads r JOIN conversations c ON c.id = r.conversation_id
+            WHERE c.organisation_id = $1 AND r.membership_id = $2 AND r.marked_unread AND r.muted_at IS NULL AND c.archived_at IS NULL
+              AND NOT EXISTS (SELECT 1 FROM conversation_hides h WHERE h.conversation_id = c.id AND h.membership_id = $2)
+              AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.conversation_id = c.id AND m.deleted_at IS NULL AND m.sender_membership_id <> $2 AND m.created_at > r.last_read_at))
+     ) AS n`, [ctx.org.id, ctx.membership.id]);
   return r.n;
 }
 
@@ -57,9 +66,10 @@ const SUMMARY_SQL = `
          CASE c.kind WHEN 'organisation' THEN o.name WHEN 'team' THEN 'Team channel' WHEN 'channel' THEN (SELECT count(*)::text || ' people' FROM conversation_participants pp WHERE pp.conversation_id = c.id) ELSE NULLIF(concat_ws(', ', CASE mo.role WHEN 'manager' THEN 'Team lead' WHEN 'owner' THEN 'Organisation owner' WHEN 'hr' THEN 'HR' ELSE 'Staff' END, ot.teams), '') END AS subtitle,
          mo.id AS other_membership_id, po.id AS other_profile_id, po.avatar_key AS other_avatar_key, po.presence AS other_presence,
          lm.body AS last_body, lp.display_name AS last_sender_name,
-         (SELECT count(*)::int FROM messages m
+         GREATEST((SELECT count(*)::int FROM messages m
             WHERE m.conversation_id = c.id AND m.deleted_at IS NULL AND m.sender_membership_id <> $2
-              AND m.created_at > COALESCE(r.last_read_at, (SELECT created_at FROM memberships WHERE id = $2))) AS unread
+              AND m.created_at > COALESCE(r.last_read_at, (SELECT created_at FROM memberships WHERE id = $2))), CASE WHEN r.marked_unread THEN 1 ELSE 0 END) AS unread,
+         (r.muted_at IS NOT NULL) AS muted, COALESCE(r.marked_unread, false) AS marked_unread
   FROM conversations c
   JOIN organisations o ON o.id = c.organisation_id
   LEFT JOIN teams t ON t.id = c.team_id
@@ -132,17 +142,22 @@ export async function thread(ctx: OrgContext, conversationId: string): Promise<T
       `SELECT * FROM (
          SELECT m.id, m.sender_membership_id, p.display_name AS sender_name, p.id AS sender_profile_id, p.avatar_key AS sender_avatar_key, CASE WHEN m.deleted_at IS NULL THEN m.body ELSE '' END AS body, m.created_at, m.deleted_at, m.edited_at,
                 m.task_id, t.title AS task_title, t.status AS task_status, (m.sender_membership_id = $2) AS mine,
-                m.voice_key, m.voice_mime, m.voice_seconds
+                m.voice_key, m.voice_mime, m.voice_seconds,
+                m.reply_to_id, CASE WHEN rm.id IS NULL THEN NULL WHEN rm.deleted_at IS NOT NULL THEN '' ELSE rm.body END AS reply_body, rp.display_name AS reply_sender_name, (rm.sender_membership_id = $2) AS reply_mine
          FROM messages m
          JOIN memberships sm ON sm.id = m.sender_membership_id
          JOIN profiles p ON p.id = sm.user_id
          LEFT JOIN tasks t ON t.id = m.task_id
+         LEFT JOIN messages rm ON rm.id = m.reply_to_id
+         LEFT JOIN memberships rsm ON rsm.id = rm.sender_membership_id
+         LEFT JOIN profiles rp ON rp.id = rsm.user_id
          WHERE m.conversation_id = $1
          ORDER BY m.created_at DESC LIMIT 200) x ORDER BY created_at`, [conversationId, ctx.membership.id]);
+    // Opening the thread reads it up to now and clears a "mark as unread".
     await db.query(
       `INSERT INTO conversation_reads(conversation_id, organisation_id, membership_id, last_read_at) VALUES ($1, $2, $3, now())
-       ON CONFLICT (conversation_id, membership_id) DO UPDATE SET last_read_at = now()`, [conversationId, ctx.org.id, ctx.membership.id]);
-    return { conversation: { ...conv, unread: 0, people }, messages };
+       ON CONFLICT (conversation_id, membership_id) DO UPDATE SET last_read_at = now(), marked_unread = false`, [conversationId, ctx.org.id, ctx.membership.id]);
+    return { conversation: { ...conv, unread: 0, marked_unread: false, people }, messages };
   });
 }
 
@@ -150,10 +165,11 @@ export const sendSchema = z.object({
   conversationId: z.uuid(),
   body: z.string().trim().min(1, "Write a message first.").max(4000, "Keep a message under 4000 characters."),
   taskId: z.uuid().nullable().optional(),
+  replyToId: z.uuid().nullable().optional(),
 });
 export type SendInput = z.infer<typeof sendSchema>;
 
-/** Posts a message. In a direct thread the other person gets an in-app notification; channels rely on the unread badge. */
+/** Posts a message. In a direct thread the other person gets an in-app notification unless they muted the thread; channels rely on the unread badge. */
 export async function sendMessage(ctx: OrgContext, input: SendInput) {
   return withUser(ctx.user.profileId, async (db) => {
     const conv = await db.maybeOne<{ id: string; kind: ConversationKind; archived_at: string | null }>(`SELECT id, kind, archived_at FROM conversations WHERE id = $1 AND organisation_id = $2`, [input.conversationId, ctx.org.id]);
@@ -164,15 +180,21 @@ export async function sendMessage(ctx: OrgContext, input: SendInput) {
       task = await db.maybeOne<{ id: string; title: string }>(`SELECT id, title FROM tasks WHERE id = $1 AND organisation_id = $2`, [input.taskId, ctx.org.id]);
       if (!task) throw invalid("That task is not visible to you.", { taskId: ["Pick a task you can see."] });
     }
+    let replyTo: string | null = null;
+    if (input.replyToId) {
+      const r = await db.maybeOne<{ id: string }>(`SELECT id FROM messages WHERE id = $1 AND conversation_id = $2 AND deleted_at IS NULL`, [input.replyToId, conv.id]);
+      if (!r) throw invalid("The message you are replying to is not in this conversation any more.", { replyToId: ["Pick a message in this conversation."] });
+      replyTo = r.id;
+    }
     const m = await db.one<{ id: string; created_at: string }>(
-      `INSERT INTO messages(organisation_id, conversation_id, sender_membership_id, body, task_id) VALUES ($1, $2, $3, $4, $5) RETURNING id, created_at`,
-      [ctx.org.id, conv.id, ctx.membership.id, input.body, task?.id ?? null]);
+      `INSERT INTO messages(organisation_id, conversation_id, sender_membership_id, body, task_id, reply_to_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, created_at`,
+      [ctx.org.id, conv.id, ctx.membership.id, input.body, task?.id ?? null, replyTo]);
     // The sender has read their own thread up to now.
     await db.query(
       `INSERT INTO conversation_reads(conversation_id, organisation_id, membership_id, last_read_at) VALUES ($1, $2, $3, now())
-       ON CONFLICT (conversation_id, membership_id) DO UPDATE SET last_read_at = now()`, [conv.id, ctx.org.id, ctx.membership.id]);
+       ON CONFLICT (conversation_id, membership_id) DO UPDATE SET last_read_at = now(), marked_unread = false`, [conv.id, ctx.org.id, ctx.membership.id]);
     if (conv.kind === "direct") {
-      const others = await db.query<{ membership_id: string }>(`SELECT membership_id FROM conversation_participants WHERE conversation_id = $1 AND membership_id <> $2`, [conv.id, ctx.membership.id]);
+      const others = await db.query<{ membership_id: string }>(`SELECT membership_id FROM conversation_participants WHERE conversation_id = $1 AND membership_id <> $2 AND NOT app_conversation_muted($1, membership_id)`, [conv.id, ctx.membership.id]);
       const preview = input.body.length > 120 ? `${input.body.slice(0, 117)}…` : input.body;
       for (const o of others) {
         await notify(db, {
@@ -198,6 +220,7 @@ export async function incomingMessages(ctx: OrgContext, after: string): Promise<
      LEFT JOIN teams t ON t.id = c.team_id
      JOIN memberships sm ON sm.id = m.sender_membership_id JOIN profiles p ON p.id = sm.user_id
      WHERE m.organisation_id = $1 AND m.sender_membership_id <> $2 AND m.deleted_at IS NULL AND m.created_at > $3::timestamptz
+       AND NOT EXISTS (SELECT 1 FROM conversation_reads r WHERE r.conversation_id = c.id AND r.membership_id = $2 AND r.muted_at IS NOT NULL)
      ORDER BY m.created_at DESC LIMIT 10`, [ctx.org.id, ctx.membership.id, after]));
 }
 
@@ -229,7 +252,7 @@ export async function sendVoiceMessage(ctx: OrgContext, input: { conversationId:
       `INSERT INTO conversation_reads(conversation_id, organisation_id, membership_id, last_read_at) VALUES ($1, $2, $3, now())
        ON CONFLICT (conversation_id, membership_id) DO UPDATE SET last_read_at = now()`, [conv.id, ctx.org.id, ctx.membership.id]);
     if (conv.kind === "direct") {
-      const others = await db.query<{ membership_id: string }>(`SELECT membership_id FROM conversation_participants WHERE conversation_id = $1 AND membership_id <> $2`, [conv.id, ctx.membership.id]);
+      const others = await db.query<{ membership_id: string }>(`SELECT membership_id FROM conversation_participants WHERE conversation_id = $1 AND membership_id <> $2 AND NOT app_conversation_muted($1, membership_id)`, [conv.id, ctx.membership.id]);
       for (const o of others) {
         await notify(db, { organisationId: ctx.org.id, recipientMembershipId: o.membership_id, type: "message.direct", title: `${ctx.user.displayName} sent you a voice note`, body: voiceLabel(seconds), resourceType: "conversation", resourceId: conv.id, href: `/app/${ctx.org.slug}/messages?c=${conv.id}`, dedupKey: `message:${m.id}` });
       }
@@ -302,6 +325,26 @@ export async function deleteConversation(ctx: OrgContext, conversationId: string
       return { deleted: false as const, hidden: true as const };
     }
     throw invalid("Team and organisation channels cannot be deleted; they follow the team.");
+  });
+}
+
+/**
+ * The caller's own choices for a conversation (owner decision, 26 September 2026): mark it unread so it stands out in the
+ * list until opened, or mute it so it stops notifying and counting on the badge. Both live on the person's reads row.
+ */
+export async function setConversationPrefs(ctx: OrgContext, conversationId: string, input: { unread?: boolean; muted?: boolean }) {
+  return withUser(ctx.user.profileId, async (db) => {
+    const conv = await db.maybeOne<{ id: string }>(`SELECT id FROM conversations WHERE id = $1 AND organisation_id = $2`, [conversationId, ctx.org.id]);
+    if (!conv) throw notFound("That conversation does not exist or you are not part of it.");
+    await db.query(
+      `INSERT INTO conversation_reads(conversation_id, organisation_id, membership_id, last_read_at, marked_unread, muted_at)
+       VALUES ($1, $2, $3, now(), COALESCE($4, false), CASE WHEN $5 THEN now() ELSE NULL END)
+       ON CONFLICT (conversation_id, membership_id) DO UPDATE SET
+         marked_unread = COALESCE($4, conversation_reads.marked_unread),
+         last_read_at = CASE WHEN $4 = false THEN now() ELSE conversation_reads.last_read_at END,
+         muted_at = CASE WHEN $5 IS NULL THEN conversation_reads.muted_at WHEN $5 THEN COALESCE(conversation_reads.muted_at, now()) ELSE NULL END`,
+      [conversationId, ctx.org.id, ctx.membership.id, input.unread ?? null, input.muted ?? null]);
+    return { id: conversationId, unread: input.unread ?? null, muted: input.muted ?? null };
   });
 }
 

@@ -4,15 +4,14 @@ import { AppShell } from "@/components/app/shell";
 import { PageHeader } from "@/components/ui/card";
 import { StatCard } from "@/components/ui/stat-card";
 import { Tabs } from "@/components/ui/tabs";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { DataTable } from "@/components/ui/table";
 import { EmptyState, PermissionDenied } from "@/components/ui/states";
 import { attendanceBoard, attendanceMonth, type ClockStatus } from "@/server/services/attendance";
-import { addDays } from "@/server/lib/time";
 import { formatDuration, formatLongDate, cn } from "@/lib/utils";
 import { DatePicker } from "@/components/ui/date-picker";
 import { Person } from "@/components/ui/person";
+import { AutoSubmitSelect } from "@/components/ui/auto-submit";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Attendance" };
@@ -20,7 +19,6 @@ export const metadata = { title: "Attendance" };
 const timeOf = (iso: string, tz: string) => new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
 const hhmm = (t: string) => t.slice(0, 5);
 const monthLabel = (m: string) => new Intl.DateTimeFormat("en-GB", { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(`${m}-01T00:00:00Z`));
-const shiftMonth = (m: string, by: number) => { const [y, mo] = m.split("-").map(Number); const d = new Date(Date.UTC(y, mo - 1 + by, 1)); return d.toISOString().slice(0, 7); };
 type Tab = "in" | "not_in" | "out" | "all";
 
 /** Who has clocked in, who has not, who has left: any day, or a whole month at a glance. */
@@ -33,7 +31,7 @@ export default async function AttendancePage({ params, searchParams }: { params:
   const back = { href: ctx.membership.role === "manager" ? `${base}/my-day` : `${base}/dashboard`, label: ctx.membership.role === "manager" ? "My Day" : "Dashboard" };
   const teamId = sp.team || null;
   const viewSwitch = (view: "day" | "month", active: boolean) => (
-    <Link href={`${base}/attendance?view=${view}${teamId ? `&team=${teamId}` : ""}`} aria-current={active ? "page" : undefined} className={cn("whitespace-nowrap rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors duration-[var(--duration-fast)]", active ? "bg-wash-active text-fg" : "text-fg-muted hover:text-fg")}>{view === "day" ? "Day" : "Month"}</Link>
+    <Link href={`${base}/attendance?view=${view}${teamId ? `&team=${teamId}` : ""}`} aria-current={active ? "page" : undefined} className={cn("whitespace-nowrap rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors duration-[var(--duration-fast)]", active ? "bg-wash-active text-accent" : "text-fg-muted hover:text-fg")}>{view === "day" ? "Day" : "Month"}</Link>
   );
 
   // ---- Month view --------------------------------------------------------
@@ -51,18 +49,15 @@ export default async function AttendancePage({ params, searchParams }: { params:
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <form className="flex items-center gap-2 text-sm" action={`${base}/attendance`}>
             <input type="hidden" name="view" value="month" />{teamId ? <input type="hidden" name="team" value={teamId} /> : null}
-            <Link href={nav(shiftMonth(m.month, -1))} className="link-action">Previous month</Link>
             <label htmlFor="month" className="sr-only">Month</label>
-            <DatePicker mode="month" id="month" name="month" defaultValue={m.month} max={m.today.slice(0, 7)} size="sm" />
-            <Button type="submit" size="sm" variant="subtle">Show</Button>
-            {m.month < m.today.slice(0, 7) ? <Link href={nav(shiftMonth(m.month, 1))} className="link-action">Next month</Link> : null}
+            <DatePicker mode="month" id="month" name="month" defaultValue={m.month} max={m.today.slice(0, 7)} size="sm" submitOnChange />
+            {m.month < m.today.slice(0, 7) ? <Link href={nav(m.today.slice(0, 7))} className="link-action">This month</Link> : null}
           </form>
           {m.teams.length > 1 ? (
             <form className="flex items-center gap-2 text-sm" action={`${base}/attendance`}>
               <input type="hidden" name="view" value="month" /><input type="hidden" name="month" value={m.month} />
               <label htmlFor="team" className="text-fg-muted">Team</label>
-              <select id="team" name="team" defaultValue={teamId ?? ""} className="field field-sm"><option value="">All teams</option>{m.teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select>
-              <Button type="submit" size="sm" variant="subtle">Show</Button>
+              <AutoSubmitSelect id="team" name="team" defaultValue={teamId ?? ""}><option value="">All teams</option>{m.teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</AutoSubmitSelect>
             </form>
           ) : null}
         </div>
@@ -121,18 +116,15 @@ export default async function AttendancePage({ params, searchParams }: { params:
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <form className="flex flex-wrap items-center gap-2 text-sm" action={`${base}/attendance`}>
           <input type="hidden" name="tab" value={tab} />{teamId ? <input type="hidden" name="team" value={teamId} /> : null}
-          <Link href={q({ date: addDays(b.date, -1) })} className="link-action">Previous day</Link>
           <label htmlFor="date" className="sr-only">Day</label>
-          <DatePicker id="date" name="date" defaultValue={b.date} max={b.today} size="sm" />
-          <Button type="submit" size="sm" variant="subtle">Show</Button>
-          {b.date < b.today ? <><Link href={q({ date: addDays(b.date, 1) })} className="link-action">Next day</Link><Link href={q({ date: undefined })} className="link-action">Today</Link></> : null}
+          <DatePicker id="date" name="date" defaultValue={b.date} max={b.today} size="sm" submitOnChange />
+          {b.date < b.today ? <Link href={q({ date: undefined })} className="link-action">Today</Link> : null}
         </form>
         {b.teams.length > 1 ? (
           <form className="flex items-center gap-2 text-sm" action={`${base}/attendance`}>
             <input type="hidden" name="tab" value={tab} />{b.date !== b.today ? <input type="hidden" name="date" value={b.date} /> : null}
             <label htmlFor="team" className="text-fg-muted">Team</label>
-            <select id="team" name="team" defaultValue={teamId ?? ""} className="field field-sm"><option value="">All teams</option>{b.teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select>
-            <Button type="submit" size="sm" variant="subtle">Show</Button>
+            <AutoSubmitSelect id="team" name="team" defaultValue={teamId ?? ""}><option value="">All teams</option>{b.teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</AutoSubmitSelect>
           </form>
         ) : null}
       </div>

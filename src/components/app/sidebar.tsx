@@ -50,7 +50,7 @@ export function WorkspaceNav({ items, collapsed = false }: { items: NavItem[]; c
         if (collapsed) {
           return (
             <Link key={it.href} href={it.href} aria-current={active ? "page" : undefined} aria-label={it.badge ? `${it.label}, ${it.badge}` : it.label}
-              className={cn("group relative grid size-11 place-items-center rounded-[12px] border text-fg-subtle transition-[transform,color,border-color,background-color] duration-200 ease-[var(--ease-out)] hover:-translate-y-0.5 hover:scale-105 hover:border-border-strong hover:text-fg motion-reduce:hover:translate-y-0 motion-reduce:hover:scale-100", active ? "border-border bg-wash-strong text-fg shadow-[inset_0_1px_0_var(--highlight)]" : "border-transparent hover:bg-wash")}>
+              className={cn("group relative grid size-11 place-items-center rounded-[12px] border text-fg-subtle transition-[transform,color,border-color,background-color] duration-200 ease-[var(--ease-out)] hover:border-border-strong hover:text-fg motion-reduce:hover:translate-y-0 motion-reduce:hover:scale-100", active ? "border-border bg-wash-strong text-fg" : "border-transparent hover:bg-wash")}>
               <Icon className={cn("size-[18px] transition-transform duration-200 group-hover:scale-110", active && "text-accent")} aria-hidden />
               {it.badge ? <span aria-hidden className="absolute -right-1 -top-1 min-w-[18px] rounded-full bg-accent px-1 text-center text-[10px] font-bold leading-[18px] tabular-nums text-accent-fg">{it.badge}</span> : null}
               <DockLabel>{it.label}</DockLabel>
@@ -60,7 +60,7 @@ export function WorkspaceNav({ items, collapsed = false }: { items: NavItem[]; c
         return (
           <Link key={it.href} href={it.href} aria-current={active ? "page" : undefined}
             className={cn("group relative flex min-h-9 items-center gap-2.5 rounded-[var(--radius-sm)] px-2.5 py-1.5 text-[14px] font-medium text-fg-muted transition-[color] duration-[var(--duration-fast)] hover:text-fg", active && "text-fg")}>
-            {active ? <SlidingMarker layoutId="nav-active" className="absolute inset-0 rounded-[var(--radius-sm)] bg-wash-strong shadow-[inset_0_1px_0_var(--highlight)]" /> : null}
+            {active ? <SlidingMarker layoutId="nav-active" className="absolute inset-0 rounded-[var(--radius-sm)] bg-wash-strong" /> : null}
             <Icon className={cn("relative size-4 transition-transform duration-200 group-hover:-translate-y-px group-hover:scale-110 motion-reduce:group-hover:translate-y-0 motion-reduce:group-hover:scale-100", active ? "text-accent" : "text-fg-subtle")} aria-hidden />
             <span className="relative flex-1 truncate">{it.label}</span>
             {it.badge ? <span className="relative rounded-full bg-accent px-1.5 py-px text-[11px] font-bold tabular-nums text-accent-fg">{it.badge}</span> : null}
@@ -86,7 +86,7 @@ export function Sidebar({ items, orgSlug, orgName }: { items: NavItem[]; orgSlug
         {collapsed ? <Link href={`/app/${orgSlug}`} aria-label="Boredroom home" className="font-display text-xl tracking-wide text-fg">B<span className="text-accent">.</span></Link> : <Logo href={`/app/${orgSlug}`} />}
       </div>
       {collapsed ? (
-        <Link href="/app" aria-label={`${orgName}: switch workspace`} className="group relative mb-5 grid size-11 place-items-center rounded-[12px] border border-border bg-wash text-fg-muted transition-[transform,color] duration-200 hover:-translate-y-0.5 hover:scale-105 hover:text-fg motion-reduce:hover:translate-y-0 motion-reduce:hover:scale-100">
+        <Link href="/app" aria-label={`${orgName}: switch workspace`} className="group relative mb-5 grid size-11 place-items-center rounded-[12px] border border-border bg-wash text-fg-muted transition-[transform,color] duration-200 hover:text-fg motion-reduce:hover:translate-y-0 motion-reduce:hover:scale-100">
           <Building2 className="size-[18px]" aria-hidden />
           <DockLabel>{orgName}, switch workspace</DockLabel>
         </Link>

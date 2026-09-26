@@ -5,13 +5,13 @@ import { AppShell } from "@/components/app/shell";
 import { PageHeader } from "@/components/ui/card";
 import { StatCard } from "@/components/ui/stat-card";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { EmptyState, PermissionDenied } from "@/components/ui/states";
 import { LiveClock, LiveBadge } from "@/components/app/live";
 import { Rise } from "@/components/ui/motion";
 import { workroomView, workroomStatus, type WorkroomStatus } from "@/server/services/views";
 import { formatDuration, formatDateTime, relativeTime, formatLongDate, cn } from "@/lib/utils";
 import { Avatar } from "@/components/ui/avatar";
+import { AutoSubmitSelect } from "@/components/ui/auto-submit";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Workroom" };
@@ -39,7 +39,6 @@ export default async function WorkroomPage({ params, searchParams }: { params: P
   const totalToday = rows.reduce((a, r) => a + r.today_seconds, 0);
   const live = rows.filter((r) => r.recording_live).length;
   const q = (extra: Record<string, string | undefined>) => { const p = new URLSearchParams(); const merged = { team: sp.team, show: sp.show, ...extra }; for (const [k, v] of Object.entries(merged)) if (v) p.set(k, v); const s = p.toString(); return `${base}/workroom${s ? `?${s}` : ""}`; };
-  const chip = (active: boolean) => cn("chip chip-link whitespace-nowrap rounded-full px-3 py-1 text-sm", active ? "border-accent/60 text-fg" : "text-fg-muted");
   return (
     <AppShell ctx={ctx} counts={counts} teams={navTeams}>
       <PageHeader icon="eye-dashboard" back={{ href: isOrg ? `${base}/dashboard` : base, label: isOrg ? "Dashboard" : "Back" }} overline={formatLongDate(data.today)} title="Who is working now"
@@ -52,11 +51,17 @@ export default async function WorkroomPage({ params, searchParams }: { params: P
       </div>
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        {data.teams.length > 1 ? <><Link href={q({ team: undefined })} className={chip(!sp.team)}>All teams</Link>{data.teams.map((t) => <Link key={t.id} href={q({ team: t.id })} className={chip(sp.team === t.id)}>{t.name}</Link>)}</> : null}
-        <Link href={q({ show: sp.show === "all" ? undefined : "all" })} className="ml-auto text-sm text-fg-muted hover:text-fg">{sp.show === "all" ? "Hide people who have not started" : "Show everyone"}</Link>
+        {data.teams.length > 1 ? (
+          <form className="flex items-center gap-2" action={`${base}/workroom`}>
+            {sp.show ? <input type="hidden" name="show" value={sp.show} /> : null}
+            <label htmlFor="team" className="eyebrow">Team</label>
+            <AutoSubmitSelect id="team" name="team" defaultValue={sp.team ?? ""} className="w-48"><option value="">All teams</option>{data.teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</AutoSubmitSelect>
+          </form>
+        ) : null}
+        <Link href={q({ show: sp.show === "all" ? undefined : "all" })} className="link-action ml-auto">{sp.show === "all" ? "Hide people who have not started" : "Show everyone"}</Link>
       </div>
 
-      {shown.length === 0 ? <EmptyState icon3d="person-laptop" title={rows.length === 0 ? "Nobody to show" : "Nobody has clocked in yet today"} description={rows.length === 0 ? "Team leads see the people on their teams; the organisation account sees everyone who holds tasks." : "As soon as someone presses Start on My Day they appear here."} action={rows.length ? <Link href={q({ show: "all" })}><Button size="sm" variant="outline">Show everyone</Button></Link> : undefined} /> : (
+      {shown.length === 0 ? <EmptyState icon3d="person-laptop" title={rows.length === 0 ? "Nobody to show" : "Nobody has clocked in yet today"} description={rows.length === 0 ? "Team leads see the people on their teams; the organisation account sees everyone who holds tasks." : "As soon as someone presses Start on My Day they appear here."} action={rows.length ? <Link href={q({ show: "all" })} className="link-action">Show everyone</Link> : undefined} /> : (
         <ul className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {shown.map((r) => {
             const st = STATUS[r.status];

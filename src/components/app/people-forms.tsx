@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { ConfirmButton } from "@/components/ui/confirm";
@@ -10,7 +10,7 @@ import { Alert } from "@/components/ui/states";
 import { Badge } from "@/components/ui/badge";
 import { IconButton } from "@/components/ui/icon-button";
 import { Switch } from "@/components/ui/switch";
-import { Copy, Link2, Check, RefreshCw } from "lucide-react";
+import { Copy, Link2, Check, RefreshCw, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { api, isApiFailure } from "@/lib/api-client";
 
@@ -102,18 +102,35 @@ export function InvitationRow({ orgSlug, id, email, role, team, state, expires, 
 }
 
 /** "Add new team": creates the team and opens it so people can be added straight away. */
+/** "Add new team" opens a pop-up (owner decision, 26 September 2026) with the one field that matters. */
 export function NewTeamForm({ orgSlug }: { orgSlug: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <Button onClick={() => setOpen(true)} aria-haspopup="dialog">Add new team</Button>
+      {open ? <NewTeamSheet orgSlug={orgSlug} onClose={() => setOpen(false)} /> : null}
+    </>
+  );
+}
+
+function NewTeamSheet({ orgSlug, onClose }: { orgSlug: string; onClose: () => void }) {
   const router = useRouter();
   const { pending, error, submit } = useForm();
-  const [open, setOpen] = useState(false);
-  if (!open) return <Button onClick={() => setOpen(true)}>Add new team</Button>;
+  const ref = useRef<HTMLDialogElement>(null);
+  const titleId = useId();
+  useEffect(() => { ref.current?.showModal(); }, []);
   return (
-    <form className="tile flex w-full flex-wrap items-end gap-2 p-4 md:w-[420px]" onSubmit={(e) => { e.preventDefault(); const f = new FormData(e.currentTarget); submit(() => api<{ id: string }>(`/api/orgs/${orgSlug}/teams`, { method: "POST", body: { name: f.get("name") } }), (r) => { setOpen(false); if (r?.id) router.push(`/app/${orgSlug}/teams/${r.id}`); }); }}>
-      {error ? <Alert tone="danger" className="w-full">{error}</Alert> : null}
-      <Field label="Team name" htmlFor="team-name" hint="e.g. Design, Tech, Branding"><Input id="team-name" name="name" required maxLength={120} autoFocus /></Field>
-      <Button type="submit" disabled={pending}>{pending ? "Creating…" : "Create team"}</Button>
-      <Button type="button" variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
-    </form>
+    <dialog ref={ref} className="sheet" aria-labelledby={titleId} onClose={onClose} onCancel={(e) => { e.preventDefault(); onClose(); }}>
+      <form className="grid gap-4 p-5" onSubmit={(e) => { e.preventDefault(); const f = new FormData(e.currentTarget); submit(() => api<{ id: string }>(`/api/orgs/${orgSlug}/teams`, { method: "POST", body: { name: f.get("name") } }), (r) => { onClose(); if (r?.id) router.push(`/app/${orgSlug}/teams/${r.id}`); }); }}>
+        <div className="flex items-start justify-between gap-3">
+          <div><h2 id={titleId} className="font-display text-xl">New team</h2><p className="mt-1 text-sm text-fg-muted">Name it, then put a team lead on it and add people from the team&apos;s page.</p></div>
+          <Button type="button" variant="ghost" size="icon" aria-label="Close" onClick={onClose}><X className="size-4" aria-hidden /></Button>
+        </div>
+        {error ? <Alert tone="danger">{error}</Alert> : null}
+        <Field label="Team name" htmlFor="team-name" hint="e.g. Design, Tech, Branding"><Input id="team-name" name="name" required maxLength={120} autoFocus /></Field>
+        <div className="flex justify-end gap-2"><Button type="button" variant="ghost" onClick={onClose}>Cancel</Button><Button type="submit" disabled={pending}>{pending ? "Creating…" : "Create team"}</Button></div>
+      </form>
+    </dialog>
   );
 }
 
@@ -140,8 +157,8 @@ export function JoinCodePanel({ orgSlug, appOrigin, joinCode, teams }: { orgSlug
             <p className="text-sm text-fg-muted">Organisation code</p>
             <p className="mt-1 font-mono text-3xl tracking-widest">{joinCode.join_code}</p>
             <div className="mt-2 flex items-center gap-1.5">
-              <IconButton aria-label={copied === "code" ? "Code copied" : "Copy the code"} title="Copy the code" onClick={() => copy(joinCode.join_code!, "code")} className={cn("size-9", copied === "code" && "border-success/60 text-success")}>{copied === "code" ? <Check className="size-4" aria-hidden /> : <Copy className="size-4" aria-hidden />}</IconButton>
-              <IconButton aria-label={copied === "link" ? "Link copied" : "Copy the join link"} title="Copy the join link" onClick={() => copy(link!, "link")} className={cn("size-9", copied === "link" && "border-success/60 text-success")}>{copied === "link" ? <Check className="size-4" aria-hidden /> : <Link2 className="size-4" aria-hidden />}</IconButton>
+              <IconButton aria-label={copied === "code" ? "Code copied" : "Copy the code"} onClick={() => copy(joinCode.join_code!, "code")} className={cn("size-9", copied === "code" && "border-success/60 text-success")}>{copied === "code" ? <Check className="size-4" aria-hidden /> : <Copy className="size-4" aria-hidden />}</IconButton>
+              <IconButton aria-label={copied === "link" ? "Link copied" : "Copy the join link"} onClick={() => copy(link!, "link")} className={cn("size-9", copied === "link" && "border-success/60 text-success")}>{copied === "link" ? <Check className="size-4" aria-hidden /> : <Link2 className="size-4" aria-hidden />}</IconButton>
               <ConfirmButton size="icon" variant="ghost" className="size-9 rounded-full" aria-label="Generate a new code" title="Generate a new join code?" description="The current code and link stop working immediately. People who already joined are not affected." confirmLabel="Generate new code" disabled={pending} onConfirm={() => patch({ rotate: true })}><RefreshCw className="size-4" aria-hidden /></ConfirmButton>
               <span className="ml-1 text-xs text-fg-subtle" aria-live="polite">{copied === "code" ? "Code copied" : copied === "link" ? "Link copied" : ""}</span>
             </div>

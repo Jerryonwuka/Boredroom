@@ -11,6 +11,7 @@ import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent
 import { AnimatePresence, motion } from "motion/react";
 import { CalendarDays, ChevronLeft, ChevronRight, Clock3, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { liftToTopLayer } from "@/components/ui/top-layer";
 import { TimePicker } from "@/components/ui/time-picker";
 
 export type DateMode = "date" | "month" | "datetime";
@@ -58,7 +59,9 @@ function cells(view: Date) {
 const navBtn = "grid size-8 place-items-center rounded-full text-fg-muted transition-colors duration-[var(--duration-fast)] hover:bg-wash hover:text-fg";
 const cellBtn = "h-10 rounded-[var(--radius-sm)] text-sm tabular-nums transition-colors duration-[var(--duration-fast)]";
 
-export function DatePicker({ name, id, mode = "date", value, defaultValue, onChange, min, max, required, placeholder, className, size = "md", "aria-label": ariaLabel, disabled }: {
+export function DatePicker({ name, id, mode = "date", value, defaultValue, onChange, min, max, required, placeholder, className, size = "md", "aria-label": ariaLabel, disabled, submitOnChange = false }: {
+  /** Submits the enclosing form as soon as a value is picked, so filter bars need no Show button. */
+  submitOnChange?: boolean;
   name?: string; id?: string; mode?: DateMode; value?: string; defaultValue?: string; onChange?: (value: string) => void; min?: string; max?: string;
   required?: boolean; placeholder?: string; className?: string; size?: "sm" | "md"; "aria-label"?: string; disabled?: boolean;
 }) {
@@ -77,7 +80,11 @@ export function DatePicker({ name, id, mode = "date", value, defaultValue, onCha
   const uid = useId();
   const popId = `${uid}-pop`;
 
-  const commit = (next: string) => { if (!controlled) setInner(next); onChange?.(next); };
+  const commit = (next: string) => {
+    if (!controlled) setInner(next);
+    onChange?.(next);
+    if (submitOnChange && next) window.setTimeout(() => root.current?.closest("form")?.requestSubmit(), 0);
+  };
   const minD = parse(min, mode === "month" ? "month" : "date").date;
   const maxD = parse(max, mode === "month" ? "month" : "date").date;
   const outside = (d: Date) => (minD ? d < new Date(minD.getFullYear(), minD.getMonth(), mode === "month" ? 1 : minD.getDate()) : false) || (maxD ? d > new Date(maxD.getFullYear(), maxD.getMonth(), mode === "month" ? 31 : maxD.getDate(), 23, 59) : false);
@@ -145,9 +152,9 @@ export function DatePicker({ name, id, mode = "date", value, defaultValue, onCha
       {name ? <input type="text" name={name} value={current} required={required} readOnly tabIndex={-1} aria-hidden className="pointer-events-none absolute inset-0 -z-10 h-full w-full opacity-0" /> : null}
       <AnimatePresence>
         {open ? (
-          <motion.div key="pop" id={popId} role="dialog" aria-label={mode === "month" ? "Choose a month" : "Choose a date"} initial={{ opacity: 0, y: pos.up ? 6 : -6, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: pos.up ? 4 : -4, scale: 0.98 }} transition={{ duration: 0.16, ease: [0.23, 1, 0.32, 1] }}
+          <motion.div ref={liftToTopLayer} key="pop" id={popId} role="dialog" aria-label={mode === "month" ? "Choose a month" : "Choose a date"} initial={{ opacity: 0, y: pos.up ? 6 : -6, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: pos.up ? 4 : -4, scale: 0.98 }} transition={{ duration: 0.16, ease: [0.23, 1, 0.32, 1] }}
             style={{ position: "fixed", top: pos.up ? undefined : pos.top, bottom: pos.up ? window.innerHeight - pos.top : undefined, left: pos.left, zIndex: "var(--z-toast)" as unknown as number }}
-            className="w-72 rounded-[var(--radius)] border border-border-strong bg-popover p-3 text-fg shadow-[var(--card-shadow)]">
+            className="top-pop w-72 rounded-[var(--radius)] border border-border-strong bg-popover p-3 text-fg shadow-[var(--card-shadow)]">
             <div className="mb-2 flex items-center justify-between">
               <button type="button" aria-label={`Previous ${heading.unit}`} onClick={heading.prev} className={navBtn}><ChevronLeft className="size-4" aria-hidden /></button>
               {heading.up ? <button type="button" onClick={heading.up} title={heading.hint} className="rounded-full px-3 py-1 font-display text-base transition-colors duration-[var(--duration-fast)] hover:bg-wash">{heading.text}</button> : <span className="px-3 py-1 font-display text-base">{heading.text}</span>}

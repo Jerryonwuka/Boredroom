@@ -1,13 +1,13 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { Hash, Building2, ArrowLeft, Archive } from "lucide-react";
+import { Hash, Building2, ArrowLeft, Archive, BellOff } from "lucide-react";
 import { workspacePage } from "@/server/lib/workspace-page";
 import { AppShell } from "@/components/app/shell";
 import { Badge, TASK_STATUS_TONE, label } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/states";
 import { Avatar } from "@/components/ui/avatar";
 import { PRESENCE } from "@/lib/presence";
-import { Composer, NewMessage, ScrollToLatest, MessageMenu, NewChannel, ConversationMenu } from "@/components/app/messages";
+import { Composer, NewConversation, ScrollToLatest, MessageMenu, ConversationMenu, ConversationRowMenu, ReplyProvider } from "@/components/app/messages";
 import { MessageBubble } from "@/components/ui/chat-messages";
 import { VoiceNote } from "@/components/app/voice-note";
 import { inbox, thread, openDirect, peopleToMessage, visibleTask, type ConversationSummary, type MessageRow } from "@/server/services/messaging";
@@ -55,17 +55,18 @@ export default async function MessagesPage({ params, searchParams }: { params: P
     const active = selected?.conversation.id === c.id;
     const Icon = c.kind === "organisation" ? Building2 : c.kind === "team" || c.kind === "channel" ? Hash : null;
     return (
-      <li>
+      <li className="group relative">
         <Link href={`${base}/messages?c=${c.id}`} aria-current={active ? "page" : undefined}
-          className={cn("flex items-center gap-3 rounded-[var(--radius-sm)] px-2.5 py-2 transition-colors duration-[var(--duration-fast)] hover:bg-wash", active && "bg-wash-strong shadow-[inset_0_1px_0_var(--highlight)]")}>
+          className={cn("flex items-center gap-3 rounded-[var(--radius-sm)] px-2.5 py-2 transition-colors duration-[var(--duration-fast)] hover:bg-wash", active && "bg-wash-strong", c.muted && "opacity-70")}>
           {Icon ? <span className={cn("grid size-9 shrink-0 place-items-center rounded-full border border-border bg-wash", active ? "text-accent" : "text-fg-subtle")}><Icon className="size-4" aria-hidden /></span>
             : <Avatar profileId={c.other_profile_id ?? c.id} name={c.title} avatarKey={c.other_avatar_key} presence={c.other_presence ?? "offline"} size={36} />}
           <span className="min-w-0 flex-1">
-            <span className="flex items-baseline justify-between gap-2"><span className={cn("truncate text-sm", c.unread ? "font-semibold" : "font-medium")}>{c.title}</span>{c.last_message_at ? <span className="shrink-0 text-[11px] text-fg-subtle">{relativeTime(c.last_message_at)}</span> : null}</span>
-            <span className={cn("block truncate text-xs", c.unread ? "text-fg-muted" : "text-fg-subtle")}>{c.last_body === null ? (c.subtitle ?? "") : c.last_body === "" ? "Message withdrawn" : `${c.last_sender_name === ctx.user.displayName ? "You" : (c.last_sender_name ?? "").split(" ")[0]}: ${c.last_body}`}</span>
+            <span className="flex items-baseline justify-between gap-2"><span className={cn("truncate text-sm", c.unread ? "font-bold text-fg" : "font-medium")}>{c.title}</span><span className="flex shrink-0 items-center gap-1.5 text-[11px] text-fg-subtle">{c.muted ? <BellOff className="size-3" aria-label="Muted" /> : null}{c.last_message_at ? relativeTime(c.last_message_at) : null}</span></span>
+            <span className={cn("block truncate text-xs", c.unread ? "font-semibold text-fg" : "text-fg-subtle")}>{c.last_body === null ? (c.subtitle ?? "") : c.last_body === "" ? "Message withdrawn" : `${c.last_sender_name === ctx.user.displayName ? "You" : (c.last_sender_name ?? "").split(" ")[0]}: ${c.last_body}`}</span>
           </span>
-          {c.unread ? <span className="shrink-0 rounded-full bg-accent px-1.5 py-px text-[11px] font-bold tabular-nums text-accent-fg">{c.unread}</span> : null}
+          {c.unread ? <span className="shrink-0 rounded-full bg-accent px-1.5 py-px text-[11px] font-bold tabular-nums text-accent-fg">{c.marked_unread && c.unread <= 1 ? "•" : c.unread}</span> : null}
         </Link>
+        <ConversationRowMenu orgSlug={ctx.org.slug} active={active} conversation={{ id: c.id, kind: c.kind, title: c.title, unread: c.unread, muted: c.muted, archived_at: c.archived_at, can_manage: c.can_manage }} />
       </li>
     );
   };
@@ -76,13 +77,13 @@ export default async function MessagesPage({ params, searchParams }: { params: P
         <aside aria-label="Conversations" className={cn("min-h-0 flex-col border-border-soft bg-sidebar md:flex md:border-r", selected ? "hidden" : "flex flex-1")}>
           <div className="flex items-center justify-between gap-3 border-b border-border-soft px-4 py-3">
             <div><p className="eyebrow">Messages</p><h1 className="font-display text-lg leading-tight">Conversations</h1></div>
-            <div className="flex items-center gap-1.5"><NewChannel orgSlug={ctx.org.slug} people={people} /><NewMessage orgSlug={ctx.org.slug} people={people} /></div>
+            <NewConversation orgSlug={ctx.org.slug} people={people} />
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto p-2">
             <p className="eyebrow px-2.5 pb-1 pt-2">Channels</p>
             <ul className="space-y-0.5">{channels.map((c) => <Item key={c.id} c={c} />)}</ul>
             <p className="eyebrow px-2.5 pb-1 pt-4">People</p>
-            {direct.length === 0 ? <p className="px-2.5 py-2 text-xs text-fg-subtle">No direct threads yet. Use “New message” to start one.</p> : <ul className="space-y-0.5">{direct.map((c) => <Item key={c.id} c={c} />)}</ul>}
+            {direct.length === 0 ? <p className="px-2.5 py-2 text-xs text-fg-subtle">No direct threads yet. Press New to start one.</p> : <ul className="space-y-0.5">{direct.map((c) => <Item key={c.id} c={c} />)}</ul>}
             {archived.length ? (
               <div className="mt-4 border-t border-border-soft pt-3">
                 <Link href={`${base}/messages?archived=${showArchived ? "0" : "1"}`} className="link-action mx-2.5"><Archive className="size-3" aria-hidden />{showArchived ? "Hide archived" : `Archived (${archived.length})`}</Link>
@@ -97,7 +98,7 @@ export default async function MessagesPage({ params, searchParams }: { params: P
               <EmptyState icon3d="chat" className="border-0 bg-transparent shadow-none" title="Pick a conversation" description="Choose a channel or a person on the left, or start a new message." />
             </div>
           ) : (
-            <>
+            <ReplyProvider key={selected.conversation.id}>
               <header className="flex items-center gap-3 border-b border-border-soft px-4 py-3 md:px-6">
                 <Link href={`${base}/messages`} className="rounded-full p-1 text-fg-muted hover:text-fg md:hidden" aria-label="All conversations"><ArrowLeft className="size-4" aria-hidden /></Link>
                 {other ? <Avatar profileId={other.other_profile_id ?? other.id} name={other.title} avatarKey={other.other_avatar_key} presence={other.other_presence ?? "offline"} size={40} />
@@ -119,9 +120,9 @@ export default async function MessagesPage({ params, searchParams }: { params: P
                       const newDay = !prev || dayKey(prev.created_at, ctx.org.timezone) !== dayKey(m.created_at, ctx.org.timezone);
                       const grouped = !newDay && !!prev && prev.sender_membership_id === m.sender_membership_id && new Date(m.created_at).getTime() - new Date(prev.created_at).getTime() < 5 * 60_000;
                       return (
-                        <li key={m.id}>
+                        <li key={m.id} id={`m-${m.id}`} className="target-flash scroll-mt-4 rounded-[var(--radius-sm)]">
                           {newDay ? <p className="eyebrow my-4 flex items-center gap-3 before:h-px before:flex-1 before:bg-border-soft after:h-px after:flex-1 after:bg-border-soft">{formatLongDate(dayKey(m.created_at, ctx.org.timezone))}</p> : null}
-                          <Message m={m} grouped={grouped} orgSlug={ctx.org.slug} timeZone={ctx.org.timezone} />
+                          <Message m={m} grouped={grouped} orgSlug={ctx.org.slug} timeZone={ctx.org.timezone} canReply={!selected.conversation.archived_at} />
                         </li>
                       );
                     })}
@@ -133,7 +134,7 @@ export default async function MessagesPage({ params, searchParams }: { params: P
                 task={task ? { id: task.id, title: task.title } : null}
                 prefill={task ? `How far with “${task.title}”?` : undefined}
                 placeholder={selected.conversation.kind === "direct" ? `Message ${title}` : `Message ${selected.conversation.kind === "team" || selected.conversation.kind === "channel" ? `#${title}` : "everyone"}`} />}
-            </>
+            </ReplyProvider>
           )}
         </section>
       </div>
@@ -141,17 +142,24 @@ export default async function MessagesPage({ params, searchParams }: { params: P
   );
 }
 
-function Message({ m, grouped, orgSlug, timeZone }: { m: MessageRow; grouped: boolean; orgSlug: string; timeZone: string }) {
+function Message({ m, grouped, orgSlug, timeZone, canReply }: { m: MessageRow; grouped: boolean; orgSlug: string; timeZone: string; canReply: boolean }) {
   const time = <><time dateTime={m.created_at} title={formatDateTime(m.created_at, timeZone)}>{timeOnly(m.created_at, timeZone)}</time>{m.edited_at && !m.deleted_at ? <span className="ml-1 text-fg-faint" title={`Edited ${formatDateTime(m.edited_at, timeZone)}`}>edited</span> : null}</>;
+  // The quoted message a reply points at: the sender's name and a line of it, jumping to the original on click.
+  const quote = m.reply_to_id && !m.deleted_at ? (
+    <a href={`#m-${m.reply_to_id}`} className={cn("mb-2 flex max-w-full items-stretch gap-2 rounded-lg border px-2.5 py-1.5 text-xs no-underline transition-colors duration-[var(--duration-fast)]", m.mine ? "border-white/10 bg-black/25 hover:bg-black/35" : "border-border-soft bg-wash hover:bg-wash-strong")}>
+      <span className="w-0.5 shrink-0 self-stretch rounded-full bg-accent" aria-hidden />
+      <span className="min-w-0"><span className="block truncate font-semibold text-fg-muted">{m.reply_mine ? "You" : m.reply_sender_name}</span><span className={cn("block truncate text-fg-subtle", m.reply_body === "" && "italic")}>{m.reply_body === "" ? "Message withdrawn" : m.reply_body}</span></span>
+    </a>
+  ) : null;
   return (
-    <MessageBubble mine={m.mine} grouped={grouped} withdrawn={!!m.deleted_at} name={m.sender_name} time={time}
+    <MessageBubble mine={m.mine} grouped={grouped} withdrawn={!!m.deleted_at} name={m.sender_name} time={time} quote={quote}
       avatar={<Avatar profileId={m.sender_profile_id} name={m.sender_name} avatarKey={m.sender_avatar_key} size={32} />}
       footer={m.task_id && !m.deleted_at ? (
         <Link href={`/app/${orgSlug}/tasks/${m.task_id}`} className="chip chip-link inline-flex max-w-full items-center gap-2 px-2.5 py-1.5 text-sm">
           <span className="truncate font-medium">{m.task_title}</span>{m.task_status ? <Badge tone={TASK_STATUS_TONE[m.task_status] ?? "neutral"}>{m.task_status === "in_review" ? "Sent for check" : label(m.task_status)}</Badge> : null}
         </Link>
       ) : null}
-      actions={!m.deleted_at ? <MessageMenu orgSlug={orgSlug} id={m.id} mine={m.mine} body={m.body} isVoice={!!m.voice_key} /> : null}>
+      actions={!m.deleted_at ? <MessageMenu orgSlug={orgSlug} id={m.id} mine={m.mine} body={m.body} isVoice={!!m.voice_key} senderName={m.sender_name} canReply={canReply} /> : null}>
       {m.deleted_at ? "Message withdrawn" : m.voice_key && m.voice_seconds ? <VoiceNote src={`/api/orgs/${orgSlug}/messages/${m.id}/voice`} seconds={m.voice_seconds} mine={m.mine} /> : <span className="whitespace-pre-wrap break-words">{m.body}</span>}
     </MessageBubble>
   );

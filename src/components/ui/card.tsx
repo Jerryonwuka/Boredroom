@@ -2,7 +2,7 @@ import * as React from "react";
 import { cn } from "@/lib/utils";
 import { BackLink } from "@/components/ui/back-link";
 import { Rise } from "@/components/ui/motion";
-import { IconTile, type Icon3DName } from "@/components/ui/icon";
+import type { Icon3DName } from "@/components/ui/icon";
 
 export function Card({ className, glow, ...props }: React.HTMLAttributes<HTMLDivElement> & { glow?: boolean }) {
   return <div className={cn("tile p-5", glow && "tile-glow", className)} {...props} />;
@@ -56,8 +56,8 @@ export function Ledger({ items, className }: { items: { label: string; value: Re
 export function PageHeader({ overline, title, description, meta, actions, back, icon }: { overline?: React.ReactNode; title: React.ReactNode; description?: React.ReactNode; /** Micro information under the description (sync time, zone), set as an eyebrow. */ meta?: React.ReactNode; actions?: React.ReactNode; back?: { href: string; label: string }; icon?: Icon3DName }) {
   return (
     <Rise className="mb-8 flex flex-wrap items-end justify-between gap-4">
+      {/* The 3D icon beside the title was retired (owner decision, 26 September 2026); `icon` is kept so callers need not change. */}
       <div className="flex items-start gap-4">
-        {icon ? <IconTile name={icon} className="mt-1" /> : null}
         <div>
           {back ? <BackLink href={back.href} label={back.label} /> : null}
           {overline ? <Overline className="mb-2">{overline}</Overline> : null}

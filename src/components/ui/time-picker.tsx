@@ -9,6 +9,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { Clock3 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { liftToTopLayer } from "@/components/ui/top-layer";
 
 const pad = (n: number) => String(n).padStart(2, "0");
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
@@ -66,9 +67,9 @@ export function TimePicker({ name, id, value, defaultValue, onChange, required, 
       {name ? <input type="text" name={name} value={current} required={required} readOnly tabIndex={-1} aria-hidden className="pointer-events-none absolute inset-0 -z-10 h-full w-full opacity-0" /> : null}
       <AnimatePresence>
         {open ? (
-          <motion.div key="pop" role="dialog" aria-label="Choose a time" initial={{ opacity: 0, y: pos.up ? 6 : -6, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: pos.up ? 4 : -4, scale: 0.98 }} transition={{ duration: 0.16, ease: [0.23, 1, 0.32, 1] }}
+          <motion.div ref={liftToTopLayer} key="pop" role="dialog" aria-label="Choose a time" initial={{ opacity: 0, y: pos.up ? 6 : -6, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: pos.up ? 4 : -4, scale: 0.98 }} transition={{ duration: 0.16, ease: [0.23, 1, 0.32, 1] }}
             style={{ position: "fixed", top: pos.up ? undefined : pos.top, bottom: pos.up ? window.innerHeight - pos.top : undefined, left: pos.left, zIndex: "var(--z-toast)" as unknown as number }}
-            className="w-60 rounded-[var(--radius)] border border-border-strong bg-popover p-3 text-fg shadow-[var(--card-shadow)]">
+            className="top-pop w-60 rounded-[var(--radius)] border border-border-strong bg-popover p-3 text-fg shadow-[var(--card-shadow)]">
             <div className="mb-2 flex items-center justify-between"><span className="eyebrow">Hour</span><span className="eyebrow">Minute</span></div>
             <div className="grid grid-cols-[1fr_1fr] gap-2">
               <div ref={hoursRef} className="prompt-scroll grid max-h-52 grid-cols-2 gap-1 overflow-y-auto pr-1">

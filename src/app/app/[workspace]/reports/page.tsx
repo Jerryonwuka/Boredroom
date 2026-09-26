@@ -12,6 +12,7 @@ import { formatDuration, formatDateTime } from "@/lib/utils";
 import { ExemptionForm } from "@/components/app/exemption-form";
 import Link from "next/link";
 import { DatePicker } from "@/components/ui/date-picker";
+import { EmptyState } from "@/components/ui/states";
 
 /** Quick periods. They are filters, not resets: monthly views never wipe anything. */
 function periodPresets(today: string) {
@@ -91,7 +92,7 @@ export default async function ReportsPage({ params, searchParams }: { params: Pr
         <Card>
           <CardHeader title={`Open blockers (${m.blockers.length})`} />
           <p className="text-xs text-fg-subtle">Age is elapsed wall-clock time since the task was marked blocked, not labour hours.</p>
-          <ul className="mt-2 space-y-1 text-sm">{m.blockers.length === 0 ? <li className="text-fg-subtle">None.</li> : m.blockers.map((b) => <li key={b.id}><strong>{b.title}</strong>, {b.display_name}, since {formatDateTime(b.since, ctx.org.timezone)}{b.blocked_reason ? <p className="text-fg-muted">{b.blocked_reason}</p> : null}</li>)}</ul>
+          <ul className="mt-2 space-y-1 text-sm">{m.blockers.length === 0 ? <li><EmptyState compact icon3d="flag-alert" title="Nothing blocked" /></li> : m.blockers.map((b) => <li key={b.id}><strong>{b.title}</strong>, {b.display_name}, since {formatDateTime(b.since, ctx.org.timezone)}{b.blocked_reason ? <p className="text-fg-muted">{b.blocked_reason}</p> : null}</li>)}</ul>
         </Card>
         <Card>
           <CardHeader title="Report completeness" />

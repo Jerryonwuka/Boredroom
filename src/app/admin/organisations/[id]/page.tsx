@@ -61,7 +61,7 @@ export default async function OrganisationPage({ params, searchParams }: { param
           </div>
           <div className="space-y-4">
             <Card><CardHeader title="Teams" className="mb-2" /><ul className="space-y-1 text-sm">{d.teams.filter((x) => !x.archived_at).map((x) => <li key={x.id} className="flex justify-between gap-2"><span>{x.name}</span><span className="text-fg-subtle">{x.members} people{x.leads.length ? `, lead ${x.leads.join(", ")}` : ", no lead"}</span></li>)}{d.teams.length === 0 ? <li className="text-fg-subtle">No teams yet.</li> : null}</ul></Card>
-            <Card><CardHeader title="Recent admin actions" className="mb-2" /><ul className="space-y-1 text-xs text-fg-muted">{d.audit.slice(0, 6).map((a) => <li key={a.id}><span className="font-medium text-fg">{a.action}</span> · {a.admin_email ?? "system"} · {relativeTime(a.occurred_at)}{a.reason ? <p className="text-fg-subtle">{a.reason}</p> : null}</li>)}{d.audit.length === 0 ? <li className="text-fg-subtle">None.</li> : null}</ul></Card>
+            <Card><CardHeader title="Recent admin actions" className="mb-2" /><ul className="space-y-1 text-xs text-fg-muted">{d.audit.slice(0, 6).map((a) => <li key={a.id}><span className="font-medium text-fg">{a.action}</span> · {a.admin_email ?? "system"} · {relativeTime(a.occurred_at)}{a.reason ? <p className="text-fg-subtle">{a.reason}</p> : null}</li>)}{d.audit.length === 0 ? <li><EmptyState compact title="Nothing here yet" icon3d="box-doc-check" /></li> : null}</ul></Card>
           </div>
         </div>
       ) : null}

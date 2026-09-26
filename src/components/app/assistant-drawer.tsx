@@ -118,16 +118,16 @@ export function AssistantDrawer({ orgSlug, isOrg, firstName, floating = false }:
   return (
     <>
       {floating ? (
-        <button ref={fabRef} type="button" aria-label="Assistant" aria-expanded={open} aria-controls="assistant-drawer" title="Assistant. Drag to move it out of the way."
+        <button ref={fabRef} type="button" aria-label="Assistant" aria-expanded={open} aria-controls="assistant-drawer" data-tip="Assistant. Drag to move it"
           onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={() => { drag.current = null; }}
           onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpen((v) => !v); } }}
           style={pos ? { left: pos.x, top: pos.y, right: "auto", bottom: "auto" } : undefined}
           className={cn("fixed bottom-6 right-6 z-[var(--z-sticky)] grid size-14 touch-none select-none place-items-center rounded-full border text-accent transition-[box-shadow,border-color] duration-[var(--duration)] ease-[var(--ease-out)] cursor-grab active:cursor-grabbing hover:border-accent focus-visible:outline-2 focus-visible:outline-[var(--border-strong)] focus-visible:outline-offset-2",
-            "border-accent/50 bg-[linear-gradient(180deg,var(--btn-top),var(--btn-bottom))] shadow-[inset_0_1px_0_var(--highlight),0_0_0_1px_rgba(255,108,2,0.2),0_12px_30px_-8px_rgba(255,108,2,0.55)]", open && !pos && "translate-x-[calc(-26rem+3.5rem)] md:translate-x-0")}>
+            "border-accent/50 bg-[var(--btn-bg)]", open && !pos && "translate-x-[calc(-26rem+3.5rem)] md:translate-x-0")}>
           <Sparkles className="size-6 pointer-events-none" aria-hidden />
         </button>
       ) : (
-        <IconButton aria-label="Assistant" aria-expanded={open} aria-controls="assistant-drawer" title="Assistant" onClick={() => setOpen((v) => !v)} className={cn(open && "border-accent/60 text-accent")}>
+        <IconButton aria-label="Assistant" aria-expanded={open} aria-controls="assistant-drawer" onClick={() => setOpen((v) => !v)} className={cn(open && "border-accent/60 text-accent")}>
           <Sparkles className="size-[18px]" aria-hidden />
         </IconButton>
       )}

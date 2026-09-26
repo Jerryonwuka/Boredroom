@@ -13,6 +13,7 @@ import { ImpersonateButton } from "@/components/admin/impersonate";
 import { bytes, dateOnly, num, hours } from "@/lib/format";
 import { formatDateTime, formatDuration, relativeTime } from "@/lib/utils";
 import type { Presence } from "@/lib/presence";
+import { EmptyState } from "@/components/ui/states";
 
 export const metadata = { title: "User" };
 
@@ -42,7 +43,7 @@ export default async function UserPage({ params }: { params: Promise<{ id: strin
           <Card><CardHeader title="Organisations" />
             {u.orgs?.length ? <ul className="divide-y divide-border-soft text-sm">{u.orgs.map((o) => <li key={o.id} className="flex items-center justify-between gap-3 py-2"><span><Link href={`/admin/organisations/${o.id}`} className="font-semibold hover:underline">{o.name}</Link> <span className="text-fg-subtle">{o.role}{o.plan ? `, ${o.plan}` : ""}</span></span></li>)}</ul> : <p className="text-sm text-fg-subtle">Not in any organisation.</p>}
           </Card>
-          <Card><CardHeader title="Clock-ins" />{d.clockIns.length === 0 ? <p className="text-sm text-fg-subtle">None.</p> : <DataTable caption="Clock-ins"><thead><tr><th>Day</th><th>Organisation</th><th>In</th><th>Out</th><th>Late</th></tr></thead><tbody>{d.clockIns.map((c, i) => <tr key={i}><td>{dateOnly(c.local_date)}</td><td>{c.org_name}</td><td className="text-sm">{formatDateTime(c.clock_in_at)}</td><td className="text-sm">{c.clock_out_at ? formatDateTime(c.clock_out_at) : "—"}</td><td>{c.late_seconds ? <span className="text-warning">{formatDuration(c.late_seconds)}</span> : "—"}</td></tr>)}</tbody></DataTable>}</Card>
+          <Card><CardHeader title="Clock-ins" />{d.clockIns.length === 0 ? <EmptyState compact title="Nothing here yet" icon3d="box-doc-check" /> : <DataTable caption="Clock-ins"><thead><tr><th>Day</th><th>Organisation</th><th>In</th><th>Out</th><th>Late</th></tr></thead><tbody>{d.clockIns.map((c, i) => <tr key={i}><td>{dateOnly(c.local_date)}</td><td>{c.org_name}</td><td className="text-sm">{formatDateTime(c.clock_in_at)}</td><td className="text-sm">{c.clock_out_at ? formatDateTime(c.clock_out_at) : "—"}</td><td>{c.late_seconds ? <span className="text-warning">{formatDuration(c.late_seconds)}</span> : "—"}</td></tr>)}</tbody></DataTable>}</Card>
           <Card><CardHeader title="Sessions and devices" description="Open and recent sign-ins." />
             <DataTable caption="Sessions"><thead><tr><th>Started</th><th>Last seen</th><th>State</th><th>Device</th></tr></thead><tbody>{d.sessions.map((s) => <tr key={s.id}><td className="text-sm">{formatDateTime(s.created_at)}</td><td className="text-sm text-fg-muted">{relativeTime(s.last_seen_at)}</td><td>{s.revoked_at ? <Badge tone="neutral">revoked</Badge> : new Date(s.expires_at) < new Date() ? <Badge tone="neutral">expired</Badge> : <Badge tone="success">open</Badge>}{s.impersonation_id ? <Badge tone="warning" className="ml-1">impersonation</Badge> : null}</td><td className="max-w-[260px] truncate text-xs text-fg-subtle">{s.user_agent ?? "—"}</td></tr>)}</tbody></DataTable>
           </Card>
@@ -62,7 +63,7 @@ export default async function UserPage({ params }: { params: Promise<{ id: strin
               <ChangeRoleForm path={act} memberships={d.memberships.map((m) => ({ id: m.id, org_name: m.org_name, role: m.role }))} />
             </Card>
           ) : null}
-          <Card><CardHeader title="Administrative changes" className="mb-2" /><ul className="space-y-1 text-xs text-fg-muted">{d.adminAudit.map((a) => <li key={a.id}><span className="font-medium text-fg">{a.action}</span> · {a.admin_email ?? "system"} · {relativeTime(a.occurred_at)}{a.reason ? <p className="text-fg-subtle">{a.reason}</p> : null}</li>)}{d.adminAudit.length === 0 ? <li>None.</li> : null}</ul></Card>
+          <Card><CardHeader title="Administrative changes" className="mb-2" /><ul className="space-y-1 text-xs text-fg-muted">{d.adminAudit.map((a) => <li key={a.id}><span className="font-medium text-fg">{a.action}</span> · {a.admin_email ?? "system"} · {relativeTime(a.occurred_at)}{a.reason ? <p className="text-fg-subtle">{a.reason}</p> : null}</li>)}{d.adminAudit.length === 0 ? <li><EmptyState compact title="Nothing here yet" icon3d="box-doc-check" /></li> : null}</ul></Card>
         </div>
       </div>
     </>

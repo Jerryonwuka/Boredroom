@@ -28,9 +28,11 @@ export default async function ReviewsPage({ params }: { params: Promise<{ worksp
       <PageHeader icon="eye-checklist" back={{ href: `/app/${ctx.org.slug}`, label: "Home" }} title="Reviews" description={decides ? "Submitted work, daily reports, time corrections, capture exceptions and privacy incidents waiting for a decision. You never see your own submissions here." : "Everything waiting for a decision across the organisation. Team leads give the decisions; you can see where each one stands."} />
       {total === 0 && q.overdue.length === 0 && q.missing.length === 0 ? <EmptyState icon3d="shield-check" title="Queue is clear" description={decides ? "Nothing is waiting for your decision." : "Nothing of yours is waiting on a decision."} /> : (
       <div className="space-y-6">
-        <Section title="Task submissions" count={q.submissions.length}>
+        <Section title="Task submissions" count={q.submissions.length} rows>
           {q.submissions.map((s) => (
-            <li key={s.submission_id} className="tile p-4"><div className="flex flex-wrap items-center justify-between gap-2"><Link href={`${base}/tasks/${s.task_id}`} className="font-semibold hover:underline">{s.title}</Link><span className="text-sm text-fg-subtle">{s.assignee_name}, revision {s.revision}, {formatDateTime(s.submitted_at, tz)}{s.reviewer_is_me ? "" : ", manager scope"}</span></div>{s.note ? <p className="mt-1 text-sm text-fg-muted">{s.note}</p> : null}<Link href={`${base}/tasks/${s.task_id}`} className="link-action mt-2">Open task to review evidence</Link></li>
+            <Row key={s.submission_id} href={`${base}/tasks/${s.task_id}`} leading={<Person orgSlug={ctx.org.slug} membershipId={s.assignee_membership_id} name={s.assignee_name} showName={false} size={32} />}
+              title={s.title} meta={`${s.assignee_name} · revision ${s.revision}${s.note ? ` · ${s.note}` : ""}${s.reviewer_is_me ? "" : " · manager scope"}`}
+              trailing={<><span className="eyebrow block">Submitted</span>{formatDateTime(s.submitted_at, tz)}</>} />
           ))}
         </Section>
         <Section title="Daily reports" count={q.reports.length}>
@@ -68,12 +70,12 @@ export default async function ReviewsPage({ params }: { params: Promise<{ worksp
         {q.overdue.length || q.missing.length || ctx.membership.role !== "employee" ? <div className="grid gap-4 md:grid-cols-2">
           <Card>
             <h2 className="font-display text-lg">Overdue commitments ({q.overdue.length})</h2>
-            <RowList className="mt-3">{q.overdue.length === 0 ? <RowEmpty /> : q.overdue.map((t) => <Row key={t.id} href={`${base}/tasks/${t.id}`} leading={<Person orgSlug={ctx.org.slug} membershipId={t.assignee_membership_id} name={t.assignee_name} profileId={t.assignee_profile_id} avatarKey={t.assignee_avatar_key} showName={false} size={32} />} title={t.title} meta={t.assignee_name} trailing={<><span className="eyebrow block">Due</span><span className="text-danger">{formatDateTime(t.due_at, tz)}</span></>} />)}</RowList>
+            <RowList className="mt-3">{q.overdue.length === 0 ? <RowEmpty icon3d="card-check" title="No overdue commitments" /> : q.overdue.map((t) => <Row key={t.id} href={`${base}/tasks/${t.id}`} leading={<Person orgSlug={ctx.org.slug} membershipId={t.assignee_membership_id} name={t.assignee_name} profileId={t.assignee_profile_id} avatarKey={t.assignee_avatar_key} showName={false} size={32} />} title={t.title} meta={t.assignee_name} trailing={<><span className="eyebrow block">Due</span><span className="text-danger">{formatDateTime(t.due_at, tz)}</span></>} />)}</RowList>
           </Card>
           <Card>
             <h2 className="font-display text-lg">Missing reports, last 7 working days ({q.missing.length})</h2>
             <p className="text-xs text-fg-subtle">Days with tracked time but no submitted report. A missing report is a prompt for clarification, not a penalty.</p>
-            <RowList className="mt-3">{q.missing.length === 0 ? <RowEmpty /> : q.missing.map((m) => <Row key={`${m.membership_id}${m.local_date}`} href={`${base}/timesheets?member=${m.membership_id}&date=${m.local_date}`} leading={<Person orgSlug={ctx.org.slug} membershipId={m.membership_id} name={m.display_name} showName={false} size={32} />} title={m.display_name} meta="No report for a day with tracked time" trailing={<><span className="eyebrow block">Day</span>{formatLongDate(m.local_date)}</>} />)}</RowList>
+            <RowList className="mt-3">{q.missing.length === 0 ? <RowEmpty icon3d="doc-link-check" title="No missing reports" /> : q.missing.map((m) => <Row key={`${m.membership_id}${m.local_date}`} href={`${base}/timesheets?member=${m.membership_id}&date=${m.local_date}`} leading={<Person orgSlug={ctx.org.slug} membershipId={m.membership_id} name={m.display_name} showName={false} size={32} />} title={m.display_name} meta="No report for a day with tracked time" trailing={<><span className="eyebrow block">Day</span>{formatLongDate(m.local_date)}</>} />)}</RowList>
           </Card>
         </div> : null}
       </div>)}
@@ -81,7 +83,7 @@ export default async function ReviewsPage({ params }: { params: Promise<{ worksp
   );
 }
 
-function Section({ title, count, children }: { title: string; count: number; children: React.ReactNode }) {
+function Section({ title, count, children, rows = false }: { title: string; count: number; children: React.ReactNode; rows?: boolean }) {
   if (count === 0) return null;
-  return <section><h2 className="mb-3 flex items-center gap-2 font-display text-lg">{title} <Badge tone="accent">{count}</Badge></h2><ul className="space-y-3">{children}</ul></section>;
+  return <section><h2 className="mb-3 flex items-center gap-2 font-display text-lg">{title} <Badge tone="accent">{count}</Badge></h2>{rows ? <RowList className="tile px-3 py-1">{children}</RowList> : <ul className="space-y-3">{children}</ul>}</section>;
 }

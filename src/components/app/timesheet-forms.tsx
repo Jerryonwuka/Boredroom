@@ -29,9 +29,8 @@ export function MemberDatePicker({ orgSlug, members, membershipId, date, prev, n
   const router = useRouter();
   return (
     <form className="flex flex-wrap items-end gap-2" onSubmit={(e) => { e.preventDefault(); const f = new FormData(e.currentTarget); router.push(`/app/${orgSlug}/timesheets?member=${f.get("member") ?? membershipId}&date=${f.get("date")}`); }}>
-      {members.length ? <Field label="Member" htmlFor="ts-member"><Select id="ts-member" name="member" defaultValue={membershipId}>{members.map((m) => <option key={m.id} value={m.id}>{m.display_name}</option>)}</Select></Field> : null}
-      <Field label="Date" htmlFor="ts-date"><DatePicker id="ts-date" name="date" defaultValue={date} /></Field>
-      <Button type="submit" variant="outline">Show</Button>
+      {members.length ? <Field label="Member" htmlFor="ts-member"><Select id="ts-member" name="member" defaultValue={membershipId} onChange={(e) => e.currentTarget.form?.requestSubmit()}>{members.map((m) => <option key={m.id} value={m.id}>{m.display_name}</option>)}</Select></Field> : null}
+      <Field label="Date" htmlFor="ts-date"><DatePicker id="ts-date" name="date" defaultValue={date} submitOnChange /></Field>
       <Button variant="ghost" onClick={() => router.push(`/app/${orgSlug}/timesheets?member=${membershipId}&date=${prev}`)}>← {prev}</Button>
       <Button variant="ghost" onClick={() => router.push(`/app/${orgSlug}/timesheets?member=${membershipId}&date=${next}`)}>{next}</Button>
     </form>

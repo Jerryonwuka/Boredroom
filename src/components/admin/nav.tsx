@@ -53,7 +53,7 @@ export function AdminNav({ groups }: { groups: AdminNavGroup[] }) {
               const active = it.href === "/admin" ? pathname === "/admin" : pathname === it.href || pathname.startsWith(`${it.href}/`);
               return (
                 <li key={it.href}>
-                  <Link href={it.href} aria-current={active ? "page" : undefined} className={cn("group flex min-h-9 items-center gap-2.5 rounded-[var(--radius-sm)] px-2.5 py-1.5 text-[14px] font-medium text-fg-muted transition-colors duration-[var(--duration-fast)] hover:text-fg", active && "bg-wash-strong text-fg shadow-[inset_0_1px_0_var(--highlight)]")}>
+                  <Link href={it.href} aria-current={active ? "page" : undefined} className={cn("group flex min-h-9 items-center gap-2.5 rounded-[var(--radius-sm)] px-2.5 py-1.5 text-[14px] font-medium text-fg-muted transition-colors duration-[var(--duration-fast)] hover:text-fg", active && "bg-wash-strong text-fg")}>
                     <Icon className={cn("size-4 transition-transform duration-200 group-hover:-translate-y-px", active ? "text-accent" : "text-fg-subtle")} aria-hidden />
                     <span className="truncate">{it.label}</span>
                   </Link>

@@ -9,9 +9,10 @@ import { PermissionDenied, EmptyState } from "@/components/ui/states";
 import { Button } from "@/components/ui/button";
 import { orgDashboard } from "@/server/services/views";
 import { attendanceBoard } from "@/server/services/attendance";
-import { listRecordings } from "@/server/services/recording";
-import { formatDuration, formatDateTime, relativeTime, formatLongDate } from "@/lib/utils";
+import { formatDuration, formatDateTime, relativeTime, formatLongDate, cn } from "@/lib/utils";
 import { Person } from "@/components/ui/person";
+import { ICON_BUTTON } from "@/components/ui/icon-button";
+import { ClipboardCheck } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Dashboard" };
@@ -22,7 +23,7 @@ export default async function DashboardPage({ params }: { params: Promise<{ work
   const { workspace } = await params;
   const { ctx, counts, teams } = await workspacePage(workspace, `/app/${workspace}/dashboard`);
   if (!["owner", "hr"].includes(ctx.membership.role)) return <AppShell ctx={ctx} counts={counts} teams={teams}><PermissionDenied description="The organisation dashboard is for the organisation account (owners and HR). Team leads use their team board; staff use My Day." /></AppShell>;
-  const [d, recentRecordings, att] = await Promise.all([orgDashboard(ctx), listRecordings(ctx, { limit: 6 }), attendanceBoard(ctx)]);
+  const [d, att] = await Promise.all([orgDashboard(ctx), attendanceBoard(ctx)]);
   const base = `/app/${ctx.org.slug}`;
   const now = new Date(d.serverNow).getTime();
   const fmtTime = (iso: string) => new Intl.DateTimeFormat("en-GB", { timeZone: att.schedule.timezone, hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
@@ -37,7 +38,7 @@ export default async function DashboardPage({ params }: { params: Promise<{ work
   return (
     <AppShell ctx={ctx} counts={counts} teams={teams}>
       <PageHeader icon="eye-dashboard" overline={formatLongDate(d.today)} title={<>Welcome, {ctx.user.displayName.split(" ")[0]}.</>} description={<>Here is {ctx.org.name} right now, from clocks, timers and tasks. Nothing here is a productivity score.</>} meta={<>Last sync {formatDateTime(d.serverNow, ctx.org.timezone)}</>}
-        actions={<><Link href={`${base}/people`}><Button>Add people and teams</Button></Link><Link href={`${base}/reviews`}><Button variant="outline">Review queue{counts.attention ? ` (${counts.attention})` : ""}</Button></Link></>} />
+        actions={<><Link href={`${base}/people`}><Button>Add people and teams</Button></Link><Link href={`${base}/reviews`} aria-label={counts.attention ? `Review queue, ${counts.attention} waiting` : "Review queue"} title="Review queue" className={cn(ICON_BUTTON, "size-11")}><ClipboardCheck className="size-[18px]" aria-hidden />{counts.attention ? <span className="absolute -right-0.5 -top-0.5 min-w-[18px] rounded-full bg-accent px-1 text-center text-[10px] font-bold leading-[18px] tabular-nums text-accent-fg">{counts.attention > 99 ? "99+" : counts.attention}</span> : null}</Link></>} />
 
       <div className="mb-8 grid gap-4 md:grid-cols-3">
         <StatCard label="Attendance" verdict={attendanceVerdict} tone={att.counts.late ? "warning" : "default"} href={`${base}/attendance`}
@@ -49,7 +50,7 @@ export default async function DashboardPage({ params }: { params: Promise<{ work
       </div>
 
       <section className="mb-8">
-        <CardHeader title={`Working right now (${d.workingNow.length})`} action={<Link href={`${base}/workroom`} className="link-action">Open the Workroom</Link>} />
+        <CardHeader title="Working right now" action={<Link href={`${base}/workroom`} className="link-action">Open the Workroom</Link>} />
         {d.workingNow.length === 0 ? <EmptyState icon3d="stopwatch" title="Nobody has a session open" description="Open sessions appear here the moment someone presses Start." /> : (
           <DataTable caption="People with an open session">
             <thead><tr><th>Person</th><th>Team</th><th>State</th><th>Task</th><th>Since</th><th>Sync</th><th>Today</th></tr></thead>
@@ -62,7 +63,7 @@ export default async function DashboardPage({ params }: { params: Promise<{ work
       </section>
 
       <section className="mb-8">
-        <CardHeader title={`Clocked in today (${clockedIn})`} description={<span className="eyebrow">{formatLongDate(att.today)}</span>} action={<span className="flex items-center gap-4 text-sm">{att.counts.not_in ? <Link href={`${base}/attendance?tab=not_in`} className="link-action">{att.counts.not_in} not clocked in yet</Link> : null}<Link href={`${base}/attendance`} className="link-action">Open Attendance</Link></span>} />
+        <CardHeader title={<span className="flex items-center gap-2">Clocked in today<Badge tone="accent" dot>Today</Badge></span>} action={<Link href={`${base}/attendance`} className="link-action">Open Attendance</Link>} />
         {clockedIn === 0 ? <EmptyState icon3d="clock-in" title="Nobody has clocked in yet today" description="People appear here the moment they press Clock in. This list starts empty every day." /> : (
           <DataTable caption="People who clocked in today">
             <thead><tr><th>Person</th><th className="hidden md:table-cell">Team</th><th>Clocked in</th><th>Status</th><th className="hidden md:table-cell">Clocked out</th></tr></thead>
@@ -85,15 +86,11 @@ export default async function DashboardPage({ params }: { params: Promise<{ work
           {d.teams.length === 0 ? <EmptyState icon3d="people" title="No teams yet" description="Create teams such as Design, Tech or Branding, then put a team lead on each." action={<Link href={`${base}/people`}><Button size="sm">Go to People</Button></Link>} /> : (
             <DataTable caption="Teams">
               <thead><tr><th>Team</th><th>Lead</th><th>Members</th><th>Open</th><th>Blocked</th><th>Working now</th></tr></thead>
-              <tbody>{d.teams.map((t) => <tr key={t.id}><td><Link href={`${base}/teams/${t.id}`} className="font-semibold hover:underline">{t.name}</Link></td><td>{t.leads.length ? t.leads.join(", ") : <span className="text-warning">no lead yet</span>}</td><td className="tabular-nums">{t.members}</td><td className="tabular-nums">{t.open_tasks}</td><td className="tabular-nums">{t.blocked ? <span className="text-danger">{t.blocked}</span> : 0}</td><td className="tabular-nums">{t.working}</td></tr>)}</tbody>
+              <tbody>{d.teams.map((t) => <tr key={t.id}><td><Link href={`${base}/teams/${t.id}`} className="font-semibold hover:underline">{t.name}</Link></td><td>{t.leads.length ? <span className="flex items-center -space-x-1.5">{t.leads.map((name, i) => <Person key={t.lead_ids[i] ?? name} orgSlug={ctx.org.slug} membershipId={t.lead_ids[i] ?? name} name={name} showName={false} size={30} href={`${base}/workroom/${t.lead_ids[i] ?? ""}`} className="ring-2 ring-[var(--bg-elevated)] rounded-full" />)}</span> : <span className="text-warning">no lead yet</span>}</td><td className="tabular-nums">{t.members}</td><td className="tabular-nums">{t.open_tasks}</td><td className="tabular-nums">{t.blocked ? <span className="text-danger">{t.blocked}</span> : 0}</td><td className="tabular-nums">{t.working}</td></tr>)}</tbody>
             </DataTable>
           )}
         </section>
         <div className="space-y-4">
-          <Card>
-            <CardHeader title="Recent recordings" action={<Link href={`${base}/recordings`} className="link-action">All</Link>} />
-            <ul className="space-y-2 text-sm">{recentRecordings.length === 0 ? <li className="text-fg-subtle">No screen recordings yet. They appear here when someone presses Record screen.</li> : recentRecordings.map((r) => <li key={r.id} className="chip chip-link px-3 py-2"><Link href={`${base}/tasks/${r.task_id}`} className="block font-medium hover:underline">{r.task_title}</Link><p className="text-xs text-fg-subtle">{r.display_name}, {r.capture_started_at ? formatDateTime(r.capture_started_at, ctx.org.timezone) : "pending"}, {formatDuration(r.duration_seconds)}, {r.upload_state}</p></li>)}</ul>
-          </Card>
           <Card>
             <CardHeader title="Recently completed" />
             <ul className="space-y-2 text-sm">{d.recentDone.length === 0 ? <li className="text-fg-subtle">Nothing approved yet.</li> : d.recentDone.map((t) => <li key={t.id} className="chip chip-link px-3 py-2"><Link href={`${base}/tasks/${t.id}`} className="block font-medium hover:underline">{t.title}</Link><p className="text-xs text-fg-subtle">{t.assignee_name}, {formatDateTime(t.completed_at, ctx.org.timezone)}</p></li>)}</ul>

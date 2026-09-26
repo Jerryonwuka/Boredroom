@@ -24,22 +24,24 @@ export function TypingIndicator({ className }: { className?: string }) {
 }
 
 /**
- * One bubble. `mine` sits right in orange; other people's sit left with `avatar` beside the last bubble of a run.
- * `grouped` bubbles (same sender within a few minutes) drop the name and tighten the spacing.
+ * One bubble. `mine` sits right in orange, other people's sit left; the sender's `avatar` stands beside the first bubble
+ * of a run on both sides (owner decision, 26 September 2026). `grouped` bubbles (same sender within a few minutes) drop
+ * the name and tighten the spacing. `quote` is the message this one replies to, shown inside the bubble above the text.
  */
-export function MessageBubble({ mine, avatar, name, time, grouped = false, withdrawn = false, children, footer, actions, className }: { mine: boolean; avatar?: ReactNode; name?: string; time?: ReactNode; grouped?: boolean; withdrawn?: boolean; children: ReactNode; footer?: ReactNode; actions?: ReactNode; className?: string }) {
+export function MessageBubble({ mine, avatar, name, time, grouped = false, withdrawn = false, children, footer, actions, quote, className }: { mine: boolean; avatar?: ReactNode; name?: string; time?: ReactNode; grouped?: boolean; withdrawn?: boolean; children: ReactNode; footer?: ReactNode; actions?: ReactNode; quote?: ReactNode; className?: string }) {
   const reduced = useReducedMotion();
   return (
     <motion.div initial={reduced ? false : { opacity: 0, y: 10, scale: 0.97, x: mine ? 14 : -14 }} animate={{ opacity: 1, y: 0, scale: 1, x: 0 }} transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
       className={cn("group flex w-full", mine ? "justify-end" : "justify-start", grouped ? "mt-1" : "mt-3", className)}>
       <div className={cn("flex max-w-[78%] items-end gap-2", mine && "flex-row-reverse")}>
-        {!mine ? <div className="w-8 shrink-0">{grouped ? null : avatar}</div> : null}
+        {avatar ? <div className="w-8 shrink-0">{grouped ? null : avatar}</div> : null}
         <div className="min-w-0">
           {!grouped && !mine && name ? <p className="mb-1 flex items-baseline gap-2 pl-1 text-xs text-fg-subtle"><span className="font-semibold text-fg-muted">{name}</span>{time}</p> : null}
           <div className={cn("relative rounded-2xl px-4 py-2.5 text-[15px] leading-relaxed",
             withdrawn ? "border border-dashed border-border bg-transparent italic text-fg-subtle"
               : mine ? "rounded-tr-md border border-[var(--bubble-mine-border)] bg-[var(--bubble-mine)] text-fg"
                 : "rounded-tl-md border border-[var(--bubble-theirs-border)] bg-[var(--bubble-theirs)] text-fg")}>
+            {quote}
             {children}
           </div>
           {footer ? <div className={cn("mt-1", mine ? "text-right" : "pl-1")}>{footer}</div> : null}
@@ -109,7 +111,7 @@ export function ChatMessages({ messages = DEFAULT_MESSAGES, autoPlay = true, aut
       </div>
       <div ref={scrollRef} role="log" aria-label="Chat messages" aria-live="polite" className="flex-1 overflow-y-auto p-4">
         {chatMessages.slice(0, visibleCount).map((m) => (
-          <MessageBubble key={m.id} mine={m.sender === "user"} avatar={<div className="grid size-8 place-items-center rounded-full bg-accent-soft"><Sparkles className="size-4 text-accent" /></div>}>{m.content}</MessageBubble>
+          <MessageBubble key={m.id} mine={m.sender === "user"} avatar={m.sender === "user" ? undefined : <div className="grid size-8 place-items-center rounded-full bg-accent-soft"><Sparkles className="size-4 text-accent" /></div>}>{m.content}</MessageBubble>
         ))}
         <AnimatePresence>{isTyping ? <div className="mt-3"><TypingIndicator /></div> : null}</AnimatePresence>
       </div>

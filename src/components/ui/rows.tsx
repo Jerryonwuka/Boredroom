@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { cn } from "@/lib/utils";
+import { EmptyState } from "@/components/ui/states";
+import type { Icon3DName } from "@/components/ui/icon";
 
 /**
  * A defined list (owner decision, 25 September 2026): every row has a place for who, what, a little context and a
@@ -24,6 +26,7 @@ export function Row({ leading, title, meta, trailing, href, className }: { leadi
   return <li>{href ? <Link href={href} className={cls}>{body}</Link> : <div className={cls}>{body}</div>}</li>;
 }
 
-export function RowEmpty({ children = "None." }: { children?: React.ReactNode }) {
-  return <li className="px-2 py-3 text-sm text-fg-subtle">{children}</li>;
+/** The empty row (owner decision, 26 September 2026): one of our icons and a short line, never a bare "None." */
+export function RowEmpty({ title = "Nothing here yet", icon3d = "box-doc-check", description }: { title?: string; icon3d?: Icon3DName; description?: string }) {
+  return <li><EmptyState compact icon3d={icon3d} title={title} description={description} /></li>;
 }

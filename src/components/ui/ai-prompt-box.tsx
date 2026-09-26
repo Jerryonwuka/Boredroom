@@ -111,7 +111,7 @@ export const PromptInputBox = React.forwardRef<HTMLDivElement, PromptInputBoxPro
             {leading}
           </div>
           <PromptInputAction tooltip={isLoading ? "Thinking" : hasContent ? "Send" : "Type or dictate first"}>
-            <button type="button" onClick={submit} disabled={isLoading || !hasContent} aria-label="Send" className={cn("grid size-8 place-items-center rounded-full transition-[background-color,color,box-shadow,transform] duration-[var(--duration-fast)] disabled:cursor-not-allowed", hasContent && !isLoading ? "bg-[linear-gradient(180deg,var(--accent-hover),var(--accent))] text-accent-fg shadow-[0_6px_18px_-6px_rgba(255,108,2,0.6)] hover:scale-105" : "bg-wash text-fg-subtle")}>
+            <button type="button" onClick={submit} disabled={isLoading || !hasContent} aria-label="Send" className={cn("grid size-8 place-items-center rounded-full transition-[background-color,color,box-shadow,transform] duration-[var(--duration-fast)] disabled:cursor-not-allowed", hasContent && !isLoading ? "bg-accent hover:bg-[var(--accent-hover)] text-accent-fg hover:scale-105" : "bg-wash text-fg-subtle")}>
               {isLoading ? <Square className="size-3.5 animate-pulse fill-current" aria-hidden /> : <ArrowUp className="size-4" aria-hidden />}
             </button>
           </PromptInputAction>

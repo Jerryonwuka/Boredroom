@@ -63,10 +63,12 @@
   --surface-bottom: #0f0f0f;
   --surface-hover-top: #1a1a1a;
   --surface-hover-bottom: #131313;
-  --btn-top: #1d1d1d;            /* .btn gradient, one step above the card */
+  --btn-top: #1d1d1d;            /* legacy gradient stops, kept for the landing mocks */
   --btn-bottom: #141414;
   --btn-hover-top: #262626;
   --btn-hover-bottom: #1a1a1a;
+  --btn-bg: #1b1b1b;             /* flat button fill (owner decision, 26 September 2026: no 3D) */
+  --btn-bg-hover: #262626;
   --avatar-top: #242424;
   --avatar-bottom: #161616;
   --sidebar: #050505;
@@ -120,6 +122,8 @@
   --btn-bottom: #f2f2f0;
   --btn-hover-top: #fbfbfa;
   --btn-hover-bottom: #ebebe9;
+  --btn-bg: #ffffff;
+  --btn-bg-hover: #f1f1ef;
   --avatar-top: #e9e9e7;
   --avatar-bottom: #d6d6d3;
   --sidebar: #fafaf8;
@@ -214,6 +218,23 @@ dialog.sheet::backdrop { background: var(--overlay); }
 dialog.sheet[open] { animation: sheet-in var(--duration) var(--ease-out) both; }
 dialog.sheet[open]::backdrop { animation: rise-in var(--duration) var(--ease-out) both; }
 
+/* Pop-ups lifted into the browser's top layer (components/ui/top-layer.ts): the browser's own popover box is reset
+   here, in the base layer, so each pop-up's utilities and rules still win. */
+@layer base {
+  .top-pop { inset: auto; margin: 0; border: 0; padding: 0; width: auto; height: auto; overflow: visible; color: inherit; background: transparent; }
+}
+
+/* The message a reply quote jumps to lights up for a moment so the eye finds it. */
+@keyframes target-flash { from { background: var(--accent-soft); } to { background: transparent; } }
+.target-flash:target { animation: target-flash 1.6s var(--ease-out) both; }
+
+/* Tooltips (owner decision, 26 September 2026): the label under an icon-only control, see components/ui/tooltips.tsx.
+   Above every layer, out of the way of the pointer, in with a short lift from the side it sits on. */
+.tip { position: fixed; z-index: var(--z-toast); transform: translateX(-50%); pointer-events: none; max-width: 16rem; padding: 5px 9px; border-radius: 8px; border: 1px solid var(--border-strong); background: var(--bg-popover); color: var(--fg); font-size: 12px; line-height: 1.25; font-weight: 500; letter-spacing: 0.005em; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; box-shadow: inset 0 1px 0 var(--highlight), 0 8px 24px -10px rgba(0, 0, 0, 0.6); animation: tip-in 120ms var(--ease-out) both; }
+.tip.tip-up { animation-name: tip-in-up; }
+@keyframes tip-in { from { opacity: 0; transform: translate(-50%, -4px) scale(0.97); } to { opacity: 1; transform: translate(-50%, 0) scale(1); } }
+@keyframes tip-in-up { from { opacity: 0; transform: translate(-50%, 4px) scale(0.97); } to { opacity: 1; transform: translate(-50%, 0) scale(1); } }
+
 /* Focus (owner decision, 24 September 2026): nothing orange, and nothing on a click. Text fields only brighten their
    hairline; buttons and links get a quiet grey ring, and only when focus arrives from the keyboard. */
 :focus { outline: none; }
@@ -267,23 +288,23 @@ input[type="checkbox"].switch:checked { background: var(--accent); border-color:
 input[type="checkbox"].switch:checked::before { background: #fff; transform: translateX(16px); }
 
 /* A segmented control: radios drawn as pills inside one strip. */
-.segmented { display: inline-flex; flex-wrap: wrap; gap: 2px; padding: 3px; border-radius: 999px; border: 1px solid var(--border); background: var(--wash-soft); box-shadow: inset 0 1px 0 var(--highlight); }
+.segmented { display: inline-flex; flex-wrap: wrap; gap: 2px; padding: 3px; border-radius: 999px; border: 1px solid var(--border); background: var(--wash-soft); }
 .segmented-item { position: relative; display: inline-flex; }
 .segmented-item input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; appearance: none; border: 0; box-shadow: none; }
 .segmented-item span { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 14px; border-radius: 999px; font-size: 13px; font-weight: 500; color: var(--fg-muted); transition: background-color var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out); }
 .segmented-item:hover span { color: var(--fg); }
-.segmented-item input:checked + span { background: linear-gradient(180deg, var(--btn-hover-top), var(--btn-hover-bottom)); color: var(--fg); box-shadow: inset 0 1px 0 var(--highlight-strong), 0 1px 2px rgba(0, 0, 0, 0.4); }
+.segmented-item input:checked + span { background: var(--btn-bg-hover); color: var(--fg); box-shadow: none; }
+.segmented-item input:checked + span { color: var(--accent); }
 .segmented-item[data-tone="success"] input:checked + span { color: var(--success); }
 .segmented-item[data-tone="warning"] input:checked + span { color: var(--warning); }
 .segmented-item[data-tone="danger"] input:checked + span { color: var(--danger); }
 .segmented-item input:focus-visible + span { box-shadow: 0 0 0 2px var(--border-strong); }
 
 /* The edit affordance: a pill with a pencil that warms to orange on hover. */
-.edit-btn { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 11px; border-radius: 999px; border: 1px solid var(--border); background: linear-gradient(180deg, var(--btn-top), var(--btn-bottom)); color: var(--fg-muted); font-size: 12.5px; font-weight: 600; box-shadow: inset 0 1px 0 var(--highlight); transition: color var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out), transform var(--duration-fast) var(--ease-out), box-shadow var(--duration-fast) var(--ease-out); }
+.edit-btn { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 11px; border-radius: 999px; border: 1px solid var(--border); background: var(--btn-bg); color: var(--fg-muted); font-size: 12.5px; font-weight: 600; transition: color var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out), transform var(--duration-fast) var(--ease-out), box-shadow var(--duration-fast) var(--ease-out); }
 .edit-btn svg { transition: transform 200ms var(--ease-out), color var(--duration-fast) var(--ease-out); }
-.edit-btn:hover { color: var(--fg); border-color: rgba(255, 108, 2, 0.5); box-shadow: inset 0 1px 0 var(--highlight), 0 0 0 3px var(--accent-soft); transform: translateY(-1px); }
+.edit-btn:hover { color: var(--fg); background: var(--btn-bg-hover); border-color: rgba(255, 108, 2, 0.5); }
 .edit-btn:hover svg { color: var(--accent); transform: rotate(-12deg); }
-.edit-btn:active { transform: translateY(0); }
 .edit-btn-icon { width: 30px; padding: 0; justify-content: center; }
 
 /* A field with a prefix or suffix inside it (currency, units). The inner input is bare; the wrapper is the field. */
@@ -340,12 +361,13 @@ input[type="checkbox"].switch:checked::before { background: #fff; transform: tra
 .hairline-cell img { transition: transform 350ms var(--ease-out), filter 350ms var(--ease-out); }
 .hairline-cell:hover img { transform: translateY(-6px) scale(1.08) rotate(-3deg); filter: drop-shadow(0 12px 18px rgba(255, 108, 2, 0.35)); }
 .hairline-cell:hover h3 { color: var(--accent-hover); }
-/* Buttons: one surface for every button (owner decision, 24 September 2026): a dark fill one step above the card,
-   a hairline, a top highlight, 16px corners, white text. Variants change only the text and border colour. */
-.btn { background: linear-gradient(180deg, var(--btn-top), var(--btn-bottom)); border: 1px solid var(--border); color: var(--fg); box-shadow: inset 0 1px 0 var(--highlight), 0 8px 20px -14px rgba(0, 0, 0, 0.9); }
-.btn:hover { background: linear-gradient(180deg, var(--btn-hover-top), var(--btn-hover-bottom)); border-color: var(--border-strong); }
-.btn-primary { border-color: rgba(255, 108, 2, 0.55); }
-.btn.btn-primary:hover { background: linear-gradient(180deg, var(--accent-hover), var(--accent)); border-color: var(--accent-hover); color: var(--accent-fg); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), 0 0 0 1px rgba(255, 108, 2, 0.35), 0 8px 24px -6px rgba(255, 108, 2, 0.55); }
+/* Buttons (owner decision, 26 September 2026): flat and quiet. A solid fill one step above the card, a hairline, 16px
+   corners, white text; nothing raised, no highlight, no glow. Hover lightens the fill. Variants change text and border. */
+.btn { background: var(--btn-bg); border: 1px solid var(--border); color: var(--fg); box-shadow: none; }
+.btn:hover { background: var(--btn-bg-hover); border-color: var(--border-strong); }
+/* The primary button is solid orange at rest, a shade brighter on hover. */
+.btn.btn-primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); box-shadow: none; }
+.btn.btn-primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); color: var(--accent-fg); box-shadow: none; }
 .btn-danger { color: var(--danger); border-color: rgba(255, 92, 92, 0.45); }
 .btn.btn-danger:hover { border-color: var(--danger); background: rgba(255, 92, 92, 0.1); }
 .btn-ghost { background: transparent; border-color: transparent; box-shadow: none; color: var(--fg-muted); }
@@ -362,8 +384,12 @@ input[type="checkbox"].switch:checked::before { background: #fff; transform: tra
 .eyebrow { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--fg-subtle); }
 .eyebrow-accent { color: var(--accent); }
 /* A text link that acts: an eyebrow with a hairline under it that turns orange on hover (owner decision, 25 September 2026). */
-.link-action { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--fg-muted); border-bottom: 1px solid var(--border); padding-bottom: 2px; line-height: 1.4; white-space: nowrap; transition: color var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out); }
-.link-action:hover { color: var(--fg); border-color: var(--accent); }
+.link-action { position: relative; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--fg-muted); padding-bottom: 2px; line-height: 1.4; white-space: nowrap; transition: color var(--duration-fast) var(--ease-out); }
+/* The line lives under the text only while the pointer is on it, drawn in from the left (owner decision, 26 September 2026). */
+.link-action::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 1px; background: var(--accent); transform: scaleX(0); transform-origin: left center; transition: transform 240ms var(--ease-out); }
+.link-action:hover { color: var(--fg); }
+.link-action:hover::after, .link-action:focus-visible::after { transform: scaleX(1); }
+@media (prefers-reduced-motion: reduce) { .link-action::after { transition: none; } }
 .link-action svg { width: 12px; height: 12px; }
 
 /* The live status dot: a ring that swells and fades from the green dot, twice a cycle. */
@@ -413,12 +439,12 @@ input[type="checkbox"].switch:checked::before { background: #fff; transform: tra
 .lp-icon::after { content: ""; position: absolute; left: 12%; right: 12%; bottom: -12px; height: 12px; border-radius: 50%; background: radial-gradient(closest-side, rgba(255, 108, 2, 0.7), transparent); filter: blur(6px); }
 .lp-icon img { width: 44px; height: 44px; object-fit: contain; }
 /* Buttons on the landing page share the product surface (.btn), 44px tall, 16px corners. */
-.lp-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 44px; padding: 0 22px; border-radius: var(--radius); font-weight: 600; font-size: 15px; white-space: nowrap; transition: transform 120ms var(--ease-out), background-color 120ms var(--ease-out), border-color 120ms var(--ease-out), box-shadow 120ms var(--ease-out); background: linear-gradient(180deg, var(--btn-top), var(--btn-bottom)); border: 1px solid var(--border); color: var(--fg); box-shadow: inset 0 1px 0 var(--highlight), 0 8px 20px -14px rgba(0, 0, 0, 0.9); }
-.lp-btn:hover { background: linear-gradient(180deg, var(--btn-hover-top), var(--btn-hover-bottom)); border-color: var(--border-strong); }
+.lp-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 44px; padding: 0 22px; border-radius: var(--radius); font-weight: 600; font-size: 15px; white-space: nowrap; transition: transform 120ms var(--ease-out), background-color 120ms var(--ease-out), border-color 120ms var(--ease-out), box-shadow 120ms var(--ease-out); background: var(--btn-bg); border: 1px solid var(--border); color: var(--fg); box-shadow: none; }
+.lp-btn:hover { background: var(--btn-bg-hover); border-color: var(--border-strong); }
 .lp-btn:active { transform: scale(0.97); }
 /* Primary carries an orange hairline and fills orange with a soft glow on hover; secondary is the plain surface. */
 .lp-btn-primary { border-color: rgba(255, 108, 2, 0.55); }
-.lp-btn.lp-btn-primary:hover { background: linear-gradient(180deg, var(--accent-hover), var(--accent)); border-color: var(--accent-hover); color: var(--accent-fg); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), 0 0 0 1px rgba(255, 108, 2, 0.35), 0 8px 24px -6px rgba(255, 108, 2, 0.55); }
+.lp-btn.lp-btn-primary:hover { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); box-shadow: none; }
 /* .lp-btn-secondary is the plain surface; nothing to add. */
 .lp-btn-sm { height: 36px; padding: 0 16px; font-size: 14px; border-radius: 10px; }
 /* Hero backdrop: a faint grid that fades out, with a warm glow behind the headline. */
@@ -463,6 +489,8 @@ table.data th { text-align: left; font-weight: 600; color: var(--fg-subtle); fon
 table.data td { padding: 0.8125rem 0.875rem; border-bottom: 1px solid var(--border-soft); vertical-align: top; max-width: 28rem; overflow-wrap: normal; }
 table.data td.wrap { overflow-wrap: break-word; } /* JSON and references: a token longer than the column breaks, words never do */
 table.data td.nowrap { white-space: nowrap; }
+/* A table whose first column gives way: fills its card and lets long titles truncate instead of scrolling sideways. */
+.data-fit table.data { width: 100%; table-layout: fixed; }
 table.data tbody tr:hover td { background: var(--wash-soft); }
 table.data tr:last-child td { border-bottom: 0; }
 /* A cell that is only a pill, a figure or a time never breaks it over two lines. */

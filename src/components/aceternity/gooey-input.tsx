@@ -204,6 +204,8 @@ export function GooeyInput({
           <button
             type="button"
             disabled={disabled}
+            aria-label={isExpanded ? undefined : "Search"}
+            aria-expanded={isExpanded}
             onClick={handleExpand}
             className={cn(
               "flex h-10 w-full cursor-pointer items-center justify-center gap-2 rounded-full px-4 text-sm font-medium outline-none transition-[color,box-shadow] disabled:pointer-events-none disabled:opacity-50",

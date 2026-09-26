@@ -168,6 +168,31 @@ export async function updateTask(ctx: OrgContext, taskId: string, input: z.infer
   });
 }
 
+export const bulkSchema = z.object({
+  ids: z.array(z.string().uuid()).min(1).max(100),
+  action: z.enum(["archive", "reassign"]),
+  assigneeMembershipId: z.string().uuid().optional(),
+});
+
+/**
+ * The same change on many tasks at once (owner decision, 26 September 2026): remove them, or hand them all to one
+ * person. Each task goes through updateTask, so the permission and session checks are exactly the single-task ones;
+ * the ones that refuse are reported by title instead of stopping the rest.
+ */
+export async function bulkTasks(ctx: OrgContext, input: z.infer<typeof bulkSchema>, requestId?: string) {
+  if (input.action === "reassign" && !input.assigneeMembershipId) throw invalid("Pick who should get these tasks.", { assigneeMembershipId: ["Required."] });
+  const rows = await withUser(ctx.user.profileId, (db) => db.query<{ id: string; version: number; title: string }>(`SELECT id, version, title FROM tasks WHERE organisation_id = $1 AND id = ANY($2::uuid[])`, [ctx.org.id, input.ids]));
+  let done = 0;
+  const failed: { id: string; title: string; reason: string }[] = [];
+  for (const t of rows) {
+    try {
+      await updateTask(ctx, t.id, input.action === "archive" ? { expectedVersion: t.version, archive: true } : { expectedVersion: t.version, assigneeMembershipId: input.assigneeMembershipId }, requestId);
+      done++;
+    } catch (err) { failed.push({ id: t.id, title: t.title, reason: (err as Error).message }); }
+  }
+  return { done, failed };
+}
+
 export async function addComment(ctx: OrgContext, taskId: string, body: string) {
   return withUser(ctx.user.profileId, async (db) => {
     const t = await db.maybeOne<{ assignee_membership_id: string; reviewer_membership_id: string | null; title: string }>(`SELECT assignee_membership_id, reviewer_membership_id, title FROM tasks WHERE id = $1 AND organisation_id = $2`, [taskId, ctx.org.id]);

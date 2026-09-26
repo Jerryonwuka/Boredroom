@@ -3,11 +3,11 @@ import { AlertTriangle, Inbox, Lock, WifiOff } from "lucide-react";
 import { Icon3D, type Icon3DName } from "@/components/ui/icon";
 
 /** An empty state names one next action. Give it a 3D icon when the empty thing has one (tasks, messages, recordings); the lucide inbox otherwise. */
-export function EmptyState({ title, description, action, icon: Icon = Inbox, icon3d, className }: { title: string; description?: string; action?: React.ReactNode; icon?: React.ComponentType<{ className?: string }>; icon3d?: Icon3DName; className?: string }) {
+export function EmptyState({ title, description, action, icon: Icon = Inbox, icon3d, className, compact = false }: { title: string; description?: string; action?: React.ReactNode; icon?: React.ComponentType<{ className?: string }>; icon3d?: Icon3DName; className?: string; /** Inside a card: smaller icon, less height, no tile of its own. */ compact?: boolean }) {
   return (
-    <div className={cn("tile flex flex-col items-center justify-center px-6 py-12 text-center", className)}>
-      {icon3d ? <Icon3D name={icon3d} size={64} className="mb-4" /> : <Icon className="mb-3 h-8 w-8 text-fg-subtle" aria-hidden />}
-      <p className="font-semibold text-fg">{title}</p>
+    <div className={cn("flex flex-col items-center justify-center text-center", compact ? "px-4 py-6" : "tile px-6 py-12", className)}>
+      {icon3d ? <Icon3D name={icon3d} size={compact ? 40 : 64} className={compact ? "mb-2" : "mb-4"} /> : <Icon className="mb-3 h-8 w-8 text-fg-subtle" aria-hidden />}
+      <p className={cn("text-fg", compact ? "text-sm font-medium" : "font-semibold")}>{title}</p>
       {description ? <p className="mt-1 max-w-md text-sm text-fg-muted">{description}</p> : null}
       {action ? <div className="mt-4">{action}</div> : null}
     </div>

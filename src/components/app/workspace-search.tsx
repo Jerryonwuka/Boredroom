@@ -15,7 +15,7 @@ import type { SearchHit, SearchResult } from "@/server/services/search";
 
 type Hit = SearchHit | { kind: "page"; id: string; title: string; hint: string | null; href: string };
 const ICON: Record<Hit["kind"], typeof ListChecks> = { page: LayoutGrid, task: ListChecks, person: User, project: FolderKanban, team: Users };
-const SURFACE = "border border-border bg-[linear-gradient(180deg,var(--btn-top),var(--btn-bottom))] text-fg shadow-[inset_0_1px_0_var(--highlight)] ring-0";
+const SURFACE = "border border-border bg-[var(--btn-bg)] text-fg ring-0";
 
 export function WorkspaceSearch({ orgSlug, pages, className }: { orgSlug: string; pages: { label: string; href: string }[]; className?: string }) {
   const [q, setQ] = useState("");

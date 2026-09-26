@@ -10,6 +10,7 @@ import { Alert } from "@/components/ui/states";
 import { Badge } from "@/components/ui/badge";
 import { api, isApiFailure } from "@/lib/api-client";
 import { DatePicker } from "@/components/ui/date-picker";
+import { DurationPicker } from "@/components/ui/duration-picker";
 
 function useForm() {
   const router = useRouter();
@@ -27,7 +28,7 @@ function useForm() {
 
 type TaskLite = { id: string; version: number; status: string; archived: boolean; blockedReason: string | null };
 
-export function TaskActions({ orgSlug, task, isAssignee, canManage, members, reviewerId, assigneeId }: { orgSlug: string; task: TaskLite; isAssignee: boolean; canManage: boolean; members: { id: string; display_name: string }[]; reviewerId: string | null; assigneeId: string }) {
+export function TaskActions({ orgSlug, task, isAssignee, canManage, members, reviewerId, assigneeId, estimateMinutes = null }: { orgSlug: string; task: TaskLite; isAssignee: boolean; canManage: boolean; members: { id: string; display_name: string }[]; reviewerId: string | null; assigneeId: string; estimateMinutes?: number | null }) {
   const { pending, error, submit } = useForm();
   const [mode, setMode] = useState<null | "block" | "edit">(null);
   const patch = (body: Record<string, unknown>) => submit(() => api(`/api/orgs/${orgSlug}/tasks/${task.id}`, { method: "PATCH", body: { expectedVersion: task.version, ...body } }), () => setMode(null));
@@ -53,7 +54,7 @@ export function TaskActions({ orgSlug, task, isAssignee, canManage, members, rev
           <Field label="Reviewer" htmlFor="e-rev"><Select id="e-rev" name="reviewerMembershipId" defaultValue={reviewerId ?? ""}><option value="">None yet</option>{members.filter((m) => m.id !== assigneeId).map((m) => <option key={m.id} value={m.id}>{m.display_name}</option>)}</Select></Field>
           {canManage ? <Field label="Assignee" htmlFor="e-asg" hint="blocked while a session is open"><Select id="e-asg" name="assigneeMembershipId" defaultValue={assigneeId}>{members.map((m) => <option key={m.id} value={m.id}>{m.display_name}</option>)}</Select></Field> : null}
           <div className="grid grid-cols-2 gap-2">
-            <Field label="Estimate (min)" htmlFor="e-est"><Input id="e-est" name="estimateMinutes" type="number" min={1} /></Field>
+            <Field label="Estimated time" htmlFor="e-est"><DurationPicker id="e-est" name="estimateMinutes" defaultValue={estimateMinutes} /></Field>
             <Field label="Due" htmlFor="e-due"><DatePicker mode="datetime" id="e-due" name="dueAt" /></Field>
           </div>
           <Field label="Priority" htmlFor="e-pri"><Select id="e-pri" name="priority" defaultValue="normal"><option value="low">Low</option><option value="normal">Normal</option><option value="high">High</option><option value="urgent">Urgent</option></Select></Field>

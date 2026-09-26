@@ -14,7 +14,7 @@ const STATUS = [{ value: "active", label: "Active", tone: "success" as const }, 
 
 function Section({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-[var(--radius)] border border-border-soft bg-wash-soft p-4 shadow-[inset_0_1px_0_var(--highlight)]">
+    <section className="rounded-[var(--radius)] border border-border-soft bg-wash-soft p-4">
       <div className="mb-3"><p className="eyebrow">{title}</p>{hint ? <p className="mt-0.5 text-xs text-fg-subtle">{hint}</p> : null}</div>
       {children}
     </section>

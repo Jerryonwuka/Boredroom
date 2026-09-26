@@ -8,8 +8,10 @@ import { Badge } from "@/components/ui/badge";
 import { DataTable } from "@/components/ui/table";
 import { ClockButtons } from "@/components/app/clock";
 import { myClock } from "@/server/services/attendance";
-import { formatDuration, formatLongDate, formatDateTime } from "@/lib/utils";
+import { formatDuration, formatLongDate, formatDateTime, cn } from "@/lib/utils";
 import { DatePicker } from "@/components/ui/date-picker";
+import { ICON_BUTTON } from "@/components/ui/icon-button";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Clock in" };
@@ -70,11 +72,10 @@ export default async function ClockPage({ params, searchParams }: { params: Prom
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
           <h2 className="font-display text-lg">{c.month === thisMonth ? "Earlier this month" : monthLabel(c.month)}</h2>
           <form className="flex items-center gap-2 text-sm" action={`/app/${ctx.org.slug}/clock`}>
-            <Link href={monthHref(shiftMonth(c.month, -1))} className="link-action">Previous month</Link>
+            <Link href={monthHref(shiftMonth(c.month, -1))} aria-label="Previous month" className={cn(ICON_BUTTON, "size-9")}><ChevronLeft className="size-4" aria-hidden /></Link>
             <label htmlFor="month" className="sr-only">Month</label>
-            <DatePicker mode="month" id="month" name="month" defaultValue={c.month} max={thisMonth} size="sm" />
-            <Button type="submit" size="sm" variant="subtle">Show</Button>
-            {c.month < thisMonth ? <><Link href={monthHref(shiftMonth(c.month, 1))} className="link-action">Next month</Link><Link href={monthHref(thisMonth)} className="link-action">This month</Link></> : null}
+            <DatePicker mode="month" id="month" name="month" defaultValue={c.month} max={thisMonth} size="sm" submitOnChange />
+            {c.month < thisMonth ? <><Link href={monthHref(shiftMonth(c.month, 1))} aria-label="Next month" className={cn(ICON_BUTTON, "size-9")}><ChevronRight className="size-4" aria-hidden /></Link><Link href={monthHref(thisMonth)} className="link-action">This month</Link></> : null}
           </form>
         </div>
         <p className="mb-3 text-sm text-fg-muted">{c.summary.present} day{c.summary.present === 1 ? "" : "s"} clocked in{c.summary.late ? `, ${c.summary.late} late` : ""}{c.summary.missed ? `, ${c.summary.missed} working day${c.summary.missed === 1 ? "" : "s"} with no clock-in` : ""}{c.month === thisMonth ? " (not counting today)" : ""}.</p>

@@ -210,8 +210,8 @@ export type { Db };
 
 export async function reviewQueue(ctx: OrgContext) {
   return withUser(ctx.user.profileId, async (db) => {
-    const submissions = await db.query<{ task_id: string; title: string; assignee_name: string; submission_id: string; revision: number; submitted_at: string; note: string; reviewer_is_me: boolean }>(
-      `SELECT t.id AS task_id, t.title, pr.display_name AS assignee_name, s.id AS submission_id, s.revision, s.submitted_at, s.note, (t.reviewer_membership_id = $2) AS reviewer_is_me
+    const submissions = await db.query<{ task_id: string; title: string; assignee_name: string; assignee_membership_id: string; submission_id: string; revision: number; submitted_at: string; note: string; reviewer_is_me: boolean }>(
+      `SELECT t.id AS task_id, t.title, pr.display_name AS assignee_name, m.id AS assignee_membership_id, s.id AS submission_id, s.revision, s.submitted_at, s.note, (t.reviewer_membership_id = $2) AS reviewer_is_me
        FROM tasks t JOIN memberships m ON m.id = t.assignee_membership_id JOIN profiles pr ON pr.id = m.user_id
        JOIN LATERAL (SELECT id, revision, submitted_at, note FROM task_submissions WHERE task_id = t.id ORDER BY revision DESC LIMIT 1) s ON true
        WHERE t.organisation_id = $1 AND t.status = 'in_review' AND t.assignee_membership_id <> $2
@@ -280,7 +280,7 @@ export async function orgDashboard(ctx: OrgContext) {
       [ctx.org.id, dayStart, ctx.org.current_policy_id]);
     const stale = counts.stale;
     type WorkingNow = { membership_id: string; display_name: string; team_names: string[]; state: string; task_id: string; task_title: string; started_at: string; last_heartbeat_at: string; today_seconds: number };
-    type TeamRow = { id: string; name: string; members: number; leads: string[]; open_tasks: number; blocked: number; working: number; project_id: string | null };
+    type TeamRow = { id: string; name: string; members: number; leads: string[]; lead_ids: string[]; open_tasks: number; blocked: number; working: number; project_id: string | null };
     type DoneRow = { id: string; title: string; assignee_name: string; completed_at: string };
     const lists = await db.one<{ working_now: WorkingNow[] | null; teams: TeamRow[] | null; recent_done: DoneRow[] | null }>(
       `SELECT
@@ -295,6 +295,7 @@ export async function orgDashboard(ctx: OrgContext) {
         SELECT t.id, t.name, t.project_id,
               (SELECT count(*) FROM team_members tm WHERE tm.team_id = t.id)::int AS members,
               COALESCE((SELECT array_agg(pr.display_name ORDER BY pr.display_name) FROM team_members tm JOIN memberships m ON m.id = tm.membership_id JOIN profiles pr ON pr.id = m.user_id WHERE tm.team_id = t.id AND tm.is_manager), '{}') AS leads,
+              COALESCE((SELECT array_agg(m.id ORDER BY pr.display_name) FROM team_members tm JOIN memberships m ON m.id = tm.membership_id JOIN profiles pr ON pr.id = m.user_id WHERE tm.team_id = t.id AND tm.is_manager), '{}') AS lead_ids,
               (SELECT count(*) FROM tasks x JOIN team_members tm ON tm.membership_id = x.assignee_membership_id AND tm.team_id = t.id WHERE x.status IN ('todo','in_progress') AND x.archived_at IS NULL)::int AS open_tasks,
               (SELECT count(*) FROM tasks x JOIN team_members tm ON tm.membership_id = x.assignee_membership_id AND tm.team_id = t.id WHERE x.status = 'blocked' AND x.archived_at IS NULL)::int AS blocked,
               (SELECT count(*) FROM work_sessions s JOIN team_members tm ON tm.membership_id = s.membership_id AND tm.team_id = t.id WHERE s.state IN ('running','paused','interrupted'))::int AS working
@@ -343,10 +344,11 @@ export async function myTeams(ctx: OrgContext) {
 // Tasks page: staff see everything assigned to them; team leads see their teams' tasks; organisation accounts see all
 // ---------------------------------------------------------------------------
 export type TaskListRow = TaskRow & { created_by_name: string; team_name: string | null; completed_at: string | null; overdue: boolean };
-export type TaskListFilter = { status?: "open" | "check" | "done" | "all"; who?: string | null };
+/** `assigned` (owner decision, 26 September 2026): the tasks the viewer handed to other people. */
+export type TaskListFilter = { status?: "open" | "check" | "done" | "all" | "assigned"; who?: string | null };
 
 export async function tasksView(ctx: OrgContext, filter: TaskListFilter = {}) {
-  const status = filter.status ?? "open";
+  const status = filter.status ?? "all";
   return withUser(ctx.user.profileId, async (db) => {
     const scope: "org" | "lead" | "mine" = ctx.membership.role === "owner" || ctx.membership.role === "hr" ? "org"
       : ctx.membership.role === "manager" || (await db.maybeOne(`SELECT 1 FROM team_members WHERE membership_id = $1 AND is_manager`, [ctx.membership.id])) ? "lead" : "mine";
@@ -370,16 +372,21 @@ export async function tasksView(ctx: OrgContext, filter: TaskListFilter = {}) {
     // A lead's list: everything on their teams, plus anything they handed to someone outside them. Filtering by a person narrows to that person.
     const scopeSql = who ? `t.assignee_membership_id = $2` : scope === "lead" ? `(t.assignee_membership_id = ANY($2::uuid[]) OR t.created_by = $3)` : `t.assignee_membership_id = ANY($2::uuid[])`;
     const scopeParams: unknown[] = who ? [ctx.org.id, who] : scope === "lead" ? [ctx.org.id, teamIds, ctx.membership.id] : [ctx.org.id, scope === "org" ? allIds : teamIds];
-    const statusSql = status === "open" ? `t.status IN ('todo','in_progress','blocked')` : status === "check" ? `t.status = 'in_review'` : status === "done" ? `t.status = 'completed'` : `true`;
+    // "Assigned" is what the viewer handed to others; it needs the viewer's id as one more parameter.
+    const me = `$${scopeParams.length + 1}`;
+    const assignedSql = `(t.created_by = ${me} AND t.assignee_membership_id <> ${me})`;
+    const statusSql = status === "open" ? `t.status IN ('todo','in_progress','blocked')` : status === "check" ? `t.status = 'in_review'` : status === "done" ? `t.status = 'completed'` : status === "assigned" ? assignedSql : `true`;
+    const params = [...scopeParams, ctx.membership.id];
     const tasks = await db.query<TaskListRow>(
       `${TASK_SELECT.replace("SELECT t.id,", "SELECT pc.display_name AS created_by_name, t.completed_at, (t.due_at IS NOT NULL AND t.due_at < now() AND t.status <> 'completed') AS overdue, (SELECT string_agg(tt.name, ', ' ORDER BY tt.name) FROM team_members tm JOIN teams tt ON tt.id = tm.team_id WHERE tm.membership_id = t.assignee_membership_id AND tt.archived_at IS NULL) AS team_name, t.id,").replace("LEFT JOIN memberships mr", "JOIN memberships mc ON mc.id = t.created_by JOIN profiles pc ON pc.id = mc.user_id LEFT JOIN memberships mr")}
        WHERE t.organisation_id = $1 AND ${scopeSql} AND t.archived_at IS NULL AND ${statusSql}
        ORDER BY CASE t.status WHEN 'blocked' THEN 0 WHEN 'in_progress' THEN 1 WHEN 'todo' THEN 2 WHEN 'in_review' THEN 3 ELSE 4 END,
                 CASE t.priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END,
-                t.due_at NULLS LAST, t.completed_at DESC NULLS LAST, t.created_at DESC LIMIT 300`, scopeParams);
-    const c = await db.one<{ open: number; check: number; done: number }>(
-      `SELECT count(*) FILTER (WHERE t.status IN ('todo','in_progress','blocked'))::int AS open, count(*) FILTER (WHERE t.status = 'in_review')::int AS check, count(*) FILTER (WHERE t.status = 'completed')::int AS done
-       FROM tasks t WHERE t.organisation_id = $1 AND ${scopeSql} AND t.archived_at IS NULL`, scopeParams);
+                t.due_at NULLS LAST, t.completed_at DESC NULLS LAST, t.created_at DESC LIMIT 300`, status === "assigned" ? params : scopeParams);
+    const c = await db.one<{ open: number; check: number; done: number; assigned: number }>(
+      `SELECT count(*) FILTER (WHERE t.status IN ('todo','in_progress','blocked'))::int AS open, count(*) FILTER (WHERE t.status = 'in_review')::int AS check, count(*) FILTER (WHERE t.status = 'completed')::int AS done,
+              count(*) FILTER (WHERE ${assignedSql})::int AS assigned
+       FROM tasks t WHERE t.organisation_id = $1 AND ${scopeSql} AND t.archived_at IS NULL`, params);
     const running = scope === "mine" ? await db.maybeOne<{ task_id: string }>(`SELECT task_id FROM work_sessions WHERE membership_id = $1 AND state IN ('running','paused','interrupted')`, [ctx.membership.id]) : null;
     return { scope, status, who, people, tasks, counts: c, runningTaskId: running?.task_id ?? null };
   });

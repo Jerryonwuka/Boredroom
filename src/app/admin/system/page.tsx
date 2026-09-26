@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { AdminAction } from "@/components/admin/actions";
 import { num } from "@/lib/format";
 import { formatDateTime, relativeTime } from "@/lib/utils";
+import { EmptyState } from "@/components/ui/states";
 
 export const metadata = { title: "System" };
 
@@ -45,8 +46,8 @@ export default async function SystemPage({ searchParams }: { searchParams: Promi
       ) : null}
       {tab === "errors" ? (
         <div className="grid gap-6 lg:grid-cols-2">
-          <Card><CardHeader title={`Failed jobs (${s.jobs.failed.length})`} />{s.jobs.failed.length === 0 ? <p className="text-sm text-fg-subtle">None.</p> : <ul className="divide-y divide-border-soft text-sm">{s.jobs.failed.map((j) => <li key={j.id} className="py-2"><span className="font-mono text-xs">{j.type}</span> <span className="text-xs text-fg-subtle">{relativeTime(j.created_at)} · {j.attempts} attempts</span><p className="text-xs text-danger">{j.last_error}</p>{can(admin, "system.configure") ? <div className="mt-1"><AdminAction path={`/api/admin/jobs/${j.id}/retry`}>Retry</AdminAction></div> : null}</li>)}</ul>}</Card>
-          <Card><CardHeader title="Recorded errors" description="Failures the platform audited." />{s.jobs.errors.length === 0 ? <p className="text-sm text-fg-subtle">None.</p> : <ul className="divide-y divide-border-soft text-sm">{s.jobs.errors.map((e, i) => <li key={i} className="py-2"><span className="font-mono text-xs">{e.action}</span> <span className="text-xs text-fg-subtle">{formatDateTime(e.occurred_at)}</span><p className="truncate text-xs text-fg-muted">{JSON.stringify(e.metadata)}</p></li>)}</ul>}</Card>
+          <Card><CardHeader title={`Failed jobs (${s.jobs.failed.length})`} />{s.jobs.failed.length === 0 ? <EmptyState compact title="Nothing here yet" icon3d="box-doc-check" /> : <ul className="divide-y divide-border-soft text-sm">{s.jobs.failed.map((j) => <li key={j.id} className="py-2"><span className="font-mono text-xs">{j.type}</span> <span className="text-xs text-fg-subtle">{relativeTime(j.created_at)} · {j.attempts} attempts</span><p className="text-xs text-danger">{j.last_error}</p>{can(admin, "system.configure") ? <div className="mt-1"><AdminAction path={`/api/admin/jobs/${j.id}/retry`}>Retry</AdminAction></div> : null}</li>)}</ul>}</Card>
+          <Card><CardHeader title="Recorded errors" description="Failures the platform audited." />{s.jobs.errors.length === 0 ? <EmptyState compact title="Nothing here yet" icon3d="box-doc-check" /> : <ul className="divide-y divide-border-soft text-sm">{s.jobs.errors.map((e, i) => <li key={i} className="py-2"><span className="font-mono text-xs">{e.action}</span> <span className="text-xs text-fg-subtle">{formatDateTime(e.occurred_at)}</span><p className="truncate text-xs text-fg-muted">{JSON.stringify(e.metadata)}</p></li>)}</ul>}</Card>
         </div>
       ) : null}
       {tab === "api" ? <Card><CardHeader title="API keys" description="Boredroom does not expose a public API yet. When it does, keys, permissions, usage and rate limits will be managed here." /><p className="text-sm text-fg-subtle">Phase 2.</p></Card> : null}

@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "motion/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Send, X, MessageSquarePlus, Mic, Trash2, MoreHorizontal, Copy, Pencil, Flag, Plus, Users, Archive } from "lucide-react";
+import { Send, X, MessageSquarePlus, Mic, Trash2, MoreHorizontal, Copy, Pencil, Flag, Plus, Users, Archive, ArchiveRestore, Hash, Reply, Bell, BellOff, Mail, MailOpen } from "lucide-react";
 import { VoicePoweredOrb } from "@/components/ui/voice-powered-orb";
 import { useVoiceRecorder } from "@/hooks/use-voice-recorder";
 import { Button } from "@/components/ui/button";
@@ -15,10 +16,23 @@ import { Presence } from "@/components/ui/motion";
 import { ConfirmButton, ConfirmDialog } from "@/components/ui/confirm";
 import { api, isApiFailure } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
+import { liftToTopLayer } from "@/components/ui/top-layer";
 import { Avatar } from "@/components/ui/avatar";
 import type { Presence as PresenceStatus } from "@/lib/presence";
 
 type TaskRef = { id: string; title: string } | null;
+
+// ---- Replying (owner decision, 26 September 2026): pick a message anywhere in the thread, the composer quotes it -------
+
+export type ReplyRef = { id: string; name: string; body: string } | null;
+const ReplyContext = createContext<{ reply: ReplyRef; setReply: (r: ReplyRef) => void }>({ reply: null, setReply: () => {} });
+
+/** Holds the message being replied to between the bubbles and the composer. Keyed by conversation on the page, so it resets on switch. */
+export function ReplyProvider({ children }: { children: ReactNode }) {
+  const [reply, setReply] = useState<ReplyRef>(null);
+  return <ReplyContext.Provider value={{ reply, setReply }}>{children}</ReplyContext.Provider>;
+}
+export const useReply = () => useContext(ReplyContext);
 
 /**
  * The composer. Enter sends, Shift+Enter starts a new line. State lives here, so the live refresh that
@@ -34,7 +48,9 @@ export function Composer({ orgSlug, conversationId, task, prefill, placeholder, 
   const errId = useId();
   const voice = useVoiceRecorder();
   const [sendingVoice, setSendingVoice] = useState(false);
+  const { reply, setReply } = useReply();
   useEffect(() => { ref.current?.focus(); }, [conversationId]);
+  useEffect(() => { if (reply) ref.current?.focus(); }, [reply]);
   const fmt = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
   const sendVoice = async () => {
     const note = await voice.stop();
@@ -54,8 +70,8 @@ export function Composer({ orgSlug, conversationId, task, prefill, placeholder, 
     if (!text || pending) return;
     setPending(true); setError(null);
     try {
-      await api(`/api/orgs/${orgSlug}/messages`, { method: "POST", body: { conversationId, body: text, taskId: attached?.id ?? null } });
-      setBody(""); setAttached(null);
+      await api(`/api/orgs/${orgSlug}/messages`, { method: "POST", body: { conversationId, body: text, taskId: attached?.id ?? null, replyToId: reply?.id ?? null } });
+      setBody(""); setAttached(null); setReply(null);
       if (ref.current) { ref.current.style.height = "auto"; ref.current.focus(); }
       if (attached) router.replace(`/app/${orgSlug}/messages?c=${conversationId}`);
       router.refresh();
@@ -63,7 +79,15 @@ export function Composer({ orgSlug, conversationId, task, prefill, placeholder, 
     finally { setPending(false); }
   };
   return (
-    <form data-refresh-safe className="border-t border-border-soft bg-bg px-4 py-3 md:px-6" onSubmit={(e) => { e.preventDefault(); void send(); }}>
+    <form data-refresh-safe className="border-t border-border-soft bg-bg px-4 py-3 md:px-6" onSubmit={(e) => { e.preventDefault(); void send(); }} onKeyDown={(e) => { if (e.key === "Escape" && reply) { e.preventDefault(); setReply(null); } }}>
+      <Presence show={!!reply}>
+        <div className="mb-2 flex items-center gap-3 rounded-[var(--radius-sm)] border border-border-soft bg-wash py-1.5 pl-3 pr-1.5 text-sm">
+          <span className="h-8 w-0.5 shrink-0 rounded-full bg-accent" aria-hidden />
+          <Reply className="size-4 shrink-0 text-accent" aria-hidden />
+          <span className="min-w-0 flex-1"><span className="block truncate text-xs font-semibold text-fg-muted">Replying to {reply?.name}</span><span className="block truncate text-xs text-fg-subtle">{reply?.body}</span></span>
+          <button type="button" aria-label="Stop replying" className="grid size-7 shrink-0 place-items-center rounded-full text-fg-subtle transition-colors duration-[var(--duration-fast)] hover:bg-wash-strong hover:text-fg" onClick={() => setReply(null)}><X className="size-3.5" aria-hidden /></button>
+        </div>
+      </Presence>
       <Presence show={!!attached}>
         <div className="mb-2 flex items-center gap-2 text-sm">
           <span className="text-fg-subtle">About</span>
@@ -88,8 +112,8 @@ export function Composer({ orgSlug, conversationId, task, prefill, placeholder, 
           className="prompt-scroll max-h-[200px] min-h-10 flex-1 resize-none self-center bg-transparent py-2 text-base text-fg outline-none placeholder:text-fg-subtle disabled:opacity-50"
           onChange={(e) => { setBody(e.target.value); grow(e.target); }}
           onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); void send(); } }} />
-        {canVoice && voice.supported && !body.trim() ? <button type="button" aria-label="Record a voice note" title="Record a voice note" disabled={pending} onClick={() => void voice.start()} className="grid size-9 shrink-0 place-items-center rounded-full text-fg-subtle transition-colors duration-[var(--duration-fast)] hover:bg-wash hover:text-fg"><Mic className="size-4" aria-hidden /></button> : null}
-        <button type="submit" aria-label="Send" disabled={pending || !body.trim()} className={cn("grid size-9 shrink-0 place-items-center rounded-full transition-[background-color,color,box-shadow,transform] duration-[var(--duration-fast)] disabled:cursor-not-allowed", body.trim() && !pending ? "bg-[linear-gradient(180deg,var(--accent-hover),var(--accent))] text-accent-fg shadow-[0_6px_18px_-6px_rgba(255,108,2,0.6)] hover:scale-105" : "bg-wash text-fg-subtle")}><Send className="size-4" aria-hidden /></button>
+        {canVoice && voice.supported && !body.trim() ? <button type="button" aria-label="Record a voice note" disabled={pending} onClick={() => void voice.start()} className="grid size-9 shrink-0 place-items-center rounded-full text-fg-subtle transition-colors duration-[var(--duration-fast)] hover:bg-wash hover:text-fg"><Mic className="size-4" aria-hidden /></button> : null}
+        <button type="submit" aria-label="Send" disabled={pending || !body.trim()} className={cn("grid size-9 shrink-0 place-items-center rounded-full transition-[background-color,color,box-shadow,transform] duration-[var(--duration-fast)] disabled:cursor-not-allowed", body.trim() && !pending ? "bg-accent hover:bg-[var(--accent-hover)] text-accent-fg hover:scale-105" : "bg-wash text-fg-subtle")}><Send className="size-4" aria-hidden /></button>
       </div>
       )}
       <p className="eyebrow mt-2 normal-case tracking-normal">{voice.recording ? "Speak, then press Send. Up to ten minutes." : "Enter sends, Shift+Enter starts a new line. The microphone records a voice note."}</p>
@@ -97,11 +121,30 @@ export function Composer({ orgSlug, conversationId, task, prefill, placeholder, 
   );
 }
 
-/** "New message": pick a person, land in the direct thread. */
-export function NewMessage({ orgSlug, people }: { orgSlug: string; people: { membership_id: string; display_name: string; role: string; teams: string | null; profile_id: string; avatar_key: string | null; presence: PresenceStatus }[] }) {
+/**
+ * The one "New" button on Messages (owner decision, 26 September 2026): orange, and it asks which kind of new,
+ * a channel or a direct thread with someone, instead of two buttons side by side.
+ */
+export function NewConversation({ orgSlug, people }: { orgSlug: string; people: Person[] }) {
+  const { open, setOpen, pos, btn, root, show } = useMenu(256);
+  const [sheet, setSheet] = useState<"channel" | "person" | null>(null);
+  return (
+    <div ref={root} className="relative">
+      <Button ref={btn} size="sm" aria-haspopup="menu" aria-expanded={open} onClick={show}><Plus className="size-4" aria-hidden />New</Button>
+      <Menu open={open} pos={pos} label="New" className="w-64">
+        <button type="button" role="menuitem" className={MENU_ITEM} onClick={() => { setOpen(false); setSheet("channel"); }}><Hash className="size-4" aria-hidden /><span><span className="block text-fg">New channel</span><span className="block text-xs text-fg-subtle">A room for a topic or a group</span></span></button>
+        <button type="button" role="menuitem" className={MENU_ITEM} onClick={() => { setOpen(false); setSheet("person"); }}><MessageSquarePlus className="size-4" aria-hidden /><span><span className="block text-fg">Message someone</span><span className="block text-xs text-fg-subtle">A direct thread with a teammate</span></span></button>
+      </Menu>
+      <NewChannel orgSlug={orgSlug} people={people} open={sheet === "channel"} onClose={() => setSheet(null)} />
+      <NewMessage orgSlug={orgSlug} people={people} open={sheet === "person"} onClose={() => setSheet(null)} />
+    </div>
+  );
+}
+
+/** "Message someone": pick a person, land in the direct thread. */
+export function NewMessage({ orgSlug, people, open, onClose }: { orgSlug: string; people: Person[]; open: boolean; onClose: () => void }) {
   const router = useRouter();
   const ref = useRef<HTMLDialogElement>(null);
-  const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -110,18 +153,17 @@ export function NewMessage({ orgSlug, people }: { orgSlug: string; people: { mem
   const shown = people.filter((p) => !q.trim() || `${p.display_name} ${p.teams ?? ""}`.toLowerCase().includes(q.trim().toLowerCase()));
   const start = async (membershipId: string) => {
     setPending(membershipId); setError(null);
-    try { const r = await api<{ id: string }>(`/api/orgs/${orgSlug}/messages/direct`, { method: "POST", body: { membershipId } }); setOpen(false); router.push(`/app/${orgSlug}/messages?c=${r.id}`); router.refresh(); }
+    try { const r = await api<{ id: string }>(`/api/orgs/${orgSlug}/messages/direct`, { method: "POST", body: { membershipId } }); onClose(); router.push(`/app/${orgSlug}/messages?c=${r.id}`); router.refresh(); }
     catch (err) { setError(isApiFailure(err) ? err.error.message : "Cannot reach the server."); }
     finally { setPending(null); }
   };
   return (
     <>
-      <Button size="sm" onClick={() => setOpen(true)} aria-haspopup="dialog"><MessageSquarePlus className="size-4" aria-hidden />New</Button>
-      <dialog ref={ref} className="sheet" aria-labelledby={titleId} onClose={() => setOpen(false)} onCancel={(e) => { e.preventDefault(); setOpen(false); }}>
+      <dialog ref={ref} className="sheet" aria-labelledby={titleId} onClose={onClose} onCancel={(e) => { e.preventDefault(); onClose(); }}>
         <div className="grid gap-3 p-5">
           <div className="flex items-start justify-between gap-3">
             <div><h2 id={titleId} className="font-display text-xl">Message someone</h2><p className="mt-1 text-sm text-fg-muted">Anyone in the organisation, in your team or not.</p></div>
-            <Button variant="ghost" size="icon" aria-label="Close" onClick={() => setOpen(false)}><X className="size-4" aria-hidden /></Button>
+            <Button variant="ghost" size="icon" aria-label="Close" onClick={onClose}><X className="size-4" aria-hidden /></Button>
           </div>
           <Input aria-label="Search people" placeholder="Search by name or team…" value={q} onChange={(e) => setQ(e.target.value)} autoFocus />
           {error ? <p role="alert" className="text-sm text-danger">{error}</p> : null}
@@ -162,19 +204,21 @@ export function WithdrawMessage({ orgSlug, id, className }: { orgSlug: string; i
 
 // ---- Menus and sheets (owner decision, 25 September 2026): one burger per message and per conversation ---------------
 
-function useMenu() {
+function useMenu(width = 208) {
   const [open, setOpen] = useState(false);
-  const [pos, setPos] = useState({ top: 0, left: 0 });
+  const [pos, setPos] = useState<MenuPos>({ top: 0, left: 0, up: false });
   const btn = useRef<HTMLButtonElement>(null);
   const root = useRef<HTMLDivElement>(null);
   const show = () => {
     const r = btn.current?.getBoundingClientRect();
-    if (r) setPos({ top: r.bottom + 6, left: Math.max(8, Math.min(r.right - 208, window.innerWidth - 216)) });
+    // Below the button unless that would run off the bottom of the screen; then it opens upward from the button's top.
+    if (r) { const up = r.bottom + 6 + 220 > window.innerHeight && r.top > window.innerHeight - r.bottom; setPos({ top: up ? r.top - 6 : r.bottom + 6, up, left: Math.max(8, Math.min(r.right - width, window.innerWidth - width - 8)) }); }
     setOpen((o) => !o);
   };
   useEffect(() => {
     if (!open) return;
-    const onDown = (e: MouseEvent) => { if (root.current && !root.current.contains(e.target as Node)) setOpen(false); };
+    // The menu itself is portaled to the body (see Menu), so a press inside it must not count as outside.
+    const onDown = (e: MouseEvent) => { const t = e.target as Element | null; if (root.current && !root.current.contains(t) && !t?.closest?.("[data-menu]")) setOpen(false); };
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
     document.addEventListener("mousedown", onDown); document.addEventListener("keydown", onKey);
     return () => { document.removeEventListener("mousedown", onDown); document.removeEventListener("keydown", onKey); };
@@ -184,16 +228,25 @@ function useMenu() {
 
 const MENU_ITEM = "flex w-full items-center gap-2.5 rounded-[var(--radius-sm)] px-2.5 py-2 text-left text-sm text-fg-muted transition-colors duration-[var(--duration-fast)] hover:bg-wash hover:text-fg disabled:opacity-40";
 
-function Menu({ open, pos, children, label }: { open: boolean; pos: { top: number; left: number }; children: ReactNode; label: string }) {
-  return (
+/**
+ * The pop-up itself. Rendered into the body: a fixed box inside a transformed or scrolling ancestor (the hover burger
+ * on a list row, the scrolling thread) would be measured from that ancestor and clipped by it.
+ */
+type MenuPos = { top: number; left: number; up: boolean };
+
+function Menu({ open, pos, children, label, className }: { open: boolean; pos: MenuPos; children: ReactNode; label: string; className?: string }) {
+  if (typeof document === "undefined") return null;
+  const lift = pos.up ? 4 : -4;
+  return createPortal(
     <AnimatePresence>
       {open ? (
-        <motion.div key="menu" role="menu" aria-label={label} initial={{ opacity: 0, y: -4, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -4, scale: 0.98 }} transition={{ duration: 0.14, ease: [0.23, 1, 0.32, 1] }}
-          style={{ position: "fixed", top: pos.top, left: pos.left, zIndex: "var(--z-toast)" as unknown as number }} className="w-52 rounded-[var(--radius)] border border-border-strong bg-popover p-1.5 shadow-[var(--card-shadow)]">
+        <motion.div ref={liftToTopLayer} key="menu" role="menu" aria-label={label} data-menu initial={{ opacity: 0, y: lift, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: lift, scale: 0.98 }} transition={{ duration: 0.14, ease: [0.23, 1, 0.32, 1] }}
+          style={{ position: "fixed", top: pos.up ? undefined : pos.top, bottom: pos.up ? window.innerHeight - pos.top : undefined, left: pos.left, zIndex: "var(--z-toast)" as unknown as number }} className={cn("top-pop w-52 rounded-[var(--radius)] border border-border-strong bg-popover p-1.5 shadow-[var(--card-shadow)]", className)}>
           {children}
         </motion.div>
       ) : null}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body,
   );
 }
 
@@ -218,17 +271,23 @@ function TextSheet({ onClose, title, description, label, initial = "", submitLab
   );
 }
 
-/** The burger on a message: copy, edit and withdraw for your own, copy and report for everyone else's. */
-export function MessageMenu({ orgSlug, id, mine, body, isVoice }: { orgSlug: string; id: string; mine: boolean; body: string; isVoice: boolean }) {
+const HOVER_BTN = "grid size-7 place-items-center rounded-full border border-transparent text-fg-subtle transition-colors duration-[var(--duration-fast)] hover:border-border hover:bg-wash hover:text-fg";
+
+/** The actions beside a message: a reply arrow, and a burger with copy, edit and withdraw for your own, copy and report for everyone else's. */
+export function MessageMenu({ orgSlug, id, mine, body, isVoice, senderName, canReply = true }: { orgSlug: string; id: string; mine: boolean; body: string; isVoice: boolean; senderName: string; canReply?: boolean }) {
   const router = useRouter();
   const { open, setOpen, pos, btn, root, show } = useMenu();
+  const { setReply } = useReply();
   const [sheet, setSheet] = useState<"edit" | "report" | "withdraw" | null>(null);
   const [copied, setCopied] = useState(false);
   const copy = async () => { try { await navigator.clipboard.writeText(body); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { /* clipboard blocked */ } setOpen(false); };
+  const startReply = () => { setOpen(false); setReply({ id, name: mine ? "yourself" : senderName, body: isVoice ? "Voice note" : body }); };
   return (
-    <div ref={root} className="relative">
-      <button ref={btn} type="button" aria-label="Message actions" aria-haspopup="menu" aria-expanded={open} onClick={show} className="grid size-7 place-items-center rounded-full border border-transparent text-fg-subtle transition-colors duration-[var(--duration-fast)] hover:border-border hover:bg-wash hover:text-fg"><MoreHorizontal className="size-4" aria-hidden /></button>
+    <div ref={root} className={cn("relative flex items-center gap-0.5", mine && "flex-row-reverse")}>
+      {canReply ? <button type="button" aria-label="Reply" onClick={startReply} className={HOVER_BTN}><Reply className="size-4" aria-hidden /></button> : null}
+      <button ref={btn} type="button" aria-label="Message actions" aria-haspopup="menu" aria-expanded={open} onClick={show} className={HOVER_BTN}><MoreHorizontal className="size-4" aria-hidden /></button>
       <Menu open={open} pos={pos} label="Message actions">
+        {canReply ? <button type="button" role="menuitem" className={MENU_ITEM} onClick={startReply}><Reply className="size-4" aria-hidden />Reply</button> : null}
         {!isVoice ? <button type="button" role="menuitem" className={MENU_ITEM} onClick={copy}><Copy className="size-4" aria-hidden />{copied ? "Copied" : "Copy text"}</button> : null}
         {mine && !isVoice ? <button type="button" role="menuitem" className={MENU_ITEM} onClick={() => { setOpen(false); setSheet("edit"); }}><Pencil className="size-4" aria-hidden />Edit</button> : null}
         {mine ? <button type="button" role="menuitem" className={cn(MENU_ITEM, "text-danger hover:text-danger")} onClick={() => { setOpen(false); setSheet("withdraw"); }}><Trash2 className="size-4" aria-hidden />Withdraw</button> : null}
@@ -267,8 +326,12 @@ function PeoplePicker({ people, chosen, onChange }: { people: Person[]; chosen: 
   );
 }
 
-/** Start a channel: a name and the people in it. */
-export function NewChannel({ orgSlug, people }: { orgSlug: string; people: Person[] }) {
+/** Start a channel: a name and the people in it. Mounted only while open, so every opening starts blank. */
+export function NewChannel({ orgSlug, people, open, onClose }: { orgSlug: string; people: Person[]; open: boolean; onClose: () => void }) {
+  return open ? <NewChannelSheet orgSlug={orgSlug} people={people} onClose={onClose} /> : null;
+}
+
+function NewChannelSheet({ orgSlug, people, onClose }: { orgSlug: string; people: Person[]; onClose: () => void }) {
   const router = useRouter();
   const ref = useRef<HTMLDialogElement>(null);
   const [title, setTitle] = useState("");
@@ -276,19 +339,53 @@ export function NewChannel({ orgSlug, people }: { orgSlug: string; people: Perso
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const titleId = useId();
+  useEffect(() => { ref.current?.showModal(); }, []);
   return (
-    <>
-      <IconButton aria-label="New channel" title="New channel" className="size-9" onClick={() => { setTitle(""); setChosen(new Set()); setError(null); ref.current?.showModal(); }}><Plus className="size-4" aria-hidden /></IconButton>
-      <dialog ref={ref} className="sheet" aria-labelledby={titleId} onCancel={(e) => { e.preventDefault(); ref.current?.close(); }}>
-        <form className="grid gap-4 p-5" onSubmit={async (e) => { e.preventDefault(); setPending(true); setError(null); try { const r = await api<{ id: string }>(`/api/orgs/${orgSlug}/messages/channels`, { method: "POST", body: { title, memberIds: [...chosen] }, retries: 0 }); ref.current?.close(); router.push(`/app/${orgSlug}/messages?c=${r.id}`); router.refresh(); } catch (err) { setError(isApiFailure(err) ? err.error.message : "Cannot reach the server."); } finally { setPending(false); } }}>
-          <div className="flex items-start justify-between gap-3"><div><h2 id={titleId} className="font-display text-xl">New channel</h2><p className="mt-1 text-sm text-fg-muted">A named room for a topic or a group. You can add or remove people later.</p></div><Button type="button" variant="ghost" size="icon" aria-label="Close" onClick={() => ref.current?.close()}><X className="size-4" aria-hidden /></Button></div>
-          {error ? <Alert tone="danger">{error}</Alert> : null}
-          <label className="grid gap-1.5"><span className="eyebrow">Channel name</span><InputAdorned prefix="#" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={80} required placeholder="launch-week" autoFocus /></label>
-          <div><p className="eyebrow mb-1.5">People</p><PeoplePicker people={people} chosen={chosen} onChange={setChosen} /></div>
-          <div className="flex justify-end gap-2"><Button type="button" variant="ghost" onClick={() => ref.current?.close()}>Cancel</Button><Button type="submit" disabled={pending || !title.trim()}>{pending ? "Creating…" : "Create channel"}</Button></div>
-        </form>
-      </dialog>
-    </>
+    <dialog ref={ref} className="sheet" aria-labelledby={titleId} onCancel={(e) => { e.preventDefault(); onClose(); }} onClose={onClose}>
+      <form className="grid gap-4 p-5" onSubmit={async (e) => { e.preventDefault(); setPending(true); setError(null); try { const r = await api<{ id: string }>(`/api/orgs/${orgSlug}/messages/channels`, { method: "POST", body: { title, memberIds: [...chosen] }, retries: 0 }); onClose(); router.push(`/app/${orgSlug}/messages?c=${r.id}`); router.refresh(); } catch (err) { setError(isApiFailure(err) ? err.error.message : "Cannot reach the server."); } finally { setPending(false); } }}>
+        <div className="flex items-start justify-between gap-3"><div><h2 id={titleId} className="font-display text-xl">New channel</h2><p className="mt-1 text-sm text-fg-muted">A named room for a topic or a group. You can add or remove people later.</p></div><Button type="button" variant="ghost" size="icon" aria-label="Close" onClick={onClose}><X className="size-4" aria-hidden /></Button></div>
+        {error ? <Alert tone="danger">{error}</Alert> : null}
+        <label className="grid gap-1.5"><span className="eyebrow">Channel name</span><InputAdorned prefix="#" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={80} required placeholder="launch-week" autoFocus /></label>
+        <div><p className="eyebrow mb-1.5">People</p><PeoplePicker people={people} chosen={chosen} onChange={setChosen} /></div>
+        <div className="flex justify-end gap-2"><Button type="button" variant="ghost" onClick={onClose}>Cancel</Button><Button type="submit" disabled={pending || !title.trim()}>{pending ? "Creating…" : "Create channel"}</Button></div>
+      </form>
+    </dialog>
+  );
+}
+
+/**
+ * The burger that slides in when a conversation in the list is hovered (owner decision, 26 September 2026): mark it
+ * unread or read, mute or unmute, archive or restore a channel you run, delete a chat or channel.
+ */
+export function ConversationRowMenu({ orgSlug, conversation, active }: { orgSlug: string; conversation: { id: string; kind: string; title: string; unread: number; muted: boolean; archived_at: string | null; can_manage: boolean }; active: boolean }) {
+  const router = useRouter();
+  const { open, setOpen, pos, btn, root, show } = useMenu();
+  const [confirm, setConfirm] = useState<"delete" | null>(null);
+  const [pending, setPending] = useState(false);
+  const c = conversation;
+  const patch = async (body: Record<string, unknown>) => { setOpen(false); setPending(true); try { await api(`/api/orgs/${orgSlug}/messages/conversations/${c.id}`, { method: "PATCH", body, retries: 0 }); router.refresh(); } finally { setPending(false); } };
+  const isChannel = c.kind === "channel";
+  const canDelete = c.kind === "direct" || (isChannel && c.can_manage);
+  return (
+    <div ref={root} className={cn("absolute right-2 top-1/2 -translate-y-1/2 transition-[opacity,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)]", open ? "translate-x-0 opacity-100" : "translate-x-1.5 opacity-0 group-hover:translate-x-0 group-hover:opacity-100 focus-within:translate-x-0 focus-within:opacity-100")}>
+      <IconButton ref={btn} aria-label={`Actions for ${c.title}`} aria-haspopup="menu" aria-expanded={open} disabled={pending} onClick={(e) => { e.preventDefault(); e.stopPropagation(); show(); }} className="size-7 border-border-strong bg-[var(--bg-popover)]"><MoreHorizontal className="size-3.5" aria-hidden /></IconButton>
+      <Menu open={open} pos={pos} label={`Actions for ${c.title}`}>
+        {!active ? (c.unread > 0
+          ? <button type="button" role="menuitem" className={MENU_ITEM} onClick={() => void patch({ unread: false })}><MailOpen className="size-4" aria-hidden />Mark as read</button>
+          : <button type="button" role="menuitem" className={MENU_ITEM} onClick={() => void patch({ unread: true })}><Mail className="size-4" aria-hidden />Mark as unread</button>) : null}
+        {c.muted
+          ? <button type="button" role="menuitem" className={MENU_ITEM} onClick={() => void patch({ muted: false })}><Bell className="size-4" aria-hidden />Unmute</button>
+          : <button type="button" role="menuitem" className={MENU_ITEM} onClick={() => void patch({ muted: true })}><BellOff className="size-4" aria-hidden />Mute</button>}
+        {isChannel && c.can_manage ? (c.archived_at
+          ? <button type="button" role="menuitem" className={MENU_ITEM} onClick={() => void patch({ archived: false })}><ArchiveRestore className="size-4" aria-hidden />Restore</button>
+          : <button type="button" role="menuitem" className={MENU_ITEM} onClick={() => void patch({ archived: true })}><Archive className="size-4" aria-hidden />Archive</button>) : null}
+        {canDelete ? <button type="button" role="menuitem" className={cn(MENU_ITEM, "text-danger hover:text-danger")} onClick={() => { setOpen(false); setConfirm("delete"); }}><Trash2 className="size-4" aria-hidden />{isChannel ? "Delete channel" : "Delete chat"}</button> : null}
+      </Menu>
+      <ConfirmDialog open={confirm === "delete"} onClose={() => setConfirm(null)} title={isChannel ? `Delete #${c.title}?` : `Delete the chat with ${c.title}?`}
+        description={isChannel ? "Every message in it is removed for everyone. Archive it instead if you might want it back." : "It disappears from your list. The other person keeps their copy, and it comes back here if they write to you again."}
+        confirmLabel={isChannel ? "Delete channel" : "Delete chat"}
+        onConfirm={async () => { await api(`/api/orgs/${orgSlug}/messages/conversations/${c.id}`, { method: "DELETE", retries: 0 }); if (active) router.push(`/app/${orgSlug}/messages`); router.refresh(); }} />
+    </div>
   );
 }
 

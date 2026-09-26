@@ -11,7 +11,6 @@ import Link from "next/link";
 import { AnimatePresence, motion } from "motion/react";
 import { MessageSquare, CalendarClock } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
 import { PRESENCE, type Presence } from "@/lib/presence";
 import { api } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
@@ -58,7 +57,7 @@ export function Person({ orgSlug, membershipId, name, profileId, avatarKey, pres
   );
   const cls = cn("inline-flex max-w-full items-center gap-2.5 align-middle", href && "rounded-[var(--radius-sm)] transition-colors duration-[var(--duration-fast)] hover:text-fg", className);
   return (
-    <span ref={anchor} className="relative inline-flex max-w-full" onMouseEnter={show} onMouseLeave={hide} onFocus={show} onBlur={hide}>
+    <span ref={anchor} data-no-tip className="relative inline-flex max-w-full" onMouseEnter={show} onMouseLeave={hide} onFocus={show} onBlur={hide}>
       {href ? <Link href={href} className={cls} aria-label={showName ? undefined : name}>{inner}</Link> : <span className={cls} aria-label={showName ? undefined : name}>{inner}</span>}
       {typeof document !== "undefined" ? createPortal(<AnimatePresence>
         {open ? (
@@ -75,12 +74,11 @@ export function Person({ orgSlug, membershipId, name, profileId, avatarKey, pres
                   <dt className="eyebrow">Status</dt><dd className="flex items-center gap-1.5 text-fg-muted"><span className="inline-block size-1.5 rounded-full" style={{ background: PRESENCE[card.presence].color }} aria-hidden />{PRESENCE[card.presence].label}{card.status_text ? <span className="truncate">· “{card.status_text}”</span> : null}</dd>
                   <dt className="eyebrow">Teams</dt><dd className="truncate text-fg-muted">{card.teams ?? "No team"}</dd>
                   <dt className="eyebrow">Id</dt><dd className="font-mono text-fg-muted">{card.employee_code}</dd>
-                  {card.email ? <><dt className="eyebrow">Email</dt><dd className="truncate text-fg-muted">{card.email}</dd></> : null}
+                  {card.email ? <><dt className="eyebrow">Email</dt><dd className="min-w-0 truncate text-fg-muted">{card.email}</dd></> : null}
                 </dl>
-                <div className="mt-3 flex items-center gap-2 border-t border-border-soft pt-3">
+                <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-border-soft pt-3">
                   <Link href={`/app/${orgSlug}/messages?to=${card.membership_id}`} className="link-action"><MessageSquare aria-hidden />Message</Link>
                   <Link href={`/app/${orgSlug}/workroom/${card.membership_id}`} className="link-action"><CalendarClock aria-hidden />Their day</Link>
-                  {card.role !== "employee" ? <Badge tone="neutral" className="ml-auto">{ROLE[card.role]}</Badge> : null}
                 </div>
               </>
             ) : null}
