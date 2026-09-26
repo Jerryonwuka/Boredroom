@@ -1,5 +1,6 @@
 import { withUser } from "@/server/db";
 import type { OrgContext } from "@/server/lib/api";
+import { notFound } from "@/server/lib/errors";
 import { unreadMessageCount } from "@/server/services/messaging";
 
 export type RecentNotification = { id: string; type: string; title: string; body: string | null; href: string | null; read_at: string | null; created_at: string };
@@ -57,5 +58,20 @@ export async function workspaceShell(ctx: OrgContext, opts: { checkPolicy?: bool
          (SELECT json_agg(n) FROM (SELECT id, type, title, body, href, read_at, created_at::text AS created_at FROM notifications WHERE recipient_membership_id = $2 ORDER BY created_at DESC LIMIT 6) n) AS recent`,
       [ctx.org.id, ctx.membership.id, opts.checkPolicy === false ? null : ctx.org.current_policy_id, supervisor]);
     return { counts: { unread: r.unread, attention: r.attention, messages: r.messages, recent: r.recent ?? [] }, teams: r.teams ?? [], acknowledged: r.acknowledged };
+  });
+}
+
+
+/** The hover card for a person in a list. Email is included only for the organisation account. */
+export async function memberCard(ctx: OrgContext, membershipId: string) {
+  return withUser(ctx.user.profileId, async (db) => {
+    const isOrg = ctx.membership.role === "owner" || ctx.membership.role === "hr";
+    const row = await db.maybeOne<{ membership_id: string; display_name: string; role: string; employee_code: string; profile_id: string; avatar_key: string | null; presence: string; title: string | null; status_text: string | null; teams: string | null; email: string | null; joined_at: string }>(
+      `SELECT m.id AS membership_id, p.display_name, m.role, m.employee_code, p.id AS profile_id, p.avatar_key, p.presence, p.title, p.status_text,
+              (SELECT string_agg(t.name, ', ' ORDER BY t.name) FROM team_members tm JOIN teams t ON t.id = tm.team_id WHERE tm.membership_id = m.id AND t.archived_at IS NULL) AS teams,
+              CASE WHEN $3::boolean THEN p.email ELSE NULL END AS email, m.created_at::text AS joined_at
+       FROM memberships m JOIN profiles p ON p.id = m.user_id WHERE m.id = $1 AND m.organisation_id = $2 AND m.status = 'active'`, [membershipId, ctx.org.id, isOrg]);
+    if (!row) throw notFound("That person is not an active member.");
+    return row;
   });
 }

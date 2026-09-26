@@ -11,6 +11,7 @@ import { LiveClock, LiveBadge } from "@/components/app/live";
 import { Rise } from "@/components/ui/motion";
 import { workroomView, workroomStatus, type WorkroomStatus } from "@/server/services/views";
 import { formatDuration, formatDateTime, relativeTime, formatLongDate, cn } from "@/lib/utils";
+import { Avatar } from "@/components/ui/avatar";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Workroom" };
@@ -63,9 +64,12 @@ export default async function WorkroomPage({ params, searchParams }: { params: P
               <Rise as="li" key={r.membership_id}>
                 <Link href={`${base}/workroom/${r.membership_id}`} className={cn("tile tile-link block h-full p-5", r.status === "active" && "tile-active")}>
                   <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="truncate font-semibold">{r.display_name}</p>
-                      <p className="truncate text-xs text-fg-subtle">{r.teams.join(", ") || "No team"}, {r.role === "manager" ? "team lead" : "staff"}</p>
+                    <div className="flex min-w-0 items-center gap-3">
+                      <Avatar profileId={r.membership_id} name={r.display_name} size={36} />
+                      <div className="min-w-0">
+                        <p className="truncate font-semibold">{r.display_name}</p>
+                        <p className="truncate text-xs text-fg-subtle">{r.teams.join(", ") || "No team"}, {r.role === "manager" ? "team lead" : "staff"}</p>
+                      </div>
                     </div>
                     <div className="flex shrink-0 items-center gap-1.5">
                       {r.recording_live ? <LiveBadge /> : null}

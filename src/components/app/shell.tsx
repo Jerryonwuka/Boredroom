@@ -11,6 +11,7 @@ import { AssistantDrawer } from "@/components/app/assistant-drawer";
 import { Suspense } from "react";
 import { cn } from "@/lib/utils";
 import { ImpersonationBanner } from "@/components/app/impersonation-banner";
+import { BillingBanner } from "@/components/app/billing-banner";
 import { getAdmin } from "@/server/admin/auth";
 import { launchSettings } from "@/server/admin/settings";
 import { Logo as BrandLogo } from "@/components/logo";
@@ -32,12 +33,12 @@ export function navItems(ctx: OrgContext, counts: NavCounts, teams: { id: string
     items.push({ href: `${base}/tasks`, label: "Tasks", icon: "tasks" });
     items.push({ href: `${base}/people`, label: "People and teams", icon: "people" });
     items.push({ href: `${base}/reviews`, label: "Reviews", icon: "reviews", badge: counts.attention || undefined });
-    items.push({ href: `${base}/recordings`, label: "Recordings", icon: "recordings" });
+    if (ctx.plan.features.VIDEO_RECORDING) items.push({ href: `${base}/recordings`, label: "Recordings", icon: "recordings" });
     // Records (timesheets, corrections, CSV export) are reached from Reports and from any person's row; not a top-level item.
     items.push({ href: `${base}/reports`, label: "Reports", icon: "reports" });
     items.push({ href: `${base}/projects`, label: "Projects", icon: "projects" });
     items.push({ href: `${base}/policy`, label: "Policy", icon: "policy" });
-    items.push({ href: `${base}/audit`, label: "Audit", icon: "audit" });
+    if (ctx.plan.features.AUDIT_LOGS) items.push({ href: `${base}/audit`, label: "Audit", icon: "audit" });
     return items;
   }
   if (role === "manager") {
@@ -49,7 +50,7 @@ export function navItems(ctx: OrgContext, counts: NavCounts, teams: { id: string
     items.push({ href: `${base}/workroom`, label: "Workroom", icon: "team" });
     items.push({ href: `${base}/messages`, label: "Messages", icon: "messages", badge: counts.messages || undefined });
     items.push({ href: `${base}/reviews`, label: "Reviews", icon: "reviews", badge: counts.attention || undefined });
-    items.push({ href: `${base}/recordings`, label: "Recordings", icon: "recordings" });
+    if (ctx.plan.features.VIDEO_RECORDING) items.push({ href: `${base}/recordings`, label: "Recordings", icon: "recordings" });
     items.push({ href: `${base}/timesheets`, label: "Timesheets", icon: "timesheets" });
     items.push({ href: `${base}/reports`, label: "Reports", icon: "reports" });
     items.push({ href: `${base}/projects`, label: "Projects", icon: "projects" });
@@ -87,6 +88,7 @@ export async function AppShell({ ctx, counts, teams = [], children, bleed = fals
   return (
     <MotionRoot>
     {ctx.user.impersonation ? <ImpersonationBanner name={ctx.user.displayName} adminEmail={ctx.user.impersonation.adminEmail} /> : null}
+    {isOrg ? <BillingBanner orgSlug={ctx.org.slug} plan={ctx.plan} /> : null}
     {launch.mode === "maintenance" && launch.app_access ? <p className="border-b border-warning/40 bg-warning/10 px-4 py-2 text-center text-sm">{launch.message || "Maintenance is under way; some things may be slow for a while."}</p> : null}
     <div className={cn("flex min-h-dvh", bleed && "md:h-dvh md:overflow-hidden")}>
       <Sidebar items={items} orgSlug={ctx.org.slug} orgName={ctx.org.name} />
@@ -114,7 +116,7 @@ export async function AppShell({ ctx, counts, teams = [], children, bleed = fals
         {bleed
           ? <main id="main" className="flex min-h-0 flex-1 flex-col md:h-[calc(100dvh-4rem)]">{children}</main>
           : <main id="main" className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 md:px-8 md:py-8"><PageRise>{children}</PageRise></main>}
-        <AssistantDrawer orgSlug={ctx.org.slug} isOrg={isOrg} firstName={ctx.user.displayName.split(" ")[0]} floating />
+        {ctx.plan.features.AI_ASSISTANT ? <AssistantDrawer orgSlug={ctx.org.slug} isOrg={isOrg} firstName={ctx.user.displayName.split(" ")[0]} floating /> : null}
         <RealtimeRefresher orgSlug={ctx.org.slug} />
         <Suspense fallback={null}><MessageToasts orgSlug={ctx.org.slug} /></Suspense>
       </div>

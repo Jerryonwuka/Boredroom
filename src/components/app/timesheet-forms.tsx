@@ -8,6 +8,7 @@ import { Alert } from "@/components/ui/states";
 import { api, isApiFailure } from "@/lib/api-client";
 import type { ReportSnapshotEntry } from "@/server/services/reports";
 import { DatePicker } from "@/components/ui/date-picker";
+import { Lock } from "lucide-react";
 
 function useForm() {
   const router = useRouter();
@@ -92,10 +93,11 @@ export function AdjustmentForm({ orgSlug, localDate, entries }: { orgSlug: strin
   );
 }
 
-export function ExportForm({ orgSlug, members }: { orgSlug: string; members: { id: string; display_name: string }[] }) {
+export function ExportForm({ orgSlug, members, canExport = true, upgradeTo }: { orgSlug: string; members: { id: string; display_name: string }[]; canExport?: boolean; upgradeTo?: string | null }) {
   const [open, setOpen] = useState(false);
   const today = new Date().toISOString().slice(0, 10);
   const monthStart = today.slice(0, 8) + "01";
+  if (!canExport) return <span className="inline-flex items-center gap-2 text-sm text-fg-subtle" title={upgradeTo ? `Exports are part of ${upgradeTo}.` : "Exports are not on this plan."}><Lock className="size-3.5" aria-hidden />Export CSV{upgradeTo ? <span className="text-xs">· {upgradeTo}</span> : null}</span>;
   if (!open) return <Button variant="outline" onClick={() => setOpen(true)}>Export CSV</Button>;
   return (
     <form className="tile flex flex-wrap items-end gap-2 p-3" method="get" action={`/api/orgs/${orgSlug}/exports/timesheets`}>

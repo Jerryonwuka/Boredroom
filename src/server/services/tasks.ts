@@ -66,10 +66,7 @@ export async function createTask(ctx: OrgContext, input: z.infer<typeof createTa
     if (!(await canManageAssignee(db, ctx, assignee, input.projectId))) throw forbidden("You cannot assign tasks to that person in this project. Hand-outs from My Day or the Tasks page work for anyone in the organisation.");
     const assigneeRow = await db.maybeOne<{ role: string }>(`SELECT role FROM memberships WHERE id = $1 AND organisation_id = $2 AND status = 'active'`, [assignee, ctx.org.id]);
     if (!assigneeRow) throw invalid("Assignee is not an active member.", { assigneeMembershipId: ["Not an active member."] });
-    // Organisation accounts supervise: they do not make tasks for themselves. A team lead may hand one up to them.
-    if ((assigneeRow.role === "owner" || assigneeRow.role === "hr") && (ctx.membership.role === "owner" || ctx.membership.role === "hr")) {
-      throw invalid("Organisation accounts do not create tasks for themselves. A team lead can assign you one from their Tasks page.", { assigneeMembershipId: ["Organisation accounts cannot give themselves tasks."] });
-    }
+    // Organisation accounts may keep a task for themselves (owner decision, 25 September 2026) or hand one to anyone.
     if (input.reviewerMembershipId) {
       const rev = await db.maybeOne(`SELECT 1 FROM memberships WHERE id = $1 AND organisation_id = $2 AND status = 'active'`, [input.reviewerMembershipId, ctx.org.id]);
       if (!rev) throw invalid("Reviewer is not an active member.", { reviewerMembershipId: ["Not an active member."] });

@@ -53,7 +53,7 @@ export function AdminShell({ admin, launch, children, title }: { admin: Admin; l
         <div className="mt-4 border-t border-border-soft px-2 pt-3 text-xs text-fg-subtle">
           <p className="truncate font-semibold text-fg-muted">{admin.user.displayName}</p>
           <p className="truncate">{ROLE_LABEL[admin.role]}</p>
-          <Link href="/app" className="mt-2 inline-block text-fg-muted hover:text-fg">Back to the app</Link>
+          <Link href="/app" className="link-action mt-2">Back to the app</Link>
         </div>
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
@@ -66,7 +66,7 @@ export function AdminShell({ admin, launch, children, title }: { admin: Admin; l
           <div className="flex items-center gap-2">
             <AdminSearch />
             <ThemeToggle />
-            <div className="md:hidden"><AdminMobileMenu groups={groups} footer={<><p className="font-semibold">{admin.user.displayName}</p><p className="text-fg-subtle">{ROLE_LABEL[admin.role]}</p><Link href="/app" className="mt-2 inline-block text-fg-muted hover:text-fg">Back to the app</Link></>} /></div>
+            <div className="md:hidden"><AdminMobileMenu groups={groups} footer={<><p className="font-semibold">{admin.user.displayName}</p><p className="text-fg-subtle">{ROLE_LABEL[admin.role]}</p><Link href="/app" className="link-action mt-2">Back to the app</Link></>} /></div>
           </div>
         </header>
         <main id="main" className="mx-auto w-full max-w-7xl flex-1 px-4 py-6 md:px-8 md:py-8"><PageRise>{children}</PageRise></main>

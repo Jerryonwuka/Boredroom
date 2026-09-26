@@ -8,6 +8,10 @@ import { ConfirmButton } from "@/components/ui/confirm";
 import { Input, Select, Field } from "@/components/ui/input";
 import { Alert } from "@/components/ui/states";
 import { Badge } from "@/components/ui/badge";
+import { IconButton } from "@/components/ui/icon-button";
+import { Switch } from "@/components/ui/switch";
+import { Copy, Link2, Check, RefreshCw } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { api, isApiFailure } from "@/lib/api-client";
 
 function useForm() {
@@ -135,18 +139,16 @@ export function JoinCodePanel({ orgSlug, appOrigin, joinCode, teams }: { orgSlug
           <div>
             <p className="text-sm text-fg-muted">Organisation code</p>
             <p className="mt-1 font-mono text-3xl tracking-widest">{joinCode.join_code}</p>
-            <div className="mt-2 flex flex-wrap gap-2">
-              <Button size="sm" variant="outline" onClick={() => copy(joinCode.join_code!, "code")}>{copied === "code" ? "Copied" : "Copy code"}</Button>
-              <Button size="sm" variant="outline" onClick={() => copy(link!, "link")}>{copied === "link" ? "Copied" : "Copy link"}</Button>
+            <div className="mt-2 flex items-center gap-1.5">
+              <IconButton aria-label={copied === "code" ? "Code copied" : "Copy the code"} title="Copy the code" onClick={() => copy(joinCode.join_code!, "code")} className={cn("size-9", copied === "code" && "border-success/60 text-success")}>{copied === "code" ? <Check className="size-4" aria-hidden /> : <Copy className="size-4" aria-hidden />}</IconButton>
+              <IconButton aria-label={copied === "link" ? "Link copied" : "Copy the join link"} title="Copy the join link" onClick={() => copy(link!, "link")} className={cn("size-9", copied === "link" && "border-success/60 text-success")}>{copied === "link" ? <Check className="size-4" aria-hidden /> : <Link2 className="size-4" aria-hidden />}</IconButton>
+              <ConfirmButton size="icon" variant="ghost" className="size-9 rounded-full" aria-label="Generate a new code" title="Generate a new join code?" description="The current code and link stop working immediately. People who already joined are not affected." confirmLabel="Generate new code" disabled={pending} onConfirm={() => patch({ rotate: true })}><RefreshCw className="size-4" aria-hidden /></ConfirmButton>
+              <span className="ml-1 text-xs text-fg-subtle" aria-live="polite">{copied === "code" ? "Code copied" : copied === "link" ? "Link copied" : ""}</span>
             </div>
             <p className="mt-2 break-all text-xs text-fg-subtle">{link}</p>
           </div>
           <div className="grid gap-3">
-            <div className="flex flex-wrap items-center gap-3">
-              <Badge tone={joinCode.join_code_enabled ? "success" : "danger"} dot>{joinCode.join_code_enabled ? "Accepting joins" : "Paused"}</Badge>
-              <Button size="sm" variant="subtle" disabled={pending} onClick={() => patch({ enabled: !joinCode.join_code_enabled })}>{joinCode.join_code_enabled ? "Pause joining" : "Resume joining"}</Button>
-              <ConfirmButton size="sm" variant="ghost" disabled={pending} title="Generate a new join code?" description="The current code and link stop working immediately. People who already joined are not affected." confirmLabel="Generate new code" onConfirm={() => patch({ rotate: true })}>Generate new code</ConfirmButton>
-            </div>
+            <Switch checked={joinCode.join_code_enabled} disabled={pending} onChange={(e) => patch({ enabled: e.target.checked })} hint={joinCode.join_code_enabled ? "Anyone with the code or link can join right now." : "Paused: the code and link are refused until you switch this back on."} className="-mx-3"><span className="flex items-center gap-2">Accepting joins<Badge tone={joinCode.join_code_enabled ? "success" : "danger"} dot>{joinCode.join_code_enabled ? "open" : "paused"}</Badge></span></Switch>
             <div className="flex flex-wrap items-end gap-3">
               <Field label="People who join become" htmlFor="jc-role"><Select id="jc-role" className="h-10 w-44 py-1 text-sm" value={joinCode.join_code_role} disabled={pending} onChange={(e) => patch({ role: e.target.value })}><option value="employee">Staff</option><option value="manager">Team lead</option></Select></Field>
               <Field label="and are placed in team" htmlFor="jc-team"><Select id="jc-team" className="h-10 w-48 py-1 text-sm" value={joinCode.join_code_team_id ?? ""} disabled={pending} onChange={(e) => patch({ teamId: e.target.value || null })}><option value="">No team yet (assign later)</option>{teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</Select></Field>

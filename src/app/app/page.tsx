@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/server/auth";
 import { listMyWorkspaces } from "@/server/services/orgs";
+import { workspaceAllowance } from "@/server/services/workspace-limit";
 import { Logo } from "@/components/logo";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -16,7 +17,8 @@ export default async function WorkspacesPage({ searchParams }: { searchParams: P
   const user = await getCurrentUser();
   if (!user) redirect("/login?next=/app");
   if (!user.emailVerified) redirect("/verify/pending");
-  const workspaces = await listMyWorkspaces(user.profileId);
+  const [workspaces, allowance] = await Promise.all([listMyWorkspaces(user.profileId), workspaceAllowance(user.profileId)]);
+  const full = allowance.limit !== null && allowance.used >= allowance.limit;
   if (workspaces.length === 1 && !sp.verified) redirect(`/app/${workspaces[0].slug}`);
   return (
     <main id="main" className="mx-auto w-full max-w-2xl px-4 py-12">
@@ -34,7 +36,16 @@ export default async function WorkspacesPage({ searchParams }: { searchParams: P
           </Link>
         ))}
       </div>
-      {workspaces.length > 0 ? <div className="mt-6"><Link href="/onboarding" className="text-sm text-fg-muted hover:text-fg">Create another workspace</Link></div> : null}
+      {workspaces.length > 0 ? (
+        <div className="mt-8 tile p-5">
+          <p className="eyebrow">Another organisation</p>
+          <p className="mt-1 text-sm text-fg-muted">{allowance.used} of {allowance.limit ?? "unlimited"} workspace{allowance.limit === 1 ? "" : "s"} owned on {allowance.plan}.{full ? ` ${allowance.nextPlan ? `Move a workspace to ${allowance.nextPlan} to own more.` : "You own as many as your plan allows."}` : ""} Joining someone else&apos;s is always free.</p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Link href="/join"><Button variant="outline">Join with a code</Button></Link>
+            {full ? null : <Link href="/onboarding"><Button>Create a workspace</Button></Link>}
+          </div>
+        </div>
+      ) : null}
     </main>
   );
 }

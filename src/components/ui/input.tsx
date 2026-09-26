@@ -16,11 +16,22 @@ export const Select = React.forwardRef<HTMLSelectElement, React.SelectHTMLAttrib
   return <select ref={ref} className={cn(base, className)} {...props}>{children}</select>;
 });
 
+/** A field with a prefix or suffix drawn inside it: a currency, a unit, a path. */
+export const InputAdorned = React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement> & { prefix?: React.ReactNode; suffix?: React.ReactNode; small?: boolean }>(function InputAdorned({ className, prefix, suffix, small, ...props }, ref) {
+  return (
+    <label className={cn("field field-adorned", small && "field-sm", className)}>
+      {prefix ? <span>{prefix}</span> : null}
+      <input ref={ref} {...props} />
+      {suffix ? <span>{suffix}</span> : null}
+    </label>
+  );
+});
+
 export function Label({ className, children, hint, ...props }: React.LabelHTMLAttributes<HTMLLabelElement> & { hint?: string }) {
   return (
-    <label className={cn("block text-sm font-medium text-fg-muted mb-1.5", className)} {...props}>
+    <label className={cn("eyebrow mb-1.5 block", className)} {...props}>
       {children}
-      {hint ? <span className="ml-2 font-normal text-fg-subtle">{hint}</span> : null}
+      {hint ? <span className="ml-2 font-normal normal-case tracking-normal text-fg-subtle">{hint}</span> : null}
     </label>
   );
 }

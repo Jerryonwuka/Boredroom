@@ -34,7 +34,7 @@ export default async function ProfilePage({ params }: { params: Promise<{ worksp
               <div><dt className="text-xs text-fg-subtle">Email</dt><dd className="mt-0.5">{me.email} {ctx.user.emailVerified ? <Badge tone="success">verified</Badge> : <Badge tone="warning">not verified</Badge>}</dd></div>
               <div><dt className="text-xs text-fg-subtle">Member since</dt><dd className="mt-0.5">{formatLongDate(me.createdAt.slice(0, 10))}</dd></div>
             </dl>
-            <p className="mt-3 text-xs text-fg-subtle">Change your password from <Link href="/recover" className="text-fg-muted hover:text-fg">Recover a password</Link>; the link goes to your email.</p>
+            <p className="mt-3 text-xs text-fg-subtle">Change your password from <Link href="/recover" className="link-action">Recover a password</Link>; the link goes to your email.</p>
           </Card>
           <Card>
             <CardHeader title="Your workspaces" className="mb-2" />

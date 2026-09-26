@@ -5,7 +5,9 @@ import { PageHeader, Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/states";
 import { reviewQueue } from "@/server/services/views";
-import { formatDateTime, formatDuration } from "@/lib/utils";
+import { formatDateTime, formatDuration, formatLongDate } from "@/lib/utils";
+import { RowList, Row, RowEmpty } from "@/components/ui/rows";
+import { Person } from "@/components/ui/person";
 import { DecisionForm } from "@/components/app/small-actions";
 
 export const dynamic = "force-dynamic";
@@ -19,16 +21,16 @@ export default async function ReviewsPage({ params }: { params: Promise<{ worksp
   const base = `/app/${ctx.org.slug}`;
   // Organisation accounts see the whole queue; team leads give the decisions.
   const decides = ctx.membership.role === "manager";
-  const leadDecides = <p className="eyebrow mt-3 normal-case tracking-normal">Waiting for the team lead&apos;s decision.</p>;
+  const leadDecides = <p className="mt-2 text-xs text-fg-subtle">Waiting for the team lead&apos;s decision.</p>;
   const total = q.submissions.length + q.reports.length + q.adjustments.length + q.exceptions.length + q.incidents.length;
   return (
     <AppShell ctx={ctx} counts={counts} teams={teams}>
       <PageHeader icon="eye-checklist" back={{ href: `/app/${ctx.org.slug}`, label: "Home" }} title="Reviews" description={decides ? "Submitted work, daily reports, time corrections, capture exceptions and privacy incidents waiting for a decision. You never see your own submissions here." : "Everything waiting for a decision across the organisation. Team leads give the decisions; you can see where each one stands."} />
-      {total === 0 && q.overdue.length === 0 && q.missing.length === 0 ? <EmptyState icon3d="shield-check" title="Queue is clear" description="Nothing is waiting for you." /> : null}
-      <div className="space-y-8">
+      {total === 0 && q.overdue.length === 0 && q.missing.length === 0 ? <EmptyState icon3d="shield-check" title="Queue is clear" description={decides ? "Nothing is waiting for your decision." : "Nothing of yours is waiting on a decision."} /> : (
+      <div className="space-y-6">
         <Section title="Task submissions" count={q.submissions.length}>
           {q.submissions.map((s) => (
-            <li key={s.submission_id} className="tile p-4"><div className="flex flex-wrap items-center justify-between gap-2"><Link href={`${base}/tasks/${s.task_id}`} className="font-semibold hover:underline">{s.title}</Link><span className="text-sm text-fg-subtle">{s.assignee_name}, revision {s.revision}, {formatDateTime(s.submitted_at, tz)}{s.reviewer_is_me ? "" : ", manager scope"}</span></div>{s.note ? <p className="mt-1 text-sm text-fg-muted">{s.note}</p> : null}<Link href={`${base}/tasks/${s.task_id}`} className="mt-2 inline-block text-sm text-accent hover:underline">Open task to review evidence</Link></li>
+            <li key={s.submission_id} className="tile p-4"><div className="flex flex-wrap items-center justify-between gap-2"><Link href={`${base}/tasks/${s.task_id}`} className="font-semibold hover:underline">{s.title}</Link><span className="text-sm text-fg-subtle">{s.assignee_name}, revision {s.revision}, {formatDateTime(s.submitted_at, tz)}{s.reviewer_is_me ? "" : ", manager scope"}</span></div>{s.note ? <p className="mt-1 text-sm text-fg-muted">{s.note}</p> : null}<Link href={`${base}/tasks/${s.task_id}`} className="link-action mt-2">Open task to review evidence</Link></li>
           ))}
         </Section>
         <Section title="Daily reports" count={q.reports.length}>
@@ -36,7 +38,7 @@ export default async function ReviewsPage({ params }: { params: Promise<{ worksp
             <li key={r.id} className="tile p-4">
               <div className="flex flex-wrap items-center justify-between gap-2"><span className="font-semibold">{r.display_name}, {r.local_date}</span><span className="text-sm text-fg-subtle">version {r.current_version}, {formatDuration(r.total_seconds)}, submitted {formatDateTime(r.submitted_at, tz)}{r.has_adjustment ? ", includes a correction" : ""}</span></div>
               {r.blockers ? <p className="mt-1 text-sm"><strong>Blockers:</strong> {r.blockers}</p> : null}{r.next_priorities ? <p className="text-sm"><strong>Next:</strong> {r.next_priorities}</p> : null}
-              <Link href={`${base}/timesheets?member=${r.membership_id}&date=${r.local_date}`} className="mt-1 inline-block text-sm text-accent hover:underline">Open full report</Link>
+              <Link href={`${base}/timesheets?member=${r.membership_id}&date=${r.local_date}`} className="link-action mt-1">Open full report</Link>
               {!decides ? leadDecides : r.has_adjustment ? <p className="mt-1 text-xs text-fg-subtle">Decide this one under Time corrections; approving the correction approves this version.</p> : <DecisionForm path={`/api/orgs/${ctx.org.slug}/reports/${r.id}/review`} extra={{ version: r.current_version }} options={[{ value: "approved", label: "Approve" }, { value: "changes_requested", label: "Request changes" }]} />}
             </li>
           ))}
@@ -63,18 +65,18 @@ export default async function ReviewsPage({ params }: { params: Promise<{ worksp
             ))}
           </Section>
         ) : null}
-        <div className="grid gap-6 md:grid-cols-2">
+        {q.overdue.length || q.missing.length || ctx.membership.role !== "employee" ? <div className="grid gap-4 md:grid-cols-2">
           <Card>
             <h2 className="font-display text-lg">Overdue commitments ({q.overdue.length})</h2>
-            <ul className="mt-2 space-y-1 text-sm">{q.overdue.length === 0 ? <li className="text-fg-subtle">None.</li> : q.overdue.map((t) => <li key={t.id}><Link href={`${base}/tasks/${t.id}`} className="hover:underline">{t.title}</Link> <span className="text-fg-subtle">, {t.assignee_name}, due {formatDateTime(t.due_at, tz)}</span></li>)}</ul>
+            <RowList className="mt-3">{q.overdue.length === 0 ? <RowEmpty /> : q.overdue.map((t) => <Row key={t.id} href={`${base}/tasks/${t.id}`} leading={<Person orgSlug={ctx.org.slug} membershipId={t.assignee_membership_id} name={t.assignee_name} profileId={t.assignee_profile_id} avatarKey={t.assignee_avatar_key} showName={false} size={32} />} title={t.title} meta={t.assignee_name} trailing={<><span className="eyebrow block">Due</span><span className="text-danger">{formatDateTime(t.due_at, tz)}</span></>} />)}</RowList>
           </Card>
           <Card>
             <h2 className="font-display text-lg">Missing reports, last 7 working days ({q.missing.length})</h2>
             <p className="text-xs text-fg-subtle">Days with tracked time but no submitted report. A missing report is a prompt for clarification, not a penalty.</p>
-            <ul className="mt-2 space-y-1 text-sm">{q.missing.length === 0 ? <li className="text-fg-subtle">None.</li> : q.missing.map((m) => <li key={`${m.membership_id}${m.local_date}`}><Link href={`${base}/timesheets?member=${m.membership_id}&date=${m.local_date}`} className="hover:underline">{m.display_name}, {m.local_date}</Link></li>)}</ul>
+            <RowList className="mt-3">{q.missing.length === 0 ? <RowEmpty /> : q.missing.map((m) => <Row key={`${m.membership_id}${m.local_date}`} href={`${base}/timesheets?member=${m.membership_id}&date=${m.local_date}`} leading={<Person orgSlug={ctx.org.slug} membershipId={m.membership_id} name={m.display_name} showName={false} size={32} />} title={m.display_name} meta="No report for a day with tracked time" trailing={<><span className="eyebrow block">Day</span>{formatLongDate(m.local_date)}</>} />)}</RowList>
           </Card>
-        </div>
-      </div>
+        </div> : null}
+      </div>)}
     </AppShell>
   );
 }

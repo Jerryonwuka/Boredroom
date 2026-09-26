@@ -8,6 +8,7 @@ import { useId, useRef, useState, type ReactNode } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { X, Download } from "lucide-react";
 import { Button, type ButtonProps } from "@/components/ui/button";
+import { EditButton } from "@/components/ui/edit-button";
 import { Textarea, Input } from "@/components/ui/input";
 import { Alert } from "@/components/ui/states";
 import { api, isApiFailure } from "@/lib/api-client";
@@ -54,12 +55,12 @@ export function AdminAction({ path, method = "POST", body, children, confirm, re
 }
 
 /** An Edit link that opens its form in a sheet, so a table row never has to grow to hold a form. */
-export function EditSheet({ title, label = "Edit", children }: { title: string; label?: string; children: ReactNode }) {
+export function EditSheet({ title, label = "Edit", children }: { title: string; label?: React.ReactNode; children: ReactNode }) {
   const ref = useRef<HTMLDialogElement>(null);
   const titleId = useId();
   return (
     <>
-      <button type="button" className="text-sm text-fg-muted hover:text-fg" onClick={() => ref.current?.showModal()}>{label}</button>
+      <EditButton label={label} aria-haspopup="dialog" onClick={() => ref.current?.showModal()} />
       <dialog ref={ref} className="sheet" aria-labelledby={titleId} onCancel={(e) => { e.preventDefault(); ref.current?.close(); }}>
         <div className="grid max-h-[85vh] gap-4 overflow-y-auto p-5">
           <div className="flex items-start justify-between gap-3"><h2 id={titleId} className="font-display text-xl">{title}</h2><Button type="button" variant="ghost" size="icon" aria-label="Close" onClick={() => ref.current?.close()}><X className="size-4" aria-hidden /></Button></div>

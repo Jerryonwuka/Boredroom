@@ -47,14 +47,14 @@ export function ClockCard({ orgSlug, status, startLabel, endLabel, late, clocked
             <p className="mt-1 text-sm text-fg-muted">{late ? "Clocking in now is recorded as late; the record shows by how much." : `Clock in on or before ${startLabel} to be on time. The day ends at ${endLabel}.`}</p>
           </div>
         </div>
-        <div className="flex items-center gap-3"><ClockButtons orgSlug={orgSlug} status={status} timerOpen={false} size="lg" /><Link href={`/app/${orgSlug}/clock`} className="text-sm text-fg-muted hover:text-fg">Your clock</Link></div>
+        <div className="flex items-center gap-3"><ClockButtons orgSlug={orgSlug} status={status} timerOpen={false} size="lg" /><Link href={`/app/${orgSlug}/clock`} className="link-action">Your clock</Link></div>
       </section>
     );
   }
   return (
     <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius)] border border-border-soft bg-wash-soft px-4 py-3">
       <p className="text-sm"><span className="font-semibold">{status === "in" ? `Clocked in${clockedInAt ? ` at ${clockedInAt}` : ""}.` : "You have clocked out for today."}</span> <span className="text-fg-muted">{status === "in" ? (lateBy ? `Late by ${lateBy}.` : "On time.") : ""}</span></p>
-      <div className="flex items-center gap-3">{status === "in" ? <ClockButtons orgSlug={orgSlug} status={status} timerOpen={timerOpen} size="md" /> : null}<Link href={`/app/${orgSlug}/clock`} className="text-sm text-fg-muted hover:text-fg">Your clock</Link></div>
+      <div className="flex items-center gap-3">{status === "in" ? <ClockButtons orgSlug={orgSlug} status={status} timerOpen={timerOpen} size="md" /> : null}<Link href={`/app/${orgSlug}/clock`} className="link-action">Your clock</Link></div>
     </div>
   );
 }

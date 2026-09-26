@@ -8,11 +8,14 @@ import { withUser, withSystem, type Db } from "@/server/db";
 import { currentUserIn } from "@/server/auth";
 import { sha256 } from "@/server/lib/crypto";
 import { explainInfraError } from "@/server/lib/health";
+import { resolveEntitlements, requireFeature as requireFeatureOf, type Entitlements } from "@/server/lib/entitlements";
 
 export type OrgContext = {
   user: CurrentUser;
   org: { id: string; slug: string; name: string; timezone: string; current_policy_id: string | null; status: string };
   membership: { id: string; role: "owner" | "hr" | "manager" | "employee"; employee_code: string };
+  /** What the workspace's plan allows right now; see server/lib/entitlements.ts. */
+  plan: Entitlements;
 };
 
 export function errorResponse(err: unknown, requestId: string) {
@@ -110,21 +113,26 @@ const ORG_SQL = `SELECT o.id AS org_id, o.slug, o.name, o.timezone, o.current_po
 export const orgContext = cache(async function orgContext(orgSlug: string): Promise<OrgContext> {
   const found = await withSystem(async (db) => {
     const user = await currentUserIn(db);
-    if (!user) return { user: null, row: null };
+    if (!user) return { user: null, row: null, plan: null };
     // The membership query binds the user id itself, so the system role sees exactly what RLS would show this user.
     const row = await db.maybeOne<OrgRow>(ORG_SQL, [orgSlug, user.profileId]);
-    return { user, row };
+    const plan = row ? await resolveEntitlements(db, row.org_id) : null;
+    return { user, row, plan };
   });
-  const { user, row } = found;
+  const { user, row, plan } = found;
   if (!user) throw unauthenticated();
-  if (!row) throw notFound("Workspace not found.");
+  if (!row || !plan) throw notFound("Workspace not found.");
   if (row.status !== "active") throw forbidden("This workspace is not active.");
   return {
     user,
     org: { id: row.org_id, slug: row.slug, name: row.name, timezone: row.timezone, current_policy_id: row.current_policy_id, status: row.status },
     membership: { id: row.membership_id, role: row.role, employee_code: row.employee_code },
+    plan,
   };
 });
+
+/** Refuses when the workspace's plan does not include a module. */
+export function requireFeature(ctx: OrgContext, key: string) { requireFeatureOf(ctx.plan, key); }
 
 export function requireRole(ctx: OrgContext, ...roles: OrgContext["membership"]["role"][]) {
   if (!roles.includes(ctx.membership.role)) throw forbidden();

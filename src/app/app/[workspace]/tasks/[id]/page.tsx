@@ -105,7 +105,7 @@ export default async function TaskPage({ params, searchParams }: { params: Promi
               {history.map((h, i) => <li key={i}><span className="text-fg-subtle">{formatDateTime(h.occurred_at, ctx.org.timezone)}</span>: {h.from_status ? `${label(h.from_status)} to ` : ""}{label(h.to_status)}{h.actor_name ? ` by ${h.actor_name}` : ""}{h.reason ? <p className="text-fg-muted">{h.reason}</p> : null}</li>)}
             </ol>
           </Card>
-          <p className="text-sm"><Link href={`/app/${ctx.org.slug}/projects/${task.project_id}`} className="text-fg-muted hover:text-fg">Back to {task.project_name}</Link></p>
+          <p className="text-sm"><Link href={`/app/${ctx.org.slug}/projects/${task.project_id}`} className="link-action">Back to {task.project_name}</Link></p>
         </aside>
       </div>
     </AppShell>

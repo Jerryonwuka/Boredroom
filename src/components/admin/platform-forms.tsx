@@ -4,6 +4,12 @@ import { useState } from "react";
 import { AdminAction, JsonForm } from "@/components/admin/actions";
 import { inputCls } from "@/components/admin/fields";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Alert } from "@/components/ui/states";
+import { Segmented } from "@/components/ui/segmented";
+import { InputAdorned } from "@/components/ui/input";
+import { api, isApiFailure } from "@/lib/api-client";
+import type { paystackStatus } from "@/server/admin/paystack-config";
 import { cn } from "@/lib/utils";
 import type { LaunchSettings, GeneralSettings, LandingSettings, BillingSettings, FeatureFlags } from "@/server/admin/settings";
 import type { AdminRow } from "@/server/admin/ops";
@@ -96,6 +102,66 @@ export function AdminRowActions({ row, self }: { row: AdminRow; self: boolean })
       {role !== row.role ? <AdminAction path={base} method="PATCH" body={{ role }} reason confirm={{ title: `Change ${row.email} to ${ROLE_LABEL[role]}?`, label: "Change role" }}>Apply</AdminAction> : null}
       <AdminAction path={base} method="PATCH" body={{ revokeSessions: true }} confirm={{ title: `Sign ${row.email} out everywhere?`, label: "Sign out" }}>Revoke sessions</AdminAction>
       {row.status === "active" ? <AdminAction path={base} method="PATCH" body={{ status: "disabled" }} reason danger disabled={self} confirm={{ title: `Disable ${row.email}'s admin access?`, description: "Their sessions are revoked and the Control Center refuses them. Their Boredroom account is untouched.", label: "Disable" }}>Disable</AdminAction> : <AdminAction path={base} method="PATCH" body={{ status: "active" }} reason variant="primary" confirm={{ title: `Re-enable ${row.email}?`, label: "Enable" }}>Enable</AdminAction>}
+    </div>
+  );
+}
+
+
+type PaystackStatus = Awaited<ReturnType<typeof paystackStatus>>;
+
+/** One pair of keys: public in the open, secret write-only, a Test button, and a glow when it is the pair in use. */
+function KeyPair({ which, status, mode, testing, onTest }: { which: "test" | "live"; status: PaystackStatus; mode: "test" | "live"; testing: "test" | "live" | null; onTest: (m: "test" | "live") => void }) {
+  const st = status[which];
+  const active = mode === which;
+  return (
+    <section className={cn("rounded-[var(--radius)] border p-4 transition-colors duration-[var(--duration-fast)]", active ? "border-accent/50 bg-wash-soft shadow-[inset_0_1px_0_var(--highlight),0_0_40px_-20px_var(--accent)]" : "border-border-soft bg-wash-soft")}>
+      <div className="mb-3 flex items-center justify-between gap-3"><p className="eyebrow">{which} keys</p>{active ? <Badge tone="accent" dot>in use</Badge> : st.complete ? <Badge tone="neutral">stored</Badge> : <Badge tone="neutral">empty</Badge>}</div>
+      <div className="grid gap-3">
+        <label className="grid gap-1.5 text-sm font-medium text-fg-muted"><span>Public key</span><InputAdorned prefix={`pk_${which}`} name={`${which}_public_key`} defaultValue={st.public_key} placeholder="…" className="font-mono text-[13px]" autoComplete="off" /></label>
+        <label className="grid gap-1.5 text-sm font-medium text-fg-muted"><span>Secret key <span className="text-fg-subtle">{st.secret_tail ? `(stored, ends ${st.secret_tail}; blank keeps it)` : "(not stored yet)"}</span></span><InputAdorned prefix={`sk_${which}`} name={`${which}_secret_key`} type="password" placeholder={st.secret_tail ? "••••••••" : "paste the secret key"} className="font-mono text-[13px]" autoComplete="new-password" /></label>
+      </div>
+      <div className="mt-3 flex items-center justify-between gap-3"><p className="text-xs text-fg-subtle">{which === "test" ? "Charges nothing. Use Paystack's test cards." : "Real money. Only after the test pair works."}</p><Button type="button" size="sm" variant="subtle" disabled={testing !== null || !st.secret_tail} onClick={() => onTest(which)}>{testing === which ? "Testing…" : `Test ${which} key`}</Button></div>
+    </section>
+  );
+}
+
+/**
+ * Paystack keys (owner decision, 25 September 2026): a test pair and a live pair, a switch that says which is in
+ * use, a Test button that calls Paystack with the stored key, and the two URLs to paste into the Paystack dashboard.
+ * Secrets are write-only: the form shows their last four characters and a blank field keeps what is stored.
+ */
+export function PaystackSettingsForm({ status }: { status: PaystackStatus }) {
+  const [mode, setMode] = useState<"test" | "live">(status.mode);
+  const [testing, setTesting] = useState<"test" | "live" | null>(null);
+  const [result, setResult] = useState<{ tone: "success" | "danger"; text: string } | null>(null);
+  const [copied, setCopied] = useState<string | null>(null);
+  const test = async (m: "test" | "live") => {
+    setTesting(m); setResult(null);
+    try { const r = await api<{ transactions: number }>("/api/admin/paystack", { method: "POST", body: { action: "test", mode: m }, retries: 0 }); setResult({ tone: "success", text: `Paystack accepted the ${m} secret key. ${r.transactions.toLocaleString()} transaction${r.transactions === 1 ? "" : "s"} on that account.` }); }
+    catch (err) { setResult({ tone: "danger", text: isApiFailure(err) ? err.error.message : "Cannot reach the server." }); }
+    finally { setTesting(null); }
+  };
+  const copy = async (text: string) => { try { await navigator.clipboard.writeText(text); setCopied(text); setTimeout(() => setCopied(null), 1500); } catch { /* clipboard blocked: the text is visible to select */ } };
+  return (
+    <div className="grid gap-5">
+      {result ? <Alert tone={result.tone}>{result.text}</Alert> : null}
+      <JsonForm path="/api/admin/paystack" method="PUT" transform={(d) => ({ value: { mode: String(d.mode), test_public_key: String(d.test_public_key ?? ""), test_secret_key: String(d.test_secret_key ?? ""), live_public_key: String(d.live_public_key ?? ""), live_secret_key: String(d.live_secret_key ?? "") }, reason: "Paystack keys updated" })} submitLabel="Save keys" successMessage="Saved. Checkout now uses the pair marked in use.">
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius)] border border-border-soft bg-wash-soft p-4">
+          <div><p className="eyebrow">Mode</p><p className="mt-0.5 text-sm text-fg-muted">{mode === "live" ? "Customers are charged for real." : "Checkout runs against Paystack's sandbox; nothing is charged."}</p></div>
+          <Segmented name="mode" aria-label="Paystack mode" value={mode} onChange={(v) => setMode(v as "test" | "live")} options={[{ value: "test", label: "Test", tone: "warning" }, { value: "live", label: "Live", tone: "success" }]} />
+        </div>
+        <div className="grid gap-4 md:grid-cols-2"><KeyPair which="test" status={status} mode={mode} testing={testing} onTest={test} /><KeyPair which="live" status={status} mode={mode} testing={testing} onTest={test} /></div>
+        {status.source === "env" ? <p className="text-xs text-fg-subtle">Right now the keys come from the server environment (PAYSTACK_SECRET_KEY). Saving a pair here takes over.</p> : null}
+      </JsonForm>
+      <section className="rounded-[var(--radius)] border border-border-soft bg-wash-soft p-4">
+        <p className="eyebrow mb-2">Paste into Paystack</p>
+        <ul className="grid gap-2 text-sm">
+          {[["Webhook URL", status.webhook_url], ["Callback URL", status.callback_url]].map(([label, url]) => (
+            <li key={label} className="flex flex-wrap items-center justify-between gap-2"><span className="text-fg-muted">{label}</span><span className="flex items-center gap-2"><code className="rounded-full bg-inset px-3 py-1 text-xs">{url}</code><Button type="button" size="sm" variant="ghost" onClick={() => void copy(url)}>{copied === url ? "Copied" : "Copy"}</Button></span></li>
+          ))}
+        </ul>
+        <p className="mt-3 text-xs text-fg-subtle">Paystack dashboard, Settings, API Keys and Webhooks: add the webhook URL for both test and live. Events handled: charge.success, charge.failed, invoice.payment_failed, subscription.create, subscription.disable, subscription.not_renew, refund.processed. Every delivery is checked against the stored secrets and stored once.</p>
+      </section>
     </div>
   );
 }

@@ -10,6 +10,8 @@ import { emitEvent } from "@/server/admin/events";
 import { invitationMail } from "@/server/lib/emails";
 import { audit, notify } from "@/server/services/common";
 import type { OrgContext } from "@/server/lib/api";
+import { assertCanCreateWorkspace } from "@/server/services/workspace-limit";
+import { resolveEntitlements, requireSeat } from "@/server/lib/entitlements";
 
 export const ROLES = ["owner", "hr", "manager", "employee"] as const;
 export type Role = (typeof ROLES)[number];
@@ -30,6 +32,7 @@ export const createOrgSchema = z.object({
 export async function createOrganisation(userId: string, input: z.infer<typeof createOrgSchema>) {
   if (!(await registrationOpen())) throw forbidden("Boredroom is not open for new organisations yet. Join the waitlist and we will email you when it is.");
   if (!isValidTimeZone(input.timezone)) throw invalid("Unknown time zone.", { timezone: ["Choose a valid IANA time zone."] });
+  await assertCanCreateWorkspace(userId);
   return withUser(userId, async (db) => {
     // The id is generated here: RETURNING would need SELECT rights the creator only gains once their membership exists.
     const org = { id: randomUUID(), slug: input.slug };
@@ -80,6 +83,7 @@ function assertCanGrant(ctx: OrgContext, role: Role) {
 
 export async function createInvitation(ctx: OrgContext, input: z.infer<typeof inviteSchema>, opts: { send: boolean }) {
   assertCanGrant(ctx, input.role);
+  requireSeat(ctx.plan);
   return withUser(ctx.user.profileId, async (db) => {
     const existing = await db.maybeOne(`SELECT 1 FROM memberships m JOIN profiles p ON p.id = m.user_id WHERE m.organisation_id = $1 AND p.email = $2 AND m.status = 'active'`, [ctx.org.id, input.email]);
     if (existing) throw conflict("ALREADY_MEMBER", "That person is already a member of this workspace.");
@@ -145,6 +149,7 @@ export async function acceptInvitation(userId: string, userEmail: string, token:
     if (inv.revoked_at) throw conflict("INVITE_REVOKED", "This invitation was revoked.");
     if (new Date(inv.expires_at) < new Date()) throw conflict("INVITE_EXPIRED", "This invitation has expired. Ask your administrator for a new one.");
 
+    requireSeat(await withSystem((sdb) => resolveEntitlements(sdb, inv.organisation_id)));
     const code = inv.employee_code ?? (await nextEmployeeCode(db, inv.organisation_id));
     let membership: { id: string };
     try {
@@ -429,6 +434,7 @@ export async function joinWithCode(userId: string, code: string) {
     const existing = await db.maybeOne<{ status: string }>(`SELECT status FROM memberships WHERE organisation_id = $1 AND user_id = $2`, [preview.organisationId, userId]);
     if (existing?.status === "active") throw conflict("ALREADY_MEMBER", "You are already a member of this organisation.");
     if (existing?.status === "revoked") throw forbidden("Your access to this organisation was removed. Ask your administrator to invite you again.");
+    requireSeat(await withSystem((sdb) => resolveEntitlements(sdb, preview.organisationId)));
     const employeeCode = await db.one<{ code: string }>(`SELECT app_next_employee_code($1) AS code`, [preview.organisationId]);
     const membership = await db.one<{ id: string }>(`INSERT INTO memberships(organisation_id, user_id, employee_code, role) VALUES ($1, $2, $3, $4) RETURNING id`,
       [preview.organisationId, userId, employeeCode.code, preview.role]);

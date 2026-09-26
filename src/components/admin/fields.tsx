@@ -10,5 +10,5 @@ export const inputCls = "field field-sm";
 
 /** A small labelled control for filter bars. */
 export function F({ label, children }: { label: string; children: ReactNode }) {
-  return <label className="grid gap-1 text-xs font-medium text-fg-subtle"><span>{label}</span>{children}</label>;
+  return <label className="grid gap-1.5"><span className="eyebrow">{label}</span>{children}</label>;
 }

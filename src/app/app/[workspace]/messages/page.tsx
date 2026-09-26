@@ -1,13 +1,13 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { Hash, Building2, ArrowLeft } from "lucide-react";
+import { Hash, Building2, ArrowLeft, Archive } from "lucide-react";
 import { workspacePage } from "@/server/lib/workspace-page";
 import { AppShell } from "@/components/app/shell";
 import { Badge, TASK_STATUS_TONE, label } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/states";
 import { Avatar } from "@/components/ui/avatar";
-import { PresenceLabel } from "@/components/ui/presence";
-import { Composer, NewMessage, ScrollToLatest, WithdrawMessage } from "@/components/app/messages";
+import { PRESENCE } from "@/lib/presence";
+import { Composer, NewMessage, ScrollToLatest, MessageMenu, NewChannel, ConversationMenu } from "@/components/app/messages";
 import { MessageBubble } from "@/components/ui/chat-messages";
 import { VoiceNote } from "@/components/app/voice-note";
 import { inbox, thread, openDirect, peopleToMessage, visibleTask, type ConversationSummary, type MessageRow } from "@/server/services/messaging";
@@ -29,7 +29,7 @@ function timeOnly(iso: string, timeZone: string) {
  * bubbles for the conversation and the composer pinned at the bottom. Direct threads with anyone in the
  * organisation, a channel per team, and Everyone.
  */
-export default async function MessagesPage({ params, searchParams }: { params: Promise<{ workspace: string }>; searchParams: Promise<{ c?: string; to?: string; task?: string }> }) {
+export default async function MessagesPage({ params, searchParams }: { params: Promise<{ workspace: string }>; searchParams: Promise<{ c?: string; to?: string; task?: string; archived?: string }> }) {
   const { workspace } = await params;
   const sp = await searchParams;
   const { ctx, counts: countsBefore, teams } = await workspacePage(workspace, `/app/${workspace}/messages`);
@@ -44,6 +44,8 @@ export default async function MessagesPage({ params, searchParams }: { params: P
   const clear = (c: ConversationSummary) => (selected && c.id === selected.conversation.id ? { ...c, unread: 0 } : c);
   const channels = box.channels.map(clear);
   const direct = box.direct.map(clear);
+  const archived = box.archived.map(clear);
+  const showArchived = sp.archived === "1" || (selected?.conversation.archived_at ? true : false);
   const counts = selected ? await navCounts(ctx) : countsBefore;
   const task = sp.task && selected ? await visibleTask(ctx, sp.task) : null;
   const title = selected ? selected.conversation.title : null;
@@ -51,7 +53,7 @@ export default async function MessagesPage({ params, searchParams }: { params: P
 
   const Item = ({ c }: { c: ConversationSummary }) => {
     const active = selected?.conversation.id === c.id;
-    const Icon = c.kind === "organisation" ? Building2 : c.kind === "team" ? Hash : null;
+    const Icon = c.kind === "organisation" ? Building2 : c.kind === "team" || c.kind === "channel" ? Hash : null;
     return (
       <li>
         <Link href={`${base}/messages?c=${c.id}`} aria-current={active ? "page" : undefined}
@@ -74,13 +76,19 @@ export default async function MessagesPage({ params, searchParams }: { params: P
         <aside aria-label="Conversations" className={cn("min-h-0 flex-col border-border-soft bg-sidebar md:flex md:border-r", selected ? "hidden" : "flex flex-1")}>
           <div className="flex items-center justify-between gap-3 border-b border-border-soft px-4 py-3">
             <div><p className="eyebrow">Messages</p><h1 className="font-display text-lg leading-tight">Conversations</h1></div>
-            <NewMessage orgSlug={ctx.org.slug} people={people} />
+            <div className="flex items-center gap-1.5"><NewChannel orgSlug={ctx.org.slug} people={people} /><NewMessage orgSlug={ctx.org.slug} people={people} /></div>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto p-2">
             <p className="eyebrow px-2.5 pb-1 pt-2">Channels</p>
             <ul className="space-y-0.5">{channels.map((c) => <Item key={c.id} c={c} />)}</ul>
             <p className="eyebrow px-2.5 pb-1 pt-4">People</p>
             {direct.length === 0 ? <p className="px-2.5 py-2 text-xs text-fg-subtle">No direct threads yet. Use “New message” to start one.</p> : <ul className="space-y-0.5">{direct.map((c) => <Item key={c.id} c={c} />)}</ul>}
+            {archived.length ? (
+              <div className="mt-4 border-t border-border-soft pt-3">
+                <Link href={`${base}/messages?archived=${showArchived ? "0" : "1"}`} className="link-action mx-2.5"><Archive className="size-3" aria-hidden />{showArchived ? "Hide archived" : `Archived (${archived.length})`}</Link>
+                {showArchived ? <ul className="mt-2 space-y-0.5 opacity-70">{archived.map((c) => <Item key={c.id} c={c} />)}</ul> : null}
+              </div>
+            ) : null}
           </div>
         </aside>
         <section aria-label={title ? `Conversation with ${title}` : "Conversation"} className={cn("min-h-0 min-w-0 flex-col bg-bg md:flex", selected ? "flex flex-1" : "hidden")}>
@@ -95,12 +103,13 @@ export default async function MessagesPage({ params, searchParams }: { params: P
                 {other ? <Avatar profileId={other.other_profile_id ?? other.id} name={other.title} avatarKey={other.other_avatar_key} presence={other.other_presence ?? "offline"} size={40} />
                   : <span className="grid size-10 place-items-center rounded-full border border-border bg-wash text-fg-subtle">{selected.conversation.kind === "team" ? <Hash className="size-4" aria-hidden /> : <Building2 className="size-4" aria-hidden />}</span>}
                 <div className="min-w-0 flex-1">
-                  <h2 className="truncate font-display text-lg leading-tight">{selected.conversation.kind === "team" ? `# ${title}` : title}</h2>
-                  {other ? <p className="flex items-center gap-2 truncate text-xs text-fg-subtle"><PresenceLabel presence={other.other_presence ?? "offline"} /><span aria-hidden>·</span><span className="truncate">{other.subtitle}</span></p>
-                    : <p className="truncate text-xs text-fg-subtle">{selected.conversation.people.length} people, {selected.conversation.kind === "team" ? "team channel" : "everyone in the organisation"}</p>}
+                  <h2 className="truncate font-display text-lg leading-tight">{selected.conversation.kind === "team" || selected.conversation.kind === "channel" ? `# ${title}` : title}</h2>
+                  {other ? <p className="flex items-center gap-2 truncate text-xs text-fg-subtle"><span className="text-fg-muted">{PRESENCE[other.other_presence ?? "offline"].label}</span><span aria-hidden>·</span><span className="truncate">{other.subtitle}</span></p>
+                    : <p className="truncate text-xs text-fg-subtle">{selected.conversation.people.length} people, {selected.conversation.kind === "team" ? "team channel" : selected.conversation.kind === "channel" ? (selected.conversation.archived_at ? "archived channel" : "channel") : "everyone in the organisation"}</p>}
                 </div>
                 {selected.conversation.kind !== "direct" ? <div className="hidden items-center -space-x-2 md:flex">{selected.conversation.people.slice(0, 5).map((p) => <Avatar key={p.membership_id} profileId={p.profile_id} name={p.display_name} avatarKey={p.avatar_key} size={28} className="ring-2 ring-[var(--bg)]" />)}{selected.conversation.people.length > 5 ? <span className="ml-3 text-xs text-fg-subtle">+{selected.conversation.people.length - 5}</span> : null}</div> : null}
-                {other && other.other_membership_id && ctx.membership.role !== "employee" ? <Link href={`${base}/workroom/${other.other_membership_id}`} className="text-sm text-fg-muted hover:text-fg">Their day</Link> : null}
+                {other && other.other_membership_id && ctx.membership.role !== "employee" ? <Link href={`${base}/workroom/${other.other_membership_id}`} className="link-action">Their day</Link> : null}
+                <ConversationMenu orgSlug={ctx.org.slug} conversation={{ id: selected.conversation.id, kind: selected.conversation.kind, title: title ?? "", archived_at: selected.conversation.archived_at, can_manage: selected.conversation.can_manage, other_membership_id: selected.conversation.other_membership_id }} people={people} memberIds={selected.conversation.people.map((p) => p.membership_id)} />
               </header>
               <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3 md:px-6">
                 {selected.messages.length === 0 ? <p className="py-10 text-center text-sm text-fg-muted">No messages yet. Say hello, or ask how something is going.</p> : (
@@ -120,10 +129,10 @@ export default async function MessagesPage({ params, searchParams }: { params: P
                 )}
                 <ScrollToLatest count={selected.messages.length} conversationId={selected.conversation.id} />
               </div>
-              <Composer key={selected.conversation.id} orgSlug={ctx.org.slug} conversationId={selected.conversation.id}
+              {selected.conversation.archived_at ? <p className="border-t border-border-soft px-6 py-4 text-center text-sm text-fg-subtle">This channel is archived. Restore it from the menu to write here again.</p> : <Composer key={selected.conversation.id} canVoice={ctx.plan.features.VOICE_NOTES} orgSlug={ctx.org.slug} conversationId={selected.conversation.id}
                 task={task ? { id: task.id, title: task.title } : null}
                 prefill={task ? `How far with “${task.title}”?` : undefined}
-                placeholder={selected.conversation.kind === "direct" ? `Message ${title}` : `Message ${selected.conversation.kind === "team" ? `#${title}` : "everyone"}`} />
+                placeholder={selected.conversation.kind === "direct" ? `Message ${title}` : `Message ${selected.conversation.kind === "team" || selected.conversation.kind === "channel" ? `#${title}` : "everyone"}`} />}
             </>
           )}
         </section>
@@ -133,7 +142,7 @@ export default async function MessagesPage({ params, searchParams }: { params: P
 }
 
 function Message({ m, grouped, orgSlug, timeZone }: { m: MessageRow; grouped: boolean; orgSlug: string; timeZone: string }) {
-  const time = <time dateTime={m.created_at} title={formatDateTime(m.created_at, timeZone)}>{timeOnly(m.created_at, timeZone)}</time>;
+  const time = <><time dateTime={m.created_at} title={formatDateTime(m.created_at, timeZone)}>{timeOnly(m.created_at, timeZone)}</time>{m.edited_at && !m.deleted_at ? <span className="ml-1 text-fg-faint" title={`Edited ${formatDateTime(m.edited_at, timeZone)}`}>edited</span> : null}</>;
   return (
     <MessageBubble mine={m.mine} grouped={grouped} withdrawn={!!m.deleted_at} name={m.sender_name} time={time}
       avatar={<Avatar profileId={m.sender_profile_id} name={m.sender_name} avatarKey={m.sender_avatar_key} size={32} />}
@@ -142,7 +151,7 @@ function Message({ m, grouped, orgSlug, timeZone }: { m: MessageRow; grouped: bo
           <span className="truncate font-medium">{m.task_title}</span>{m.task_status ? <Badge tone={TASK_STATUS_TONE[m.task_status] ?? "neutral"}>{m.task_status === "in_review" ? "Sent for check" : label(m.task_status)}</Badge> : null}
         </Link>
       ) : null}
-      actions={m.mine && !m.deleted_at ? <WithdrawMessage orgSlug={orgSlug} id={m.id} /> : null}>
+      actions={!m.deleted_at ? <MessageMenu orgSlug={orgSlug} id={m.id} mine={m.mine} body={m.body} isVoice={!!m.voice_key} /> : null}>
       {m.deleted_at ? "Message withdrawn" : m.voice_key && m.voice_seconds ? <VoiceNote src={`/api/orgs/${orgSlug}/messages/${m.id}/voice`} seconds={m.voice_seconds} mine={m.mine} /> : <span className="whitespace-pre-wrap break-words">{m.body}</span>}
     </MessageBubble>
   );

@@ -175,7 +175,9 @@
 /* `dark:` utilities follow the toggle, not the OS, so vendored components switch with the rest of the page. */
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
-html { color-scheme: dark; }
+html { color-scheme: dark; scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+#waitlist { scroll-margin-top: 96px; } /* the waitlist form lands under the floating header with room to breathe */
 html[data-theme="light"] { color-scheme: light; }
 html, body { transition: background-color var(--duration) var(--ease-out), color var(--duration) var(--ease-out); }
 body {
@@ -258,6 +260,38 @@ input[type="checkbox"]:checked:hover:not(:disabled) { border-color: var(--accent
 input[type="checkbox"]:focus-visible, input[type="radio"]:focus-visible { outline: none; box-shadow: var(--field-shadow), var(--field-ring); }
 input[type="checkbox"]:disabled, input[type="radio"]:disabled { opacity: 0.5; cursor: not-allowed; }
 @media (prefers-reduced-motion: reduce) { input[type="checkbox"]::before, input[type="radio"]::before, .field { transition: none; } }
+/* A switch: a checkbox drawn as a pill with a sliding knob. */
+input[type="checkbox"].switch { width: 38px; height: 22px; border-radius: 999px; display: inline-block; place-content: unset; background: var(--wash-strong); border-color: var(--border-strong); }
+input[type="checkbox"].switch::before { content: ""; position: relative; display: block; width: 16px; height: 16px; margin: 2px; border-radius: 50%; background: var(--fg-muted); mask: none; transform: translateX(0); transition: transform 160ms var(--ease-out), background-color 160ms var(--ease-out); }
+input[type="checkbox"].switch:checked { background: var(--accent); border-color: var(--accent); }
+input[type="checkbox"].switch:checked::before { background: #fff; transform: translateX(16px); }
+
+/* A segmented control: radios drawn as pills inside one strip. */
+.segmented { display: inline-flex; flex-wrap: wrap; gap: 2px; padding: 3px; border-radius: 999px; border: 1px solid var(--border); background: var(--wash-soft); box-shadow: inset 0 1px 0 var(--highlight); }
+.segmented-item { position: relative; display: inline-flex; }
+.segmented-item input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; appearance: none; border: 0; box-shadow: none; }
+.segmented-item span { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 14px; border-radius: 999px; font-size: 13px; font-weight: 500; color: var(--fg-muted); transition: background-color var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out); }
+.segmented-item:hover span { color: var(--fg); }
+.segmented-item input:checked + span { background: linear-gradient(180deg, var(--btn-hover-top), var(--btn-hover-bottom)); color: var(--fg); box-shadow: inset 0 1px 0 var(--highlight-strong), 0 1px 2px rgba(0, 0, 0, 0.4); }
+.segmented-item[data-tone="success"] input:checked + span { color: var(--success); }
+.segmented-item[data-tone="warning"] input:checked + span { color: var(--warning); }
+.segmented-item[data-tone="danger"] input:checked + span { color: var(--danger); }
+.segmented-item input:focus-visible + span { box-shadow: 0 0 0 2px var(--border-strong); }
+
+/* The edit affordance: a pill with a pencil that warms to orange on hover. */
+.edit-btn { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 11px; border-radius: 999px; border: 1px solid var(--border); background: linear-gradient(180deg, var(--btn-top), var(--btn-bottom)); color: var(--fg-muted); font-size: 12.5px; font-weight: 600; box-shadow: inset 0 1px 0 var(--highlight); transition: color var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out), transform var(--duration-fast) var(--ease-out), box-shadow var(--duration-fast) var(--ease-out); }
+.edit-btn svg { transition: transform 200ms var(--ease-out), color var(--duration-fast) var(--ease-out); }
+.edit-btn:hover { color: var(--fg); border-color: rgba(255, 108, 2, 0.5); box-shadow: inset 0 1px 0 var(--highlight), 0 0 0 3px var(--accent-soft); transform: translateY(-1px); }
+.edit-btn:hover svg { color: var(--accent); transform: rotate(-12deg); }
+.edit-btn:active { transform: translateY(0); }
+.edit-btn-icon { width: 30px; padding: 0; justify-content: center; }
+
+/* A field with a prefix or suffix inside it (currency, units). The inner input is bare; the wrapper is the field. */
+.field-adorned { display: flex; align-items: center; gap: 8px; }
+.field-adorned > input { min-width: 0; flex: 1; height: 100%; background: transparent; border: 0; outline: none; color: var(--fg); font-size: inherit; padding: 0; }
+.field-adorned > input::placeholder { color: var(--fg-subtle); }
+.field-adorned > span { flex-shrink: 0; font-size: 12px; font-weight: 600; letter-spacing: 0.04em; color: var(--fg-subtle); }
+.field-adorned:focus-within { border-color: var(--border-strong); box-shadow: var(--field-shadow), var(--field-ring); }
 }
 
 .glow-header {
@@ -327,6 +361,10 @@ input[type="checkbox"]:disabled, input[type="radio"]:disabled { opacity: 0.5; cu
 /* Eyebrow: micro information (dates, sync times, section labels) is small, spaced and quiet, never body-sized. */
 .eyebrow { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--fg-subtle); }
 .eyebrow-accent { color: var(--accent); }
+/* A text link that acts: an eyebrow with a hairline under it that turns orange on hover (owner decision, 25 September 2026). */
+.link-action { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--fg-muted); border-bottom: 1px solid var(--border); padding-bottom: 2px; line-height: 1.4; white-space: nowrap; transition: color var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out); }
+.link-action:hover { color: var(--fg); border-color: var(--accent); }
+.link-action svg { width: 12px; height: 12px; }
 
 /* The live status dot: a ring that swells and fades from the green dot, twice a cycle. */
 .presence-live { animation: presence-ping 2s cubic-bezier(0, 0, 0.2, 1) infinite; opacity: 0.6; }

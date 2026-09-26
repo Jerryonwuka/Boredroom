@@ -1,4 +1,4 @@
-import { route, parseBody, orgContext, ok } from "@/server/lib/api";
+import { route, parseBody, orgContext, ok, requireFeature } from "@/server/lib/api";
 import { planFromText, planRequestSchema } from "@/server/services/assistant";
 
 /**
@@ -7,6 +7,7 @@ import { planFromText, planRequestSchema } from "@/server/services/assistant";
  */
 export const POST = route<{ org: string }>(async (req, { params }) => {
   const ctx = await orgContext(params.org);
+  requireFeature(ctx, "AI_ASSISTANT");
   const body = await parseBody(req, planRequestSchema);
   return ok(await planFromText(ctx, body));
 });

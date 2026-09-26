@@ -14,6 +14,7 @@ import { NewTaskForm } from "@/components/app/project-forms";
 import { TeamTaskActions, TeamMemberActions } from "@/components/app/team-forms";
 import { RecordingsTable } from "@/components/app/recordings-table";
 import { listRecordings, recordingCountsByTask } from "@/server/services/recording";
+import { Person } from "@/components/ui/person";
 
 export const dynamic = "force-dynamic";
 
@@ -39,7 +40,7 @@ export default async function TeamBoardPage({ params }: { params: Promise<{ work
             <thead><tr><th>Person</th><th>Role in team</th><th>Now</th><th>Open</th><th>Blocked</th><th>In review</th>{isOrgAdmin ? <th></th> : null}</tr></thead>
             <tbody>{members.map((m) => (
               <tr key={m.membership_id}>
-                <td><Link href={`${base}/timesheets?member=${m.membership_id}`} className="font-semibold hover:underline">{m.display_name}</Link><p className="text-xs text-fg-subtle">{m.employee_code}</p></td>
+                <td><Person orgSlug={ctx.org.slug} membershipId={m.membership_id} name={m.display_name} href={`${base}/timesheets?member=${m.membership_id}`} meta={m.employee_code} /></td>
                 <td>{m.is_manager ? <Badge tone="accent">Team lead</Badge> : <Badge>Staff</Badge>}</td>
                 <td>{m.session_state ? <><Badge tone={SESSION_STATE_TONE[m.session_state]} dot>{label(m.session_state)}</Badge> <span className="text-sm">{m.task_title}</span></> : <span className="text-fg-subtle">—</span>}</td>
                 <td>{m.open_tasks}</td><td>{m.blocked_tasks ? <span className="text-danger">{m.blocked_tasks}</span> : 0}</td><td>{m.in_review_tasks}</td>
@@ -74,7 +75,7 @@ export default async function TeamBoardPage({ params }: { params: Promise<{ work
       <section className="mt-8">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <h2 className="font-display text-lg">Screen recordings</h2>
-          <Link href={`${base}/recordings?team=${team.id}`} className="text-sm text-fg-muted hover:text-fg">All recordings for this team</Link>
+          <Link href={`${base}/recordings?team=${team.id}`} className="link-action">All recordings for this team</Link>
         </div>
         {recordings.length === 0 ? <EmptyState icon3d="screen-record" title="No recordings from this team yet" description="When someone on the team presses Record screen while their timer runs, the footage appears here against their task." /> : (
           <RecordingsTable orgSlug={ctx.org.slug} rows={recordings} timeZone={ctx.org.timezone} compact />

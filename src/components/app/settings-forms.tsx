@@ -9,6 +9,7 @@ import { Alert } from "@/components/ui/states";
 import { Badge } from "@/components/ui/badge";
 import { api, isApiFailure } from "@/lib/api-client";
 import { dateOnly } from "@/lib/format";
+import { TimePicker } from "@/components/ui/time-picker";
 
 function useForm() {
   const router = useRouter();
@@ -49,8 +50,8 @@ export function ScheduleForm({ orgSlug, schedule }: { orgSlug: string; schedule:
       {error ? <Alert tone="danger">{error}</Alert> : null}{ok ? <Alert tone="success">{ok}</Alert> : null}
       <fieldset><legend className="mb-1 text-sm font-semibold text-fg-muted">Working days</legend><div className="flex flex-wrap gap-3 text-sm">{DAYS.map((d, i) => <label key={d} className="flex items-center gap-1"><input type="checkbox" name="days" value={i} defaultChecked={days.includes(i)} /> {d}</label>)}</div></fieldset>
       <div className="grid grid-cols-2 gap-3 md:w-[30rem] md:grid-cols-3">
-        <Field label="Clock in by" htmlFor="s-start" hint="start of the day"><Input id="s-start" name="start" type="time" defaultValue={(schedule?.start_local ?? "09:00").slice(0, 5)} required /></Field>
-        <Field label="Clock out at" htmlFor="s-end" hint="end of the day" error={fieldErrors.endLocal}><Input id="s-end" name="end" type="time" defaultValue={(schedule?.end_local ?? "17:00").slice(0, 5)} required /></Field>
+        <Field label="Clock in by" htmlFor="s-start" hint="start of the day"><TimePicker id="s-start" name="start" defaultValue={(schedule?.start_local ?? "09:00").slice(0, 5)} required /></Field>
+        <Field label="Clock out at" htmlFor="s-end" hint="end of the day" error={fieldErrors.endLocal}><TimePicker id="s-end" name="end" defaultValue={(schedule?.end_local ?? "17:00").slice(0, 5)} required /></Field>
         <Field label="Late after (minutes)" htmlFor="s-grace" hint="grace period" error={fieldErrors.graceMinutes}><Input id="s-grace" name="grace" type="number" min={0} max={180} defaultValue={schedule?.clock_grace_minutes ?? 0} /></Field>
       </div>
       <div><Button type="submit" disabled={pending}>Save schedule</Button></div>

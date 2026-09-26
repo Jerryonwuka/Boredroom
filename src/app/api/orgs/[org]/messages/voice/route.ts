@@ -1,10 +1,11 @@
-import { route, orgContext, ok } from "@/server/lib/api";
+import { route, orgContext, ok, requireFeature } from "@/server/lib/api";
 import { invalid } from "@/server/lib/errors";
 import { sendVoiceMessage } from "@/server/services/messaging";
 
 /** Posts a recorded voice note (multipart: file, conversationId, seconds) into a conversation the caller can read. */
 export const POST = route<{ org: string }>(async (req, { params }) => {
   const ctx = await orgContext(params.org);
+  requireFeature(ctx, "VOICE_NOTES");
   const form = await req.formData().catch(() => null);
   const file = form?.get("file");
   const conversationId = String(form?.get("conversationId") ?? "");

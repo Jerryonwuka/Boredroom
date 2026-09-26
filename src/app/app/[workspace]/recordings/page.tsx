@@ -2,6 +2,7 @@ import Link from "next/link";
 import { workspacePage } from "@/server/lib/workspace-page";
 import { AppShell } from "@/components/app/shell";
 import { PageHeader } from "@/components/ui/card";
+import { UpgradeGate } from "@/components/app/upgrade-gate";
 import { Select } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { EmptyState, PermissionDenied } from "@/components/ui/states";
@@ -20,6 +21,7 @@ export default async function RecordingsPage({ params, searchParams }: { params:
   const sp = await searchParams;
   const { ctx, counts, teams: navTeams } = await workspacePage(workspace, `/app/${workspace}/recordings`);
   const role = ctx.membership.role;
+  if (!ctx.plan.features.VIDEO_RECORDING) return <AppShell ctx={ctx} counts={counts} teams={navTeams}><UpgradeGate feature="VIDEO_RECORDING" orgSlug={ctx.org.slug} planName={ctx.plan.plan?.name ?? null} upgradeTo={ctx.plan.upgradeTo} isOwner={role === "owner" || role === "hr"} lapsed={ctx.plan.lapsed} /></AppShell>;
   if (role === "employee") return <AppShell ctx={ctx} counts={counts} teams={navTeams}><PermissionDenied description="Your own recordings are listed on each task you recorded. Team leads and the organisation account see recordings here." /></AppShell>;
   const isOrg = role === "owner" || role === "hr";
   const teams = isOrg
@@ -37,7 +39,7 @@ export default async function RecordingsPage({ params, searchParams }: { params:
         {teams.length > 1 || isOrg ? <label><span className="block text-xs text-fg-subtle">Team</span><Select name="team" defaultValue={sp.team ?? ""} className="h-10 w-48 py-1 text-sm"><option value="">All teams</option>{teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</Select></label> : null}
         <label><span className="block text-xs text-fg-subtle">Person</span><Select name="member" defaultValue={sp.member ?? ""} className="h-10 w-56 py-1 text-sm"><option value="">Everyone</option>{members.map((m) => <option key={m.id} value={m.id}>{m.display_name}</option>)}</Select></label>
         <Button type="submit" variant="outline" size="sm">Filter</Button>
-        {sp.team || sp.member ? <Link href={`${base}/recordings`} className="text-sm text-fg-muted hover:text-fg">Clear</Link> : null}
+        {sp.team || sp.member ? <Link href={`${base}/recordings`} className="link-action">Clear</Link> : null}
       </form>
       {waiting ? <Alert tone="warning" className="mb-4" title={`${waiting} recording${waiting === 1 ? " is" : "s are"} waiting to be assembled`}>Uploaded chunks become a watchable video only when the background worker runs. <code>pnpm dev</code> now starts it automatically; on a server run <code>pnpm worker</code> alongside <code>pnpm start</code>.</Alert> : null}
       {rows.length === 0 ? <EmptyState icon3d="screen-record" title="No recordings yet" description="A recording appears here as soon as someone presses Record screen while their timer runs. Recording must be on under Settings, and each person acknowledges the notice once." action={isOrg ? <Link href={`${base}/settings`}><Button size="sm" variant="outline">Check the recording setting</Button></Link> : undefined} /> : (

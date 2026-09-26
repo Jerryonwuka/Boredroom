@@ -7,7 +7,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Bell, Settings, ChevronRight } from "lucide-react";
+import { Bell, Settings, ChevronRight, Building2 } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -133,7 +133,7 @@ export function TopBar({ orgSlug, user, roleLabel, isOrg, unread, attention, rec
             <PresencePicker value={user.presence ?? "active"} />
             <ul className="border-t border-border-soft pt-1 text-sm">
               <li><Link href={`${base}/profile`} onClick={() => setOpen(null)} className="block rounded-[var(--radius-sm)] px-2 py-2 hover:bg-wash">Your profile</Link></li>
-              <li><Link href="/app" onClick={() => setOpen(null)} className="block rounded-[var(--radius-sm)] px-2 py-2 hover:bg-wash">Switch workspace</Link></li>
+              <li><Link href="/app" onClick={() => setOpen(null)} className="flex items-center gap-2 rounded-[var(--radius-sm)] px-2 py-2 hover:bg-wash"><Building2 className="size-4 text-fg-subtle" aria-hidden />Organisations<span className="ml-auto text-xs text-fg-subtle">switch, join or create</span></Link></li>
               {user.isAdmin ? <li><Link href="/admin" onClick={() => setOpen(null)} className="block rounded-[var(--radius-sm)] px-2 py-2 text-accent hover:bg-wash">Control Center</Link></li> : null}
               <li><button type="button" className="block w-full rounded-[var(--radius-sm)] px-2 py-2 text-left hover:bg-wash" onClick={async () => { await api("/api/auth/logout", { method: "POST", retries: 0 }); router.push("/login"); router.refresh(); }}>Sign out</button></li>
             </ul>

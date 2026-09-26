@@ -14,6 +14,7 @@ import { CaptureProvider, useCaptureGate, useCaptureContext, captureSupport } fr
 import { AssistantPanel } from "@/components/app/assistant-panel";
 import { AnimatedList, AnimatedRow, AnimatePresence, Presence, Expand } from "@/components/ui/motion";
 import { Button } from "@/components/ui/button";
+import { EditButton } from "@/components/ui/edit-button";
 import { Badge, label } from "@/components/ui/badge";
 import { Input, Textarea, Select, Field } from "@/components/ui/input";
 import { Alert } from "@/components/ui/states";
@@ -183,7 +184,7 @@ function TodoRow({ t, orgSlug, self, running, anyRunning, canRecord, onStart, on
           </p>
         </div>
         <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
-          {!waiting && !running ? <Button size="icon" variant="ghost" aria-label={`Edit ${t.title}`} aria-expanded={editing} onClick={() => { setEditing((v) => !v); setChoosing(false); }}><Pencil className="size-4" aria-hidden /></Button> : null}
+          {!waiting && !running ? <EditButton iconOnly label={`Edit ${t.title}`} aria-expanded={editing} onClick={() => { setEditing((v) => !v); setChoosing(false); }} /> : null}
           {waiting ? <Link href={`/app/${orgSlug}/tasks/${t.id}`}><Button size="sm" variant="ghost">View</Button></Link> : running ? (
             confirmDone ? <><Button size="sm" onClick={() => { setConfirmDone(false); onDone(); }}><Check className="size-4" aria-hidden />Yes, send for check</Button><Button size="sm" variant="ghost" onClick={() => setConfirmDone(false)}>Not yet</Button></>
             : <Button size="sm" onClick={() => setConfirmDone(true)}><Check className="size-4" aria-hidden />Done</Button>

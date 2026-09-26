@@ -12,6 +12,7 @@ import { attendanceBoard, attendanceMonth, type ClockStatus } from "@/server/ser
 import { addDays } from "@/server/lib/time";
 import { formatDuration, formatLongDate, cn } from "@/lib/utils";
 import { DatePicker } from "@/components/ui/date-picker";
+import { Person } from "@/components/ui/person";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Attendance" };
@@ -50,11 +51,11 @@ export default async function AttendancePage({ params, searchParams }: { params:
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <form className="flex items-center gap-2 text-sm" action={`${base}/attendance`}>
             <input type="hidden" name="view" value="month" />{teamId ? <input type="hidden" name="team" value={teamId} /> : null}
-            <Link href={nav(shiftMonth(m.month, -1))} className="text-fg-muted hover:text-fg">Previous month</Link>
+            <Link href={nav(shiftMonth(m.month, -1))} className="link-action">Previous month</Link>
             <label htmlFor="month" className="sr-only">Month</label>
             <DatePicker mode="month" id="month" name="month" defaultValue={m.month} max={m.today.slice(0, 7)} size="sm" />
             <Button type="submit" size="sm" variant="subtle">Show</Button>
-            {m.month < m.today.slice(0, 7) ? <Link href={nav(shiftMonth(m.month, 1))} className="text-fg-muted hover:text-fg">Next month</Link> : null}
+            {m.month < m.today.slice(0, 7) ? <Link href={nav(shiftMonth(m.month, 1))} className="link-action">Next month</Link> : null}
           </form>
           {m.teams.length > 1 ? (
             <form className="flex items-center gap-2 text-sm" action={`${base}/attendance`}>
@@ -77,7 +78,7 @@ export default async function AttendancePage({ params, searchParams }: { params:
             <thead><tr><th className="sticky left-0 bg-bg-elevated">Person</th>{m.days.map((d) => <th key={d} className={cn("day text-[11px] font-normal", !m.workingDays.includes(d) && "text-fg-faint", d === m.today && "text-accent")}>{Number(d.slice(8))}</th>)}<th className="text-right">In</th><th className="text-right">Late</th><th className="text-right">Missed</th><th className="hidden text-right lg:table-cell">Hours</th></tr></thead>
             <tbody>{m.rows.map((r) => (
               <tr key={r.membership_id}>
-                <td className="sticky left-0 bg-bg-elevated"><Link href={`${base}/workroom/${r.membership_id}`} className="whitespace-nowrap font-semibold hover:underline">{r.display_name}</Link><p className="text-xs text-fg-subtle">{r.teams.join(", ") || (r.role === "owner" ? "owner" : r.role === "hr" ? "HR" : "—")}</p></td>
+                <td className="sticky left-0 bg-bg-elevated"><Person orgSlug={ctx.org.slug} membershipId={r.membership_id} name={r.display_name} href={`${base}/workroom/${r.membership_id}`} meta={r.teams.join(", ") || (r.role === "owner" ? "owner" : r.role === "hr" ? "HR" : "—")} className="whitespace-nowrap" /></td>
                 {m.days.map((d) => { const c = r.days[d]; const working = m.workingDays.includes(d); const before = d < r.joined; return (
                   <td key={d} className="day">
                     {c ? <span title={`${formatLongDate(d)}: in ${timeOf(c.in, tz)}${c.out ? `, out ${timeOf(c.out, tz)}` : ""}${c.late ? `, late by ${formatDuration(c.late)}` : ", on time"}`} className={cn("inline-block size-2.5 rounded-full", c.late ? "bg-warning" : "bg-success")} aria-label={`${d}: ${c.late ? "late" : "on time"}`} />
@@ -120,11 +121,11 @@ export default async function AttendancePage({ params, searchParams }: { params:
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <form className="flex flex-wrap items-center gap-2 text-sm" action={`${base}/attendance`}>
           <input type="hidden" name="tab" value={tab} />{teamId ? <input type="hidden" name="team" value={teamId} /> : null}
-          <Link href={q({ date: addDays(b.date, -1) })} className="text-fg-muted hover:text-fg">Previous day</Link>
+          <Link href={q({ date: addDays(b.date, -1) })} className="link-action">Previous day</Link>
           <label htmlFor="date" className="sr-only">Day</label>
           <DatePicker id="date" name="date" defaultValue={b.date} max={b.today} size="sm" />
           <Button type="submit" size="sm" variant="subtle">Show</Button>
-          {b.date < b.today ? <><Link href={q({ date: addDays(b.date, 1) })} className="text-fg-muted hover:text-fg">Next day</Link><Link href={q({ date: undefined })} className="text-fg-muted hover:text-fg">Today</Link></> : null}
+          {b.date < b.today ? <><Link href={q({ date: addDays(b.date, 1) })} className="link-action">Next day</Link><Link href={q({ date: undefined })} className="link-action">Today</Link></> : null}
         </form>
         {b.teams.length > 1 ? (
           <form className="flex items-center gap-2 text-sm" action={`${base}/attendance`}>
@@ -151,7 +152,7 @@ export default async function AttendancePage({ params, searchParams }: { params:
           <thead><tr><th>Person</th><th className="hidden md:table-cell">Team</th><th>Clocked in</th><th>Status</th><th className="hidden md:table-cell">Clocked out</th><th className="hidden lg:table-cell">On the clock</th></tr></thead>
           <tbody>{shown.map((p) => (
             <tr key={p.membership_id}>
-              <td><Link href={`${base}/workroom/${p.membership_id}`} className="font-semibold hover:underline">{p.display_name}</Link><p className="text-xs text-fg-subtle">{p.employee_code}{p.role === "manager" ? ", team lead" : p.role === "owner" ? ", organisation owner" : p.role === "hr" ? ", HR" : ""}<span className="md:hidden">{p.teams.length ? `, ${p.teams.join(", ")}` : ""}</span></p></td>
+              <td><Person orgSlug={ctx.org.slug} membershipId={p.membership_id} name={p.display_name} href={`${base}/workroom/${p.membership_id}`} /><p className="text-xs text-fg-subtle">{p.employee_code}{p.role === "manager" ? ", team lead" : p.role === "owner" ? ", organisation owner" : p.role === "hr" ? ", HR" : ""}<span className="md:hidden">{p.teams.length ? `, ${p.teams.join(", ")}` : ""}</span></p></td>
               <td className="hidden text-fg-muted md:table-cell">{p.teams.join(", ") || "—"}</td>
               <td className="tabular-nums">{p.clock_in_at ? timeOf(p.clock_in_at, tz) : <span className="text-fg-subtle">—</span>}</td>
               <td><span className="flex flex-wrap gap-1"><Badge tone={STATUS[p.status].tone} dot={p.status === "in"}>{STATUS[p.status].label}</Badge>{(p.late_seconds ?? 0) > 0 ? <Badge tone="warning">Late by {formatDuration(p.late_seconds!)}</Badge> : p.clock_in_at ? <Badge tone="success">On time</Badge> : null}{(p.left_early_seconds ?? 0) > 0 ? <Badge tone="info">Left early</Badge> : null}</span></td>

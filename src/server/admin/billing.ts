@@ -13,6 +13,9 @@ import type { OrgContext } from "@/server/lib/api";
 import { AppError, invalid, notFound, forbidden } from "@/server/lib/errors";
 import { adminAudit, type Admin } from "@/server/admin/auth";
 import { emitEvent } from "@/server/admin/events";
+import { paystackConfig, paystackSecrets } from "@/server/admin/paystack-config";
+import { notifyBilling } from "@/server/admin/billing-reminders";
+import { dateOnly } from "@/lib/format";
 
 // ---- Plans ---------------------------------------------------------------------------------------------------
 
@@ -25,13 +28,14 @@ export const planSchema = z.object({
   annualPrice: z.number().int().min(0),
   maxUsers: z.number().int().positive().nullable().optional(),
   maxStorageGb: z.number().positive().nullable().optional(),
+  maxWorkspaces: z.number().int().positive().nullable().optional(),
   trialDays: z.number().int().min(0).max(365).default(0),
   features: z.record(z.string(), z.boolean()).default({}),
   status: z.enum(["active", "hidden", "archived"]).default("active"),
   sortOrder: z.number().int().default(0),
 });
 
-export type PlanRow = { id: string; code: string; name: string; description: string | null; currency: string; monthly_price: number; annual_price: number; max_users: number | null; max_storage_bytes: number | null; trial_days: number; features: Record<string, boolean>; status: string; sort_order: number; subscribers: number; created_at: string };
+export type PlanRow = { id: string; code: string; name: string; description: string | null; currency: string; monthly_price: number; annual_price: number; max_users: number | null; max_storage_bytes: number | null; max_workspaces: number | null; trial_days: number; features: Record<string, boolean>; status: string; sort_order: number; subscribers: number; created_at: string };
 
 export async function listPlans(includeArchived = true) {
   return withSystem((db) => db.query<PlanRow>(`SELECT p.*, (SELECT count(*)::int FROM subscriptions s WHERE s.plan_id = p.id) AS subscribers FROM plans p ${includeArchived ? "" : "WHERE p.status <> 'archived'"} ORDER BY p.sort_order, p.created_at`));
@@ -43,10 +47,10 @@ export async function savePlan(admin: Admin, id: string | null, input: z.infer<t
     const before = id ? await db.maybeOne<PlanRow>(`SELECT * FROM plans WHERE id = $1`, [id]) : null;
     if (id && !before) throw notFound("Plan not found.");
     const row = id
-      ? await db.one<{ id: string }>(`UPDATE plans SET code = $2, name = $3, description = $4, currency = $5, monthly_price = $6, annual_price = $7, max_users = $8, max_storage_bytes = $9, trial_days = $10, features = $11, status = $12, sort_order = $13, updated_at = now() WHERE id = $1 RETURNING id`,
-          [id, input.code, input.name, input.description ?? null, input.currency, input.monthlyPrice, input.annualPrice, input.maxUsers ?? null, bytes, input.trialDays, JSON.stringify(input.features), input.status, input.sortOrder])
-      : await db.one<{ id: string }>(`INSERT INTO plans(code, name, description, currency, monthly_price, annual_price, max_users, max_storage_bytes, trial_days, features, status, sort_order) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id`,
-          [input.code, input.name, input.description ?? null, input.currency, input.monthlyPrice, input.annualPrice, input.maxUsers ?? null, bytes, input.trialDays, JSON.stringify(input.features), input.status, input.sortOrder]);
+      ? await db.one<{ id: string }>(`UPDATE plans SET code = $2, name = $3, description = $4, currency = $5, monthly_price = $6, annual_price = $7, max_users = $8, max_storage_bytes = $9, trial_days = $10, features = $11, status = $12, sort_order = $13, max_workspaces = $14, updated_at = now() WHERE id = $1 RETURNING id`,
+          [id, input.code, input.name, input.description ?? null, input.currency, input.monthlyPrice, input.annualPrice, input.maxUsers ?? null, bytes, input.trialDays, JSON.stringify(input.features), input.status, input.sortOrder, input.maxWorkspaces ?? null])
+      : await db.one<{ id: string }>(`INSERT INTO plans(code, name, description, currency, monthly_price, annual_price, max_users, max_storage_bytes, trial_days, features, status, sort_order, max_workspaces) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING id`,
+          [input.code, input.name, input.description ?? null, input.currency, input.monthlyPrice, input.annualPrice, input.maxUsers ?? null, bytes, input.trialDays, JSON.stringify(input.features), input.status, input.sortOrder, input.maxWorkspaces ?? null]);
     await adminAudit(db, admin, { action: id ? "plan.updated" : "plan.created", targetType: "plan", targetId: row.id, targetLabel: input.name, before, after: input });
     return row;
   });
@@ -175,11 +179,11 @@ export async function markRefunded(admin: Admin, id: string, reason: string) {
 
 // ---- Paystack -----------------------------------------------------------------------------------------------------
 
-export function paystackConfigured(env: Record<string, string | undefined> = process.env) { return !!env.PAYSTACK_SECRET_KEY; }
+export async function paystackConfigured() { return !!(await paystackConfig()).secretKey; }
 const PAYSTACK = "https://api.paystack.co";
 
 async function paystack<T>(path: string, init: { method?: string; body?: unknown } = {}): Promise<T> {
-  const key = process.env.PAYSTACK_SECRET_KEY;
+  const key = (await paystackConfig()).secretKey;
   if (!key) throw new AppError(503, "PAYSTACK_NOT_CONFIGURED", "Payments are not set up on this server yet.");
   const res = await fetch(`${PAYSTACK}${path}`, { method: init.method ?? "GET", headers: { Authorization: `Bearer ${key}`, "content-type": "application/json" }, body: init.body ? JSON.stringify(init.body) : undefined, signal: AbortSignal.timeout(20_000) });
   const body = (await res.json().catch(() => ({}))) as { status?: boolean; message?: string; data?: T };
@@ -188,12 +192,14 @@ async function paystack<T>(path: string, init: { method?: string; body?: unknown
 }
 
 /** Verifies a webhook body against Paystack's signature (HMAC SHA-512 of the raw body with the secret key). */
-export function verifyPaystackSignature(rawBody: string, signature: string | null): boolean {
-  const key = process.env.PAYSTACK_SECRET_KEY;
-  if (!key || !signature) return false;
-  const expected = createHmac("sha512", key).update(rawBody).digest("hex");
-  const a = Buffer.from(expected), b = Buffer.from(signature);
-  return a.length === b.length && timingSafeEqual(a, b);
+export async function verifyPaystackSignature(rawBody: string, signature: string | null): Promise<boolean> {
+  if (!signature) return false;
+  for (const key of await paystackSecrets()) {
+    const expected = createHmac("sha512", key).update(rawBody).digest("hex");
+    const a = Buffer.from(expected), b = Buffer.from(signature);
+    if (a.length === b.length && timingSafeEqual(a, b)) return true;
+  }
+  return false;
 }
 
 /** An organisation owner starts a checkout: returns Paystack's hosted page URL. The reference carries our ids. */
@@ -256,9 +262,12 @@ export async function recordPayment(db: Db, tx: PaystackTx) {
       [orgId, planId, interval, interval === "annual" ? "12" : "1", tx.customer?.customer_code ?? null, tx.authorization ? JSON.stringify(tx.authorization) : null]);
     await db.query(`UPDATE payment_transactions SET subscription_id = (SELECT id FROM subscriptions WHERE organisation_id = $2) WHERE reference = $1`, [tx.reference, orgId]);
     await emitEvent(db, "PAYMENT_SUCCESSFUL", { organisationId: orgId, reference: tx.reference, amount: tx.amount, currency: tx.currency, planId, email: tx.customer?.email ?? null });
+    const renewed = await db.maybeOne<{ name: string; end: string | null }>(`SELECT p.name, s.current_period_end::text AS "end" FROM subscriptions s JOIN plans p ON p.id = s.plan_id WHERE s.organisation_id = $1`, [orgId]);
+    await notifyBilling(db, orgId, { type: "billing.renewed", key: `billing.renewed:${tx.reference}`, title: `${renewed?.name ?? "Plan"} is paid up`, body: `${money(tx.amount, tx.currency)} received (${tx.reference}).${renewed?.end ? ` The plan runs until ${dateOnly(renewed.end)}.` : ""}` });
   } else if (status === "failed" && orgId) {
     await db.query(`UPDATE subscriptions SET payment_status = 'failed', status = CASE WHEN status = 'active' THEN 'payment_failed' ELSE status END, updated_at = now() WHERE organisation_id = $1`, [orgId]);
     await emitEvent(db, "PAYMENT_FAILED", { organisationId: orgId, reference: tx.reference, amount: tx.amount, currency: tx.currency, planId, email: tx.customer?.email ?? null, response: tx.gateway_response ?? null });
+    await notifyBilling(db, orgId, { type: "billing.payment_failed", key: `billing.failed:${tx.reference}`, title: "A payment did not go through", body: `${money(tx.amount, tx.currency)} could not be taken${tx.gateway_response ? ` (${tx.gateway_response})` : ""}. Try again from Settings to keep the plan's modules.` });
   }
   return { changed: true, status, organisationId: orgId };
 }
@@ -316,7 +325,8 @@ export async function orgBilling(ctx: OrgContext) {
     const plans = await db.query<{ id: string; code: string; name: string; description: string | null; currency: string; monthly_price: number; annual_price: number; max_users: number | null; max_storage_bytes: number | null; features: Record<string, boolean> }>(`SELECT id, code, name, description, currency, monthly_price, annual_price, max_users, max_storage_bytes, features FROM plans WHERE status = 'active' ORDER BY sort_order`);
     const payments = ctx.membership.role === "owner" || ctx.membership.role === "hr" ? await db.query<{ reference: string; amount: number; currency: string; status: string; paid_at: string | null; created_at: string }>(`SELECT reference, amount, currency, status, paid_at, created_at FROM payment_transactions WHERE organisation_id = $1 ORDER BY created_at DESC LIMIT 12`, [ctx.org.id]) : [];
     const users = await db.one<{ n: number }>(`SELECT count(*)::int AS n FROM memberships WHERE organisation_id = $1 AND status = 'active'`, [ctx.org.id]);
-    return { sub, plans, payments, users: users.n, paystack: paystackConfigured() };
+    const pay = await paystackConfig();
+    return { sub, plans, payments, users: users.n, paystack: !!pay.secretKey, mode: pay.mode };
   });
 }
 

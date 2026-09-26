@@ -11,6 +11,8 @@ import { Moments } from "@/components/landing/moments";
 import { LitTile } from "@/components/landing/lit-tile";
 import { Reveal, RevealGroup, RevealItem } from "@/components/landing/reveal";
 import { WaitlistForm } from "@/components/landing/waitlist-form";
+import { Pricing } from "@/components/landing/pricing";
+import { publicPlans } from "@/server/services/pricing";
 import { SectionTitle } from "@/components/landing/section-title";
 import { GlassCard } from "@/components/landing/glass-card";
 import { SiteNav } from "@/components/landing/site-nav";
@@ -50,7 +52,7 @@ const FAQ = [
 
 export default async function LandingPage() {
   // The public page never fails over the database: a slow or absent connection means the defaults (live mode).
-  const [user, launch, copy] = await Promise.all([getCurrentUser().catch(() => null), launchSettings().catch(() => ({ mode: "live" as const, waitlist_open: true, app_access: true })), landingSettings().catch(() => ({ headline: "", subheadline: "", cta: "" }))]);
+  const [user, launch, copy, plans] = await Promise.all([getCurrentUser().catch(() => null), launchSettings().catch(() => ({ mode: "live" as const, waitlist_open: true, app_access: true })), landingSettings().catch(() => ({ headline: "", subheadline: "", cta: "" })), publicPlans().catch(() => [])]);
   const waitlist = launch.mode === "waitlist";
   return (
     <MotionRoot>
@@ -176,6 +178,13 @@ export default async function LandingPage() {
             <div className="mx-auto max-w-6xl px-6">
               <SectionTitle icon="desk" title="A week in the room" sub="Not what people say about it. What it records, in the order it happens." />
               <Reveal className="mt-14" delay={0.1}><Moments /></Reveal>
+            </div>
+          </section>
+
+          <section id="pricing" className="py-24 md:py-36">
+            <div className="mx-auto max-w-6xl px-6">
+              <SectionTitle icon="card-check" title="Pay per workspace, not per glance" sub="Start free with one workspace. Move to Pro when you run several teams, or talk to us when you run a company of them." />
+              <Reveal delay={0.1} className="mt-14"><Pricing plans={plans} waitlist={waitlist} signedIn={!!user} /></Reveal>
             </div>
           </section>
 

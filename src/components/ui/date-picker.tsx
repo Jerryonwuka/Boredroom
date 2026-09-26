@@ -11,6 +11,7 @@ import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent
 import { AnimatePresence, motion } from "motion/react";
 import { CalendarDays, ChevronLeft, ChevronRight, Clock3, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { TimePicker } from "@/components/ui/time-picker";
 
 export type DateMode = "date" | "month" | "datetime";
 type Level = "days" | "months" | "years";
@@ -175,7 +176,7 @@ export function DatePicker({ name, id, mode = "date", value, defaultValue, onCha
                   ); })}
                 </div>
                 {mode === "datetime" ? (
-                  <label className="mt-3 flex items-center gap-2 text-xs font-medium text-fg-subtle"><span className="w-10">Time</span><input type="time" value={time || "09:00"} onChange={(e) => commit(serialise(date ?? today, e.target.value, mode))} className="field field-sm flex-1" aria-label="Time" /></label>
+                  <div className="mt-3 flex items-center gap-2 text-xs font-medium text-fg-subtle"><span className="w-10">Time</span><TimePicker size="sm" className="flex-1" aria-label="Time" value={time || "09:00"} onChange={(v) => commit(serialise(date ?? today, v, mode))} /></div>
                 ) : null}
               </>
             )}

@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { NewAssignedTask, PickUpTask, MarkDone } from "@/components/app/tasks-page";
 import { tasksView, type TaskListFilter } from "@/server/services/views";
 import { formatDateTime, formatDuration, cn } from "@/lib/utils";
+import { Person } from "@/components/ui/person";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Tasks" };
@@ -37,7 +38,7 @@ export default async function TasksPage({ params, searchParams }: { params: Prom
     <AppShell ctx={ctx} counts={counts} teams={teams}>
       <PageHeader icon="card-check" title={mine ? "Your tasks" : "Tasks"}
         description={mine ? "Everything assigned to you, by your team lead or by yourself. Press Start to pick one up; the clock opens on My Day." : lead ? "Create a task and hand it to someone on your team, to another team lead, or up to the owner or HR. They are notified and see it under their tasks; follow it here until it is done." : "Every task in the organisation and who holds it. Add a task and assign it to anyone; anything handed to you appears here with a Mark done button."} />
-      {!mine ? <NewAssignedTask orgSlug={ctx.org.slug} people={data.people.filter((p) => p.id !== ctx.membership.id)} self={ctx.membership.id} selfName={ctx.user.displayName} canKeep={lead} /> : null}
+      {!mine ? <NewAssignedTask orgSlug={ctx.org.slug} people={data.people.filter((p) => p.id !== ctx.membership.id)} self={ctx.membership.id} selfName={ctx.user.displayName} canKeep={ctx.membership.role !== "employee"} /> : null}
 
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <Tabs label="Task status" param="status" value={status} tabs={tabs} />
@@ -70,7 +71,7 @@ export default async function TasksPage({ params, searchParams }: { params: Prom
                   <Link href={`${base}/tasks/${t.id}`} className="font-semibold hover:underline">{t.title}</Link>
                   <p className="text-xs text-fg-subtle">{mine ? (t.created_by === ctx.membership.id ? "your own to-do" : `from ${t.created_by_name}`) : (t.created_by === t.assignee_membership_id ? "their own to-do" : `from ${t.created_by_name}`)}{t.estimate_minutes ? `, est. ${formatDuration(t.estimate_minutes * 60)}` : ""}{!mine ? <span className="md:hidden">, {t.assignee_name}</span> : null}{t.due_at ? <span className={cn("md:hidden", t.overdue ? "text-danger" : "")}>, due {formatDateTime(t.due_at, ctx.org.timezone)}</span> : null}</p>
                 </td>
-                {!mine ? <td className="hidden md:table-cell">{t.assignee_membership_id === ctx.membership.id ? <span className="font-semibold text-accent">You</span> : <Link href={`${base}/workroom/${t.assignee_membership_id}`} className="hover:underline">{t.assignee_name}</Link>}{t.team_name ? <p className="text-xs text-fg-subtle">{t.team_name}</p> : null}</td> : null}
+                {!mine ? <td className="hidden md:table-cell"><Person orgSlug={ctx.org.slug} membershipId={t.assignee_membership_id} name={t.assignee_name} you={t.assignee_membership_id === ctx.membership.id} href={t.assignee_membership_id === ctx.membership.id ? undefined : `${base}/workroom/${t.assignee_membership_id}`} />{t.team_name ? <p className="text-xs text-fg-subtle">{t.team_name}</p> : null}</td> : null}
                 <td>{running ? <Badge tone="success" dot>Working now</Badge> : <Badge tone={TASK_STATUS_TONE[t.status]}>{t.status === "in_review" ? "Sent for check" : label(t.status)}</Badge>}{t.blocked_reason ? <p className="mt-1 max-w-[16rem] text-xs text-danger">{t.blocked_reason}</p> : null}</td>
                 <td className="hidden md:table-cell">{t.priority === "normal" ? <span className="text-sm text-fg-subtle">Normal</span> : <Badge tone={PRIORITY_TONE[t.priority as keyof typeof PRIORITY_TONE] ?? "neutral"}>{label(t.priority)}</Badge>}</td>
                 <td className={cn("hidden text-sm md:table-cell", t.overdue ? "text-danger" : "")}>{t.due_at ? formatDateTime(t.due_at, ctx.org.timezone) : <span className="text-fg-subtle">—</span>}</td>

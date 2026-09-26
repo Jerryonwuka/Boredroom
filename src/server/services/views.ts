@@ -235,8 +235,8 @@ export async function reviewQueue(ctx: OrgContext) {
     const incidents = await db.query<{ id: string; recording_id: string; reason: string; restricted_at: string; reporter_name: string }>(
       `SELECT i.id, i.recording_id, i.reason, i.restricted_at, pr.display_name AS reporter_name FROM privacy_incidents i JOIN memberships m ON m.id = i.reporter_membership_id JOIN profiles pr ON pr.id = m.user_id
        WHERE i.organisation_id = $1 AND i.disposition = 'open' AND app_is_privacy_admin($1) ORDER BY i.restricted_at`, [ctx.org.id]);
-    const overdue = await db.query<{ id: string; title: string; assignee_name: string; due_at: string; status: string }>(
-      `SELECT t.id, t.title, pr.display_name AS assignee_name, t.due_at, t.status FROM tasks t JOIN memberships m ON m.id = t.assignee_membership_id JOIN profiles pr ON pr.id = m.user_id
+    const overdue = await db.query<{ id: string; title: string; assignee_name: string; assignee_membership_id: string; assignee_profile_id: string; assignee_avatar_key: string | null; due_at: string; status: string }>(
+      `SELECT t.id, t.title, pr.display_name AS assignee_name, m.id AS assignee_membership_id, pr.id AS assignee_profile_id, pr.avatar_key AS assignee_avatar_key, t.due_at, t.status FROM tasks t JOIN memberships m ON m.id = t.assignee_membership_id JOIN profiles pr ON pr.id = m.user_id
        WHERE t.organisation_id = $1 AND t.archived_at IS NULL AND t.status <> 'completed' AND t.due_at < now() AND (app_has_role($1, 'owner', 'hr') OR app_manages($1, t.assignee_membership_id)) ORDER BY t.due_at LIMIT 50`, [ctx.org.id]);
     const missing = ctx.membership.role === "employee" ? [] : await db.query<{ membership_id: string; display_name: string; local_date: string }>(
       `WITH sched AS (SELECT working_days FROM schedules WHERE organisation_id = $1 AND membership_id IS NULL ORDER BY effective_from DESC, created_at DESC LIMIT 1),

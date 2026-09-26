@@ -12,7 +12,7 @@ import type { orgBilling } from "@/server/admin/billing";
 type Data = Awaited<ReturnType<typeof orgBilling>>;
 
 /** The organisation's plan, the other plans, and Paystack checkout. Free plans switch at once; paid ones go to Paystack. */
-export function BillingCard({ orgSlug, data, notice }: { orgSlug: string; data: Data; notice?: string }) {
+export function BillingCard({ orgSlug, data, notice, preselect }: { orgSlug: string; data: Data; notice?: string; preselect?: string }) {
   const router = useRouter();
   const [cycle, setCycle] = useState<"monthly" | "annual">((data.sub?.billing_interval as "monthly" | "annual") ?? "monthly");
   const [pending, setPending] = useState<string | null>(null);
@@ -32,18 +32,18 @@ export function BillingCard({ orgSlug, data, notice }: { orgSlug: string; data: 
       {notice === "success" ? <Alert tone="success">Payment received. Thank you; the plan is active.</Alert> : notice === "failed" || notice === "abandoned" ? <Alert tone="warning">The payment did not go through. Nothing was charged; try again when you are ready.</Alert> : notice === "error" ? <Alert tone="danger">The payment could not be verified. If money left your account, reply to the receipt email and we will sort it out.</Alert> : null}
       {error ? <Alert tone="danger">{error}</Alert> : null}
       <div className="chip flex flex-wrap items-center justify-between gap-3 px-4 py-3">
-        <div><p className="eyebrow">Current plan</p><p className="font-display text-xl">{s?.plan_name ?? "Free"} <Badge tone={s?.status === "active" ? "success" : s?.status === "trial" ? "info" : s ? "warning" : "neutral"}>{s?.status ?? "active"}</Badge></p>
+        <div><p className="eyebrow">Current plan{data.paystack && data.mode === "test" ? <Badge tone="warning" className="ml-2">test mode</Badge> : null}</p><p className="font-display text-xl">{s?.plan_name ?? "Free"} <Badge tone={s?.status === "active" ? "success" : s?.status === "trial" ? "info" : s ? "warning" : "neutral"}>{s?.status ?? "active"}</Badge></p>
           <p className="text-xs text-fg-subtle">{s?.current_period_end ? `${s.status === "trial" ? "Trial ends" : s.auto_renew ? "Renews" : "Ends"} ${dateOnly(s.current_period_end)}` : "No end date"}{s?.max_users ? ` · ${data.users} of ${s.max_users} people` : ` · ${data.users} people`}{s?.max_storage_bytes ? ` · ${bytes(s.max_storage_bytes)} storage` : ""}</p></div>
         <span role="radiogroup" aria-label="Billing interval" className="inline-flex rounded-full border border-border bg-wash-soft p-0.5">{(["monthly", "annual"] as const).map((v) => <button key={v} type="button" role="radio" aria-checked={cycle === v} onClick={() => setCycle(v)} className={`rounded-full px-3 py-1 text-xs ${cycle === v ? "bg-wash-active text-fg" : "text-fg-muted"}`}>{v}</button>)}</span>
       </div>
-      <div className="grid gap-3 md:grid-cols-3">{data.plans.map((p) => { const price = cycle === "annual" ? p.annual_price : p.monthly_price; const current = s?.plan_code === p.code; return (
-        <div key={p.id} className={`tile p-4 ${current ? "border-accent/60" : ""}`}>
+      <div className="grid gap-3 md:grid-cols-3">{data.plans.map((p) => { const price = cycle === "annual" ? p.annual_price : p.monthly_price; const current = s?.plan_code === p.code; const chosen = !current && preselect === p.code; return (
+        <div key={p.id} className={`tile p-4 ${current ? "border-accent/60" : chosen ? "tile-glow" : ""}`}>{chosen ? <p className="eyebrow eyebrow-accent mb-2">Your pick from the pricing page</p> : null}
           <p className="font-semibold">{p.name}{current ? <Badge tone="accent" className="ml-2">current</Badge> : null}</p>
           <p className="mt-1 font-display text-2xl">{price ? money(price, p.currency) : "Free"}<span className="text-xs text-fg-subtle">{price ? ` / ${cycle === "annual" ? "year" : "month"}` : ""}</span></p>
           <p className="mt-1 text-xs text-fg-muted">{p.description}</p>
           <p className="eyebrow mt-2">{p.max_users ? `${p.max_users} people` : "unlimited people"} · {p.max_storage_bytes ? bytes(p.max_storage_bytes) : "unlimited storage"}</p>
           <ul className="mt-2 flex flex-wrap gap-1">{Object.entries(p.features).filter(([, v]) => v).map(([k]) => <li key={k} className="chip px-2 py-0.5 text-[11px]">{k.replace(/_/g, " ").toLowerCase()}</li>)}</ul>
-          {!current ? <Button size="sm" className="mt-3 w-full" disabled={pending !== null || (price > 0 && !data.paystack)} onClick={() => void choose(p.id)}>{pending === p.id ? "Opening…" : price ? "Pay with Paystack" : "Switch to Free"}</Button> : null}
+          {!current ? <Button size="sm" className="mt-3 w-full" disabled={pending !== null || (price > 0 && !data.paystack)} onClick={() => void choose(p.id)}>{pending === p.id ? "Opening…" : price ? (chosen ? `Continue with ${p.name}` : "Pay with Paystack") : "Switch to Free"}</Button> : null}
           {price > 0 && !data.paystack ? <p className="mt-2 text-[11px] text-fg-subtle">Payments are not enabled on this server yet.</p> : null}
         </div>
       ); })}</div>

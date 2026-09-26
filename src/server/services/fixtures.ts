@@ -7,6 +7,7 @@ import { hashPassword } from "@/server/lib/crypto";
 import { createOrganisation, createTeam, setTeamMember, createInvitation, acceptInvitation, acknowledgePolicy } from "@/server/services/orgs";
 import { createProject, createTask } from "@/server/services/tasks";
 import type { OrgContext } from "@/server/lib/api";
+import { resolveEntitlements } from "@/server/lib/entitlements";
 
 export type FixtureUser = { profileId: string; authUserId: string; email: string; displayName: string; password: string };
 
@@ -27,6 +28,7 @@ export async function contextFor(user: FixtureUser, orgSlug: string): Promise<Or
     user: { profileId: user.profileId, authUserId: user.authUserId, email: user.email, displayName: user.displayName, emailVerified: true, sessionId: "fixture", avatarKey: null, title: null, statusText: null, presence: "active" },
     org: { id: row.org_id, slug: row.slug, name: row.name, timezone: row.timezone, current_policy_id: row.current_policy_id, status: row.status },
     membership: { id: row.membership_id, role: row.role, employee_code: row.employee_code },
+    plan: await withSystem((db) => resolveEntitlements(db, row.org_id)),
   };
 }
 

@@ -1,6 +1,7 @@
 import { workspacePage } from "@/server/lib/workspace-page";
 import { AppShell } from "@/components/app/shell";
 import { PageHeader } from "@/components/ui/card";
+import { UpgradeGate } from "@/components/app/upgrade-gate";
 import { DataTable } from "@/components/ui/table";
 import { EmptyState } from "@/components/ui/states";
 import { Input } from "@/components/ui/input";
@@ -16,6 +17,7 @@ export default async function AuditPage({ params, searchParams }: { params: Prom
   const { workspace } = await params;
   const sp = await searchParams;
   const { ctx, counts, teams } = await workspacePage(workspace, `/app/${workspace}/audit`);
+  if (!ctx.plan.features.AUDIT_LOGS) return <AppShell ctx={ctx} counts={counts} teams={teams}><UpgradeGate feature="AUDIT_LOGS" orgSlug={ctx.org.slug} planName={ctx.plan.plan?.name ?? null} upgradeTo={ctx.plan.upgradeTo} isOwner={ctx.membership.role === "owner" || ctx.membership.role === "hr"} lapsed={ctx.plan.lapsed} /></AppShell>;
   const rows = await auditView(ctx, { action: sp.action, from: sp.from ? new Date(sp.from).toISOString() : undefined, to: sp.to ? new Date(new Date(sp.to).getTime() + 86400000).toISOString() : undefined });
   const scope = { owner: "the whole organisation", hr: "operational events across the organisation", manager: "your own actions and your teams' review events", employee: "events about your own records" }[ctx.membership.role];
   return (

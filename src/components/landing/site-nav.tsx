@@ -9,11 +9,13 @@ import Link from "next/link";
 import { Navbar, NavBody, NavItems, MobileNav, MobileNavHeader, MobileNavMenu, MobileNavToggle } from "@/components/aceternity/resizable-navbar";
 import { Logo } from "@/components/logo";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
+import { WaitlistLink } from "@/components/landing/waitlist-link";
 
 const LINKS = [
   { name: "How it works", link: "#how" },
   { name: "Product", link: "#product" },
   { name: "Fairness", link: "#fair" },
+  { name: "Pricing", link: "#pricing" },
   { name: "FAQ", link: "#faq" },
 ];
 
@@ -21,7 +23,7 @@ export function SiteNav({ signedIn, waitlist = false }: { signedIn: boolean; wai
   const [open, setOpen] = useState(false);
   const cta = signedIn
     ? <Link href="/app" className="lp-btn lp-btn-primary lp-btn-sm">Open workspace</Link>
-    : waitlist ? <><Link href="/login" className="lp-muted text-sm transition-colors hover:text-fg">Log in</Link><a href="#waitlist" className="lp-btn lp-btn-primary lp-btn-sm">Join the waitlist</a></>
+    : waitlist ? <><Link href="/login" className="lp-muted text-sm transition-colors hover:text-fg">Log in</Link><WaitlistLink className="lp-btn lp-btn-primary lp-btn-sm">Join the waitlist</WaitlistLink></>
     : <><Link href="/login" className="lp-muted text-sm transition-colors hover:text-fg">Log in</Link><Link href="/signup" className="lp-btn lp-btn-primary lp-btn-sm">Get started</Link></>;
   return (
     <Navbar className="top-0 pt-3">

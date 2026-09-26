@@ -24,8 +24,10 @@ export const controlCenterHandlers: Record<string, Handler> = {
   },
   "automations.scheduled": async () => {
     const { runScheduledAutomations, expireSubscriptions } = await import("../src/server/admin/marketing");
+    const { billingReminders } = await import("../src/server/admin/billing-reminders");
     await expireSubscriptions();
     await runScheduledAutomations();
+    await billingReminders();
   },
 };
 

@@ -6,6 +6,12 @@ import { BackgroundRippleEffect } from "@/components/aceternity/background-rippl
 import { ContainerScroll } from "@/components/aceternity/container-scroll-animation";
 import { FlipWords } from "@/components/aceternity/flip-words";
 import { DashboardMock } from "@/components/landing/mocks";
+import { WaitlistLink } from "@/components/landing/waitlist-link";
+
+/** The pill above the headline: a waitlist link in waitlist mode, a sign-up link otherwise. */
+function Pill({ href, className, children }: { href: string; className?: string; children: React.ReactNode }) {
+  return href === "#waitlist" ? <WaitlistLink className={className}>{children}</WaitlistLink> : <Link href={href} className={className}>{children}</Link>;
+}
 
 export type LandingCopy = { headline: string; subheadline: string; cta: string };
 
@@ -19,12 +25,12 @@ function HeroCopy({ signedIn, waitlist, copy }: { signedIn: boolean; waitlist: b
   return (
     <div className="pointer-events-none relative mx-auto max-w-6xl px-6 pt-8 text-center md:pt-14">
       <motion.div {...rise(0)} className="pointer-events-auto">
-        <Link href={waitlist ? "#waitlist" : "/signup?intent=org"} className="lp-muted inline-flex items-center gap-3 lp-glass rounded-full py-1.5 pl-2 pr-4 text-sm transition-colors hover:text-fg">
+        <Pill href={waitlist ? "#waitlist" : "/signup?intent=org"} className="lp-muted inline-flex items-center gap-3 lp-glass rounded-full py-1.5 pl-2 pr-4 text-sm transition-colors hover:text-fg">
           <span className="flex -space-x-2.5" aria-hidden>
             {USERS.map((src, i) => <Image key={src} src={src} alt="" width={28} height={28} priority className="h-7 w-7 rounded-full border-2 border-bg object-cover" style={{ zIndex: USERS.length - i }} />)}
           </span>
           <span>{waitlist ? "Opening soon. Join the waitlist." : <>Trusted by <strong className="font-semibold text-fg">10k+</strong> users.</>}</span>
-        </Link>
+        </Pill>
       </motion.div>
       <motion.h1 {...rise(0.1)} className="mx-auto mt-8 max-w-5xl font-display text-[52px] leading-[1.02] tracking-[-0.03em] md:text-[96px]">
         {waitlist && copy.headline ? copy.headline : <>Know what your<br />team is{" "}<FlipWords words={["doing", "stuck on"]} duration={3000} className="text-accent" /></>}
@@ -35,7 +41,7 @@ function HeroCopy({ signedIn, waitlist, copy }: { signedIn: boolean; waitlist: b
       {/* In waitlist mode the form lives in the closing section (#waitlist); the hero only points there. */}
       <motion.div {...rise(0.3)} className="pointer-events-auto mt-9 flex flex-wrap justify-center gap-3">
         {signedIn ? <Link href="/app" className="lp-btn lp-btn-primary">Open your workspace</Link>
-          : waitlist ? <a href="#waitlist" className="lp-btn lp-btn-primary">{copy.cta || "Join the waitlist"}</a>
+          : waitlist ? <WaitlistLink className="lp-btn lp-btn-primary">{copy.cta || "Join the waitlist"}</WaitlistLink>
           : <Link href="/signup?intent=org" className="lp-btn lp-btn-primary">Get started</Link>}
         <a href="#how" className="lp-btn lp-btn-secondary">How it works</a>
       </motion.div>

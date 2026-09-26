@@ -7,11 +7,14 @@ import * as marketing from "../src/server/admin/marketing";
 import * as ops from "../src/server/admin/ops";
 import { launchState, joinWaitlist } from "../src/server/admin/launch";
 import { allSettings } from "../src/server/admin/settings";
+import { paystackStatus } from "../src/server/admin/paystack-config";
+import { resolveEntitlements } from "../src/server/lib/entitlements";
+import { publicPlans } from "../src/server/services/pricing";
 
 /** Exercises every Control Center read model and the safe write paths against the database. */
 async function main() {
   const checks: [string, () => Promise<unknown>][] = [
-    ["settings", () => allSettings(true)], ["launchState", () => launchState()],
+    ["settings", () => allSettings(true)], ["paystackStatus", () => paystackStatus()], ["publicPlans", () => publicPlans()], ["entitlements", async () => { const id = (await orgs.listOrganisations()).rows[0].id; return withSystem((db) => resolveEntitlements(db, id)); }], ["launchState", () => launchState()],
     ["dashboardMetrics", () => ops.dashboardMetrics()], ["activityByDay", () => ops.activityByDay(30)], ["waitlistByDay", () => marketing.waitlistByDay(30)], ["usageOverview", () => ops.usageOverview(30)], ["liveActivity", () => ops.liveActivity()], ["storageOverview", () => ops.storageOverview()],
     ["systemOverview", () => ops.systemOverview()], ["auditLog", () => ops.auditLog()], ["listAdmins", () => ops.listAdmins()], ["globalSearch", () => ops.globalSearch("a")], ["impersonations", () => ops.impersonations()],
     ["listOrganisations", () => orgs.listOrganisations({ status: "all" })], ["listOrganisations expiring", () => orgs.listOrganisations({ status: "expiring", q: "co" })],

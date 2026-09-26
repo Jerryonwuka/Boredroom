@@ -1,18 +1,19 @@
 import { requireAdmin, can } from "@/server/admin/auth";
 import { generalSettings, billingSettings, featureFlags, FEATURE_KEYS } from "@/server/admin/settings";
-import { paystackConfigured } from "@/server/admin/billing";
+import { paystackStatus } from "@/server/admin/paystack-config";
 import { brevoConfigured, brevoAccount } from "@/server/admin/marketing";
 import { googleConfigured } from "@/server/auth/google";
 import { PageHeader, Card, CardHeader } from "@/components/ui/card";
 import { Tabs } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { GeneralSettingsForm, BillingSettingsForm, FeatureFlagsForm } from "@/components/admin/platform-forms";
+import { GeneralSettingsForm, BillingSettingsForm, FeatureFlagsForm, PaystackSettingsForm } from "@/components/admin/platform-forms";
 
 export const metadata = { title: "Settings" };
 
 export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
   const admin = await requireAdmin("settings.view");
   const { tab: t } = await searchParams;
+  const pay = await paystackStatus();
   const tab = ["general", "billing", "brevo", "paystack", "security", "flags"].includes(t ?? "") ? t! : "general";
   const tabs = [["general", "General"], ["billing", "Billing"], ["brevo", "Brevo"], ["paystack", "Paystack"], ["security", "Security"], ["flags", "Feature flags"]].map(([v, l]) => ({ label: l, href: `/admin/settings${v === "general" ? "" : `?tab=${v}`}`, value: v }));
   const edit = can(admin, "settings.edit");
@@ -36,13 +37,8 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
         </Card>
       ) : null}
       {tab === "paystack" ? (
-        <Card><CardHeader title="Paystack" description="Checkout, verification and webhooks." />
-          <ul className="space-y-2 text-sm">
-            <li className="flex items-center justify-between gap-3"><span>Secret key (PAYSTACK_SECRET_KEY)</span><Badge tone={paystackConfigured() ? "success" : "neutral"}>{paystackConfigured() ? "set" : "not set"}</Badge></li>
-            <li className="flex items-center justify-between gap-3"><span>Webhook URL</span><code className="rounded bg-inset px-2 py-1 text-xs">{origin}/api/billing/paystack/webhook</code></li>
-            <li className="flex items-center justify-between gap-3"><span>Callback URL</span><code className="rounded bg-inset px-2 py-1 text-xs">{origin}/api/billing/paystack/callback</code></li>
-          </ul>
-          <p className="mt-4 text-xs text-fg-subtle">In the Paystack dashboard, Settings, API Keys and Webhooks: paste the webhook URL. Events handled: charge.success, charge.failed, invoice.payment_failed, subscription.create, subscription.disable, subscription.not_renew, refund.processed. Every delivery is verified with the secret key and recorded once.</p>
+        <Card><CardHeader title="Paystack" description="The keys checkout, verification and webhooks run on. Test first, then switch to live." action={<Badge tone={pay.configured ? (pay.mode === "live" ? "success" : "warning") : "neutral"} dot>{pay.configured ? `${pay.mode} mode` : "not set up"}</Badge>} />
+          {edit ? <PaystackSettingsForm status={pay} /> : <p className="text-sm text-fg-subtle">View only. {pay.configured ? `Paystack is in ${pay.mode} mode.` : "Paystack is not set up."}</p>}
         </Card>
       ) : null}
       {tab === "security" ? (
