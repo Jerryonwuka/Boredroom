@@ -86,8 +86,8 @@ export async function projectDetail(ctx: OrgContext, projectId: string) {
 
 export async function taskDetail(ctx: OrgContext, taskId: string) {
   return withUser(ctx.user.profileId, async (db) => {
-    const task = await db.maybeOne<TaskRow & { expected_output: string; created_by: string; created_by_name: string; completed_at: string | null; created_at: string }>(
-      `${TASK_SELECT.replace("SELECT t.id,", "SELECT t.expected_output, pc.display_name AS created_by_name, t.completed_at, t.created_at, t.id,").replace("LEFT JOIN memberships mr", "JOIN memberships mc ON mc.id = t.created_by JOIN profiles pc ON pc.id = mc.user_id LEFT JOIN memberships mr")} WHERE t.id = $1 AND t.organisation_id = $2`, [taskId, ctx.org.id]);
+    const task = await db.maybeOne<TaskRow & { expected_output: string; created_by: string; created_by_name: string; completed_at: string | null; created_at: string; team_name: string | null; overdue: boolean }>(
+      `${TASK_SELECT.replace("SELECT t.id,", "SELECT t.expected_output, pc.display_name AS created_by_name, t.completed_at, t.created_at, (t.due_at IS NOT NULL AND t.due_at < now() AND t.status <> 'completed') AS overdue, (SELECT string_agg(tt.name, ', ' ORDER BY tt.name) FROM team_members tm JOIN teams tt ON tt.id = tm.team_id WHERE tm.membership_id = t.assignee_membership_id AND tt.archived_at IS NULL) AS team_name, t.id,").replace("LEFT JOIN memberships mr", "JOIN memberships mc ON mc.id = t.created_by JOIN profiles pc ON pc.id = mc.user_id LEFT JOIN memberships mr")} WHERE t.id = $1 AND t.organisation_id = $2`, [taskId, ctx.org.id]);
     if (!task) return null;
     const sessions = await db.query<{ id: string; state: string; started_at: string; ended_at: string | null; stop_outcome: string | null; stop_note: string | null; member_name: string; confirmed_seconds: number; uncertain_seconds: number }>(
       `SELECT s.id, s.state, s.started_at, s.ended_at, s.stop_outcome, s.stop_note, pr.display_name AS member_name,

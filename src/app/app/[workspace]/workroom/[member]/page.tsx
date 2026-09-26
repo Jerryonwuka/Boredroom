@@ -3,6 +3,8 @@ import { notFound } from "next/navigation";
 import { Video } from "lucide-react";
 import { workspacePage } from "@/server/lib/workspace-page";
 import { AppShell } from "@/components/app/shell";
+import { TaskPeekLink } from "@/components/app/tasks-page";
+import { taskViewer } from "@/server/lib/task-viewer";
 import { PageHeader, Card, CardHeader } from "@/components/ui/card";
 import { StatCard } from "@/components/ui/stat-card";
 import { buttonVariants } from "@/components/ui/button";
@@ -58,7 +60,7 @@ export default async function WorkroomPersonPage({ params }: { params: Promise<{
             <thead><tr><th>Task</th><th>Status</th><th>Time today</th><th>Sessions</th><th>First started</th><th>Recordings</th><th><span className="sr-only">Actions</span></th></tr></thead>
             <tbody>{tasks.map((t) => (
               <tr key={t.id} className={t.current ? "bg-accent-soft/30" : ""}>
-                <td><Link href={`${base}/tasks/${t.id}`} className="font-semibold hover:underline">{t.title}</Link><p className="text-xs text-fg-subtle">{t.project_name}{t.created_by_name !== person.display_name ? `, from ${t.created_by_name}` : ""}{t.due_at ? `, due ${formatDateTime(t.due_at, ctx.org.timezone)}` : ""}</p></td>
+                <td><TaskPeekLink orgSlug={ctx.org.slug} viewer={taskViewer(ctx)} task={{ id: t.id, title: t.title, status: t.status, due_at: t.due_at, project_name: t.project_name }} /><p className="text-xs text-fg-subtle">{t.project_name}{t.created_by_name !== person.display_name ? `, from ${t.created_by_name}` : ""}{t.due_at ? `, due ${formatDateTime(t.due_at, ctx.org.timezone)}` : ""}</p></td>
                 <td>{t.current ? <Badge tone="success" dot>Working now</Badge> : <Badge tone={TASK_STATUS_TONE[t.status]}>{t.status === "in_review" ? "Sent for check" : label(t.status)}</Badge>}</td>
                 <td className="tabular-nums">{formatDuration(t.seconds_today)}</td>
                 <td className="tabular-nums">{t.sessions_today}</td>

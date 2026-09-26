@@ -3,6 +3,8 @@ import { Video } from "lucide-react";
 import { notFound } from "next/navigation";
 import { workspacePage } from "@/server/lib/workspace-page";
 import { AppShell } from "@/components/app/shell";
+import { TaskPeekLink } from "@/components/app/tasks-page";
+import { taskViewer } from "@/server/lib/task-viewer";
 import { PageHeader, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge, TASK_STATUS_TONE, SESSION_STATE_TONE, label } from "@/components/ui/badge";
@@ -58,7 +60,7 @@ export default async function TeamBoardPage({ params }: { params: Promise<{ work
             <thead><tr><th>Task</th><th>Status</th><th>Worked by</th><th>Project</th><th>Due</th><th>Tracked</th><th>Recordings</th>{isLead ? <th></th> : null}</tr></thead>
             <tbody>{tasks.map((t) => (
               <tr key={t.id}>
-                <td><Link href={`${base}/tasks/${t.id}`} className="font-semibold hover:underline">{t.title}</Link>{t.blocked_reason ? <p className="text-sm text-danger">{t.blocked_reason}</p> : null}</td>
+                <td><TaskPeekLink orgSlug={ctx.org.slug} viewer={taskViewer(ctx)} task={{ ...t }} />{t.blocked_reason ? <p className="text-sm text-danger">{t.blocked_reason}</p> : null}</td>
                 <td><Badge tone={TASK_STATUS_TONE[t.status]}>{label(t.status)}</Badge></td>
                 <td>{t.assignee_name}</td>
                 <td className="text-sm text-fg-muted">{t.project_name}</td>

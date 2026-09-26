@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { workspacePage } from "@/server/lib/workspace-page";
 import { AppShell } from "@/components/app/shell";
+import { TaskPeekLink } from "@/components/app/tasks-page";
+import { taskViewer } from "@/server/lib/task-viewer";
 import { PageHeader, Card, CardHeader } from "@/components/ui/card";
 import { StatCard } from "@/components/ui/stat-card";
 import { Badge, SESSION_STATE_TONE, label } from "@/components/ui/badge";
@@ -93,7 +95,7 @@ export default async function DashboardPage({ params }: { params: Promise<{ work
         <div className="space-y-4">
           <Card>
             <CardHeader title="Recently completed" />
-            <ul className="space-y-2 text-sm">{d.recentDone.length === 0 ? <li className="text-fg-subtle">Nothing approved yet.</li> : d.recentDone.map((t) => <li key={t.id} className="chip chip-link px-3 py-2"><Link href={`${base}/tasks/${t.id}`} className="block font-medium hover:underline">{t.title}</Link><p className="text-xs text-fg-subtle">{t.assignee_name}, {formatDateTime(t.completed_at, ctx.org.timezone)}</p></li>)}</ul>
+            <ul className="space-y-2 text-sm">{d.recentDone.length === 0 ? <li className="text-fg-subtle">Nothing approved yet.</li> : d.recentDone.map((t) => <li key={t.id} className="chip chip-link px-3 py-2"><TaskPeekLink orgSlug={ctx.org.slug} viewer={taskViewer(ctx)} task={{ id: t.id, title: t.title }} className="block font-medium" /><p className="text-xs text-fg-subtle">{t.assignee_name}, {formatDateTime(t.completed_at, ctx.org.timezone)}</p></li>)}</ul>
           </Card>
         </div>
       </div>

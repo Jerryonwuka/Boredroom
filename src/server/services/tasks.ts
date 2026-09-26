@@ -294,6 +294,8 @@ export const quickTodoSchema = z.object({
   assigneeMembershipId: z.string().uuid().nullable().optional(),
   estimateMinutes: z.number().int().positive().nullable().optional(),
   priority: z.enum(["low", "normal", "high", "urgent"]).optional(),
+  /** Which project the task is filed under (owner decision, 26 September 2026); left out, it is chosen automatically. */
+  projectId: z.string().uuid().nullable().optional(),
 });
 
 /**
@@ -334,7 +336,8 @@ export async function quickTodo(ctx: OrgContext, input: z.infer<typeof quickTodo
   const isOrg = ctx.membership.role === "owner" || ctx.membership.role === "hr";
   if (isOrg && forSelf) throw forbidden("Organisation accounts supervise; they do not hold tasks of their own. Pick who should do this.");
   if (!forSelf && ctx.membership.role === "employee") throw forbidden("Only team leads and organisation accounts can hand tasks to others.");
-  const projectId = await withUser(ctx.user.profileId, (db) => (forSelf ? todoProjectFor(db, ctx) : handoutProjectFor(db, ctx, assignee)));
+  // A chosen project is checked by createTask (the creator must be allowed to assign there); otherwise pick one.
+  const projectId = input.projectId ?? await withUser(ctx.user.profileId, (db) => (forSelf ? todoProjectFor(db, ctx) : handoutProjectFor(db, ctx, assignee)));
   // Own to-dos are checked by the team lead; a to-do handed out is checked by whoever handed it out.
   const reviewer = forSelf ? await withUser(ctx.user.profileId, (db) => defaultReviewerFor(db, ctx.org.id, ctx.membership.id)) : ctx.membership.id;
   return createTask(ctx, { projectId, title: input.title, expectedOutput: input.description?.trim() || input.title, assigneeMembershipId: assignee, reviewerMembershipId: reviewer, category: "work", priority: input.priority ?? "normal", estimateMinutes: input.estimateMinutes ?? null, dueAt: input.dueAt ?? null, captureRequirement: "none", addToMyDay: forSelf }, requestId);

@@ -95,6 +95,36 @@ export async function submitInternal(db: Db, ctx: OrgContext, taskId: string, in
 
 export const reviewSchema = z.object({ decision: z.enum(["approved", "changes_requested", "question"]), note: z.string().trim().max(4000).default("") });
 
+/**
+ * One submission for the review pop-up (owner decision, 26 September 2026): the task it belongs to, the revision's
+ * note, its links and files, the decisions so far, and whether the caller may give the decision now.
+ */
+export async function submissionDetail(ctx: OrgContext, submissionId: string) {
+  return withUser(ctx.user.profileId, async (db) => {
+    const s = await db.maybeOne<{ id: string; revision: number; note: string; submitted_at: string; submitted_by: string; submitted_by_name: string; task_id: string; title: string; expected_output: string; status: string; version: number; project_name: string; assignee_membership_id: string; assignee_name: string; reviewer_membership_id: string | null; reviewer_name: string | null; due_at: string | null; estimate_minutes: number | null }>(
+      `SELECT s.id, s.revision, s.note, s.submitted_at, s.submitted_by, ps.display_name AS submitted_by_name,
+              t.id AS task_id, t.title, t.expected_output, t.status, t.version, p.name AS project_name, t.assignee_membership_id, pa.display_name AS assignee_name,
+              t.reviewer_membership_id, pr.display_name AS reviewer_name, t.due_at, t.estimate_minutes
+       FROM task_submissions s
+       JOIN tasks t ON t.id = s.task_id JOIN projects p ON p.id = t.project_id
+       JOIN memberships ms ON ms.id = s.submitted_by JOIN profiles ps ON ps.id = ms.user_id
+       JOIN memberships ma ON ma.id = t.assignee_membership_id JOIN profiles pa ON pa.id = ma.user_id
+       LEFT JOIN memberships mr ON mr.id = t.reviewer_membership_id LEFT JOIN profiles pr ON pr.id = mr.user_id
+       WHERE s.id = $1 AND s.organisation_id = $2`, [submissionId, ctx.org.id]);
+    if (!s) throw notFound("Submission not found.");
+    const deliverables = await db.query<{ id: string; kind: string; url: string | null; file_name: string | null; mime_type: string | null; size_bytes: number | null; scan_status: string; notes: string | null }>(
+      `SELECT id, kind, url, file_name, mime_type, size_bytes, scan_status, notes FROM deliverables WHERE submission_id = $1 ORDER BY created_at`, [submissionId]);
+    const reviews = await db.query<{ id: string; decision: string; note: string; reviewed_at: string; reviewer_name: string }>(
+      `SELECT r.id, r.decision, r.note, r.reviewed_at, pr.display_name AS reviewer_name FROM reviews r JOIN memberships m ON m.id = r.reviewer_membership_id JOIN profiles pr ON pr.id = m.user_id WHERE r.submission_id = $1 ORDER BY r.reviewed_at`, [submissionId]);
+    const latest = await db.one<{ max: number }>(`SELECT MAX(revision) AS max FROM task_submissions WHERE task_id = $1`, [s.task_id]);
+    const scope = await db.one<{ v: boolean }>(`SELECT app_manages($1, $2) AS v`, [ctx.org.id, s.assignee_membership_id]);
+    const isOrg = ctx.membership.role === "owner" || ctx.membership.role === "hr";
+    const decided = reviews.some((r) => r.decision !== "question");
+    const canReview = !isOrg && s.status === "in_review" && latest.max === s.revision && !decided && s.submitted_by !== ctx.membership.id && s.assignee_membership_id !== ctx.membership.id && (s.reviewer_membership_id === ctx.membership.id || scope.v);
+    return { submission: s, deliverables, reviews, canReview, isLatest: latest.max === s.revision };
+  });
+}
+
 /** Reviewer decision on the latest revision. Self-review is rejected here and by the database. */
 export async function reviewSubmission(ctx: OrgContext, submissionId: string, input: z.infer<typeof reviewSchema>, requestId?: string) {
   if (ctx.membership.role === "owner" || ctx.membership.role === "hr") throw forbidden("Organisation accounts see reviews; the team lead gives the decision.");

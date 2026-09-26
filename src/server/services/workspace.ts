@@ -1,7 +1,7 @@
 import { withUser } from "@/server/db";
 import type { OrgContext } from "@/server/lib/api";
 import { notFound } from "@/server/lib/errors";
-import { unreadMessageCount } from "@/server/services/messaging";
+import { unreadMessageCount, unreadMessagesSql } from "@/server/services/messaging";
 
 export type RecentNotification = { id: string; type: string; title: string; body: string | null; href: string | null; read_at: string | null; created_at: string };
 export type NavCounts = { unread: number; attention: number; messages: number; recent?: RecentNotification[] };
@@ -47,11 +47,7 @@ export async function workspaceShell(ctx: OrgContext, opts: { checkPolicy?: bool
            + (SELECT count(*) FROM time_adjustments a WHERE a.organisation_id = $1 AND a.status = 'pending' AND a.membership_id <> $2)
            + (SELECT count(*) FROM capture_exceptions c WHERE c.organisation_id = $1 AND c.status = 'pending' AND c.membership_id <> $2)
          ELSE 0 END::int AS attention,
-         (SELECT count(*)::int FROM messages m
-            JOIN conversations c ON c.id = m.conversation_id
-            LEFT JOIN conversation_reads r ON r.conversation_id = c.id AND r.membership_id = $2
-            WHERE c.organisation_id = $1 AND m.deleted_at IS NULL AND m.sender_membership_id <> $2
-              AND m.created_at > COALESCE(r.last_read_at, (SELECT created_at FROM memberships WHERE id = $2))) AS messages,
+         ${unreadMessagesSql("$1", "$2")} AS messages,
          (SELECT json_agg(json_build_object('id', t.id, 'name', t.name, 'is_manager', tm.is_manager) ORDER BY t.name)
             FROM team_members tm JOIN teams t ON t.id = tm.team_id WHERE tm.membership_id = $2 AND t.archived_at IS NULL) AS teams,
          ($3::uuid IS NULL OR EXISTS (SELECT 1 FROM policy_acknowledgements WHERE membership_id = $2 AND policy_id = $3)) AS acknowledged,

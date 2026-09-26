@@ -9,6 +9,9 @@ import { formatDateTime, formatDuration, formatLongDate } from "@/lib/utils";
 import { RowList, Row, RowEmpty } from "@/components/ui/rows";
 import { Person } from "@/components/ui/person";
 import { DecisionForm } from "@/components/app/small-actions";
+import { SubmissionRow } from "@/components/app/review-sheet";
+import { TaskRow } from "@/components/app/tasks-page";
+import { taskViewer } from "@/server/lib/task-viewer";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Reviews" };
@@ -19,6 +22,7 @@ export default async function ReviewsPage({ params }: { params: Promise<{ worksp
   const q = await reviewQueue(ctx);
   const tz = ctx.org.timezone;
   const base = `/app/${ctx.org.slug}`;
+  const viewer = taskViewer(ctx);
   // Organisation accounts see the whole queue; team leads give the decisions.
   const decides = ctx.membership.role === "manager";
   const leadDecides = <p className="mt-2 text-xs text-fg-subtle">Waiting for the team lead&apos;s decision.</p>;
@@ -30,7 +34,7 @@ export default async function ReviewsPage({ params }: { params: Promise<{ worksp
       <div className="space-y-6">
         <Section title="Task submissions" count={q.submissions.length} rows>
           {q.submissions.map((s) => (
-            <Row key={s.submission_id} href={`${base}/tasks/${s.task_id}`} leading={<Person orgSlug={ctx.org.slug} membershipId={s.assignee_membership_id} name={s.assignee_name} showName={false} size={32} />}
+            <SubmissionRow key={s.submission_id} orgSlug={ctx.org.slug} submissionId={s.submission_id} timezone={tz} leading={<Person orgSlug={ctx.org.slug} membershipId={s.assignee_membership_id} name={s.assignee_name} showName={false} size={32} />}
               title={s.title} meta={`${s.assignee_name} · revision ${s.revision}${s.note ? ` · ${s.note}` : ""}${s.reviewer_is_me ? "" : " · manager scope"}`}
               trailing={<><span className="eyebrow block">Submitted</span>{formatDateTime(s.submitted_at, tz)}</>} />
           ))}
@@ -70,7 +74,7 @@ export default async function ReviewsPage({ params }: { params: Promise<{ worksp
         {q.overdue.length || q.missing.length || ctx.membership.role !== "employee" ? <div className="grid gap-4 md:grid-cols-2">
           <Card>
             <h2 className="font-display text-lg">Overdue commitments ({q.overdue.length})</h2>
-            <RowList className="mt-3">{q.overdue.length === 0 ? <RowEmpty icon3d="card-check" title="No overdue commitments" /> : q.overdue.map((t) => <Row key={t.id} href={`${base}/tasks/${t.id}`} leading={<Person orgSlug={ctx.org.slug} membershipId={t.assignee_membership_id} name={t.assignee_name} profileId={t.assignee_profile_id} avatarKey={t.assignee_avatar_key} showName={false} size={32} />} title={t.title} meta={t.assignee_name} trailing={<><span className="eyebrow block">Due</span><span className="text-danger">{formatDateTime(t.due_at, tz)}</span></>} />)}</RowList>
+            <RowList className="mt-3">{q.overdue.length === 0 ? <RowEmpty icon3d="card-check" title="No overdue commitments" /> : q.overdue.map((t) => <TaskRow key={t.id} orgSlug={ctx.org.slug} viewer={viewer} task={{ id: t.id, title: t.title, status: t.status, due_at: t.due_at, assignee_membership_id: t.assignee_membership_id, assignee_name: t.assignee_name, overdue: true }} leading={<Person orgSlug={ctx.org.slug} membershipId={t.assignee_membership_id} name={t.assignee_name} profileId={t.assignee_profile_id} avatarKey={t.assignee_avatar_key} showName={false} size={32} />} meta={t.assignee_name} trailing={<><span className="eyebrow block">Due</span><span className="text-danger">{formatDateTime(t.due_at, tz)}</span></>} />)}</RowList>
           </Card>
           <Card>
             <h2 className="font-display text-lg">Missing reports, last 7 working days ({q.missing.length})</h2>

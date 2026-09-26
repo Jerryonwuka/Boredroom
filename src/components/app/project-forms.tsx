@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input, Textarea, Select, Field } from "@/components/ui/input";
@@ -8,6 +8,10 @@ import { Alert } from "@/components/ui/states";
 import { Badge } from "@/components/ui/badge";
 import { api, isApiFailure } from "@/lib/api-client";
 import { DatePicker } from "@/components/ui/date-picker";
+import { DurationPicker } from "@/components/ui/duration-picker";
+import { IconButton } from "@/components/ui/icon-button";
+import { ConfirmDialog } from "@/components/ui/confirm";
+import { Archive, X } from "lucide-react";
 
 function useForm() {
   const [pending, setPending] = useState(false);
@@ -45,20 +49,33 @@ export function NewProjectForm({ orgSlug, members }: { orgSlug: string; members:
 }
 
 export function NewTaskForm({ orgSlug, projectId, members, self, canAssignOthers, requiresDueDate, requiresEstimate }: { orgSlug: string; projectId: string; members: { id: string; display_name: string }[]; self: string; canAssignOthers: boolean; requiresDueDate: boolean; requiresEstimate: boolean }) {
-  const router = useRouter();
   const [open, setOpen] = useState(false);
-  const { pending, error, fieldErrors, submit } = useForm();
-  if (!open) return <Button onClick={() => setOpen(true)}>New task</Button>;
   return (
-    <form className="tile grid w-full gap-3 p-4 md:w-[640px]" onSubmit={async (e) => {
+    <>
+      <Button onClick={() => setOpen(true)} aria-haspopup="dialog">New task</Button>
+      {open ? <NewTaskSheet orgSlug={orgSlug} projectId={projectId} members={members} self={self} canAssignOthers={canAssignOthers} requiresDueDate={requiresDueDate} requiresEstimate={requiresEstimate} onClose={() => setOpen(false)} /> : null}
+    </>
+  );
+}
+
+function NewTaskSheet({ orgSlug, projectId, members, self, canAssignOthers, requiresDueDate, requiresEstimate, onClose }: { orgSlug: string; projectId: string; members: { id: string; display_name: string }[]; self: string; canAssignOthers: boolean; requiresDueDate: boolean; requiresEstimate: boolean; onClose: () => void }) {
+  const router = useRouter();
+  const { pending, error, fieldErrors, submit } = useForm();
+  const ref = useRef<HTMLDialogElement>(null);
+  const titleId = useId();
+  useEffect(() => { ref.current?.showModal(); }, []);
+  return (
+    <dialog ref={ref} className="sheet !max-w-[min(92vw,40rem)]" aria-labelledby={titleId} onClose={onClose} onCancel={(e) => { e.preventDefault(); onClose(); }}>
+    <form className="grid gap-3 p-5" onSubmit={async (e) => {
       e.preventDefault();
       const f = new FormData(e.currentTarget);
       const r = await submit(() => api<{ id: string }>(`/api/orgs/${orgSlug}/tasks`, { method: "POST", body: {
         projectId, title: f.get("title"), expectedOutput: f.get("expectedOutput"), assigneeMembershipId: f.get("assigneeMembershipId") || self, reviewerMembershipId: f.get("reviewerMembershipId") || null,
         category: f.get("category"), priority: f.get("priority"), estimateMinutes: f.get("estimateMinutes") ? Number(f.get("estimateMinutes")) : null,
         dueAt: f.get("dueAt") ? new Date(String(f.get("dueAt"))).toISOString() : null, captureRequirement: f.get("captureRequirement") ?? "none", addToMyDay: false } }));
-      if (r) { setOpen(false); router.push(`/app/${orgSlug}/tasks/${r.id}`); }
+      if (r) { onClose(); router.refresh(); }
     }}>
+      <div className="flex items-start justify-between gap-3"><div><h2 id={titleId} className="font-display text-xl">New task in this project</h2><p className="mt-1 text-sm text-fg-muted">Say what a finished result looks like; the reviewer accepts against it.</p></div><Button type="button" variant="ghost" size="icon" aria-label="Close" onClick={onClose}><X className="size-4" aria-hidden /></Button></div>
       {error ? <Alert tone="danger">{error}</Alert> : null}
       <Field label="Title" htmlFor="t-title" error={fieldErrors.title}><Input id="t-title" name="title" required maxLength={200} /></Field>
       <Field label="Expected output" htmlFor="t-out" hint="what the reviewer will accept" error={fieldErrors.expectedOutput}><Textarea id="t-out" name="expectedOutput" required maxLength={4000} /></Field>
@@ -67,15 +84,17 @@ export function NewTaskForm({ orgSlug, projectId, members, self, canAssignOthers
         <Field label="Reviewer" htmlFor="t-reviewer" hint="must differ from assignee" error={fieldErrors.reviewerMembershipId}><Select id="t-reviewer" name="reviewerMembershipId" defaultValue=""><option value="">Choose later</option>{members.map((m) => <option key={m.id} value={m.id}>{m.display_name}</option>)}</Select></Field>
         <Field label="Category" htmlFor="t-cat"><Select id="t-cat" name="category" defaultValue="work"><option value="work">Work</option><option value="meeting">Meeting</option><option value="offline">Offline work</option><option value="admin">Admin</option></Select></Field>
         <Field label="Priority" htmlFor="t-pri"><Select id="t-pri" name="priority" defaultValue="normal"><option value="low">Low</option><option value="normal">Normal</option><option value="high">High</option><option value="urgent">Urgent</option></Select></Field>
-        <Field label="Estimate (minutes)" htmlFor="t-est" hint={requiresEstimate ? "required" : "optional"} error={fieldErrors.estimateMinutes}><Input id="t-est" name="estimateMinutes" type="number" min={1} required={requiresEstimate} /></Field>
+        <Field label="Estimated time" htmlFor="t-est" hint={requiresEstimate ? "required" : "optional"} error={fieldErrors.estimateMinutes}><DurationPicker id="t-est" name="estimateMinutes" required={requiresEstimate} /></Field>
         <Field label="Due" htmlFor="t-due" hint={requiresDueDate ? "required" : "optional"} error={fieldErrors.dueAt}><DatePicker mode="datetime" id="t-due" name="dueAt" required={requiresDueDate} /></Field>
         {canAssignOthers ? <Field label="Screen capture" htmlFor="t-cap" hint="only applies if policy enables recording"><Select id="t-cap" name="captureRequirement" defaultValue="none"><option value="none">Not requested</option><option value="optional">Optional</option><option value="required">Required on this task</option></Select></Field> : null}
       </div>
-      <div className="flex gap-2"><Button type="submit" disabled={pending}>{pending ? "Creating…" : "Create task"}</Button><Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button></div>
+      <div className="flex justify-end gap-2"><Button type="button" variant="ghost" onClick={onClose}>Cancel</Button><Button type="submit" disabled={pending}>{pending ? "Creating…" : "Create task"}</Button></div>
     </form>
+    </dialog>
   );
 }
 
+/** Archiving a project is one icon (owner decision, 26 September 2026) that asks first. */
 export function ArchiveProjectButton({ orgSlug, projectId }: { orgSlug: string; projectId: string }) {
   const router = useRouter();
   const { pending, error, submit } = useForm();
@@ -83,8 +102,8 @@ export function ArchiveProjectButton({ orgSlug, projectId }: { orgSlug: string; 
   return (
     <div className="flex flex-col items-end gap-2">
       {error ? <Alert tone="danger">{error}</Alert> : null}
-      {confirm ? <div className="flex gap-2"><Button variant="danger" size="sm" disabled={pending} onClick={async () => { const r = await submit(() => api(`/api/orgs/${orgSlug}/projects/${projectId}/archive`, { method: "POST" })); if (r) router.refresh(); }}>Confirm archive</Button><Button variant="ghost" size="sm" onClick={() => setConfirm(false)}>Cancel</Button></div>
-        : <Button variant="subtle" size="sm" onClick={() => setConfirm(true)}>Archive project</Button>}
+      <IconButton aria-label="Archive project" disabled={pending} onClick={() => setConfirm(true)}><Archive className="size-4" aria-hidden /></IconButton>
+      <ConfirmDialog open={confirm} onClose={() => setConfirm(false)} title="Archive this project?" description="No new work sessions can start on its tasks. Everything stays readable." confirmLabel="Archive project" onConfirm={async () => { const r = await submit(() => api(`/api/orgs/${orgSlug}/projects/${projectId}/archive`, { method: "POST" })); if (r) router.refresh(); }} />
     </div>
   );
 }

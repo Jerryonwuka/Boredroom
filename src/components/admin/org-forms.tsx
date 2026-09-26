@@ -30,7 +30,7 @@ export function FeatureOverridesForm({ orgId, keys, overrides, plan }: { orgId: 
           <li key={k} className="flex items-center justify-between gap-3 py-2">
             <span><span className="font-mono text-xs">{k}</span><span className="ml-2 text-xs text-fg-subtle">plan: {k in plan ? (plan[k] ? "on" : "off") : "not set"}</span></span>
             <span role="radiogroup" aria-label={k} className="inline-flex rounded-full border border-border bg-wash-soft p-0.5">
-              {(["inherit", "on", "off"] as const).map((v) => <button key={v} type="button" role="radio" aria-checked={state[k] === v} onClick={() => setState((s) => ({ ...s, [k]: v }))} className={cn("rounded-full px-2.5 py-1 text-xs", state[k] === v ? (v === "on" ? "bg-success/20 text-success" : v === "off" ? "bg-danger/20 text-danger" : "bg-wash-active text-accent") : "text-fg-muted")}>{v}</button>)}
+              {(["inherit", "on", "off"] as const).map((v) => <button key={v} type="button" role="radio" aria-checked={state[k] === v} onClick={() => setState((s) => ({ ...s, [k]: v }))} className={cn("rounded-full px-2.5 py-1 text-xs", state[k] === v ? (v === "on" ? "bg-success/20 text-success" : v === "off" ? "bg-danger/20 text-danger" : "border border-accent/50 bg-accent-soft text-accent") : "text-fg-muted")}>{v}</button>)}
             </span>
           </li>
         ))}

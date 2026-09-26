@@ -293,11 +293,11 @@ input[type="checkbox"].switch:checked::before { background: #fff; transform: tra
 .segmented-item input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; appearance: none; border: 0; box-shadow: none; }
 .segmented-item span { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 14px; border-radius: 999px; font-size: 13px; font-weight: 500; color: var(--fg-muted); transition: background-color var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out); }
 .segmented-item:hover span { color: var(--fg); }
-.segmented-item input:checked + span { background: var(--btn-bg-hover); color: var(--fg); box-shadow: none; }
-.segmented-item input:checked + span { color: var(--accent); }
-.segmented-item[data-tone="success"] input:checked + span { color: var(--success); }
-.segmented-item[data-tone="warning"] input:checked + span { color: var(--warning); }
-.segmented-item[data-tone="danger"] input:checked + span { color: var(--danger); }
+/* The chosen segment reads like the accent badge (owner decision, 26 September 2026): orange text, an orange hairline, a soft orange fill. */
+.segmented-item input:checked + span { background: var(--accent-soft); color: var(--accent); box-shadow: inset 0 0 0 1px rgba(255, 108, 2, 0.5); }
+.segmented-item[data-tone="success"] input:checked + span { background: var(--wash-active); color: var(--success); }
+.segmented-item[data-tone="warning"] input:checked + span { background: var(--wash-active); color: var(--warning); }
+.segmented-item[data-tone="danger"] input:checked + span { background: var(--wash-active); color: var(--danger); }
 .segmented-item input:focus-visible + span { box-shadow: 0 0 0 2px var(--border-strong); }
 
 /* The edit affordance: a pill with a pencil that warms to orange on hover. */

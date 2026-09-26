@@ -32,23 +32,29 @@ export type Thread = {
   messages: MessageRow[];
 };
 
-/** Unread messages across every conversation the person can read, muted ones left out, plus conversations they marked unread; used for the sidebar badge. */
+/**
+ * The number on the Messages badge, as one SQL expression over `org` and `me` placeholders: every unread message in a
+ * conversation the person can read, muted and hidden threads and archived channels left out, plus one for each
+ * conversation they marked unread that has nothing new in it. The app shell and the page use the same expression,
+ * so the badge and the list always agree.
+ */
+export const unreadMessagesSql = (org: string, me: string) => `(
+  (SELECT count(*)::int
+     FROM messages m
+     JOIN conversations c ON c.id = m.conversation_id
+     LEFT JOIN conversation_reads r ON r.conversation_id = c.id AND r.membership_id = ${me}
+     WHERE c.organisation_id = ${org} AND m.deleted_at IS NULL AND m.sender_membership_id <> ${me} AND c.archived_at IS NULL AND r.muted_at IS NULL
+       AND NOT EXISTS (SELECT 1 FROM conversation_hides h WHERE h.conversation_id = c.id AND h.membership_id = ${me})
+       AND m.created_at > COALESCE(r.last_read_at, (SELECT created_at FROM memberships WHERE id = ${me})))
+  + (SELECT count(*)::int
+       FROM conversation_reads r JOIN conversations c ON c.id = r.conversation_id
+       WHERE c.organisation_id = ${org} AND r.membership_id = ${me} AND r.marked_unread AND r.muted_at IS NULL AND c.archived_at IS NULL
+         AND NOT EXISTS (SELECT 1 FROM conversation_hides h WHERE h.conversation_id = c.id AND h.membership_id = ${me})
+         AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.conversation_id = c.id AND m.deleted_at IS NULL AND m.sender_membership_id <> ${me} AND m.created_at > r.last_read_at))
+)`;
+
 export async function unreadMessageCount(db: Db, ctx: OrgContext): Promise<number> {
-  const r = await db.one<{ n: number }>(
-    `SELECT (
-       (SELECT count(*)::int
-          FROM messages m
-          JOIN conversations c ON c.id = m.conversation_id
-          LEFT JOIN conversation_reads r ON r.conversation_id = c.id AND r.membership_id = $2
-          WHERE c.organisation_id = $1 AND m.deleted_at IS NULL AND m.sender_membership_id <> $2 AND c.archived_at IS NULL AND r.muted_at IS NULL
-            AND NOT EXISTS (SELECT 1 FROM conversation_hides h WHERE h.conversation_id = c.id AND h.membership_id = $2)
-            AND m.created_at > COALESCE(r.last_read_at, (SELECT created_at FROM memberships WHERE id = $2)))
-       + (SELECT count(*)::int
-            FROM conversation_reads r JOIN conversations c ON c.id = r.conversation_id
-            WHERE c.organisation_id = $1 AND r.membership_id = $2 AND r.marked_unread AND r.muted_at IS NULL AND c.archived_at IS NULL
-              AND NOT EXISTS (SELECT 1 FROM conversation_hides h WHERE h.conversation_id = c.id AND h.membership_id = $2)
-              AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.conversation_id = c.id AND m.deleted_at IS NULL AND m.sender_membership_id <> $2 AND m.created_at > r.last_read_at))
-     ) AS n`, [ctx.org.id, ctx.membership.id]);
+  const r = await db.one<{ n: number }>(`SELECT ${unreadMessagesSql("$1", "$2")} AS n`, [ctx.org.id, ctx.membership.id]);
   return r.n;
 }
 

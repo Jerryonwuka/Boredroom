@@ -6,7 +6,7 @@ import { EmptyState } from "@/components/ui/states";
 import { Tabs } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { NewAssignedTask, TaskTable } from "@/components/app/tasks-page";
-import { tasksView, type TaskListFilter } from "@/server/services/views";
+import { tasksView, listProjects, type TaskListFilter } from "@/server/services/views";
 import { AutoSubmitSelect } from "@/components/ui/auto-submit";
 
 export const dynamic = "force-dynamic";
@@ -22,7 +22,7 @@ export default async function TasksPage({ params, searchParams }: { params: Prom
   const sp = await searchParams;
   const { ctx, counts, teams } = await workspacePage(workspace, `/app/${workspace}/tasks`);
   const status = (["all", "assigned", "open", "check", "done"].includes(sp.status ?? "") ? sp.status : "all") as NonNullable<TaskListFilter["status"]>;
-  const data = await tasksView(ctx, { status, who: sp.who ?? null });
+  const [data, projects] = await Promise.all([tasksView(ctx, { status, who: sp.who ?? null }), listProjects(ctx)]);
   const base = `/app/${ctx.org.slug}`;
   const mine = data.scope === "mine";
   const lead = data.scope === "lead";
@@ -39,7 +39,7 @@ export default async function TasksPage({ params, searchParams }: { params: Prom
     <AppShell ctx={ctx} counts={counts} teams={teams}>
       <PageHeader icon="card-check" title={mine ? "Your tasks" : "Tasks"}
         description={mine ? "Everything assigned to you, by your team lead or by yourself. Press Start to pick one up; the clock opens on My Day." : lead ? "Create a task and hand it to someone on your team, to another team lead, or up to the owner or HR. Open a task to see the details; tick several to act on them together." : "Every task in the organisation and who holds it. Open a task to see the details; tick several to act on them together."}
-        actions={!mine ? <NewAssignedTask orgSlug={ctx.org.slug} people={data.people.filter((p) => p.id !== ctx.membership.id)} self={ctx.membership.id} selfName={ctx.user.displayName} canKeep={ctx.membership.role !== "employee"} /> : undefined} />
+        actions={!mine ? <NewAssignedTask orgSlug={ctx.org.slug} people={data.people.filter((p) => p.id !== ctx.membership.id)} self={ctx.membership.id} selfName={ctx.user.displayName} canKeep={ctx.membership.role !== "employee"} projects={projects.filter((p) => p.status === "active").map((p) => ({ id: p.id, name: p.name }))} /> : undefined} />
 
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <Tabs label="Task status" param="status" value={status} tabs={tabs} />

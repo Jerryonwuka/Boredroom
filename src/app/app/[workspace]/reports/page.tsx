@@ -10,6 +10,8 @@ import { withUser } from "@/server/db";
 import { todayLocal, addDays } from "@/server/lib/time";
 import { formatDuration, formatDateTime } from "@/lib/utils";
 import { ExemptionForm } from "@/components/app/exemption-form";
+import { RowList, Row, RowEmpty } from "@/components/ui/rows";
+import { Person } from "@/components/ui/person";
 import Link from "next/link";
 import { DatePicker } from "@/components/ui/date-picker";
 import { EmptyState } from "@/components/ui/states";
@@ -43,7 +45,6 @@ export default async function ReportsPage({ params, searchParams }: { params: Pr
   const preset = periods.find((p) => p.key === sp.period);
   const from = preset ? preset.from : sp.from && /^\d{4}-\d{2}-\d{2}$/.test(sp.from) ? sp.from : addDays(today, -13);
   const to = preset ? preset.to : sp.to && /^\d{4}-\d{2}-\d{2}$/.test(sp.to) ? sp.to : today;
-  const activePreset = preset?.key ?? periods.find((p) => p.from === from && p.to === to)?.key ?? null;
   const isEmployee = ctx.membership.role === "employee";
   const member = isEmployee ? ctx.membership.id : sp.member || null;
   const [m, projects, teams, members] = await Promise.all([
@@ -59,11 +60,6 @@ export default async function ReportsPage({ params, searchParams }: { params: Pr
     <AppShell ctx={ctx} counts={counts} teams={navTeams}>
       <PageHeader icon="chart-ring" back={{ href: `/app/${ctx.org.slug}`, label: "Home" }} overline={`${from} to ${to}`} title="Reports" description="Transparent measures at employee, team and project scope. No composite score, no ranking by hours. Approved and provisional data are shown separately."
         actions={<Link href={`/app/${ctx.org.slug}/timesheets`}><Button variant="outline" size="sm">{isEmployee ? "My timesheet" : "Timesheets, corrections and CSV export"}</Button></Link>} />
-      <div className="mb-3 flex flex-wrap items-center gap-2 text-sm">
-        <span className="text-xs text-fg-subtle">Period:</span>
-        {periods.map((p) => <Link key={p.key} href={`/app/${ctx.org.slug}/reports?period=${p.key}${keep}`} aria-current={activePreset === p.key ? "page" : undefined} className={`chip chip-link whitespace-nowrap rounded-full px-3 py-1 ${activePreset === p.key ? "border-accent/60 text-fg" : "text-fg-muted"}`}>{p.label}</Link>)}
-        <span className="text-xs text-fg-subtle">or pick dates below. Nothing resets month to month; every period is a filter over the same records.</span>
-      </div>
       <form className="mb-6 flex flex-wrap items-end gap-2 text-sm">
         <label><span className="block text-xs text-fg-subtle">From</span><DatePicker name="from" defaultValue={from} /></label>
         <label><span className="block text-xs text-fg-subtle">To</span><DatePicker name="to" defaultValue={to} /></label>
@@ -97,7 +93,7 @@ export default async function ReportsPage({ params, searchParams }: { params: Pr
         <Card>
           <CardHeader title="Report completeness" />
           <p className="text-xs text-fg-subtle">Submitted reports ÷ expected workdays ({m.expectedDays}) under the saved schedule, minus authorised exemptions.</p>
-          <ul className="mt-2 space-y-1 text-sm">{m.completeness.map((c) => { const expected = Math.max(0, m.expectedDays - c.exempt); return <li key={c.membership_id} className="flex justify-between"><span>{c.display_name}</span><span>{c.submitted} / {expected}{expected ? ` (${Math.round((c.submitted / expected) * 100)}%)` : ""}</span></li>; })}</ul>
+          <RowList className="mt-2">{m.completeness.length === 0 ? <RowEmpty icon3d="doc-link-check" title="Nobody in scope" /> : m.completeness.map((c) => { const expected = Math.max(0, m.expectedDays - c.exempt); const pct = expected ? Math.round((c.submitted / expected) * 100) : null; return <Row key={c.membership_id} leading={<Person orgSlug={ctx.org.slug} membershipId={c.membership_id} name={c.display_name} showName={false} size={32} />} title={c.display_name} meta={c.exempt ? `${c.exempt} exempt day${c.exempt === 1 ? "" : "s"}` : undefined} trailing={<><span className="eyebrow block">Reports</span><span className={pct !== null && pct < 50 ? "text-danger" : pct !== null && pct < 100 ? "text-warning" : "text-fg"}>{c.submitted} / {expected}{pct !== null ? ` (${pct}%)` : ""}</span></>} />; })}</RowList>
           {!isEmployee && members.length ? <div className="mt-3"><ExemptionForm orgSlug={ctx.org.slug} members={members} /></div> : null}
         </Card>
       </div>

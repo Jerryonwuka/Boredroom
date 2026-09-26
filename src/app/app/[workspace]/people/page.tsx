@@ -70,12 +70,12 @@ export default async function PeoplePage({ params, searchParams }: { params: Pro
           <h2 id="people-heading" className="sr-only">People</h2>
           <div>
             <h3 className="mb-2 font-display text-lg">Join code and link</h3>
-            <JoinCodePanel orgSlug={ctx.org.slug} appOrigin={process.env.APP_ORIGIN ?? "http://localhost:3000"} joinCode={joinCode} teams={teams} />
+            <JoinCodePanel orgSlug={ctx.org.slug} joinCode={joinCode} teams={teams} />
           </div>
           <div>
-            <h3 className="mb-2 font-display text-lg">Everyone ({activeMembers.length})</h3>
+            <h3 className="mb-2 font-display text-lg">Everyone</h3>
             <DataTable caption="Members">
-              <thead><tr><th>Name</th><th>Employee ID</th><th>Role</th><th>Teams</th><th>Policy</th><th>Actions</th></tr></thead>
+              <thead><tr><th>Name</th><th>Employee ID</th><th>Role</th><th>Teams</th><th>Status</th><th>Actions</th></tr></thead>
               <tbody>{members.map((m) => (
                 <MemberRow key={m.id} orgSlug={ctx.org.slug} member={m} teams={teams} isOwner={isOwner} self={m.id === ctx.membership.id} />
               ))}</tbody>
