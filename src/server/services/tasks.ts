@@ -35,6 +35,7 @@ export const updateTaskSchema = z.object({
   status: z.enum(TASK_STATUSES).optional(),
   reason: z.string().trim().max(2000).optional(),
   archive: z.boolean().optional(),
+  progressPercent: z.number().int().min(0).max(100).optional(),
 });
 
 type ProjectRow = { id: string; status: string; requires_due_date: boolean; requires_estimate: boolean };
@@ -117,6 +118,15 @@ export async function updateTask(ctx: OrgContext, taskId: string, input: z.infer
     if (input.category !== undefined) push("category", input.category);
     if (input.priority !== undefined) push("priority", input.priority);
     if (input.estimateMinutes !== undefined) push("estimate_minutes", input.estimateMinutes);
+    if (input.progressPercent !== undefined) {
+      push("progress_percent", input.progressPercent);
+      // Progress is news for the people supervising (owner decision, 28 September 2026): it lands on their dashboards, not the worker's.
+      if (isAssignee) {
+        for (const mgr of await managersOf(db, ctx.org.id, ctx.membership.id)) {
+          await notify(db, { organisationId: ctx.org.id, recipientMembershipId: mgr, type: "task.progress", title: `${ctx.user.displayName} is ${input.progressPercent}% through “${t.title}”`, resourceType: "task", resourceId: t.id, href: `/app/${ctx.org.slug}/tasks/${t.id}`, dedupKey: `task.progress:${t.id}:${input.progressPercent}` });
+        }
+      }
+    }
     if (input.dueAt !== undefined) push("due_at", input.dueAt);
     if (input.captureRequirement !== undefined) { if (!manages) throw forbidden("Only managers can change capture requirements."); push("capture_requirement", input.captureRequirement); }
     if (input.reviewerMembershipId !== undefined) {

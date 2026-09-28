@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { EditButton } from "@/components/ui/edit-button";
@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { api, isApiFailure } from "@/lib/api-client";
 import { DatePicker } from "@/components/ui/date-picker";
 import { DurationPicker } from "@/components/ui/duration-picker";
+import { X } from "lucide-react";
 
 function useForm() {
   const router = useRouter();
@@ -40,7 +41,7 @@ export function TaskActions({ orgSlug, task, isAssignee, canManage, members, rev
         {isAssignee && ["todo", "in_progress", "blocked"].includes(task.status) ? <ConfirmButton size="sm" variant="primary" disabled={pending} tone="primary" title="Mark this task done?" description="If someone else handed it to you it goes to them for a quick check; your own to-dos complete at once." confirmLabel="Mark done" onConfirm={() => submit(() => api(`/api/orgs/${orgSlug}/tasks/${task.id}/complete`, { method: "POST", body: { note: "" } }))}>Mark done</ConfirmButton> : null}
         {isAssignee && task.status === "in_progress" ? <Button size="sm" variant="subtle" onClick={() => setMode("block")}>Mark blocked</Button> : null}
         {isAssignee && task.status === "blocked" ? <Button size="sm" variant="subtle" disabled={pending} onClick={() => patch({ status: "in_progress" })}>Unblock</Button> : null}
-        {(isAssignee || canManage) && task.status !== "completed" ? <EditButton onClick={() => setMode("edit")} /> : null}
+        {(isAssignee || canManage) && task.status !== "completed" ? <EditButton iconOnly label="Edit task" onClick={() => setMode("edit")} /> : null}
         {canManage && task.status !== "in_progress" ? <ConfirmButton size="sm" variant="ghost" disabled={pending} title="Archive this task?" description="History is kept and nothing is deleted, but no new work sessions can start on it." confirmLabel="Archive task" onConfirm={() => patch({ archive: true })}>Archive</ConfirmButton> : null}
       </div>
       {mode === "block" ? (
@@ -50,19 +51,33 @@ export function TaskActions({ orgSlug, task, isAssignee, canManage, members, rev
         </form>
       ) : null}
       {mode === "edit" ? (
-        <form className="tile grid w-96 gap-2 p-3" onSubmit={(e) => { e.preventDefault(); const f = new FormData(e.currentTarget); const body: Record<string, unknown> = { reviewerMembershipId: f.get("reviewerMembershipId") || null, estimateMinutes: f.get("estimateMinutes") ? Number(f.get("estimateMinutes")) : null, dueAt: f.get("dueAt") ? new Date(String(f.get("dueAt"))).toISOString() : null, priority: f.get("priority") }; if (canManage) { body.assigneeMembershipId = f.get("assigneeMembershipId"); body.captureRequirement = f.get("captureRequirement"); } patch(body); }}>
-          <Field label="Reviewer" htmlFor="e-rev"><Select id="e-rev" name="reviewerMembershipId" defaultValue={reviewerId ?? ""}><option value="">None yet</option>{members.filter((m) => m.id !== assigneeId).map((m) => <option key={m.id} value={m.id}>{m.display_name}</option>)}</Select></Field>
-          {canManage ? <Field label="Assignee" htmlFor="e-asg" hint="blocked while a session is open"><Select id="e-asg" name="assigneeMembershipId" defaultValue={assigneeId}>{members.map((m) => <option key={m.id} value={m.id}>{m.display_name}</option>)}</Select></Field> : null}
-          <div className="grid grid-cols-2 gap-2">
-            <Field label="Estimated time" htmlFor="e-est"><DurationPicker id="e-est" name="estimateMinutes" defaultValue={estimateMinutes} /></Field>
-            <Field label="Due" htmlFor="e-due"><DatePicker mode="datetime" id="e-due" name="dueAt" /></Field>
-          </div>
-          <Field label="Priority" htmlFor="e-pri"><Select id="e-pri" name="priority" defaultValue="normal"><option value="low">Low</option><option value="normal">Normal</option><option value="high">High</option><option value="urgent">Urgent</option></Select></Field>
-          {canManage ? <Field label="Capture" htmlFor="e-cap"><Select id="e-cap" name="captureRequirement" defaultValue="none"><option value="none">Not requested</option><option value="optional">Optional</option><option value="required">Required</option></Select></Field> : null}
-          <div className="flex gap-2"><Button size="sm" type="submit" disabled={pending}>Save</Button><Button size="sm" variant="ghost" onClick={() => setMode(null)}>Cancel</Button></div>
-        </form>
+        <EditTaskSheet onClose={() => setMode(null)} pending={pending} canManage={canManage} members={members} reviewerId={reviewerId} assigneeId={assigneeId} estimateMinutes={estimateMinutes}
+          onSubmit={(f) => { const body: Record<string, unknown> = { reviewerMembershipId: f.get("reviewerMembershipId") || null, estimateMinutes: f.get("estimateMinutes") ? Number(f.get("estimateMinutes")) : null, dueAt: f.get("dueAt") ? new Date(String(f.get("dueAt"))).toISOString() : null, priority: f.get("priority") }; if (canManage) { body.assigneeMembershipId = f.get("assigneeMembershipId"); body.captureRequirement = f.get("captureRequirement"); } void patch(body); }} />
       ) : null}
     </div>
+  );
+}
+
+/** The task's edit form in a pop-up (owner decision, 28 September 2026): reviewer, assignee, estimate, due, priority, capture. */
+function EditTaskSheet({ onClose, onSubmit, pending, canManage, members, reviewerId, assigneeId, estimateMinutes }: { onClose: () => void; onSubmit: (f: FormData) => void; pending: boolean; canManage: boolean; members: { id: string; display_name: string }[]; reviewerId: string | null; assigneeId: string; estimateMinutes: number | null }) {
+  const ref = useRef<HTMLDialogElement>(null);
+  const titleId = useId();
+  useEffect(() => { ref.current?.showModal(); }, []);
+  return (
+    <dialog ref={ref} className="sheet" aria-labelledby={titleId} onClose={onClose} onCancel={(e) => { e.preventDefault(); onClose(); }}>
+      <form className="grid gap-4 p-5" onSubmit={(e) => { e.preventDefault(); onSubmit(new FormData(e.currentTarget)); }}>
+        <div className="flex items-start justify-between gap-3"><h2 id={titleId} className="font-display text-xl">Edit task</h2><Button type="button" variant="ghost" size="icon" aria-label="Close" onClick={onClose}><X className="size-4" aria-hidden /></Button></div>
+        <Field label="Reviewer" htmlFor="e-rev"><Select id="e-rev" name="reviewerMembershipId" defaultValue={reviewerId ?? ""}><option value="">None yet</option>{members.filter((m) => m.id !== assigneeId).map((m) => <option key={m.id} value={m.id}>{m.display_name}</option>)}</Select></Field>
+        {canManage ? <Field label="Assignee" htmlFor="e-asg" hint="blocked while a session is open"><Select id="e-asg" name="assigneeMembershipId" defaultValue={assigneeId}>{members.map((m) => <option key={m.id} value={m.id}>{m.display_name}</option>)}</Select></Field> : null}
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Estimated time" htmlFor="e-est"><DurationPicker id="e-est" name="estimateMinutes" defaultValue={estimateMinutes} /></Field>
+          <Field label="Due" htmlFor="e-due"><DatePicker mode="datetime" id="e-due" name="dueAt" /></Field>
+        </div>
+        <Field label="Priority" htmlFor="e-pri"><Select id="e-pri" name="priority" defaultValue="normal"><option value="low">Low</option><option value="normal">Normal</option><option value="high">High</option><option value="urgent">Urgent</option></Select></Field>
+        {canManage ? <Field label="Capture" htmlFor="e-cap"><Select id="e-cap" name="captureRequirement" defaultValue="none"><option value="none">Not requested</option><option value="optional">Optional</option><option value="required">Required</option></Select></Field> : null}
+        <div className="flex justify-end gap-2"><Button type="button" variant="ghost" onClick={onClose}>Cancel</Button><Button type="submit" disabled={pending}>{pending ? "Saving…" : "Save"}</Button></div>
+      </form>
+    </dialog>
   );
 }
 

@@ -61,7 +61,7 @@ export default async function TasksPage({ params, searchParams }: { params: Prom
           description={mine ? "When your team lead assigns you something it appears here, and on My Day. You can also add your own to-dos on My Day." : "Press Add new task to create one and hand it to someone."}
           action={mine ? <Link href={`${base}/my-day`}><Button size="sm" variant="outline">Open My Day</Button></Link> : undefined} />
       ) : (
-        <TaskTable orgSlug={ctx.org.slug} rows={data.tasks} mine={mine} runningTaskId={data.runningTaskId} canBulk={!mine}
+        <TaskTable orgSlug={ctx.org.slug} rows={data.tasks} mine={mine} runningTaskId={data.runningTaskId} canBulk
           viewer={{ membershipId: ctx.membership.id, displayName: ctx.user.displayName, role: ctx.membership.role, timezone: ctx.org.timezone }}
           people={data.people.filter((p) => p.group === "team").map((p) => ({ id: p.id, display_name: p.display_name }))} />
       )}

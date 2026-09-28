@@ -12,12 +12,15 @@ export type TaskRow = {
   assignee_membership_id: string; assignee_name: string; reviewer_membership_id: string | null; reviewer_name: string | null;
   due_at: string | null; estimate_minutes: number | null; capture_requirement: string; blocked_reason: string | null; version: number;
   archived_at: string | null; tracked_seconds: number; updated_at: string; created_by: string;
+  /** 0 to 100, set by the person holding the task; 100 once completed. */
+  progress_percent: number;
 };
 
 const TASK_SELECT = `
   SELECT t.id, t.title, t.status, t.priority, t.category, t.project_id, p.name AS project_name,
          t.assignee_membership_id, pa.display_name AS assignee_name, t.reviewer_membership_id, pr.display_name AS reviewer_name,
          t.due_at, t.estimate_minutes, t.capture_requirement, t.blocked_reason, t.version, t.archived_at, t.updated_at, t.created_by,
+         CASE WHEN t.status = 'completed' THEN 100 ELSE t.progress_percent END::int AS progress_percent,
          COALESCE((SELECT SUM(EXTRACT(EPOCH FROM (COALESCE(i.ended_at, now()) - i.started_at)))::int FROM session_intervals i WHERE i.task_id = t.id AND i.confirmation_status = 'confirmed'), 0) AS tracked_seconds
   FROM tasks t
   JOIN projects p ON p.id = t.project_id
@@ -279,7 +282,7 @@ export async function orgDashboard(ctx: OrgContext) {
          (SELECT count(*) FROM daily_reports r WHERE r.organisation_id = $1 AND r.status = 'submitted')::int AS reports_pending`,
       [ctx.org.id, dayStart, ctx.org.current_policy_id]);
     const stale = counts.stale;
-    type WorkingNow = { membership_id: string; display_name: string; team_names: string[]; state: string; task_id: string; task_title: string; started_at: string; last_heartbeat_at: string; today_seconds: number };
+    type WorkingNow = { membership_id: string; display_name: string; team_names: string[]; state: string; task_id: string; task_title: string; task_progress: number; started_at: string; last_heartbeat_at: string; today_seconds: number };
     type TeamRow = { id: string; name: string; members: number; leads: string[]; lead_ids: string[]; open_tasks: number; blocked: number; working: number; project_id: string | null };
     type DoneRow = { id: string; title: string; assignee_name: string; completed_at: string };
     const lists = await db.one<{ working_now: WorkingNow[] | null; teams: TeamRow[] | null; recent_done: DoneRow[] | null }>(
@@ -287,7 +290,7 @@ export async function orgDashboard(ctx: OrgContext) {
        (SELECT json_agg(w) FROM (
         SELECT m.id AS membership_id, pr.display_name,
               COALESCE((SELECT array_agg(t.name ORDER BY t.name) FROM team_members tm JOIN teams t ON t.id = tm.team_id WHERE tm.membership_id = m.id), '{}') AS team_names,
-              s.state, s.task_id, tk.title AS task_title, s.started_at, s.last_heartbeat_at,
+              s.state, s.task_id, tk.title AS task_title, tk.progress_percent::int AS task_progress, s.started_at, s.last_heartbeat_at,
               COALESCE((SELECT SUM(EXTRACT(EPOCH FROM (LEAST(COALESCE(i.ended_at, now()), $2::timestamptz + interval '1 day') - GREATEST(i.started_at, $2::timestamptz))))::int FROM session_intervals i WHERE i.membership_id = m.id AND i.confirmation_status = 'confirmed' AND i.started_at < $2::timestamptz + interval '1 day' AND COALESCE(i.ended_at, now()) > $2::timestamptz), 0) AS today_seconds
        FROM work_sessions s JOIN memberships m ON m.id = s.membership_id JOIN profiles pr ON pr.id = m.user_id JOIN tasks tk ON tk.id = s.task_id
        WHERE s.organisation_id = $1 AND s.state IN ('running','paused','interrupted') ORDER BY s.started_at) w) AS working_now,

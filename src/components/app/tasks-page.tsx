@@ -4,7 +4,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
-import { Play, Plus, X, CheckCircle2, MessageSquareText, Trash2, UserRoundCheck, ExternalLink, CalendarClock, Hourglass, Timer, Users } from "lucide-react";
+import { Play, Plus, X, CheckCircle2, ArrowLeftRight, MessageSquareText, Trash2, UserRoundCheck, ExternalLink, CalendarClock, Hourglass, Timer, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { IconButton, ICON_BUTTON } from "@/components/ui/icon-button";
 import { Input, Select, Textarea, Field } from "@/components/ui/input";
@@ -17,6 +17,7 @@ import { Presence } from "@/components/ui/motion";
 import { ConfirmDialog } from "@/components/ui/confirm";
 import { DatePicker } from "@/components/ui/date-picker";
 import { DurationPicker, durationLabel } from "@/components/ui/duration-picker";
+import { ProgressArc } from "@/components/ui/progress-arc";
 import { api, isApiFailure } from "@/lib/api-client";
 import { cn, formatDateTime, formatDuration } from "@/lib/utils";
 import type { TaskListRow } from "@/server/services/views";
@@ -166,7 +167,7 @@ export function TaskTable({ orgSlug, rows, viewer, mine, runningTaskId, people, 
                 </div>
               </td>
               <td className="hidden whitespace-nowrap md:table-cell">{t.due_at ? <><span className="eyebrow block">{t.overdue ? "Overdue" : "Due"}</span><span className={cn("text-sm tabular-nums", t.overdue ? "text-danger" : "text-fg-muted")}>{formatDateTime(t.due_at, viewer.timezone)}</span></> : <span className="text-fg-subtle">—</span>}</td>
-              <td>{running ? <Badge tone="success" dot>Working now</Badge> : <Badge tone={TASK_STATUS_TONE[t.status]}>{statusLabel(t.status)}</Badge>}</td>
+              <td><span className="flex items-center gap-2">{running ? <Badge tone="success" dot>Working now</Badge> : <Badge tone={TASK_STATUS_TONE[t.status]}>{statusLabel(t.status)}</Badge>}{t.progress_percent > 0 || t.status === "in_progress" ? <ProgressArc percent={t.progress_percent} size={34} /> : null}</span></td>
               <td className="whitespace-nowrap text-right">
                 {mine && t.status !== "completed" && t.status !== "in_review" ? <PickUpTask orgSlug={orgSlug} taskId={t.id} running={running} anyRunning={!!runningTaskId} /> : null}
                 {!mine && isMe && ["todo", "in_progress", "blocked"].includes(t.status) ? <MarkDone orgSlug={orgSlug} taskId={t.id} /> : null}
@@ -229,6 +230,8 @@ export function TaskSheet({ orgSlug, row, viewer, mine = false, running = false,
   const [detail, setDetail] = useState<Detail | null>(null);
   const [failed, setFailed] = useState(false);
   const [confirm, setConfirm] = useState<"delete" | null>(null);
+  const [progress, setProgress] = useState<number | null>(null);
+  const [savingProgress, setSavingProgress] = useState(false);
   useEffect(() => { ref.current?.showModal(); }, []);
   useEffect(() => {
     let alive = true;
@@ -241,6 +244,15 @@ export function TaskSheet({ orgSlug, row, viewer, mine = false, running = false,
   const overdue = t.overdue ?? (!!t.due_at && new Date(t.due_at) < new Date() && t.status !== "completed");
   const status = t.status ?? "todo";
   const priority = t.priority ?? "normal";
+  const shownProgress = progress ?? t.progress_percent ?? 0;
+  const canSetProgress = isMe && !["completed", "in_review"].includes(status) && !!detail;
+  const saveProgress = async (value: number) => {
+    if (!detail) return;
+    setSavingProgress(true);
+    try { const r = await api<{ version: number }>(`/api/orgs/${orgSlug}/tasks/${t.id}`, { method: "PATCH", body: { expectedVersion: detail.task.version, progressPercent: value }, retries: 0 }); setDetail({ ...detail, task: { ...detail.task, version: r.version, progress_percent: value } }); router.refresh(); }
+    catch { setProgress(null); }
+    finally { setSavingProgress(false); }
+  };
   const fact = (icon: React.ReactNode, name: string, value: React.ReactNode) => (
     <div className="flex items-start gap-2.5 rounded-[var(--radius-sm)] border border-border-soft bg-wash px-3 py-2"><span className="mt-0.5 text-fg-subtle">{icon}</span><span className="min-w-0"><span className="eyebrow block">{name}</span><span className="block truncate text-sm">{value}</span></span></div>
   );
@@ -264,6 +276,16 @@ export function TaskSheet({ orgSlug, row, viewer, mine = false, running = false,
           {detail ? <p className="whitespace-pre-wrap text-sm text-fg-muted">{detail.task.expected_output}</p> : failed ? <p className="text-sm text-danger">Could not load the details. Open the full task instead.</p> : <p className="text-sm text-fg-subtle">Loading…</p>}
           {t.blocked_reason ? <p className="mt-2 rounded-[var(--radius-sm)] border border-danger/40 bg-danger/10 px-3 py-2 text-sm"><strong>Blocked:</strong> {t.blocked_reason}</p> : null}
         </div>
+        {shownProgress > 0 || canSetProgress || status === "in_progress" ? (
+          <div className="flex items-center gap-4 rounded-[var(--radius-sm)] border border-border-soft bg-wash px-3 py-2">
+            <ProgressArc percent={shownProgress} size={56} />
+            <div className="min-w-0 flex-1">
+              <p className="eyebrow">How far along</p>
+              {canSetProgress ? <input type="range" min={0} max={100} step={5} value={shownProgress} disabled={savingProgress} aria-label="Percentage done" className="mt-1 w-full accent-[var(--accent)]" onChange={(e) => setProgress(Number(e.target.value))} onMouseUp={(e) => void saveProgress(Number((e.target as HTMLInputElement).value))} onTouchEnd={(e) => void saveProgress(Number((e.target as HTMLInputElement).value))} onKeyUp={(e) => { if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"].includes(e.key)) void saveProgress(Number((e.target as HTMLInputElement).value)); }} />
+                : <p className="text-sm text-fg-muted">{shownProgress >= 100 ? "Finished" : `${shownProgress}% done, by the person holding it`}</p>}
+            </div>
+          </div>
+        ) : null}
         <div className="grid grid-cols-2 gap-2">
           {fact(<CalendarClock className="size-4" aria-hidden />, overdue ? "Overdue" : "Due", t.due_at ? <span className={cn("tabular-nums", overdue && "text-danger")}>{formatDateTime(t.due_at, tz)}</span> : "No date")}
           {fact(<Hourglass className="size-4" aria-hidden />, "Estimated", durationLabel(t.estimate_minutes) || "Not set")}
@@ -322,7 +344,7 @@ export function PickUpTask({ orgSlug, taskId, running, anyRunning }: { orgSlug: 
           }
           router.push(`/app/${orgSlug}/my-day`);
         } catch (err) { setError(isApiFailure(err) ? err.error.message : "Cannot reach the server."); setPending(false); }
-      }}><Play className="size-3.5" aria-hidden />{pending ? "Starting…" : anyRunning ? "Switch to this" : "Start"}</Button>
+      }} aria-label={anyRunning ? "Switch the timer to this task" : undefined} className={anyRunning ? "size-9 rounded-full px-0" : undefined}>{anyRunning ? <ArrowLeftRight className="size-4" aria-hidden /> : <><Play className="size-3.5" aria-hidden />{pending ? "Starting…" : "Start"}</>}</Button>
       {error ? <p role="alert" className="max-w-xs text-right text-xs text-danger">{error}</p> : null}
     </div>
   );

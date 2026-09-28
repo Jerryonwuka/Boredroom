@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { Pause, Play, Square, ArrowLeftRight, WifiOff, Circle } from "lucide-react";
 import { api, isApiFailure } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
+import { ProgressArc } from "@/components/ui/progress-arc";
 import { Badge, SESSION_STATE_TONE, label } from "@/components/ui/badge";
 import { Alert } from "@/components/ui/states";
 import { Textarea, Select, Field } from "@/components/ui/input";
@@ -13,7 +15,7 @@ import { Swap } from "@/components/ui/motion";
 import type { SessionView } from "@/server/services/sessions";
 
 export type CurrentSessionPayload = { session: SessionView | null; elsewhere: { organisationName: string; organisationSlug: string } | null };
-export type StartableTask = { id: string; title: string; project_name: string; status: string; capture_requirement: string; estimate_minutes: number | null };
+export type StartableTask = { id: string; title: string; project_name: string; status: string; capture_requirement: string; estimate_minutes: number | null; progress_percent?: number; version?: number };
 
 /** Capture integration point (recording pilot). Returns the capture mode to start with, or null to abort. */
 export type CaptureGate = (task: StartableTask, sessionIdForRecording: (id: string) => void) => Promise<{ captureMode: "none" | "optional" | "required" | "exception"; captureExceptionId?: string | null } | null>;
@@ -54,6 +56,7 @@ export function SessionTimer({ orgSlug, initial, tasks, captureGate, onCaptureSe
   const [connectionLost, setConnectionLost] = useState(false);
   const [conflict, setConflict] = useState<Conflict | null>(null);
   const [stopDialog, setStopDialog] = useState<StopDialogState>(null);
+  const [progress, setProgress] = useState<{ taskId: string; value: number; version: number } | null>(null);
   const base = `/api/orgs/${orgSlug}/sessions`;
   const elsewhere = initial.elsewhere;
 
@@ -167,6 +170,14 @@ export function SessionTimer({ orgSlug, initial, tasks, captureGate, onCaptureSe
   const elapsed = elapsedFor(session, nowMs, offsetMs);
   const estimateReached = session?.estimateMinutes ? elapsed >= session.estimateMinutes * 60 : false;
   const current = session ? tasks.find((t) => t.id === session.taskId) : undefined;
+  // The progress ring on the clock (owner decision, 28 September 2026): the person updates it while they work.
+  const shownProgress = progress && progress.taskId === session?.taskId ? progress.value : current?.progress_percent ?? 0;
+  const saveProgress = async (value: number) => {
+    if (!session || !current || current.version === undefined) return;
+    const version = progress?.taskId === session.taskId ? progress.version : current.version;
+    try { const r = await api<{ version: number }>(`/api/orgs/${orgSlug}/tasks/${session.taskId}`, { method: "PATCH", body: { expectedVersion: version, progressPercent: value }, retries: 0 }); setProgress({ taskId: session.taskId, value, version: r.version }); router.refresh(); }
+    catch (err) { setError(isApiFailure(err) ? err.error.message : "Cannot reach the server."); router.refresh(); }
+  };
   const syncAgo = nowMs != null && lastHeartbeatOkMs != null ? Math.max(0, Math.round((nowMs - lastHeartbeatOkMs) / 1000)) : 0;
 
   return (
@@ -220,12 +231,23 @@ export function SessionTimer({ orgSlug, initial, tasks, captureGate, onCaptureSe
       ) : null}
 
       {session ? (
-        <div className="mt-5 flex flex-wrap gap-2">
-          {session.state === "running" ? <Button variant="subtle" onClick={pause} disabled={!!busy}><Pause className="h-4 w-4" aria-hidden />Pause</Button> : null}
-          {session.state === "paused" || session.state === "interrupted" ? <Button onClick={resume} disabled={!!busy}><Play className="h-4 w-4" aria-hidden />Resume</Button> : null}
-          <Button variant="outline" onClick={() => setStopDialog({ mode: "switch", nextTaskId: "" })} disabled={!!busy || tasks.filter((t) => t.id !== session.taskId).length === 0}><ArrowLeftRight className="h-4 w-4" aria-hidden />Switch task</Button>
-          <Button variant="danger" onClick={() => setStopDialog({ mode: "stop" })} disabled={!!busy}><Square className="h-4 w-4" aria-hidden />Stop</Button>
-          {recordingControls ? recordingControls(session) : null}
+        <div className="mt-5 flex flex-wrap items-center gap-4">
+          <div className="flex items-center gap-2">
+            {session.state === "running" ? <IconButton aria-label="Pause" onClick={pause} disabled={!!busy}><Pause className="size-4" aria-hidden /></IconButton> : null}
+            {session.state === "paused" || session.state === "interrupted" ? <IconButton aria-label="Resume" onClick={resume} disabled={!!busy} className="!border-accent !bg-accent !text-accent-fg"><Play className="size-4" aria-hidden /></IconButton> : null}
+            <IconButton aria-label="Switch task" onClick={() => setStopDialog({ mode: "switch", nextTaskId: "" })} disabled={!!busy || tasks.filter((t) => t.id !== session.taskId).length === 0}><ArrowLeftRight className="size-4" aria-hidden /></IconButton>
+            <IconButton aria-label="Stop the session" onClick={() => setStopDialog({ mode: "stop" })} disabled={!!busy} className="border-danger/40 bg-danger/10 text-danger hover:border-danger/70 hover:bg-danger/15 hover:text-danger"><Square className="size-4" aria-hidden /></IconButton>
+            {recordingControls ? recordingControls(session) : null}
+          </div>
+          {current?.version !== undefined ? (
+            <div className="flex min-w-[220px] flex-1 items-center gap-3 rounded-[var(--radius-sm)] border border-border-soft bg-wash px-3 py-2">
+              <ProgressArc percent={shownProgress} size={44} />
+              <div className="min-w-0 flex-1">
+                <p className="eyebrow">How far along</p>
+                <input type="range" min={0} max={100} step={5} value={shownProgress} aria-label="Percentage done" className="mt-1 w-full accent-[var(--accent)]" onChange={(e) => setProgress({ taskId: session.taskId, value: Number(e.target.value), version: progress?.taskId === session.taskId ? progress.version : current.version! })} onMouseUp={(e) => void saveProgress(Number((e.target as HTMLInputElement).value))} onTouchEnd={(e) => void saveProgress(Number((e.target as HTMLInputElement).value))} onKeyUp={(e) => { if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"].includes(e.key)) void saveProgress(Number((e.target as HTMLInputElement).value)); }} />
+              </div>
+            </div>
+          ) : null}
         </div>
       ) : null}
 

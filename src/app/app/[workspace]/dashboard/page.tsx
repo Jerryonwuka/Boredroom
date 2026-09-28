@@ -2,6 +2,7 @@ import Link from "next/link";
 import { workspacePage } from "@/server/lib/workspace-page";
 import { AppShell } from "@/components/app/shell";
 import { TaskPeekLink } from "@/components/app/tasks-page";
+import { ProgressArc } from "@/components/ui/progress-arc";
 import { taskViewer } from "@/server/lib/task-viewer";
 import { PageHeader, Card, CardHeader } from "@/components/ui/card";
 import { StatCard } from "@/components/ui/stat-card";
@@ -58,7 +59,7 @@ export default async function DashboardPage({ params }: { params: Promise<{ work
             <thead><tr><th>Person</th><th>Team</th><th>State</th><th>Task</th><th>Since</th><th>Sync</th><th>Today</th></tr></thead>
             <tbody>{d.workingNow.map((w) => {
               const stale = w.state === "running" && now - new Date(w.last_heartbeat_at).getTime() > d.staleAfterSeconds * 1000;
-              return <tr key={w.membership_id}><td><Person orgSlug={ctx.org.slug} membershipId={w.membership_id} name={w.display_name} href={`${base}/workroom/${w.membership_id}`} /></td><td className="text-fg-muted">{w.team_names.join(", ") || "—"}</td><td><Badge tone={stale ? "danger" : SESSION_STATE_TONE[w.state]} dot>{stale ? "stale" : label(w.state)}</Badge></td><td><Link href={`${base}/tasks/${w.task_id}`} className="hover:underline">{w.task_title}</Link></td><td className="text-sm">{formatDateTime(w.started_at, ctx.org.timezone)}</td><td className="text-sm text-fg-muted">{relativeTime(w.last_heartbeat_at, now)}</td><td className="tabular-nums">{formatDuration(w.today_seconds)}</td></tr>;
+              return <tr key={w.membership_id}><td><Person orgSlug={ctx.org.slug} membershipId={w.membership_id} name={w.display_name} href={`${base}/workroom/${w.membership_id}`} /></td><td className="text-fg-muted">{w.team_names.join(", ") || "—"}</td><td><Badge tone={stale ? "danger" : SESSION_STATE_TONE[w.state]} dot>{stale ? "stale" : label(w.state)}</Badge></td><td><span className="flex items-center gap-2"><TaskPeekLink orgSlug={ctx.org.slug} viewer={taskViewer(ctx)} task={{ id: w.task_id, title: w.task_title }} className="font-medium" /><ProgressArc percent={w.task_progress} size={30} /></span></td><td className="text-sm">{formatDateTime(w.started_at, ctx.org.timezone)}</td><td className="text-sm text-fg-muted">{relativeTime(w.last_heartbeat_at, now)}</td><td className="tabular-nums">{formatDuration(w.today_seconds)}</td></tr>;
             })}</tbody>
           </DataTable>
         )}

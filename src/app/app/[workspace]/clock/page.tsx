@@ -53,7 +53,7 @@ export default async function ClockPage({ params, searchParams }: { params: Prom
               {c.status === "in" && r ? <><p className="font-display text-3xl">Clocked in {timeOf(r.clock_in_at, tz)}</p><p className="mt-1 flex items-center gap-2 text-sm text-fg-muted">{r.late_seconds > 0 ? <Badge tone="warning">Late by {formatDuration(r.late_seconds)}</Badge> : <Badge tone="success">On time</Badge>}<span>{formatDuration(onPremises)} on the clock so far</span></p></> : null}
               {c.status === "out" && r ? <><p className="font-display text-3xl">{timeOf(r.clock_in_at, tz)} to {timeOf(r.clock_out_at!, tz)}</p><p className="mt-1 flex flex-wrap items-center gap-2 text-sm text-fg-muted">{r.late_seconds > 0 ? <Badge tone="warning">Late by {formatDuration(r.late_seconds)}</Badge> : <Badge tone="success">On time</Badge>}{(r.left_early_seconds ?? 0) > 0 ? <Badge tone="info">Left {formatDuration(r.left_early_seconds!)} early</Badge> : null}<span>{formatDuration(onPremises)} on the clock</span></p></> : null}
             </div>
-            <ClockButtons orgSlug={ctx.org.slug} status={c.status} timerOpen={c.timerOpen} />
+            <ClockButtons orgSlug={ctx.org.slug} status={c.status} timerOpen={c.timerOpen} timing={{ startAt: c.scheduledStartAt, endAt: c.scheduledEndAt, graceMinutes: c.schedule.clock_grace_minutes }} />
           </div>
           {c.timerOpen && c.status === "in" ? <p className="mt-3 text-xs text-fg-subtle">A task timer is running; stop it on My Day before clocking out.</p> : null}
         </Card>

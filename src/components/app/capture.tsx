@@ -8,7 +8,8 @@
  * - Every recorder instance is its own server-side recording (segment). Resume = new instance.
  */
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { Circle, Square, AlertTriangle } from "lucide-react";
+import { Circle, Square, AlertTriangle, X } from "lucide-react";
+import { IconButton } from "@/components/ui/icon-button";
 import { api, isApiFailure } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
 import { Alert } from "@/components/ui/states";
@@ -63,6 +64,8 @@ type Ctx = {
   startCapture: (sessionId: string) => Promise<boolean>;
   stopCapture: (reason: "stopped" | "interrupted" | "failed") => Promise<void>;
   requestPermissionOnly: () => Promise<{ stream: MediaStream; label: string } | null>;
+  /** Clears a "did not start" message; time tracking is unaffected. */
+  dismissError: () => void;
   pendingStream: React.MutableRefObject<MediaStream | null>;
   orgSlug: string; recordingMode: string;
 };
@@ -207,7 +210,8 @@ export function CaptureProvider({ orgSlug, recordingMode, children }: { orgSlug:
     return () => window.removeEventListener("beforeunload", warn);
   }, []);
 
-  const value = useMemo<Ctx>(() => ({ state, startCapture, stopCapture, requestPermissionOnly, pendingStream, orgSlug, recordingMode }), [state, startCapture, stopCapture, requestPermissionOnly, orgSlug, recordingMode]);
+  const dismissError = useCallback(() => setState((s) => ({ ...s, status: "idle", error: null })), []);
+  const value = useMemo<Ctx>(() => ({ state, startCapture, stopCapture, requestPermissionOnly, dismissError, pendingStream, orgSlug, recordingMode }), [state, startCapture, stopCapture, requestPermissionOnly, dismissError, orgSlug, recordingMode]);
   return <CaptureContext.Provider value={value}>{children}<RecordingIndicator /></CaptureContext.Provider>;
 }
 
@@ -215,14 +219,18 @@ function RecordingIndicator() {
   const c = useContext(CaptureContext);
   if (!c || c.state.status === "idle") return null;
   const mb = (c.state.pendingBytes / 1048576).toFixed(1);
+  const problem = c.state.status === "error";
   return (
-    <div role="status" aria-live="polite" className="fixed bottom-[max(1rem,env(safe-area-inset-bottom))] right-[max(1rem,env(safe-area-inset-right))] z-[var(--z-toast)] flex max-w-sm items-center gap-3 rounded-full border border-danger/50 bg-popover px-4 py-2 shadow-[var(--ring-lift)]">
-      {c.state.status === "recording" ? <Circle className="rec-dot h-3 w-3 fill-danger text-danger" aria-hidden /> : <AlertTriangle className="h-4 w-4 text-warning" aria-hidden />}
-      <div className="text-sm">
-        <p className="font-semibold">{c.state.status === "recording" ? "Recording screen" : c.state.status === "uploading" ? "Uploading recording" : c.state.status === "requesting" ? "Choose what to share" : "Capture problem"}</p>
-        <p className="text-xs text-fg-muted">{c.state.sourceLabel ? `${c.state.sourceLabel}, ` : ""}{c.state.uploadedChunks} chunks sent, {mb} MB pending{c.state.pendingBytes > WARN_BYTES ? ", high" : ""}</p>
+    <div role="status" aria-live="polite" className={`fixed bottom-[max(1rem,env(safe-area-inset-bottom))] right-[max(1rem,env(safe-area-inset-right))] z-[var(--z-toast)] flex max-w-md items-center gap-3 rounded-full border bg-popover px-4 py-2.5 shadow-[var(--card-shadow)] ${problem ? "border-warning/50" : "border-danger/50"}`}>
+      {c.state.status === "recording" ? <Circle className="rec-dot h-3 w-3 fill-danger text-danger" aria-hidden /> : <AlertTriangle className="h-4 w-4 shrink-0 text-warning" aria-hidden />}
+      <div className="min-w-0 text-sm">
+        <p className="font-semibold">{c.state.status === "recording" ? "Recording screen" : c.state.status === "uploading" ? "Uploading recording" : c.state.status === "requesting" ? "Choose what to share" : "Recording did not start"}</p>
+        {problem
+          ? <p className="text-xs text-fg-muted">{c.state.error ?? "Something stopped the recording."} Your time keeps tracking without it.</p>
+          : <p className="text-xs text-fg-muted">{c.state.sourceLabel ? `${c.state.sourceLabel}, ` : ""}{c.state.uploadedChunks} chunks sent, {mb} MB pending{c.state.pendingBytes > WARN_BYTES ? ", high" : ""}</p>}
       </div>
       {c.state.status === "recording" ? <Button size="sm" variant="danger" onClick={() => c.stopCapture("stopped")}><Square className="h-3 w-3" aria-hidden />Stop</Button> : null}
+      {problem ? <button type="button" aria-label="Dismiss" onClick={() => c.dismissError()} className="grid size-8 shrink-0 place-items-center rounded-full text-fg-subtle transition-colors duration-[var(--duration-fast)] hover:bg-wash hover:text-fg"><X className="size-4" aria-hidden /></button> : null}
     </div>
   );
 }
@@ -267,10 +275,10 @@ export function useCaptureGate() {
       // Recording is allowed by policy but this session cannot record: the member had not acknowledged the current notice when it started.
       return <span className="inline-flex items-center gap-2 text-xs text-warning"><Circle className="h-3 w-3" aria-hidden />This session started before you acknowledged the monitoring notice. <a className="underline" href={`/app/${c.orgSlug}/policy?next=/app/${c.orgSlug}/my-day`}>Acknowledge it</a>, then stop and start the timer to record.</span>;
     }
-    if (c.state.status === "recording") return <Button variant="outline" onClick={() => c.stopCapture("stopped")}><Square className="h-3 w-3" aria-hidden />Stop recording</Button>;
+    if (c.state.status === "recording") return <IconButton aria-label="Stop recording" onClick={() => c.stopCapture("stopped")} className="border-danger/60 text-danger hover:text-danger"><span className="relative grid place-items-center"><Circle className="size-4 fill-danger text-danger animate-pulse" aria-hidden /><Square className="absolute size-2 fill-current" aria-hidden /></span></IconButton>;
     const support = captureSupport();
     if (!support.supported) return <span className="max-w-sm text-xs text-warning">Screen recording unavailable here: {support.reason} {typeof window !== "undefined" && !window.isSecureContext ? `Open the app at http://localhost:${window.location.port || "3000"} (or an https:// address) instead of ${window.location.host}.` : "Use Chrome or Edge on a computer."}</span>;
-    return <Button variant="outline" disabled={c.state.status === "requesting"} onClick={() => c.startCapture(session.id)}><Circle className="h-3 w-3 fill-danger text-danger" aria-hidden />{c.state.status === "requesting" ? "Choose a screen…" : "Record screen"}</Button>;
+    return <IconButton aria-label={c.state.status === "requesting" ? "Choose a screen…" : "Record screen"} disabled={c.state.status === "requesting"} onClick={() => c.startCapture(session.id)}><Circle className="size-4 fill-danger text-danger" aria-hidden /></IconButton>;
   }, [c]);
 
   const dialogEl = useMemo(() => dialog ? <ExceptionDialog orgSlug={c!.orgSlug} task={dialog.task} reason={dialog.reason} onResolve={(v) => { dialog.resolve(v); setDialog(null); }} onRetry={async () => { const p = await c!.requestPermissionOnly(); if (p) { dialog.resolve({ captureMode: "required" }); setDialog(null); } }} /> : null, [dialog, c]);

@@ -36,7 +36,7 @@ export default async function MyDayPage({ params }: { params: Promise<{ workspac
     <AppShell ctx={ctx} counts={counts} teams={teams}>
       <PageHeader icon="day-checklist" overline={formatLongDate(data.today)} title={<>Welcome, {first}.</>}
         description={<>What are you doing today? {data.todaySeconds ? <>You have worked {formatDuration(data.todaySeconds)} so far.</> : "Tell the assistant, or add a to-do and press Start when you begin."} {data.report ? <Link className="underline" href={`/app/${ctx.org.slug}/timesheets?date=${data.today}`}>Today&apos;s report is {data.report.status.replace("_", " ")}.</Link> : null}</>} />
-      {clock.workingDay ? <ClockCard orgSlug={ctx.org.slug} status={clock.status} startLabel={clock.schedule.start_local.slice(0, 5)} endLabel={clock.schedule.end_local.slice(0, 5)} late={lateNow} clockedInAt={clock.record ? timeOf(clock.record.clock_in_at) : null} lateBy={clock.record && clock.record.late_seconds > 0 ? formatDuration(clock.record.late_seconds) : null} timerOpen={clock.timerOpen} /> : null}
+      {clock.workingDay ? <ClockCard orgSlug={ctx.org.slug} status={clock.status} startLabel={clock.schedule.start_local.slice(0, 5)} endLabel={clock.schedule.end_local.slice(0, 5)} late={lateNow} clockedInAt={clock.record ? timeOf(clock.record.clock_in_at) : null} lateBy={clock.record && clock.record.late_seconds > 0 ? formatDuration(clock.record.late_seconds) : null} timerOpen={clock.timerOpen} timing={{ startAt: clock.scheduledStartAt, endAt: clock.scheduledEndAt, graceMinutes: clock.schedule.clock_grace_minutes }} /> : null}
       <MyDayBoard
         orgSlug={ctx.org.slug}
         today={data.today}
