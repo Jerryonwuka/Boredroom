@@ -23,7 +23,7 @@ export function SiteNav({ signedIn, waitlist = false }: { signedIn: boolean; wai
   const [open, setOpen] = useState(false);
   const cta = signedIn
     ? <Link href="/app" className="lp-btn lp-btn-primary lp-btn-sm">Open workspace</Link>
-    : waitlist ? <><Link href="/login" className="lp-muted text-sm transition-colors hover:text-fg">Log in</Link><WaitlistLink className="lp-btn lp-btn-primary lp-btn-sm">Join the waitlist</WaitlistLink></>
+    : waitlist ? <WaitlistLink className="lp-btn lp-btn-primary lp-btn-sm">Join the waitlist</WaitlistLink>
     : <><Link href="/login" className="lp-muted text-sm transition-colors hover:text-fg">Log in</Link><Link href="/signup" className="lp-btn lp-btn-primary lp-btn-sm">Get started</Link></>;
   return (
     <Navbar className="top-0 pt-3">
