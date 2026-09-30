@@ -1,0 +1,12 @@
+# Boredroom background worker on Fly.io.
+# No [http_service]/[[services]] block: this app exposes no ports — the Machine
+# just runs `pnpm worker` continuously, polling the Postgres job queue.
+app = "boredroom-worker"
+primary_region = "iad"   # US East, close to the Neon database (us-east-1)
+
+[build]
+  dockerfile = "Dockerfile.worker"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

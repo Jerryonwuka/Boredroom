@@ -1,0 +1,16 @@
+# Boredroom background worker — durable Postgres job-queue poller. No HTTP server.
+# Runs `pnpm worker` (tsx worker/index.ts). Deployed to Fly.io as a Machine with no exposed ports.
+FROM node:22-slim
+
+# pnpm via npm (avoids corepack's signature-verification issues); pinned to the repo's version.
+RUN npm install -g pnpm@10.33.0
+
+WORKDIR /app
+
+# Copy the whole repo (see .dockerignore for exclusions) and install all deps.
+# tsx is a devDependency needed at runtime, so we do NOT prune dev deps.
+COPY . .
+RUN pnpm install --frozen-lockfile
+
+ENV NODE_ENV=production
+CMD ["pnpm", "worker"]
