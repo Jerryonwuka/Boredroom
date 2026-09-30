@@ -385,7 +385,7 @@ export async function runCampaignBatch(campaignId: string, batch = 40): Promise<
 
 // ---- Automations -----------------------------------------------------------------------------------------------------
 
-export const automationSchema = z.object({ name: z.string().trim().min(1).max(120), trigger: z.enum(["user_created", "account_age_days", "user_inactive_days", "subscription_expiring_days", "subscription_expired", "payment_failed", "payment_successful", "waitlist_joined"]), triggerValue: z.number().int().min(0).max(3650).nullable().optional(), templateId: z.string().uuid(), enabled: z.boolean().default(true) });
+export const automationSchema = z.object({ name: z.string().trim().min(1).max(120), trigger: z.enum(["user_created", "account_age_days", "user_inactive_days", "subscription_expiring_days", "subscription_expired", "payment_failed", "payment_successful", "waitlist_joined", "waitlist_invited"]), triggerValue: z.number().int().min(0).max(3650).nullable().optional(), templateId: z.string().uuid(), enabled: z.boolean().default(true) });
 export type AutomationRow = { id: string; name: string; trigger: string; trigger_value: number | null; template_id: string; template_name: string; enabled: boolean; runs: number; last_run: string | null; created_at: string };
 
 export const listAutomations = () => withSystem((db) => db.query<AutomationRow>(`SELECT a.*, t.name AS template_name, (SELECT count(*)::int FROM automation_runs r WHERE r.automation_id = a.id) AS runs, (SELECT MAX(ran_at) FROM automation_runs r WHERE r.automation_id = a.id) AS last_run FROM automations a JOIN email_templates t ON t.id = a.template_id ORDER BY a.trigger, a.trigger_value`));
@@ -416,7 +416,7 @@ async function runAutomationFor(db: Db, a: { id: string; template_id: string; na
 
 /** Event-driven automations, called by the worker for each platform event. */
 export async function automationsForEvent(type: string, payload: Record<string, unknown>) {
-  const map: Record<string, string> = { USER_CREATED: "user_created", WAITLIST_JOINED: "waitlist_joined", SUBSCRIPTION_EXPIRED: "subscription_expired", PAYMENT_FAILED: "payment_failed", PAYMENT_SUCCESSFUL: "payment_successful" };
+  const map: Record<string, string> = { USER_CREATED: "user_created", WAITLIST_JOINED: "waitlist_joined", WAITLIST_INVITED: "waitlist_invited", SUBSCRIPTION_EXPIRED: "subscription_expired", PAYMENT_FAILED: "payment_failed", PAYMENT_SUCCESSFUL: "payment_successful" };
   const trigger = map[type];
   if (!trigger) return;
   await withSystem(async (db) => {

@@ -9,7 +9,7 @@ import { num } from "@/lib/format";
 import { relativeTime } from "@/lib/utils";
 
 export const metadata = { title: "Automations" };
-const LABEL: Record<string, string> = { user_created: "User created", account_age_days: "Account age", user_inactive_days: "Inactive", subscription_expiring_days: "Expiring in", subscription_expired: "Subscription expired", payment_failed: "Payment failed", payment_successful: "Payment successful", waitlist_joined: "Joined the waitlist" };
+const LABEL: Record<string, string> = { user_created: "User created", account_age_days: "Account age", user_inactive_days: "Inactive", subscription_expiring_days: "Expiring in", subscription_expired: "Subscription expired", payment_failed: "Payment failed", payment_successful: "Payment successful", waitlist_joined: "Joined the waitlist", waitlist_invited: "Invited from waitlist" };
 
 export default async function AutomationsPage() {
   const admin = await requireAdmin("marketing.view");
