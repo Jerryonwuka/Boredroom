@@ -8,6 +8,7 @@ import type { NavCounts } from "@/server/services/workspace";
 import { RealtimeRefresher } from "@/components/app/realtime";
 import { MessageToasts } from "@/components/app/message-toasts";
 import { AssistantDrawer } from "@/components/app/assistant-drawer";
+import { BrendaPresence } from "@/components/app/brenda";
 import { Suspense } from "react";
 import { cn } from "@/lib/utils";
 import { ImpersonationBanner } from "@/components/app/impersonation-banner";
@@ -117,6 +118,7 @@ export async function AppShell({ ctx, counts, teams = [], children, bleed = fals
           ? <main id="main" className="flex min-h-0 flex-1 flex-col md:h-[calc(100dvh-4rem)]">{children}</main>
           : <main id="main" className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 md:px-8 md:py-8"><PageRise>{children}</PageRise></main>}
         {ctx.plan.features.AI_ASSISTANT ? <AssistantDrawer orgSlug={ctx.org.slug} isOrg={isOrg} firstName={ctx.user.displayName.split(" ")[0]} floating /> : null}
+        {ctx.plan.features.AI_ASSISTANT && !isOrg ? <BrendaPresence orgSlug={ctx.org.slug} /> : null}
         <RealtimeRefresher orgSlug={ctx.org.slug} />
         <Suspense fallback={null}><MessageToasts orgSlug={ctx.org.slug} /></Suspense>
       </div>

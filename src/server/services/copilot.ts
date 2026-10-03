@@ -1,5 +1,6 @@
 /**
- * The workspace agent: a conversation that gets things done. It looks things up (the person's day, who is working
+ * Brenda, the workspace agent (owner decision, 3 October 2026; spec "Brenda for Boredroom"): a conversation that gets
+ * things done. It looks things up (the person's day, who is working
  * or clocked in, tasks and people by name) and it acts: adds to-dos, assigns tasks, clocks in and out, runs the
  * timer, sends messages, creates teams, invites people, sets the work status. Every action runs as the signed-in
  * person through the same services as the buttons do, so row-level security, role checks, audit entries and
@@ -20,6 +21,11 @@ import { inbox, openDirect, peopleToMessage, sendMessage } from "@/server/servic
 import { createTeam, createInvitation } from "@/server/services/orgs";
 import { setMyPresence } from "@/server/services/profile";
 import { searchWorkspace } from "@/server/services/search";
+import { addComment } from "@/server/services/tasks";
+import { submitTask } from "@/server/services/evidence";
+import { briefing, createReminder, listReminders, cancelReminder, recordAction } from "@/server/services/brenda";
+import { signPayload, verifyPayload } from "@/server/lib/crypto";
+import { forbidden, invalid } from "@/server/lib/errors";
 import { isPresence } from "@/lib/presence";
 import { todayLocal } from "@/server/lib/time";
 
@@ -34,7 +40,9 @@ export type Proposal =
   | { kind: "todo"; title: string; description: string | null; dueAt: string | null; assigneeMembershipId: string | null; assigneeName: string | null; estimateMinutes: number | null }
   | { kind: "clock_in" } | { kind: "clock_out" }
   | { kind: "start_timer"; taskId: string; taskTitle: string }
-  | { kind: "open"; href: string; label: string };
+  | { kind: "open"; href: string; label: string }
+  /** A consequential action Brenda prepared; it runs only when the person presses Confirm (owner decision, 3 October 2026). */
+  | { kind: "confirm"; token: string; summary: string; tool: string };
 
 export type ChatResult = { reply: string; engine: "claude" | "builtin"; actions: Action[]; proposals: Proposal[]; note: string | null };
 
@@ -90,7 +98,21 @@ function describeError(err: unknown): string {
 // ---- Tools --------------------------------------------------------------------
 
 type Person = { membership_id: string; display_name: string; role: string; teams: string | null };
-type ToolCtx = { ctx: OrgContext; base: string; actions: Action[]; proposals: Proposal[]; people: Person[] };
+type ToolCtx = { ctx: OrgContext; base: string; actions: Action[]; proposals: Proposal[]; people: Person[]; mode: "chat" | "confirm" };
+
+/**
+ * When Brenda acts at once and when she asks (spec section 8). Reading, the person's own clock, timer, to-dos, status,
+ * comments, progress and reminders are low-risk and reversible: she just does them. Anything that lands on someone
+ * else, goes out to a group, or sends an email waits for a Confirm press: assigning or reassigning work, creating a
+ * task for someone else, changing a task the person does not hold, submitting for review, messaging a team or
+ * everyone, creating a team, inviting someone.
+ */
+const CONFIRM_TTL = 15 * 60;
+function askFirst(t: ToolCtx, tool: string, input: Record<string, unknown>, summary: string) {
+  const token = signPayload({ k: "brenda", o: t.ctx.org.id, m: t.ctx.membership.id, tool, input }, CONFIRM_TTL);
+  t.proposals.push({ kind: "confirm", token, summary, tool });
+  return { needsConfirmation: true, summary, note: "Not done yet. A Confirm button is shown to the person; tell them what will happen and that it runs when they confirm." };
+}
 
 const obj = (properties: Record<string, unknown>, required: string[] = []) => ({ type: "object" as const, properties, required });
 const str = (description: string) => ({ type: "string", description });
@@ -104,14 +126,22 @@ const TOOLS = [
   { name: "list_tasks", description: "Tasks the person can see, with ids, status, assignee and due date. Staff see their own; leads their team's; organisation accounts everyone's.", input_schema: obj({ status: { type: "string", enum: ["open", "check", "done", "all"], description: "open by default" } }) },
   { name: "search", description: "Find tasks, people, projects and teams by name.", input_schema: obj({ q: str("Words from the name") }, ["q"]) },
   // Acting
-  { name: "create_todos", description: "Create to-dos now. Staff to-dos are their own; a team lead may name an assignee from their team (exact name from list_people). Returns what was created.", input_schema: obj({ items: { type: "array", items: obj({ title: str("Short imperative title, at most 120 characters"), description: str("Detail, or omit"), due: str("ISO 8601 with offset, or omit"), assignee: str("Exact team member name, or omit"), estimateMinutes: { type: "integer" } }, ["title"]) } }, ["items"]) },
-  { name: "assign_task", description: "Hand an existing task to someone (team leads and organisation accounts, within their scope). Use a task id from list_tasks or search and a membership id from list_people.", input_schema: obj({ taskId: str("Task id"), assigneeMembershipId: str("Membership id of the new assignee") }, ["taskId", "assigneeMembershipId"]) },
+  { name: "get_briefing", description: "What is waiting for the person today, from real data: clock and timer, tasks due today and tomorrow, overdue tasks, their work waiting for someone's check, work waiting for their review, assignments they handed out that nobody picked up, and reminders due today. Use it for 'what's waiting for me', 'what should I work on', 'what did I get done' style questions.", input_schema: obj({}) },
+  { name: "get_task", description: "One task in full: details, assignee, reviewer, due date, estimate, tracked time, progress, latest comments and status history.", input_schema: obj({ taskId: str("Task id") }, ["taskId"]) },
+  { name: "create_todos", description: "Create tasks. With no assignee they are the person's own to-dos (staff and team leads). A team lead or organisation account may name an assignee (exact name from list_people); a task for someone else waits for the person to confirm. Returns what was created or prepared.", input_schema: obj({ items: { type: "array", items: obj({ title: str("Short imperative title, at most 120 characters"), description: str("Detail, or omit"), due: str("ISO 8601 with offset, or omit"), assignee: str("Exact team member name, or omit"), estimateMinutes: { type: "integer" } }, ["title"]) } }, ["items"]) },
+  { name: "assign_task", description: "Hand an existing task to someone (team leads and organisation accounts, within their scope). Use a task id from list_tasks or search and a membership id from list_people. Waits for confirmation.", input_schema: obj({ taskId: str("Task id"), assigneeMembershipId: str("Membership id of the new assignee") }, ["taskId", "assigneeMembershipId"]) },
+  { name: "update_task", description: "Change a task: title, details, due date, estimate, priority, status (todo, in_progress, or blocked with a reason) or progress percentage. Changes to a task the person does not hold wait for confirmation.", input_schema: obj({ taskId: str("Task id"), title: str("New title, or omit"), details: str("What a finished result looks like, or omit"), due: str("ISO 8601 with offset, 'none' to clear, or omit"), estimateMinutes: { type: "integer" }, priority: { type: "string", enum: ["low", "normal", "high", "urgent"] }, status: { type: "string", enum: ["todo", "in_progress", "blocked"] }, reason: str("Required when blocking"), progressPercent: { type: "integer", minimum: 0, maximum: 100 } }, ["taskId"]) },
+  { name: "add_comment", description: "Add a comment to a task's discussion; the assignee and reviewer are notified.", input_schema: obj({ taskId: str("Task id"), body: str("The comment") }, ["taskId", "body"]) },
+  { name: "submit_for_review", description: "Send one of the person's own tasks for review with a progress note (no files; files are attached on the task page). Waits for confirmation.", input_schema: obj({ taskId: str("Task id"), note: str("What was delivered and where to look") }, ["taskId", "note"]) },
+  { name: "remind_me", description: "Set a personal reminder delivered as a notification at the given time, optionally about a task.", input_schema: obj({ body: str("What to remind them of, e.g. 'Call Josh'"), at: str("ISO 8601 with offset"), taskId: str("Task id, or omit") }, ["body", "at"]) },
+  { name: "list_reminders", description: "The person's upcoming reminders.", input_schema: obj({}) },
+  { name: "cancel_reminder", description: "Cancel one of the person's reminders by id (from list_reminders).", input_schema: obj({ reminderId: str("Reminder id") }, ["reminderId"]) },
   { name: "complete_task", description: "Mark one of the person's own tasks done (it goes to their team lead for a check when one exists).", input_schema: obj({ taskId: str("Task id"), note: str("What was done, or omit") }, ["taskId"]) },
   { name: "clock", description: "Clock the person in or out. Staff and team leads only.", input_schema: obj({ direction: { type: "string", enum: ["in", "out"] } }, ["direction"]) },
   { name: "timer", description: "Run the person's timer: start on one of their tasks, pause, resume, or stop (with an outcome). Staff and team leads only.", input_schema: obj({ action: { type: "string", enum: ["start", "pause", "resume", "stop"] }, taskId: str("For start: the task id"), outcome: { type: "string", enum: ["continue_later", "blocked", "ready_for_review", "completed"], description: "For stop; continue_later by default" }, note: str("For stop, or omit") }, ["action"]) },
   { name: "send_message", description: "Send a message: to a person by exact name (a direct thread), to a team channel by team name, or to everyone. Optionally attach a task by id.", input_schema: obj({ to: str("A person's exact name, a team name, or 'everyone'"), body: str("The message"), taskId: str("Task id to attach, or omit") }, ["to", "body"]) },
   { name: "create_team", description: "Create a team (organisation accounts only).", input_schema: obj({ name: str("Team name") }, ["name"]) },
-  { name: "invite_person", description: "Invite someone by email; they get an invitation email (organisation accounts only). role: employee (staff) or manager (team lead); team by exact name, optional.", input_schema: obj({ email: str("Email address"), role: { type: "string", enum: ["employee", "manager", "hr"] }, team: str("Exact team name, or omit") }, ["email", "role"]) },
+  { name: "invite_person", description: "Invite someone by email; they get an invitation email (organisation accounts only; waits for confirmation). role: employee (staff) or manager (team lead); team by exact name, optional.", input_schema: obj({ email: str("Email address"), role: { type: "string", enum: ["employee", "manager", "hr"] }, team: str("Exact team name, or omit") }, ["email", "role"]) },
   { name: "set_status", description: "Set the person's own work status.", input_schema: obj({ presence: { type: "string", enum: ["active", "away", "busy", "offline"] } }, ["presence"]) },
   { name: "open_page", description: "Offer a link to a page (a path from the page list, or a task, person, project or team href from search).", input_schema: obj({ path: str("Path such as /tasks or /tasks/<id>"), label: str("Link text") }, ["path", "label"]) },
 ];
@@ -122,7 +152,8 @@ async function runTool(t: ToolCtx, name: string, input: Record<string, unknown>)
   const { ctx, base } = t;
   const role = ctx.membership.role;
   const people = async () => { if (!t.people.length) t.people = await peopleToMessage(ctx); return t.people; };
-  const done = (kind: string, summary: string, href?: string) => { t.actions.push({ kind, summary, href }); return { done: true, summary }; };
+  const done = (kind: string, summary: string, href?: string) => { t.actions.push({ kind, summary, href }); void recordAction(ctx, { tool: name, summary, outcome: t.mode === "confirm" ? "confirmed" : "done", source: t.mode === "confirm" ? "confirm" : "chat", detail: { href } }); return { done: true, summary }; };
+  const confirmMode = t.mode === "confirm";
   switch (name) {
     case "get_my_day": {
       if (!WORKERS.includes(role)) return { error: "Organisation accounts have no day of their own; use get_team_status or get_attendance." };
@@ -153,22 +184,44 @@ async function runTool(t: ToolCtx, name: string, input: Record<string, unknown>)
       const r = await searchWorkspace(ctx, String(input.q ?? "").slice(0, 120) || " ");
       return { hits: r.hits.map((h) => ({ kind: h.kind, id: h.id, title: h.title, hint: h.hint, href: h.href.replace(base, "") })) };
     }
+    case "get_briefing": return briefing(ctx);
+    case "get_task": {
+      const taskId = uuid(input.taskId); if (!taskId) return { error: "taskId must be a task id." };
+      const { taskDetail } = await import("@/server/services/views");
+      const d = await taskDetail(ctx, taskId);
+      if (!d) return { error: "That task is not visible to you." };
+      const x = d.task;
+      return { id: x.id, title: x.title, details: x.expected_output, status: x.status, priority: x.priority, project: x.project_name, assignee: x.assignee_name, assigneeMembershipId: x.assignee_membership_id, reviewer: x.reviewer_name, createdBy: x.created_by_name, due: x.due_at, estimateMinutes: x.estimate_minutes, trackedSeconds: x.tracked_seconds, progressPercent: x.progress_percent, blockedReason: x.blocked_reason, comments: d.comments.slice(-6).map((c) => ({ by: c.author_name, at: c.created_at, body: c.body })), history: d.history.slice(-6).map((h) => ({ from: h.from_status, to: h.to_status, by: h.actor_name, at: h.occurred_at, reason: h.reason })) };
+    }
     case "create_todos": {
-      if (!WORKERS.includes(role)) return { error: "Organisation accounts have no to-dos; a team lead adds them for their team." };
       const items = Array.isArray(input.items) ? (input.items as Record<string, unknown>[]).slice(0, 15) : [];
-      const team = role === "manager" ? await assignableMembers(ctx) : [];
-      const created: { id: string; title: string; assignee: string | null }[] = [];
+      const isOrg = ORG.includes(role);
+      const pool = role === "employee" ? [] : (await assignableMembers(ctx)).map((p) => ({ id: p.id, display_name: p.display_name }));
+      const plan: { title: string; description: string | null; due: string | null; est: number | null; person: { id: string; display_name: string } | null }[] = [];
       for (const it of items) {
         const title = String(it.title ?? "").trim().slice(0, 200);
         if (!title) continue;
-        const person = it.assignee && team.length ? matchPerson(String(it.assignee), team) : null;
-        if (it.assignee && team.length && !person) return { error: `"${it.assignee}" is not on the team. People: ${team.map((p) => p.display_name).join(", ")}.`, created };
+        let person: { id: string; display_name: string } | null = null;
+        if (it.assignee) {
+          if (role === "employee") return { error: "Staff add to-dos for themselves only; ask your team lead to hand work to someone else." };
+          person = matchPerson(String(it.assignee), pool);
+          if (!person) return { error: `"${it.assignee}" is not someone you can assign to. People: ${pool.map((p) => p.display_name).join(", ") || "nobody yet"}.` };
+        } else if (isOrg) return { error: "Organisation accounts hand tasks to someone; name who it is for." };
         const due = typeof it.due === "string" && !Number.isNaN(Date.parse(it.due)) ? new Date(it.due).toISOString() : null;
         const est = typeof it.estimateMinutes === "number" && it.estimateMinutes > 0 ? Math.round(it.estimateMinutes) : null;
-        const r = await quickTodo(ctx, { title, description: typeof it.description === "string" && it.description.trim() ? it.description.trim().slice(0, 4000) : null, dueAt: due, assigneeMembershipId: person?.id ?? null, estimateMinutes: est });
+        plan.push({ title, description: typeof it.description === "string" && it.description.trim() ? it.description.trim().slice(0, 4000) : null, due, est, person });
+      }
+      if (!plan.length) return { error: "Give each to-do a title." };
+      const forOthers = plan.filter((p) => p.person);
+      if (forOthers.length && !confirmMode) {
+        return askFirst(t, name, input, plan.length === 1 ? `Create “${plan[0].title}” for ${plan[0].person?.display_name ?? "you"}${plan[0].due ? `, due ${new Date(plan[0].due).toLocaleString("en-GB", { timeZone: ctx.org.timezone, weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}` : ""}` : `Create ${plan.length} tasks: ${plan.map((p) => `${p.title}${p.person ? ` (${p.person.display_name})` : ""}`).join("; ")}`);
+      }
+      const created: { id: string; title: string; assignee: string | null }[] = [];
+      for (const p of plan) {
+        const r = await quickTodo(ctx, { title: p.title, description: p.description, dueAt: p.due, assigneeMembershipId: p.person?.id ?? null, estimateMinutes: p.est });
         const id = (r as { id?: string }).id ?? "";
-        created.push({ id, title, assignee: person?.display_name ?? null });
-        done("todo", `Added to-do: ${title}${person ? ` for ${person.display_name}` : ""}`, id ? `${base}/tasks/${id}` : undefined);
+        created.push({ id, title: p.title, assignee: p.person?.display_name ?? null });
+        done("todo", `${p.person ? "Created" : "Added to-do"}: ${p.title}${p.person ? ` for ${p.person.display_name}` : ""}`, id ? `${base}/tasks/${id}` : undefined);
       }
       return { created };
     }
@@ -178,8 +231,57 @@ async function runTool(t: ToolCtx, name: string, input: Record<string, unknown>)
       const task = await withUser(ctx.user.profileId, (db) => db.maybeOne<{ version: number; title: string }>(`SELECT version, title FROM tasks WHERE id = $1 AND organisation_id = $2`, [taskId, ctx.org.id]));
       if (!task) return { error: "That task is not visible to you." };
       const who = (await people()).find((p) => p.membership_id === to);
+      if (!confirmMode) return askFirst(t, name, input, `Assign “${task.title}” to ${who?.display_name ?? "them"}`);
       await updateTask(ctx, taskId, { expectedVersion: task.version, assigneeMembershipId: to });
       return done("assign", `Assigned "${task.title}" to ${who?.display_name ?? "them"}`, `${base}/tasks/${taskId}`);
+    }
+    case "update_task": {
+      const taskId = uuid(input.taskId); if (!taskId) return { error: "taskId must be a task id." };
+      const task = await withUser(ctx.user.profileId, (db) => db.maybeOne<{ version: number; title: string; assignee_membership_id: string }>(`SELECT version, title, assignee_membership_id FROM tasks WHERE id = $1 AND organisation_id = $2`, [taskId, ctx.org.id]));
+      if (!task) return { error: "That task is not visible to you." };
+      const patch: Record<string, unknown> = {};
+      const changes: string[] = [];
+      if (typeof input.title === "string" && input.title.trim()) { patch.title = input.title.trim().slice(0, 200); changes.push(`title to “${patch.title}”`); }
+      if (typeof input.details === "string" && input.details.trim()) { patch.expectedOutput = input.details.trim().slice(0, 4000); changes.push("details"); }
+      if (input.due === "none") { patch.dueAt = null; changes.push("no due date"); }
+      else if (typeof input.due === "string" && !Number.isNaN(Date.parse(input.due))) { patch.dueAt = new Date(input.due).toISOString(); changes.push(`due ${new Date(input.due).toLocaleString("en-GB", { timeZone: ctx.org.timezone, weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}`); }
+      if (typeof input.estimateMinutes === "number" && input.estimateMinutes > 0) { patch.estimateMinutes = Math.round(input.estimateMinutes); changes.push(`estimate ${Math.round(input.estimateMinutes)} min`); }
+      if (["low", "normal", "high", "urgent"].includes(String(input.priority))) { patch.priority = input.priority; changes.push(`priority ${input.priority}`); }
+      if (["todo", "in_progress", "blocked"].includes(String(input.status))) { patch.status = input.status; if (input.reason) patch.reason = String(input.reason).slice(0, 2000); changes.push(`status ${String(input.status).replace("_", " ")}`); }
+      if (typeof input.progressPercent === "number") { patch.progressPercent = Math.max(0, Math.min(100, Math.round(input.progressPercent))); changes.push(`${patch.progressPercent}% done`); }
+      if (!changes.length) return { error: "Say what to change." };
+      const summary = `Update “${task.title}”: ${changes.join(", ")}`;
+      if (task.assignee_membership_id !== ctx.membership.id && !confirmMode) return askFirst(t, name, input, summary);
+      await updateTask(ctx, taskId, { expectedVersion: task.version, ...patch } as Parameters<typeof updateTask>[2]);
+      return done("update", summary.replace(/^Update/, "Updated"), `${base}/tasks/${taskId}`);
+    }
+    case "add_comment": {
+      const taskId = uuid(input.taskId); const body = String(input.body ?? "").trim().slice(0, 4000);
+      if (!taskId || !body) return { error: "taskId and body are required." };
+      await addComment(ctx, taskId, body);
+      return done("comment", `Commented: “${body.length > 80 ? `${body.slice(0, 77)}…` : body}”`, `${base}/tasks/${taskId}`);
+    }
+    case "submit_for_review": {
+      const taskId = uuid(input.taskId); const note = String(input.note ?? "").trim().slice(0, 4000);
+      if (!taskId) return { error: "taskId must be a task id." };
+      const task = await withUser(ctx.user.profileId, (db) => db.maybeOne<{ title: string; assignee_membership_id: string; reviewer_name: string | null }>(`SELECT t.title, t.assignee_membership_id, pr.display_name AS reviewer_name FROM tasks t LEFT JOIN memberships mr ON mr.id = t.reviewer_membership_id LEFT JOIN profiles pr ON pr.id = mr.user_id WHERE t.id = $1 AND t.organisation_id = $2`, [taskId, ctx.org.id]));
+      if (!task) return { error: "That task is not visible to you." };
+      if (task.assignee_membership_id !== ctx.membership.id) return { error: "Only the person holding a task submits it for review." };
+      if (!confirmMode) return askFirst(t, name, input, `Send “${task.title}” for review${task.reviewer_name ? ` to ${task.reviewer_name}` : ""}${note ? ` with the note “${note.length > 60 ? `${note.slice(0, 57)}…` : note}”` : ""}`);
+      await submitTask(ctx, taskId, { note, links: [], fileIds: [] });
+      return done("submit", `Sent “${task.title}” for review`, `${base}/tasks/${taskId}`);
+    }
+    case "remind_me": {
+      const body = String(input.body ?? "").trim().slice(0, 500);
+      if (!body || typeof input.at !== "string" || Number.isNaN(Date.parse(input.at))) return { error: "body and at (ISO 8601 with offset) are required." };
+      const r = await createReminder(ctx, { body, remindAt: new Date(input.at).toISOString(), taskId: uuid(input.taskId) });
+      return done("reminder", `Reminder set for ${new Date(r.remind_at).toLocaleString("en-GB", { timeZone: ctx.org.timezone, weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}: ${body}`, `${base}/notifications`);
+    }
+    case "list_reminders": return { reminders: (await listReminders(ctx)).map((r) => ({ id: r.id, body: r.body, at: r.remind_at, taskId: r.task_id })) };
+    case "cancel_reminder": {
+      const id = uuid(input.reminderId); if (!id) return { error: "reminderId must be an id from list_reminders." };
+      const r = await cancelReminder(ctx, id);
+      return done("reminder_cancel", `Cancelled the reminder: ${r.body}`);
     }
     case "complete_task": {
       const taskId = uuid(input.taskId);
@@ -227,15 +329,17 @@ async function runTool(t: ToolCtx, name: string, input: Record<string, unknown>)
         }
       }
       if (!conversationId) return { error: "That conversation could not be opened." };
+      if (label === "everyone" || label.startsWith("#")) { if (!confirmMode) return askFirst(t, name, input, `Message ${label === "everyone" ? "everyone" : label}: “${body.length > 80 ? `${body.slice(0, 77)}…` : body}”`); }
       await sendMessage(ctx, { conversationId, body, taskId });
       return done("message", `Sent to ${label}: “${body.length > 80 ? `${body.slice(0, 77)}…` : body}”`, `${base}/messages?c=${conversationId}`);
     }
     case "create_team": {
       if (!ORG.includes(role)) return { error: "Only organisation accounts create teams." };
-      const name = String(input.name ?? "").trim().slice(0, 120); if (!name) return { error: "A team needs a name." };
-      const r = await createTeam(ctx, name);
+      const teamName = String(input.name ?? "").trim().slice(0, 120); if (!teamName) return { error: "A team needs a name." };
+      if (!confirmMode) return askFirst(t, name, input, `Create the team ${teamName}`);
+      const r = await createTeam(ctx, teamName);
       const id = (r as { id?: string }).id;
-      return done("team", `Created the team ${name}`, id ? `${base}/teams/${id}` : `${base}/people?tab=teams`);
+      return done("team", `Created the team ${teamName}`, id ? `${base}/teams/${id}` : `${base}/people?tab=teams`);
     }
     case "invite_person": {
       if (!ORG.includes(role)) return { error: "Only organisation accounts invite people." };
@@ -248,6 +352,7 @@ async function runTool(t: ToolCtx, name: string, input: Record<string, unknown>)
         if (!team) return { error: `No team called "${input.team}". Teams: ${teams.map((x) => x.name).join(", ") || "none yet"}.` };
         teamId = team.id;
       }
+      if (!confirmMode) return askFirst(t, name, input, `Invite ${email} as ${r === "manager" ? "team lead" : r === "hr" ? "HR administrator" : "staff"}${input.team ? ` in ${input.team}` : ""} (sends an email)`);
       await createInvitation(ctx, { email, role: r, teamId }, { send: true });
       return done("invite", `Invited ${email} as ${r === "manager" ? "team lead" : r === "hr" ? "HR administrator" : "staff"}${input.team ? ` in ${input.team}` : ""}; the email is on its way`, `${base}/people?tab=invitations`);
     }
@@ -273,14 +378,15 @@ async function chatWithClaude(ctx: OrgContext, conn: AssistantConnection, messag
   const client = new Anthropic({ apiKey: conn.apiKey, maxRetries: 2, timeout: 90_000 });
   const role = ctx.membership.role;
   const base = `/app/${ctx.org.slug}`;
-  const t: ToolCtx = { ctx, base, actions: [], proposals: [], people: [] };
+  const t: ToolCtx = { ctx, base, actions: [], proposals: [], people: [], mode: "chat" };
   const today = todayLocal(ctx.org.timezone);
   const weekday = new Date(`${today}T12:00:00Z`).toLocaleDateString("en-GB", { weekday: "long", timeZone: "UTC" });
   const roleLabel: Record<Role, string> = { owner: "organisation owner", hr: "HR administrator", manager: "team lead", employee: "staff member" };
   const team = role === "manager" ? await assignableMembers(ctx) : [];
   const system = [
-    `You are the assistant inside Boredroom, a work tracker for remote teams, and you get things done. You are working for ${ctx.user.displayName}, a ${roleLabel[role]} at ${ctx.org.name}. Today is ${weekday} ${today} in the ${ctx.org.timezone} timezone.`,
-    "When the person asks for something to be done, do it with the tools, then tell them in plain words what you did. Do not ask for confirmation for ordinary work: adding to-dos, assigning tasks, clocking, the timer, messages, teams, invitations, status. Ask one short question only when the request is ambiguous (two people with the same name, no task named) or when a detail you need is missing (an email address). Look names and ids up with list_people, list_tasks or search before acting; never invent an id.",
+    `You are Brenda, the AI teammate inside Boredroom, a work tracker for remote teams. You understand the person's work and help get it done. You are working for ${ctx.user.displayName}, a ${roleLabel[role]} at ${ctx.org.name}. Today is ${weekday} ${today} in the ${ctx.org.timezone} timezone.`,
+    "When the person asks for something to be done, do it with the tools, then tell them in plain words what you did. Their own work you just do: their to-dos, clock, timer, status, comments, progress and reminders. Some tools return needsConfirmation instead of doing the work (anything that lands on someone else, goes to a group, or sends an email): then nothing has happened yet; say in one sentence what will happen and that it runs when they press Confirm. Ask one short question only when the request is ambiguous (two people with the same name, no task named) or a detail you need is missing (an email address, a time). Look names and ids up with list_people, list_tasks, search or get_briefing before acting; never invent an id.",
+    "Base reminders, priorities and summaries on what the tools return, never on assumptions. For 'what's waiting for me', 'what should I work on' or 'what did I get done', call get_briefing first.",
     "You act as the person, with their permissions: what they cannot do, you cannot do, and the tool will say so; pass that on plainly and say who can. Never claim something happened unless the tool returned done.",
     `Pages in this workspace for this person (paths are relative to the workspace): ${pagesFor(role).map((p) => `${p.label} (${p.path}): ${p.what}`).join("; ")}. When the answer is a place, call open_page for it.`,
     role === "owner" || role === "hr" ? "Organisation accounts do not clock in, have no to-dos and no timers, and do not give reviews; they supervise, assign, message, create teams and invite people." : role === "manager" ? `The person is a team lead and may add to-dos for these team members: ${team.map((p) => p.display_name).join(", ") || "nobody yet"}; they may also assign existing tasks to them.` : "The person is staff: every to-do is their own; they cannot see other people's activity or assign work.",
@@ -292,7 +398,8 @@ async function chatWithClaude(ctx: OrgContext, conn: AssistantConnection, messag
   const thread: Msg[] = messages.slice(-20).map((m) => ({ role: m.role, content: m.content }));
   let reply = "";
   for (let step = 0; step < 10; step++) {
-    const res = await client.messages.create({ model: conn.model, max_tokens: 1500, system, tools: TOOLS, messages: thread });
+    const res = await client.messages.create({ model: conn.model, max_tokens: 8000, system, tools: TOOLS, messages: thread });
+    if (res.stop_reason === "refusal") { reply = "I can't help with that one."; break; }
     const text = res.content.filter((b) => b.type === "text").map((b) => (b.type === "text" ? b.text : "")).join("").trim();
     const uses = res.content.filter((b) => b.type === "tool_use");
     if (text) reply = text;
@@ -302,13 +409,38 @@ async function chatWithClaude(ctx: OrgContext, conn: AssistantConnection, messag
     for (const u of uses) {
       if (u.type !== "tool_use") continue;
       let out: unknown;
+      let failed = false;
       try { out = await runTool(t, u.name, (u.input ?? {}) as Record<string, unknown>); }
-      catch (err) { out = { error: ((err as { message?: string }).message ?? String(err)).slice(0, 300) }; }
-      results.push({ type: "tool_result" as const, tool_use_id: u.id, content: JSON.stringify(out).slice(0, 20_000) });
+      catch (err) { failed = true; out = { error: ((err as { message?: string }).message ?? String(err)).slice(0, 300) }; }
+      const isError = failed || (!!out && typeof out === "object" && "error" in (out as Record<string, unknown>));
+      if (isError && ACTION_TOOLS.has(u.name)) void recordAction(ctx, { tool: u.name, summary: String((out as { error?: string }).error ?? "Refused").slice(0, 300), outcome: failed ? "failed" : "refused" });
+      results.push({ type: "tool_result" as const, tool_use_id: u.id, content: JSON.stringify(out).slice(0, 20_000), ...(isError ? { is_error: true } : {}) });
     }
     thread.push({ role: "user", content: results });
   }
   return { reply: reply || (t.actions.length ? "Done." : "I could not work that one out. Try asking in a different way."), engine: "claude", actions: t.actions, proposals: t.proposals, note: null };
+}
+
+/** For the smoke script: run one tool as the person, in chat mode (gated tools prepare) or confirm mode (they run). */
+export async function runBrendaTool(ctx: OrgContext, name: string, input: Record<string, unknown>, mode: "chat" | "confirm" = "chat") {
+  const t: ToolCtx = { ctx, base: `/app/${ctx.org.slug}`, actions: [], proposals: [], people: [], mode };
+  const out = await runTool(t, name, input);
+  return { out, actions: t.actions, proposals: t.proposals };
+}
+
+const ACTION_TOOLS = new Set(["create_todos", "assign_task", "update_task", "add_comment", "submit_for_review", "remind_me", "cancel_reminder", "complete_task", "clock", "timer", "send_message", "create_team", "invite_person", "set_status"]);
+
+/** Runs an action Brenda prepared, once the person pressed Confirm. The token is signed, expires and is bound to them. */
+export async function confirmAction(ctx: OrgContext, token: string): Promise<{ actions: Action[]; error: string | null }> {
+  const p = verifyPayload<{ k: string; o: string; m: string; tool: string; input: Record<string, unknown>; exp: number }>(token);
+  if (!p || p.k !== "brenda") throw invalid("That confirmation is not valid. Ask Brenda again.");
+  if (p.exp * 1000 < Date.now()) throw invalid("That confirmation expired. Ask Brenda again.");
+  if (p.o !== ctx.org.id || p.m !== ctx.membership.id) throw forbidden("That confirmation belongs to someone else.");
+  if (!ACTION_TOOLS.has(p.tool)) throw invalid("That action cannot be confirmed.");
+  const t: ToolCtx = { ctx, base: `/app/${ctx.org.slug}`, actions: [], proposals: [], people: [], mode: "confirm" };
+  const out = await runTool(t, p.tool, p.input) as { error?: string };
+  if (out && out.error) { void recordAction(ctx, { tool: p.tool, summary: out.error.slice(0, 300), outcome: "refused", source: "confirm" }); return { actions: [], error: out.error }; }
+  return { actions: t.actions, error: null };
 }
 
 // ---- Built-in helper: answers, and offers actions as buttons -------------------------------------
@@ -327,6 +459,23 @@ async function chatBuiltin(ctx: OrgContext, messages: { role: "user" | "assistan
   if (WORKERS.includes(role) && /\bclock\b/.test(lc) && /\b(in|out)\b/.test(lc)) {
     const isOut = /\bout\b/.test(lc);
     return out(`Press the button below to clock ${isOut ? "out" : "in"}. Your clock page keeps the history.`, [{ kind: isOut ? "clock_out" : "clock_in" }, { kind: "open", href: `${base}/clock`, label: "Your clock" }]);
+  }
+
+  if (/\b(waiting|what should i|brief|attention|due today|overdue)\b/.test(lc)) {
+    const b = await briefing(ctx);
+    const parts = [
+      b.dueToday.length ? `${b.dueToday.length} task${b.dueToday.length === 1 ? "" : "s"} due today` : null,
+      b.overdue.length ? `${b.overdue.length} overdue` : null,
+      b.waitingForYourReview.length ? `${b.waitingForYourReview.length} waiting for your review` : null,
+      b.assignmentsNotPickedUp.length ? `${b.assignmentsNotPickedUp.length} assignment${b.assignmentsNotPickedUp.length === 1 ? "" : "s"} nobody has picked up` : null,
+      b.remindersToday.length ? `${b.remindersToday.length} reminder${b.remindersToday.length === 1 ? "" : "s"} today` : null,
+    ].filter(Boolean);
+    const first = b.overdue[0] ?? b.dueToday[0] ?? null;
+    return out(parts.length ? `You have ${parts.join(", ")}.${first ? ` Start with “${first.title}”.` : ""}` : "Nothing is waiting on you right now.", [
+      ...(first && WORKERS.includes(role) && !b.timer ? [{ kind: "start_timer" as const, taskId: first.id, taskTitle: first.title }] : []),
+      ...(b.waitingForYourReview.length ? [{ kind: "open" as const, href: `${base}/reviews`, label: "Reviews" }] : []),
+      { kind: "open", href: `${base}/tasks`, label: "Tasks" },
+    ]);
   }
 
   const words = lc.split(/[^a-z]+/).filter((w) => w.length > 3 && !STOP.has(w));

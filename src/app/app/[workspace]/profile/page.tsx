@@ -7,6 +7,8 @@ import { ProfileForm } from "@/components/app/profile-form";
 import { PresencePicker } from "@/components/app/topbar";
 import { myProfile } from "@/server/services/profile";
 import { formatLongDate } from "@/lib/utils";
+import { brendaOverview } from "@/server/services/brenda";
+import { BrendaMyPrefs } from "@/components/app/brenda";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Your profile" };
@@ -15,7 +17,7 @@ export const metadata = { title: "Your profile" };
 export default async function ProfilePage({ params }: { params: Promise<{ workspace: string }> }) {
   const { workspace } = await params;
   const { ctx, counts, teams } = await workspacePage(workspace, `/app/${workspace}/profile`);
-  const me = await myProfile(ctx.user);
+  const [me, brenda] = await Promise.all([myProfile(ctx.user), brendaOverview(ctx)]);
   return (
     <AppShell ctx={ctx} counts={counts} teams={teams}>
       <PageHeader icon="person-laptop" back={{ href: `/app/${ctx.org.slug}`, label: "Home" }} title="Your profile" description="How you appear to the people you work with. Your picture, name and status show beside your name across the workspace." />
@@ -28,6 +30,12 @@ export default async function ProfilePage({ params }: { params: Promise<{ worksp
             <CardHeader title="Work status" description="Shown as the dot on your picture wherever your name appears." className="mb-1" />
             <PresencePicker value={me.presence} className="border-0 px-0 pb-0" />
           </Card>
+          {ctx.plan.features.AI_ASSISTANT ? (
+            <Card>
+              <CardHeader title="Brenda" description="What Brenda may do for you, and what she did." className="mb-1" />
+              <BrendaMyPrefs orgSlug={ctx.org.slug} initial={{ ...brenda, actions: brenda.actions.filter((a) => a.display_name === ctx.user.displayName) }} worker={ctx.membership.role === "employee" || ctx.membership.role === "manager"} />
+            </Card>
+          ) : null}
           <Card>
             <CardHeader title="Account" className="mb-2" />
             <dl className="space-y-2 text-sm">

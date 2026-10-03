@@ -31,8 +31,9 @@ export function statusOf(r: { clock_in_at: string; clock_out_at: string | null }
   return !r ? "not_in" : r.clock_out_at ? "out" : "in";
 }
 
-/** Clocks the caller in for today. Idempotent: a second press returns the existing record. */
-export async function clockIn(ctx: OrgContext, requestId?: string) {
+/** Clocks the caller in for today. Idempotent: a second press returns the existing record. `by` records whether Brenda did it. */
+export async function clockIn(ctx: OrgContext, requestId?: string, opts: { by?: "self" | "brenda" } = {}) {
+  const by = opts.by ?? "self";
   return withUser(ctx.user.profileId, async (db) => {
     const s = await scheduleFor(db, ctx.org.id, ctx.org.timezone);
     const now = new Date();
@@ -42,10 +43,10 @@ export async function clockIn(ctx: OrgContext, requestId?: string) {
     const start = instantOf(today, s.start_local, s.timezone).getTime() + s.clock_grace_minutes * 60_000;
     const late = Math.max(0, Math.round((now.getTime() - start) / 1000));
     const record = await db.one<AttendanceRow>(
-      `INSERT INTO attendance_days(organisation_id, membership_id, local_date, timezone, scheduled_start, scheduled_end, grace_minutes, clock_in_at, late_seconds)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
-      [ctx.org.id, ctx.membership.id, today, s.timezone, s.start_local, s.end_local, s.clock_grace_minutes, now.toISOString(), late]);
-    await audit(db, { organisationId: ctx.org.id, actorMembershipId: ctx.membership.id, action: "attendance.clock_in", subjectType: "attendance", subjectId: record.id, subjectMembershipId: ctx.membership.id, requestId, metadata: { localDate: today, lateSeconds: late } });
+      `INSERT INTO attendance_days(organisation_id, membership_id, local_date, timezone, scheduled_start, scheduled_end, grace_minutes, clock_in_at, late_seconds, clocked_in_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
+      [ctx.org.id, ctx.membership.id, today, s.timezone, s.start_local, s.end_local, s.clock_grace_minutes, now.toISOString(), late, by]);
+    await audit(db, { organisationId: ctx.org.id, actorMembershipId: ctx.membership.id, action: "attendance.clock_in", subjectType: "attendance", subjectId: record.id, subjectMembershipId: ctx.membership.id, requestId, metadata: { localDate: today, lateSeconds: late, by } });
     return { record, already: false as const };
   });
 }

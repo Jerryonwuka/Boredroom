@@ -185,11 +185,26 @@ export async function userFromSessionTokenIn(db: Db, token: string | undefined):
   };
 }
 
-/** The current user from the request cookie, inside a caller-provided system transaction. */
+/**
+ * The current user from the request cookie, inside a caller-provided system transaction. Without a cookie, an
+ * `Authorization: Bearer` token is accepted: the Brenda desktop app holds a desktop session token this way (owner
+ * decision, 3 October 2026). Browsers never attach that header on their own, so it does not widen what a page can do.
+ */
 export async function currentUserIn(db: Db): Promise<CurrentUser | null> {
   const jar = await cookies();
-  return userFromSessionTokenIn(db, jar.get(SESSION_COOKIE)?.value);
+  const cookie = jar.get(SESSION_COOKIE)?.value;
+  if (cookie) return userFromSessionTokenIn(db, cookie);
+  return userFromSessionTokenIn(db, await bearerToken());
 }
+
+async function bearerToken(): Promise<string | undefined> {
+  const h = (await headers()).get("authorization") ?? "";
+  const m = /^Bearer\s+([A-Za-z0-9_-]{20,200})$/.exec(h.trim());
+  return m?.[1];
+}
+
+/** Rate limits for unauthenticated endpoints outside this module (the desktop link). */
+export async function rateLimitIn(db: Db, bucket: string, limit: number, windowSeconds: number) { return rateLimit(db, bucket, limit, windowSeconds); }
 
 export async function userFromSessionToken(token: string | undefined): Promise<CurrentUser | null> {
   if (!token) return null;
@@ -206,7 +221,7 @@ export async function sessionCookieOptions() {
 /** Deduplicated per request: layouts, pages and helpers that all ask for the user share one lookup. */
 export const getCurrentUser = cache(async function getCurrentUser(): Promise<CurrentUser | null> {
   const jar = await cookies();
-  return userFromSessionToken(jar.get(SESSION_COOKIE)?.value);
+  return userFromSessionToken(jar.get(SESSION_COOKIE)?.value ?? (await bearerToken()));
 });
 
 export async function requireUser(): Promise<CurrentUser> {

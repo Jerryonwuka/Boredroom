@@ -22,6 +22,11 @@ export const controlCenterHandlers: Record<string, Handler> = {
     // More to send: queue the next batch under a fresh key so the rate stays gentle on the relay.
     if (r.remaining > 0) await withWorker((db) => enqueueJob(db, "campaign.send", { campaignId: payload.campaignId }, { dedupKey: `campaign.send:${payload.campaignId}:${Date.now()}`, runAt: new Date(Date.now() + 5_000) }));
   },
+  "brenda.tick": async () => {
+    const { brendaTick } = await import("../src/server/services/brenda");
+    const r = await brendaTick();
+    if (r.sent) console.log(`[worker] brenda sent ${r.sent} reminder(s)`);
+  },
   "automations.scheduled": async () => {
     const { runScheduledAutomations, expireSubscriptions } = await import("../src/server/admin/marketing");
     const { billingReminders } = await import("../src/server/admin/billing-reminders");
@@ -34,4 +39,6 @@ export const controlCenterHandlers: Record<string, Handler> = {
 /** Once a day: expire what has lapsed and run the time-based automations. Deduplicated on the date. */
 export async function scheduleControlCenter() {
   await withWorker((db) => enqueueJob(db, "automations.scheduled", {}, { dedupKey: `automations.scheduled:${new Date().toISOString().slice(0, 10)}` }));
+  // Brenda's reminders and nudges: every five minutes, one job per window.
+  await withWorker((db) => enqueueJob(db, "brenda.tick", {}, { dedupKey: `brenda.tick:${Math.floor(Date.now() / 300_000)}` }));
 }

@@ -1,14 +1,13 @@
 "use client";
 
 /**
- * The workspace assistant: a floating sparkle bottom right on every page opens a side panel to ask anything about
- * the platform, dictated or typed, in the prompt box from the owner's reference. Replies may carry proposals (add a
- * to-do, clock in, start a timer, open a page); each is a button here that calls the normal endpoint, so the
- * assistant never changes anything on its own.
+ * Brenda (owner decision, 3 October 2026): a floating sparkle bottom right on every page opens a side panel to talk to
+ * her, typed or spoken. Her own-work actions come back as done lines; anything that lands on someone else comes back
+ * as a prepared action with Confirm and Not now, and only runs when the person presses Confirm.
  */
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
-import { AlarmClock, ArrowUpRight, Check, Play, Plus, Sparkles, X } from "lucide-react";
+import { AlarmClock, ArrowUpRight, Check, Play, Plus, Sparkles, X, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import { Alert } from "@/components/ui/states";
@@ -21,7 +20,7 @@ import { api, isApiFailure } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import type { Action, ChatResult, Proposal } from "@/server/services/copilot";
 
-type Msg = { role: "user" | "assistant"; content: string; actions?: Action[]; proposals?: (Proposal & { done?: string })[]; engine?: ChatResult["engine"]; note?: string | null };
+type Msg = { role: "user" | "assistant"; content: string; actions?: Action[]; proposals?: (Proposal & { done?: string; pending?: boolean })[]; engine?: ChatResult["engine"]; note?: string | null };
 
 // Where the floating button sits. Dragged positions are remembered per browser; nothing set means bottom right.
 const POS_KEY = "boredroom-assistant-pos";
@@ -42,8 +41,8 @@ function useFloatingPosition() {
 }
 
 const STARTERS: Record<"org" | "worker", string[]> = {
-  org: ["Who has clocked in today?", "Who is working right now?", "Message everyone: stand-up moves to 10:00 tomorrow", "Create a team called Design"],
-  worker: ["What is on my day?", "Clock me in", "Add to-dos: finish the homepage by Friday, then update the deck", "Start the timer on my first task"],
+  org: ["What's waiting for me today?", "Who is working right now?", "Which assignments has nobody picked up?", "Remind me to review the payroll at 4pm"],
+  worker: ["What's waiting for me today?", "What should I work on first?", "Start the timer on my highest-priority task", "Remind me to call Josh at 7"],
 };
 
 export function AssistantDrawer({ orgSlug, isOrg, firstName, floating = false }: { orgSlug: string; isOrg: boolean; firstName: string; floating?: boolean }) {
@@ -108,6 +107,12 @@ export function AssistantDrawer({ orgSlug, isOrg, firstName, floating = false }:
       else if (p.kind === "clock_in") { await api(`/api/orgs/${orgSlug}/clock/in`, { method: "POST" }); mark("Clocked in"); }
       else if (p.kind === "clock_out") { await api(`/api/orgs/${orgSlug}/clock/out`, { method: "POST" }); mark("Clocked out"); }
       else if (p.kind === "start_timer") { await api(`/api/orgs/${orgSlug}/sessions/start`, { method: "POST", body: { taskId: p.taskId } }); mark("Started"); }
+      else if (p.kind === "confirm") {
+        const r = await api<{ actions: Action[]; error: string | null }>(`/api/orgs/${orgSlug}/brenda/confirm`, { method: "POST", body: { token: p.token }, retries: 0 });
+        if (r.error) { setError(r.error); return; }
+        mark("Done");
+        if (r.actions.length) setMessages((cur) => cur.map((m, i) => (i === mi ? { ...m, actions: [...(m.actions ?? []), ...r.actions] } : m)));
+      }
       router.refresh();
     } catch (err) { setError(isApiFailure(err) ? err.error.message : "Cannot reach the server."); }
   }
@@ -118,7 +123,7 @@ export function AssistantDrawer({ orgSlug, isOrg, firstName, floating = false }:
   return (
     <>
       {floating ? (
-        <button ref={fabRef} type="button" aria-label="Assistant" aria-expanded={open} aria-controls="assistant-drawer" data-tip="Assistant. Drag to move it"
+        <button ref={fabRef} type="button" aria-label="Brenda" aria-expanded={open} aria-controls="assistant-drawer" data-tip="Brenda. Drag to move her"
           onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={() => { drag.current = null; }}
           onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpen((v) => !v); } }}
           style={pos ? { left: pos.x, top: pos.y, right: "auto", bottom: "auto" } : undefined}
@@ -127,17 +132,17 @@ export function AssistantDrawer({ orgSlug, isOrg, firstName, floating = false }:
           <Sparkles className="size-6 pointer-events-none" aria-hidden />
         </button>
       ) : (
-        <IconButton aria-label="Assistant" aria-expanded={open} aria-controls="assistant-drawer" onClick={() => setOpen((v) => !v)} className={cn(open && "border-accent/60 text-accent")}>
+        <IconButton aria-label="Brenda" aria-expanded={open} aria-controls="assistant-drawer" onClick={() => setOpen((v) => !v)} className={cn(open && "border-accent/60 text-accent")}>
           <Sparkles className="size-[18px]" aria-hidden />
         </IconButton>
       )}
       {open ? <button type="button" aria-label="Close assistant" className="fixed inset-0 z-[var(--z-overlay)] bg-[var(--overlay)] md:bg-transparent" onClick={close} /> : null}
-      <aside id="assistant-drawer" role="dialog" aria-label="Assistant" aria-hidden={!open} data-refresh-safe
+      <aside id="assistant-drawer" role="dialog" aria-label="Brenda" aria-hidden={!open} data-refresh-safe
         className={cn("fixed inset-y-0 right-0 z-[var(--z-dialog)] flex w-full max-w-[26rem] flex-col border-l border-border bg-bg-elevated shadow-[var(--card-shadow)] transition-transform duration-[var(--duration)] ease-[var(--ease-out)]", open ? "translate-x-0" : "translate-x-full")}>
         <header className="flex items-center justify-between gap-3 border-b border-border-soft px-5 py-4">
           <div className="flex items-center gap-3">
             <div className="grid size-9 place-items-center rounded-full bg-accent-soft"><Sparkles className="size-4 text-accent" aria-hidden /></div>
-            <div><p className="eyebrow eyebrow-accent">Assistant</p><h2 className="font-display text-lg leading-tight">What do you need, {firstName}?</h2></div>
+            <div><p className="eyebrow eyebrow-accent">Brenda</p><h2 className="font-display text-lg leading-tight">What do you need, {firstName}?</h2></div>
           </div>
           <IconButton aria-label="Close" onClick={close}><X className="size-[18px]" aria-hidden /></IconButton>
         </header>
@@ -145,7 +150,7 @@ export function AssistantDrawer({ orgSlug, isOrg, firstName, floating = false }:
         <div ref={listRef} className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
           {messages.length === 0 ? (
             <div className="space-y-3">
-              <p className="text-sm text-fg-muted">Ask for anything on the platform and it gets done: {isOrg ? "assign work, message people, create teams, invite someone, see who is working or clocked in" : "add to-dos, start the timer, clock in, message someone, set your status"}. It acts as you, with your permissions.</p>
+              <p className="text-sm text-fg-muted">I&apos;m Brenda. Tell me what you need done and I&apos;ll take care of it: {isOrg ? "see what is waiting, assign work, follow up on tasks nobody picked up, message people, set reminders" : "see what is waiting, start and stop your timer, clock in, update your tasks, set reminders"}. I act as you, with your permissions, and I ask before anything that lands on someone else.</p>
               <ul className="space-y-1.5">{starters.map((s) => <li key={s}><button type="button" className="chip chip-link w-full px-3 py-2 text-left text-sm" onClick={() => void send(s)}>{s}</button></li>)}</ul>
             </div>
           ) : null}
@@ -163,7 +168,17 @@ export function AssistantDrawer({ orgSlug, isOrg, firstName, floating = false }:
                   ))}</ul>
                 ) : null}
                 {m.proposals?.length ? (
-                  <ul className="space-y-1.5 pl-6">{m.proposals.map((p, pi) => (
+                  <ul className="space-y-1.5 pl-6">{m.proposals.map((p, pi) => p.kind === "confirm" ? (
+                    <li key={pi} className="rounded-[var(--radius-sm)] border border-accent/40 bg-accent-soft/40 px-3 py-2.5">
+                      <p className="flex items-start gap-2 text-sm"><ShieldCheck className="mt-0.5 size-4 shrink-0 text-accent" aria-hidden /><span className="min-w-0">{p.summary}</span></p>
+                      <div className="mt-2 flex items-center justify-end gap-2">
+                        {p.done ? <span className="text-xs text-fg-subtle">{p.done}</span> : <>
+                          <Button size="sm" variant="ghost" onClick={() => setMessages((cur) => cur.map((x, i) => (i === mi && x.proposals ? { ...x, proposals: x.proposals.map((y, j) => (j === pi ? { ...y, done: "Not done" } : y)) } : x)))}>Not now</Button>
+                          <Button size="sm" onClick={() => void act(mi, pi, p)}><Check className="size-3.5" aria-hidden />Confirm</Button>
+                        </>}
+                      </div>
+                    </li>
+                  ) : (
                     <li key={pi} className="chip flex items-center justify-between gap-2 px-3 py-2">
                       <span className="min-w-0 flex-1 truncate text-sm">
                         {p.kind === "todo" ? <>{p.title}{p.assigneeName ? <span className="text-fg-subtle"> for {p.assigneeName}</span> : null}</> : p.kind === "clock_in" ? "Clock in" : p.kind === "clock_out" ? "Clock out" : p.kind === "start_timer" ? <>Start <span className="text-fg-muted">{p.taskTitle}</span></> : p.label}
@@ -176,7 +191,7 @@ export function AssistantDrawer({ orgSlug, isOrg, firstName, floating = false }:
                     </li>
                   ))}</ul>
                 ) : null}
-                {m.role === "assistant" && (m.engine === "builtin" || m.note) ? <p className="eyebrow pl-6 normal-case tracking-normal">{m.note ?? "Built-in helper; the AI is not connected yet."}</p> : null}
+                {m.role === "assistant" && (m.engine === "builtin" || m.note) ? <p className="eyebrow pl-6 normal-case tracking-normal">{m.note ?? "Brenda's built-in helper: the AI is not connected yet, so she suggests instead of acting."}</p> : null}
               </div>
             </div>
           ))}
@@ -186,7 +201,7 @@ export function AssistantDrawer({ orgSlug, isOrg, firstName, floating = false }:
         </div>
 
         <div className="border-t border-border-soft p-3">
-          <PromptInputBox value={text} onValueChange={setText} onSend={(m) => void send(m)} isLoading={pending} placeholder={isOrg ? "e.g. Who is late today?" : "e.g. What should I start with?"}
+          <PromptInputBox value={text} onValueChange={setText} onSend={(m) => void send(m)} isLoading={pending} placeholder={isOrg ? "Tell Brenda what you need…" : "Tell Brenda what you need…"}
             recording={dictation.listening} onToggleRecording={() => void dictation.toggle()} recordingSupported={dictation.supported !== false}
             recordingView={
               <div className="flex items-center gap-3 rounded-[16px] border border-accent/40 bg-accent-soft/40 p-2 pr-3">

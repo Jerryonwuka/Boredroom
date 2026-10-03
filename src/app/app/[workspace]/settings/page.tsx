@@ -7,6 +7,9 @@ import { Badge } from "@/components/ui/badge";
 import { settingsView } from "@/server/services/views";
 import { OrgSettingsForm, ScheduleForm, PolicyForm, GrantsPanel, AssistantConnectionForm, RecordingSwitch } from "@/components/app/settings-forms";
 import { assistantStatus } from "@/server/services/orgs";
+import { brendaOverview } from "@/server/services/brenda";
+import { BrendaOrgSettings } from "@/components/app/brenda";
+import { Sparkles } from "lucide-react";
 import { orgBilling } from "@/server/admin/billing";
 import { BillingCard } from "@/components/app/billing-card";
 import Link from "next/link";
@@ -19,7 +22,7 @@ export default async function SettingsPage({ params, searchParams }: { params: P
   const sp = await searchParams;
   const { ctx, counts, teams: navTeams } = await workspacePage(workspace, `/app/${workspace}/settings`);
   if (!["owner", "hr"].includes(ctx.membership.role)) return <AppShell ctx={ctx} counts={counts} teams={navTeams}><PermissionDenied /></AppShell>;
-  const [{ policy, schedule, grants, members, teams, counts: c }, ai, billing] = await Promise.all([settingsView(ctx), assistantStatus(ctx), orgBilling(ctx)]);
+  const [{ policy, schedule, grants, members, teams, counts: c }, ai, billing, brenda] = await Promise.all([settingsView(ctx), assistantStatus(ctx), orgBilling(ctx), brendaOverview(ctx)]);
   const isOwner = ctx.membership.role === "owner";
   const checklist = [
     { label: "Workspace created", done: true },
@@ -41,8 +44,13 @@ export default async function SettingsPage({ params, searchParams }: { params: P
             {isOwner ? <RecordingSwitch orgSlug={ctx.org.slug} mode={policy?.recording_mode ?? "disabled"} /> : <Alert tone="info">Only owners can change this.</Alert>}
           </Card>
           <Card>
-            <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="flex items-center gap-3 font-display text-lg"><img src="/icons/day-checklist.png" alt="" className="size-8" />AI assistant</h2><Badge tone={ai.source === "none" ? "warning" : "success"} dot>{ai.source === "none" ? "Not connected (built-in parser)" : ai.source === "organisation" ? `Connected, Claude (${ai.model})` : "Connected via server key"}</Badge></div>
-            <p className="mb-3 text-sm text-fg-muted">The assistant on My Day turns typed or dictated notes into to-dos. Connect an Anthropic API key so it runs on Claude; without one a simple built-in parser is used and the page says so. The key is tested with one request, then stored encrypted and never shown again.</p>
+            <div className="mb-1 flex flex-wrap items-center justify-between gap-2"><h2 className="flex items-center gap-3 font-display text-lg"><span className="grid size-8 place-items-center rounded-full bg-accent-soft"><Sparkles className="size-4 text-accent" aria-hidden /></span>Brenda</h2><Badge tone={ai.source === "none" ? "warning" : "success"}>{ai.source === "none" ? "AI not connected" : "on Claude"}</Badge></div>
+            <p className="mb-3 text-sm text-fg-muted">Brenda is the AI teammate in every workspace page. She reads what each person is allowed to see, does their own work for them, and asks before anything that lands on someone else. Every action is logged below.</p>
+            <BrendaOrgSettings orgSlug={ctx.org.slug} initial={brenda} canEdit />
+          </Card>
+          <Card>
+            <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="flex items-center gap-3 font-display text-lg"><img src="/icons/day-checklist.png" alt="" className="size-8" />Brenda&apos;s AI connection</h2><Badge tone={ai.source === "none" ? "warning" : "success"} dot>{ai.source === "none" ? "Not connected (built-in parser)" : ai.source === "organisation" ? `Connected, Claude (${ai.model})` : "Connected via server key"}</Badge></div>
+            <p className="mb-3 text-sm text-fg-muted">Brenda runs on Claude. Connect an Anthropic API key so she can act; without one a simple built-in helper answers and only suggests, and says so. The key is tested with one request, then stored encrypted and never shown again.</p>
             {isOwner ? <AssistantConnectionForm orgSlug={ctx.org.slug} status={ai} /> : <Alert tone="info">Only owners can connect the assistant.</Alert>}
           </Card>
           <Card id="billing"><CardHeader title="Plan and billing" description="What the organisation is on, and the other plans. Paid plans are billed through Paystack." /><BillingCard preselect={sp.plan} orgSlug={ctx.org.slug} data={billing} notice={sp.billing} /></Card>

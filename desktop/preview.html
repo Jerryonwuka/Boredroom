@@ -1,0 +1,29 @@
+<!doctype html>
+<!-- Layout preview of the notch in an ordinary browser, with sample data. Not part of the app. Open with ?state=link|compact|briefing|timer|reminder -->
+<html lang="en"><head><meta charset="utf-8"><title>Brenda notch preview</title><link rel="stylesheet" href="src/style.css">
+<style>html,body{background:radial-gradient(120% 90% at 70% 110%,#1a3cff,#050b33 60%,#020311)!important;height:100%;overflow:auto!important} #frame{width:420px;margin:0 auto}</style></head>
+<body><div id="frame"><main id="notch" class="notch compact"></main></div>
+<script>
+const state = new URLSearchParams(location.search).get("state") || "briefing";
+const now = new Date().toISOString();
+const sample = {
+  serverNow: now, me: { displayName: "Ada Employee", role: "employee", presence: "active" }, workspace: { slug: "company-a", name: "Company A" }, brendaEnabled: true,
+  settings: { autoClockIn: true, reminders: true }, prefs: { autoClockIn: true, reminders: true },
+  clock: { status: "in", workingDay: true, startAt: now, endAt: now, clockInAt: now, lateSeconds: 0 },
+  timer: state === "timer" || state === "compact" ? { id: "s1", version: 3, state: "running", taskId: "t1", taskTitle: "KITA onboarding flow", confirmedSeconds: 2832, openIntervalStartedAt: now, serverNow: now, estimateMinutes: 180, progress: 60, taskVersion: 4 } : null,
+  briefing: { openTasks: 5, dueToday: [{ id: "t1", title: "KITA onboarding flow", due: now }], dueTomorrow: [{ id: "t3", title: "Brand deck refresh", due: now }], overdue: [{ id: "t2", title: "Landing page copy", due: now }], waitingForYourReview: [], assignmentsNotPickedUp: [], remindersToday: [], waitingForTheirCheck: [] },
+  notifications: state === "reminder" ? [{ id: "n1", type: "brenda.reminder", title: "Reminder: Call Josh", body: "You asked Brenda to remind you.", href: null, created_at: now }] : [],
+};
+window.__TAURI__ = {
+  core: { invoke: async (cmd) => {
+    if (cmd === "get_config") return state === "link" ? { baseUrl: "https://boredroom.cc", signedIn: false } : { baseUrl: "https://boredroom.cc", signedIn: true, workspaceSlug: "company-a", workspaceName: "Company A", displayName: "Ada Employee" };
+    if (cmd === "api") return sample.notifications.length || state !== "reminder" ? sample : sample;
+    if (cmd === "set_notch_size") return;
+    return {};
+  } },
+  event: { listen: () => {} },
+};
+try { localStorage.clear(); } catch {}
+</script>
+<script src="src/main.js"></script>
+</body></html>
