@@ -10,7 +10,8 @@
   interface and a display face (Geist, standing in for their proprietary Waldenburg) for page titles. Orange marks what
   is live, active, chosen or the one thing to do (the accent rules, owner decision 6 October 2026: the active nav icon,
   tab underlines, attention counts, the one standout button, live dots and timers, progress, checked boxes, selected
-  rows), 3 to 6 small touches a screen, never decoration. No gradients, no glass, no glow, no aurora.
+  rows), 3 to 6 small touches a screen, never decoration. No gradients, no glass, no glow, no aurora (one exception,
+  owner decision 7 October 2026: Brenda's home panel and orb, §5).
   docs/design-system.md records the decisions; /dev/design shows every part.
 
   Order of this file:
@@ -649,6 +650,87 @@ html[data-brenda-chat] #workspace-sidebar, html:has([data-brenda-chat-view]) #wo
   .brenda-face, .brenda-face *, .brenda-shimmer { animation: none !important; transition: none !important; }
   .brenda-shimmer { -webkit-text-fill-color: currentColor; }
   .rec-dot, .presence-live { animation: none; }
+}
+
+/* Her home (owner decision, 7 October 2026: "I want the Brenda tab to look just like this, but instead of the purple
+   gradient let it be our orange"). THE ONE EXCEPTION to "no gradients, no glow" (docs/design-system.md, "Brenda's
+   home panel"): her home panel, near-black at its edges warming to orange towards the upper middle (white with a soft
+   peach glow in light); the orb she floats in, whose light breathes slowly (still under reduced motion); and her box
+   (`.prompt-hero`, PromptInputBox variant="hero"), an orange-tinted hairline with a faint glow inside it. Her canvas
+   blends by luminosity inside the orb, so her mood light takes the orb's orange instead of its own colour. */
+:root, [data-theme="dark"] {
+  --brenda-panel-base: #0b0b0c;
+  --brenda-glow-hot: rgb(255 61 0 / 0.16);
+  --brenda-glow: rgb(255 108 2 / 0.13);
+  --brenda-glow-wide: rgb(255 108 2 / 0.05);
+  --brenda-orb-light: rgb(255 214 178 / 0.4);
+  --brenda-orb-core: #c2500c;
+  --brenda-orb-mid: #6a2405;
+  --brenda-orb-edge: #2a0e04;
+  --brenda-orb-rim: rgb(255 154 77 / 0.45);
+  --brenda-orb-halo: rgb(255 108 2 / 0.3);
+  --brenda-orb-halo-wide: rgb(255 61 0 / 0.14);
+  --brenda-box-ring: rgb(255 108 2 / 0.32);
+  --brenda-box-glow: rgb(255 108 2 / 0.07);
+}
+[data-theme="light"] {
+  --brenda-panel-base: #ffffff;
+  --brenda-glow-hot: rgb(255 110 30 / 0.12);
+  --brenda-glow: rgb(255 140 60 / 0.14);
+  --brenda-glow-wide: rgb(255 170 110 / 0.1);
+  --brenda-orb-light: rgb(255 255 255 / 0.75);
+  --brenda-orb-core: #ffa766;
+  --brenda-orb-mid: #ffc99f;
+  --brenda-orb-edge: #ffe4cf;
+  --brenda-orb-rim: rgb(242 95 0 / 0.3);
+  --brenda-orb-halo: rgb(255 120 40 / 0.24);
+  --brenda-orb-halo-wide: rgb(255 140 60 / 0.12);
+  --brenda-box-ring: rgb(242 95 0 / 0.3);
+  --brenda-box-glow: rgb(242 95 0 / 0.05);
+}
+:root, [data-theme] {
+  /* Translucent over the panel's glow: her box, the chips and the cards. */
+  --brenda-fill: color-mix(in srgb, var(--background) 62%, transparent);
+}
+@layer components {
+.brenda-panel { position: relative; overflow: clip; border: 1px solid var(--border); border-radius: 22px;
+  background:
+    radial-gradient(55% 42% at 60% 4%, var(--brenda-glow-hot), transparent 70%),
+    radial-gradient(75% 58% at 50% 20%, var(--brenda-glow), transparent 72%),
+    radial-gradient(130% 95% at 50% 0%, var(--brenda-glow-wide), transparent 78%),
+    var(--brenda-panel-base);
+  /* Unrepeated: a repeat would draw the glow's hot top edge again under the translucent bottom hairline. */
+  background-repeat: no-repeat; }
+.brenda-orb { position: relative; isolation: isolate; display: grid; place-items: center; width: 120px; height: 120px; border-radius: 9999px;
+  background:
+    radial-gradient(56% 34% at 50% 15%, var(--brenda-orb-light), transparent 100%),
+    radial-gradient(circle 72px at 50% 60%, var(--brenda-orb-core) 0%, var(--brenda-orb-mid) 55%, var(--brenda-orb-edge) 100%);
+  box-shadow: inset 0 0 0 1px var(--brenda-orb-rim), inset 0 -14px 30px -6px var(--brenda-orb-halo); }
+.brenda-orb::before { content: ""; position: absolute; inset: 0; z-index: -1; border-radius: inherit; pointer-events: none;
+  box-shadow: 0 0 44px 6px var(--brenda-orb-halo), 0 0 120px 28px var(--brenda-orb-halo-wide);
+  animation: brenda-orb 6s ease-in-out infinite; }
+/* Her canvas is a rectangle smaller than the orb and her mood light runs past its bottom edge, so unmasked it draws a
+   straight line across the sphere; the mask fades the canvas out before its edges (her face stays whole). */
+.brenda-orb > canvas { mix-blend-mode: luminosity; mask-image: radial-gradient(closest-side, #000 62%, transparent); }
+/* Listening (a live microphone): her orb's light is brighter. */
+.brenda-orb[data-live] { --brenda-orb-halo: color-mix(in srgb, var(--accent) 48%, transparent); }
+.prompt-hero { position: relative; width: 100%; border-radius: 16px; background: var(--brenda-fill);
+  box-shadow: inset 0 0 0 1px var(--brenda-box-ring), inset 0 0 28px var(--brenda-box-glow), var(--elev-natural-xs);
+  transition: box-shadow var(--duration) var(--ease-out); }
+/* Focused: the hairline turns solid orange with a soft outer ring, a clear change from the resting 32% tint. */
+.prompt-hero:focus-within, .prompt-hero[data-recording] {
+  box-shadow: inset 0 0 0 1px var(--accent), inset 0 0 32px var(--brenda-box-glow), 0 0 0 4px var(--brenda-box-glow), var(--elev-natural-xs); }
+/* Docked under her chat: solid, so the conversation never shows through (the Brenda contract). */
+.prompt-hero-sm { border-radius: 14px; background: var(--surface); }
+}
+/* Her canvas takes the keyboard (a poke). Its mask would hide a ring drawn on the canvas, and an orange ring would vanish
+   into the orange orb (about 1.7:1), so the orb itself carries the ring, round, in the foreground: white on the dark
+   panel, near-black on the light one, over 4.5:1 either way. Outside any layer, so it beats the page-wide ring. */
+.brenda-orb > canvas:focus-visible { outline: none; }
+.brenda-orb:has(> canvas:focus-visible) { outline: 2px solid var(--foreground); outline-offset: 3px; }
+@keyframes brenda-orb { 0%, 100% { opacity: 0.75; scale: 1; } 50% { opacity: 1; scale: 1.05; } }
+@media (prefers-reduced-motion: reduce) {
+  .brenda-orb::before { animation: none; opacity: 1; }
 }
 
 /* ---------------------------------------------------------------------------------------------------------------

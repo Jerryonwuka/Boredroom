@@ -15,10 +15,19 @@
  *
  * While dictating, the notch's voice card sits above the text, inside the pill (owner decision, 5 October 2026;
  * VoiceCapture). The page-wide tooltip layer labels the microphone and Send from their accessible names.
+ *
+ * `variant="hero"` is Brenda's home box (owner decision, 7 October 2026: her home "just like" the reference AI chat
+ * home, in our orange): r16, a 1px orange-tinted hairline with a faint orange glow inside it, translucent over her home
+ * panel's glow (globals.css `.prompt-hero`); her glyph in orange at the top left, then the text with room for two or
+ * three lines; on a bottom row, `leading` as ghost text actions on the left (`PromptTextAction`: "More asks") and the
+ * round microphone and Send on the right. `size="sm"` is the same box docked under her chat: one line to start, 32px
+ * actions, and solid (`--surface`) so the conversation never shows through. Same props, dictation and voice card.
  */
 import * as React from "react";
 import { ArrowUp, Mic, Square } from "lucide-react";
+import { BrendaGlyph } from "@/components/app/brenda-glyph";
 import { VoiceCapture } from "@/components/app/voice-capture";
+import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 // ---- Prompt input -----------------------------------------------------------
@@ -61,6 +70,11 @@ export const PromptAction = React.forwardRef<HTMLButtonElement, React.ButtonHTML
   return <button ref={ref} type={type} className={cn("grid size-9 shrink-0 place-items-center rounded-full text-secondary transition-colors duration-75 hover:bg-fill-1 hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ring)] disabled:pointer-events-none disabled:opacity-50 [&_svg]:size-[18px]", className)} {...props} />;
 });
 
+/** A ghost text action with its icon for the hero box's bottom row ("More asks"): 32px, 13px medium, secondary grey. */
+export const PromptTextAction = React.forwardRef<HTMLButtonElement, React.ButtonHTMLAttributes<HTMLButtonElement>>(function PromptTextAction({ className, type = "button", ...props }, ref) {
+  return <button ref={ref} type={type} className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "rounded-lg px-2", className)} {...props} />;
+});
+
 // ---- The box ------------------------------------------------------------------
 
 export interface PromptInputBoxProps {
@@ -94,16 +108,63 @@ export interface PromptInputBoxProps {
   trailing?: React.ReactNode;
   /** The textarea's growth limit in px (200 by default). */
   maxHeight?: number;
+  /** "pill" (default): the r26 pill with its round actions on one line (the drawer). "hero": Brenda's home box (see above). */
+  variant?: "pill" | "hero";
+  /** The hero box's size: "md" on her home screen, "sm" docked under her chat (solid, one line to start). */
+  size?: "md" | "sm";
 }
 
-export const PromptInputBox = React.forwardRef<HTMLDivElement, PromptInputBoxProps>(function PromptInputBox({ value, onValueChange, onSend, isLoading = false, placeholder = "Ask anything…", className, label = "Message Brenda", recording = false, onToggleRecording, recordingSupported = true, transcribing = false, recordingHint, recordingHeard, onCancelRecording, recordingView, recordingPlaceholder = "Listening… your words appear here", leading, trailing, maxHeight = 200 }, ref) {
+export const PromptInputBox = React.forwardRef<HTMLDivElement, PromptInputBoxProps>(function PromptInputBox({ value, onValueChange, onSend, isLoading = false, placeholder = "Ask anything…", className, label = "Message Brenda", recording = false, onToggleRecording, recordingSupported = true, transcribing = false, recordingHint, recordingHeard, onCancelRecording, recordingView, recordingPlaceholder = "Listening… your words appear here", leading, trailing, maxHeight = 200, variant = "pill", size = "md" }, ref) {
   // While dictating (or writing the words out), Send is allowed with an empty box: the parent waits for the words and sends them.
   const hasContent = value.trim() !== "" || recording || transcribing;
   const submit = () => { if (hasContent && !isLoading) onSend(value.trim()); };
   const mic = !!onToggleRecording && recordingSupported;
+  const hero = variant === "hero";
   const voice = recording && recordingView ? recordingView
-    : recording || transcribing ? <VoiceCapture compact phase={recording ? "listening" : "working"} hint={recordingHint} heard={recordingHeard} onCancel={onCancelRecording} />
+    : recording || transcribing ? <VoiceCapture compact phase={recording ? "listening" : "working"} hint={recordingHint} heard={recordingHeard} onCancel={onCancelRecording} className={hero ? "rounded-[10px]" : undefined} />
     : null;
+
+  if (hero) {
+    const sm = size === "sm";
+    const round = cn("grid shrink-0 place-items-center rounded-full transition-colors duration-75 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ring)] pointer-coarse:size-10", sm ? "size-8 [&_svg]:size-4" : "size-9 [&_svg]:size-[18px]");
+    return (
+      <div ref={ref} className="w-full">
+        <PromptInputContext.Provider value={{ isLoading, value, setValue: onValueChange, maxHeight, onSubmit: submit, disabled: isLoading }}>
+          {/* A press on the box's own blank space (beside her glyph, between the actions) puts the cursor in the text. */}
+          <div data-recording={recording || undefined} className={cn("prompt-hero", sm && "prompt-hero-sm", className)}
+            onMouseDown={(e) => {
+              if ((e.target as HTMLElement).closest("button, a, textarea, input, [role=menu]")) return;
+              const field = e.currentTarget.querySelector("textarea");
+              if (field && !field.disabled) { e.preventDefault(); field.focus(); }
+            }}>
+            {voice ? <div className="px-2 pt-2">{voice}</div> : null}
+            <div className={cn("flex items-start", sm ? "gap-2.5 px-3 pt-3" : "gap-3 px-4 pt-4")}>
+              <BrendaGlyph aria-hidden className="mt-0.5 size-5 shrink-0 text-accent" />
+              <PromptInputTextarea placeholder={recording ? recordingPlaceholder : placeholder} aria-label={label}
+                className={cn("py-0", sm ? "min-h-6" : "min-h-12 sm:min-h-[72px]")} />
+            </div>
+            <div className={cn("flex items-center gap-1", sm ? "px-2 pb-2 pt-1" : "px-3 pb-3 pt-2")}>
+              {leading ? <div className="flex min-w-0 items-center gap-0.5">{leading}</div> : null}
+              <div className="ml-auto flex shrink-0 items-center gap-1.5">
+                {trailing ? <div className="mr-1 flex items-center gap-1">{trailing}</div> : null}
+                {mic ? (
+                  <button type="button" onClick={onToggleRecording} disabled={transcribing} aria-pressed={recording} aria-label={recording ? "Stop dictating" : "Dictate"}
+                    className={cn(round, "disabled:cursor-not-allowed disabled:opacity-50", recording ? "bg-fill-150 text-accent" : "bg-fill-1 text-secondary hover:bg-fill-150 hover:text-foreground")}>
+                    {recording ? <Square className="!size-3.5 fill-current" aria-hidden /> : <Mic aria-hidden />}
+                  </button>
+                ) : null}
+                <button type="button" onClick={submit} disabled={isLoading || !hasContent} aria-label="Send" data-tip={recording ? "Stop dictating and send" : undefined}
+                  className={cn(round, "disabled:cursor-not-allowed", hasContent && !isLoading ? "bg-accent text-accent-fg hover:bg-accent-hover" : "bg-fill-150 text-subtle")}>
+                  {isLoading ? <Square className="!size-3 animate-pulse fill-current" aria-hidden /> : <ArrowUp strokeWidth={2.25} aria-hidden />}
+                </button>
+              </div>
+            </div>
+          </div>
+        </PromptInputContext.Provider>
+      </div>
+    );
+  }
+
   return (
     <div ref={ref} className="w-full">
       <PromptInput value={value} onValueChange={onValueChange} isLoading={isLoading} onSubmit={submit} maxHeight={maxHeight} className={cn(recording && "shadow-[0_0_0_1px_var(--accent-ring),var(--elev-natural-xs)] focus-within:shadow-[0_0_0_1px_var(--accent-ring),var(--elev-natural-xs)]", className)} disabled={isLoading}>

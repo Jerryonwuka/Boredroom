@@ -4,6 +4,7 @@ import { BrendaHome, type HomeData } from "@/components/app/brenda-home";
 import { briefing } from "@/server/services/brenda";
 import { teamStatus } from "@/server/services/views";
 import { attendanceBoard } from "@/server/services/attendance";
+import { assistantConfigured } from "@/server/services/assistant";
 import { getConversation, listConversations } from "@/server/services/brenda-history";
 import { localParts } from "@/server/lib/time";
 import { formatLongDate } from "@/lib/utils";
@@ -18,7 +19,9 @@ type Search = { ask?: string | string[]; tab?: string | string[]; chat?: string 
  * you talk or type, and she does it. v4 (6 October 2026): laid out like the ElevenLabs Home, with your day, your past
  * chats and (for team leads and the organisation) your team under underline tabs beneath her box. Her chat keeps past
  * chats in a column beside it: `?chat=` opens one of them, `?tab=history` opens the chat on the list (links from the
- * drawer and elsewhere).
+ * drawer and elsewhere). Her home (owner decision, 7 October 2026) is one large panel with an orange glow, her status
+ * (which engine answers: Claude when the organisation's assistant is connected, else the built-in helper), her box,
+ * quick asks and three action cards; your day and your team follow under it.
  */
 export default async function HomePage({ params, searchParams }: { params: Promise<{ workspace: string }>; searchParams: Promise<Search> }) {
   const { workspace } = await params;
@@ -31,13 +34,15 @@ export default async function HomePage({ params, searchParams }: { params: Promi
   const role = ctx.membership.role;
   const lead = role !== "employee";
   const aiEnabled = ctx.plan.features.AI_ASSISTANT === true;
-  const [brief, team, attendance, history, chat] = await Promise.all([
+  const [brief, team, attendance, history, chat, connected] = await Promise.all([
     briefing(ctx),
     lead ? teamStatus(ctx).then((s) => s.rows) : Promise.resolve([]),
     role === "owner" || role === "hr" ? attendanceBoard(ctx).then((a) => a.counts) : Promise.resolve(null),
     // Past chats are only shown while the plan includes Brenda (carrying one on needs her).
     aiEnabled ? listConversations(ctx) : Promise.resolve([]),
     aiEnabled && chatId ? getConversation(ctx, chatId) : Promise.resolve(null),
+    // Which engine answers her: the organisation's own key or the server's (Claude), else the built-in helper.
+    aiEnabled ? assistantConfigured(ctx.org.id) : Promise.resolve(false),
   ]);
   const now = new Date();
   const hour = localParts(now, ctx.org.timezone).hour;
@@ -48,6 +53,7 @@ export default async function HomePage({ params, searchParams }: { params: Promi
     greeting: hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening",
     dateLabel: formatLongDate(brief.today),
     aiEnabled,
+    assistantConfigured: connected,
     brief,
     working: team.filter((r) => r.membership_id !== ctx.membership.id).map((r) => ({ id: r.membership_id, name: r.display_name, state: r.session_state ?? null, task: r.task_title ?? null, todaySeconds: r.today_seconds })),
     attendance: attendance ? { in: attendance.in, out: attendance.out, late: attendance.late, notIn: attendance.not_in } : null,

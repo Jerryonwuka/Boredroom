@@ -21,7 +21,7 @@
  *
  * v4 look (6 October 2026, docs/design-system.md): your messages are fill-1 bubbles (r16); her replies are plain text
  * beside her face, with no bubble; what she did and what she prepared are outline rows (r12, a 10% hairline), and the
- * one white primary button is Confirm. The box is the home prompt pill.
+ * one white primary button is Confirm. The box is the home prompt pill; on Brenda's page, her hero box (7 October 2026).
  */
 import { useEffect, useId, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -583,14 +583,16 @@ export function DictationNotes({ chat, className }: { chat: BrendaChat; classNam
 }
 
 /**
- * The box: the home prompt pill. Type, or press the microphone and talk. While you talk, and while your words are
- * written out, the pill shows the notch's voice card (CONTRACT B: PromptInputBox draws it from `recordingHint` and
- * `transcribing`). `onSend` replaces plain sending (Brenda's page opens the full chat first). `leading` takes the
- * pill's round "+" on the left; `trailing` small things before the microphone.
+ * The box: the home prompt pill (the drawer), or on Brenda's page her hero box (`variant="hero"`: `size="md"` on her
+ * home screen, `"sm"` docked under her chat; owner decision, 7 October 2026). Type, or press the microphone and talk.
+ * While you talk, and while your words are written out, the box shows the notch's voice card (CONTRACT B:
+ * PromptInputBox draws it from `recordingHint` and `transcribing`). `onSend` replaces plain sending (Brenda's page opens
+ * the full chat first). `leading` takes the pill's round "+" on the left (the hero box's "More asks" on its bottom
+ * row); `trailing` small things before the microphone.
  */
-export function BrendaComposer({ chat, placeholder = "Tell Brenda what you need…", className, onSend, label, leading, trailing }: {
+export function BrendaComposer({ chat, placeholder = "Tell Brenda what you need…", className, onSend, label, leading, trailing, variant, size }: {
   chat: BrendaChat; placeholder?: string; className?: string; onSend?: (message: string) => void; /** The box's accessible name. */ label?: string;
-  leading?: React.ReactNode; trailing?: React.ReactNode;
+  leading?: React.ReactNode; trailing?: React.ReactNode; variant?: "pill" | "hero"; size?: "md" | "sm";
 }) {
   const { text, setText, send, pending, dictation } = chat;
   // How far the on-device model has come while it downloads, announced in quarter steps only (the card is a live region).
@@ -606,6 +608,6 @@ export function BrendaComposer({ chat, placeholder = "Tell Brenda what you need�
     <PromptInputBox value={text} onValueChange={setText} onSend={(m) => (onSend ? onSend(m) : void send(m, true))} isLoading={pending} placeholder={placeholder} className={className} label={label}
       recording={dictation.listening} transcribing={dictation.busy} onToggleRecording={() => void dictation.toggle()} recordingSupported={dictation.supported !== false}
       recordingPlaceholder={dictation.engine === "whisper" ? "Listening… your words appear when you stop" : undefined}
-      recordingHint={hint} recordingHeard={dictation.heard || null} onCancelRecording={() => dictation.cancel()} leading={leading} trailing={trailing} />
+      recordingHint={hint} recordingHeard={dictation.heard || null} onCancelRecording={() => dictation.cancel()} leading={leading} trailing={trailing} variant={variant} size={size} />
   );
 }

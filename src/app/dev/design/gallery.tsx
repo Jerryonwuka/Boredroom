@@ -16,7 +16,7 @@ import {
 import { BrendaGlyph } from "@/components/app/brenda-glyph";
 import { VoiceCapture } from "@/components/app/voice-capture";
 import { Logo } from "@/components/logo";
-import { PromptAction, PromptInputBox } from "@/components/ui/ai-prompt-box";
+import { PromptAction, PromptInputBox, PromptTextAction } from "@/components/ui/ai-prompt-box";
 import { AnalyticsCard, MetricStrip } from "@/components/ui/analytics-card";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge, CountPill, Kbd, MonoChip, NewBadge } from "@/components/ui/badge";
@@ -775,9 +775,19 @@ function Pickers() {
   );
 }
 
+/** Brenda's quick asks as they sit above her hero box: chips that fill the box (label, then a small icon). */
+const HERO_CHIPS = [
+  { icon: CalendarCheck, label: "What's due today?", prompt: "What's waiting for me today?" },
+  { icon: AlarmClock, label: "Set a reminder", prompt: "Remind me to " },
+  { icon: Clock, label: "Start a timer", prompt: "Start the timer on " },
+];
+
 function Prompt() {
   const [text, setTextFor] = React.useState<Record<Theme, string>>({ dark: "", light: "" });
   const [recFor, setRecFor] = React.useState<Record<Theme, boolean>>({ dark: false, light: false });
+  const [hero, setHeroFor] = React.useState<Record<Theme, string>>({ dark: "", light: "" });
+  const [heroRec, setHeroRec] = React.useState<Record<Theme, boolean>>({ dark: false, light: false });
+  const [small, setSmallFor] = React.useState<Record<Theme, string>>({ dark: "", light: "" });
   const rec = recFor.dark || recFor.light;
   const [level, setLevel] = React.useState(0.2);
   React.useEffect(() => {
@@ -786,7 +796,7 @@ function Prompt() {
     return () => window.clearInterval(id);
   }, [rec]);
   return (
-    <Section id="prompt" title="Prompt" description="The home prompt pill: min-h 52, r26, solid fill-1, 16/24 text, round 36px actions; an orange ring while focused; Send orange with text, grey when empty. Suggestions fill the box, never send.">
+    <Section id="prompt" title="Prompt" description="The prompt pill (the drawer): min-h 52, r26, solid fill-1, 16/24 text, round 36px actions; an orange ring while focused; Send orange with text, grey when empty. Below it, Brenda's hero box (variant “hero”) on her home panel, and its small docked size. Suggestions fill the box, never send.">
       <Both>
         {(t) => (
           <div className="space-y-5">
@@ -804,6 +814,29 @@ function Prompt() {
               <ToolTile icon={<Clock />} label="Clock in" onClick={() => setTextFor((m) => ({ ...m, [t]: "Clock me in" }))} />
               <ToolTile icon={<SquareCheckBig />} label="New task" onClick={() => setTextFor((m) => ({ ...m, [t]: "Create a task: " }))} />
             </ToolTileRow>
+          </div>
+        )}
+      </Both>
+      <Both>
+        {(t) => (
+          // Brenda's home (owner decision, 7 October 2026): her panel's orange glow (the one approved gradient) behind
+          // the chips and the hero box; the small size is the same box docked under her chat.
+          <div className="brenda-panel space-y-3 p-4">
+            <Cap>Hero: Brenda&apos;s home box. r16, an orange-tinted hairline with a faint glow inside, translucent over her panel; her glyph; room for a few lines; “More asks” left, microphone and Send right.</Cap>
+            <div role="group" aria-label={`Quick asks (${t})`} className="flex flex-wrap gap-2">
+              {HERO_CHIPS.map((c) => (
+                <Button key={c.label} variant="secondary" size="sm" className="rounded-full bg-[color:var(--brenda-fill)] px-3 [&_svg]:size-3.5 [&_svg]:text-secondary" onClick={() => setHeroFor((m) => ({ ...m, [t]: c.prompt }))}>
+                  {c.label}<c.icon aria-hidden />
+                </Button>
+              ))}
+            </div>
+            <PromptInputBox variant="hero" value={hero[t]} onValueChange={(v) => setHeroFor((m) => ({ ...m, [t]: v }))} onSend={() => { setHeroFor((m) => ({ ...m, [t]: "" })); setHeroRec((m) => ({ ...m, [t]: false })); }}
+              placeholder="Ask Brenda anything…" label={`Hero box (${t})`} leading={<PromptTextAction><Plus aria-hidden />More asks</PromptTextAction>}
+              recording={heroRec[t]} onToggleRecording={() => setHeroRec((m) => ({ ...m, [t]: !m[t] }))} onCancelRecording={() => setHeroRec((m) => ({ ...m, [t]: false }))} recordingHint="Speak naturally. Press stop or send when you're done." />
+            <Cap className="pt-2">Small: docked under her chat. Solid (--surface), one line to start, 32px actions.</Cap>
+            <PromptInputBox variant="hero" size="sm" value={small[t]} onValueChange={(v) => setSmallFor((m) => ({ ...m, [t]: v }))} onSend={() => setSmallFor((m) => ({ ...m, [t]: "" }))}
+              placeholder="Reply to Brenda, Ada…" label={`Small hero box (${t})`} leading={<PromptTextAction><Plus aria-hidden />More asks</PromptTextAction>} onToggleRecording={() => {}} />
+            <PromptInputBox variant="hero" size="sm" value="Plan my day around the 2pm review" onValueChange={() => {}} onSend={() => {}} isLoading label={`Small hero box, working (${t})`} onToggleRecording={() => {}} />
           </div>
         )}
       </Both>

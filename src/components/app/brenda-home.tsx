@@ -5,33 +5,39 @@
  * asks what you want to do today; you type or talk and she does it. Everything she does goes through the same chat,
  * permissions and confirmations as the drawer.
  *
- * v4 (owner decision, 6 October 2026): her home screen is laid out like the ElevenLabs Home. One centred column: her
- * character, small and monochrome; a greeting line (14/20, secondary); the display headline "What do you want to do
- * today?" (28/36); 20px under it the prompt pill (max 650px, r26) with its round "+" (more things to ask), the
- * microphone and the white Send; 40px under that her asks as tool tiles (a 40px r12 square with a 20px grey icon over
- * a 14/20 label). A quiet "Past chats" button opens them beside the chat (they are not a tab of their own). Then
- * underline tabs: "Your day" (stat cards and calm 64px list rows) and, for team leads and the organisation, "Team".
- * The asks and the "+" menu fill the box so the words can be edited; they never send (owner decision, 5 October 2026).
+ * Her home screen (owner decision, 7 October 2026: "I want the Brenda tab to look just like this, but instead of the
+ * purple gradient let it be our orange. Our suggestive texts can still be there", after a reference AI chat home): one
+ * large rounded panel filling the screen under the top bar, near-black at its edges warming to orange towards the upper
+ * middle (white with a peach glow in light; the one owner-approved gradient, globals.css "Her home"). Inside it: a row of
+ * small pills (her status and which engine answers on the left; Back to our conversation, Past chats and, for the
+ * organisation, Brenda settings on the right); her live character floating in a glowing orange orb, the greeting and
+ * the display headline "What do you want to do today?"; then, anchored to the bottom, her quick asks as chips, her hero
+ * box (PromptInputBox variant="hero": her glyph, room for a few lines, "More asks" on the left of its bottom row, the
+ * microphone and the orange Send on the right) and three action cards. Under the panel, as before, underline tabs:
+ * "Your day" (stat cards and calm 64px list rows) and, for team leads and the organisation, "Team". The chips, the
+ * cards and the "More asks" menu fill the box so the words can be edited; they never send (owner decision, 5 October
+ * 2026).
  *
  * The chat (owner decisions, 5 October 2026): from your first message the page becomes a full conversation with her,
  * at once, with no animation between the two. Her own header takes the very top of the screen (the app's top bar
  * steps aside while the chat is open, CONTRACT A in globals.css), with Back to her home screen and New chat; past
  * chats sit in a column beside the conversation (a sheet on small screens), so moving between conversations is one
- * press. The box is docked at the bottom on a solid canvas strip, so the conversation never shows through it.
+ * press. The box (the hero box in its small, solid size, so both screens feel the same) is docked at the bottom on a
+ * solid canvas strip, so the conversation never shows through it.
  *
  * Past chats are private to the person (server/services/brenda-history.ts). The address follows what is on screen
  * (`?chat=` for a saved conversation, `?tab=history` for the chat opened on its past chats), so a reload or a link
  * comes back to the same place.
  */
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import {
   AlarmClock, ArrowLeft, CalendarCheck, ChevronRight, CircleAlert, ClipboardCheck, Clock, FileText, History, ListOrdered, ListPlus,
-  MessageSquareReply, MessagesSquare, Play, Plus, Send, Timer, UserPlus, Users,
+  MessageSquareReply, MessagesSquare, Play, Plus, Send, Settings, Timer, UserPlus, Users,
 } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
-import { PromptAction } from "@/components/ui/ai-prompt-box";
+import { PromptTextAction } from "@/components/ui/ai-prompt-box";
 import { Menu, MenuItem, MenuLabel } from "@/components/ui/menu";
 import { ToolSquare, ToolTile, ToolTileRow } from "@/components/ui/tool-tile";
 import { ListRow } from "@/components/ui/rows";
@@ -40,7 +46,7 @@ import { StatCard } from "@/components/ui/stat-card";
 import { Badge, CountPill } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { EmptyState } from "@/components/ui/states";
-import { LiveIndicator, StatusDot } from "@/components/ui/status-dot";
+import { LiveIndicator, StatusDot, type StatusTone } from "@/components/ui/status-dot";
 import { BrendaGlyph } from "@/components/app/brenda-glyph";
 import { BrendaCharacter, type BrendaCharacterHandle } from "@/components/app/brenda-character";
 import { BrendaFace } from "@/components/app/brenda-face";
@@ -55,6 +61,8 @@ type Brief = Awaited<ReturnType<typeof briefing>>;
 export type HomeData = {
   orgSlug: string; firstName: string; role: "owner" | "hr" | "manager" | "employee";
   greeting: string; dateLabel: string; aiEnabled: boolean; brief: Brief;
+  /** Her engine: Claude when the organisation's assistant is connected (its own key or the server's), else the built-in helper. */
+  assistantConfigured: boolean;
   /** A request handed over by a link elsewhere (`?ask=`), placed in the box for the person to send. */
   ask?: string;
   working: { id: string; name: string; state: string | null; task: string | null; todaySeconds: number }[];
@@ -73,7 +81,7 @@ export type HomeData = {
 
 type Ask = { icon: React.ComponentType<{ "aria-hidden"?: boolean }>; label: string; prompt: string };
 
-/** Her asks, as tool tiles: short labels (they sit under a 40px square, 81px wide); the words they put in the box. */
+/** Her asks in a new chat, as tool tiles: short labels (they sit under a 40px square, 81px wide); the words they put in the box. */
 const ASKS: Record<"worker" | "lead", Ask[]> = {
   worker: [
     { icon: ListOrdered, label: "Plan my day", prompt: "Arrange my tasks for today in the order I should do them, and tell me why." },
@@ -91,7 +99,37 @@ const ASKS: Record<"worker" | "lead", Ask[]> = {
   ],
 };
 
-/** The pill's "+": more things to ask, each a sentence to finish in the box. Clocking and the timer only for people who clock in. */
+/** Her quick asks on her home screen: chips above the box (the label, then a small icon). Each fills the box, never sends. */
+const QUICK: Record<"worker" | "lead", Ask[]> = {
+  worker: [
+    { icon: CalendarCheck, label: "What's due today?", prompt: "What's waiting for me today?" },
+    { icon: AlarmClock, label: "Set a reminder", prompt: "Remind me to " },
+    { icon: Timer, label: "Start a timer", prompt: "Start the timer on " },
+  ],
+  lead: [
+    { icon: Users, label: "Who's working?", prompt: "Who is working right now, and on what?" },
+    { icon: CircleAlert, label: "Who's late?", prompt: "Who is late or hasn't clocked in today?" },
+    { icon: UserPlus, label: "Assign a task", prompt: "Assign a task to " },
+  ],
+};
+
+type Card = Ask & { description: string; action: string };
+
+/** The three action cards under her box: a title, one line on what she does, and the small pill's word. They fill the box too. */
+const CARDS: Record<"worker" | "lead", Card[]> = {
+  worker: [
+    { icon: ListOrdered, label: "Plan my day", description: "Today's tasks in the order to do them.", action: "Plan it", prompt: "Arrange my tasks for today in the order I should do them, and tell me why." },
+    { icon: FileText, label: "Write a doc", description: "A brief, notes or a how-to, drafted with you.", action: "Draft it", prompt: "Help me write a document about " },
+    { icon: MessageSquareReply, label: "Follow up on overdue work", description: "Chase what's late, one task at a time.", action: "Follow up", prompt: "Look at my overdue tasks and help me follow up on each one." },
+  ],
+  lead: [
+    { icon: ClipboardCheck, label: "Week summary", description: "What the team got done this week.", action: "Summarise", prompt: "Summarise what the team got done this week." },
+    { icon: MessageSquareReply, label: "Chase work", description: "Assignments nobody has picked up yet.", action: "Chase it", prompt: "Which assignments has nobody picked up? Help me follow up." },
+    { icon: FileText, label: "Write a doc", description: "A brief, a policy or notes, drafted with you.", action: "Draft it", prompt: "Help me write a document about " },
+  ],
+};
+
+/** "More asks" in her box: more things to ask, each a sentence to finish in the box. Clocking and the timer only for people who clock in. */
 function moreAsks(role: HomeData["role"]): Ask[] {
   const worker = role === "employee" || role === "manager";
   return [
@@ -228,59 +266,97 @@ export function BrendaHome({ data }: { data: HomeData }) {
     );
   }
 
-  const asks = ASKS[lead ? "lead" : "worker"];
+  const kind = lead ? "lead" : "worker";
+  const isOrg = role === "owner" || role === "hr";
   const tabs = [
     { label: "Your day", value: "day" },
     ...(lead ? [{ label: "Team", value: "team" }] : []),
   ];
   const tabLabel = tabs.find((t) => t.value === tab)?.label ?? "Your day";
-  // Her character is monochrome like the rest of v4; the accent shows only while she listens (a live microphone).
+  // Her character is monochrome like the rest of v4 (her light takes the orb's orange); the orb brightens while she
+  // listens (a live microphone).
   const listening = chat.state === "listening";
+  // Which engine answers her, beside her name: a short word on phones.
+  const engine = !data.aiEnabled ? { full: "Not in your plan" } : data.assistantConfigured ? { full: "Connected to Claude", short: "Claude" } : { full: "Built-in helper" };
+  const dot: StatusTone = !data.aiEnabled ? "neutral" : listening ? "live" : data.assistantConfigured ? "success" : "neutral";
+  // The small pills in the panel's top row: 32px, round, hairline, the label then its icon; icon only on phones.
+  const pill = cn(buttonVariants({ variant: "secondary", size: "sm" }), "rounded-full px-3 [&_svg]:text-secondary hover:[&_svg]:text-foreground");
+  const iconOnPhones = "max-sm:w-8 max-sm:px-0 max-sm:pointer-coarse:w-10";
 
   return (
-    <div className="mx-auto w-full max-w-[1040px] pb-16">
-      <section aria-labelledby="home-ask" className="flex flex-col items-center pt-4 text-center md:pt-12">
-        <BrendaCharacter ref={character} state={chat.state} size={64} interactive label="Brenda" className={cn("-mb-1.5 -mt-2", !listening && "grayscale")} />
-        <p className="text-sm font-medium text-secondary">{data.greeting}, {data.firstName}. It&apos;s {data.dateLabel}.</p>
-        <h1 id="home-ask" className="type-headline mt-1">What do you want to do today?</h1>
-
-        {data.aiEnabled ? (
-          <>
-            <div className="mt-5 w-full max-w-[650px] text-left">
-              <div ref={box}>
-                <BrendaComposer chat={chat} onSend={sendFromStart} leading={more}
-                  placeholder={lead ? "Ask about the team…" : "Plan my day, start a timer…"} />
-              </div>
-              <DictationNotes chat={chat} className="mt-2" />
-            </div>
-            {/* Past chats live beside the chat, not in a tab of their own (owner decision, 5 October 2026): this opens them there. */}
-            <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
-              {hasConversation ? (
-                <button ref={resumeButton} type="button" onClick={() => setView("chat")} className={buttonVariants({ variant: "secondary", size: "sm" })}>
-                  <MessagesSquare aria-hidden />Back to our conversation<CountPill count={chat.messages.length} />
-                </button>
-              ) : null}
-              <button ref={pastChatsButton} type="button" onClick={showPastChats} className={buttonVariants({ variant: "ghost", size: "sm" })}>
-                <History aria-hidden />Past chats{history.length ? <CountPill count={history.length} /> : null}
+    <div className="w-full pb-16">
+      {/* Her panel fills the screen under the top bar (20px from it and from the bottom, as from the sides). */}
+      <section aria-labelledby="home-ask" className="brenda-panel -mt-1 flex min-h-[calc(100dvh-var(--header-height)-var(--shell-banners,0px)-40px)] flex-col p-3 sm:p-4 lg:p-5">
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="inline-flex h-8 min-w-0 max-w-full items-center gap-2 rounded-full border border-border-input bg-background px-3 text-meta font-medium text-foreground">
+            <StatusDot tone={dot} size={6} />
+            <span>Brenda</span>
+            <span aria-hidden className="h-3.5 w-px shrink-0 bg-border-input" />
+            <span className="min-w-0 truncate font-normal text-secondary">
+              {engine.short ? <><span className="sm:hidden">{engine.short}</span><span className="max-sm:hidden">{engine.full}</span></> : engine.full}
+            </span>
+          </p>
+          <div className="ml-auto flex items-center gap-1.5">
+            {data.aiEnabled && hasConversation ? (
+              <button ref={resumeButton} type="button" onClick={() => setView("chat")} className={cn(pill, "max-sm:px-2.5")}>
+                <span className="max-sm:sr-only">Back to our conversation</span><CountPill count={chat.messages.length} /><MessagesSquare aria-hidden />
               </button>
-            </div>
-            <ToolTileRow label="Ask Brenda" className="mt-10">
-              {asks.map((a) => <ToolTile key={a.label} icon={<a.icon aria-hidden />} label={a.label} onClick={() => fill(a.prompt)} />)}
-            </ToolTileRow>
-          </>
-        ) : (
-          <div className="card-tint mt-5 w-full max-w-[650px] px-4 py-3 text-left">
-            <p className="text-sm font-medium text-foreground">Brenda isn&apos;t part of this workspace&apos;s plan yet.</p>
-            <p className="mt-0.5 text-meta font-normal text-secondary">
-              {role === "owner" ? "She does the work for your people: plans their day, follows up and writes documents." : "Ask your organisation owner to add her."}
-            </p>
-            {/* The one standout on this screen (accent rules): there is no Send to press without her. */}
-            {role === "owner" ? <Link className={`${buttonVariants({ variant: "accent", size: "sm" })} mt-3`} href="/app/billing">Upgrade the plan</Link> : null}
+            ) : null}
+            {/* Past chats live beside the chat, not in a tab of their own (owner decision, 5 October 2026): this opens them there. */}
+            {data.aiEnabled ? (
+              <button ref={pastChatsButton} type="button" onClick={showPastChats} className={cn(pill, iconOnPhones)}>
+                <span className="max-sm:sr-only">Past chats</span>{history.length ? <CountPill count={history.length} className="max-sm:hidden" /> : null}<History aria-hidden />
+              </button>
+            ) : null}
+            {isOrg ? (
+              <Link href={`${base}/settings?section=brenda`} className={cn(pill, iconOnPhones)}>
+                <span className="max-sm:sr-only">Brenda settings</span><Settings aria-hidden />
+              </Link>
+            ) : null}
           </div>
-        )}
+        </div>
+
+        <div className="flex flex-1 flex-col items-center justify-center px-1 pb-8 pt-10 text-center">
+          <div className="brenda-orb" data-live={listening || undefined}>
+            <BrendaCharacter ref={character} state={chat.state} size={72} interactive label="Brenda" className={cn(!listening && "grayscale")} />
+          </div>
+          <p className="mt-6 text-sm font-medium text-secondary">{data.greeting}, {data.firstName}. It&apos;s {data.dateLabel}.</p>
+          <h1 id="home-ask" className="type-headline mt-1 sm:text-[32px] sm:leading-10">What do you want to do today?</h1>
+        </div>
+
+        <div className="@container mx-auto w-full max-w-[720px] text-left">
+          {data.aiEnabled ? (
+            <>
+              <div role="group" aria-label="Quick asks" className="mb-3 flex flex-wrap gap-2">
+                {QUICK[kind].map((a) => (
+                  <button key={a.label} type="button" onClick={() => fill(a.prompt)}
+                    className={cn(pill, "bg-[color:var(--brenda-fill)] [&_svg]:size-3.5")}>
+                    {a.label}<a.icon aria-hidden />
+                  </button>
+                ))}
+              </div>
+              <div ref={box}>
+                <BrendaComposer chat={chat} onSend={sendFromStart} leading={more} variant="hero" placeholder="Ask Brenda anything…" />
+              </div>
+              <DictationNotes chat={chat} className="[&>*:not(:empty)]:mt-2" />
+              <ul aria-label="Start with" className="mt-3 grid gap-3 @xl:grid-cols-3">
+                {CARDS[kind].map((c) => <ActionCard key={c.label} card={c} onPick={() => fill(c.prompt)} />)}
+              </ul>
+            </>
+          ) : (
+            <div className="card-tint px-4 py-3">
+              <p className="text-sm font-medium text-foreground">Brenda isn&apos;t part of this workspace&apos;s plan yet.</p>
+              <p className="mt-0.5 text-meta font-normal text-secondary">
+                {role === "owner" ? "She does the work for your people: plans their day, follows up and writes documents." : "Ask your organisation owner to add her."}
+              </p>
+              {/* The one standout on this screen (accent rules): there is no Send to press without her. */}
+              {role === "owner" ? <Link className={`${buttonVariants({ variant: "accent", size: "sm" })} mt-3`} href="/app/billing">Upgrade the plan</Link> : null}
+            </div>
+          )}
+        </div>
       </section>
 
-      <section className="mt-14" aria-labelledby={tabs.length > 1 ? undefined : "home-day"}>
+      <section className="mx-auto mt-12 w-full max-w-[1040px]" aria-labelledby={tabs.length > 1 ? undefined : "home-day"}>
         {/* One section (staff) is a plain title; tabs only when there is something to switch to. */}
         {tabs.length > 1 ? <Tabs tabs={tabs} value={tab} onChange={(v) => setTab(v as HomeTab)} label="Brenda's home" /> : <h2 id="home-day" className="type-section-title mb-3.5">Your day</h2>}
         <div role={tabs.length > 1 ? "tabpanel" : undefined} aria-label={tabs.length > 1 ? tabLabel : undefined} className={tabs.length > 1 ? "pt-6" : "pt-1"}>
@@ -291,10 +367,36 @@ export function BrendaHome({ data }: { data: HomeData }) {
   );
 }
 
-/** The pill's round "+": a menu of more things to ask. Choosing one puts its sentence in the box. */
+/**
+ * One of the three action cards under her box (after the reference's tool cards): r16, a hairline, the translucent fill
+ * over her panel's glow, p16; a 32px icon square (r8, hairline) at the top left whose icon turns orange on hover and
+ * focus (as her tool tiles did), the small pill's word at the top right, the title (14/20 600) and one line on what she
+ * does (13px secondary). The whole card is one button: it (or its pill) fills the box with the request, never sends.
+ */
+function ActionCard({ card, onPick }: { card: Card; onPick: () => void }) {
+  const id = useId();
+  return (
+    <li className="flex min-w-0">
+      {/* Named by its title and its pill's word (what you see on it, so "Plan it" works by voice too); the line is its description. */}
+      <button type="button" onClick={onPick} aria-labelledby={`${id}-title ${id}-action`} aria-describedby={`${id}-desc`}
+        className="group flex w-full min-w-0 flex-col rounded-2xl border border-border bg-[color:var(--brenda-fill)] p-4 text-left transition-colors duration-75 hover:border-border-input-hover">
+        <span className="flex w-full items-start justify-between gap-3">
+          <span aria-hidden className="grid size-8 shrink-0 place-items-center rounded-lg border border-border bg-background text-secondary transition-colors duration-75 group-hover:text-accent group-focus-visible:text-accent [&_svg]:size-4">
+            <card.icon aria-hidden />
+          </span>
+          <span id={`${id}-action`} className="inline-flex h-6 shrink-0 items-center rounded-full bg-fill-1 px-2.5 text-xs font-medium text-foreground transition-colors duration-75 group-hover:bg-fill-150">{card.action}</span>
+        </span>
+        <span id={`${id}-title`} className="mt-3 text-sm font-semibold text-foreground">{card.label}</span>
+        <span id={`${id}-desc`} className="mt-0.5 text-meta font-normal text-secondary">{card.description}</span>
+      </button>
+    </li>
+  );
+}
+
+/** "More asks" on the left of her box's bottom row: a menu of more things to ask. Choosing one puts its sentence in the box. */
 function MoreMenu({ role, onPick }: { role: HomeData["role"]; onPick: (prompt: string) => void }) {
   return (
-    <Menu label="Ask Brenda to" trigger={<PromptAction aria-label="More things to ask Brenda"><Plus aria-hidden /></PromptAction>}>
+    <Menu label="Ask Brenda to" trigger={<PromptTextAction><Plus aria-hidden />More asks</PromptTextAction>}>
       <MenuLabel>Ask Brenda to…</MenuLabel>
       {moreAsks(role).map((a) => <MenuItem key={a.label} icon={<a.icon aria-hidden />} onSelect={() => onPick(a.prompt)}>{a.label}</MenuItem>)}
     </Menu>
@@ -583,7 +685,7 @@ function ChatView({ data, chat, box, onBack, onNewChat, history, sheet, onSheet,
           {/* Docked on a solid strip of the canvas with a hairline above: the conversation scrolls above it and never shows through. */}
           <div className="shrink-0 border-t border-border bg-background px-5 pb-4 pt-3 md:pb-5">
             <div ref={box} className="mx-auto max-w-3xl">
-              <BrendaComposer chat={chat} leading={more} placeholder={empty ? `What do you need, ${data.firstName}?` : `Reply to Brenda, ${data.firstName}…`} />
+              <BrendaComposer chat={chat} leading={more} variant="hero" size="sm" placeholder={empty ? `What do you need, ${data.firstName}?` : `Reply to Brenda, ${data.firstName}…`} />
               <p className="mt-2 text-center text-xs font-normal text-subtle">Brenda asks before anything that lands on someone else.</p>
             </div>
           </div>
