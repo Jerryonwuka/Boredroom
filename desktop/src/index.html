@@ -4,10 +4,18 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Brenda</title>
+  <!-- Inter and Geist Mono ship with the app (src/fonts); preloaded so the first card is drawn in them. -->
+  <link rel="preload" href="fonts/inter-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="fonts/geist-mono-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <main id="notch" class="notch compact" aria-live="polite" aria-label="Brenda"></main>
+  <!-- The island grows and shrinks inside a fixed, transparent window; the content inside keeps its own width. -->
+  <div id="island" class="island">
+    <main id="notch" class="notch compact" aria-live="polite" aria-label="Brenda"></main>
+    <i id="countdown" class="countdown" aria-hidden="true"></i>
+  </div>
+  <script src="sound.js"></script>
   <script src="main.js"></script>
 </body>
 </html>

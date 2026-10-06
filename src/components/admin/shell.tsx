@@ -46,7 +46,7 @@ export function AdminShell({ admin, launch, children, title }: { admin: Admin; l
   return (
     <MotionRoot>
     <div className="flex min-h-dvh">
-      <aside className="sticky top-0 hidden h-dvh w-64 shrink-0 flex-col border-r border-border-soft bg-sidebar px-3 py-5 md:flex">
+      <aside className="sidebar-glass sticky top-0 hidden h-dvh w-64 shrink-0 flex-col border-r border-border-soft px-3 py-5 md:flex">
         <div className="mb-1 px-2"><Logo href="/admin" /></div>
         <p className="eyebrow eyebrow-accent mb-5 px-2">Control Center</p>
         <div className="min-h-0 flex-1 overflow-y-auto"><AdminNav groups={groups} /></div>
@@ -57,7 +57,7 @@ export function AdminShell({ admin, launch, children, title }: { admin: Admin; l
         </div>
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-[var(--z-sticky)] flex h-16 shrink-0 items-center justify-between gap-4 border-b border-border-soft bg-sidebar px-4 md:px-6">
+        <header className="topbar-glass sticky top-0 z-[var(--z-sticky)] flex h-16 shrink-0 items-center justify-between gap-4 border-b border-border-soft px-4 md:px-6">
           <div className="flex min-w-0 items-center gap-3">
             <Logo href="/admin" className="md:hidden" />
             <div className="hidden min-w-0 md:block"><p className="eyebrow">Boredroom</p><p className="truncate text-sm font-semibold leading-tight">{title ?? "Control Center"}</p></div>

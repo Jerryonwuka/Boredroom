@@ -45,3 +45,6 @@ next-env.d.ts
 /var/
 /test-results/
 /playwright-report/
+
+# On-device dictation runtime, copied from onnxruntime-web by scripts/copy-speech-runtime.mjs
+/public/speech/

@@ -1,5 +1,19 @@
 import { clsx, type ClassValue } from "clsx";
-import { twMerge } from "tailwind-merge";
+import { extendTailwindMerge } from "tailwind-merge";
+
+/**
+ * tailwind-merge taught the v4 scale registered in globals.css (@theme): `text-meta` (13/19.5) and `text-2xs` are
+ * font sizes, and the named shadows are shadows. Without this, `text-meta` reads as a colour and silently drops the
+ * text colour it is merged with (white-on-white small primary buttons), and a named shadow cannot replace another.
+ */
+const twMerge = extendTailwindMerge({
+  extend: {
+    theme: {
+      text: ["meta", "2xs"],
+      shadow: ["natural-xs", "chart", "sheet", "toast", "thumb"],
+    },
+  },
+});
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));

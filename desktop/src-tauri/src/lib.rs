@@ -5,8 +5,8 @@
 //! storage, places the window as a notch at the top centre of the screen, and puts Brenda in the tray. Everything the
 //! person sees is in `src/` (plain HTML, CSS and JavaScript).
 //!
-//! The computer is only ever acted on by opening a Boredroom link in the browser. No files, keyboard, screen or
-//! microphone access in this version.
+//! The computer is only ever acted on by opening a Boredroom link in the browser. No files, keyboard or screen access.
+//! The microphone is used only while the person holds the talk shortcut, and only once they turn voice on (`voice.rs`).
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -14,9 +14,14 @@ use std::{fs, path::PathBuf, sync::Mutex};
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::TrayIconBuilder,
-    AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, State, WebviewWindow,
+    AppHandle, Emitter, Manager, State, WebviewWindow,
 };
+use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 use tauri_plugin_opener::OpenerExt;
+
+mod files;
+mod island;
+mod voice;
 
 const DEFAULT_BASE_URL: &str = "https://boredroom.cc";
 
@@ -28,6 +33,15 @@ struct Config {
     workspace_slug: Option<String>,
     workspace_name: Option<String>,
     display_name: Option<String>,
+    /// Hold-to-talk. Off until the person turns it on; the microphone is never opened before.
+    #[serde(default)]
+    voice: bool,
+    /// Brenda's little sounds (opening, a reminder arriving, done, listening). On unless switched off in the tray.
+    #[serde(default)]
+    muted: bool,
+    /// Keep the notch showing even when nothing needs the person (by default it tucks away and peeks out on hover).
+    #[serde(default)]
+    always_visible: bool,
 }
 
 /// What the web view may know: everything except the token itself.
@@ -39,6 +53,8 @@ struct PublicConfig {
     workspace_slug: Option<String>,
     workspace_name: Option<String>,
     display_name: Option<String>,
+    sounds: bool,
+    always_visible: bool,
 }
 
 struct AppState {
@@ -50,6 +66,16 @@ struct AppState {
 struct ApiError {
     status: u16,
     message: String,
+    /// Boredroom's error code when it sent one (`ALREADY_CONFIRMED` for a Confirm that already ran), so the page can
+    /// tell such an answer from a failure.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    code: Option<String>,
+}
+
+impl ApiError {
+    fn new(status: u16, message: impl Into<String>) -> Self {
+        ApiError { status, message: message.into(), code: None }
+    }
 }
 
 fn config_path(app: &AppHandle) -> Option<PathBuf> {
@@ -95,6 +121,8 @@ fn public(config: &Config) -> PublicConfig {
         workspace_slug: config.workspace_slug.clone(),
         workspace_name: config.workspace_name.clone(),
         display_name: config.display_name.clone(),
+        sounds: !config.muted,
+        always_visible: config.always_visible,
     }
 }
 
@@ -106,6 +134,52 @@ fn device_name() -> String {
         other => other,
     };
     format!("Brenda on this {os}")
+}
+
+fn voice_on(app: &AppHandle) -> bool {
+    app.state::<AppState>().config.lock().unwrap().voice
+}
+
+#[tauri::command]
+fn voice_status(app: AppHandle) -> voice::VoiceStatus {
+    voice::status(&app, voice_on(&app))
+}
+
+/// Turns hold-to-talk on or off. Turning it on fetches the speech model the first time (progress arrives as events).
+#[tauri::command]
+fn set_voice(app: AppHandle, enabled: bool) -> voice::VoiceStatus {
+    {
+        let state = app.state::<AppState>();
+        let mut c = state.config.lock().unwrap();
+        c.voice = enabled;
+        save_config(&app, &c);
+    }
+    if enabled && !voice::model_ready(&app) {
+        let handle = app.clone();
+        tauri::async_runtime::spawn(async move {
+            let _ = voice::download_model(handle).await;
+        });
+    }
+    refresh_voice_menu(&app);
+    voice::status(&app, enabled)
+}
+
+#[tauri::command]
+fn speak(app: AppHandle, text: String) {
+    voice::speak(&app, &text);
+}
+
+#[tauri::command]
+fn stop_speaking(app: AppHandle) {
+    voice::stop_speaking(&app);
+}
+
+struct VoiceMenu(MenuItem<tauri::Wry>);
+
+fn refresh_voice_menu(app: &AppHandle) {
+    if let Some(item) = app.try_state::<VoiceMenu>() {
+        let _ = item.0.set_text(if voice_on(app) { format!("Turn voice off (hold {})", voice::SHORTCUT_LABEL) } else { "Turn voice on".to_string() });
+    }
 }
 
 #[tauri::command]
@@ -141,27 +215,28 @@ async fn send(state: &State<'_, AppState>, method: &str, path: &str, body: Optio
         (base_url(&c), c.token.clone())
     };
     if !path.starts_with("/api/") {
-        return Err(ApiError { status: 400, message: "Only Boredroom API paths are allowed.".into() });
+        return Err(ApiError::new(400, "Only Boredroom API paths are allowed."));
     }
     let url = format!("{base}{path}");
-    let m = reqwest::Method::from_bytes(method.as_bytes()).map_err(|_| ApiError { status: 400, message: "Unknown method.".into() })?;
+    let m = reqwest::Method::from_bytes(method.as_bytes()).map_err(|_| ApiError::new(400, "Unknown method."))?;
     let mut req = state.http.request(m, &url).header("accept", "application/json").header("user-agent", format!("Brenda desktop/{} ({})", env!("CARGO_PKG_VERSION"), std::env::consts::OS));
     if with_token {
         if let Some(t) = token {
             req = req.bearer_auth(t);
         } else {
-            return Err(ApiError { status: 401, message: "Not signed in.".into() });
+            return Err(ApiError::new(401, "Not signed in."));
         }
     }
     if let Some(b) = body {
         req = req.json(&b);
     }
-    let res = req.send().await.map_err(|e| ApiError { status: 0, message: format!("Cannot reach Boredroom: {e}") })?;
+    let res = req.send().await.map_err(|e| ApiError::new(0, format!("Cannot reach Boredroom: {e}")))?;
     let status = res.status().as_u16();
     let value: Value = res.json().await.unwrap_or(Value::Null);
     if status >= 400 {
         let message = value.get("message").and_then(|m| m.as_str()).unwrap_or("Request failed.").to_string();
-        return Err(ApiError { status, message });
+        let code = value.get("code").and_then(|c| c.as_str()).map(String::from);
+        return Err(ApiError { status, message, code });
     }
     Ok(value)
 }
@@ -205,48 +280,83 @@ fn open_in_browser(app: AppHandle, state: State<AppState>, path: String) -> Resu
     app.opener().open_url(url, None::<&str>).map_err(|e| e.to_string())
 }
 
-/// The notch: top centre of the screen the window is on, at the size the page asks for.
+/// Gives the notch keyboard focus so the person can type to Brenda (the window does not take focus on its own).
 #[tauri::command]
-fn set_notch_size(window: WebviewWindow, width: f64, height: f64) -> Result<(), String> {
-    place(&window, width, height).map_err(|e| e.to_string())
+fn focus_notch(window: WebviewWindow) -> Result<(), String> {
+    window.set_focus().map_err(|e| e.to_string())
 }
 
-fn place(window: &WebviewWindow, width: f64, height: f64) -> tauri::Result<()> {
-    window.set_size(LogicalSize::new(width, height))?;
-    if let Some(monitor) = window.current_monitor()?.or(window.primary_monitor()?) {
-        let scale = monitor.scale_factor();
-        let size = monitor.size().to_logical::<f64>(scale);
-        let origin = monitor.position().to_logical::<f64>(scale);
-        window.set_position(LogicalPosition::new(origin.x + (size.width - width) / 2.0, origin.y))?;
-    }
-    Ok(())
+struct SoundMenu(MenuItem<tauri::Wry>);
+struct VisibleMenu(MenuItem<tauri::Wry>);
+
+fn visible_label(always: bool) -> &'static str {
+    if always { "Tuck Brenda away when idle" } else { "Keep Brenda always visible" }
+}
+
+fn sounds_label(muted: bool) -> &'static str {
+    if muted { "Turn sounds on" } else { "Turn sounds off" }
+}
+
+/// Hold to talk: Option+Space on a Mac, Alt+Space elsewhere.
+fn talk_shortcut() -> Shortcut {
+    Shortcut::new(Some(Modifiers::ALT), Code::Space)
 }
 
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_handler(|app, shortcut, event| {
+                    if *shortcut != talk_shortcut() {
+                        return;
+                    }
+                    match event.state() {
+                        ShortcutState::Pressed => voice::pressed(app, voice_on(app)),
+                        ShortcutState::Released => voice::released(app),
+                    }
+                })
+                .build(),
+        )
         .setup(|app| {
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory); // no Dock icon: Brenda lives in the notch and the menu bar
 
             let handle = app.handle().clone();
             let config = load_config(&handle);
+            app.manage(voice::Voice::default());
             app.manage(AppState {
                 config: Mutex::new(config),
                 http: reqwest::Client::builder().timeout(std::time::Duration::from_secs(20)).build().expect("http client"),
             });
 
+            app.manage(island::Island::default());
+            app.manage(files::Dropped::default());
             if let Some(window) = app.get_webview_window("notch") {
-                let _ = place(&window, 220.0, 44.0);
                 let _ = window.set_always_on_top(true);
+                let _ = island::place(&window);
+                island::start(&handle, window);
+            }
+
+            if let Err(e) = app.global_shortcut().register(talk_shortcut()) {
+                eprintln!("Brenda: the talk shortcut is taken by another app ({e})");
             }
 
             let open = MenuItem::with_id(app, "open", "Open Boredroom", true, None::<&str>)?;
             let toggle = MenuItem::with_id(app, "toggle", "Hide Brenda", true, None::<&str>)?;
+            let voice_item = MenuItem::with_id(app, "voice", "Turn voice on", true, None::<&str>)?;
+            app.manage(VoiceMenu(voice_item.clone()));
+            refresh_voice_menu(&handle);
+            let muted = app.state::<AppState>().config.lock().unwrap().muted;
+            let sound_item = MenuItem::with_id(app, "sounds", sounds_label(muted), true, None::<&str>)?;
+            app.manage(SoundMenu(sound_item.clone()));
+            let always = app.state::<AppState>().config.lock().unwrap().always_visible;
+            let visible_item = MenuItem::with_id(app, "visible", visible_label(always), true, None::<&str>)?;
+            app.manage(VisibleMenu(visible_item.clone()));
             let signout = MenuItem::with_id(app, "signout", "Sign out of this computer", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit Brenda", true, None::<&str>)?;
             let sep = PredefinedMenuItem::separator(app)?;
-            let menu = Menu::with_items(app, &[&open, &toggle, &sep, &signout, &quit])?;
+            let menu = Menu::with_items(app, &[&open, &toggle, &voice_item, &sound_item, &visible_item, &sep, &signout, &quit])?;
             let toggle_item = toggle.clone();
             TrayIconBuilder::with_id("brenda")
                 .icon(app.default_window_icon().cloned().expect("app icon"))
@@ -257,7 +367,7 @@ pub fn run() {
                     "open" => {
                         let state = app.state::<AppState>();
                         let c = state.config.lock().unwrap().clone();
-                        let path = c.workspace_slug.map(|s| format!("/app/{s}")).unwrap_or_else(|| "/app".into());
+                        let path = c.workspace_slug.as_ref().map(|s| format!("/app/{s}")).unwrap_or_else(|| "/app".into());
                         let _ = app.opener().open_url(format!("{}{}", base_url(&c), path), None::<&str>);
                     }
                     "toggle" => {
@@ -266,6 +376,31 @@ pub fn run() {
                             let _ = if visible { w.hide() } else { w.show() };
                             let _ = toggle_item.set_text(if visible { "Show Brenda" } else { "Hide Brenda" });
                         }
+                    }
+                    "voice" => {
+                        let on = !voice_on(app);
+                        let status = set_voice(app.clone(), on);
+                        let _ = app.emit("brenda://voice-status", status);
+                    }
+                    "sounds" => {
+                        let state = app.state::<AppState>();
+                        let mut c = state.config.lock().unwrap();
+                        c.muted = !c.muted;
+                        save_config(app, &c);
+                        if let Some(item) = app.try_state::<SoundMenu>() {
+                            let _ = item.0.set_text(sounds_label(c.muted));
+                        }
+                        let _ = app.emit("brenda://sounds", !c.muted);
+                    }
+                    "visible" => {
+                        let state = app.state::<AppState>();
+                        let mut c = state.config.lock().unwrap();
+                        c.always_visible = !c.always_visible;
+                        save_config(app, &c);
+                        if let Some(item) = app.try_state::<VisibleMenu>() {
+                            let _ = item.0.set_text(visible_label(c.always_visible));
+                        }
+                        let _ = app.emit("brenda://always-visible", c.always_visible);
                     }
                     "signout" => {
                         let state = app.state::<AppState>();
@@ -283,7 +418,12 @@ pub fn run() {
                 .build(app)?;
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![get_config, set_base_url, sign_out, api, link_start, link_poll, open_in_browser, set_notch_size])
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::DragDrop(drag) = event {
+                files::on_drag(window.app_handle(), drag, window.scale_factor().unwrap_or(1.0));
+            }
+        })
+        .invoke_handler(tauri::generate_handler![get_config, voice_status, set_voice, speak, stop_speaking, set_base_url, sign_out, api, link_start, link_poll, open_in_browser, focus_notch, island::set_island_rect, island::menu_bar_height, island::debug_log, files::upload_dropped])
         .run(tauri::generate_context!())
         .expect("error while running Brenda");
 }

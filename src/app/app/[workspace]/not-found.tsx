@@ -1,11 +1,10 @@
-import Link from "next/link";
-import { AuthShell } from "@/components/auth/auth-shell";
-import { Button } from "@/components/ui/button";
+import { getCurrentUser } from "@/server/auth";
+import { listMyWorkspaces } from "@/server/services/orgs";
+import { WorkspaceNotFoundView } from "@/components/app/workspace-not-found";
 
-export default function WorkspaceNotFound() {
-  return (
-    <AuthShell title="Workspace not found" subtitle="Either this workspace does not exist or you are not a member of it.">
-      <Link href="/app"><Button className="w-full">Back to your workspaces</Button></Link>
-    </AuthShell>
-  );
+/** Says whether the workspace or only the page inside it was not found (see WorkspaceNotFoundView). */
+export default async function WorkspaceNotFound() {
+  const user = await getCurrentUser();
+  const workspaces = user ? await listMyWorkspaces(user.profileId) : [];
+  return <WorkspaceNotFoundView workspaces={workspaces.map((w) => ({ slug: w.slug, name: w.name }))} />;
 }

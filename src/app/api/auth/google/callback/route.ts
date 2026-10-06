@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { completeGoogleSignIn, signInWithGoogle, safeNext, OAUTH_COOKIE } from "@/server/auth/google";
+import { completeGoogleSignIn, signInWithGoogle, safeNext, googleFailureCode, OAUTH_COOKIE, type GoogleFailure } from "@/server/auth/google";
 import { SESSION_COOKIE, sessionCookieOptions } from "@/server/auth";
 
 export const dynamic = "force-dynamic";
@@ -10,17 +10,18 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
   const jar = await cookies();
   const raw = jar.get(OAUTH_COOKIE)?.value;
-  const fail = (message: string) => {
-    const res = NextResponse.redirect(`${process.env.APP_ORIGIN ?? url.origin}/login?google=${encodeURIComponent(message)}`, 302);
+  // The reason goes back as a fixed code; the sign-in page owns the words (GOOGLE_FAILURE).
+  const fail = (code: GoogleFailure) => {
+    const res = NextResponse.redirect(`${process.env.APP_ORIGIN ?? url.origin}/login?google=${code}`, 302);
     res.cookies.set(OAUTH_COOKIE, "", { path: "/api/auth/google", maxAge: 0 });
     return res;
   };
   let pending: { state: string; nonce: string; next: string; at: number } | null = null;
   try { pending = raw ? JSON.parse(raw) : null; } catch { pending = null; }
-  if (!pending || Date.now() - pending.at > 600_000) return fail("The sign-in took too long. Try again.");
-  if (url.searchParams.get("error")) return fail(url.searchParams.get("error") === "access_denied" ? "Google sign-in was cancelled." : "Google could not sign you in.");
+  if (!pending || Date.now() - pending.at > 600_000) return fail("timeout");
+  if (url.searchParams.get("error")) return fail(url.searchParams.get("error") === "access_denied" ? "cancelled" : "failed");
   const code = url.searchParams.get("code"), state = url.searchParams.get("state");
-  if (!code || !state || state !== pending.state) return fail("The sign-in did not match the one that was started. Try again.");
+  if (!code || !state || state !== pending.state) return fail("mismatch");
   try {
     const claims = await completeGoogleSignIn(code, pending.nonce);
     const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "local";
@@ -30,6 +31,6 @@ export async function GET(req: Request) {
     res.cookies.set(OAUTH_COOKIE, "", { path: "/api/auth/google", maxAge: 0 });
     return res;
   } catch (err) {
-    return fail((err as { message?: string }).message ?? "Google could not sign you in.");
+    return fail(googleFailureCode(err));
   }
 }

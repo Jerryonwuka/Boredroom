@@ -23,6 +23,8 @@ function ensureDependencies() {
 
 async function main() {
   ensureDependencies();
+  // On-device dictation serves its WebAssembly runtime from public/speech (see scripts/copy-speech-runtime.mjs).
+  spawnSync(process.execPath, ["scripts/copy-speech-runtime.mjs"], { stdio: "inherit" });
   let stop: (() => Promise<void>) | null = null;
   if (usesLocalPostgres()) {
     if (!existsSync(`${DATA_DIR}/PG_VERSION`)) { console.error("The local database has not been set up yet. Run: pnpm quickstart"); process.exit(1); }

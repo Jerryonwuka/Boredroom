@@ -98,7 +98,8 @@ export function MessagesMock() {
 
 /** The organisation dashboard, in the style of a metrics page: three verdict cards and one chart. */
 export function DashboardMock() {
-  const nav = ["Dashboard", "Clock in", "Attendance", "Workroom", "Messages", "Tasks", "People and teams", "Reviews", "Recordings", "Reports"];
+  // The organisation account's own menu (shell.tsx navItems): Brenda first, no Clock in, no Reports.
+  const nav = ["Brenda", "Dashboard", "Attendance", "Workroom", "Tasks", "Messages", "Reviews", "People and teams", "Recordings", "Timesheets"];
   const cards = [
     { k: "Attendance", v: "Good", rows: [["Clocked in", "12", "100%", "bg-success"], ["Late", "1", "8%", "bg-warning"]] },
     { k: "Focus", v: "Good", rows: [["Working now", "9", "75%", "bg-accent"], ["Paused", "2", "17%", "bg-fg-subtle"]] },
@@ -112,7 +113,7 @@ export function DashboardMock() {
       <div className="grid md:grid-cols-[200px_1fr]">
         <aside className="hidden border-r bg-wash-soft p-4 lp-line md:block">
           <p className="mb-4 font-display text-sm">BOREDROOM<span className="text-accent">.</span></p>
-          <ul className="space-y-1 text-sm">{nav.map((n, i) => <li key={n} className={cn("rounded-lg px-3 py-1.5", i === 0 ? "bg-wash-active text-fg" : "lp-muted")}>{n}</li>)}</ul>
+          <ul className="space-y-1 text-sm">{nav.map((n) => <li key={n} className={cn("rounded-lg px-3 py-1.5", n === "Dashboard" ? "bg-wash-active text-fg" : "lp-muted")}>{n}</li>)}</ul>
         </aside>
         <div className="p-5 md:p-7">
           <p className="font-display text-xl">Dashboard</p>

@@ -4,12 +4,9 @@ import { AppError } from "@/server/lib/errors";
 import { navCounts, workspaceShell } from "@/server/services/workspace";
 import { myTeams } from "@/server/services/views";
 
-/** Role-based landing page: organisation account → dashboard, team lead → first team board, staff → My Day. */
-export function homeFor(ctx: OrgContext, teams: { id: string; is_manager: boolean }[]): string {
-  const base = `/app/${ctx.org.slug}`;
-  if (ctx.membership.role === "owner" || ctx.membership.role === "hr") return `${base}/dashboard`;
-  const lead = teams.find((t) => t.is_manager);
-  return lead ? `${base}/teams/${lead.id}` : `${base}/my-day`;
+/** Where a workspace opens: Brenda Home, for everyone (owner decision, 5 October 2026). */
+export function homeFor(ctx: OrgContext): string {
+  return `/app/${ctx.org.slug}/home`;
 }
 
 /** Resolves the workspace for a server page. Unauthenticated → login; not a member → 404. */
@@ -23,8 +20,8 @@ export async function workspacePage(slug: string, currentPath: string): Promise<
     throw err;
   }
   if (!ctx.user.emailVerified) redirect(`/verify/pending?next=${encodeURIComponent(currentPath)}`);
-  // One statement for counts, teams and the policy check: on a distant database every round trip shows.
-  const { counts, teams, acknowledged } = await workspaceShell(ctx, { checkPolicy: !currentPath.endsWith("/policy") });
-  if (!acknowledged) redirect(`/app/${slug}/policy?required=1&next=${encodeURIComponent(currentPath)}`);
+  // One statement for counts and teams: on a distant database every round trip shows. No policy gate: the general
+  // sign-off is gone (owner decision, 5 October 2026); consent to screen recording is asked when a recorded session starts.
+  const { counts, teams } = await workspaceShell(ctx);
   return { ctx, counts, teams };
 }

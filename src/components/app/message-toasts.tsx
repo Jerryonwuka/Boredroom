@@ -5,6 +5,10 @@
  * their picture, "New message from …", the first line, and Reply, which opens the thread. Fed by the realtime
  * stream: on a messages or notifications change the browser asks for messages since the last look. Nothing shows
  * for the thread that is open on screen, and nothing shows twice.
+ *
+ * v4 (spec §7 Toasts): the toast surface (grey at 85% in dark, white in light) with the toast shadow, r12, the title
+ * 14/20 medium, the line in the toast's description colour, and two small buttons. This file also holds the page's
+ * one <Toaster>: every toast in the app (`notify`, `successToast`, these) floats bottom left, clear of Brenda's button.
  */
 import { useEffect, useRef } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -42,14 +46,14 @@ export function MessageToasts({ orgSlug }: { orgSlug: string }) {
           if (openConversation.current === m.conversation_id) continue;
           const href = `/app/${orgSlug}/messages?c=${m.conversation_id}`;
           toast.custom((t) => (
-            <div className="tile flex w-[340px] items-start gap-3 p-4">
-              <Avatar profileId={m.sender_profile_id} name={m.sender_name} avatarKey={m.sender_avatar_key} size={40} className="mt-0.5" />
+            <div className="toast-surface flex w-[340px] max-w-[calc(100vw-2.5rem)] items-start gap-3 p-3 pr-4">
+              <Avatar profileId={m.sender_profile_id} name={m.sender_name} avatarKey={m.sender_avatar_key} size={32} />
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium">New message from {m.sender_name}{m.kind !== "direct" ? <span className="text-fg-subtle"> in {m.conversation_title}</span> : null}</p>
-                <p className="line-clamp-2 text-sm text-fg-muted">{m.body}</p>
-                <div className="mt-2 flex gap-2">
-                  <Button size="sm" variant="outline" onClick={() => { toast.dismiss(t); router.push(href); }}>Reply</Button>
-                  <Button size="sm" variant="ghost" onClick={() => toast.dismiss(t)}>Later</Button>
+                <p className="truncate text-sm font-medium text-foreground">New message from {m.sender_name}{m.kind !== "direct" ? <span className="font-normal text-[var(--toast-description)]"> in {m.kind === "organisation" ? "Everyone" : `#${m.conversation_title}`}</span> : null}</p>
+                <p className="mt-0.5 line-clamp-2 break-words text-sm font-normal text-[var(--toast-description)]">{m.body}</p>
+                <div className="mt-2.5 flex gap-1.5">
+                  <Button size="xs" onClick={() => { toast.dismiss(t); router.push(href); }}>Reply</Button>
+                  <Button size="xs" variant="ghost" onClick={() => toast.dismiss(t)}>Later</Button>
                 </div>
               </div>
             </div>
@@ -62,5 +66,5 @@ export function MessageToasts({ orgSlug }: { orgSlug: string }) {
     return () => window.removeEventListener(CHANGE_EVENT, onChange);
   }, [orgSlug, router]);
 
-  return <Toaster position="bottom-left" theme={theme} offset={24} gap={12} toastOptions={{ unstyled: true, classNames: { toast: "w-auto" } }} />;
+  return <Toaster position="bottom-left" theme={theme} offset={20} mobileOffset={12} gap={8} toastOptions={{ unstyled: true, classNames: { toast: "w-auto" } }} />;
 }

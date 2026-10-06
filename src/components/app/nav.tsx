@@ -1,4 +1,4 @@
 "use client";
 
-// The sidebar list moved to `sidebar.tsx`; this keeps the old import path for the mobile menu.
-export { WorkspaceNav, type NavItem } from "@/components/app/sidebar";
+// The sidebar list and the phone menu live in `sidebar.tsx`; this keeps the old import path.
+export { WorkspaceNav, MobileNav, type NavItem } from "@/components/app/sidebar";

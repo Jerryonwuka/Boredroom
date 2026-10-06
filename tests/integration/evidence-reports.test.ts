@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { resetTestDatabase, adminQuery } from "../helpers/db";
 import { buildCompany, type CompanyFixture } from "@/server/services/fixtures";
 import { submitTask, reviewSubmission, uploadDeliverableFile, authoriseDeliverableDownload, scanDeliverable } from "@/server/services/evidence";
-import { submitReport, reviewReport, requestAdjustment, reviewAdjustment, exportTimesheetsCsv, reportForDate } from "@/server/services/reports";
+import { requestAdjustment, reviewAdjustment, exportTimesheetsCsv, timesheetForDate } from "@/server/services/reports";
 import { startSession, stopSession } from "@/server/services/sessions";
 import { updateTask, createTask } from "@/server/services/tasks";
 import { todayLocal } from "@/server/lib/time";
@@ -29,8 +29,9 @@ describe("A10 / A11 evidence and review", () => {
     // Self-review is rejected (service and DB).
     await expect(reviewSubmission(a.employeeCtx, r1.submissionId, { decision: "approved", note: "" })).rejects.toMatchObject({ status: 403 });
     await expect(adminQuery("INSERT INTO reviews(organisation_id, submission_id, reviewer_membership_id, decision) VALUES ($1, $2, $3, 'approved')", [a.ownerCtx.org.id, r1.submissionId, a.employeeCtx.membership.id])).rejects.toThrow(/SELF_REVIEW/);
-    // Organisation accounts supervise only: they cannot hold tasks or run timers at all.
-    await expect(createTask(a.ownerCtx, { projectId: a.projectId, title: "Owner task", expectedOutput: "x", reviewerMembershipId: a.managerCtx.membership.id, category: "work", priority: "normal", captureRequirement: "none", addToMyDay: false })).rejects.toMatchObject({ status: 422 });
+    // Organisation accounts may keep a task for themselves (owner decision, 25 September 2026), but they supervise: no timers.
+    const ownerTask = await createTask(a.ownerCtx, { projectId: a.projectId, title: "Owner task", expectedOutput: "x", reviewerMembershipId: a.managerCtx.membership.id, category: "work", priority: "normal", captureRequirement: "none", addToMyDay: false });
+    expect((await adminQuery<{ assignee_membership_id: string }>("SELECT assignee_membership_id FROM tasks WHERE id = $1", [ownerTask.id]))[0].assignee_membership_id).toBe(a.ownerCtx.membership.id);
     const { startSession: start } = await import("@/server/services/sessions");
     await expect(start(a.ownerCtx, { taskId: t, captureMode: "none" })).rejects.toMatchObject({ status: 403 });
     // David requests changes.
@@ -77,8 +78,9 @@ describe("A10 / A11 evidence and review", () => {
   });
 });
 
-describe("A12 / A13 / A20 reports, corrections and export", () => {
-  it("submits, approves, corrects with a new version and exports reconciled CSV", async () => {
+describe("A12 / A13 / A20 confirmed time, corrections and export", () => {
+  // No staff daily report (owner decision, 6 October 2026): the timesheet and the export read the confirmed ledger.
+  it("confirms timer time, corrects it once the lead approves and exports reconciled CSV", async () => {
     const ctx = a.employee2Ctx; // Ben: clean timeline
     const today = todayLocal(a.ownerCtx.org.timezone);
     const s = await startSession(ctx, { taskId: a.taskIds.second, captureMode: "none" });
@@ -87,18 +89,15 @@ describe("A12 / A13 / A20 reports, corrections and export", () => {
     await adminQuery("ALTER TABLE session_intervals DISABLE TRIGGER session_intervals_immutable");
     await adminQuery("UPDATE session_intervals SET started_at = ended_at - interval '30 minutes' WHERE session_id = $1", [s.id]);
     await adminQuery("ALTER TABLE session_intervals ENABLE TRIGGER session_intervals_immutable");
-    const sub = await submitReport(ctx, { localDate: today, blockers: "", nextPriorities: "Finish pricing page" });
-    expect(sub.version).toBe(1);
-    expect(sub.totalSeconds).toBe(1800);
-    // Employee cannot approve own; manager approves.
-    await expect(reviewReport(ctx, sub.reportId, { decision: "approved", note: "", version: 1 })).rejects.toMatchObject({ status: 403 });
-    await reviewReport(a.managerCtx, sub.reportId, { decision: "approved", note: "", version: 1 });
-    let rep = await reportForDate(a.managerCtx, ctx.membership.id, today);
-    expect(rep.report?.status).toBe("approved");
-    expect(rep.report?.approved_version).toBe(1);
+    let sheet = await timesheetForDate(a.managerCtx, ctx.membership.id, today);
+    expect(sheet.day.totalSeconds).toBe(1800);
+    let csv = await exportTimesheetsCsv(a.hrCtx, { from: today, to: today, membershipId: ctx.membership.id });
+    expect(csv.totalSeconds).toBe(1800);
 
     // A13: proposed correction overlapping Ada's session (other member) is fine; overlapping Ben's own confirmed interval in *another organisation* must be rejected generically.
     const { joinViaInvitation } = await import("@/server/services/fixtures");
+    // Company B's five people fill the Free plan's seats; Pro makes room for Ben.
+    await adminQuery("INSERT INTO subscriptions(organisation_id, plan_id, status, billing_interval, current_period_end, updated_at) VALUES ($1, (SELECT id FROM plans WHERE code = 'pro'), 'active', 'monthly', NULL, now()) ON CONFLICT (organisation_id) DO UPDATE SET plan_id = EXCLUDED.plan_id, status = 'active', current_period_end = NULL", [b.ownerCtx.org.id]);
     const benInB = await joinViaInvitation(b.hrCtx, a.employee2, "employee", b.teamId);
     const tB = await createTask(b.managerCtx, { projectId: b.projectId, title: "B secret task", expectedOutput: "x", assigneeMembershipId: benInB.membership.id, category: "work", priority: "normal", captureRequirement: "none", addToMyDay: false });
     const sB = await startSession(benInB, { taskId: tB.id, captureMode: "none" });
@@ -108,42 +107,43 @@ describe("A12 / A13 / A20 reports, corrections and export", () => {
     expect(overlapErr).toMatchObject({ code: "INTERVAL_OVERLAP" });
     expect(String(overlapErr.message)).not.toContain("secret");
 
-    // A12: valid correction replaces the 30-minute interval with 45 minutes → new version needs approval; v1 stays approved until then.
+    // A12: a valid correction replaces the 30-minute interval with 45 minutes; the ledger is unchanged until the lead approves.
     const original = (await adminQuery<{ id: string; started_at: string; ended_at: string }>("SELECT id, started_at, ended_at FROM session_intervals WHERE session_id = $1", [s.id]))[0];
     const adj = await requestAdjustment(ctx, { taskId: a.taskIds.second, localDate: today, originalIntervalIds: [original.id], proposedIntervals: [{ startedAt: new Date(new Date(original.ended_at).getTime() - 45 * 60000).toISOString(), endedAt: original.ended_at }], reason: "Timer started late" });
-    expect(adj.reportVersion).toBe(2);
-    rep = await reportForDate(a.managerCtx, ctx.membership.id, today);
-    expect(rep.report?.status).toBe("submitted");
-    expect(rep.report?.approved_version).toBe(1);
-    expect(rep.versions.find((v) => v.version === 1)?.status).toBe("approved");
-    expect(rep.versions.find((v) => v.version === 2)?.total_seconds).toBe(2700);
-    // Export before approval reflects v1 (1800 s).
-    let csv = await exportTimesheetsCsv(a.hrCtx, { from: today, to: today, membershipId: ctx.membership.id });
+    sheet = await timesheetForDate(a.managerCtx, ctx.membership.id, today);
+    expect(sheet.day.totalSeconds).toBe(1800);
+    expect(sheet.adjustments.find((x) => x.id === adj.adjustmentId)?.status).toBe("pending");
+    csv = await exportTimesheetsCsv(a.hrCtx, { from: today, to: today, membershipId: ctx.membership.id });
     expect(csv.totalSeconds).toBe(1800);
-    // Approve the correction: ledger applied atomically, v2 approved, v1 superseded.
+    // Ben cannot approve his own correction, and organisation accounts do not decide; his lead does.
+    await expect(reviewAdjustment(ctx, adj.adjustmentId, { decision: "approved", note: "" })).rejects.toMatchObject({ status: 403 });
+    await expect(reviewAdjustment(a.hrCtx, adj.adjustmentId, { decision: "approved", note: "" })).rejects.toMatchObject({ status: 403 });
+    // Approval applies the ledger atomically: the 30 minutes are superseded and the 45 count.
     await reviewAdjustment(a.managerCtx, adj.adjustmentId, { decision: "approved", note: "" });
-    rep = await reportForDate(a.managerCtx, ctx.membership.id, today);
-    expect(rep.report?.approved_version).toBe(2);
-    expect(rep.versions.find((v) => v.version === 1)?.status).toBe("superseded");
-    expect(rep.versions.find((v) => v.version === 2)?.status).toBe("approved");
     const ledger = await adminQuery<{ confirmation_status: string; source: string }>("SELECT confirmation_status, source FROM session_intervals WHERE session_id = $1 ORDER BY created_at", [s.id]);
     expect(ledger.map((l) => l.confirmation_status)).toEqual(["superseded", "confirmed"]);
     expect(ledger[1].source).toBe("adjustment");
+    sheet = await timesheetForDate(a.managerCtx, ctx.membership.id, today);
+    expect(sheet.day.totalSeconds).toBe(2700);
     csv = await exportTimesheetsCsv(a.hrCtx, { from: today, to: today, membershipId: ctx.membership.id });
     expect(csv.totalSeconds).toBe(2700);
     expect(csv.csv).toContain("EMP-002");
-    expect(csv.csv.split("\r\n")[0]).toContain("report_version");
-    // Employees cannot export; Company B sees nothing of A.
+    expect(csv.csv.split("\r\n")[0]).toContain("confirmed_seconds");
+    // Employees cannot export; Company B's export holds Ben's time there (the secret task) and nothing of A's.
     await expect(exportTimesheetsCsv(ctx, { from: today, to: today })).rejects.toMatchObject({ status: 403 });
     const bCsv = await exportTimesheetsCsv(b.hrCtx, { from: today, to: today });
-    expect(bCsv.rows).toBe(0);
+    expect(bCsv.rows).toBe(1);
+    expect(bCsv.csv.split("\r\n").slice(1).filter(Boolean).every((l) => l.includes("B secret task") && !l.includes(a.ownerCtx.org.name))).toBe(true);
   });
 
-  it("rejects report submission while a session is open", async () => {
+  it("leaves a running timer out of the export until it stops", async () => {
     const today = todayLocal(a.ownerCtx.org.timezone);
+    const before = await exportTimesheetsCsv(a.hrCtx, { from: today, to: today, membershipId: a.employeeCtx.membership.id });
     const fresh = await createTask(a.managerCtx, { projectId: a.projectId, title: "Fresh task", expectedOutput: "x", assigneeMembershipId: a.employeeCtx.membership.id, category: "work", priority: "normal", captureRequirement: "none", addToMyDay: false });
     const s = await startSession(a.employeeCtx, { taskId: fresh.id, captureMode: "none" });
-    await expect(submitReport(a.employeeCtx, { localDate: today, blockers: "", nextPriorities: "" })).rejects.toMatchObject({ code: "SESSION_OPEN" });
+    const during = await exportTimesheetsCsv(a.hrCtx, { from: today, to: today, membershipId: a.employeeCtx.membership.id });
+    expect(during.totalSeconds).toBe(before.totalSeconds);
+    expect(during.csv).not.toContain("Fresh task");
     await stopSession(a.employeeCtx, s.id, { expectedVersion: s.version, note: "", outcome: "continue_later" });
   });
 });

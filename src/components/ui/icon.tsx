@@ -1,6 +1,15 @@
+import {
+  CalendarClock, ChartPie, FileCheck, Flag, LayoutDashboard, Laptop, ListChecks, ListTodo, LogIn, LogOut, MessageSquare,
+  MonitorPlay, PackageCheck, ShieldCheck, SquareCheckBig, Target, Timer, Users, Video, Building2, type LucideIcon,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ToolSquare } from "@/components/ui/tool-tile";
 
-/** The 3D icon set in public/icons (orange glass on black). Use one per page header, empty state or feature card; lucide for controls. */
+/**
+ * The v3 3D icon names, kept so callers compile. v4 is monochrome (owner decision, 6 October 2026): every name now
+ * draws a line icon (lucide, 1.5 stroke) in the secondary grey, and IconTile draws it in the v4 tool square. The PNGs
+ * in public/icons stay for the landing page only.
+ */
 export const ICON_3D = {
   "flag-alert": "Blocked, flagged, needs attention",
   "chart-ring": "Reports, analytics, hours",
@@ -25,18 +34,43 @@ export const ICON_3D = {
 } as const;
 export type Icon3DName = keyof typeof ICON_3D;
 
-export function Icon3D({ name, size = 40, className, alt = "" }: { name: Icon3DName; size?: number; className?: string; alt?: string }) {
-  // eslint-disable-next-line @next/next/no-img-element -- static PNGs served from /public, sized by the caller
-  return <img src={`/icons/${name}.png`} alt={alt} width={size} height={size} loading="lazy" className={cn("inline-block shrink-0 object-contain", className)} style={{ width: size, height: size }} />;
-}
+/** The line icon for each v3 name. */
+export const LINE_ICON: Record<Icon3DName, LucideIcon> = {
+  "flag-alert": Flag,
+  "chart-ring": ChartPie,
+  "eye-dashboard": LayoutDashboard,
+  "box-doc-check": PackageCheck,
+  "doc-link-check": FileCheck,
+  "eye-checklist": ListChecks,
+  "shield-check": ShieldCheck,
+  chat: MessageSquare,
+  "video-people": Video,
+  "screen-record": MonitorPlay,
+  desk: Building2,
+  "calendar-clock": CalendarClock,
+  "person-laptop": Laptop,
+  people: Users,
+  "card-check": SquareCheckBig,
+  "day-checklist": ListTodo,
+  "focus-target": Target,
+  stopwatch: Timer,
+  "clock-in": LogIn,
+  "clock-out": LogOut,
+};
 
-/** The lit square that holds a 3D icon: page headers, section openers, empty states. */
-export function IconTile({ name, size = "md", className }: { name: Icon3DName; size?: "sm" | "md" | "lg"; className?: string }) {
-  const px = size === "sm" ? 40 : size === "lg" ? 72 : 56;
-  const icon = size === "sm" ? 26 : size === "lg" ? 50 : 38;
+/** A line icon by its v3 name, drawn at 75% of `size` inside a `size` box so it lines up where the 3D icon stood. */
+export function Icon3D({ name, size = 40, className, alt = "" }: { name: Icon3DName; size?: number; className?: string; alt?: string }) {
+  const Line = LINE_ICON[name];
   return (
-    <span className={cn("icon-tile", className)} style={{ width: px, height: px, borderRadius: Math.round(px / 4) }}>
-      <Icon3D name={name} size={icon} />
+    <span role={alt ? "img" : undefined} aria-label={alt || undefined} aria-hidden={alt ? undefined : true} className={cn("inline-grid shrink-0 place-items-center text-secondary", className)} style={{ width: size, height: size }}>
+      <Line size={Math.round(size * 0.75)} strokeWidth={1.5} aria-hidden />
     </span>
   );
+}
+
+/** The v4 tool square with the line icon: sm 40, md 48, lg 56. */
+export function IconTile({ name, size = "md", className }: { name: Icon3DName; size?: "sm" | "md" | "lg"; className?: string }) {
+  const Line = LINE_ICON[name];
+  const px = size === "sm" ? 40 : size === "lg" ? 56 : 48;
+  return <ToolSquare size={px} className={className}><Line strokeWidth={1.75} style={{ width: Math.round(px / 2), height: Math.round(px / 2) }} /></ToolSquare>;
 }

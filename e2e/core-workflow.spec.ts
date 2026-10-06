@@ -3,11 +3,11 @@ import { signIn, latestMailTo, PASSWORD } from "./helpers";
 
 test.describe.configure({ mode: "serial" });
 
-test("A24: employee plans, starts, pauses, stops and submits; manager reviews; report approved; CSV exported", async ({ page, browser }) => {
+test("A24: employee plans, starts, pauses, stops and submits; manager reviews; CSV exported", async ({ page, browser }) => {
   // Ada: keyboard-reachable core flow.
   await signIn(page, "ada@company-a.test");
   await page.goto("/app/company-a/my-day");
-  await expect(page.getByRole("heading", { name: /Good day/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Welcome, Ada/ })).toBeVisible();
   // Start the homepage task from the assigned list.
   const row = page.getByRole("listitem").filter({ hasText: "Homepage design" }).first();
   await row.getByRole("button", { name: "Start", exact: true }).click();
@@ -36,7 +36,8 @@ test("A24: employee plans, starts, pauses, stops and submits; manager reviews; r
   await page.getByRole("button", { name: "Stop", exact: true }).click();
   await page.getByLabel(/Progress note/).fill("Agreed scope with client");
   await page.getByRole("button", { name: "Stop session" }).click();
-  await expect(page.getByText("Not on the clock")).toBeVisible();
+  // My Day shows no idle clock (owner decision, 5 October 2026): the timer card goes once the session stops.
+  await expect(page.locator("section[aria-labelledby=timer-heading]")).toHaveCount(0);
 
   // Submit the homepage task with a Figma link.
   await page.goto("/app/company-a/projects");
@@ -53,16 +54,12 @@ test("A24: employee plans, starts, pauses, stops and submits; manager reviews; r
   await expect(page.getByText("In review").first()).toBeVisible();
   await expect(page.getByRole("heading", { name: "Revision 1", exact: true })).toBeVisible();
 
-  // Daily report: submit.
+  // No daily report to submit (owner decision, 6 October 2026): the timesheet shows the confirmed time as it is.
   await page.goto("/app/company-a/timesheets");
-  await page.getByLabel("Blockers").fill("Waiting on brand assets");
-  await page.getByLabel("Next priorities").fill("Pricing page");
-  await page.getByRole("button", { name: "Submit report" }).click();
-  // The success line is replaced by the submitted version once the page refreshes; assert the durable state.
-  await expect(page.getByRole("heading", { name: "Versions" })).toBeVisible();
-  await expect(page.getByText(/Version 1/).first()).toBeVisible();
+  await expect(page.getByText("Confirmed time", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Submit report" })).toHaveCount(0);
 
-  // David reviews: changes requested, then approve after resubmission; approve the report.
+  // David reviews: changes requested, then approve after resubmission.
   const ctx2 = await browser.newContext();
   const david = await ctx2.newPage();
   await signIn(david, "david@company-a.test");
@@ -95,16 +92,11 @@ test("A24: employee plans, starts, pauses, stops and submits; manager reviews; r
   await expect(david.getByRole("heading", { name: "Revision 1", exact: true })).toBeVisible();
   await expect(david.getByRole("heading", { name: "Revision 2", exact: true })).toBeVisible();
 
-  // Team dashboard shows Ada; report approval.
+  // Team dashboard shows Ada.
   await david.goto("/app/company-a/team");
   await expect(david.getByRole("link", { name: "Ada Employee" })).toBeVisible();
-  await david.goto("/app/company-a/reviews");
-  const reportCard = david.locator("li").filter({ hasText: "Ada Employee ·" }).first();
-  await reportCard.getByLabel("Decision").selectOption("approved");
-  await reportCard.getByRole("button", { name: "Decide" }).click();
-  await expect(reportCard).toBeHidden();
 
-  // CSV export as HR.
+  // CSV export as HR: confirmed time, with no report to approve first.
   const ctx3 = await browser.newContext();
   const mary = await ctx3.newPage();
   await signIn(mary, "mary@company-a.test");
@@ -112,7 +104,7 @@ test("A24: employee plans, starts, pauses, stops and submits; manager reviews; r
   const res = await mary.request.get(`/api/orgs/company-a/exports/timesheets?from=${today}&to=${today}`);
   expect(res.status()).toBe(200);
   const csv = await res.text();
-  expect(csv.split("\n")[0]).toContain("approved_seconds");
+  expect(csv.split("\n")[0]).toContain("confirmed_seconds");
   expect(csv).toContain("EMP-001");
   await ctx2.close(); await ctx3.close();
 });
@@ -161,11 +153,8 @@ test("A03 invitation lifecycle in the browser with the local mail sink", async (
   await np.getByRole("button", { name: "Confirm my email" }).click();
   await np.goto(`/invite/${token}`);
   await np.getByRole("button", { name: /Join Company A/ }).click();
-  await np.waitForURL(/\/app\/company-a\/policy/);
-  await expect(np.getByText("Welcome to Company A")).toBeVisible();
-  await np.getByRole("checkbox").check();
-  await np.getByRole("button", { name: "Acknowledge" }).click();
-  await np.waitForURL(/my-day/);
+  // No policy sign-off any more (owner decision, 5 October 2026): joining lands on Brenda's page.
+  await np.waitForURL(/\/app\/company-a\/home/);
   // Reuse is rejected.
   await np.goto(`/invite/${token}`);
   await expect(np.getByText("already been used")).toBeVisible();
@@ -228,7 +217,7 @@ test("Tasks: David creates a task from the Tasks page and assigns it to Ada; Ada
   if (await dialog.isVisible().catch(() => false)) await dialog.getByRole("button", { name: /Stop/ }).click();
 });
 
-test("Dictation: the assistant fills the note from speech, survives the browser ending a session, and Stop keeps the text", async ({ page }) => {
+test("Dictation: Ada says her to-dos into My Day's new row, the words survive the browser ending a session, and Brenda drafts them", async ({ page }) => {
   // Headless Chromium has no speech service, so a small fake stands in for window.SpeechRecognition.
   await page.addInitScript(() => {
     class FakeRecognition {
@@ -254,16 +243,13 @@ test("Dictation: the assistant fills the note from speech, survives the browser 
   await page.context().clearCookies();
   await signIn(page, "ada@company-a.test");
   await page.goto("/app/company-a/my-day");
-  await page.getByRole("button", { name: "Assistant" }).click();
+  // "+" opens a new row in the list (owner decision, 5 October 2026); Dictate shows the voice card.
+  await page.getByRole("button", { name: "Add a to-do" }).first().click();
   await page.getByRole("button", { name: "Dictate" }).click();
   await expect(page.getByText(/Listening…/)).toBeVisible();
-  const note = page.getByLabel("What are you working on?");
-  await expect(note).toHaveValue(/finish the logo export by Friday\. reply to the client email tomorrow\./, { timeout: 5000 });
-  await page.getByRole("button", { name: "Stop dictating" }).click();
-  await expect(page.getByRole("button", { name: "Dictate" })).toBeVisible();
-  await expect(note).toHaveValue(/finish the logo export by Friday\. reply to the client email tomorrow\./);
-  await page.getByRole("button", { name: "Suggest to-dos" }).click();
-  await expect(page.getByLabel("To-do 1 title")).toHaveValue(/logo export/i);
+  await expect(page.getByText(/finish the logo export by Friday\. reply to the client email tomorrow\./)).toBeVisible({ timeout: 5000 });
+  await page.getByRole("button", { name: "Stop", exact: true }).click();
+  await expect(page.getByLabel("To-do 1", { exact: true })).toHaveValue(/logo export/i, { timeout: 15000 });
 });
 
 test("Tasks: a team lead hands a task up to the owner, who marks it done from the Tasks page", async ({ page }) => {
@@ -299,13 +285,13 @@ test("Tasks: the owner adds a task from the Tasks page and assigns it to Ben", a
   await expect(page.getByRole("row").filter({ hasText: "Prepare the board pack" })).toContainText("Ben Employee");
 });
 
-test("Clocking: Ada clocks in from My Day, sees her status, and the owner sees her under Clocked in", async ({ page }) => {
+test("Clocking: Ada clocks in on the Clock in page, sees her status, and the owner sees her under Clocked in", async ({ page }) => {
   await page.context().clearCookies();
   await signIn(page, "ada@company-a.test");
-  await page.goto("/app/company-a/my-day");
-  await page.getByRole("button", { name: "Clock in" }).first().click();
-  await expect(page.getByRole("button", { name: "Clock in" })).toHaveCount(0);
+  // Clocking in has its own page; My Day no longer carries it (owner decision, 5 October 2026).
   await page.goto("/app/company-a/clock");
+  await page.getByRole("button", { name: /^Clock in/ }).first().click();
+  await expect(page.getByRole("button", { name: /^Clock in/ })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Your clock" })).toBeVisible();
   await expect(page.getByText(/Clocked in \d\d:\d\d/)).toBeVisible();
   await expect(page.getByText(/On time|Late by/).first()).toBeVisible();
@@ -319,8 +305,7 @@ test("Clocking: Ada clocks in from My Day, sees her status, and the owner sees h
   await page.getByRole("link", { name: /Not clocked in/ }).click();
   await expect(page.getByRole("row").filter({ hasText: "Ben Employee" })).toBeVisible();
   await expect(page.getByRole("row").filter({ hasText: "Ada Employee" })).toHaveCount(0);
-  // The owner clocks in as well.
+  // The organisation account supervises and does not clock in: its Clock in page leads to Attendance.
   await page.goto("/app/company-a/clock");
-  await page.getByRole("button", { name: "Clock in" }).click();
-  await expect(page.getByRole("button", { name: "Clock out" })).toBeVisible();
+  await page.waitForURL(/\/app\/company-a\/attendance/);
 });

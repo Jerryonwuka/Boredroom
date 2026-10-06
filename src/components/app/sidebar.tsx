@@ -1,25 +1,42 @@
 "use client";
 
 /**
- * The workspace sidebar. Expanded it is the list; collapsed it is a dock: one icon tile per page, lifting on hover with
- * its label beside it. The choice lives on <html data-sidebar> and in localStorage, applied before first paint by the
- * root layout's inline script, so the page never jumps.
+ * The workspace sidebar, v4 (spec §6, owner decision 6 October 2026): a 256px panel on the sidebar grey with a hairline
+ * on its right. The logo row is 50px, level with the top bar. Nav items are 32px tall with 4px between them, inset 12px:
+ * an 18px icon and the label, both in the secondary grey; hover and the current page get fill-1 and the foreground.
+ * Groups after the first carry a quiet label ("Work", "Records"). Counts are tiny pills. At the bottom: a notice card
+ * when the plan needs a word (accent tint), then the workspace row, which opens the workspace menu.
+ *
+ * Collapsed, it is a 56px rail: the "B." mark, the icons alone (their labels as tooltips to the right), a hairline
+ * between groups, a small orange dot for a count, and the workspace avatar. The choice lives on <html data-sidebar>
+ * and in localStorage; the root layout's inline script applies it before first paint, and every collapsed style
+ * here hangs off that attribute in CSS, so the server's HTML is already right and nothing jumps or hides on load.
+ *
+ * Below md the sidebar is hidden and `MobileNav` (the top bar's menu button) opens the same list in a sheet from the left.
  */
-import { useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore, type ComponentType } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { motion, useReducedMotion } from "motion/react";
-import { Activity, AlarmClock, BarChart3, Bell, Building2, CalendarDays, ClipboardCheck, ClipboardList, FolderKanban, History, LayoutDashboard, ListChecks, MessageSquare, PanelLeftClose, PanelLeftOpen, Settings, ShieldCheck, Users, UsersRound, Kanban, Video } from "lucide-react";
+import { Activity, AlarmClock, Bell, CalendarDays, ChevronsUpDown, ClipboardCheck, ClipboardList, FileText, FolderKanban, History, Kanban, LayoutDashboard, ListChecks, MessageSquare, PanelLeft, Plus, Settings, ShieldCheck, UsersRound, Video, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { SlidingMarker } from "@/components/ui/motion";
+import { Avatar } from "@/components/ui/avatar";
+import { CountPill } from "@/components/ui/badge";
+import { IconButton } from "@/components/ui/icon-button";
+import { Menu, MenuItem, MenuLabel, MenuSeparator } from "@/components/ui/menu";
+import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { Logo } from "@/components/logo";
+import { BrendaGlyph } from "@/components/app/brenda-glyph";
 
-export type NavItem = { href: string; label: string; icon: keyof typeof ICONS; badge?: number };
-const ICONS = { dashboard: LayoutDashboard, board: Kanban, myday: CalendarDays, projects: FolderKanban, team: Activity, reviews: ClipboardCheck, timesheets: History, reports: BarChart3, people: UsersRound, settings: Settings, audit: ShieldCheck, notifications: Bell, policy: Users, recordings: Video, messages: MessageSquare, tasks: ListChecks, clock: AlarmClock, attendance: ClipboardList };
+export type NavItem = { href: string; label: string; icon: keyof typeof ICONS; badge?: number; /** Section label shown above the first item of each group. */ group?: string };
+export type Workspace = { slug: string; name: string };
+/** A short word from the workspace in the sidebar's tinted card (a trial running out, say). */
+export type SidebarNotice = { title: string; body: string; href: string; cta: string };
+/** Any line icon that takes a class and can hide from screen readers: lucide's, and Brenda's own glyph. */
+type NavIcon = ComponentType<{ className?: string; "aria-hidden"?: boolean }>;
+// Brenda's page carries her face, never a generic AI icon (owner decision, 5 October 2026). Reports and Policy are gone.
+const ICONS = { brenda: BrendaGlyph, dashboard: LayoutDashboard, board: Kanban, myday: CalendarDays, projects: FolderKanban, team: Activity, reviews: ClipboardCheck, timesheets: History, people: UsersRound, settings: Settings, audit: ShieldCheck, notifications: Bell, recordings: Video, messages: MessageSquare, tasks: ListChecks, clock: AlarmClock, attendance: ClipboardList, docs: FileText } satisfies Record<string, NavIcon>;
 
 export const SIDEBAR_KEY = "boredroom-sidebar";
-const EXPANDED = 240;
-const COLLAPSED = 76;
 
 function subscribe(onChange: () => void) {
   const o = new MutationObserver(onChange);
@@ -29,80 +46,197 @@ function subscribe(onChange: () => void) {
 const readCollapsed = () => document.documentElement.dataset.sidebar === "collapsed";
 const serverCollapsed = () => false;
 
+/** Whether the person collapsed the sidebar (false while the page hydrates; the look itself comes from CSS). */
+export function useSidebarCollapsed() {
+  return useSyncExternalStore(subscribe, readCollapsed, serverCollapsed);
+}
+
 export function setSidebarCollapsed(collapsed: boolean) {
   if (collapsed) document.documentElement.dataset.sidebar = "collapsed"; else delete document.documentElement.dataset.sidebar;
   try { localStorage.setItem(SIDEBAR_KEY, collapsed ? "collapsed" : "expanded"); } catch { /* private mode */ }
 }
 
-/** The label that appears beside a dock tile on hover or focus. */
-function DockLabel({ children }: { children: React.ReactNode }) {
-  return <span role="tooltip" className="pointer-events-none absolute left-[calc(100%+10px)] top-1/2 z-[var(--z-dropdown)] -translate-y-1/2 translate-x-1 whitespace-nowrap rounded-[10px] border border-border bg-popover px-2.5 py-1.5 text-xs font-medium text-fg opacity-0 shadow-[var(--ring-lift)] transition-[opacity,transform] duration-[var(--duration-fast)] group-hover:translate-x-0 group-hover:opacity-100 group-focus-visible:translate-x-0 group-focus-visible:opacity-100">{children}</span>;
+/** The top bar's panel button (md and up): collapses the sidebar to its rail and back. */
+export function SidebarToggle({ className }: { className?: string }) {
+  const collapsed = useSidebarCollapsed();
+  return (
+    <IconButton className={className} aria-controls="workspace-sidebar" aria-label={collapsed ? "Expand the sidebar" : "Collapse the sidebar"} onClick={() => setSidebarCollapsed(!collapsed)}>
+      <PanelLeft aria-hidden />
+    </IconButton>
+  );
 }
 
-/** The list of pages: a quiet white pill slides to the active item; icons lift a little on hover, like a dock. */
-export function WorkspaceNav({ items, collapsed = false }: { items: NavItem[]; collapsed?: boolean }) {
+type Variant = "rail" | "sheet";
+
+/** The items in order, split where the group changes. */
+function groupsOf(items: NavItem[]) {
+  const groups: { label?: string; items: NavItem[] }[] = [];
+  for (const it of items) {
+    const last = groups[groups.length - 1];
+    if (last && last.label === it.group) last.items.push(it); else groups.push({ label: it.group, items: [it] });
+  }
+  return groups;
+}
+
+const ITEM = "relative flex h-8 items-center gap-2 rounded-lg px-2 text-sm font-medium transition-colors duration-75 [&>svg]:size-[18px] [&>svg]:shrink-0";
+// The rail's collapsed look (only inside the desktop sidebar, never in the phone sheet): the icon alone, centred.
+const ITEM_RAIL = "in-data-[sidebar=collapsed]:w-8 in-data-[sidebar=collapsed]:px-[7px]";
+
+/**
+ * The list of pages. The first group has no label (like the top of ElevenLabs' list); the others carry theirs. In the
+ * rail, a collapsed sidebar shows the icons with their labels as tooltips, and a hairline between groups.
+ */
+export function WorkspaceNav({ items, variant = "rail" }: { items: NavItem[]; variant?: Variant }) {
   const pathname = usePathname();
+  const collapsed = useSidebarCollapsed() && variant === "rail";
+  const rail = variant === "rail";
   return (
-    <nav aria-label="Workspace" className={cn("flex flex-col", collapsed ? "items-center gap-1.5" : "gap-0.5")}>
-      {items.map((it) => {
-        const Icon = ICONS[it.icon];
-        const active = pathname === it.href || pathname.startsWith(it.href + "/");
-        if (collapsed) {
-          return (
-            <Link key={it.href} href={it.href} aria-current={active ? "page" : undefined} aria-label={it.badge ? `${it.label}, ${it.badge}` : it.label}
-              className={cn("group relative grid size-11 place-items-center rounded-[12px] border text-fg-subtle transition-[transform,color,border-color,background-color] duration-200 ease-[var(--ease-out)] hover:border-border-strong hover:text-fg motion-reduce:hover:translate-y-0 motion-reduce:hover:scale-100", active ? "border-border bg-wash-strong text-fg" : "border-transparent hover:bg-wash")}>
-              <Icon className={cn("size-[18px] transition-transform duration-200 group-hover:scale-110", active && "text-accent")} aria-hidden />
-              {it.badge ? <span aria-hidden className="absolute -right-1 -top-1 min-w-[18px] rounded-full bg-accent px-1 text-center text-[10px] font-bold leading-[18px] tabular-nums text-accent-fg">{it.badge}</span> : null}
-              <DockLabel>{it.label}</DockLabel>
-            </Link>
-          );
-        }
+    <nav aria-label="Workspace">
+      {groupsOf(items).map((g, gi) => {
+        const labelId = `nav-${variant}-${gi}`;
+        const labelled = gi > 0 && g.label;
         return (
-          <Link key={it.href} href={it.href} aria-current={active ? "page" : undefined}
-            className={cn("group relative flex min-h-9 items-center gap-2.5 rounded-[var(--radius-sm)] px-2.5 py-1.5 text-[14px] font-medium text-fg-muted transition-[color] duration-[var(--duration-fast)] hover:text-fg", active && "text-fg")}>
-            {active ? <SlidingMarker layoutId="nav-active" className="absolute inset-0 rounded-[var(--radius-sm)] bg-wash-strong" /> : null}
-            <Icon className={cn("relative size-4 transition-transform duration-200 group-hover:-translate-y-px group-hover:scale-110 motion-reduce:group-hover:translate-y-0 motion-reduce:group-hover:scale-100", active ? "text-accent" : "text-fg-subtle")} aria-hidden />
-            <span className="relative flex-1 truncate">{it.label}</span>
-            {it.badge ? <span className="relative rounded-full bg-accent px-1.5 py-px text-[11px] font-bold tabular-nums text-accent-fg">{it.badge}</span> : null}
-          </Link>
+          <div key={`${g.label ?? "top"}-${gi}`} className={cn(gi > 0 && "mt-4", gi > 0 && rail && "in-data-[sidebar=collapsed]:mt-2 in-data-[sidebar=collapsed]:border-t in-data-[sidebar=collapsed]:border-border in-data-[sidebar=collapsed]:pt-2")}>
+            {labelled ? <p id={labelId} className={cn("mb-1 px-1.5 text-sm font-medium text-secondary", rail && "in-data-[sidebar=collapsed]:sr-only")}>{g.label}</p> : null}
+            <ul className="space-y-1" aria-labelledby={labelled ? labelId : undefined}>
+              {g.items.map((it) => {
+                const Icon: NavIcon = ICONS[it.icon];
+                const active = pathname === it.href || pathname.startsWith(it.href + "/");
+                return (
+                  <li key={it.href}>
+                    <Link href={it.href} aria-current={active ? "page" : undefined} data-tip={collapsed ? (it.badge ? `${it.label}, ${it.badge}` : it.label) : undefined} data-tip-side="right"
+                      className={cn(ITEM, active ? "bg-fill-1 text-foreground" : "text-secondary hover:bg-fill-1 hover:text-foreground", rail ? ITEM_RAIL : "pointer-coarse:h-10")}>
+                      <Icon aria-hidden />
+                      <span className={cn("min-w-0 flex-1 truncate", rail && "in-data-[sidebar=collapsed]:sr-only")}>{it.label}</span>
+                      {it.badge ? <CountPill count={it.badge} className={cn(rail && "in-data-[sidebar=collapsed]:sr-only")} /> : null}
+                      {it.badge && rail ? <span aria-hidden className="absolute right-1 top-1 hidden size-1.5 rounded-full bg-accent in-data-[sidebar=collapsed]:block" /> : null}
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
         );
       })}
     </nav>
   );
 }
 
-export function Sidebar({ items, orgSlug, orgName }: { items: NavItem[]; orgSlug: string; orgName: string }) {
-  const collapsed = useSyncExternalStore(subscribe, readCollapsed, serverCollapsed);
-  const reduced = useReducedMotion();
+/**
+ * The workspace row: its avatar and name; it opens a menu of the person's workspaces (the current one ticked), then
+ * joining or creating another, and the workspace settings for the people who run it.
+ */
+function WorkspaceSwitcher({ orgSlug, orgName, workspaces, isOrg, variant }: { orgSlug: string; orgName: string; workspaces: Workspace[]; isOrg: boolean; variant: Variant }) {
+  const collapsed = useSidebarCollapsed() && variant === "rail";
+  const rail = variant === "rail";
+  const list = workspaces.some((w) => w.slug === orgSlug) ? workspaces : [{ slug: orgSlug, name: orgName }, ...workspaces];
   return (
-    <motion.aside
-      aria-label="Sidebar"
-      initial={false}
-      animate={{ width: collapsed ? COLLAPSED : EXPANDED }}
-      transition={reduced ? { duration: 0 } : { type: "spring", stiffness: 380, damping: 36 }}
-      className={cn("sticky top-0 hidden h-dvh shrink-0 flex-col overflow-hidden border-r border-border-soft bg-sidebar py-5 md:flex", collapsed ? "items-center px-3" : "px-3")}
-      style={{ width: collapsed ? COLLAPSED : EXPANDED }}>
-      <div className={cn("mb-6 flex items-center", collapsed ? "justify-center" : "justify-between px-2")}>
-        {collapsed ? <Link href={`/app/${orgSlug}`} aria-label="Boredroom home" className="font-display text-xl tracking-wide text-fg">B<span className="text-accent">.</span></Link> : <Logo href={`/app/${orgSlug}`} />}
-      </div>
-      {collapsed ? (
-        <Link href="/app" aria-label={`${orgName}: switch workspace`} className="group relative mb-5 grid size-11 place-items-center rounded-[12px] border border-border bg-wash text-fg-muted transition-[transform,color] duration-200 hover:text-fg motion-reduce:hover:translate-y-0 motion-reduce:hover:scale-100">
-          <Building2 className="size-[18px]" aria-hidden />
-          <DockLabel>{orgName}, switch workspace</DockLabel>
-        </Link>
-      ) : (
-        <Link href="/app" className="chip chip-link mb-5 block px-3 py-2" aria-label="Switch workspace">
-          <p className="truncate text-sm font-semibold">{orgName}</p>
-          <p className="text-xs text-fg-subtle">Switch workspace</p>
-        </Link>
-      )}
-      <div className={cn("min-h-0 flex-1 overflow-y-auto overflow-x-visible", collapsed ? "w-full" : "-mx-1 px-1")}><WorkspaceNav items={items} collapsed={collapsed} /></div>
-      <div className={cn("mt-auto pt-4", collapsed ? "flex justify-center" : "px-1")}>
-        <button type="button" onClick={() => setSidebarCollapsed(!collapsed)} aria-pressed={collapsed} aria-label={collapsed ? "Expand the sidebar" : "Collapse the sidebar"}
-          className={cn("group relative inline-flex items-center gap-2 rounded-[12px] border border-transparent text-fg-subtle transition-[color,background-color,border-color,transform] duration-200 hover:border-border hover:bg-wash hover:text-fg", collapsed ? "size-11 justify-center hover:-translate-y-0.5 motion-reduce:hover:translate-y-0" : "h-9 px-2.5 text-[13px] font-medium")}>
-          {collapsed ? <><PanelLeftOpen className="size-[18px]" aria-hidden /><DockLabel>Expand</DockLabel></> : <><PanelLeftClose className="size-4" aria-hidden />Collapse</>}
+    // Menu wraps its trigger in an inline span; the row should span the panel, so that span is made a full-width flex.
+    <div className="min-w-0 [&>span]:flex [&>span]:w-full">
+    <Menu align="start" label="Workspaces" className="w-[232px]"
+      trigger={
+        <button type="button" data-tip={collapsed ? `${orgName}, switch workspace` : undefined} data-tip-side="right"
+          className={cn("flex h-8 w-full min-w-0 items-center gap-2 rounded-lg px-2 text-sm font-medium text-foreground transition-colors duration-75 hover:bg-fill-1 aria-expanded:bg-fill-1", rail ? "in-data-[sidebar=collapsed]:w-8 in-data-[sidebar=collapsed]:px-1.5" : "pointer-coarse:h-10")}>
+          <Avatar profileId={`workspace-${orgSlug}`} name={orgName} size={20} />
+          <span className={cn("min-w-0 flex-1 truncate text-left", rail && "in-data-[sidebar=collapsed]:sr-only")}>{orgName}<span className="sr-only">, switch workspace</span></span>
+          <ChevronsUpDown className={cn("size-3.5 shrink-0 text-secondary", rail && "in-data-[sidebar=collapsed]:hidden")} aria-hidden />
         </button>
+      }>
+      <MenuLabel>Workspaces</MenuLabel>
+      {list.map((w) => (
+        <MenuItem key={w.slug} href={`/app/${w.slug}`} checked={w.slug === orgSlug} icon={<Avatar profileId={`workspace-${w.slug}`} name={w.name} size={20} />}>{w.name}</MenuItem>
+      ))}
+      <MenuSeparator />
+      <MenuItem href="/app?switch=1" icon={<Plus aria-hidden />}>Join or create a workspace</MenuItem>
+      {isOrg ? <MenuItem href={`/app/${orgSlug}/settings`} icon={<Settings aria-hidden />}>Workspace settings</MenuItem> : null}
+    </Menu>
+    </div>
+  );
+}
+
+function NoticeCard({ notice, rail }: { notice: SidebarNotice; rail: boolean }) {
+  return (
+    <div className={cn("card-tint", rail && "in-data-[sidebar=collapsed]:hidden")}>
+      <p className="text-sm font-medium text-foreground">{notice.title}</p>
+      <p className="mt-0.5 text-meta font-normal text-secondary">{notice.body}</p>
+      <Link href={notice.href} className="mt-2 inline-flex rounded-sm text-meta font-medium text-accent-text hover:underline">{notice.cta}</Link>
+    </div>
+  );
+}
+
+type SidebarProps = { items: NavItem[]; orgSlug: string; orgName: string; workspaces?: Workspace[]; isOrg?: boolean; notice?: SidebarNotice | null };
+
+export function Sidebar({ items, orgSlug, orgName, workspaces = [], isOrg = false, notice = null }: SidebarProps) {
+  return (
+    // The outer box animates its width; the inner one switches at once, so nothing reflows while the rail slides.
+    // data-ready: the server's HTML is already in the right state (the collapsed look is CSS on <html data-sidebar>).
+    <aside id="workspace-sidebar" data-app-sidebar data-ready="" aria-label="Sidebar"
+      className="sticky top-[var(--shell-banners,0px)] hidden h-[calc(100dvh-var(--shell-banners,0px))] w-64 shrink-0 overflow-hidden border-r border-border bg-sidebar transition-[width] duration-200 ease-out md:block [[data-sidebar=collapsed]_&]:w-14">
+      <div className="flex h-full w-64 flex-col in-data-[sidebar=collapsed]:w-14">
+        <div className="flex h-[50px] shrink-0 items-center pl-[18px] pr-3 in-data-[sidebar=collapsed]:justify-center in-data-[sidebar=collapsed]:px-0">
+          <Logo href={`/app/${orgSlug}`} height={16} className="in-data-[sidebar=collapsed]:hidden" />
+          <Logo href={`/app/${orgSlug}`} variant="mark" height={18} className="hidden in-data-[sidebar=collapsed]:inline-flex" />
+        </div>
+        <div className="scroll-thin min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 pb-3 pt-1">
+          <WorkspaceNav items={items} variant="rail" />
+        </div>
+        <div className="shrink-0 space-y-2 p-3">
+          {notice ? <NoticeCard notice={notice} rail /> : null}
+          <WorkspaceSwitcher orgSlug={orgSlug} orgName={orgName} workspaces={workspaces} isOrg={isOrg} variant="rail" />
+        </div>
       </div>
-    </motion.aside>
+    </aside>
+  );
+}
+
+/**
+ * The phone and tablet menu (below md, where the sidebar is hidden): the top bar's panel button opens the sidebar's
+ * contents in a sheet from the left, on the native <dialog> (focus moves in and stays, Escape closes, focus returns to
+ * the button). Choosing a page, a tap on the overlay or Escape closes it.
+ */
+export function MobileNav({ items, orgSlug, orgName, workspaces = [], isOrg = false, notice = null, className }: SidebarProps & { className?: string }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDialogElement>(null);
+  const pathname = usePathname();
+  useEffect(() => {
+    const d = ref.current;
+    if (!d) return;
+    if (open && !d.open) d.showModal();
+    if (!open && d.open) d.close();
+  }, [open]);
+  // A page chosen elsewhere (a search result, the browser's back button) closes it too.
+  const [shownFor, setShownFor] = useState(pathname);
+  if (shownFor !== pathname) { setShownFor(pathname); if (open) setOpen(false); }
+  return (
+    <>
+      <IconButton className={className} aria-label="Open the menu" aria-haspopup="dialog" aria-controls="mobile-nav" onClick={() => setOpen(true)}>
+        <PanelLeft aria-hidden />
+      </IconButton>
+      <dialog ref={ref} id="mobile-nav" aria-label="Menu"
+        onCancel={(e) => { e.preventDefault(); setOpen(false); }}
+        onClose={() => setOpen(false)}
+        onMouseDown={(e) => { if (e.target === e.currentTarget && e.clientX > e.currentTarget.getBoundingClientRect().right) setOpen(false); }}
+        onClick={(e) => { if ((e.target as HTMLElement).closest("a")) setOpen(false); }}
+        className="fixed inset-y-0 left-0 right-auto m-0 h-dvh max-h-dvh w-[min(288px,calc(100vw-48px))] max-w-none border-0 border-r border-border bg-sidebar p-0 text-foreground shadow-sheet transition-transform duration-300 ease-out backdrop:bg-overlay open:flex open:flex-col starting:open:-translate-x-full md:hidden">
+        {open ? (
+          <>
+            <div className="flex h-[50px] shrink-0 items-center justify-between pl-[18px] pr-3">
+              <Logo href={`/app/${orgSlug}`} height={16} />
+              <IconButton aria-label="Close the menu" onClick={() => setOpen(false)}><X aria-hidden /></IconButton>
+            </div>
+            <div className="scroll-thin min-h-0 flex-1 overflow-y-auto px-3 pb-3 pt-1">
+              <WorkspaceNav items={items} variant="sheet" />
+            </div>
+            <div className="shrink-0 space-y-2 p-3">
+              {notice ? <NoticeCard notice={notice} rail={false} /> : null}
+              <div className="flex items-center gap-1">
+                <div className="min-w-0 flex-1"><WorkspaceSwitcher orgSlug={orgSlug} orgName={orgName} workspaces={workspaces} isOrg={isOrg} variant="sheet" /></div>
+                <ThemeToggle />
+              </div>
+            </div>
+          </>
+        ) : null}
+      </dialog>
+    </>
   );
 }

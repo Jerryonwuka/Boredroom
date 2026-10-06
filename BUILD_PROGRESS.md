@@ -237,6 +237,10 @@ The owner supplied the Control Center PRD and asked for it to be built. The MVP 
 
 Verified: typecheck, lint, 26 unit tests, the page and assistant smoke runs, and `pnpm smoke:admin` (36 checks across every read model, the audience SQL, the waitlist join, expiry and scheduled automations) against Neon. Not exercised live: a real Paystack payment and a real Brevo sync (no keys on this server), and the signed-in console screens (the assistant cannot sign in). Phase 2 items from the PRD (API keys, inbox, deeper analytics, notification centre) are marked in the console where they will go.
 
+## Owner decision (6 October 2026): no staff daily report
+
+Staff no longer write or submit a daily report, and team leads no longer approve one; Brenda's end-of-day team report (`src/server/services/daily-report.ts`) tells team leads, and the owner and HR, what each team did. Entries above that describe submitting, approving or missing daily reports are history. Confirmed time never depended on a report: it is the ledger (`session_intervals`), as the timer records it and as approved corrections change it. A time correction now goes straight to the team lead under Reviews → Time corrections. The CSV export reads the ledger (one row per person, local day and task, `confirmed_seconds`) instead of approved report versions. Removed: Submit report and report versions on Timesheets, the report card on My Day, daily reports, Missing reports and day exemptions under Reviews, the report reminder job and its setting in the policy form. Migration 0031 drops queued reminders and rewrites the day-7 email's report sentence; 0032 lets a team lead approve a correction for a day the timer never ran; 0033 removes the report reminders already delivered to people's notifications. Old reports, versions and exemptions stay in the database, unread.
+
 ## Milestone status
 
 | Milestone | Status | Evidence |

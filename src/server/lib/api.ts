@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { AppError, invalid, unauthenticated, forbidden, notFound } from "@/server/lib/errors";
 import { getCurrentUser, type CurrentUser } from "@/server/auth";
 import { cache } from "react";
-import { withUser, withSystem, type Db } from "@/server/db";
+import { withSystem, type Db } from "@/server/db";
 import { currentUserIn } from "@/server/auth";
 import { sha256 } from "@/server/lib/crypto";
 import { explainInfraError } from "@/server/lib/health";
@@ -25,6 +25,10 @@ export function errorResponse(err: unknown, requestId: string) {
   const code = (err as { code?: string } | null)?.code;
   if (code === "42501") {
     return NextResponse.json({ code: "FORBIDDEN", message: "You are not allowed to do that.", requestId }, { status: 403 });
+  }
+  // A malformed id in the address (/tasks/abc) reaches a uuid column and Postgres refuses it: that thing does not exist.
+  if (code === "22P02" && err instanceof Error && /type uuid/.test(err.message)) {
+    return NextResponse.json({ code: "NOT_FOUND", message: "Not found. Check the link and try again.", requestId }, { status: 404 });
   }
   console.error(`[${requestId}]`, err);
   // Infrastructure problems (database down, wrong password, migrations missing) are explained safely in every environment.

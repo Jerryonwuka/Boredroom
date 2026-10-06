@@ -25,7 +25,7 @@ export const metadata = { title: "Boredroom · Know what your remote team is doi
 const WAYS_IN = ["Join code", "Join link", "Email invitation", "Teams", "Team leads", "Owner", "HR", "Staff", "One workspace per company", "Sealed from every other"];
 
 const FAIR = [
-  { icon: "shield-check", t: "A notice everyone acknowledges", d: "Each person reads exactly what is recorded about them before their first session." },
+  { icon: "shield-check", t: "Consent before any recording", d: "Each person reads exactly what is recorded about them, and agrees, before their screen is first recorded." },
   { icon: "flag-alert", t: "No productivity score", d: "Timers, heartbeats, logins and recordings are never treated as proof of work." },
   { icon: "stopwatch", t: "Uncertain time gets a question", d: "A gap leads to a clarification request, not a penalty." },
   { icon: "screen-record", t: "Recording needs a press", d: "Off by default, video only, explicit each time, with an indicator that never hides." },
@@ -43,7 +43,7 @@ const CONTROL = [
 ];
 
 const FAQ = [
-  ["Do my staff know they are being tracked?", "Yes. Every member reads and acknowledges a versioned monitoring notice before working, and can open it at any time to see exactly what is recorded about them."],
+  ["Do my staff know they are being tracked?", "Yes. Before anyone's screen is recorded for the first time, they read exactly what is recorded, who can watch it and how long it is kept, and agree to it. They are asked again whenever the rules change."],
   ["Is screen recording mandatory?", "No. It is off until an owner turns it on. Even then nothing records until the person presses Record screen and picks what to share, and a visible indicator runs the whole time."],
   ["Can a team lead read private messages?", "No. A direct thread is readable only by the two people in it. Team channels are readable by that team. Nothing crosses organisations."],
   ["What happens when someone's laptop sleeps?", "The session closes at the last heartbeat and the gap is marked uncertain. The person is asked what happened; the time is not counted and not held against them."],
@@ -116,7 +116,7 @@ export default async function LandingPage() {
                     <GlassCard bodyClassName="p-6 md:p-8">
                       <ReportsMock />
                       <h3 className="mt-6 font-display text-2xl">Reports and timesheets</h3>
-                      <p className="lp-muted mt-2 text-pretty leading-relaxed">Time by person, team and task for any period. Daily reports with blockers, corrections that keep the approved version, and a CSV export that matches the approved snapshots.</p>
+                      <p className="lp-muted mt-2 text-pretty leading-relaxed">At the end of each day Brenda sends every supervisor a report of what their team did, so nobody writes one. Timesheets count only confirmed time, a correction counts once a lead approves it, and the CSV export adds up to the same totals.</p>
                     </GlassCard>
                   </RevealItem>
                 </RevealGroup>
@@ -151,7 +151,7 @@ export default async function LandingPage() {
           <section className="py-16 md:py-24">
             <Reveal className="mx-auto max-w-4xl px-6 text-center">
               <p className="text-balance font-display text-3xl leading-[1.2] md:text-[44px]">&ldquo;Timers, heartbeats, recordings and logins are never treated as proof of productivity. Unlogged or uncertain work leads to a question, not a penalty.&rdquo;</p>
-              <p className="lp-muted mt-8 text-[15px]">From the monitoring notice every member reads and acknowledges</p>
+              <p className="lp-muted mt-8 text-[15px]">From the monitoring notice every member reads before they are recorded</p>
             </Reveal>
           </section>
 

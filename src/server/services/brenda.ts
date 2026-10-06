@@ -2,7 +2,7 @@
  * Brenda, the AI work assistant (owner decision, 3 October 2026; spec "Brenda for Boredroom", MVP).
  *
  * This module holds what Brenda knows and does outside the conversation itself (that lives in copilot.ts):
- * - what the organisation and the person allow her to do (automatic clock-in, reminders);
+ * - what the organisation and the person allow her to do (automatic clock-in, reminders, the daily team report);
  * - the action log: every action she takes is written here, so it is visible, auditable and revocable;
  * - the briefing: "what's waiting for me today", built from real Boredroom data;
  * - personal reminders ("remind me to call Josh at 7");
@@ -23,12 +23,20 @@ import { localDate, weekdayOf } from "@/server/lib/time";
 
 // ---- What is allowed --------------------------------------------------------------------------------
 
-export type BrendaSettings = { autoClockIn: boolean; reminders: boolean };
+/**
+ * The organisation's switches. The daily team report (owner decision, 5 October 2026; daily-report.ts) is on by default
+ * at 18:00 local time, and owners and HR get the whole organisation unless that is switched off.
+ */
+export type BrendaSettings = { autoClockIn: boolean; reminders: boolean; dailyReportEnabled: boolean; dailyReportTime: string; dailyReportOrgWide: boolean };
 export type BrendaPrefs = { autoClockIn: boolean; reminders: boolean };
 
 export async function brendaSettings(db: Db, orgId: string): Promise<BrendaSettings> {
-  const r = await db.maybeOne<{ auto_clock_in: boolean; reminders: boolean }>(`SELECT auto_clock_in, reminders FROM brenda_settings WHERE organisation_id = $1`, [orgId]);
-  return { autoClockIn: r?.auto_clock_in ?? false, reminders: r?.reminders ?? true };
+  const r = await db.maybeOne<{ auto_clock_in: boolean; reminders: boolean; daily_report_enabled: boolean; daily_report_time: string; daily_report_org_wide: boolean }>(
+    `SELECT auto_clock_in, reminders, daily_report_enabled, to_char(daily_report_time, 'HH24:MI') AS daily_report_time, daily_report_org_wide FROM brenda_settings WHERE organisation_id = $1`, [orgId]);
+  return {
+    autoClockIn: r?.auto_clock_in ?? false, reminders: r?.reminders ?? true,
+    dailyReportEnabled: r?.daily_report_enabled ?? true, dailyReportTime: r?.daily_report_time ?? "18:00", dailyReportOrgWide: r?.daily_report_org_wide ?? true,
+  };
 }
 
 export async function brendaPrefs(db: Db, membershipId: string): Promise<BrendaPrefs> {
@@ -38,17 +46,31 @@ export async function brendaPrefs(db: Db, membershipId: string): Promise<BrendaP
 
 export const settingsSchema = z.object({ autoClockIn: z.boolean().optional(), reminders: z.boolean().optional() });
 
+/** The organisation's switches, which add the daily team report to the person's own two. Times are "HH:MM", 24-hour. */
+export const orgSettingsSchema = settingsSchema.extend({
+  dailyReportEnabled: z.boolean().optional(),
+  dailyReportTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Use a 24-hour time such as 18:00.").optional(),
+  dailyReportOrgWide: z.boolean().optional(),
+});
+
 /** The organisation's switches (owners and HR). */
-export async function setBrendaSettings(ctx: OrgContext, input: z.infer<typeof settingsSchema>) {
+export async function setBrendaSettings(ctx: OrgContext, input: z.infer<typeof orgSettingsSchema>) {
   if (ctx.membership.role !== "owner" && ctx.membership.role !== "hr") throw forbidden("Only the organisation owner or HR can change what Brenda may do here.");
   return withUser(ctx.user.profileId, async (db) => {
+    // Each change names only what it changes (Settings saves a switch the moment it moves), so two at once take turns:
+    // otherwise both read the same row and the second write puts back what the first changed.
+    await db.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [`brenda_settings:${ctx.org.id}`]);
     const cur = await brendaSettings(db, ctx.org.id);
-    const next = { autoClockIn: input.autoClockIn ?? cur.autoClockIn, reminders: input.reminders ?? cur.reminders };
+    const next: BrendaSettings = {
+      autoClockIn: input.autoClockIn ?? cur.autoClockIn, reminders: input.reminders ?? cur.reminders,
+      dailyReportEnabled: input.dailyReportEnabled ?? cur.dailyReportEnabled, dailyReportTime: input.dailyReportTime ?? cur.dailyReportTime, dailyReportOrgWide: input.dailyReportOrgWide ?? cur.dailyReportOrgWide,
+    };
     await db.query(
-      `INSERT INTO brenda_settings(organisation_id, auto_clock_in, reminders, updated_by, updated_at) VALUES ($1, $2, $3, $4, now())
-       ON CONFLICT (organisation_id) DO UPDATE SET auto_clock_in = $2, reminders = $3, updated_by = $4, updated_at = now()`,
-      [ctx.org.id, next.autoClockIn, next.reminders, ctx.membership.id]);
-    await logAction(db, ctx, { tool: "settings", summary: `Organisation settings: automatic clock-in ${next.autoClockIn ? "on" : "off"}, reminders ${next.reminders ? "on" : "off"}`, outcome: "done", source: "confirm" });
+      `INSERT INTO brenda_settings(organisation_id, auto_clock_in, reminders, daily_report_enabled, daily_report_time, daily_report_org_wide, updated_by, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, now())
+       ON CONFLICT (organisation_id) DO UPDATE SET auto_clock_in = $2, reminders = $3, daily_report_enabled = $4, daily_report_time = $5, daily_report_org_wide = $6, updated_by = $7, updated_at = now()`,
+      [ctx.org.id, next.autoClockIn, next.reminders, next.dailyReportEnabled, next.dailyReportTime, next.dailyReportOrgWide, ctx.membership.id]);
+    const report = next.dailyReportEnabled ? `daily team report at ${next.dailyReportTime}${next.dailyReportOrgWide ? ", whole organisation for owners and HR" : ""}` : "daily team report off";
+    await logAction(db, ctx, { tool: "settings", summary: `Organisation settings: automatic clock-in ${next.autoClockIn ? "on" : "off"}, reminders ${next.reminders ? "on" : "off"}, ${report}`, outcome: "done", source: "confirm" });
     return next;
   });
 }
@@ -146,7 +168,6 @@ export async function briefing(ctx: OrgContext) {
     overdue: data.overdue.map(short),
     waitingForTheirCheck: data.waitingOnOthers.map(short),
     waitingForYourReview: queue ? queue.submissions.map((s) => ({ taskId: s.task_id, title: s.title, from: s.assignee_name, submittedAt: s.submitted_at, youAreTheReviewer: s.reviewer_is_me })) : [],
-    reportsWaiting: queue ? queue.reports.length : 0,
     assignmentsNotPickedUp: data.unanswered.map((t) => ({ ...short(t), assignee: t.assignee_name })),
     remindersToday: data.reminders.map((r) => ({ id: r.id, body: r.body, at: r.remind_at })),
   };

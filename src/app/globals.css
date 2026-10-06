@@ -1,422 +1,692 @@
 @import "tailwindcss";
-@import "@fontsource/manrope/400.css";
-@import "@fontsource/manrope/500.css";
-@import "@fontsource/manrope/600.css";
-@import "@fontsource/manrope/700.css";
-@import "@fontsource/cal-sans/400.css";
+@import "@fontsource-variable/inter/index.css";
+@import "@fontsource-variable/geist/index.css";
+@import "@fontsource-variable/geist-mono/index.css";
 
 /*
-  Boredroom design tokens, taken from the landing page (Figma "Boredroom Website"):
-  black surfaces, one orange accent (#FF6C02), Cal Sans display, Manrope body,
-  pill buttons and softly glowing glass tiles. The product keeps the palette but
-  stays restrained: tables and text first, glow only on page headers.
+  Boredroom design system, version 4 (owner decision, 6 October 2026): the ElevenLabs app's design language, measured
+  from the live app with computed styles, with Boredroom orange as the one accent. Monochrome: a near-black canvas,
+  white text, greys made of white at low alpha, hairlines instead of shadows, Inter 14/20 medium for everything in the
+  interface and a display face (Geist, standing in for their proprietary Waldenburg) for page titles. Orange is rare:
+  the focus ring, "New" badges and one standout action. No gradients, no glass, no glow, no aurora.
+  docs/design-system.md records the decisions; /dev/design shows every part.
+
+  Order of this file:
+    1. Tokens, dark (default) and light            5. Components layer: v4 parts that need CSS
+    2. Legacy token aliases (landing, admin only)   6. Legacy class aliases (admin only)
+    3. Tailwind registration (@theme)               7. Brenda: chat contract, face, voice card
+    4. Base: type, focus, selection, scrollbars     8. Landing page (frozen on its v3 look, not part of v4)
 */
-:root {
-  /* Surfaces: one hue, lightness steps only (base → +7% → +9% → +12%). Sidebars share the canvas colour. */
-  --bg: #000000;                /* true black canvas, as on the landing page */
-  --bg-elevated: #121212;       /* cards (the .tile gradient runs #151515 to #0f0f0f around this) */
-  --bg-surface: #181818;        /* small surfaces inside cards */
-  --bg-popover: #1a1a1a;
-  --bg-inset: #0a0a0a;          /* inputs sit darker than their surroundings: they receive content */
-  /* Borders: low-opacity white so edges blend; a progression from soft to emphasis. */
-  --border-soft: rgba(255, 255, 255, 0.07);
-  --border: rgba(255, 255, 255, 0.12);
-  --border-strong: rgba(255, 255, 255, 0.18);
-  /* Text: four tiers (primary, secondary, tertiary, disabled). Weight and colour carry hierarchy before size. */
-  --fg: #ffffff;
-  --fg-muted: #a1a1a1;
-  --fg-subtle: #6b6b6b;
-  --fg-faint: #4a4a4a;
-  /* One accent, used with intention. Semantic colours slightly desaturated for dark surfaces. */
+
+/* ---------------------------------------------------------------------------------------------------------------
+   1. Tokens. Dark is the default. A nested [data-theme] re-declares everything, so a panel can show the other theme
+   (the /dev/design gallery does), and everything derived below recomputes inside it.
+   --------------------------------------------------------------------------------------------------------------- */
+:root, [data-theme="dark"] {
+  color-scheme: dark;
+  /* Surfaces */
+  --background: #0f0f10;              /* canvas, cards, outline-button fill, dialogs */
+  --sidebar: #171717;                 /* the sidebar panel */
+  --popover: #2e2e2e;                 /* menus, popovers */
+  --toast: hsl(0 0% 23% / 0.85);      /* toasts and tooltips */
+  --toast-description: rgb(255 255 255 / 0.71);
+  --overlay: rgb(59 59 59 / 0.3);     /* behind dialogs and sheets; never blurred */
+  /* Text */
+  --foreground: #ffffff;
+  --secondary: rgb(255 255 255 / 0.64);   /* nav items, descriptions, icons, table headers */
+  --subtle: rgb(255 255 255 / 0.53);      /* placeholders, metric labels, control labels */
+  --faint: rgb(255 255 255 / 0.32);       /* disabled text */
+  /* Lines */
+  --border: rgb(255 255 255 / 0.075);           /* every hairline */
+  --border-input: rgb(255 255 255 / 0.1);       /* inputs, outline buttons */
+  --border-input-hover: rgb(255 255 255 / 0.16);
+  /* Fills (white at low alpha) */
+  --fill-0: rgb(255 255 255 / 0.024);    /* section cards, metric cells, filter controls */
+  --fill-075: rgb(255 255 255 / 0.03);   /* tiny count pill */
+  --fill-1: rgb(255 255 255 / 0.043);    /* hover, active nav, prompt pill, badges */
+  --fill-150: rgb(255 255 255 / 0.07);   /* pressed, the lower edge of a tool tile square */
+  /* Solid greys */
+  --gray-75: #212121;    /* mono count chip */
+  --gray-100: #2e2e2e;   /* avatar disc, own chat bubble */
+  --gray-150: #3b3b3b;
+  --gray-600: #a3a3a3;   /* tool tile icons */
+  /* Primary button: white with near-black text (inverted in light) */
+  --primary: #ffffff;
+  --primary-hover: #cfcfcf;
+  --primary-fg: #0f0f10;
+  /* Accent: Boredroom orange, used rarely */
   --accent: #ff6c02;
-  --accent-hover: #ff8226;
-  --accent-soft: rgba(255, 108, 2, 0.14);
-  --accent-glow: rgba(252, 56, 13, 0.32);
-  --accent-fg: #140700;
-  --success: #3ddc97;
-  --warning: #ffc857;
-  --danger: #ff5c5c;
-  --info: #7fb2ff;
-  --ring: #ff9a4d;
-  /* Radius scale: small controls, medium cards, large dialogs. Nested radius = outer − padding. */
-  --radius-sm: 10px;
-  --radius: 16px;
-  --radius-lg: 24px;
-  --radius-pill: 999px;
-  /* Depth strategy: borders only (dark mode); a single 1px ring for lifted surfaces. No drop shadows. */
-  --ring-lift: 0 0 0 1px rgba(255, 255, 255, 0.1);
-  --card-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 20px 60px -30px rgba(0, 0, 0, 0.8);
-  /* Motion: felt, not watched. Custom ease-out on entrances; under 200ms for feedback. */
+  --accent-hover: #ff7f24;
+  --accent-fg: #0f0f10;               /* near-black on orange: white on orange fails contrast */
+  --accent-soft: #4a1f04;             /* "New" badge fill */
+  --accent-text: #ff9a4d;             /* "New" badge text, rare accent links */
+  --accent-tint: rgb(255 108 2 / 0.1);/* accent-tinted panels (with a hairline) */
+  --ring: rgb(255 108 2 / 0.5);       /* the focus ring */
+  /* Status: small dots and badges only */
+  --success: hsl(142 71% 45%);
+  --warning: hsl(38 92% 50%);
+  --danger: hsl(0 84% 60%);
+  --info: #a3a3a3;                    /* no blue in v4: "info" is a neutral grey */
+  /* Elevation */
+  --elev-natural-xs: 0 0 0 1px rgb(0 0 0 / 0.06), 0 1px 1px -0.5px rgb(0 0 0 / 0.06), 0 3px 3px -1.5px rgb(0 0 0 / 0.06);
+  --elev-chart: 0 0 1.143px rgb(0 0 0 / 0.4), 0 2px 4px rgb(0 0 0 / 0.04);
+  --elev-sheet: 0 4px 6px -2px rgb(16 24 40 / 0.03), 0 12px 16px -4px rgb(16 24 40 / 0.08);
+  --elev-toast: inset 0 0.5px 0 0 rgb(255 255 255 / 0.12), inset 0 0 0 0.5px rgb(255 255 255 / 0.06), 0 0 0 0.5px rgb(0 0 0 / 0.44), 0 2px 6px -2px rgb(0 0 0 / 0.13), 0 18px 40px -10px rgb(0 0 0 / 0.35);
+  --elev-thumb: 0 1px 3px rgb(0 0 0 / 0.3), 0 1px 2px -1px rgb(0 0 0 / 0.3);
+  --scrollbar: rgb(255 255 255 / 0.16);
+  --selection: rgb(255 108 2 / 0.32);
+  --field-chevron: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23a7a7a7' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='m6 9 6 6 6-6'/></svg>");
+  --field-picker-filter: invert(1);
+}
+
+[data-theme="light"] {
+  color-scheme: light;
+  --background: #ffffff;
+  --sidebar: #fafafa;
+  --popover: #ffffff;
+  --toast: #ffffff;
+  --toast-description: rgb(0 0 0 / 0.6);
+  --overlay: rgb(15 15 16 / 0.2);
+  --foreground: #0f0f10;
+  --secondary: rgb(0 0 0 / 0.53);
+  --subtle: rgb(0 0 0 / 0.44);
+  --faint: rgb(0 0 0 / 0.25);
+  --border: rgb(0 0 0 / 0.075);
+  --border-input: rgb(0 0 0 / 0.1);
+  --border-input-hover: rgb(0 0 0 / 0.16);
+  --fill-0: rgb(0 0 0 / 0.02);
+  --fill-075: rgb(0 0 0 / 0.03);
+  --fill-1: rgb(0 0 0 / 0.043);
+  --fill-150: rgb(0 0 0 / 0.06);
+  --gray-75: #f5f5f5;
+  --gray-100: #ebebeb;
+  --gray-150: #e0e0e0;
+  --gray-600: #737373;
+  --primary: #0f0f10;
+  --primary-hover: #2e2e2e;
+  --primary-fg: #ffffff;
+  --accent: #f25f00;
+  --accent-hover: #db5600;
+  --accent-fg: #0f0f10;
+  --accent-soft: #ffe9d9;
+  --accent-text: #b54400;
+  --accent-tint: rgb(242 95 0 / 0.08);
+  --ring: rgb(242 95 0 / 0.5);
+  --success: hsl(142 72% 29%);
+  --warning: hsl(32 95% 36%);
+  --danger: hsl(0 72% 46%);
+  --info: #6b6b6b;
+  --elev-natural-xs: 0 0 0 1px rgb(0 0 0 / 0.04), 0 1px 1px -0.5px rgb(0 0 0 / 0.06), 0 3px 3px -1.5px rgb(0 0 0 / 0.06);
+  --elev-chart: 0 0 1.143px rgb(0 0 0 / 0.18), 0 2px 4px rgb(0 0 0 / 0.04);
+  --elev-sheet: 0 4px 6px -2px rgb(16 24 40 / 0.03), 0 12px 16px -4px rgb(16 24 40 / 0.08);
+  --elev-toast: 0 0 0 0.5px rgb(0 0 0 / 0.12), 0 2px 6px -2px rgb(0 0 0 / 0.08), 0 18px 40px -10px rgb(0 0 0 / 0.18);
+  --elev-thumb: 0 1px 3px rgb(0 0 0 / 0.18), 0 1px 2px -1px rgb(0 0 0 / 0.12);
+  --scrollbar: rgb(0 0 0 / 0.18);
+  --selection: rgb(242 95 0 / 0.22);
+  --field-chevron: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23787878' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='m6 9 6 6 6-6'/></svg>");
+  --field-picker-filter: none;
+}
+
+/* Derived values and theme-independent scales. On every theme scope, so they recompute inside a nested theme. */
+:root, [data-theme] {
+  /* fill-1 laid over the canvas, solid: for things that must never let content show through (docked composers,
+     sticky bars inside scrolling panels). */
+  --surface: color-mix(in srgb, var(--foreground) 4.3%, var(--background));
+  --header-bg: color-mix(in srgb, var(--background) 90%, transparent);
+  /* A focused text field: the border turns to the foreground with this half-pixel ring. */
+  --field-ring: 0 0 0 0.5px var(--foreground);
+  /* Layout */
+  --header-height: 50px;
+  --sidebar-width: 16rem;
+  --sidebar-width-collapsed: 3.5rem;
+  --page-x: 20px;
+  --sheet-width: 512px;
+  /* Radius scale (rounded-* utilities follow Tailwind's; these name the spec's steps) */
+  --radius-chip: 6px;       /* mono chip, small select, kbd */
+  --radius-seg: 7px;        /* segmented items */
+  --radius-btn-xs: 8px;     /* 28px buttons, nav links, sub-nav, menu items */
+  --radius-control: 10px;   /* 32–36px buttons, inputs, icon buttons */
+  --radius-card-sm: 12px;   /* 40px buttons and inputs, stat cards, quick tiles, tool squares, menus */
+  --radius-card: 16px;      /* chart cards, side cards, dialogs */
+  --radius-section: 24px;   /* section cards, banners */
+  --radius-prompt: 26px;    /* the home prompt pill */
+  /* Motion: colours 75ms, tabs and menus 150–200ms, sheets 300ms ease-out. Nothing bounces. */
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
-  --duration-fast: 120ms;
-  --duration: 180ms;
-  /* Fixed z-index scale. */
+  --ease-spring: cubic-bezier(0.23, 1, 0.32, 1);
+  --duration-fast: 75ms;
+  --duration: 150ms;
+  --duration-menu: 180ms;
+  --duration-sheet: 300ms;
+  /* Fixed z-index scale */
   --z-raised: 10;
   --z-dropdown: 20;
   --z-sticky: 30;
   --z-overlay: 40;
   --z-dialog: 50;
   --z-toast: 60;
-
-  /* Surfaces and washes. Classes bind to these so a theme only changes values. */
-  --surface-top: #151515;        /* .tile gradient */
-  --surface-bottom: #0f0f0f;
-  --surface-hover-top: #1a1a1a;
-  --surface-hover-bottom: #131313;
-  --btn-top: #1d1d1d;            /* legacy gradient stops, kept for the landing mocks */
-  --btn-bottom: #141414;
-  --btn-hover-top: #262626;
-  --btn-hover-bottom: #1a1a1a;
-  --btn-bg: #1b1b1b;             /* flat button fill (owner decision, 26 September 2026: no 3D) */
-  --btn-bg-hover: #262626;
-  --avatar-top: #242424;
-  --avatar-bottom: #161616;
-  --sidebar: #050505;
-  --wash-soft: rgba(255, 255, 255, 0.03);   /* tab strips, unread rows */
-  --wash: rgba(255, 255, 255, 0.05);        /* chips, hover rows */
-  --wash-strong: rgba(255, 255, 255, 0.08); /* active nav, hover chips */
-  --wash-active: rgba(255, 255, 255, 0.1);  /* active pill */
-  --highlight: rgba(255, 255, 255, 0.08);   /* the 1px top highlight inside surfaces */
-  --highlight-strong: rgba(255, 255, 255, 0.1);
-  --overlay: rgba(0, 0, 0, 0.72);
-  --media: #000;                            /* video letterboxing stays black in both themes */
-  --bubble-mine: #3d2412;                   /* own chat messages: a dark shade of the orange, white text */
-  --bubble-mine-border: rgba(255, 108, 2, 0.35);
-  --bubble-theirs: #1f1f1f;                 /* other people's messages: grey */
-  --bubble-theirs-border: rgba(255, 255, 255, 0.1);
 }
 
-/* Light theme: the same system on paper white. Orange stays; status colours darken to keep contrast. */
-:root[data-theme="light"] {
-  --bg: #f4f4f2;
-  --bg-elevated: #ffffff;
-  --bg-surface: #f6f6f4;
-  --bg-popover: #ffffff;
-  --bg-inset: #f1f1ef;
-
-  --border-soft: rgba(0, 0, 0, 0.06);
-  --border: rgba(0, 0, 0, 0.1);
-  --border-strong: rgba(0, 0, 0, 0.18);
-
-  --fg: #111111;
-  --fg-muted: #5a5a5a;
-  --fg-subtle: #8a8a8a;
-  --fg-faint: #b4b4b4;
-
-  --accent-soft: rgba(255, 108, 2, 0.12);
-  --accent-glow: rgba(252, 56, 13, 0.18);
-  --success: #178f5d;
-  --warning: #a86d0f;
-  --danger: #d23c3c;
-  --info: #2b6cd9;
-  --ring: #ff6c02;
-
-  --ring-lift: 0 0 0 1px rgba(0, 0, 0, 0.05);
-  --card-shadow: inset 0 1px 0 rgba(255, 255, 255, 1), 0 16px 40px -28px rgba(0, 0, 0, 0.35);
-
-  --surface-top: #ffffff;
-  --surface-bottom: #fafafa;
-  --surface-hover-top: #ffffff;
-  --surface-hover-bottom: #f4f4f4;
-  --btn-top: #ffffff;
-  --btn-bottom: #f2f2f0;
-  --btn-hover-top: #fbfbfa;
-  --btn-hover-bottom: #ebebe9;
-  --btn-bg: #ffffff;
-  --btn-bg-hover: #f1f1ef;
-  --avatar-top: #e9e9e7;
-  --avatar-bottom: #d6d6d3;
-  --sidebar: #fafaf8;
-  --wash-soft: rgba(0, 0, 0, 0.025);
-  --wash: rgba(0, 0, 0, 0.04);
-  --wash-strong: rgba(0, 0, 0, 0.06);
-  --wash-active: rgba(0, 0, 0, 0.08);
-  --highlight: rgba(255, 255, 255, 0.9);
-  --highlight-strong: rgba(255, 255, 255, 1);
-  --overlay: rgba(20, 20, 20, 0.45);
-  --bubble-mine: #ffe4d1;
-  --bubble-mine-border: rgba(255, 108, 2, 0.35);
-  --bubble-theirs: #ebebe9;
-  --bubble-theirs-border: rgba(0, 0, 0, 0.08);
+/* ---------------------------------------------------------------------------------------------------------------
+   2. Legacy token aliases (v3 names → v4 values), KEPT ONLY FOR THE LANDING PAGE AND THE CONTROL CENTER
+   (src/app/page.tsx, src/components/landing, src/components/aceternity, src/app/admin, src/components/admin). The
+   workspace app, the entry screens and src/components/ui use v4 tokens only. The landing page re-declares these with
+   its v3 values (§8); the Control Center reads them as v4 values here. Delete each with its last user.
+   --------------------------------------------------------------------------------------------------------------- */
+:root, [data-theme] {
+  --bg: var(--background);
+  --bg-elevated: var(--background);
+  --bg-inset: var(--fill-0);
+  --border-soft: var(--border);
+  --border-strong: var(--border-input-hover);
+  --fg: var(--foreground);
+  --fg-muted: var(--secondary);
+  --fg-subtle: var(--subtle);
+  --fg-faint: var(--faint);
+  --wash-soft: var(--fill-0);
+  --wash: var(--fill-1);
+  --wash-strong: var(--fill-150);
+  --wash-active: var(--border-input);
+  --highlight: transparent;
+  --btn-bg: var(--background);
+  --radius-sm: 10px;    /* v3 "control" radius, used as rounded-[var(--radius-sm)] */
+  --radius: 16px;       /* v3 "card" radius, used as rounded-[var(--radius)] */
 }
 
+/* ---------------------------------------------------------------------------------------------------------------
+   3. Tailwind registration
+   --------------------------------------------------------------------------------------------------------------- */
 @theme inline {
+  /* v4 colours: bg-background, text-secondary, border-border, bg-fill-1, text-accent, ... */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-sidebar: var(--sidebar);
+  --color-popover: var(--popover);
+  --color-toast: var(--toast);
+  --color-overlay: var(--overlay);
+  --color-surface: var(--surface);
+  --color-secondary: var(--secondary);
+  --color-subtle: var(--subtle);
+  --color-faint: var(--faint);
+  --color-border: var(--border);
+  --color-border-input: var(--border-input);
+  --color-border-input-hover: var(--border-input-hover);
+  --color-fill-0: var(--fill-0);
+  --color-fill-075: var(--fill-075);
+  --color-fill-1: var(--fill-1);
+  --color-fill-150: var(--fill-150);
+  /* The solid greys are `grey-*` (British spelling) so Tailwind's own gray-* palette, used by vendored components,
+     keeps its values: bg-grey-75, bg-grey-100, text-grey-600. */
+  --color-grey-75: var(--gray-75);
+  --color-grey-100: var(--gray-100);
+  --color-grey-150: var(--gray-150);
+  --color-grey-600: var(--gray-600);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-fg: var(--primary-fg);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-fg: var(--accent-fg);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-text: var(--accent-text);
+  --color-accent-tint: var(--accent-tint);
+  --color-ring: var(--ring);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+  --color-info: var(--info);
+  /* Legacy colour names (v3), for the landing page and the Control Center only (§2). Not for new code. */
   --color-bg: var(--bg);
   --color-bg-elevated: var(--bg-elevated);
-  --color-surface: var(--bg-surface);
   --color-inset: var(--bg-inset);
-  --color-popover: var(--bg-popover);
   --color-border-soft: var(--border-soft);
-  --color-border: var(--border);
   --color-border-strong: var(--border-strong);
   --color-fg: var(--fg);
   --color-fg-muted: var(--fg-muted);
   --color-fg-subtle: var(--fg-subtle);
   --color-fg-faint: var(--fg-faint);
-  --color-accent: var(--accent);
-  --color-accent-hover: var(--accent-hover);
-  --color-accent-soft: var(--accent-soft);
-  --color-accent-fg: var(--accent-fg);
-  --color-success: var(--success);
-  --color-warning: var(--warning);
-  --color-danger: var(--danger);
-  --color-info: var(--info);
-  --color-ring: var(--ring);
   --color-wash-soft: var(--wash-soft);
   --color-wash: var(--wash);
   --color-wash-strong: var(--wash-strong);
   --color-wash-active: var(--wash-active);
-  --color-sidebar: var(--sidebar);
-  --color-media: var(--media);
-  --font-sans: "Manrope", ui-sans-serif, system-ui, sans-serif;
-  --font-display: "Cal Sans", "Manrope", ui-sans-serif, system-ui, sans-serif;
-  --radius-card: var(--radius);
+  /* Radius: Tailwind's scale (md 6, lg 8, xl 12, 2xl 16, 3xl 24) except sm, which is the 10px control radius. */
   --radius-sm: var(--radius-sm);
-  --radius-lg: var(--radius-lg);
+  --radius-card: var(--radius-card);
+  --radius-control: var(--radius-control);
+  --radius-prompt: var(--radius-prompt);
+  /* Elevation: shadow-natural-xs, shadow-chart, shadow-sheet, shadow-toast */
+  --shadow-natural-xs: var(--elev-natural-xs);
+  --shadow-chart: var(--elev-chart);
+  --shadow-sheet: var(--elev-sheet);
+  --shadow-toast: var(--elev-toast);
+  --shadow-thumb: var(--elev-thumb);
   --ease-out: var(--ease-out);
 }
 
-/* `dark:` utilities follow the toggle, not the OS, so vendored components switch with the rest of the page. */
-@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+@theme {
+  --font-sans: "Inter Variable", "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: "Geist Variable", "Inter Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono Variable", ui-monospace, "SF Mono", Menlo, monospace;
+  /* The measured type scale (ElevenLabs runs a customised Tailwind scale). */
+  --text-2xs: 10px;
+  --text-2xs--line-height: 16px;
+  --text-2xs--letter-spacing: 0.025px;
+  --text-xs: 12px;
+  --text-xs--line-height: 16px;
+  --text-xs--letter-spacing: 0.03px;
+  --text-meta: 13px;
+  --text-meta--line-height: 19.5px;
+  --text-sm: 14px;
+  --text-sm--line-height: 20px;
+  --text-base: 16px;
+  --text-base--line-height: 24px;
+  --text-lg: 18px;
+  --text-lg--line-height: 26px;
+  --text-lg--letter-spacing: -0.045px;
+  --text-xl: 20px;
+  --text-xl--line-height: 28px;
+  --text-2xl: 24px;
+  --text-2xl--line-height: 30px;
+  --text-2xl--letter-spacing: -0.15px;
+  --text-3xl: 28px;
+  --text-3xl--line-height: 36px;
+  --text-3xl--letter-spacing: -0.21px;
+}
 
-html { color-scheme: dark; scroll-behavior: smooth; }
-@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
-#waitlist { scroll-margin-top: 96px; } /* the waitlist form lands under the floating header with room to breathe */
-html[data-theme="light"] { color-scheme: light; }
+/* `dark:` and `light:` follow the toggle (html[data-theme]), not the OS. */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+@custom-variant light (&:where([data-theme="light"], [data-theme="light"] *));
+
+/* ---------------------------------------------------------------------------------------------------------------
+   4. Base
+   --------------------------------------------------------------------------------------------------------------- */
+html { scroll-behavior: smooth; scrollbar-color: var(--scrollbar) transparent; }
+#waitlist { scroll-margin-top: 96px; } /* the landing page's waitlist form lands under its floating header */
 html, body { transition: background-color var(--duration) var(--ease-out), color var(--duration) var(--ease-out); }
 body {
-  background: var(--bg);
-  color: var(--fg);
+  background: var(--background);
+  color: var(--foreground);
   font-family: var(--font-sans);
-  font-size: 16px;
-  line-height: 1.5;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
 }
+::selection { background: var(--selection); color: var(--foreground); }
 
-/* Type scale (ratio 1.25 from a 15/16px body): 12 · 13 · 15 · 16 · 18 · 22 · 28 · 36. Headings tighten as they grow. */
-h1, h2, h3, .font-display { font-family: var(--font-display); letter-spacing: -0.01em; text-wrap: balance; }
-h1 { letter-spacing: -0.02em; }
-p { text-wrap: pretty; }
-[id] { scroll-margin-top: 5rem; }
+@layer base {
+  /* Hairlines by default: a bare `border` draws the 7.5% line, not currentColor. */
+  *, ::before, ::after, ::backdrop { border-color: var(--border); }
+  /* Headings default to the spec; a heading's own utilities win. */
+  h1 { font-family: var(--font-display); font-size: 24px; line-height: 30px; font-weight: 400; letter-spacing: -0.15px; text-wrap: balance; }
+  h2 { font-size: 18px; line-height: 26px; font-weight: 600; letter-spacing: -0.045px; text-wrap: balance; }
+  h3 { font-size: 14px; line-height: 20px; font-weight: 600; }
+  p { text-wrap: pretty; }
+  [id] { scroll-margin-top: calc(var(--header-height) + 24px); }
+  code, kbd, samp, pre { font-family: var(--font-mono); }
+  /* Pop-ups lifted into the browser's top layer (components/ui/top-layer.ts): the browser's own popover box is reset
+     here, so each pop-up's utilities still win. */
+  .top-pop { inset: auto; margin: 0; border: 0; padding: 0; width: auto; height: auto; overflow: visible; color: inherit; background: transparent; }
+  /* Thin scrollbars inside scrolling panels. */
+  .prompt-scroll, .scroll-thin { scrollbar-width: thin; scrollbar-color: var(--scrollbar) transparent; }
+}
 
-/* Numbers never shift layout. */
-.tabular, time, td, .font-mono { font-variant-numeric: tabular-nums; }
+/* Focus: a 2px orange ring at 50%, 2px off the edge, from the keyboard only. Text fields instead turn their border
+   to the foreground with a half-pixel ring (see .field), whichever way focus arrived. */
+:focus { outline: none; }
+:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+input:focus-visible, textarea:focus-visible, select:focus-visible, [contenteditable]:focus-visible { outline: none; }
 
-/* Motion: entrances are short and ease-out; reduced motion keeps opacity changes and drops movement. */
+/* Motion: entrances are short and ease-out; reduced motion drops movement everywhere. */
 @keyframes rise-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes pop-in { from { opacity: 0; transform: scale(0.98); } to { opacity: 1; transform: none; } }
+@keyframes side-sheet-in { from { transform: translateX(100%); } to { transform: none; } }
 .rise-in { animation: rise-in var(--duration) var(--ease-out) both; }
 @media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
   *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
 }
 
-/* Native dialogs: centred, own surface level, dimmed backdrop, no scroll chaining. */
-dialog.sheet { position: fixed; inset: 0; margin: auto; border: 1px solid var(--border-strong); background: var(--bg-popover); color: var(--fg); border-radius: var(--radius-lg); padding: 0; max-width: min(92vw, 30rem); width: 100%; height: fit-content; overscroll-behavior: contain; box-shadow: var(--ring-lift); }
-dialog.sheet::backdrop { background: var(--overlay); }
-@keyframes sheet-in { from { opacity: 0; transform: scale(0.98) translateY(4px); } to { opacity: 1; transform: none; } }
-dialog.sheet[open] { animation: sheet-in var(--duration) var(--ease-out) both; }
-dialog.sheet[open]::backdrop { animation: rise-in var(--duration) var(--ease-out) both; }
-
-/* Pop-ups lifted into the browser's top layer (components/ui/top-layer.ts): the browser's own popover box is reset
-   here, in the base layer, so each pop-up's utilities and rules still win. */
-@layer base {
-  .top-pop { inset: auto; margin: 0; border: 0; padding: 0; width: auto; height: auto; overflow: visible; color: inherit; background: transparent; }
-}
-
-/* The message a reply quote jumps to lights up for a moment so the eye finds it. */
-@keyframes target-flash { from { background: var(--accent-soft); } to { background: transparent; } }
-.target-flash:target { animation: target-flash 1.6s var(--ease-out) both; }
-
-/* Tooltips (owner decision, 26 September 2026): the label under an icon-only control, see components/ui/tooltips.tsx.
-   Above every layer, out of the way of the pointer, in with a short lift from the side it sits on. */
-.tip { position: fixed; z-index: var(--z-toast); transform: translateX(-50%); pointer-events: none; max-width: 16rem; padding: 5px 9px; border-radius: 8px; border: 1px solid var(--border-strong); background: var(--bg-popover); color: var(--fg); font-size: 12px; line-height: 1.25; font-weight: 500; letter-spacing: 0.005em; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; box-shadow: inset 0 1px 0 var(--highlight), 0 8px 24px -10px rgba(0, 0, 0, 0.6); animation: tip-in 120ms var(--ease-out) both; }
-.tip.tip-up { animation-name: tip-in-up; }
-@keyframes tip-in { from { opacity: 0; transform: translate(-50%, -4px) scale(0.97); } to { opacity: 1; transform: translate(-50%, 0) scale(1); } }
-@keyframes tip-in-up { from { opacity: 0; transform: translate(-50%, 4px) scale(0.97); } to { opacity: 1; transform: translate(-50%, 0) scale(1); } }
-
-/* Focus (owner decision, 24 September 2026): nothing orange, and nothing on a click. Text fields only brighten their
-   hairline; buttons and links get a quiet grey ring, and only when focus arrives from the keyboard. */
-:focus { outline: none; }
-:focus-visible { outline: 2px solid var(--border-strong); outline-offset: 2px; border-radius: 6px; }
-input:focus-visible, textarea:focus-visible, select:focus-visible, [contenteditable]:focus-visible { outline: none; border-color: var(--border-strong); }
-
-/* Fields (owner decision, 25 September 2026): every text box, select, date and number control on the platform is a
-   `.field`: inset like the search bar's surface is raised, a hairline that brightens on hover, and a soft grey ring
-   on focus. `.field-sm` is the 36px pill for filter bars. Checkboxes and radios are drawn here too, so a bare
-   <input type="checkbox"> anywhere matches. Native pickers (date, month, colour) take the accent through accent-color. */
+/* ---------------------------------------------------------------------------------------------------------------
+   5. Components layer: the v4 parts that need CSS (the rest are Tailwind utilities in src/components/ui).
+   In the components layer so a utility written next to them wins.
+   --------------------------------------------------------------------------------------------------------------- */
 @layer components {
-:root { accent-color: var(--accent); --field-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.45), 0 1px 0 var(--highlight); --field-ring: 0 0 0 3px var(--wash-strong); --field-chevron: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23b5b5b5' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='m6 9 6 6 6-6'/></svg>"); --field-picker-filter: invert(1); }
-:root[data-theme="light"] { --field-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.06), 0 1px 0 var(--highlight); --field-ring: 0 0 0 3px var(--wash-active); --field-chevron: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%235a5a5a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='m6 9 6 6 6-6'/></svg>"); --field-picker-filter: none; }
-.field { width: 100%; min-width: 0; min-height: 40px; padding: 0 14px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: linear-gradient(180deg, var(--bg-inset), color-mix(in srgb, var(--bg-inset) 86%, var(--bg-elevated))); color: var(--fg); font-size: 15px; line-height: 1.4; box-shadow: var(--field-shadow); transition: border-color var(--duration-fast) var(--ease-out), box-shadow var(--duration-fast) var(--ease-out); }
-.field::placeholder { color: var(--fg-subtle); }
-.field:hover:not(:disabled) { border-color: var(--border-strong); background: linear-gradient(180deg, var(--bg-inset), color-mix(in srgb, var(--bg-inset) 78%, var(--bg-elevated))); }
-.field:focus, .field:focus-visible { outline: none; border-color: var(--border-strong); box-shadow: var(--field-shadow), var(--field-ring); }
+/* Type roles (spec §3). */
+.type-page-title { font-family: var(--font-display); font-size: 24px; line-height: 30px; font-weight: 400; letter-spacing: -0.15px; color: var(--foreground); text-wrap: balance; }
+.type-headline { font-family: var(--font-display); font-size: 28px; line-height: 36px; font-weight: 400; letter-spacing: -0.21px; color: var(--foreground); text-wrap: balance; }
+.type-section-title { font-family: var(--font-sans); font-size: 18px; line-height: 26px; font-weight: 600; letter-spacing: -0.045px; color: var(--foreground); }
+.type-dialog-title { font-family: var(--font-sans); font-size: 18px; line-height: 26px; font-weight: 500; letter-spacing: -0.045px; color: var(--foreground); }
+.type-stat { font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.15px; font-variant-numeric: tabular-nums; color: var(--foreground); }
+.type-metric { font-size: 18px; line-height: 26px; font-weight: 500; letter-spacing: -0.045px; font-variant-numeric: tabular-nums; color: var(--foreground); }
+.type-body { font-size: 14px; line-height: 20px; font-weight: 500; }
+.type-paragraph { font-size: 14px; line-height: 20px; font-weight: 400; color: var(--secondary); }
+.type-meta { font-size: 13px; line-height: 19.5px; font-weight: 400; color: var(--secondary); }
+.type-metric-label { font-size: 13px; line-height: 19.5px; font-weight: 500; color: var(--subtle); }
+.type-caption { font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.03px; color: var(--secondary); }
+.type-tiny { font-size: 10px; line-height: 16px; font-weight: 600; letter-spacing: 0.025px; }
+.type-code { font-family: var(--font-mono); font-size: 13.6px; line-height: 19px; font-weight: 400; }
+/* Numbers never shift layout. */
+.tabular, time, td, .font-mono { font-variant-numeric: tabular-nums; }
+
+/* Cards (spec §7). */
+.card-section { background: var(--fill-0); border: 1px solid var(--border); border-radius: var(--radius-section); padding: 24px; }
+.card-stat { background: var(--background); border: 1px solid var(--border); border-radius: var(--radius-card-sm); padding: 20px; box-shadow: var(--elev-natural-xs); }
+.card-panel { background: var(--background); border: 1px solid var(--border); border-radius: var(--radius-card); padding: 20px; box-shadow: var(--elev-chart); }
+.card-tint { background: var(--accent-tint); border: 1px solid var(--border); border-radius: var(--radius-card); padding: 12px; }
+a.card-stat, a.card-panel, a.card-section, button.card-stat, button.card-panel { transition: background-color var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out); }
+a.card-stat:hover, a.card-panel:hover, a.card-section:hover, button.card-stat:hover, button.card-panel:hover { border-color: var(--border-input-hover); }
+
+/* Floating surfaces. */
+.popover-surface { background: var(--popover); color: var(--foreground); border-radius: var(--radius-card-sm); box-shadow: var(--elev-toast); }
+.toast-surface { background: var(--toast); color: var(--foreground); border-radius: var(--radius-card-sm); box-shadow: var(--elev-toast); }
+/* Menu items (Menu in components/ui/menu.tsx, and any hand-made list in a popover). */
+.menu-item { display: flex; width: 100%; align-items: center; gap: 8px; min-height: 32px; padding: 0 8px; border-radius: var(--radius-btn-xs); font-size: 14px; line-height: 20px; font-weight: 500; color: var(--foreground); text-align: left; white-space: nowrap; cursor: pointer; user-select: none; transition: background-color var(--duration-fast) var(--ease-out); }
+.menu-item > svg { width: 16px; height: 16px; flex-shrink: 0; color: var(--secondary); }
+.menu-item:hover, .menu-item:focus-visible, .menu-item[data-active] { background: var(--fill-1); outline: none; }
+.menu-item[aria-disabled="true"], .menu-item:disabled { color: var(--faint); cursor: not-allowed; background: transparent; }
+.menu-item[data-tone="danger"], .menu-item[data-tone="danger"] > svg { color: var(--danger); }
+.menu-item[aria-checked="true"] { color: var(--foreground); }
+.menu-separator { height: 1px; margin: 4px -4px; background: var(--border); border: 0; }
+.menu-label { padding: 6px 8px 4px; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.03px; color: var(--subtle); }
+
+/* Kbd: 11px in a 20px rounded-6 chip. */
+.kbd { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; padding: 0 5px; border-radius: var(--radius-chip); background: var(--fill-1); color: var(--secondary); font-family: var(--font-sans); font-size: 11px; line-height: 1; font-weight: 500; white-space: nowrap; }
+
+/* Fields (spec §7 Inputs): every text box, select and picker trigger. h36 r10 px12, transparent, a 10% hairline that
+   goes to 16% on hover; focus turns the border to the foreground with a half-pixel ring. `.field-sm` 32px, `.field-lg`
+   40px r12 (search, toolbars), `.field-xs` 24px (the trigger inside a filter control). */
+.field { width: 100%; min-width: 0; min-height: 36px; padding: 0 12px; border: 1px solid var(--border-input); border-radius: var(--radius-control); background: transparent; color: var(--foreground); font-size: 14px; line-height: 20px; font-weight: 400; transition: border-color var(--duration-fast) var(--ease-out), box-shadow var(--duration-fast) var(--ease-out); }
+input.field, select.field { height: 36px; }
+.field::placeholder { color: var(--subtle); }
+.field:hover:not(:disabled) { border-color: var(--border-input-hover); }
+.field:focus, .field:focus-visible, .field:focus-within { outline: none; border-color: var(--foreground); box-shadow: var(--field-ring); }
 .field:disabled { opacity: 0.5; cursor: not-allowed; }
-.field[aria-invalid="true"] { border-color: var(--danger); }
+/* Pickers are buttons, where aria-invalid is not allowed: they mark the state with data-invalid. */
+.field[aria-invalid="true"], .field[data-invalid] { border-color: var(--danger); }
+.field[aria-invalid="true"]:focus, .field[data-invalid]:focus { box-shadow: 0 0 0 0.5px var(--danger); }
 .field[type="number"], .field[type="date"], .field[type="month"], .field[type="time"] { font-variant-numeric: tabular-nums; }
-textarea.field { min-height: 6rem; padding: 10px 14px; resize: vertical; }
-select.field { appearance: none; padding-right: 38px; background-image: var(--field-chevron); background-repeat: no-repeat; background-position: right 12px center; cursor: pointer; text-overflow: ellipsis; }
-select.field[multiple] { height: auto; padding: 6px; background-image: none; }
+textarea.field { height: auto; min-height: 6rem; padding: 8px 12px; resize: vertical; }
+select.field { appearance: none; padding-right: 34px; background-image: var(--field-chevron); background-repeat: no-repeat; background-position: right 10px center; cursor: pointer; text-overflow: ellipsis; }
+select.field[multiple] { height: auto; padding: 4px; background-image: none; }
 select.field[multiple] option { padding: 6px 8px; border-radius: 6px; }
-select.field option { background: var(--bg-popover); color: var(--fg); }
-.field-sm { min-height: 36px; height: 36px; padding: 0 14px; border-radius: var(--radius-pill); font-size: 14px; }
-select.field-sm { padding-right: 34px; }
-.field::-webkit-calendar-picker-indicator { margin-left: 6px; cursor: pointer; opacity: 0.55; filter: var(--field-picker-filter); transition: opacity var(--duration-fast) var(--ease-out); }
+select.field option { background: var(--popover); color: var(--foreground); }
+button.field { cursor: pointer; }
+.field-sm { min-height: 32px; padding: 0 10px; font-size: 13px; }
+input.field-sm, select.field-sm { height: 32px; }
+select.field-sm { padding-right: 30px; background-position: right 8px center; }
+.field-lg { min-height: 40px; border-radius: var(--radius-card-sm); }
+input.field-lg, select.field-lg { height: 40px; }
+.field-xs { min-height: 24px; padding: 0 8px; border-radius: var(--radius-btn-xs); font-size: 12px; line-height: 16px; font-weight: 500; }
+input.field-xs, select.field-xs { height: 24px; }
+select.field-xs { padding-right: 24px; background-position: right 5px center; background-size: 14px; }
+.field::-webkit-calendar-picker-indicator { margin-left: 6px; cursor: pointer; opacity: 0.55; filter: var(--field-picker-filter); }
 .field::-webkit-calendar-picker-indicator:hover { opacity: 1; }
 .field::-webkit-search-cancel-button { appearance: none; }
-.field:-webkit-autofill, .field:-webkit-autofill:focus { -webkit-text-fill-color: var(--fg); box-shadow: 0 0 0 1000px var(--bg-inset) inset, var(--field-shadow); }
-button.field { cursor: pointer; }
+.field:-webkit-autofill, .field:-webkit-autofill:focus { -webkit-text-fill-color: var(--foreground); box-shadow: 0 0 0 1000px var(--background) inset; }
+/* A field with a prefix or suffix inside it (currency, units, a search icon). The wrapper is the field. */
+.field-adorned { display: flex; align-items: center; gap: 8px; cursor: text; }
+.field-adorned > input { min-width: 0; flex: 1; height: 100%; background: transparent; border: 0; outline: none; color: var(--foreground); font: inherit; padding: 0; }
+.field-adorned > input::placeholder { color: var(--subtle); }
+.field-adorned > span { flex-shrink: 0; font-size: 13px; font-weight: 500; color: var(--subtle); }
+.field-adorned > svg { width: 16px; height: 16px; flex-shrink: 0; color: var(--subtle); }
 
-input[type="checkbox"], input[type="radio"] { appearance: none; display: inline-grid; place-content: center; flex-shrink: 0; width: 18px; height: 18px; margin: 0; border: 1px solid var(--border-strong); border-radius: 5px; background: var(--bg-inset); box-shadow: var(--field-shadow); vertical-align: -3px; cursor: pointer; transition: background-color var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out), box-shadow var(--duration-fast) var(--ease-out); }
+/* Checkboxes and radios: a bare <input type="checkbox"> anywhere matches. 16px, r4, 16% hairline; checked fills
+   with the foreground and the mark is drawn in the canvas colour. */
+:root { accent-color: var(--accent); }
+input[type="checkbox"], input[type="radio"] { appearance: none; display: inline-grid; place-content: center; flex-shrink: 0; width: 16px; height: 16px; margin: 0; border: 1px solid var(--border-input-hover); border-radius: 4px; background: transparent; vertical-align: -3px; cursor: pointer; transition: background-color var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out); }
 input[type="radio"] { border-radius: 50%; }
-input[type="checkbox"]::before, input[type="radio"]::before { content: ""; width: 10px; height: 10px; transform: scale(0); transition: transform var(--duration-fast) var(--ease-out); }
-input[type="checkbox"]::before { background: var(--accent-fg); mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'><path d='M20 6 9 17l-5-5'/></svg>") center / contain no-repeat; }
-input[type="radio"]::before { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
-input[type="checkbox"]:checked { background: var(--accent); border-color: var(--accent); box-shadow: 0 1px 0 var(--highlight); }
-input[type="radio"]:checked { border-color: var(--accent); }
+input[type="checkbox"]::before, input[type="radio"]::before { content: ""; width: 10px; height: 10px; transform: scale(0); transition: transform var(--duration) var(--ease-out); }
+input[type="checkbox"]::before { background: var(--background); mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'><path d='M20 6 9 17l-5-5'/></svg>") center / contain no-repeat; }
+input[type="checkbox"]:indeterminate::before { transform: scale(1); mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3.5' stroke-linecap='round'><path d='M5 12h14'/></svg>") center / contain no-repeat; }
+input[type="radio"]::before { width: 8px; height: 8px; border-radius: 50%; background: var(--foreground); }
+input[type="checkbox"]:checked, input[type="checkbox"]:indeterminate { background: var(--foreground); border-color: var(--foreground); }
+input[type="radio"]:checked { border-color: var(--foreground); }
 input[type="checkbox"]:checked::before, input[type="radio"]:checked::before { transform: scale(1); }
-input[type="checkbox"]:hover:not(:disabled), input[type="radio"]:hover:not(:disabled) { border-color: var(--fg-subtle); }
-input[type="checkbox"]:checked:hover:not(:disabled) { border-color: var(--accent); }
-input[type="checkbox"]:focus-visible, input[type="radio"]:focus-visible { outline: none; box-shadow: var(--field-shadow), var(--field-ring); }
+input[type="checkbox"]:hover:not(:disabled):not(:checked), input[type="radio"]:hover:not(:disabled) { border-color: var(--subtle); }
 input[type="checkbox"]:disabled, input[type="radio"]:disabled { opacity: 0.5; cursor: not-allowed; }
-@media (prefers-reduced-motion: reduce) { input[type="checkbox"]::before, input[type="radio"]::before, .field { transition: none; } }
-/* A switch: a checkbox drawn as a pill with a sliding knob. */
-input[type="checkbox"].switch { width: 38px; height: 22px; border-radius: 999px; display: inline-block; place-content: unset; background: var(--wash-strong); border-color: var(--border-strong); }
-input[type="checkbox"].switch::before { content: ""; position: relative; display: block; width: 16px; height: 16px; margin: 2px; border-radius: 50%; background: var(--fg-muted); mask: none; transform: translateX(0); transition: transform 160ms var(--ease-out), background-color 160ms var(--ease-out); }
-input[type="checkbox"].switch:checked { background: var(--accent); border-color: var(--accent); }
-input[type="checkbox"].switch:checked::before { background: #fff; transform: translateX(16px); }
+/* A switch: a checkbox drawn as a 36×20 pill. On = foreground; off = 16% grey; the 16px thumb is the canvas colour. */
+input[type="checkbox"].switch { position: relative; display: inline-block; width: 36px; height: 20px; border: 0; border-radius: 9999px; background: var(--border-input-hover); transition: background-color var(--duration) var(--ease-out); }
+input[type="checkbox"].switch::before { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--background); mask: none; box-shadow: var(--elev-thumb); transform: translateX(0); transition: transform var(--duration) var(--ease-out); }
+input[type="checkbox"].switch:checked { background: var(--foreground); }
+input[type="checkbox"].switch:checked::before { transform: translateX(16px); }
+input[type="checkbox"].switch:hover:not(:disabled):not(:checked) { background: color-mix(in srgb, var(--foreground) 22%, transparent); }
 
-/* A segmented control: radios drawn as pills inside one strip. */
-.segmented { display: inline-flex; flex-wrap: wrap; gap: 2px; padding: 3px; border-radius: 999px; border: 1px solid var(--border); background: var(--wash-soft); }
+/* Segmented control: radios drawn as items in one strip. fill-1 r10 p2; items h28 r7; the chosen one sits on the
+   canvas colour with a hairline. */
+.segmented { display: inline-flex; flex-wrap: wrap; gap: 2px; padding: 2px; border-radius: var(--radius-control); background: var(--fill-1); }
 .segmented-item { position: relative; display: inline-flex; }
-.segmented-item input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; appearance: none; border: 0; box-shadow: none; }
-.segmented-item span { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 14px; border-radius: 999px; font-size: 13px; font-weight: 500; color: var(--fg-muted); transition: background-color var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out); }
-.segmented-item:hover span { color: var(--fg); }
-/* The chosen segment reads like the accent badge (owner decision, 26 September 2026): orange text, an orange hairline, a soft orange fill. */
-.segmented-item input:checked + span { background: var(--accent-soft); color: var(--accent); box-shadow: inset 0 0 0 1px rgba(255, 108, 2, 0.5); }
-.segmented-item[data-tone="success"] input:checked + span { background: var(--wash-active); color: var(--success); }
-.segmented-item[data-tone="warning"] input:checked + span { background: var(--wash-active); color: var(--warning); }
-.segmented-item[data-tone="danger"] input:checked + span { background: var(--wash-active); color: var(--danger); }
-.segmented-item input:focus-visible + span { box-shadow: 0 0 0 2px var(--border-strong); }
+.segmented-item input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; appearance: none; border: 0; }
+.segmented-item > span { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border: 1px solid transparent; border-radius: var(--radius-seg); font-size: 14px; line-height: 20px; font-weight: 500; color: var(--secondary); white-space: nowrap; transition: background-color var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out); }
+.segmented-item > span > svg { width: 16px; height: 16px; }
+.segmented-item:hover > span { color: var(--foreground); }
+.segmented-item input:checked + span { background: var(--background); border-color: var(--border); color: var(--foreground); box-shadow: var(--elev-natural-xs); }
+.segmented-item[data-tone="success"] input:checked + span { color: var(--success); }
+.segmented-item[data-tone="warning"] input:checked + span { color: var(--warning); }
+.segmented-item[data-tone="danger"] input:checked + span { color: var(--danger); }
+.segmented-item input:focus-visible + span { outline: 2px solid var(--ring); outline-offset: 1px; }
+.segmented-item input:disabled + span { opacity: 0.5; cursor: not-allowed; }
 
-/* The edit affordance: a pill with a pencil that warms to orange on hover. */
-.edit-btn { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 11px; border-radius: 999px; border: 1px solid var(--border); background: var(--btn-bg); color: var(--fg-muted); font-size: 12.5px; font-weight: 600; transition: color var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out), transform var(--duration-fast) var(--ease-out), box-shadow var(--duration-fast) var(--ease-out); }
-.edit-btn svg { transition: transform 200ms var(--ease-out), color var(--duration-fast) var(--ease-out); }
-.edit-btn:hover { color: var(--fg); background: var(--btn-bg-hover); border-color: rgba(255, 108, 2, 0.5); }
-.edit-btn:hover svg { color: var(--accent); transform: rotate(-12deg); }
-.edit-btn-icon { width: 30px; padding: 0; justify-content: center; }
+/* Tables (spec §7 Tables): no outer border; a 36px head with a hairline under it; 48px rows with no lines and no hover
+   fill; first column flush left (in a padded card it lines up with the card's content). In a card with no padding
+   ([data-flush], which Card variant="plain" sets) the outer columns take 20px. Columns size to
+   their text and never break a word; a column never passes 28rem. */
+table.data { width: max-content; min-width: 100%; border-collapse: collapse; font-size: 14px; line-height: 20px; }
+table.data th { height: 36px; padding: 0 12px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: middle; font-weight: 500; color: var(--secondary); white-space: nowrap; }
+table.data td { height: 48px; padding: 8px 12px; vertical-align: middle; font-weight: 400; color: var(--foreground); max-width: 28rem; overflow-wrap: normal; }
+table.data :is(th, td):first-child { padding-left: 0; }
+table.data :is(th, td):last-child { padding-right: 0; }
+:is([data-flush], [data-card].p-0) table.data :is(th, td):first-child { padding-left: 20px; }
+:is([data-flush], [data-card].p-0) table.data :is(th, td):last-child { padding-right: 20px; }
+table.data td.wrap { overflow-wrap: break-word; }
+table.data td.nowrap { white-space: nowrap; }
+.data-fit table.data { width: 100%; table-layout: fixed; }
+table.data td:has(> .badge:only-child), table.data td.tabular-nums, table.data td:has(> time:only-child) { white-space: nowrap; }
+/* Attendance month grid: one narrow cell per calendar day. */
+.data th.day, .data td.day { padding: 0.5rem 0.15rem; text-align: center; }
 
-/* A field with a prefix or suffix inside it (currency, units). The inner input is bare; the wrapper is the field. */
-.field-adorned { display: flex; align-items: center; gap: 8px; }
-.field-adorned > input { min-width: 0; flex: 1; height: 100%; background: transparent; border: 0; outline: none; color: var(--fg); font-size: inherit; padding: 0; }
-.field-adorned > input::placeholder { color: var(--fg-subtle); }
-.field-adorned > span { flex-shrink: 0; font-size: 12px; font-weight: 600; letter-spacing: 0.04em; color: var(--fg-subtle); }
-.field-adorned:focus-within { border-color: var(--border-strong); box-shadow: var(--field-shadow), var(--field-ring); }
-}
+/* Dialogs on the native <dialog> (focus trap, Escape, inert page). Centred: r16, a hairline, the canvas colour, no
+   blur behind. `.modal` is 440px (confirms), `.sheet` 480px (v3 forms, still centred). `.side-sheet` is the v4 default
+   for forms and detail: full height from the right, 512px. */
+dialog.modal, dialog.sheet { position: fixed; inset: 0; margin: auto; width: 100%; max-width: min(calc(100vw - 32px), 440px); height: fit-content; max-height: calc(100dvh - 32px); overflow-y: auto; padding: 0; border: 1px solid var(--border); border-radius: var(--radius-card); background: var(--background); color: var(--foreground); box-shadow: var(--elev-sheet); overscroll-behavior: contain; }
+dialog.sheet { max-width: min(calc(100vw - 32px), 30rem); }
+dialog.modal::backdrop, dialog.sheet::backdrop, dialog.side-sheet::backdrop { background: var(--overlay); }
+dialog.modal[open], dialog.sheet[open] { animation: pop-in var(--duration) var(--ease-out) both; }
+dialog.modal[open]::backdrop, dialog.sheet[open]::backdrop, dialog.side-sheet[open]::backdrop { animation: fade-in var(--duration) var(--ease-out) both; }
+dialog.side-sheet { position: fixed; inset: 0 0 0 auto; margin: 0; width: min(100vw, var(--sheet-width)); max-width: 100vw; height: 100dvh; max-height: 100dvh; padding: 0; border: 0; border-left: 1px solid var(--border); border-radius: 0; background: var(--background); color: var(--foreground); box-shadow: var(--elev-sheet); overscroll-behavior: contain; }
+dialog.side-sheet[data-size="lg"] { --sheet-width: 720px; }
+dialog.side-sheet[data-size="sm"] { --sheet-width: 400px; }
+dialog.side-sheet[open] { display: flex; flex-direction: column; animation: side-sheet-in var(--duration-sheet) var(--ease-out) both; }
 
-.glow-header {
-  position: relative;
-  isolation: isolate;
-}
-.glow-header::before {
-  content: "";
-  position: absolute;
-  inset: -40px -20px auto -20px;
-  height: 220px;
-  background: radial-gradient(60% 80% at 20% 0%, rgba(255, 108, 2, 0.22), transparent 70%);
-  z-index: -1;
-  pointer-events: none;
-}
+/* Tooltips (components/ui/tooltips.tsx, the one tooltip system): the toast surface, r8, 12/16 medium. */
+.tip { position: fixed; z-index: var(--z-toast); transform: translateX(-50%); pointer-events: none; max-width: 16rem; padding: 4px 8px; border-radius: var(--radius-btn-xs); background: var(--toast); color: var(--foreground); box-shadow: var(--elev-toast); font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.03px; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; animation: tip-in var(--duration) var(--ease-out) both; }
+.tip.tip-up { animation-name: tip-in-up; }
+.tip.tip-right { transform: translateY(-50%); animation-name: tip-in-right; }
+@keyframes tip-in { from { opacity: 0; transform: translate(-50%, -2px); } to { opacity: 1; transform: translate(-50%, 0); } }
+@keyframes tip-in-up { from { opacity: 0; transform: translate(-50%, 2px); } to { opacity: 1; transform: translate(-50%, 0); } }
+@keyframes tip-in-right { from { opacity: 0; transform: translate(-2px, -50%); } to { opacity: 1; transform: translate(0, -50%); } }
 
-.gradient-text {
-  background: linear-gradient(90deg, var(--accent) 0%, var(--fg) 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-}
+/* The message a reply quote jumps to lights up for a moment so the eye finds it. */
+@keyframes target-flash { from { background: var(--fill-150); } to { background: transparent; } }
+.target-flash:target { animation: target-flash 1.6s var(--ease-out) both; }
 
-/* Tiles (cards): a solid dark gradient, a hairline and a top highlight. The same surface as the landing page cards.
-   No blur, no glow wash; the glow is reserved for page headers and the one live element on a screen. */
-.tile {
-  background: linear-gradient(180deg, var(--surface-top), var(--surface-bottom));
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--card-shadow);
-}
-/* Small surfaces inside a card: rows, chips, inner panels. */
-.chip { background: var(--wash); border: 1px solid var(--border); border-radius: var(--radius-sm); box-shadow: inset 0 1px 0 var(--highlight); }
-.chip-link { transition: background-color var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out); }
-.chip-link:hover { background: var(--wash-strong); border-color: var(--border-strong); }
-.panel { background: var(--bg-surface); border: 1px solid var(--border-soft); border-radius: 12px; box-shadow: inset 0 1px 0 var(--highlight); }
-/* The lit square that holds a 3D icon (page headers, section openers, empty states). */
-.icon-tile { position: relative; display: inline-grid; place-items: center; flex-shrink: 0; border: 1px solid var(--border); background: radial-gradient(120% 120% at 50% 0%, rgba(255, 108, 2, 0.18), var(--wash) 60%); box-shadow: inset 0 1px 0 var(--highlight-strong); }
-.icon-tile::after { content: ""; position: absolute; left: 12%; right: 12%; bottom: -10px; height: 10px; border-radius: 50%; background: radial-gradient(closest-side, rgba(255, 108, 2, 0.7), transparent); filter: blur(6px); }
-/* Hairline grid: cells split by 1px lines drawn from the gap, one rounded border around the set. */
-.hairline-grid { display: grid; gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
-.hairline-cell { position: relative; display: block; background: var(--surface-bottom); padding: 28px; transition: background-color 250ms var(--ease-out); }
-.hairline-cell::before { content: ""; position: absolute; inset: 0; background: radial-gradient(60% 50% at 50% 0%, rgba(255, 108, 2, 0.16), transparent 70%); opacity: 0; transition: opacity 300ms var(--ease-out); pointer-events: none; }
-.hairline-cell:hover { background: var(--wash); }
-.hairline-cell:hover::before { opacity: 1; }
-.hairline-cell img { transition: transform 350ms var(--ease-out), filter 350ms var(--ease-out); }
-.hairline-cell:hover img { transform: translateY(-6px) scale(1.08) rotate(-3deg); filter: drop-shadow(0 12px 18px rgba(255, 108, 2, 0.35)); }
-.hairline-cell:hover h3 { color: var(--accent-hover); }
-/* Buttons (owner decision, 26 September 2026): flat and quiet. A solid fill one step above the card, a hairline, 16px
-   corners, white text; nothing raised, no highlight, no glow. Hover lightens the fill. Variants change text and border. */
-.btn { background: var(--btn-bg); border: 1px solid var(--border); color: var(--fg); box-shadow: none; }
-.btn:hover { background: var(--btn-bg-hover); border-color: var(--border-strong); }
-/* The primary button is solid orange at rest, a shade brighter on hover. */
-.btn.btn-primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); box-shadow: none; }
-.btn.btn-primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); color: var(--accent-fg); box-shadow: none; }
-.btn-danger { color: var(--danger); border-color: rgba(255, 92, 92, 0.45); }
-.btn.btn-danger:hover { border-color: var(--danger); background: rgba(255, 92, 92, 0.1); }
-.btn-ghost { background: transparent; border-color: transparent; box-shadow: none; color: var(--fg-muted); }
-.btn.btn-ghost:hover { background: var(--wash); border-color: transparent; color: var(--fg); }
-.tile-glow { box-shadow: var(--card-shadow), inset 0 0 25px 0 var(--accent-glow); border-color: rgba(255, 108, 2, 0.35); }
-/* Tiles that are links lift by a pixel and sharpen their edge; nothing else on the page moves on hover. */
-.tile-link { transition: border-color var(--duration-fast) var(--ease-out), transform var(--duration-fast) var(--ease-out), background-color var(--duration-fast) var(--ease-out); }
-.tile-link:hover { border-color: var(--border-strong); background: linear-gradient(180deg, var(--surface-hover-top), var(--surface-hover-bottom)); transform: translateY(-1px); }
-.tile-link:active { transform: translateY(0); }
-/* The active row: accent edge instead of a glow, so the affordance is structure, not light. */
-.tile-active { border-color: rgba(255, 108, 2, 0.45); box-shadow: var(--card-shadow), inset 3px 0 0 0 var(--accent); }
-
-/* Eyebrow: micro information (dates, sync times, section labels) is small, spaced and quiet, never body-sized. */
-.eyebrow { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--fg-subtle); }
-.eyebrow-accent { color: var(--accent); }
-/* A text link that acts: an eyebrow with a hairline under it that turns orange on hover (owner decision, 25 September 2026). */
-.link-action { position: relative; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--fg-muted); padding-bottom: 2px; line-height: 1.4; white-space: nowrap; transition: color var(--duration-fast) var(--ease-out); }
-/* The line lives under the text only while the pointer is on it, drawn in from the left (owner decision, 26 September 2026). */
-.link-action::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 1px; background: var(--accent); transform: scaleX(0); transform-origin: left center; transition: transform 240ms var(--ease-out); }
-.link-action:hover { color: var(--fg); }
-.link-action:hover::after, .link-action:focus-visible::after { transform: scaleX(1); }
-@media (prefers-reduced-motion: reduce) { .link-action::after { transition: none; } }
-.link-action svg { width: 12px; height: 12px; }
-
-/* The live status dot: a ring that swells and fades from the green dot, twice a cycle. */
+/* The live status dot: a ring that swells and fades from the green dot. */
 .presence-live { animation: presence-ping 2s cubic-bezier(0, 0, 0.2, 1) infinite; opacity: 0.6; }
 @keyframes presence-ping { 0% { transform: scale(1); opacity: 0.6; } 75%, 100% { transform: scale(2.2); opacity: 0; } }
-/* The assistant's prompt box textarea keeps a thin scrollbar. */
-.prompt-scroll::-webkit-scrollbar { width: 6px; }
-.prompt-scroll::-webkit-scrollbar-track { background: transparent; }
-.prompt-scroll::-webkit-scrollbar-thumb { background-color: var(--border-strong); border-radius: 3px; }
-
 .rec-dot { animation: rec-pulse 1.4s ease-in-out infinite; }
 @keyframes rec-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+.prompt-scroll::-webkit-scrollbar { width: 6px; }
+.prompt-scroll::-webkit-scrollbar-track { background: transparent; }
+.prompt-scroll::-webkit-scrollbar-thumb { background-color: var(--scrollbar); border-radius: 3px; }
 
-/* ---------------------------------------------------------------------------------------------
-   Landing page (`.lp`). Its own layer, modelled on resend.com: true black, white and grey type,
-   hairline borders, glass cards, 3D icons and one orange. The product's design system does not apply here.
-   --------------------------------------------------------------------------------------------- */
-.lp { --lp-line: var(--border); --lp-line-soft: var(--border-soft); --lp-muted: var(--fg-muted); --lp-faint: var(--fg-subtle); background: transparent; color: var(--fg); }
+/* Touch screens get 40px targets on the small controls. */
+@media (pointer: coarse) {
+  .segmented-item > span { height: 40px; }
+  .field-sm, .field-xs { min-height: 40px; }
+  input.field-sm, select.field-sm, input.field-xs, select.field-xs { height: 40px; }
+  .menu-item { min-height: 40px; }
+}
+}
+
+/* ---------------------------------------------------------------------------------------------------------------
+   6. Legacy class aliases (v3 → v4), KEPT ONLY FOR THE CONTROL CENTER (src/app/admin, src/components/admin) and the
+   landing page's vendored mobile menu (src/components/aceternity/resizable-navbar.tsx uses .tile). Everything else
+   is on the v4 primitives (src/components/ui) and the v4 classes above. New code never uses these. Delete each rule
+   with its last user (grep the class name across src/).
+   --------------------------------------------------------------------------------------------------------------- */
+@layer components {
+/* .tile (v3 glass card) → the v4 panel card: canvas colour, hairline, r16, natural shadow. */
+.tile { position: relative; background: var(--background); border: 1px solid var(--border); border-radius: var(--radius-card); box-shadow: var(--elev-natural-xs); }
+.tile-link { transition: border-color var(--duration-fast) var(--ease-out), background-color var(--duration-fast) var(--ease-out); }
+.tile-link:hover { border-color: var(--border-input-hover); background: color-mix(in srgb, var(--foreground) 2.4%, var(--background)); }
+/* Small surfaces inside a card: rows, chips, inner panels. */
+.chip { background: var(--fill-0); border: 1px solid var(--border); border-radius: var(--radius-card-sm); }
+.chip-link { transition: background-color var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out); }
+.chip-link:hover { background: var(--fill-1); border-color: var(--border-input); }
+.panel { background: var(--fill-0); border: 1px solid var(--border); border-radius: var(--radius-card-sm); }
+/* .btn (v3 glass pill) → the v4 outline button colours; the caller sets its size. */
+.btn { background: var(--background); border: 1px solid var(--border-input); color: var(--foreground); box-shadow: none; }
+.btn:hover { background: color-mix(in srgb, var(--foreground) 2.4%, var(--background)); border-color: var(--border-input-hover); }
+/* .glass-panel (the Control Center's phone menu) → a solid panel with the sheet shadow. */
+.glass-panel { background: var(--background); box-shadow: var(--elev-sheet); }
+/* The Control Center's sidebar and top bar. The blur sits on a layer behind the bar's contents, so menus opening
+   from the bar are not inside a backdrop root. */
+.sidebar-glass { background: var(--sidebar); }
+.topbar-glass { isolation: isolate; }
+.topbar-glass::before { content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none; background: var(--header-bg); backdrop-filter: blur(8px); }
+/* .eyebrow (micro information) → the v4 caption: 12/16 medium, subtle. */
+.eyebrow { font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.03px; text-transform: none; color: var(--subtle); }
+.eyebrow-accent { color: var(--accent-text); }
+/* .link-action → a quiet 13px link: secondary, foreground on hover. */
+.link-action { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; line-height: 19.5px; font-weight: 500; color: var(--secondary); white-space: nowrap; border-radius: 4px; transition: color var(--duration-fast) var(--ease-out); }
+.link-action:hover { color: var(--foreground); }
+.link-action svg { width: 14px; height: 14px; }
+/* .num → tabular figures in the interface face (v3 set them in Geist Mono). */
+.num { font-variant-numeric: tabular-nums; }
+}
+
+/* ---------------------------------------------------------------------------------------------------------------
+   7. Brenda
+   --------------------------------------------------------------------------------------------------------------- */
+/* Her chat (owner decision, 5 October 2026): while her chat is open, her own header is the top of the screen. Her
+   page sets <html data-brenda-chat> while the chat view is mounted and removes it on her home screen, where the
+   app's top bar returns. The main column drops its padding and width cap so the chat (the screen's height less any
+   banner, scrolling inside itself) fills the height beside the sidebar. Unlayered, so it beats utilities. No
+   animation between her home screen and the chat. The :has() half covers the first paint of a page opened straight on
+   the chat (?chat=, ?tab=history), before her script sets the attribute.
+   HOOKS: the app's top bar is any element with `data-app-topbar`; the main column is `#main`; the sidebar is
+   `#workspace-sidebar`. */
+html[data-brenda-chat] [data-app-topbar], html:has([data-brenda-chat-view]) [data-app-topbar] { display: none; }
+html[data-brenda-chat] #main, html:has([data-brenda-chat-view]) #main { padding: 0; max-width: none; }
+/* A banner above the shell (billing, impersonation, maintenance) takes its height off the screen: the shell keeps it
+   as --shell-banners. The chat is that much shorter than the screen, and so is the sidebar beside it. */
+html[data-brenda-chat] #workspace-sidebar, html:has([data-brenda-chat-view]) #workspace-sidebar { height: calc(100dvh - var(--shell-banners, 0px)); }
+
+/* Her face (owner decision, 4 October 2026): the same character as the desktop notch, white, monochrome. Her eyes
+   follow the pointer (--lx/--ly, set by brenda-face.tsx), she blinks and breathes. Her glow, if any, is the accent. */
+.brenda-face { --lx: 0; --ly: 0; --glow: transparent; position: relative; display: inline-grid; place-content: center; flex: none; border-radius: 30%;
+  background: #fff; box-shadow: 0 0 0 1px var(--border-input), var(--elev-natural-xs), 0 0 12px -2px var(--glow); /* the ring and the lift keep her white face visible on the white light canvas */
+  transition: transform 250ms var(--ease-out), box-shadow 400ms var(--ease-out); animation: brenda-breathe 3.6s ease-in-out infinite; }
+.brenda-face .eyes { display: grid; grid-auto-flow: column; transform: translate(calc(var(--lx) * var(--reach-x)), calc(var(--ly) * var(--reach-y))); }
+.brenda-face .eyes > span { background: #111; border-radius: 2px; transition: transform 70ms ease, height 200ms var(--ease-out); }
+.brenda-face-sm { width: 20px; height: 15px; --reach-x: 2px; --reach-y: 1.5px; }
+.brenda-face-sm .eyes { gap: 4px; } .brenda-face-sm .eyes > span { width: 2.5px; height: 4px; }
+.brenda-face-md { width: 30px; height: 22px; --reach-x: 3px; --reach-y: 2px; }
+.brenda-face-md .eyes { gap: 5px; } .brenda-face-md .eyes > span { width: 3.5px; height: 5.5px; }
+.brenda-face-lg { width: 38px; height: 28px; --reach-x: 3.5px; --reach-y: 2.5px; }
+.brenda-face-lg .eyes { gap: 7px; } .brenda-face-lg .eyes > span { width: 4.5px; height: 7px; }
+.brenda-face.blink .eyes > span { transform: scaleY(.12); }
+.brenda-face[data-tone="accent"] { --glow: var(--accent); } .brenda-face[data-tone="ok"] { --glow: var(--success); }
+.brenda-face[data-tone="warn"] { --glow: var(--warning); } .brenda-face[data-tone="bad"] { --glow: var(--danger); }
+.brenda-face[data-tone="blue"], .brenda-face[data-tone="violet"] { --glow: transparent; }
+.brenda-face.happy .eyes > span { height: 3px; width: 6px; background: transparent; border: 2px solid #111; border-bottom: 0; border-radius: 6px 6px 0 0; }
+.brenda-face-sm.happy .eyes > span { width: 4px; height: 2px; border-width: 1.5px; }
+.brenda-face.sad .eyes > span { height: 2px; border-radius: 1px; }
+.brenda-face.alert { animation: brenda-hop 600ms var(--ease-out) 1, brenda-breathe 3.6s ease-in-out 600ms infinite; }
+.brenda-face.think .eyes { transform: translate(calc(var(--reach-x) * .8), calc(var(--reach-y) * -1)); }
+.brenda-face.think .eyes > span { animation: brenda-scan 1.8s ease-in-out infinite; }
+.brenda-face.listen .eyes > span { border-radius: 40%; scale: 1.15; }
+.brenda-face.squash { animation: brenda-squash 320ms var(--ease-out) 1; }
+.brenda-face.squash .eyes > span { height: 2px; }
+.brenda-face.squash .eyes > span:first-child { transform: rotate(18deg); } .brenda-face.squash .eyes > span:last-child { transform: rotate(-18deg); }
+.brenda-face.dizzy { animation: brenda-wobble 450ms ease-in-out infinite alternate; }
+.brenda-face.dizzy .eyes > span { width: 6px; height: 6px; border-radius: 50%; background: transparent; border: 1.5px solid #111; border-right-color: transparent; animation: brenda-spin 550ms linear infinite; }
+.brenda-face.love { --glow: var(--accent); }
+.brenda-face.love .eyes > span { width: 7px; height: 7px; border-radius: 0; background: var(--accent); clip-path: path("M3.5 6.5 L0.8 3.7 A1.7 1.7 0 0 1 3.5 1.4 A1.7 1.7 0 0 1 6.2 3.7 Z"); animation: brenda-thump 700ms ease-in-out infinite; }
+@keyframes brenda-breathe { 0%, 100% { scale: 1; } 50% { scale: 1.035; } }
+@keyframes brenda-hop { 0% { translate: 0 0; } 35% { translate: 0 -4px; } 70% { translate: 0 1px; } 100% { translate: 0 0; } }
+@keyframes brenda-scan { 0%, 100% { translate: 0 0; } 50% { translate: -2px 0; } }
+@keyframes brenda-squash { 0% { transform: scale(1); } 30% { transform: scale(1.2, .76); } 62% { transform: scale(.92, 1.1); } 100% { transform: scale(1); } }
+@keyframes brenda-wobble { from { rotate: -9deg; } to { rotate: 9deg; } }
+@keyframes brenda-spin { to { transform: rotate(360deg); } }
+@keyframes brenda-thump { 0%, 100% { scale: 1; } 50% { scale: 1.25; } }
+/* Waiting text: a light sweep across grey (the notch's shimmer). A loading indicator, not decoration. */
+.brenda-shimmer { background: linear-gradient(90deg, var(--subtle) 0%, var(--foreground) 40%, var(--subtle) 70%); background-size: 260% 100%; -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; animation: brenda-shimmer 2.2s linear infinite; }
+@keyframes brenda-shimmer { from { background-position: 130% 0; } to { background-position: -130% 0; } }
+/* The voice card's wash: a faint light rising from the bottom while the microphone is open (accent) or none. */
+.brenda-wash { --brenda-glow: transparent; isolation: isolate; }
+.brenda-wash::after { content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none; background: radial-gradient(420px 200px at 50% 112%, var(--brenda-glow), transparent 72%); }
+.brenda-wash[data-tone="accent"] { --brenda-glow: color-mix(in srgb, var(--accent) 12%, transparent); }
+.brenda-wash[data-tone="ok"] { --brenda-glow: color-mix(in srgb, var(--success) 10%, transparent); }
+.brenda-wash[data-tone="warn"] { --brenda-glow: color-mix(in srgb, var(--warning) 10%, transparent); }
+.brenda-wash[data-tone="bad"] { --brenda-glow: color-mix(in srgb, var(--danger) 10%, transparent); }
+.brenda-wash[data-tone="violet"] { --brenda-glow: transparent; }
+@media (prefers-reduced-motion: reduce) {
+  .brenda-face, .brenda-face *, .brenda-shimmer { animation: none !important; transition: none !important; }
+  .brenda-shimmer { -webkit-text-fill-color: currentColor; }
+  .rec-dot, .presence-live { animation: none; }
+}
+
+/* ---------------------------------------------------------------------------------------------------------------
+   8. Landing page (`.lp`, src/app/page.tsx and src/components/landing). NOT part of v4 and not being redesigned now:
+   it keeps its v3 look. While the landing page is on screen (:root:has(.lp)) the legacy tokens it reads take their
+   v3 values back, and inside .lp the v3 body type and Tailwind's default type scale return.
+   --------------------------------------------------------------------------------------------------------------- */
+:root:has(.lp) {
+  --bg: #05060a; --bg-elevated: #0d0f16; --bg-surface: #12141d; --bg-popover: #11131b; --bg-inset: #07080d;
+  --border-soft: rgba(225, 230, 255, 0.06); --border: rgba(225, 230, 255, 0.1); --border-strong: rgba(225, 230, 255, 0.17);
+  --fg: #f4f5f8; --fg-muted: #a3a7b4; --fg-subtle: #6e7383; --fg-faint: #474b58;
+  --accent: #ff6c02; --accent-hover: #ff8226; --accent-soft: rgba(255, 108, 2, 0.14); --accent-glow: rgba(255, 92, 40, 0.32); --accent-fg: #ffffff;
+  --success: #34e0a1; --warning: #ffc857; --danger: #ff5c7a; --info: #6fa8ff;
+  --card-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07), 0 30px 80px -40px rgba(0, 0, 0, 0.9);
+  --surface-top: rgba(255, 255, 255, 0.055); --surface-bottom: rgba(255, 255, 255, 0.018);
+  --wash-soft: rgba(225, 230, 255, 0.03); --wash: rgba(225, 230, 255, 0.05); --wash-strong: rgba(225, 230, 255, 0.08); --wash-active: rgba(225, 230, 255, 0.11);
+  --highlight: rgba(255, 255, 255, 0.07); --highlight-strong: rgba(255, 255, 255, 0.12);
+  --btn-bg: rgba(255, 255, 255, 0.055); --btn-bg-hover: rgba(255, 255, 255, 0.09);
+}
+:root[data-theme="light"]:has(.lp) {
+  --bg: #f3f4f8; --bg-elevated: #ffffff; --bg-surface: #f6f7fb; --bg-popover: #ffffff; --bg-inset: #eef0f5;
+  --border-soft: rgba(20, 24, 40, 0.06); --border: rgba(20, 24, 40, 0.1); --border-strong: rgba(20, 24, 40, 0.18);
+  --fg: #0e1018; --fg-muted: #555a6b; --fg-subtle: #858a9a; --fg-faint: #b5b9c5;
+  --accent-soft: rgba(255, 108, 2, 0.12); --accent-glow: rgba(255, 92, 40, 0.2);
+  --success: #12875b; --warning: #a86d0f; --danger: #d2345a; --info: #2b6cd9;
+  --card-shadow: inset 0 1px 0 rgba(255, 255, 255, 1), 0 24px 60px -36px rgba(30, 34, 60, 0.35);
+  --surface-top: rgba(255, 255, 255, 0.82); --surface-bottom: rgba(255, 255, 255, 0.62);
+  --wash-soft: rgba(20, 24, 40, 0.025); --wash: rgba(20, 24, 40, 0.04); --wash-strong: rgba(20, 24, 40, 0.06); --wash-active: rgba(20, 24, 40, 0.08);
+  --highlight: rgba(255, 255, 255, 0.9); --highlight-strong: rgba(255, 255, 255, 1);
+  --btn-bg: rgba(255, 255, 255, 0.9); --btn-bg-hover: #ffffff;
+}
+.lp {
+  --lp-line: var(--border); --lp-line-soft: var(--border-soft); --lp-muted: var(--fg-muted); --lp-faint: var(--fg-subtle);
+  --radius-sm: 12px; --radius: 20px; --radius-lg: 28px;
+  --text-xs--letter-spacing: normal; --text-sm--line-height: 1.25rem; --text-lg--line-height: 1.75rem; --text-lg--letter-spacing: normal;
+  --text-2xl--line-height: 2rem; --text-2xl--letter-spacing: normal; --text-3xl: 1.875rem; --text-3xl--line-height: 2.25rem; --text-3xl--letter-spacing: normal;
+  background: transparent; color: var(--fg); font-family: "Geist Variable", ui-sans-serif, system-ui, sans-serif; font-size: 15px; line-height: 1.55; font-weight: 400; font-feature-settings: "ss01", "cv11";
+}
+@layer base {
+  .lp :where(h1, h2, h3), .lp .font-display { font-family: "Geist Variable", ui-sans-serif, system-ui, sans-serif; font-size: inherit; line-height: inherit; font-weight: 560; letter-spacing: -0.025em; }
+  .lp :where(h1) { letter-spacing: -0.035em; }
+}
 .lp .lp-muted { color: var(--lp-muted); }
 .lp .lp-faint { color: var(--lp-faint); }
-/* Cards: a solid dark surface, a hairline and a top highlight. No blur, by the owner's decision. */
 .lp-card { background: linear-gradient(180deg, var(--surface-top), var(--surface-bottom)); border: 1px solid var(--lp-line); border-radius: 16px; box-shadow: var(--card-shadow); }
 .lp-card-sm { background: var(--bg-surface); border: 1px solid var(--lp-line-soft); border-radius: 12px; box-shadow: inset 0 1px 0 var(--highlight); }
-/* Rows, chips, inputs, tab strips, pills, the header and the footer: a flat translucent wash, no blur. */
 .lp-glass { background: var(--wash); border: 1px solid var(--border); box-shadow: inset 0 1px 0 var(--highlight); }
 .lp-glass:is(li, a):hover { background: var(--wash-strong); border-color: var(--border-strong); }
-/* The fairness table: hairline dividers from a 1px gap over the line colour; each cell lifts its icon on hover. */
 .lp-table { display: grid; gap: 1px; background: var(--lp-line); border: 1px solid var(--lp-line); border-radius: 20px; overflow: hidden; }
 .lp-cell { position: relative; background: var(--surface-bottom); padding: 32px; transition: background-color 250ms var(--ease-out); }
 .lp-cell::before { content: ""; position: absolute; inset: 0; background: radial-gradient(60% 50% at 50% 0%, rgba(255, 108, 2, 0.16), transparent 70%); opacity: 0; transition: opacity 300ms var(--ease-out); pointer-events: none; }
@@ -424,36 +694,25 @@ input[type="checkbox"].switch:checked::before { background: #fff; transform: tra
 .lp-cell:hover::before { opacity: 1; }
 .lp-cell img { transition: transform 350ms var(--ease-out), filter 350ms var(--ease-out); }
 .lp-cell:hover img { transform: translateY(-6px) scale(1.08) rotate(-3deg); filter: drop-shadow(0 12px 18px rgba(255, 108, 2, 0.35)); }
-.lp-cell h3 { font-family: var(--font-sans); letter-spacing: 0; font-weight: 600; transition: color 250ms var(--ease-out); }
+.lp-cell h3 { font-family: "Geist Variable", ui-sans-serif, system-ui, sans-serif; letter-spacing: 0; font-weight: 600; transition: color 250ms var(--ease-out); }
 .lp-cell:hover h3 { color: var(--accent-hover); }
-/* Ripple grid cells (background-ripple-effect). */
 .animate-cell-ripple { animation: cell-ripple var(--duration, 200ms) ease-out var(--delay, 0ms) 1; }
 @keyframes cell-ripple { 0% { opacity: 0.4; } 30% { opacity: 1; background-color: rgba(255, 108, 2, 0.35); } 60% { opacity: 0.4; } 100% { opacity: 0.4; } }
-/* Sky: a slow orange aurora drifting behind the stars. */
 .lp-aurora { background: radial-gradient(closest-side, rgba(255, 108, 2, 0.16), transparent 70%); filter: blur(60px); animation: aurora 26s ease-in-out infinite alternate; }
 @keyframes aurora { from { transform: translate(-12%, -6%) scale(1); } to { transform: translate(14%, 10%) scale(1.25); } }
 .lp-line { border-color: var(--lp-line); }
 .lp-line-soft { border-color: var(--lp-line-soft); }
-/* The small lit square that sits above every section title. */
 .lp-icon { position: relative; display: grid; place-items: center; width: 64px; height: 64px; border-radius: 16px; border: 1px solid var(--lp-line); background: radial-gradient(120% 120% at 50% 0%, rgba(255, 108, 2, 0.18), var(--wash) 60%); box-shadow: inset 0 1px 0 var(--highlight-strong); }
 .lp-icon::after { content: ""; position: absolute; left: 12%; right: 12%; bottom: -12px; height: 12px; border-radius: 50%; background: radial-gradient(closest-side, rgba(255, 108, 2, 0.7), transparent); filter: blur(6px); }
 .lp-icon img { width: 44px; height: 44px; object-fit: contain; }
-/* Buttons on the landing page share the product surface (.btn), 44px tall, 16px corners. */
-.lp-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 44px; padding: 0 22px; border-radius: var(--radius); font-weight: 600; font-size: 15px; white-space: nowrap; transition: transform 120ms var(--ease-out), background-color 120ms var(--ease-out), border-color 120ms var(--ease-out), box-shadow 120ms var(--ease-out); background: var(--btn-bg); border: 1px solid var(--border); color: var(--fg); box-shadow: none; }
+.lp-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 44px; padding: 0 22px; border-radius: 20px; font-weight: 600; font-size: 15px; white-space: nowrap; transition: transform 120ms var(--ease-out), background-color 120ms var(--ease-out), border-color 120ms var(--ease-out), box-shadow 120ms var(--ease-out); background: var(--btn-bg); border: 1px solid var(--border); color: var(--fg); box-shadow: none; }
 .lp-btn:hover { background: var(--btn-bg-hover); border-color: var(--border-strong); }
 .lp-btn:active { transform: scale(0.97); }
-/* Primary carries an orange hairline and fills orange with a soft glow on hover; secondary is the plain surface. */
 .lp-btn-primary { border-color: rgba(255, 108, 2, 0.55); }
 .lp-btn.lp-btn-primary:hover { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); box-shadow: none; }
-/* .lp-btn-secondary is the plain surface; nothing to add. */
 .lp-btn-sm { height: 36px; padding: 0 16px; font-size: 14px; border-radius: 10px; }
-/* Hero backdrop: a faint grid that fades out, with a warm glow behind the headline. */
 .lp-grid { background-image: linear-gradient(var(--lp-line-soft) 1px, transparent 1px), linear-gradient(90deg, var(--lp-line-soft) 1px, transparent 1px); background-size: 64px 64px; mask-image: radial-gradient(ellipse 70% 60% at 50% 30%, #000 20%, transparent 75%); }
 .lp-glow { background: radial-gradient(closest-side, rgba(255, 108, 2, 0.35), rgba(255, 108, 2, 0.08) 55%, transparent 80%); filter: blur(40px); }
-
-/* The hero's dashboard frame (owner decision, 25 September 2026): a slim orange border, an orange glow behind the
-   frame, and under the mouse the glow and the border brighten where the pointer is. --mx/--my are set by the frame
-   from the mouse; the layers only fade in (opacity), so reduced motion is respected by default. */
 .lp-frame { --mx: 50%; --my: 40%; --ease-in-out: cubic-bezier(0.45, 0, 0.2, 1); border-color: rgba(255, 108, 2, 0.45); box-shadow: 0 0 0 1px rgba(255, 108, 2, 0.08), 0 0 80px -20px rgba(255, 108, 2, 0.45), 0 9px 20px #0000004a, 0 37px 37px #00000042, 0 84px 50px #00000026, 0 149px 60px #0000000a; }
 .lp-frame-glow { position: absolute; inset: -48px; border-radius: 64px; pointer-events: none; background: radial-gradient(60% 55% at 50% 35%, rgba(255, 108, 2, 0.34), rgba(255, 108, 2, 0.08) 60%, transparent 78%); filter: blur(44px); }
 .lp-frame-spot { position: absolute; inset: -64px; border-radius: 80px; pointer-events: none; opacity: 0; background: radial-gradient(360px circle at calc(var(--mx) + 64px) calc(var(--my) + 64px), rgba(255, 120, 20, 0.62), rgba(255, 108, 2, 0.18) 45%, transparent 70%); filter: blur(36px); transition: opacity 700ms var(--ease-in-out); }
@@ -461,7 +720,7 @@ input[type="checkbox"].switch:checked::before { background: #fff; transform: tra
 .lp-frame:hover .lp-frame-spot, .lp-frame:hover .lp-frame-ring { opacity: 1; }
 :root[data-theme="light"] .lp-frame { box-shadow: 0 0 0 1px rgba(255, 108, 2, 0.06), 0 0 70px -24px rgba(255, 108, 2, 0.4), 0 20px 50px -30px rgba(0, 0, 0, 0.35); }
 :root[data-theme="light"] .lp-frame-glow { opacity: 0.55; }
-/* Marquees: horizontal for the strip, vertical for the moments columns. Tracks hold their list twice. */
+/* Marquees (the landing strip and Brenda's suggestion rows): tracks hold their list twice. */
 .marquee { mask-image: linear-gradient(to right, transparent, #000 12%, #000 88%, transparent); }
 .marquee-track { animation: marquee var(--marquee-duration, 70s) linear infinite; }
 .marquee:hover .marquee-track { animation-play-state: paused; }
@@ -471,32 +730,8 @@ input[type="checkbox"].switch:checked::before { background: #fff; transform: tra
 .lp-mq-y-track.reverse { animation-direction: reverse; }
 .lp-mq-y:hover .lp-mq-y-track { animation-play-state: paused; }
 @keyframes marquee-y { to { transform: translateY(-50%); } }
-/* Hatched fill for the "uncertain" interval. */
-.hatched { background-image: repeating-linear-gradient(135deg, rgba(255, 200, 87, 0.55) 0 4px, transparent 4px 9px); }
-/* Native details: the plus turns into a cross when open. */
 .lp-faq summary::-webkit-details-marker { display: none; }
-
 @media (prefers-reduced-motion: reduce) {
-  .rec-dot, .presence-live { animation: none; }
   .marquee-track, .lp-mq-y-track, .lp-aurora { animation: none; }
-  .lp-cell img, .hairline-cell img { transition: none; }
+  .lp-cell img { transition: none; }
 }
-
-/* Columns size to their text (owner decision, 25 September 2026: never break a word to fit). The table grows to
-   its content and the card scrolls sideways when it must; a single column never passes 28rem, so prose wraps at spaces. */
-table.data { width: max-content; min-width: 100%; border-collapse: collapse; font-size: 0.9375rem; }
-table.data th { text-align: left; font-weight: 600; color: var(--fg-subtle); font-size: 0.75rem; letter-spacing: 0.04em; padding: 0.75rem 0.875rem; border-bottom: 1px solid var(--border); white-space: nowrap; }
-table.data td { padding: 0.8125rem 0.875rem; border-bottom: 1px solid var(--border-soft); vertical-align: top; max-width: 28rem; overflow-wrap: normal; }
-table.data td.wrap { overflow-wrap: break-word; } /* JSON and references: a token longer than the column breaks, words never do */
-table.data td.nowrap { white-space: nowrap; }
-/* A table whose first column gives way: fills its card and lets long titles truncate instead of scrolling sideways. */
-.data-fit table.data { width: 100%; table-layout: fixed; }
-table.data tbody tr:hover td { background: var(--wash-soft); }
-table.data tr:last-child td { border-bottom: 0; }
-/* A cell that is only a pill, a figure or a time never breaks it over two lines. */
-table.data td:has(> .badge:only-child), table.data td.tabular-nums, table.data td:has(> time:only-child) { white-space: nowrap; }
-
-.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
-
-/* Attendance month grid: one narrow cell per calendar day. */
-.data th.day, .data td.day { padding: 0.5rem 0.15rem; text-align: center; }

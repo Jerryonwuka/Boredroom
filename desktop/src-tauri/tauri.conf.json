@@ -13,8 +13,8 @@
       {
         "label": "notch",
         "title": "Brenda",
-        "width": 220,
-        "height": 44,
+        "width": 480,
+        "height": 440,
         "decorations": false,
         "transparent": true,
         "alwaysOnTop": true,
@@ -22,7 +22,8 @@
         "resizable": false,
         "shadow": false,
         "visibleOnAllWorkspaces": true,
-        "focus": false
+        "focus": false,
+        "acceptFirstMouse": true
       }
     ],
     "security": {
@@ -32,6 +33,12 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"]
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
   }
 }

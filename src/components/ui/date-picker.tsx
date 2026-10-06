@@ -5,7 +5,9 @@
  * native pickers). It is a `.field` button that opens a small calendar; the chosen value goes into a hidden input
  * under the given `name`, in the same strings the native inputs used (yyyy-mm-dd, yyyy-mm, yyyy-mm-ddThh:mm), so
  * every form and query parameter keeps working. Works uncontrolled (defaultValue) or controlled (value/onChange).
- * The heading is a button: days → months → years, so any date is three taps away rather than a long scroll.
+ * The heading is a button: days → months → years, so any date is three taps away rather than a long scroll. The
+ * calendar sits on the v4 popover surface; the chosen day is the inverted primary (white, near-black figure), today a
+ * 16% ring. `size`: xs (24px, inside a FilterControl), sm (32px), md (36px).
  */
 import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 import { AnimatePresence, motion } from "motion/react";
@@ -56,14 +58,16 @@ function cells(view: Date) {
   return Array.from({ length: 42 }, (_, i) => { const d = new Date(start); d.setDate(start.getDate() + i); return d; });
 }
 
-const navBtn = "grid size-8 place-items-center rounded-full text-fg-muted transition-colors duration-[var(--duration-fast)] hover:bg-wash hover:text-fg";
-const cellBtn = "h-10 rounded-[var(--radius-sm)] text-sm tabular-nums transition-colors duration-[var(--duration-fast)]";
+const navBtn = "grid size-8 place-items-center rounded-[10px] text-secondary transition-colors duration-75 hover:bg-fill-1 hover:text-foreground";
+const cellBtn = "h-10 rounded-[10px] text-sm tabular-nums transition-colors duration-75";
 
-export function DatePicker({ name, id, mode = "date", value, defaultValue, onChange, min, max, required, placeholder, className, size = "md", "aria-label": ariaLabel, disabled, submitOnChange = false }: {
+export function DatePicker({ name, id, mode = "date", value, defaultValue, onChange, min, max, required, placeholder, className, size = "md", "aria-label": ariaLabel, "aria-invalid": ariaInvalid, "aria-describedby": ariaDescribedBy, disabled, submitOnChange = false }: {
   /** Submits the enclosing form as soon as a value is picked, so filter bars need no Show button. */
   submitOnChange?: boolean;
   name?: string; id?: string; mode?: DateMode; value?: string; defaultValue?: string; onChange?: (value: string) => void; min?: string; max?: string;
-  required?: boolean; placeholder?: string; className?: string; size?: "sm" | "md"; "aria-label"?: string; disabled?: boolean;
+  required?: boolean; placeholder?: string; className?: string; size?: "xs" | "sm" | "md"; "aria-label"?: string; disabled?: boolean;
+  /** Set by Field when it shows an error, so the error is linked to the trigger. */
+  "aria-invalid"?: boolean; "aria-describedby"?: string;
 }) {
   const controlled = value !== undefined;
   const [inner, setInner] = useState(defaultValue ?? "");
@@ -129,23 +133,24 @@ export function DatePicker({ name, id, mode = "date", value, defaultValue, onCha
   };
   const today = new Date();
   const text = label(date, time, mode);
-  const field = cn("field flex items-center justify-between gap-2 text-left", size === "sm" && "field-sm", !text && "text-fg-subtle", className);
+  const field = cn("field flex items-center justify-between gap-2 text-left", size === "sm" && "field-sm", size === "xs" && "field-xs w-auto", !text && "text-subtle", className);
   const decadeStart = Math.floor(view.getFullYear() / 12) * 12;
   const years = Array.from({ length: 12 }, (_, i) => decadeStart + i);
 
   // The heading: a button that climbs one level (days → months → years), flanked by arrows that move at that level.
   const heading = level === "days"
-    ? { prev: () => setView(new Date(view.getFullYear(), view.getMonth() - 1, 1)), next: () => setView(new Date(view.getFullYear(), view.getMonth() + 1, 1)), up: () => setLevel("months"), text: <><span>{MONTHS[view.getMonth()]}</span> <span className="tabular-nums text-fg-muted">{view.getFullYear()}</span></>, hint: "Choose a month", unit: "month" }
+    ? { prev: () => setView(new Date(view.getFullYear(), view.getMonth() - 1, 1)), next: () => setView(new Date(view.getFullYear(), view.getMonth() + 1, 1)), up: () => setLevel("months"), text: <><span>{MONTHS[view.getMonth()]}</span> <span className="tabular-nums text-secondary">{view.getFullYear()}</span></>, hint: "Choose a month", unit: "month" }
     : level === "months"
       ? { prev: () => setView(new Date(view.getFullYear() - 1, view.getMonth(), 1)), next: () => setView(new Date(view.getFullYear() + 1, view.getMonth(), 1)), up: () => setLevel("years"), text: <span className="tabular-nums">{view.getFullYear()}</span>, hint: "Choose a year", unit: "year" }
       : { prev: () => setView(new Date(view.getFullYear() - 12, view.getMonth(), 1)), next: () => setView(new Date(view.getFullYear() + 12, view.getMonth(), 1)), up: undefined, text: <span className="tabular-nums">{decadeStart}–{decadeStart + 11}</span>, hint: "", unit: "12 years" };
 
   return (
     <div ref={root} className="relative">
-      <button ref={trigger} type="button" id={id} disabled={disabled} aria-label={ariaLabel} aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? popId : undefined} onClick={show} className={field}>
+      {/* A button cannot carry aria-invalid: the error shows as data-invalid (a red hairline) and is read out through aria-describedby. */}
+      <button ref={trigger} type="button" id={id} disabled={disabled} aria-label={ariaLabel} data-invalid={ariaInvalid || undefined} aria-describedby={ariaDescribedBy} aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? popId : undefined} onClick={show} className={field}>
         <span className="truncate tabular-nums">{text || placeholder || (mode === "month" ? "Pick a month" : mode === "datetime" ? "Pick a date and time" : "Pick a date")}</span>
-        <span className="flex shrink-0 items-center gap-1 text-fg-subtle">
-          {text && !required ? <span role="button" tabIndex={-1} aria-label="Clear" onClick={(e) => { e.stopPropagation(); commit(""); }} className="grid size-5 place-items-center rounded-full hover:bg-wash-strong hover:text-fg"><X className="size-3" aria-hidden /></span> : null}
+        <span className="flex shrink-0 items-center gap-1 text-subtle">
+          {text && !required ? <span role="button" tabIndex={-1} aria-label="Clear" onClick={(e) => { e.stopPropagation(); commit(""); }} className="grid size-5 place-items-center rounded-md hover:bg-fill-1 hover:text-foreground"><X className="size-3" aria-hidden /></span> : null}
           {mode === "datetime" ? <Clock3 className="size-4" aria-hidden /> : <CalendarDays className="size-4" aria-hidden />}
         </span>
       </button>
@@ -154,45 +159,45 @@ export function DatePicker({ name, id, mode = "date", value, defaultValue, onCha
         {open ? (
           <motion.div ref={liftToTopLayer} key="pop" id={popId} role="dialog" aria-label={mode === "month" ? "Choose a month" : "Choose a date"} initial={{ opacity: 0, y: pos.up ? 6 : -6, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: pos.up ? 4 : -4, scale: 0.98 }} transition={{ duration: 0.16, ease: [0.23, 1, 0.32, 1] }}
             style={{ position: "fixed", top: pos.up ? undefined : pos.top, bottom: pos.up ? window.innerHeight - pos.top : undefined, left: pos.left, zIndex: "var(--z-toast)" as unknown as number }}
-            className="top-pop w-72 rounded-[var(--radius)] border border-border-strong bg-popover p-3 text-fg shadow-[var(--card-shadow)]">
+            className="top-pop popover-surface w-72 p-3 text-foreground">
             <div className="mb-2 flex items-center justify-between">
               <button type="button" aria-label={`Previous ${heading.unit}`} onClick={heading.prev} className={navBtn}><ChevronLeft className="size-4" aria-hidden /></button>
-              {heading.up ? <button type="button" onClick={heading.up} title={heading.hint} className="rounded-full px-3 py-1 font-display text-base transition-colors duration-[var(--duration-fast)] hover:bg-wash">{heading.text}</button> : <span className="px-3 py-1 font-display text-base">{heading.text}</span>}
+              {heading.up ? <button type="button" onClick={heading.up} title={heading.hint} className="rounded-lg px-2.5 py-1 text-sm font-semibold transition-colors duration-75 hover:bg-fill-1">{heading.text}</button> : <span className="px-3 py-1 text-sm font-semibold">{heading.text}</span>}
               <button type="button" aria-label={`Next ${heading.unit}`} onClick={heading.next} className={navBtn}><ChevronRight className="size-4" aria-hidden /></button>
             </div>
 
             {level === "years" ? (
               <div className="grid grid-cols-3 gap-1" role="listbox" aria-label="Year">
                 {years.map((y) => { const sel = view.getFullYear() === y; const now = today.getFullYear() === y; const off = yearOutside(y); return (
-                  <button key={y} type="button" role="option" aria-selected={sel} disabled={off} onClick={() => pickYear(y)} className={cn(cellBtn, sel ? "bg-accent font-semibold text-accent-fg" : "hover:bg-wash", now && !sel && "ring-1 ring-inset ring-accent/50", off && "opacity-30")}>{y}</button>
+                  <button key={y} type="button" role="option" aria-selected={sel} disabled={off} onClick={() => pickYear(y)} className={cn(cellBtn, sel ? "bg-primary font-semibold text-primary-fg" : "hover:bg-fill-1", now && !sel && "ring-1 ring-inset ring-border-input-hover", off && "opacity-30")}>{y}</button>
                 ); })}
               </div>
             ) : level === "months" ? (
               <div className="grid grid-cols-3 gap-1" role="listbox" aria-label="Month">
                 {MONTHS.map((m, i) => { const d = new Date(view.getFullYear(), i, 1); const sel = !!date && date.getFullYear() === d.getFullYear() && date.getMonth() === i; const now = today.getFullYear() === d.getFullYear() && today.getMonth() === i; const off = mode === "month" ? outside(d) : yearOutside(d.getFullYear()); return (
-                  <button key={m} type="button" role="option" aria-selected={sel} disabled={off} onClick={() => pickMonth(i)} className={cn(cellBtn, sel ? "bg-accent font-semibold text-accent-fg" : "hover:bg-wash", now && !sel && "ring-1 ring-inset ring-accent/50", off && "opacity-30")}>{m.slice(0, 3)}</button>
+                  <button key={m} type="button" role="option" aria-selected={sel} disabled={off} onClick={() => pickMonth(i)} className={cn(cellBtn, sel ? "bg-primary font-semibold text-primary-fg" : "hover:bg-fill-1", now && !sel && "ring-1 ring-inset ring-border-input-hover", off && "opacity-30")}>{m.slice(0, 3)}</button>
                 ); })}
               </div>
             ) : (
               <>
-                <div className="mb-1 grid grid-cols-7 text-center">{DAYS.map((d) => <span key={d} className="eyebrow py-1">{d}</span>)}</div>
+                <div className="mb-1 grid grid-cols-7 text-center">{DAYS.map((d) => <span key={d} className="py-1 text-xs font-medium text-subtle">{d}</span>)}</div>
                 <div ref={grid} role="grid" aria-label={`${MONTHS[view.getMonth()]} ${view.getFullYear()}`} className="grid grid-cols-7 gap-y-0.5" onKeyDown={move}>
                   {cells(view).map((d) => { const inMonth = d.getMonth() === view.getMonth(); const sel = !!date && sameDay(d, date); const now = sameDay(d, today); const off = outside(d); const focus = focusDay ? sameDay(d, focusDay) : sel; return (
                     <button key={ymd(d)} type="button" role="gridcell" data-day={ymd(d)} tabIndex={focus ? 0 : -1} disabled={off} aria-selected={sel} aria-label={d.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })} onFocus={() => setFocusDay(d)} onClick={() => pick(d)}
-                      className={cn("mx-auto grid size-9 place-items-center rounded-full text-sm tabular-nums transition-colors duration-[var(--duration-fast)]", sel ? "bg-accent font-semibold text-accent-fg shadow-[0_6px_16px_-8px_var(--accent)]" : "hover:bg-wash-strong", !inMonth && !sel && "text-fg-faint", now && !sel && "ring-1 ring-inset ring-accent/60 font-semibold", off && "opacity-30 hover:bg-transparent")}>{d.getDate()}</button>
+                      className={cn("mx-auto grid size-9 place-items-center rounded-[10px] text-sm tabular-nums transition-colors duration-75", sel ? "bg-primary font-semibold text-primary-fg" : "hover:bg-fill-1", !inMonth && !sel && "text-faint", now && !sel && "ring-1 ring-inset ring-border-input-hover font-semibold", off && "opacity-30 hover:bg-transparent")}>{d.getDate()}</button>
                   ); })}
                 </div>
                 {mode === "datetime" ? (
-                  <div className="mt-3 flex items-center gap-2 text-xs font-medium text-fg-subtle"><span className="w-10">Time</span><TimePicker size="sm" className="flex-1" aria-label="Time" value={time || "09:00"} onChange={(v) => commit(serialise(date ?? today, v, mode))} /></div>
+                  <div className="mt-3 flex items-center gap-2 text-xs font-medium text-subtle"><span className="w-10">Time</span><TimePicker size="sm" className="flex-1" aria-label="Time" value={time || "09:00"} onChange={(v) => commit(serialise(date ?? today, v, mode))} /></div>
                 ) : null}
               </>
             )}
 
-            <div className="mt-3 flex items-center justify-between border-t border-border-soft pt-2.5 text-xs">
-              <button type="button" onClick={() => { commit(""); close(); }} className="rounded-full px-2.5 py-1 text-fg-muted hover:bg-wash hover:text-fg">Clear</button>
+            <div className="mt-3 flex items-center justify-between border-t border-border pt-2.5 text-xs">
+              <button type="button" onClick={() => { commit(""); close(); }} className="inline-flex h-7 items-center rounded-lg px-2 font-medium text-secondary hover:bg-fill-1 hover:text-foreground">Clear</button>
               <div className="flex gap-1">
-                <button type="button" onClick={() => { const t = new Date(); setView(new Date(t.getFullYear(), t.getMonth(), 1)); setFocusDay(t); setLevel(mode === "month" ? "months" : "days"); pick(mode === "month" ? new Date(t.getFullYear(), t.getMonth(), 1) : t); }} className="rounded-full px-2.5 py-1 text-fg-muted hover:bg-wash hover:text-fg">Today</button>
-                {mode === "datetime" ? <button type="button" onClick={close} className="rounded-full bg-accent px-3 py-1 font-semibold text-accent-fg">Done</button> : null}
+                <button type="button" onClick={() => { const t = new Date(); setView(new Date(t.getFullYear(), t.getMonth(), 1)); setFocusDay(t); setLevel(mode === "month" ? "months" : "days"); pick(mode === "month" ? new Date(t.getFullYear(), t.getMonth(), 1) : t); }} className="inline-flex h-7 items-center rounded-lg px-2 font-medium text-secondary hover:bg-fill-1 hover:text-foreground">Today</button>
+                {mode === "datetime" ? <button type="button" onClick={close} className="inline-flex h-7 items-center rounded-lg bg-primary px-2.5 text-meta font-medium text-primary-fg hover:bg-primary-hover">Done</button> : null}
               </div>
             </div>
           </motion.div>

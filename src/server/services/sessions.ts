@@ -29,6 +29,7 @@ export type SessionView = {
   serverNow: string;
   heartbeatSeconds: number;
   staleAfterSeconds: number;
+  /** Whether the session's member has agreed to the current recording rules (asked once, when a recorded session starts). */
   policyAcknowledged: boolean;
 };
 
@@ -89,16 +90,51 @@ export async function getSession(ctx: OrgContext, sessionId: string): Promise<Se
   return withUser(ctx.user.profileId, (db) => sessionView(db, ctx, sessionId));
 }
 
-/** The caller's open session, wherever it is. Cross-workspace sessions are reported without task details. */
-export async function currentSession(ctx: OrgContext): Promise<{ session: SessionView | null; elsewhere: { organisationName: string; organisationSlug: string } | null }> {
+/**
+ * The workspace's current recording rules, in the words the consent prompt needs, and whether this person has agreed to
+ * them. Agreement is asked once per version, at the moment a recorded session starts (owner decision, 5 October 2026:
+ * no general sign-off). Null when the workspace has no rules yet, which means nothing can be recorded.
+ */
+export type RecordingRules = { version: number; mode: string; retentionDays: number; notice: string; agreed: boolean };
+
+/**
+ * The caller's open session, wherever it is, and the recording rules here. Cross-workspace sessions are reported
+ * without task details. Both come from one statement: this runs on every poll of the timer and the desktop notch.
+ */
+export async function currentSession(ctx: OrgContext): Promise<{ session: SessionView | null; elsewhere: { organisationName: string; organisationSlug: string } | null; recording: RecordingRules | null }> {
   return withUser(ctx.user.profileId, async (db) => {
-    const open = await db.maybeOne<{ id: string; organisation_id: string; name: string; slug: string }>(
-      `SELECT s.id, s.organisation_id, o.name, o.slug FROM work_sessions s JOIN organisations o ON o.id = s.organisation_id
-       WHERE s.user_id = $1 AND s.state IN ('running','paused','interrupted')`, [ctx.user.profileId]);
-    if (!open) return { session: null, elsewhere: null };
-    if (open.organisation_id !== ctx.org.id) return { session: null, elsewhere: { organisationName: open.name, organisationSlug: open.slug } };
-    return { session: await sessionView(db, ctx, open.id), elsewhere: null };
+    const r = await db.one<{ open: { id: string; organisation_id: string; name: string; slug: string } | null; recording: RecordingRules | null }>(
+      `SELECT (SELECT json_build_object('id', s.id, 'organisation_id', s.organisation_id, 'name', o.name, 'slug', o.slug)
+                 FROM work_sessions s JOIN organisations o ON o.id = s.organisation_id
+                 WHERE s.user_id = $1 AND s.state IN ('running','paused','interrupted')) AS open,
+              (SELECT json_build_object('version', p.version, 'mode', p.recording_mode, 'retentionDays', p.retention_days, 'notice', p.notice_text,
+                                        'agreed', EXISTS (SELECT 1 FROM policy_acknowledgements a WHERE a.membership_id = $2 AND a.policy_id = p.id))
+                 FROM policies p WHERE p.id = $3) AS recording`,
+      [ctx.user.profileId, ctx.membership.id, ctx.org.current_policy_id]);
+    const { open, recording } = r;
+    if (!open) return { session: null, elsewhere: null, recording };
+    if (open.organisation_id !== ctx.org.id) return { session: null, elsewhere: { organisationName: open.name, organisationSlug: open.slug }, recording };
+    return { session: await sessionView(db, ctx, open.id), elsewhere: null, recording };
   });
+}
+
+/**
+ * Consent given while a timer already runs: the session started before the person had agreed, so it was started
+ * unrecorded. Once they agree, their open session here may record, exactly as if they had agreed before pressing Start
+ * (see startInternal); nothing records until they choose a screen. Called when someone agrees to the rules
+ * (acknowledgePolicy). A session whose own rules had recording off stays as it is.
+ */
+export async function allowRecordingOnOpenSession(db: Db, ctx: OrgContext): Promise<void> {
+  const opened = await db.query<{ id: string }>(
+    `UPDATE work_sessions s SET capture_mode = 'optional'
+     WHERE s.organisation_id = $1 AND s.membership_id = $2 AND s.state IN ('running','paused','interrupted') AND s.capture_mode = 'none'
+       AND EXISTS (SELECT 1 FROM policies p WHERE p.id = s.policy_id AND p.recording_mode <> 'disabled')
+       AND EXISTS (SELECT 1 FROM policies p WHERE p.id = $3 AND p.recording_mode <> 'disabled')
+     RETURNING s.id`, [ctx.org.id, ctx.membership.id, ctx.org.current_policy_id]);
+  for (const o of opened) {
+    await db.query(`INSERT INTO session_events(organisation_id, session_id, actor_user_id, event_type, metadata) VALUES ($1, $2, $3, 'capture_allowed', $4)`,
+      [ctx.org.id, o.id, ctx.user.profileId, JSON.stringify({ captureMode: "optional", reason: "consent" })]);
+  }
 }
 
 type StartOpts = z.infer<typeof startSchema>;
@@ -132,7 +168,7 @@ async function startInternal(db: Db, ctx: OrgContext, input: StartOpts, requestI
       throw conflict("CAPTURE_REQUIRED", "This task requires screen capture. Start recording, or request an exception.", { taskId: t.id });
     }
   }
-  if ((captureMode === "required" || captureMode === "optional") && !acknowledged) throw conflict("POLICY_NOT_ACKNOWLEDGED", "Acknowledge the current monitoring policy before starting a recorded session.");
+  if ((captureMode === "required" || captureMode === "optional") && !acknowledged) throw conflict("POLICY_NOT_ACKNOWLEDGED", "Agree to the current recording rules before starting a recorded session.");
 
   let s: { id: string; started_at: string };
   try {

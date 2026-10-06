@@ -52,6 +52,10 @@ async function main() {
     const r = await confirmAction(david, token); expect(!r.error && r.actions.length === 1, r.error ?? "no action");
     const id = r.actions[0].href?.split("/").pop(); if (id) created.push(id); return r.actions[0].summary;
   });
+  await check("a second Confirm on the same token does nothing", async () => {
+    try { await confirmAction(david, token); } catch (e) { expect((e as { code?: string }).code === "ALREADY_CONFIRMED", (e as Error).message); return (e as Error).message; }
+    throw new Error("the same confirmation ran twice");
+  });
   await check("staff updates own progress at once", async () => {
     const r = await runBrendaTool(ada, "update_task", { taskId: created[0], progressPercent: 40 });
     expect(r.proposals.length === 0 && !(r.out as { error?: string }).error, JSON.stringify(r.out)); return r.actions[0]?.summary;

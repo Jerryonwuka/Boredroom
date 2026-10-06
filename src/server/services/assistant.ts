@@ -13,9 +13,9 @@ import type { OrgContext } from "@/server/lib/api";
 import { withSystem } from "@/server/db";
 import { decryptSecret } from "@/server/lib/crypto";
 import { assignableMembers } from "@/server/services/tasks";
-import { todayLocal, localMidnight, addDays, weekdayOf } from "@/server/lib/time";
+import { todayLocal, localTimeOn, addDays, weekdayOf } from "@/server/lib/time";
 
-export const DEFAULT_ASSISTANT_MODEL = "claude-opus-5";
+export const DEFAULT_ASSISTANT_MODEL = "claude-opus-5-5";
 
 export type AssistantConnection = { apiKey: string; model: string; source: "organisation" | "environment" };
 
@@ -73,6 +73,7 @@ function describeError(err: unknown): string {
   if (e?.status === 401) return "the API key was rejected";
   if (e?.status === 429) return "rate limit or credit limit reached";
   if (e?.status === 404) return "the configured model was not found";
+  if (/credit balance/i.test(e?.message ?? "")) return "the Anthropic account has run out of credits; add credits at console.anthropic.com";
   return (e?.message ?? String(err)).slice(0, 140);
 }
 
@@ -201,7 +202,7 @@ function extractEstimate(s: string): { text: string; minutes: number | null } {
 }
 
 function extractDue(s: string, today: string, tz: string): { text: string; iso: string | null } {
-  const at = (date: string, hour: number, minute = 0) => new Date(localMidnight(date, tz).getTime() + (hour * 60 + minute) * 60_000).toISOString();
+  const at = (date: string, hour: number, minute = 0) => localTimeOn(date, `${hour}:${minute}`, tz).toISOString();
   const time = s.match(/\b(?:at|by|before)\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b/i);
   let hour = 17, minute = 0, timeSpan: [number, number] | null = null;
   if (time && (time[3] || Number(time[1]) <= 23)) {

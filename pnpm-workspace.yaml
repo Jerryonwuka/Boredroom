@@ -11,3 +11,7 @@ onlyBuiltDependencies:
   - "@embedded-postgres/linux-ppc64"
   - "@embedded-postgres/linux-x64"
   - "@embedded-postgres/windows-x64"
+overrides:
+  # On-device dictation uses only the browser build of @huggingface/transformers; its Node runtime (about 287 MB of
+  # native binaries for every platform) is never loaded, so it is left out of installs and Docker images.
+  "@huggingface/transformers>onnxruntime-node": "-"

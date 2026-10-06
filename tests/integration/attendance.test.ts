@@ -67,9 +67,10 @@ describe("the attendance board", () => {
     expect(by["Ben Employee"].status).toBe("in");
     expect(by["Ben Employee"].late_seconds).toBe(0);
     expect(by["David Manager"].status).toBe("in");
-    expect(by["Olu Owner"].status).toBe("in");
+    // Only staff and team leads are listed: the owner and HR clocked in above, but the organisation account supervises.
+    expect(by["Olu Owner"]).toBeUndefined();
     expect(board.counts).toMatchObject({ out: 1, not_in: 0 });
-    expect(board.counts.in).toBe(4);
+    expect(board.counts.in).toBe(2);
     expect(board.counts.late).toBeGreaterThanOrEqual(1);
     // Yesterday: nobody had clocked in.
     const yesterday = await attendanceBoard(a.ownerCtx, { date: new Date(Date.now() - 86400000).toISOString().slice(0, 10) });

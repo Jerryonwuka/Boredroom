@@ -28,7 +28,7 @@ export function AdminMobileMenu({ groups, footer }: { groups: AdminNavGroup[]; f
           <>
             <motion.div key="veil" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }} onClick={() => setOpen(false)} className="fixed inset-0 z-[var(--z-overlay)] bg-[var(--overlay)]" aria-hidden />
             <motion.aside key="panel" id="admin-mobile-menu" role="dialog" aria-modal="true" aria-label="Control Center sections" initial={{ x: "100%" }} animate={{ x: 0 }} exit={{ x: "100%" }} transition={{ duration: 0.26, ease: [0.23, 1, 0.32, 1] }}
-              className="fixed inset-y-0 right-0 z-[var(--z-dialog)] flex w-[min(20rem,88vw)] flex-col border-l border-border-strong bg-sidebar shadow-[var(--card-shadow)]">
+              className="fixed inset-y-0 right-0 z-[var(--z-dialog)] glass-panel flex w-[min(20rem,88vw)] flex-col border-l border-border-strong">
               <div className="flex h-16 shrink-0 items-center justify-between border-b border-border-soft px-4"><p className="font-display text-base">Sections</p><button type="button" aria-label="Close menu" onClick={() => setOpen(false)} className="grid size-9 place-items-center rounded-full text-fg-muted hover:bg-wash hover:text-fg"><X className="size-4" aria-hidden /></button></div>
               <div className="flex-1 overflow-y-auto px-2 py-3" onClick={(e) => { if ((e.target as HTMLElement).closest("a")) setOpen(false); }}><AdminNav groups={groups} /></div>
               {footer ? <div className="shrink-0 border-t border-border-soft px-4 py-3 text-sm">{footer}</div> : null}

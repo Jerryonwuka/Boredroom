@@ -1,110 +1,203 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Button } from "@/components/ui/button";
+import { ChevronLeft, ChevronRight, Download, Lock, Plus, X } from "lucide-react";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Input, Textarea, Select, Field } from "@/components/ui/input";
 import { Alert } from "@/components/ui/states";
+import { IconButton } from "@/components/ui/icon-button";
+import { Sheet } from "@/components/ui/sheet";
+import { FilterBar, FilterControl, FilterSelect } from "@/components/ui/filter-control";
 import { api, isApiFailure } from "@/lib/api-client";
-import type { ReportSnapshotEntry } from "@/server/services/reports";
+import type { TimesheetEntry } from "@/server/services/reports";
 import { DatePicker } from "@/components/ui/date-picker";
-import { Lock } from "lucide-react";
+import { successToast } from "@/components/ui/toast";
 
-function useForm() {
+/** "yyyy-mm-ddThh:mm" read as a wall-clock time in the organisation's zone, to an ISO instant (DST-safe, as localMidnight). */
+function zonedIso(local: string, timeZone: string): string {
+  const [d, t = "00:00"] = local.split("T");
+  const [y, m, day] = d.split("-").map(Number);
+  const [hh, mm] = t.split(":").map(Number);
+  const f = new Intl.DateTimeFormat("en-US", { timeZone, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  const offset = (instant: number) => {
+    const p = f.formatToParts(new Date(instant));
+    const get = (k: string) => Number(p.find((x) => x.type === k)?.value);
+    return Date.UTC(get("year"), get("month") - 1, get("day"), get("hour") % 24, get("minute"), get("second")) - Math.floor(instant / 1000) * 1000;
+  };
+  const wall = Date.UTC(y, m - 1, day, hh, mm);
+  let at = wall - offset(wall);
+  at = wall - offset(at);
+  return new Date(at).toISOString();
+}
+
+/**
+ * The filter bar for Timesheets, v4: a Person filter for leads and HR (applies at once), the Day with a step either
+ * side, and a way back to today.
+ */
+export function MemberDatePicker({ orgSlug, members, membershipId, date, prev, next, today }: { orgSlug: string; members: { id: string; display_name: string }[]; membershipId: string; date: string; prev: string; next: string; today: string }) {
   const router = useRouter();
+  const href = (member: string, d: string) => `/app/${orgSlug}/timesheets?member=${member}&date=${d}`;
+  return (
+    <form className="mb-6" onSubmit={(e) => { e.preventDefault(); const f = new FormData(e.currentTarget); router.push(href(String(f.get("member") ?? membershipId), String(f.get("date") || date))); }}>
+      <FilterBar>
+        {/* Keyed by the shown member and day, so stepping between days resets the controls to what the page shows. */}
+        {members.length ? <FilterSelect key={membershipId} id="ts-member" label="Person" name="member" defaultValue={membershipId} autoSubmit options={members.map((m) => ({ value: m.id, label: m.display_name }))} /> : null}
+        <FilterControl label="Day" htmlFor="ts-date">
+          <IconButton aria-label="Previous day" size="xs" className="size-6" onClick={() => router.push(href(membershipId, prev))}><ChevronLeft aria-hidden /></IconButton>
+          <DatePicker key={date} id="ts-date" name="date" defaultValue={date} max={today} required size="xs" submitOnChange />
+          <IconButton aria-label="Next day" size="xs" className="size-6" disabled={next > today} onClick={() => router.push(href(membershipId, next))}><ChevronRight aria-hidden /></IconButton>
+        </FilterControl>
+        {date !== today ? <Link href={href(membershipId, today)} className={buttonVariants({ variant: "ghost", size: "xs" })}>Today</Link> : null}
+      </FilterBar>
+    </form>
+  );
+}
+
+/**
+ * A correction: replace recorded intervals with proposed ones, on one of the person's own tasks. The button opens a
+ * side sheet with the form (v4: forms live in sheets); a green-dot toast confirms it was sent. What was typed into the
+ * intervals survives closing the sheet by mistake, and a click outside never closes it.
+ */
+export function AdjustmentForm({ orgSlug, localDate, dateLabel, entries, tasks, timeZone }: { orgSlug: string; localDate: string; dateLabel: string; entries: TimesheetEntry[]; tasks: { id: string; title: string }[]; timeZone: string }) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [ok, setOk] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
-  async function submit<T>(fn: () => Promise<T>, okMsg: string) {
-    setPending(true); setError(null); setOk(null); setFieldErrors({});
-    try { const r = await fn(); setOk(okMsg); router.refresh(); return r; }
-    catch (err) { if (isApiFailure(err)) { setError(err.error.message); setFieldErrors(err.error.fieldErrors ?? {}); } else setError("Cannot reach the server."); return null; }
-    finally { setPending(false); }
-  }
-  return { pending, error, ok, fieldErrors, submit };
-}
-
-export function MemberDatePicker({ orgSlug, members, membershipId, date, prev, next }: { orgSlug: string; members: { id: string; display_name: string }[]; membershipId: string; date: string; prev: string; next: string }) {
-  const router = useRouter();
-  return (
-    <form className="flex flex-wrap items-end gap-2" onSubmit={(e) => { e.preventDefault(); const f = new FormData(e.currentTarget); router.push(`/app/${orgSlug}/timesheets?member=${f.get("member") ?? membershipId}&date=${f.get("date")}`); }}>
-      {members.length ? <Field label="Member" htmlFor="ts-member"><Select id="ts-member" name="member" defaultValue={membershipId} onChange={(e) => e.currentTarget.form?.requestSubmit()}>{members.map((m) => <option key={m.id} value={m.id}>{m.display_name}</option>)}</Select></Field> : null}
-      <Field label="Date" htmlFor="ts-date"><DatePicker id="ts-date" name="date" defaultValue={date} submitOnChange /></Field>
-      <Button variant="ghost" onClick={() => router.push(`/app/${orgSlug}/timesheets?member=${membershipId}&date=${prev}`)}>← {prev}</Button>
-      <Button variant="ghost" onClick={() => router.push(`/app/${orgSlug}/timesheets?member=${membershipId}&date=${next}`)}>{next}</Button>
-    </form>
-  );
-}
-
-export function SubmitReportForm({ orgSlug, localDate, blockers, nextPriorities, disabled }: { orgSlug: string; localDate: string; blockers: string; nextPriorities: string; disabled: boolean }) {
-  const { pending, error, ok, submit } = useForm();
-  return (
-    <form className="tile grid gap-3 p-4" onSubmit={(e) => { e.preventDefault(); const f = new FormData(e.currentTarget); submit(() => api(`/api/orgs/${orgSlug}/reports/submit`, { method: "POST", body: { localDate, blockers: f.get("blockers"), nextPriorities: f.get("nextPriorities") } }), "Report submitted for review."); }}>
-      <h2 className="font-display text-lg">Submit report for {localDate}</h2>
-      {error ? <Alert tone="danger">{error}</Alert> : null}{ok ? <Alert tone="success">{ok}</Alert> : null}
-      <Field label="Blockers" htmlFor="rp-block" hint="optional"><Textarea id="rp-block" name="blockers" defaultValue={blockers} maxLength={4000} /></Field>
-      <Field label="Next priorities" htmlFor="rp-next" hint="optional"><Textarea id="rp-next" name="nextPriorities" defaultValue={nextPriorities} maxLength={4000} /></Field>
-      <p className="text-xs text-fg-subtle">Submitting freezes a snapshot of today&apos;s intervals. Missing or uncertain time can be claimed with a correction below, before or after submission.</p>
-      <div><Button type="submit" disabled={pending || disabled}>{pending ? "Submitting…" : "Submit report"}</Button></div>
-    </form>
-  );
-}
-
-export function AdjustmentForm({ orgSlug, localDate, entries }: { orgSlug: string; localDate: string; entries: ReportSnapshotEntry[] }) {
-  const { pending, error, ok, fieldErrors, submit } = useForm();
-  const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
   const [rows, setRows] = useState<{ startedAt: string; endedAt: string }[]>([{ startedAt: "", endedAt: "" }]);
-  const tasks = Array.from(new Map(entries.map((e) => [e.taskId, e.taskTitle])).entries());
-  if (!open) return <Button variant="subtle" onClick={() => setOpen(true)}>Request a time correction</Button>;
-  const uniqueIntervals = entries.filter((e) => !e.intervalId.startsWith("proposed:"));
+  const formId = useId();
+  const intervalsError = `${formId}-intervals-error`;
+  // Tasks tracked on this day first, then the rest of the person's own tasks: time can be claimed for a day with no timer.
+  const tracked = Array.from(new Map(entries.map((e) => [e.taskId, e.taskTitle])).entries());
+  const options = [...tracked, ...tasks.filter((t) => !tracked.some(([id]) => id === t.id)).map((t) => [t.id, t.title] as [string, string])];
+  const time = (iso: string) => new Intl.DateTimeFormat("en-GB", { timeZone, hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
+  const zone = new Intl.DateTimeFormat("en-GB", { timeZone, timeZoneName: "short" }).formatToParts(new Date(`${localDate}T12:00:00Z`)).find((p) => p.type === "timeZoneName")?.value ?? timeZone;
+  const close = () => { if (!pending) setOpen(false); };
+
+  async function send(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const f = new FormData(e.currentTarget);
+    const filled = rows.filter((r) => r.startedAt || r.endedAt);
+    if (filled.some((r) => !r.startedAt || !r.endedAt)) { setFieldErrors({ proposedIntervals: ["Give each interval both a start and an end, or remove it."] }); return; }
+    if (!filled.length && !selected.length) { setFieldErrors({ proposedIntervals: ["Propose at least one interval, or tick the intervals to remove."] }); return; }
+    const proposed = filled.map((r) => ({ startedAt: zonedIso(r.startedAt, timeZone), endedAt: zonedIso(r.endedAt, timeZone) }));
+    setPending(true); setError(null); setFieldErrors({});
+    try {
+      await api(`/api/orgs/${orgSlug}/time-adjustments`, { method: "POST", body: { taskId: f.get("taskId"), localDate, originalIntervalIds: selected, proposedIntervals: proposed, reason: f.get("reason"), evidenceNote: f.get("evidenceNote") || undefined } });
+      successToast("Correction requested", "Your team lead reviews it next.");
+      setSelected([]); setRows([{ startedAt: "", endedAt: "" }]); setOpen(false);
+      router.refresh();
+    } catch (err) {
+      if (isApiFailure(err)) { setError(err.error.message); setFieldErrors(err.error.fieldErrors ?? {}); }
+      else setError("Cannot reach the server. Check your connection and try again.");
+    } finally { setPending(false); }
+  }
+
   return (
-    <form className="tile grid gap-3 p-4" onSubmit={(e) => {
-      e.preventDefault(); const f = new FormData(e.currentTarget);
-      const proposed = rows.filter((r) => r.startedAt && r.endedAt).map((r) => ({ startedAt: new Date(r.startedAt).toISOString(), endedAt: new Date(r.endedAt).toISOString() }));
-      submit(() => api(`/api/orgs/${orgSlug}/time-adjustments`, { method: "POST", body: { taskId: f.get("taskId"), localDate, originalIntervalIds: selected, proposedIntervals: proposed, reason: f.get("reason"), evidenceNote: f.get("evidenceNote") || undefined } }), "Correction requested. A manager will review it.").then((r) => { if (r) setOpen(false); });
-    }}>
-      <h2 className="font-display text-lg">Time correction for {localDate}</h2>
-      <p className="text-sm text-fg-muted">Select intervals to replace (optional), then propose the corrected times. Corrections never overwrite history: the original intervals stay in the ledger marked superseded.</p>
-      {error ? <Alert tone="danger">{error}</Alert> : null}{ok ? <Alert tone="success">{ok}</Alert> : null}
-      <Field label="Task" htmlFor="adj-task" error={fieldErrors.taskId}>
-        {tasks.length ? <Select id="adj-task" name="taskId">{tasks.map(([id, title]) => <option key={id} value={id}>{title}</option>)}</Select> : <Input id="adj-task" name="taskId" placeholder="Task id (no tracked tasks on this day)" required />}
-      </Field>
-      {uniqueIntervals.length ? <fieldset><legend className="mb-1 text-sm font-semibold text-fg-muted">Replace these intervals</legend><div className="space-y-1 text-sm">{uniqueIntervals.map((e) => <label key={e.intervalId} className="flex items-center gap-2"><input type="checkbox" checked={selected.includes(e.intervalId)} onChange={(ev) => setSelected(ev.target.checked ? [...selected, e.intervalId] : selected.filter((x) => x !== e.intervalId))} /> {e.taskTitle}: {new Date(e.startedAt).toLocaleTimeString()} to {new Date(e.endedAt).toLocaleTimeString()} ({e.status})</label>)}</div></fieldset> : null}
-      <div>
-        <p className="mb-1 text-sm font-semibold text-fg-muted">Proposed intervals (local time)</p>
-        {rows.map((r, i) => (
-          <div key={i} className="mb-2 flex flex-wrap items-center gap-2">
-            <DatePicker mode="datetime" aria-label="Start" value={r.startedAt} onChange={(v) => setRows(rows.map((x, j) => (j === i ? { ...x, startedAt: v } : x)))} className="w-56" />
-            <span className="text-fg-subtle">to</span>
-            <DatePicker mode="datetime" aria-label="End" value={r.endedAt} onChange={(v) => setRows(rows.map((x, j) => (j === i ? { ...x, endedAt: v } : x)))} className="w-56" />
-            <Button size="sm" variant="ghost" onClick={() => setRows(rows.filter((_, j) => j !== i))}>Remove</Button>
-          </div>
-        ))}
-        <Button size="sm" variant="outline" onClick={() => setRows([...rows, { startedAt: "", endedAt: "" }])}>Add interval</Button>
-        {fieldErrors.proposedIntervals ? <p className="mt-1 text-sm text-danger">{fieldErrors.proposedIntervals[0]}</p> : null}
-      </div>
-      <Field label="Reason" htmlFor="adj-reason" error={fieldErrors.reason}><Textarea id="adj-reason" name="reason" required maxLength={2000} /></Field>
-      <Field label="Evidence" htmlFor="adj-ev" hint="optional, e.g. calendar entry or commit"><Input id="adj-ev" name="evidenceNote" maxLength={2000} /></Field>
-      <div className="flex gap-2"><Button type="submit" disabled={pending}>{pending ? "Sending…" : "Request correction"}</Button><Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button></div>
-    </form>
+    <>
+      <Button size="sm" variant="secondary" aria-haspopup="dialog" onClick={() => { setError(null); setOpen(true); }}>Request a time correction</Button>
+      <Sheet open={open} onClose={close} dismissible={false} title={`Time correction for ${dateLabel}`}
+        description="Tick the intervals to replace, if any, then propose the right times. The originals stay in the ledger, marked as replaced."
+        footer={<><Button variant="secondary" disabled={pending} onClick={close}>Cancel</Button><Button type="submit" form={formId} loading={pending} disabled={!options.length}>{pending ? "Sending…" : "Request correction"}</Button></>}>
+        <form id={formId} className="grid gap-5" onSubmit={send}>
+          {error ? <Alert tone="danger">{error}</Alert> : null}
+          {options.length ? (
+            <Field label="Task" htmlFor={`${formId}-task`} error={fieldErrors.taskId}><Select id={`${formId}-task`} name="taskId">{options.map(([id, title]) => <option key={id} value={id}>{title}</option>)}</Select></Field>
+          ) : <Alert tone="info">You have no tasks assigned to you, so there is nothing to claim time against. Ask your team lead to assign the work first.</Alert>}
+          {entries.length ? (
+            <fieldset>
+              <legend className="mb-1.5 text-sm font-medium text-foreground">Replace these intervals</legend>
+              <div className="-mx-2 grid gap-0.5">{entries.map((e) => (
+                <label key={`${e.intervalId}-${e.startedAt}`} className="flex min-h-9 cursor-pointer items-center gap-3 rounded-lg px-2 text-sm font-normal transition-colors duration-75 hover:bg-fill-1">
+                  <input type="checkbox" checked={selected.includes(e.intervalId)} onChange={(ev) => setSelected(ev.target.checked ? [...selected, e.intervalId] : selected.filter((x) => x !== e.intervalId))} />
+                  <span className="min-w-0 flex-1 truncate text-foreground">{e.taskTitle}</span>
+                  <span className="shrink-0 tabular-nums text-secondary">{time(e.startedAt)}–{time(e.endedAt)}</span>
+                  {e.status !== "confirmed" ? <span className="shrink-0 text-xs font-medium text-warning">{e.status}</span> : null}
+                </label>
+              ))}</div>
+            </fieldset>
+          ) : null}
+          <fieldset aria-describedby={fieldErrors.proposedIntervals ? intervalsError : undefined}>
+            <legend className="mb-1.5 text-sm font-medium text-foreground">Proposed intervals <span className="font-normal text-secondary">in {zone}</span></legend>
+            <div className="grid gap-2">
+              <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_2rem] gap-2 text-xs font-medium text-subtle" aria-hidden><span>Start</span><span>End</span></div>
+              {rows.map((r, i) => (
+                <div key={i} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_2rem] items-center gap-2">
+                  <DatePicker mode="datetime" aria-label={`Interval ${i + 1} start`} value={r.startedAt} onChange={(v) => setRows(rows.map((x, j) => (j === i ? { ...x, startedAt: v } : x)))} />
+                  <DatePicker mode="datetime" aria-label={`Interval ${i + 1} end`} value={r.endedAt} onChange={(v) => setRows(rows.map((x, j) => (j === i ? { ...x, endedAt: v } : x)))} />
+                  {rows.length > 1 ? <IconButton aria-label={`Remove interval ${i + 1}`} onClick={() => setRows(rows.filter((_, j) => j !== i))}><X aria-hidden /></IconButton> : <span aria-hidden />}
+                </div>
+              ))}
+            </div>
+            <Button size="xs" variant="ghost" className="mt-2 -ml-2" onClick={() => setRows([...rows, { startedAt: "", endedAt: "" }])}><Plus aria-hidden />Add interval</Button>
+            {fieldErrors.proposedIntervals ? <p id={intervalsError} role="alert" className="mt-1.5 text-meta font-medium text-danger">{fieldErrors.proposedIntervals[0]}</p> : null}
+          </fieldset>
+          <Field label="Reason" htmlFor={`${formId}-reason`} error={fieldErrors.reason}><Textarea id={`${formId}-reason`} name="reason" required maxLength={2000} placeholder="Forgot to start the timer after lunch" /></Field>
+          <Field label="Evidence" htmlFor={`${formId}-evidence`} hint="Optional" description="Such as a calendar entry or a commit." error={fieldErrors.evidenceNote}><Input id={`${formId}-evidence`} name="evidenceNote" maxLength={2000} /></Field>
+        </form>
+      </Sheet>
+    </>
   );
 }
 
-export function ExportForm({ orgSlug, members, canExport = true, upgradeTo }: { orgSlug: string; members: { id: string; display_name: string }[]; canExport?: boolean; upgradeTo?: string | null }) {
+/** CSV of confirmed time. Fetched rather than navigated to, so a refusal shows here instead of as a raw error page. */
+export function ExportForm({ orgSlug, members, today, canExport = true, upgradeTo }: { orgSlug: string; members: { id: string; display_name: string }[]; today: string; canExport?: boolean; upgradeTo?: string | null }) {
   const [open, setOpen] = useState(false);
-  const today = new Date().toISOString().slice(0, 10);
-  const monthStart = today.slice(0, 8) + "01";
-  if (!canExport) return <span className="inline-flex items-center gap-2 text-sm text-fg-subtle" title={upgradeTo ? `Exports are part of ${upgradeTo}.` : "Exports are not on this plan."}><Lock className="size-3.5" aria-hidden />Export CSV{upgradeTo ? <span className="text-xs">· {upgradeTo}</span> : null}</span>;
-  if (!open) return <Button variant="outline" onClick={() => setOpen(true)}>Export CSV</Button>;
+  const [pending, setPending] = useState(false);
+  const formId = useId();
+  if (!canExport) return <span className="inline-flex h-8 items-center gap-1.5 text-meta font-medium text-secondary"><Lock className="size-3.5" aria-hidden />{upgradeTo ? `CSV export is part of ${upgradeTo}` : "CSV export is not on this plan"}</span>;
+  const close = () => { if (!pending) setOpen(false); };
   return (
-    <form className="tile flex flex-wrap items-end gap-2 p-3" method="get" action={`/api/orgs/${orgSlug}/exports/timesheets`}>
-      <Field label="From" htmlFor="x-from"><DatePicker id="x-from" name="from" defaultValue={monthStart} required /></Field>
-      <Field label="To" htmlFor="x-to"><DatePicker id="x-to" name="to" defaultValue={today} required /></Field>
-      <Field label="Member" htmlFor="x-member"><Select id="x-member" name="membershipId" defaultValue=""><option value="">Everyone in scope</option>{members.map((m) => <option key={m.id} value={m.id}>{m.display_name}</option>)}</Select></Field>
-      <Button type="submit">Download approved records</Button>
-      <p className="w-full text-xs text-fg-subtle">Approved report versions only; totals reconcile with the approved snapshots. Text is formula-safe.</p>
+    <>
+      <Button size="sm" variant="secondary" onClick={() => setOpen(true)} aria-haspopup="dialog"><Download aria-hidden />Export CSV</Button>
+      <Sheet open={open} onClose={close} size="sm" title="Export CSV"
+        description="Confirmed time per person, day and task, the same totals as Timesheets. A correction counts once it is approved; a running timer once it stops."
+        footer={<><Button variant="secondary" disabled={pending} onClick={close}>Cancel</Button><Button type="submit" form={formId} loading={pending}>{pending ? "Preparing…" : "Download CSV"}</Button></>}>
+        <ExportFields formId={formId} orgSlug={orgSlug} members={members} today={today} setPending={setPending} onDone={() => setOpen(false)} />
+      </Sheet>
+    </>
+  );
+}
+
+function ExportFields({ formId, orgSlug, members, today, setPending, onDone }: { formId: string; orgSlug: string; members: { id: string; display_name: string }[]; today: string; setPending: (v: boolean) => void; onDone: () => void }) {
+  const [from, setFrom] = useState(`${today.slice(0, 8)}01`);
+  const [to, setTo] = useState(today);
+  const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<{ from?: string; to?: string }>({});
+  async function download(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const errs: { from?: string; to?: string } = {};
+    if (!from) errs.from = "Pick the first day.";
+    if (!to) errs.to = "Pick the last day.";
+    else if (from && from > to) errs.to = "The last day must be on or after the first.";
+    setFieldErrors(errs);
+    if (errs.from || errs.to) return;
+    setPending(true); setError(null);
+    try {
+      const q = new URLSearchParams({ from, to });
+      const member = String(new FormData(e.currentTarget).get("membershipId") ?? "");
+      if (member) q.set("membershipId", member);
+      const res = await fetch(`/api/orgs/${orgSlug}/exports/timesheets?${q}`, { credentials: "same-origin" });
+      if (!res.ok) { const data = await res.json().catch(() => null) as { message?: string } | null; setError(data?.message ?? `The export failed (error ${res.status}). Try again in a moment.`); return; }
+      const name = /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") ?? "")?.[1] ?? `timesheets-${from}-${to}.csv`;
+      const url = URL.createObjectURL(await res.blob());
+      const a = document.createElement("a"); a.href = url; a.download = name; document.body.append(a); a.click(); a.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      successToast("CSV downloaded", name);
+      onDone();
+    } catch { setError("Cannot reach the server. Check your connection and try again."); }
+    finally { setPending(false); }
+  }
+  return (
+    <form id={formId} className="grid gap-5" onSubmit={download} noValidate>
+      {error ? <Alert tone="danger">{error}</Alert> : null}
+      <Field label="From" htmlFor="x-from" error={fieldErrors.from}><DatePicker id="x-from" value={from} onChange={setFrom} max={today} required /></Field>
+      <Field label="To" htmlFor="x-to" error={fieldErrors.to}><DatePicker id="x-to" value={to} onChange={setTo} max={today} required /></Field>
+      <Field label="Person" htmlFor="x-member"><Select id="x-member" name="membershipId" defaultValue=""><option value="">Everyone you can see</option>{members.map((m) => <option key={m.id} value={m.id}>{m.display_name}</option>)}</Select></Field>
+      <p className="text-meta font-normal text-secondary">Text in the file is safe to open in a spreadsheet.</p>
     </form>
   );
 }

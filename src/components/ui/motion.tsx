@@ -2,33 +2,33 @@
 
 /**
  * Motion primitives for Boredroom, built on `motion` (the library behind Framer).
- * Rules: one orchestrated rise per page; everything else answers an action. Durations under 250ms, custom
+ * Rules (v4: fast and calm, nothing bounces): everything answers an action. Durations 150–200ms (sheets 300ms), custom
  * ease-out, transform and opacity only. `MotionConfig reducedMotion="user"` switches movement off system-wide
  * for people who asked for it.
  */
 import { motion, AnimatePresence, LayoutGroup, MotionConfig } from "motion/react";
 import type { ReactNode } from "react";
+import { cn } from "@/lib/utils";
 
 export const EASE = [0.23, 1, 0.32, 1] as const;
-export const FAST = 0.16;
-export const BASE = 0.22;
+export const FAST = 0.15;
+export const BASE = 0.2;
 
 export function MotionRoot({ children }: { children: ReactNode }) {
   return <MotionConfig reducedMotion="user" transition={{ duration: BASE, ease: EASE }}>{children}</MotionConfig>;
 }
 
-/** The page's one entrance: the main column rises 6px and fades in, its direct children staggered by 40ms. */
+/**
+ * The page's one entrance: what sits in a `Rise` (the page header, live rows) rises 4px and fades in with the CSS
+ * `.rise-in` keyframe. CSS rather than motion variants, so it plays from the first paint: with variants the server HTML
+ * held every header at opacity 0 until the page's script woke up, and on a slow load the content showed without its
+ * header. `PageRise` stays as the main column's wrapper so callers need not change.
+ */
 export function PageRise({ children, className }: { children: ReactNode; className?: string }) {
-  return (
-    <motion.div className={className} initial="hidden" animate="show" variants={{ hidden: {}, show: { transition: { staggerChildren: 0.04, delayChildren: 0.02 } } }}>
-      {children}
-    </motion.div>
-  );
+  return <div className={className}>{children}</div>;
 }
-export const riseItem = { hidden: { opacity: 0, y: 6 }, show: { opacity: 1, y: 0, transition: { duration: BASE, ease: EASE } } };
-export function Rise({ children, className, as = "div" }: { children: ReactNode; className?: string; as?: "div" | "section" | "li" }) {
-  const Tag = motion[as];
-  return <Tag className={className} variants={riseItem}>{children}</Tag>;
+export function Rise({ children, className, as: Tag = "div" }: { children: ReactNode; className?: string; as?: "div" | "section" | "li" }) {
+  return <Tag className={cn("rise-in", className)}>{children}</Tag>;
 }
 
 /** Wraps a list whose rows move: rows with stable keys slide to their new place instead of jumping. */

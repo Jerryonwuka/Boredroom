@@ -18,17 +18,23 @@ export function RealtimeRefresher({ orgSlug }: { orgSlug: string }) {
     let es: EventSource | null = null;
     let closed = false;
     let backoff = 1000;
+    let retry: ReturnType<typeof setTimeout> | null = null;
+    // A change that arrives while the tab is in the background is held until the person comes back: one refresh
+    // then, instead of re-rendering a page nobody is looking at for every timer tick in the room.
+    let held = false;
     // Never refresh while the person is typing in a form; retry shortly after. Forms marked data-refresh-safe
     // (the message composer) keep their own state across a refresh, so they do not hold it back.
     const editing = () => { const el = document.activeElement; return !!el && !!el.closest("form:not([data-refresh-safe]), [role=dialog]:not([data-refresh-safe])"); };
     const schedule = () => {
-      if (timer.current) return;
+      if (closed || timer.current) return;
+      if (document.visibilityState === "hidden") { held = true; return; }
       timer.current = setTimeout(() => {
         timer.current = null;
         if (editing()) { schedule(); return; }
         router.refresh();
       }, editing() ? 2000 : 400);
     };
+    const onVisible = () => { if (document.visibilityState === "visible" && held) { held = false; schedule(); } };
     const connect = () => {
       if (closed) return;
       es = new EventSource(`/api/orgs/${orgSlug}/events`);
@@ -40,12 +46,13 @@ export function RealtimeRefresher({ orgSlug }: { orgSlug: string }) {
       es.onopen = () => { backoff = 1000; };
       es.onerror = () => {
         es?.close();
-        if (!closed) setTimeout(() => { connect(); schedule(); }, backoff);
+        if (!closed) retry = setTimeout(() => { retry = null; connect(); schedule(); }, backoff);
         backoff = Math.min(backoff * 2, 30000);
       };
     };
     connect();
-    return () => { closed = true; es?.close(); if (timer.current) clearTimeout(timer.current); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => { closed = true; es?.close(); if (retry) clearTimeout(retry); if (timer.current) clearTimeout(timer.current); timer.current = null; document.removeEventListener("visibilitychange", onVisible); };
   }, [orgSlug, router]);
   return null;
 }

@@ -1,110 +1,125 @@
 import Link from "next/link";
-import { Video } from "lucide-react";
+import { Hourglass, SquareCheckBig, Timer, Video } from "lucide-react";
 import { workspacePage } from "@/server/lib/workspace-page";
 import { AppShell } from "@/components/app/shell";
 import { PageHeader } from "@/components/ui/card";
 import { StatCard } from "@/components/ui/stat-card";
-import { Badge } from "@/components/ui/badge";
+import { FilterBar, FilterSelect } from "@/components/ui/filter-control";
+import { ListRow } from "@/components/ui/rows";
 import { EmptyState, PermissionDenied } from "@/components/ui/states";
-import { LiveClock, LiveBadge } from "@/components/app/live";
-import { Rise } from "@/components/ui/motion";
-import { workroomView, workroomStatus, type WorkroomStatus } from "@/server/services/views";
-import { formatDuration, formatDateTime, relativeTime, formatLongDate, cn } from "@/lib/utils";
+import { buttonVariants } from "@/components/ui/button";
 import { Avatar } from "@/components/ui/avatar";
-import { AutoSubmitSelect } from "@/components/ui/auto-submit";
+import { LiveClock, LiveBadge, LiveSync, LiveRefresh, StatusDot } from "@/components/app/live";
+import { workroomView, workroomStatus, type WorkroomStatus } from "@/server/services/views";
+import { uuid } from "@/server/lib/api";
+import { formatDuration, formatDateTime, relativeTime, cn } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Workroom" };
 
-const STATUS: Record<WorkroomStatus, { label: string; tone: "success" | "warning" | "neutral" | "info"; dot: boolean }> = {
-  active: { label: "Active", tone: "success", dot: true },
-  paused: { label: "Paused", tone: "warning", dot: true },
-  clocked_out: { label: "Off the clock", tone: "info", dot: false },
-  not_started: { label: "Not started today", tone: "neutral", dot: false },
-};
+/** A duration as a figure: "0h" when nothing is recorded yet, else "3h 05m" (formatDuration). */
+const hours = (s: number) => (s > 0 ? formatDuration(s) : "0h");
 
-/** Everyone at work right now, and everyone who worked today, with what they are on and for how long. */
-export default async function WorkroomPage({ params, searchParams }: { params: Promise<{ workspace: string }>; searchParams: Promise<{ team?: string; show?: string }> }) {
+const STATUS: Record<WorkroomStatus, { label: string; tone: "success" | "warning" | "neutral" }> = {
+  active: { label: "Active", tone: "success" },
+  paused: { label: "Paused", tone: "warning" },
+  clocked_out: { label: "Off the clock", tone: "neutral" },
+  not_started: { label: "Not started today", tone: "neutral" },
+};
+const TABS = ["today", "now", "all"] as const;
+type Tab = (typeof TABS)[number];
+
+/**
+ * Who is working right now, v4: the page title with underline tabs (Started today, Working now, Everyone), a Team
+ * filter, four stat cards, then one 64px row per person: their face, what they are on, a green breathing dot while
+ * they work, and the session clock on the right. A row opens that person's whole day.
+ */
+export default async function WorkroomPage({ params, searchParams }: { params: Promise<{ workspace: string }>; searchParams: Promise<{ team?: string; show?: string; tab?: string }> }) {
   const { workspace } = await params;
   const sp = await searchParams;
   const { ctx, counts, teams: navTeams } = await workspacePage(workspace, `/app/${workspace}/workroom`);
   if (ctx.membership.role === "employee") return <AppShell ctx={ctx} counts={counts} teams={navTeams}><PermissionDenied description="The Workroom is for team leads and the organisation account. Your own day is on My Day." /></AppShell>;
-  const data = await workroomView(ctx, { teamId: sp.team ?? null });
+  // A team id from the address bar is checked before it reaches a uuid column: a mistyped link shows everyone.
+  const teamId = sp.team && uuid.safeParse(sp.team).success ? sp.team : null;
+  const data = await workroomView(ctx, { teamId });
   const now = new Date(data.serverNow).getTime();
   const base = `/app/${ctx.org.slug}`;
   const isOrg = ctx.membership.role !== "manager";
+  const tz = ctx.org.timezone;
+  // `?show=all` is the old link for Everyone; it still works.
+  const tab: Tab = (TABS as readonly string[]).includes(sp.tab ?? "") ? (sp.tab as Tab) : sp.show === "all" ? "all" : "today";
   const rows = data.rows.map((r) => ({ ...r, status: workroomStatus(r, data.staleAfterSeconds, now) }));
-  const shown = sp.show === "all" ? rows : rows.filter((r) => r.status !== "not_started");
-  const c = { active: rows.filter((r) => r.status === "active").length, paused: rows.filter((r) => r.status === "paused").length, out: rows.filter((r) => r.status === "clocked_out").length, none: rows.filter((r) => r.status === "not_started").length };
+  const started = rows.filter((r) => r.status !== "not_started");
+  const working = rows.filter((r) => r.status === "active" || r.status === "paused");
+  const shown = tab === "all" ? rows : tab === "now" ? working : started;
+  const c = { active: rows.filter((r) => r.status === "active").length, paused: rows.filter((r) => r.status === "paused").length };
   const totalToday = rows.reduce((a, r) => a + r.today_seconds, 0);
   const live = rows.filter((r) => r.recording_live).length;
-  const q = (extra: Record<string, string | undefined>) => { const p = new URLSearchParams(); const merged = { team: sp.team, show: sp.show, ...extra }; for (const [k, v] of Object.entries(merged)) if (v) p.set(k, v); const s = p.toString(); return `${base}/workroom${s ? `?${s}` : ""}`; };
+  const href = (t: Tab) => { const p = new URLSearchParams(); if (t !== "today") p.set("tab", t); if (teamId) p.set("team", teamId); const s = p.toString(); return `${base}/workroom${s ? `?${s}` : ""}`; };
+  // Today's times read as a time; anything from an earlier day keeps its date.
+  const dayOf = (iso: string) => new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(iso));
+  const at = (iso: string) => (dayOf(iso) === data.today ? new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "2-digit", minute: "2-digit" }).format(new Date(iso)) : formatDateTime(iso, tz));
   return (
     <AppShell ctx={ctx} counts={counts} teams={navTeams}>
-      <PageHeader icon="eye-dashboard" back={{ href: isOrg ? `${base}/dashboard` : base, label: isOrg ? "Dashboard" : "Back" }} overline={formatLongDate(data.today)} title="Who is working now"
-        description={<>Everyone who has clocked in today and what they are on. Updates live; last sync {formatDateTime(data.serverNow, ctx.org.timezone)}. Click a person to see their whole day.</>} />
+      <PageHeader title="Workroom" description="Everyone who has started work today, what they are on and for how long. Open a person to see their whole day."
+        meta={<LiveSync at={at(data.serverNow)} />}
+        actions={<Link href={`${base}/attendance`} className={buttonVariants({ variant: "secondary", size: "sm" })}>Attendance</Link>}
+        tabsLabel="Who to show" tabValue={tab}
+        tabs={[
+          { label: "Started today", value: "today", href: href("today"), count: started.length },
+          { label: "Working now", value: "now", href: href("now"), count: working.length },
+          { label: "Everyone", value: "all", href: href("all"), count: rows.length },
+        ]} />
+      <LiveRefresh seconds={Math.max(30, data.staleAfterSeconds)} />
 
-      <div className="mb-6 grid gap-4 md:grid-cols-3">
-        <StatCard label="The room" verdict={c.active ? `${c.active} active` : "Quiet"} tone={c.active ? "accent" : "default"} rows={[{ label: "Active", value: c.active, tone: "success" }, { label: "Paused", value: c.paused, tone: "warning" }, { label: "Off the clock", value: c.out, tone: "info" }, { label: "Not started", value: c.none, tone: "neutral" }]} />
-        <StatCard label="Time today" verdict={formatDuration(totalToday)} rows={[{ label: "People who worked", value: rows.length - c.none, tone: "success" }, { label: "Tasks worked", value: rows.reduce((a, r) => a + r.tasks_today, 0), tone: "neutral" }]} />
-        <StatCard label="Recording" verdict={live ? `${live} live` : "None live"} tone={live ? "danger" : "default"} href={`${base}/recordings`} rows={[{ label: "Recordings today", value: rows.reduce((a, r) => a + r.recordings_today, 0), tone: "danger" }, { label: "Done today", value: rows.reduce((a, r) => a + r.done_today, 0), tone: "success" }]} />
+      {data.teams.length > 1 ? (
+        <form action={`${base}/workroom`} className="mb-5">
+          {tab !== "today" ? <input type="hidden" name="tab" value={tab} /> : null}
+          <FilterBar>
+            <FilterSelect label="Team" name="team" defaultValue={teamId ?? ""} autoSubmit options={[{ value: "", label: "All teams" }, ...data.teams.map((t) => ({ value: t.id, label: t.name }))]} />
+          </FilterBar>
+        </form>
+      ) : null}
+
+      <div className="@container mb-10">
+        <div className="grid grid-cols-1 gap-3 @md:grid-cols-2 @4xl:grid-cols-4">
+          <StatCard label="Working now" value={c.active} icon={<Timer />} hint={<><span className="tabular-nums">{c.paused}</span> paused</>} />
+          <StatCard label="Time today" value={hours(totalToday)} icon={<Hourglass />} hint={<><span className="tabular-nums">{started.length}</span> {started.length === 1 ? "person" : "people"} started</>} />
+          <StatCard label="Done today" value={rows.reduce((a, r) => a + r.done_today, 0)} icon={<SquareCheckBig />} hint={<><span className="tabular-nums">{rows.reduce((a, r) => a + r.tasks_today, 0)}</span> tasks worked on</>} />
+          <StatCard label="Recording now" value={live} href={`${base}/recordings`} icon={<Video />} hint={<><span className="tabular-nums">{rows.reduce((a, r) => a + r.recordings_today, 0)}</span> recordings today</>} />
+        </div>
       </div>
 
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        {data.teams.length > 1 ? (
-          <form className="flex items-center gap-2" action={`${base}/workroom`}>
-            {sp.show ? <input type="hidden" name="show" value={sp.show} /> : null}
-            <label htmlFor="team" className="eyebrow">Team</label>
-            <AutoSubmitSelect id="team" name="team" defaultValue={sp.team ?? ""} className="w-48"><option value="">All teams</option>{data.teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</AutoSubmitSelect>
-          </form>
-        ) : null}
-        <Link href={q({ show: sp.show === "all" ? undefined : "all" })} className="link-action ml-auto">{sp.show === "all" ? "Hide people who have not started" : "Show everyone"}</Link>
-      </div>
-
-      {shown.length === 0 ? <EmptyState icon3d="person-laptop" title={rows.length === 0 ? "Nobody to show" : "Nobody has clocked in yet today"} description={rows.length === 0 ? "Team leads see the people on their teams; the organisation account sees everyone who holds tasks." : "As soon as someone presses Start on My Day they appear here."} action={rows.length ? <Link href={q({ show: "all" })} className="link-action">Show everyone</Link> : undefined} /> : (
-        <ul className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+      {shown.length === 0 ? (
+        rows.length === 0
+          ? <EmptyState icon3d="person-laptop" title="Nobody to show" description={isOrg ? "The Workroom shows staff and team leads. Invite people, then they appear here as soon as they start work." : "Team leads see the people on their teams. Ask your organisation owner to add people to your team."} action={isOrg ? <Link href={`${base}/people`} className={buttonVariants({ size: "sm", variant: "secondary" })}>Invite people</Link> : undefined} />
+          : <EmptyState icon3d="person-laptop" title={tab === "now" ? "Nobody is working right now" : "Nobody has started work yet today"} description="People appear here as soon as they press Start on a to-do in My Day." action={<Link href={href("all")} className={buttonVariants({ size: "sm", variant: "secondary" })}>Show everyone</Link>} />
+      ) : (
+        <ul className="-mx-2" aria-label="People">
           {shown.map((r) => {
             const st = STATUS[r.status];
+            const running = r.status === "active";
+            const phrase = r.status === "active" ? `Active since ${r.started_at ? at(r.started_at) : "earlier"}`
+              : r.status === "paused" ? `Paused, started ${r.started_at ? at(r.started_at) : "earlier"}`
+              : r.status === "clocked_out" ? `Off the clock, started ${r.first_start_today ? at(r.first_start_today) : "earlier"}`
+              : st.label;
             return (
-              <Rise as="li" key={r.membership_id}>
-                <Link href={`${base}/workroom/${r.membership_id}`} className={cn("tile tile-link block h-full p-5", r.status === "active" && "tile-active")}>
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex min-w-0 items-center gap-3">
-                      <Avatar profileId={r.membership_id} name={r.display_name} size={36} />
-                      <div className="min-w-0">
-                        <p className="truncate font-semibold">{r.display_name}</p>
-                        <p className="truncate text-xs text-fg-subtle">{r.teams.join(", ") || "No team"}, {r.role === "manager" ? "team lead" : "staff"}</p>
-                      </div>
-                    </div>
-                    <div className="flex shrink-0 items-center gap-1.5">
-                      {r.recording_live ? <LiveBadge /> : null}
-                      <Badge tone={st.tone} dot={st.dot}>{st.label}</Badge>
-                    </div>
-                  </div>
-                  <div className="mt-4 min-h-[76px]">
-                    {r.task_title ? (
-                      <>
-                        <LiveClock seconds={r.session_seconds} serverNow={data.serverNow} running={r.status === "active"} className={cn("block font-display text-3xl leading-none", r.status === "active" ? "text-accent" : "text-fg-muted")} />
-                        <p className="mt-2 truncate text-sm text-fg">{r.task_title}</p>
-                        <p className="text-xs text-fg-subtle">{r.status === "active" ? "since" : "paused, started"} {r.started_at ? formatDateTime(r.started_at, ctx.org.timezone) : "—"}</p>
-                      </>
-                    ) : r.status === "clocked_out" ? (
-                      <p className="text-sm text-fg-muted">Last active {r.last_activity_at ? relativeTime(r.last_activity_at, now) : "earlier today"}. Started at {r.first_start_today ? formatDateTime(r.first_start_today, ctx.org.timezone) : "—"}.</p>
-                    ) : <p className="text-sm text-fg-subtle">No session today yet.</p>}
-                  </div>
-                  <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-border-soft pt-3 text-xs tabular-nums text-fg-subtle">
-                    <span><strong className="font-semibold text-fg-muted">{formatDuration(r.today_seconds)}</strong> today</span>
-                    <span>{r.tasks_today} task{r.tasks_today === 1 ? "" : "s"} worked</span>
-                    <span>{r.done_today} done{r.sent_for_check_today ? `, ${r.sent_for_check_today} sent for check` : ""}</span>
-                    {r.recordings_today ? <span className="inline-flex items-center gap-1"><Video className="size-3.5 text-accent" aria-hidden />{r.recordings_today}</span> : null}
-                  </div>
-                </Link>
-              </Rise>
+              <ListRow key={r.membership_id} href={`${base}/workroom/${r.membership_id}`}
+                leading={<Avatar profileId={r.membership_id} name={r.display_name} size={40} />}
+                title={<span className="inline-flex max-w-full items-center gap-2"><span className="truncate">{r.display_name}</span>{r.recording_live ? <LiveBadge /> : null}</span>}
+                subtitle={r.task_title ?? (r.status === "clocked_out" ? `Last active ${r.last_activity_at ? relativeTime(r.last_activity_at, now) : "earlier today"}` : "No session today yet")}
+                meta={<><StatusDot tone={st.tone} live={running} className="ml-1" /><span className="truncate">{phrase}, {r.teams.join(", ") || "no team"}, {r.role === "manager" ? "team lead" : "staff"}</span></>}
+                trailing={
+                  <span className="flex flex-col items-end">
+                    {r.task_title ? <LiveClock seconds={r.session_seconds} serverNow={data.serverNow} running={running} className={cn("text-sm", running ? "text-foreground" : "text-secondary")} /> : <span className="font-mono text-sm text-secondary">{formatDuration(r.today_seconds)}</span>}
+                    <span className="text-xs text-subtle">{r.task_title ? <><span className="tabular-nums">{formatDuration(r.today_seconds)}</span> today</> : "today"}</span>
+                  </span>
+                } />
             );
           })}
         </ul>
       )}
-      <p className="mt-4 text-xs text-fg-subtle">Status comes from timers only: Active means a running timer with a live connection, Paused means paused, interrupted or no heartbeat for {data.staleAfterSeconds}s, Off the clock means they worked today but nothing is running. Nothing here is a productivity score.</p>
+      <p className="mt-6 max-w-3xl text-meta font-normal text-secondary">Status comes from timers only: Active means a running timer with a live connection, Paused means paused, interrupted or no heartbeat for <span className="tabular-nums">{data.staleAfterSeconds}</span>s, Off the clock means they worked today but nothing is running. Nothing here is a productivity score.</p>
     </AppShell>
   );
 }

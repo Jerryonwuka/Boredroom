@@ -1,20 +1,17 @@
 import { withWorker } from "../src/server/db";
-import { notify, audit } from "../src/server/services/common";
+import { audit } from "../src/server/services/common";
 
 export type JobContext = { jobId: string; attempt: number };
 export type Handler = (payload: Record<string, unknown>, ctx: JobContext) => Promise<void>;
 
 /**
- * Sends the end-of-day reminder once per member per day (dedup key on notification).
- * Re-running the job never duplicates the reminder.
+ * Brenda's end-of-day team report for one recipient (services/daily-report.ts). The sent log makes a re-run a no-op;
+ * a report that is off, out of date or no longer theirs is skipped.
  */
-const reportReminder: Handler = async (payload) => {
-  const { organisationId, membershipId, localDate, slug } = payload as { organisationId: string; membershipId: string; localDate: string; slug: string };
-  await withWorker(async (db) => {
-    const existing = await db.maybeOne(`SELECT 1 FROM daily_reports WHERE membership_id = $1 AND local_date = $2 AND status <> 'draft'`, [membershipId, localDate]);
-    if (existing) return;
-    await notify(db, { organisationId, recipientMembershipId: membershipId, type: "report.reminder", title: `Your daily report for ${localDate} is due soon`, body: "Review today's sessions, add blockers and next priorities, then submit. No penalty applies for late reports.", href: `/app/${slug}/my-day`, dedupKey: `report.reminder:${localDate}` });
-  });
+const brendaDailyReport: Handler = async (payload) => {
+  const { runDailyReportJob } = await import("../src/server/services/daily-report");
+  const { organisationId, membershipId, localDate } = payload as { organisationId: string; membershipId: string; localDate: string };
+  await runDailyReportJob({ organisationId, membershipId, localDate });
 };
 
 const retentionDelete: Handler = async (payload) => {
@@ -46,7 +43,7 @@ import { controlCenterHandlers } from "./control-center";
 
 export const handlers: Record<string, Handler> = {
   ...controlCenterHandlers,
-  "report.reminder": reportReminder,
+  "brenda.daily_report": brendaDailyReport,
   "recording.retention_delete": retentionDelete,
   "recording.assemble": assembleRecording,
   "deliverable.scan": scanDeliverable,

@@ -1,64 +1,345 @@
-/* Brenda's notch, in Boredroom's system: true black, hairlines, one orange. The window itself is transparent. */
+/* Brenda's notch in Boredroom's design system v4 (owner decision, 6 October 2026: the ElevenLabs app's design language,
+   with orange kept as the accent; the notch follows the web, styling included). The dark tokens are the ones in
+   src/app/globals.css, its source of truth (docs/design-system.md). Inter 14/20 medium for words, Geist Mono for the
+   numbers that matter. Surfaces are near-black #0F0F10 with white 7.5% hairlines, and greys are white at low alpha
+   (64% secondary, 53% subtle). The primary button is white with near-black text; secondary is outline and tertiary is
+   ghost. Orange appears only where it counts: the focus ring, the unread count, the open microphone and the timer's
+   estimate and progress. No gradients, glass or glow, except the four the web keeps for Brenda: the orb's tool-tile
+   fill, the shimmer on waiting text, the orange wash while the microphone is open, and the soft light around her face.
+   The window is a fixed transparent stage. The island inside it changes shape, with motion values after Coucou by
+   Louis Raillé (MIT); its shape, motion and timings are unchanged. */
+
+/* Inter and Geist Mono, from @fontsource-variable (SIL Open Font License, fonts/OFL.txt). Nothing loads remotely. */
+@font-face { font-family: "Inter Variable"; font-style: normal; font-display: swap; font-weight: 100 900; src: url(fonts/inter-latin-ext-wght-normal.woff2) format("woff2");
+  unicode-range: U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF; }
+@font-face { font-family: "Inter Variable"; font-style: normal; font-display: swap; font-weight: 100 900; src: url(fonts/inter-latin-wght-normal.woff2) format("woff2");
+  unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
+/* Italic for the words Brenda heard. */
+@font-face { font-family: "Inter Variable"; font-style: italic; font-display: swap; font-weight: 100 900; src: url(fonts/inter-latin-wght-italic.woff2) format("woff2");
+  unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
+@font-face { font-family: "Geist Mono Variable"; font-style: normal; font-display: swap; font-weight: 100 900; src: url(fonts/geist-mono-latin-ext-wght-normal.woff2) format("woff2");
+  unicode-range: U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF; }
+@font-face { font-family: "Geist Mono Variable"; font-style: normal; font-display: swap; font-weight: 100 900; src: url(fonts/geist-mono-latin-wght-normal.woff2) format("woff2");
+  unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
+
 :root {
   color-scheme: dark;
-  --line: rgba(255,255,255,.12); --line-soft: rgba(255,255,255,.07);
-  --fg: #fff; --muted: #a1a1a1; --subtle: #6b6b6b;
-  --accent: #ff6c02; --accent-soft: rgba(255,108,2,.14); --accent-fg: #140700;
-  --ok: #3ddc97; --warn: #ffc857; --bad: #ff5c5c;
+  /* The island meets the screen's own notch and the menu bar, so it alone stays true black: #0F0F10 would show a grey
+     frame around the camera housing. Everything drawn inside it uses the v4 surfaces below. */
+  --island: #000;
+  /* v4 dark tokens (globals.css). The notch is always dark. */
+  --background: #0f0f10;                  /* panels, fields, outline buttons */
+  --background-hover: color-mix(in srgb, #fff 2.4%, #0f0f10);
+  --surface: color-mix(in srgb, #fff 4.3%, #0f0f10);   /* fill-1 over the canvas, solid: the prompt pill */
+  --popover: #2e2e2e;
+  --foreground: #fff;
+  --secondary: rgb(255 255 255 / .64);    /* descriptions, icons, ghost buttons */
+  --subtle: rgb(255 255 255 / .53);       /* placeholders, control labels */
+  --border: rgb(255 255 255 / .075);      /* every hairline */
+  --border-input: rgb(255 255 255 / .1);  /* fields, outline buttons */
+  --border-input-hover: rgb(255 255 255 / .16);
+  --fill-0: rgb(255 255 255 / .024);
+  --fill-1: rgb(255 255 255 / .043);
+  --fill-150: rgb(255 255 255 / .07);
+  --primary: #fff; --primary-hover: #cfcfcf; --primary-fg: #0f0f10;
+  --accent: #ff6c02;
+  --accent-soft: #4a1f04;                 /* the "New" badge fill */
+  --accent-text: #ff9a4d;                 /* the "New" badge text */
+  --ring: rgb(255 108 2 / .5);            /* the focus ring */
+  --success: hsl(142 71% 45%); --warning: hsl(38 92% 50%); --danger: hsl(0 84% 60%);
+  --elev-natural-xs: 0 0 0 1px rgb(0 0 0 / .06), 0 1px 1px -0.5px rgb(0 0 0 / .06), 0 3px 3px -1.5px rgb(0 0 0 / .06);
+  /* The open island floats like a toast: a half-pixel edge and one soft drop (globals.css --elev-toast, without the
+     inner highlights, which would draw along the top edge). */
+  --elev-island: 0 0 0 .5px rgb(0 0 0 / .44), 0 2px 6px -2px rgb(0 0 0 / .13), 0 18px 40px -10px rgb(0 0 0 / .35);
+  --radius-chip: 6px; --radius-btn-xs: 8px; --radius-control: 10px; --radius-card-sm: 12px;
+  /* Brenda's face, the same as `.brenda-face` on the web: white, monochrome. */
+  --face: #fff; --ink: #111;
+  /* Each teammate's own colour, for their small face (they are told apart by it, as by an avatar). */
+  --mate-0: #f472b6; --mate-1: #34d399; --mate-2: #fb923c; --mate-3: #60a5fa; --mate-4: #e879f9; --mate-5: #facc15; --mate-6: #2dd4bf; --mate-7: #a78bfa;
+  --font-sans: "Inter Variable", "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "Geist Mono Variable", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --fast: 75ms;                              /* colour changes, as on the web */
   --ease: cubic-bezier(.23,1,.32,1);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+  --spring: cubic-bezier(.32,1.22,.42,1);   /* opening: a little overshoot */
+  --settle: cubic-bezier(.45,0,.2,1);       /* closing: none */
+  font-family: var(--font-sans);
+  font-size: 14px; line-height: 20px; font-weight: 500;
+  color: var(--foreground);
+  -webkit-font-smoothing: antialiased;
 }
 html, body { margin: 0; background: transparent; overflow: hidden; -webkit-user-select: none; user-select: none; cursor: default; }
+p { margin: 0; }
 button { font: inherit; }
+svg.ic { width: 14px; height: 14px; flex: none; }
+:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
 
-.notch { box-sizing: border-box; width: 100%; background: #000; color: var(--fg); border: 1px solid var(--line); border-top: 0; border-radius: 0 0 22px 22px; padding: 10px 14px 12px; display: grid; gap: 10px; }
-.notch.compact { border-radius: 0 0 16px 16px; padding: 7px 12px; height: 44px; align-content: center; cursor: pointer; }
-.row { display: flex; align-items: center; gap: 10px; min-width: 0; }
+/* The island: black, square at the top so it melts into the screen edge, with two small concave shoulders. */
+.island { position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 220px; height: var(--compact-h, 40px); background: var(--island); border-radius: 0 0 16px 16px;
+  transition: width .34s var(--settle), height .34s var(--settle), border-radius .34s var(--settle), box-shadow .4s var(--ease); box-shadow: 0 2px 6px -2px rgb(0 0 0 / .13), 0 8px 20px -10px rgb(0 0 0 / .45); }
+/* Open, it reads as a floating v4 surface: a 7.5% hairline along the bottom edge and the toast's soft drop. */
+.island.open { border-radius: 0 0 26px 26px; box-shadow: inset 0 -1px 0 var(--border), var(--elev-island); }
+.island.growing { transition: width .52s var(--spring), height .52s var(--spring), border-radius .52s var(--spring), box-shadow .4s var(--ease); }
+.island::before, .island::after { content: ""; position: absolute; top: 0; width: 12px; height: 12px; pointer-events: none; }
+.island::before { left: -12px; background: radial-gradient(circle at 0 100%, transparent 11.5px, var(--island) 12px); }
+.island::after { right: -12px; background: radial-gradient(circle at 100% 100%, transparent 11.5px, var(--island) 12px); }
+/* While the microphone is open, the voice card's wash (the web's `.brenda-wash`): a faint orange light rising from the
+   bottom. Nothing else tints the island. */
+.island.open:has(.orb.live) { background: radial-gradient(420px 200px at 50% 112%, color-mix(in srgb, var(--accent) 12%, transparent), transparent 72%), var(--island); }
+
+.notch { position: absolute; top: 0; left: 50%; transform: translateX(-50%); box-sizing: border-box; width: 420px; color: var(--foreground); padding: 12px 16px 16px; display: grid; gap: 12px; overflow: hidden; }
+.notch.compact { padding: 0 12px; height: var(--compact-h, 40px); align-content: center; cursor: pointer; }
+.island:not(.open) .notch { width: 100% !important; }
+/* The stage is 440px tall: a card with everything at once (a long answer, what she did, her offers) scrolls inside the
+   island instead of losing its last row of buttons off the bottom of the window. */
+.island.open .notch { max-height: 440px; overflow-y: auto; overscroll-behavior: contain; }
+.notch::-webkit-scrollbar { width: 6px; }
+.notch::-webkit-scrollbar-thumb { background: var(--border-input-hover); border-radius: 3px; }
+/* New content arrives after the island has started to grow: fade, unblur, settle. Only when the view changes. */
+.notch.enter > * { animation: enter .3s ease-out .14s both; }
+.notch.compact.enter > * { animation-delay: .06s; animation-duration: .22s; }
+@keyframes enter { from { opacity: 0; filter: blur(6px); transform: scale(.97); } to { opacity: 1; filter: none; transform: none; } }
+.island.hover:not(.open) .face { transform: scale(1.08); }
+.row { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.notch.compact .row { gap: 10px; }
+.row.top { align-items: flex-start; }
+.row.top > .face { margin-top: 2px; }
 .grow { flex: 1; min-width: 0; }
 
-.face { width: 32px; height: 24px; flex: none; border-radius: 8px; background: #f4f4f4; display: grid; grid-auto-flow: column; place-content: center; gap: 6px; position: relative; }
-.face span { width: 4px; height: 6px; border-radius: 2px; background: #111; animation: blink 5s infinite; }
-.face.small { width: 26px; height: 18px; border-radius: 7px; gap: 4px; }
-.face.small span { width: 3px; height: 4px; }
-.face.busy span { animation: look 1.6s var(--ease) infinite; }
-.face .dot { position: absolute; top: -3px; left: -3px; width: 8px; height: 8px; border-radius: 50%; border: 2px solid #000; background: var(--ok); }
-.face .dot.away { background: var(--warn); } .face .dot.busy { background: var(--bad); } .face .dot.offline { background: var(--subtle); }
-@keyframes blink { 0%, 96%, 100% { transform: scaleY(1); } 98% { transform: scaleY(.1); } }
-@keyframes look { 0%, 100% { transform: translateX(-1px); } 50% { transform: translateX(1.5px); } }
+/* Brenda's face: the web's `.brenda-face` (src/app/globals.css), white and flat, the same moods and reactions. Her glow
+   follows what is happening (accent, ok, warn, bad); a running timer (blue) and thinking (violet) draw none. */
+.face { --lx: 0; --ly: 0; --glow: transparent; width: 32px; height: 24px; flex: none; border-radius: 30%; background: var(--face); display: grid; place-content: center; position: relative;
+  box-shadow: 0 0 0 1px var(--border), 0 0 12px -2px var(--glow);
+  transition: transform .25s var(--spring), box-shadow .4s var(--ease); animation: face-breathe 3.6s ease-in-out infinite; }
+.face[data-tone="accent"] { --glow: var(--accent); }
+.face[data-tone="ok"] { --glow: var(--success); }
+.face[data-tone="warn"] { --glow: var(--warning); }
+.face[data-tone="bad"] { --glow: var(--danger); }
+.face .eyes { display: grid; grid-auto-flow: column; gap: 6px; transform: translate(calc(var(--lx) * 3px), calc(var(--ly) * 2.2px)); }
+.face .eyes span { width: 4px; height: 6px; border-radius: 2px; background: var(--ink); transition: transform 70ms ease, height .2s var(--ease), border-radius .2s var(--ease); }
+.face.small { width: 26px; height: 18px; }
+.face.small .eyes { gap: 4px; transform: translate(calc(var(--lx) * 2px), calc(var(--ly) * 1.5px)); }
+.face.small .eyes span { width: 3px; height: 4px; }
+.face.blink .eyes span { transform: scaleY(.12); }
+/* Moods */
+.face.happy .eyes span { height: 3px; width: 6px; background: transparent; border: 2px solid var(--ink); border-bottom: 0; border-radius: 6px 6px 0 0; }
+.face.small.happy .eyes span { width: 4px; height: 2px; border-width: 1.5px; }
+.face.sad .eyes span { height: 2px; border-radius: 1px; }
+.face.alert { animation: hop .6s var(--spring) 1, face-breathe 3.6s ease-in-out .6s infinite; }
+.face.alert .eyes span { height: 7px; }
+.face.listen .eyes span { height: 7px; width: 5px; border-radius: 3px; }
+.face.think .eyes { transform: translate(2.5px, -2px); }
+.face.think .eyes span { animation: scan 1.8s ease-in-out infinite; }
+.face.gulp .eyes span { width: 5px; height: 6px; border-radius: 50%; }
+@keyframes face-breathe { 0%, 100% { scale: 1; } 50% { scale: 1.035; } }
+@keyframes hop { 0% { translate: 0 0; } 35% { translate: 0 -4px; } 70% { translate: 0 1px; } 100% { translate: 0 0; } }
+@keyframes scan { 0%, 100% { translate: 0 0; } 50% { translate: -2px 0; } }
+/* Her presence: a small status dot on her corner. */
+.face .dot { position: absolute; top: -3px; left: -3px; width: 8px; height: 8px; border-radius: 50%; border: 2px solid var(--island); background: var(--success); }
+.face .dot.away { background: var(--warning); } .face .dot.busy { background: var(--danger); } .face .dot.offline { background: var(--subtle); }
 
-.title { font-weight: 600; font-size: 13px; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.sub { font-size: 11.5px; color: var(--muted); line-height: 1.35; }
-.tiny { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.clock { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; }
-.code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 24px; letter-spacing: .18em; text-align: center; padding: 8px; border-radius: 12px; border: 1px solid var(--line); background: #0a0a0a; }
+/* Type: Inter for words (14/20 medium for titles, 13/19.5 regular in secondary for what goes under them), Geist Mono for
+   the numbers that matter. Sentence case throughout. */
+.title { font-size: 14px; line-height: 20px; font-weight: 500; color: var(--foreground); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sub { font-size: 13px; line-height: 19.5px; font-weight: 400; color: var(--secondary); }
+.cap { margin-top: 2px; font-size: 12px; line-height: 16px; font-weight: 400; letter-spacing: .03px; color: var(--secondary); }
+.tiny { font-size: 13px; line-height: 16px; font-weight: 500; color: var(--secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tiny .clock { color: var(--foreground); }
+.clock, .num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.err { font-size: 13px; line-height: 19.5px; font-weight: 400; color: var(--danger); }
+.note { font-size: 12px; line-height: 16px; font-weight: 400; color: var(--subtle); }
+/* The link code: a near-black panel with a hairline, the code in Geist Mono. */
+.code { font-family: var(--font-mono); font-size: 24px; line-height: 30px; font-weight: 500; letter-spacing: .18em; text-indent: .18em; text-align: center; font-variant-numeric: tabular-nums;
+  padding: 12px; border-radius: var(--radius-card-sm); border: 1px solid var(--border); background: var(--background); box-shadow: var(--elev-natural-xs); }
 
-.pill { display: inline-flex; align-items: center; gap: 5px; font-size: 10.5px; font-weight: 600; padding: 2px 8px; border-radius: 999px; border: 1px solid; white-space: nowrap; }
+/* Badges: 20px pills, 12/16 medium. Neutral on fill-1; status tones as a 12% wash of their colour; the accent one is the
+   web's "New" badge. */
+.pill { display: inline-flex; align-items: center; gap: 6px; flex: none; height: 20px; padding: 0 8px; border-radius: 9999px; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: .03px; white-space: nowrap; background: var(--fill-1); color: var(--foreground); }
 .pill .d { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
-.pill.ok { color: var(--ok); border-color: rgba(61,220,151,.4); background: rgba(61,220,151,.1); }
-.pill.warn { color: var(--warn); border-color: rgba(255,200,87,.4); background: rgba(255,200,87,.1); }
-.pill.acc { color: var(--accent); border-color: rgba(255,108,2,.5); background: var(--accent-soft); }
-.pill.bad { color: var(--bad); border-color: rgba(255,92,92,.4); background: rgba(255,92,92,.1); }
+.pill.ok { color: var(--success); background: color-mix(in srgb, var(--success) 12%, transparent); }
+.pill.warn { color: var(--warning); background: color-mix(in srgb, var(--warning) 12%, transparent); }
+.pill.acc { color: var(--accent-text); background: var(--accent-soft); }
+/* "Mic on", as on the web's voice card: a red dot with a 15% halo that pulses, and the words in secondary. */
+.mic { display: inline-flex; align-items: center; gap: 6px; flex: none; white-space: nowrap; font-size: 12px; line-height: 16px; font-weight: 500; color: var(--secondary); }
+.rec-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--danger); box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 15%, transparent); animation: rec-pulse 1.4s ease-in-out infinite; }
+@keyframes rec-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+/* The unread count in the compact bar: the "New" badge's orange on dark brown, 10/16 semibold. */
+.count { display: inline-flex; align-items: center; justify-content: center; flex: none; box-sizing: border-box; min-width: 16px; height: 16px; padding: 0 5px; border-radius: 9999px;
+  background: var(--accent-soft); color: var(--accent-text); font-size: 10px; line-height: 16px; font-weight: 600; font-variant-numeric: tabular-nums; }
 
-.actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
-.btn { font-size: 11.5px; font-weight: 600; padding: 5px 11px; border-radius: 999px; border: 1px solid var(--line); background: #1b1b1b; color: var(--fg); cursor: pointer; }
-.btn:hover { background: #262626; }
-.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
-.btn.primary:hover { background: #ff8226; }
-.btn.ghost { background: transparent; border-color: transparent; color: var(--muted); }
-.btn:disabled { opacity: .5; cursor: default; }
-.btn:focus-visible { outline: 2px solid rgba(255,255,255,.3); outline-offset: 2px; }
-.link { all: unset; color: var(--muted); font-size: 11px; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+/* Buttons, v4 at the notch's size: 28px pills, 13px medium. Primary is white with near-black text, secondary (plain
+   `.btn`) is outline on the near-black surface, ghost is text in secondary, danger is outline with red text. Colours
+   change in 75 ms; a press still squeezes. */
+.actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; align-items: center; }
+.btn { box-sizing: border-box; height: 28px; padding: 0 12px; border-radius: 9999px; border: 1px solid var(--border-input); background: var(--background); color: var(--foreground);
+  font-size: 13px; line-height: 20px; font-weight: 500; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 6px; white-space: nowrap;
+  transition: background-color var(--fast) var(--ease), border-color var(--fast) var(--ease), color var(--fast) var(--ease), transform .2s var(--spring); }
+.btn:hover { background: var(--background-hover); border-color: var(--border-input-hover); }
+.btn:active:not(:disabled) { transform: scale(.94); }
+.btn.primary { background: var(--primary); border-color: transparent; color: var(--primary-fg); }
+.btn.primary:hover { background: var(--primary-hover); }
+.btn.ghost { background: transparent; border-color: transparent; color: var(--secondary); }
+.btn.ghost:hover { background: var(--fill-1); color: var(--foreground); }
+.btn.danger { color: var(--danger); }
+.btn.danger:hover { border-color: color-mix(in srgb, var(--danger) 40%, transparent); background: color-mix(in srgb, var(--danger) 10%, transparent); }
+.btn:disabled { opacity: .5; cursor: default; pointer-events: none; }
+.btn.primary:disabled { opacity: 1; background: var(--border-input-hover); color: var(--subtle); }
+.btn .ic { width: 14px; height: 14px; }
+/* A key hint inside a button takes the button's own colour. */
+.btn kbd { height: 18px; min-width: 18px; margin-right: -4px; padding: 0 4px; background: color-mix(in srgb, currentColor 12%, transparent); color: inherit; opacity: .8; }
+/* The talk button while voice is off: a round 28px ghost icon button on the left of the actions. */
+.btn.icon { width: 28px; padding: 0; margin-right: auto; }
+.btn.icon .ic { width: 16px; height: 16px; }
+.link { all: unset; color: var(--secondary); font-size: 13px; line-height: 20px; font-weight: 500; cursor: pointer; text-decoration: underline; text-decoration-color: var(--border-input-hover); text-underline-offset: 3px; transition: color var(--fast) var(--ease); }
+.link:hover { color: var(--foreground); }
+.link:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; border-radius: 4px; }
 
-.list { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
-.list li { display: flex; align-items: center; gap: 8px; font-size: 12px; padding: 5px 8px; border-radius: 8px; background: rgba(255,255,255,.04); min-width: 0; }
+/* Lists inside a card: one near-black panel with a hairline, calm 32px rows with no lines between them. */
+.list { display: grid; margin: 0; padding: 4px; list-style: none; background: var(--background); border: 1px solid var(--border); border-radius: var(--radius-card-sm); }
+.list li { display: flex; align-items: center; gap: 8px; min-width: 0; min-height: 32px; padding: 0 8px; border-radius: var(--radius-btn-xs); font-size: 14px; line-height: 20px; font-weight: 500; color: var(--foreground); }
 .list li .t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.list li .k { font-size: 10.5px; color: var(--subtle); margin-left: auto; white-space: nowrap; }
-.list li .k.bad { color: var(--bad); }
-.ring { width: 30px; height: 30px; flex: none; cursor: pointer; }
+.list li .t .s { color: var(--secondary); font-weight: 400; }
+.list li .k { margin-left: auto; flex: none; font-size: 13px; line-height: 19.5px; font-weight: 400; color: var(--secondary); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.list li .k.bad { color: var(--danger); }
+/* What Brenda did: a green check, as on the web. */
+.list li .k.ok { color: var(--success); margin-left: 0; display: inline-flex; }
+.list li .k.ok.end { margin-left: auto; }
+.list li .k.ok .ic { width: 16px; height: 16px; }
+.list li .btn { margin-left: auto; height: 24px; padding: 0 10px; font-size: 12px; line-height: 16px; }
+.list li .btn .ic { width: 12px; height: 12px; }
+
+/* Her progress ring (the web's ProgressArc, tone accent): orange over a 10% track, green once done. */
+.ring { display: block; width: 32px; height: 32px; flex: none; }
 .ring circle { fill: none; stroke-width: 3; }
-.err { font-size: 11.5px; color: var(--bad); }
-.field { width: 100%; box-sizing: border-box; font: inherit; font-size: 12px; color: var(--fg); background: #0a0a0a; border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; -webkit-user-select: text; user-select: text; }
-.count { margin-left: 4px; font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 999px; background: var(--accent); color: var(--accent-fg); }
-.fade { animation: fade .3s var(--ease) both; }
-@keyframes fade { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: none; } }
-@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+.ring .track { stroke: var(--border-input); }
+.ring .arc { stroke: var(--accent); }
+.ring .arc.full { stroke: var(--success); }
+.ring text { fill: var(--foreground); font-family: var(--font-sans); font-size: 9px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.ring text.full { fill: var(--success); }
+.ring-btn { all: unset; cursor: pointer; display: grid; border-radius: 50%; }
+.ring-btn:hover .track { stroke: var(--border-input-hover); }
+.ring-btn:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+
+/* Fields: 36px, r10, a 10% hairline that goes to 16% on hover and to white with a half-pixel ring on focus. */
+.field { box-sizing: border-box; width: 100%; height: 36px; padding: 0 12px; font: inherit; font-size: 14px; line-height: 20px; font-weight: 400; color: var(--foreground);
+  background-color: var(--background); border: 1px solid var(--border-input); border-radius: var(--radius-control); outline: none;
+  transition: border-color var(--fast) var(--ease), box-shadow var(--fast) var(--ease); -webkit-user-select: text; user-select: text; }
+.field::placeholder { color: var(--subtle); }
+.field:hover { border-color: var(--border-input-hover); }
+.field:focus { border-color: var(--foreground); box-shadow: 0 0 0 .5px var(--foreground); }
+select.field { appearance: none; -webkit-appearance: none; padding-right: 36px; cursor: pointer; background-repeat: no-repeat; background-position: right 10px center; background-size: 16px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23a7a7a7' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E"); }
+select.field option { background: var(--popover); color: var(--foreground); }
+
+/* Shimmer for waiting text: a light sweep across grey, 2.2 s (`.brenda-shimmer` on the web). A loading sign, not decoration. */
+.shimmer { background: linear-gradient(90deg, var(--subtle) 0%, var(--foreground) 40%, var(--subtle) 70%); background-size: 260% 100%; -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; animation: shimmer 2.2s linear infinite; }
+@keyframes shimmer { from { background-position: 130% 0; } to { background-position: -130% 0; } }
+/* When an open card will fold away: a hairline at the bottom that runs out; it waits while the pointer is on it. */
+.countdown { position: absolute; left: 50%; bottom: 5px; height: 2px; width: 120px; margin-left: -60px; border-radius: 2px; background: var(--border-input-hover); transform-origin: center; transform: scaleX(0); pointer-events: none; }
+.island.open .countdown.run { animation: countdown linear forwards; }
+.island.hover .countdown.run { animation-play-state: paused; }
+@keyframes countdown { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+
+/* The running timer, as on My Day's timer card: the task, its state as a dot and a word, the clock in Geist Mono at
+   the stat size (24/30 bold), the estimate as an orange hairline that fills, and the progress ring. */
+.status { display: inline-flex; align-items: center; gap: 6px; }
+.status .d { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--danger); }
+.status .d.running { background: var(--success); }
+.status .d.paused { background: var(--warning); }
+.big { flex: none; font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.15px; color: var(--foreground); }
+.big.dim { color: var(--secondary); }
+.est { height: 2px; border-radius: 2px; background: var(--fill-1); overflow: hidden; }
+.est i { display: block; height: 100%; background: var(--accent); transform-origin: left center; transition: transform 1s linear; }
+/* Download and upload progress: white on a 7% track. */
+.bar { height: 4px; border-radius: 9999px; background: var(--fill-150); overflow: hidden; }
+.bar i { display: block; height: 100%; border-radius: inherit; background: var(--foreground); transition: width .25s var(--ease); }
+
+/* Keys: 11px medium in a 20px rounded-6 chip (18px inside a sentence). */
+kbd { display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; min-width: 20px; height: 20px; padding: 0 5px; border-radius: var(--radius-chip); vertical-align: middle;
+  background: var(--fill-1); color: var(--secondary); font: 500 11px/1 var(--font-sans); white-space: nowrap; }
+.sub kbd, .cap kbd { height: 18px; min-width: 18px; padding: 0 4px; }
+/* Voice is on: the mic and the shortcut, on the left of the actions. */
+.hint { display: inline-flex; align-items: center; gap: 6px; margin-right: auto; color: var(--secondary); }
+.hint .ic { width: 16px; height: 16px; }
+
+/* The voice card, as on the web (src/components/app/voice-capture.tsx, compact): the orb is the tool-tile square made
+   round. Listening, an orange dot swells with the voice and a thin orange ring widens around it (the page sets --lvl from
+   the microphone level); working, a white dot breathes. */
+.orb { --lvl: .1; position: relative; width: 32px; height: 32px; flex: none; border-radius: 50%; display: grid; place-items: center;
+  background: linear-gradient(to bottom, var(--fill-1), var(--fill-150)), var(--background); box-shadow: 0 0 0 1px var(--border), var(--elev-natural-xs); }
+.orb i { width: 12px; height: 12px; border-radius: 50%; background: var(--foreground); }
+.orb.live i { background: var(--accent); transform: scale(calc(.75 + var(--lvl) * .9)); transition: transform 90ms linear; }
+.orb.live::before { content: ""; position: absolute; inset: 0; border-radius: 50%; border: 1px solid var(--accent); opacity: calc(.12 + var(--lvl) * .6); transform: scale(calc(1 + var(--lvl) * .3));
+  transition: opacity 90ms linear, transform 90ms linear; }
+.orb.think i { animation: breathe 1.1s var(--ease) infinite alternate; }
+@keyframes breathe { from { transform: scale(.6); opacity: .45; } to { transform: scale(1); opacity: .9; } }
+.said { font-size: 13px; line-height: 19.5px; font-weight: 400; font-style: italic; color: var(--secondary); }
+.reply { margin-top: 4px; font-size: 14px; line-height: 20px; font-weight: 400; color: var(--foreground); white-space: pre-line; max-height: 140px; overflow: auto; -webkit-user-select: text; user-select: text; }
+.reply::-webkit-scrollbar { width: 6px; }
+.reply::-webkit-scrollbar-thumb { background: var(--border-input-hover); border-radius: 3px; }
+/* Something Brenda prepared that needs a yes: the web's warning Alert (a 6% amber wash, a 25% amber hairline, a shield). */
+.confirm { display: grid; gap: 12px; padding: 12px 14px; border-radius: var(--radius-card-sm); border: 1px solid color-mix(in srgb, var(--warning) 25%, transparent); background: color-mix(in srgb, var(--warning) 6%, transparent); }
+.confirm .sub { display: flex; gap: 10px; align-items: flex-start; font-size: 14px; line-height: 20px; color: var(--foreground); }
+.confirm .sub .ic { width: 16px; height: 16px; margin-top: 2px; color: var(--warning); }
+
+/* Typing to Brenda: the web's prompt pill at the notch's size (a solid fill-1 surface with a hairline ring), and a
+   round 32px send button, white with a near-black arrow once there is something to send, grey until then. */
+.ask { display: flex; gap: 4px; align-items: center; margin: 0; padding: 4px; border-radius: 9999px; background: var(--surface); box-shadow: 0 0 0 1px var(--border), var(--elev-natural-xs); transition: box-shadow .15s var(--ease); }
+.ask:focus-within { box-shadow: 0 0 0 1px var(--border-input-hover), var(--elev-natural-xs); }
+.ask .field, .ask .field:hover, .ask .field:focus { flex: 1; height: 32px; padding: 0 8px 0 12px; border: 0; border-radius: 9999px; background: transparent; box-shadow: none; }
+.ask .icon-send { width: 32px; height: 32px; padding: 0; border: 0; border-radius: 50%; flex: none; }
+.ask .icon-send .ic { width: 16px; height: 16px; stroke-width: 2.25; }
+.ask:has(.field:placeholder-shown) .icon-send { background: var(--fill-150); color: var(--subtle); }
+
+/* Tucked away: a thin black sliver at the top edge; the pointer reaching the top of the screen brings Brenda back. */
+.island .notch, .island::before, .island::after, .countdown { transition: opacity .2s ease; }
+.island.tucked { border-radius: 0 0 6px 6px; box-shadow: none; }
+.island.tucked .notch, .island.tucked::before, .island.tucked::after, .island.tucked .countdown { opacity: 0; pointer-events: none; }
+
+/* Teammates' small faces (team leads and organisation accounts), flat in each person's colour, with a dot for their
+   timer: green running, amber paused, red interrupted (the web's timer dots). */
+.face.mini { width: 16px; height: 12px; background: color-mix(in srgb, var(--c) 72%, var(--face)); animation: none; box-shadow: none !important; }
+.face.mini .eyes { gap: 3px; transform: translate(calc(var(--lx) * 1px), calc(var(--ly) * .8px)); }
+.face.mini .eyes span { width: 2px; height: 3px; border-radius: 1px; }
+.face.mini .st { position: absolute; top: -3px; right: -3px; width: 6px; height: 6px; border-radius: 50%; border: 1.5px solid var(--island); background: var(--success); }
+.face.mini .st.paused { background: var(--warning); }
+.face.mini .st.interrupted { background: var(--danger); }
+.minis { display: inline-flex; padding-left: 2px; }
+.minis .face.mini { margin-left: 2px; }
+/* In the day card, one outline chip per teammate (32px, r10): their face, first name, and what they are on. */
+.team { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.mate { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 8px; min-width: 0; height: 32px; padding: 0 10px 0 8px; border-radius: var(--radius-control); cursor: pointer;
+  background: var(--background); border: 1px solid var(--border-input); transition: background-color var(--fast) var(--ease), border-color var(--fast) var(--ease), transform .2s var(--spring); }
+.mate:hover { background: var(--background-hover); border-color: var(--border-input-hover); }
+.mate:active { transform: scale(.96); }
+.mate:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+.mate .nm { flex: none; font-size: 13px; line-height: 20px; font-weight: 500; color: var(--foreground); }
+.mate .tk { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; line-height: 16px; font-weight: 400; color: var(--secondary); }
+
+/* Dropping a file: a dashed zone on the faint fill that turns green when the file is over Brenda. */
+.dropzone { border: 1px dashed var(--border-input-hover); border-radius: var(--radius-card-sm); padding: 20px 16px; text-align: center; font-size: 14px; line-height: 20px; font-weight: 500; color: var(--secondary); background: var(--fill-0);
+  transition: border-color .15s var(--ease), color .15s var(--ease), background-color .15s var(--ease); }
+.island.hot .dropzone { border-color: var(--success); color: var(--success); background: color-mix(in srgb, var(--success) 10%, transparent); }
+
+/* Reactions: poked (squash, cross for a moment), poked three times (dizzy), admired (orange heart eyes, as on the web). */
+.face:not(.mini) { cursor: pointer; }
+.face.squash { animation: squash .32s var(--spring) 1; }
+.face.squash .eyes span { height: 2px; border-radius: 1px; }
+.face.squash .eyes span:first-child { transform: rotate(18deg); }
+.face.squash .eyes span:last-child { transform: rotate(-18deg); }
+.face.dizzy { animation: wobble .45s ease-in-out infinite alternate; }
+.face.dizzy .eyes span { width: 5px; height: 5px; border-radius: 50%; background: transparent; border: 1.5px solid var(--ink); border-right-color: transparent; animation: spin .55s linear infinite; }
+.face.love { --glow: var(--accent); }
+.face.love .eyes span { width: 6px; height: 6px; border-radius: 0; background: var(--accent); clip-path: path("M3 5.6 L0.7 3.2 A1.45 1.45 0 0 1 3 1.2 A1.45 1.45 0 0 1 5.3 3.2 Z"); animation: thump .7s ease-in-out infinite; }
+@keyframes squash { 0% { transform: scale(1); } 30% { transform: scale(1.2, .76); } 62% { transform: scale(.92, 1.1); } 100% { transform: scale(1); } }
+@keyframes wobble { from { rotate: -9deg; } to { rotate: 9deg; } }
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes thump { 0%, 100% { scale: 1; } 50% { scale: 1.25; } }
+
+/* Reduced motion: nothing animates or slides. The orb's dot keeps one size and only the ring's strength follows the
+   voice, as on the web; the waiting text is plain. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+  .shimmer { -webkit-text-fill-color: currentColor; }
+  .orb.live i, .orb.live::before { transform: none; }
+  .orb.think i { opacity: .8; }
+}

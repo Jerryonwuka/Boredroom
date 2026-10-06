@@ -1,6 +1,6 @@
 # Boredroom
 
-Boredroom helps organisations understand what remote employees plan to do, what they report working on, what they deliver, and what their managers accept. Task planning, work sessions, evidence, daily reports and review live in one workflow. Multiple isolated organisations are supported from the first release.
+Boredroom helps organisations understand what remote employees plan to do, what they report working on, what they deliver, and what their managers accept. Task planning, work sessions, evidence, confirmed time and review live in one workflow, and Brenda, an AI teammate, sends each team lead an end-of-day report of what the team did. Multiple isolated organisations are supported from the first release.
 
 > Timers, heartbeats, recordings, mouse movement and logins are never treated as proof of productivity. Unlogged or uncertain work leads to a clarification request, not an automatic penalty.
 

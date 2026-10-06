@@ -87,7 +87,10 @@ export async function withCtx<T>(ctx: Ctx, fn: (db: Db) => Promise<T>): Promise<
   try {
     await client.query(setup);
     const result = await fn(wrap(client));
-    await client.query("COMMIT");
+    const done = await client.query("COMMIT");
+    // Postgres answers COMMIT with ROLLBACK when a statement failed earlier and its error was caught and ignored:
+    // every write in the transaction is gone, yet nothing threw. Say so loudly (this hid the lost new workspaces).
+    if (done.command === "ROLLBACK") console.error(`[db] transaction rolled back at COMMIT: a statement failed inside it and the error was swallowed. Nothing it wrote was saved.\n${new Error().stack}`);
     return result;
   } catch (err) {
     try { await client.query("ROLLBACK"); } catch { /* ignore */ }

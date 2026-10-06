@@ -1,34 +1,48 @@
 "use client";
 
 /**
- * The staff page: one card, "Your to-dos for today". Add a to-do, press Start (with or without screen
- * recording), press Done when finished. Done sends the work to the person who checks it; it shows as
- * "Sent for check" and then "Completed". A finished to-do never offers Start again.
+ * The staff page: "Your to-dos for today". Add a to-do (the "+" opens a row to type or dictate in), press Start (with
+ * or without screen recording), press Mark done when finished. That sends the work to the person who checks it; it
+ * shows as "Sent for check" and then "Completed". A finished to-do never offers Start again.
+ *
+ * No clock-in card and no idle clock here (owner decision, 5 October 2026): clocking in has its own page and Brenda's
+ * page shows your clock. The timer card appears only while something is on the clock.
+ *
+ * v4: the timer as a stat card, the to-dos under underline tabs with counts, rows of 56px (title 14/20 semibold, meta
+ * 13px secondary, a small status badge, the progress arc in orange while in progress), no lines between them. A to-do
+ * opens in a right-hand sheet.
  */
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Plus, Check, Sparkles, ChevronDown, Circle, X, Trash2, ExternalLink, Play, CalendarClock, Hourglass, Timer } from "lucide-react";
+import { Plus, Check, ChevronRight, X, Trash2, ArrowUpRight, Play, Mic, CircleCheck, ListTodo } from "lucide-react";
 import { EditButton } from "@/components/ui/edit-button";
 import { Avatar } from "@/components/ui/avatar";
 import { SessionTimer, type CurrentSessionPayload, type StartableTask } from "@/components/app/session-timer";
-import { CaptureProvider, useCaptureGate, useCaptureContext, captureSupport } from "@/components/app/capture";
-import { AssistantPanel } from "@/components/app/assistant-panel";
-import { Presence, Expand } from "@/components/ui/motion";
+import { CaptureProvider, useCaptureGate, useCaptureContext, useCaptureSupported } from "@/components/app/capture";
+import { VoiceCapture } from "@/components/app/voice-capture";
+import { BrendaGlyph } from "@/components/app/brenda-glyph";
+import { ProgressSlider } from "@/components/app/progress-slider";
+import { DetailList, DetailRow } from "@/components/app/detail-list";
+import { useDictation } from "@/hooks/use-dictation";
+import { Presence } from "@/components/ui/motion";
 import { Tabs } from "@/components/ui/tabs";
 import { IconButton } from "@/components/ui/icon-button";
 import { ConfirmDialog } from "@/components/ui/confirm";
 import { ProgressArc } from "@/components/ui/progress-arc";
 import { DurationPicker } from "@/components/ui/duration-picker";
-import { successToast } from "@/components/app/tasks-page";
-import { Button } from "@/components/ui/button";
-import { Badge, label } from "@/components/ui/badge";
-import { Input, Textarea, Select, Field } from "@/components/ui/input";
-import { Alert } from "@/components/ui/states";
+import { successToast } from "@/components/ui/toast";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { Badge, CountPill } from "@/components/ui/badge";
+import { Card, CardHeader, SectionTitle } from "@/components/ui/card";
+import { Input, Select, Field } from "@/components/ui/input";
+import { Sheet } from "@/components/ui/sheet";
+import { Alert, EmptyState } from "@/components/ui/states";
 import { api, isApiFailure } from "@/lib/api-client";
-import { formatDuration, formatDateTime } from "@/lib/utils";
+import { cn, formatDuration, formatDateTime } from "@/lib/utils";
 import type { TaskRow } from "@/server/services/views";
 import type { SessionView } from "@/server/services/sessions";
+import type { PlanResult, ProposedTodo } from "@/server/services/assistant";
 import { DatePicker } from "@/components/ui/date-picker";
 
 type PastTask = { id: string; title: string; status: string; completed_at: string | null; archived_at: string | null; tracked_seconds: number; created_by_name: string; self_made: boolean };
@@ -41,12 +55,46 @@ type Props = {
   projects: { id: string; name: string }[]; members: Person[];
   /** People this member may hand to-dos to (team leads only; empty for staff). */
   assignable: Person[];
-  membershipId: string; recordingMode: string; reportStatus: string | null; assistantConfigured: boolean; policyAcknowledged: boolean; todaySeconds: number;
+  membershipId: string; recordingMode: string;
+  /** Whether Brenda's AI is connected; without it a simple built-in reader drafts dictated to-dos. */
+  assistantConfigured: boolean;
+  /** The organisation's zone: dates on the list read the same on the server and in the browser, and match other pages. */
+  timeZone: string;
+  /** The server's clock when the page was read; "overdue" is judged by it until the browser's own clock takes over. */
+  serverNow: string;
 };
+
+// "Overdue" needs the time now. Read during render it differed between the server and the browser, so the browser's
+// clock (to the minute) only takes over after hydration; until then both sides use the server's reading.
+const subscribeMinute = (tick: () => void) => { const t = window.setInterval(tick, 60_000); return () => window.clearInterval(t); };
+const minuteNow = () => Math.floor(Date.now() / 60_000) * 60_000;
+function useNow(serverNow: string) {
+  return useSyncExternalStore(subscribeMinute, minuteNow, () => Date.parse(serverNow));
+}
+const isOverdue = (t: { due_at: string | null; status: string }, nowMs: number) => !!t.due_at && Date.parse(t.due_at) < nowMs && t.status !== "completed";
+
+/** The day an instant falls on in the organisation's zone, as yyyy-mm-dd: the calendar the server's "today" is read on. */
+function localDay(iso: string, timeZone: string): string {
+  const parts = new Intl.DateTimeFormat("en-GB", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date(iso));
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
+  return `${get("year")}-${get("month")}-${get("day")}`;
+}
+
+/** A 40px target around a 16px checkbox; the negative margin keeps the row's layout as it is. */
+const HIT = "relative z-[1] -m-3 inline-grid size-10 shrink-0 cursor-pointer place-items-center";
+
+/** A to-do's status as a small badge (none while it simply waits to start). */
+function StatusBadge({ t, running }: { t: Row; running: boolean }) {
+  if (running) return <Badge tone="success" dot>Working now</Badge>;
+  if (t.status === "in_review") return <Badge tone="warning">Sent for check</Badge>;
+  if (t.status === "blocked") return <Badge tone="danger">Blocked</Badge>;
+  if (t.status === "in_progress") return <Badge>Started</Badge>;
+  return null;
+}
 
 export function MyDayBoard(props: Props) {
   return (
-    <CaptureProvider orgSlug={props.orgSlug} recordingMode={props.recordingMode}>
+    <CaptureProvider orgSlug={props.orgSlug} recordingMode={props.recordingMode} rules={props.initialSession.recording}>
       <Board {...props} />
     </CaptureProvider>
   );
@@ -54,11 +102,16 @@ export function MyDayBoard(props: Props) {
 
 const ORDER: Record<string, number> = { in_progress: 0, todo: 1, blocked: 2, in_review: 3, completed: 4 };
 
-function Board({ orgSlug, today, initialSession, planned, ownTodos, fromLeads, doneToday, pastTasks, assignable, membershipId, recordingMode, reportStatus, assistantConfigured, policyAcknowledged, todaySeconds }: Props) {
+function Board({ orgSlug, today, initialSession, planned, ownTodos, fromLeads, doneToday, pastTasks, assignable, membershipId, recordingMode, assistantConfigured, timeZone, serverNow }: Props) {
   const router = useRouter();
   const capture = useCaptureContext();
+  const nowMs = useNow(serverNow);
+  const captureSupported = useCaptureSupported();
   const [session, setSession] = useState<SessionView | null>(initialSession.session);
-  const [showAssistant, setShowAssistant] = useState(false);
+  // The new-to-do row: open or not, and a nudge that puts the cursor back in it when "+" is pressed while it is open.
+  const [adding, setAdding] = useState(false);
+  const [addNudge, setAddNudge] = useState(0);
+  const addButton = useRef<HTMLButtonElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const { captureGate, onSession, dialogEl, recordingControls } = useCaptureGate();
@@ -76,22 +129,28 @@ function Board({ orgSlug, today, initialSession, planned, ownTodos, fromLeads, d
     return all.sort((a, b) => (session?.taskId === a.id ? -1 : session?.taskId === b.id ? 1 : (ORDER[a.status] ?? 9) - (ORDER[b.status] ?? 9)));
   }, [planned, fromLeads, ownTodos, session?.taskId]);
   const startable: StartableTask[] = useMemo(() => rows.filter((t) => t.status !== "completed" && t.status !== "in_review" && !t.archived_at).map((t) => ({ id: t.id, title: t.title, project_name: t.project_name, status: t.status, capture_requirement: t.capture_requirement, estimate_minutes: t.estimate_minutes, progress_percent: t.progress_percent, version: t.version })), [rows]);
-  const canRecord = recordingMode !== "disabled" && policyAcknowledged && captureSupport().supported;
+  // Consent to screen recording is asked once, when a recorded session starts (owner decision, 5 October 2026), so
+  // the only conditions here are the organisation's setting and the browser.
+  const canRecord = recordingMode !== "disabled" && captureSupported === true;
   // The tabs (owner decision, 28 September 2026): to do, in progress, upcoming (a future date, not started), done.
+  // "Future" is the due date's day in the organisation's zone after today there: the UTC date of due_at is a day out
+  // for a deadline near midnight away from UTC.
   const groups = useMemo(() => {
     const g = { todo: [] as Row[], in_progress: [] as Row[], upcoming: [] as Row[], done: [] as Row[] };
     for (const t of rows) {
-      const future = !!t.due_at && t.due_at.slice(0, 10) > today;
+      const future = !!t.due_at && localDay(t.due_at, timeZone) > today;
       if (t.status === "in_review" || t.status === "completed") g.done.push(t);
       else if (t.status === "in_progress" || t.status === "blocked" || session?.taskId === t.id) g.in_progress.push(t);
       else if (future) g.upcoming.push(t);
       else g.todo.push(t);
     }
     return g;
-  }, [rows, today, session?.taskId]);
+  }, [rows, today, timeZone, session?.taskId]);
   const shown = groups[tab];
+  const hasList = rows.length > 0 || doneToday.length > 0;
   const chosen = shown.filter((t) => selected.has(t.id)).map((t) => t.id);
   const openRow = open ? rows.find((t) => t.id === open) ?? null : null;
+  const openCount = rows.filter((r) => r.status !== "in_review").length;
 
   function onSessionChange(s: SessionView | null) {
     setSession(s);
@@ -101,8 +160,11 @@ function Board({ orgSlug, today, initialSession, planned, ownTodos, fromLeads, d
       if (s.captureMode !== "none" && capture) void capture.startCapture(s.id);
     }
   }
-  function start(t: Row, record: boolean) {
+  async function start(t: Row, record: boolean) {
     setError(null); setNotice(null);
+    // "Start and record" asks for consent first, once (owner decision, 5 October 2026); without it the server starts the
+    // session unrecorded. Cancel starts nothing. Agreeing opens the screen picker in the same press.
+    if (record && capture && !(await capture.ensureConsent())) return;
     recordAfterStart.current = record;
     window.dispatchEvent(new CustomEvent("boredroom:start-task", { detail: { taskId: t.id } }));
   }
@@ -123,110 +185,137 @@ function Board({ orgSlug, today, initialSession, planned, ownTodos, fromLeads, d
       router.refresh();
     } catch (err) { setError(isApiFailure(err) ? err.error.message : "Cannot reach the server."); }
   }
+  // "+" opens the row on the To do tab, where a new to-do lands; pressed again, it puts the cursor back in the row.
+  function openAdd() {
+    if (tab !== "todo") { setTab("todo"); setSelected(new Set()); }
+    setAdding(true); setAddNudge((n) => n + 1);
+  }
+  const toggle = (id: string) => setSelected((sel) => { const n = new Set(sel); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const newRow = adding ? (
+    <NewTodoRow orgSlug={orgSlug} assignable={assignable} aiConnected={assistantConfigured} timeZone={timeZone} nudge={addNudge}
+      onAdded={(msg) => { setError(null); setNotice(msg); router.refresh(); }}
+      onClose={(refocus) => { setAdding(false); if (refocus) requestAnimationFrame(() => addButton.current?.focus()); }} />
+  ) : null;
+  const emptyLine = tab === "todo" ? "Nothing waiting to start." : tab === "in_progress" ? "Nothing started yet. Press a to-do and Start." : tab === "upcoming" ? "Nothing scheduled. Add a to-do with a future date and it waits here." : "Nothing finished yet today.";
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
-      <div className="space-y-6">
-        <SessionTimer orgSlug={orgSlug} initial={initialSession} tasks={startable} captureDialog={dialogEl} onSessionChange={onSessionChange} todaySeconds={todaySeconds}
+    <div className="grid gap-x-8 gap-y-10 xl:grid-cols-[minmax(0,1fr)_300px]">
+      <div className="min-w-0 space-y-6">
+        <SessionTimer orgSlug={orgSlug} initial={initialSession} tasks={startable} captureDialog={dialogEl} onSessionChange={onSessionChange}
           {...(recordingMode === "disabled" ? {} : { captureGate, recordingControls })} />
-        {recordingMode === "disabled" ? <Alert tone="info">Screen recording is switched off for this organisation. An owner can turn it on under Settings, Screen recording.</Alert> : !policyAcknowledged ? <Alert tone="warning">To record your screen, first <Link className="underline" href={`/app/${orgSlug}/policy?next=/app/${orgSlug}/my-day`}>read and acknowledge the monitoring notice</Link>.</Alert> : null}
+        {recordingMode === "disabled" ? <Alert tone="info">Screen recording is switched off for this organisation. An owner can turn it on under Settings, Screen recording.</Alert> : null}
         <Presence show={!!error}><Alert tone="danger">{error}</Alert></Presence>
         <Presence show={!!notice}><Alert tone="success">{notice}</Alert></Presence>
 
-        <section aria-labelledby="todo-heading" className="tile p-4 md:p-5">
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <h2 id="todo-heading" className="font-display text-xl">Your to-dos for today</h2>
-            <span className="text-sm text-fg-subtle tabular-nums">{rows.filter((r) => r.status !== "in_review").length} open, {doneToday.length} done</span>
-          </div>
-          <QuickTodo orgSlug={orgSlug} assignable={assignable} onDone={(msg) => { setNotice(msg ?? null); router.refresh(); }} onAssistant={() => setShowAssistant((v) => !v)} assistantOpen={showAssistant} />
-          <Expand show={showAssistant} id="assistant-panel"><div className="mt-3"><AssistantPanel orgSlug={orgSlug} people={assignable} configured={assistantConfigured} onClose={() => setShowAssistant(false)} onCreated={(n) => { setNotice(`${n} to-do${n === 1 ? "" : "s"} added.`); router.refresh(); }} /></div></Expand>
+        <section aria-labelledby="todo-heading">
+          <SectionTitle id="todo-heading" title="Your to-dos for today" className="mb-3"
+            action={<>
+              <span className="text-meta font-normal tabular-nums text-secondary">{openCount} open, {doneToday.length} done</span>
+              <Button ref={addButton} size="icon-sm" aria-label="Add a to-do" aria-expanded={adding} aria-controls="new-todo" onClick={openAdd}><Plus aria-hidden /></Button>
+            </>} />
 
-          {rows.length === 0 && doneToday.length === 0 ? (
-            <p className="mt-4 rounded-[var(--radius-sm)] border border-dashed border-border-strong p-6 text-center text-sm text-fg-muted">Nothing on your list yet. Type your first to-do above and press Enter, then press Start when you begin.</p>
-          ) : (
-            <div className="mt-4">
-              <Tabs label="To-do status" value={tab} onChange={(v) => { setTab(v as typeof tab); setSelected(new Set()); }} tabs={[
-                { value: "todo", label: "To do", count: groups.todo.length },
-                { value: "in_progress", label: "In progress", count: groups.in_progress.length },
-                { value: "upcoming", label: "Upcoming", count: groups.upcoming.length },
-                { value: "done", label: "Done", count: groups.done.length + doneToday.length },
-              ]} />
-              <Presence show={chosen.length > 0}>
-                <div className="mt-3 flex flex-wrap items-center gap-2 rounded-[var(--radius)] border border-accent/40 bg-accent-soft/40 px-3 py-2 text-sm">
-                  <span className="mr-1 font-semibold tabular-nums">{chosen.length} selected</span>
-                  <IconButton aria-label={`Delete ${chosen.length} to-do${chosen.length === 1 ? "" : "s"}`} onClick={() => setConfirmDelete(true)} className="size-9 text-danger hover:text-danger"><Trash2 className="size-4" aria-hidden /></IconButton>
-                  <IconButton aria-label="Clear selection" className="ml-auto size-9" onClick={() => setSelected(new Set())}><X className="size-4" aria-hidden /></IconButton>
-                </div>
-              </Presence>
-              <ul className="mt-3 divide-y divide-border-soft">
-                {shown.length === 0 && !(tab === "done" && doneToday.length) ? <li className="py-8 text-center text-sm text-fg-subtle">{tab === "todo" ? "Nothing waiting to start." : tab === "in_progress" ? "Nothing started yet. Press a to-do and Start." : tab === "upcoming" ? "Nothing scheduled. Add a to-do with a future date and it waits here." : "Nothing finished yet today."}</li> : null}
+          {/* The new-to-do row keeps one place in the tree whether or not the list is empty, so the refresh after the
+              first to-do is added never remounts it (and never drops drafts still waiting in it). */}
+          <div>
+            {hasList ? (
+              <>
+                <Tabs label="To-do status" value={tab} onChange={(v) => { setTab(v as typeof tab); setSelected(new Set()); }} tabs={[
+                  { value: "todo", label: "To do", count: groups.todo.length },
+                  { value: "in_progress", label: "In progress", count: groups.in_progress.length },
+                  { value: "upcoming", label: "Upcoming", count: groups.upcoming.length },
+                  { value: "done", label: "Done", count: groups.done.length + doneToday.length },
+                ]} />
+                <Presence show={chosen.length > 0}>
+                  <div className="mt-3 flex min-h-11 flex-wrap items-center gap-2 rounded-xl border border-border bg-fill-0 py-1.5 pl-3 pr-1.5 text-sm">
+                    <span className="mr-1 font-medium tabular-nums">{chosen.length} selected</span>
+                    <Button size="xs" variant="danger" aria-label={`Delete ${chosen.length} to-do${chosen.length === 1 ? "" : "s"}`} onClick={() => setConfirmDelete(true)}><Trash2 aria-hidden />Delete</Button>
+                    <IconButton aria-label="Clear selection" className="ml-auto" onClick={() => setSelected(new Set())}><X aria-hidden /></IconButton>
+                  </div>
+                </Presence>
+              </>
+            ) : null}
+            {newRow ? <div className={hasList ? "mt-3" : undefined}>{newRow}</div> : null}
+            {!hasList ? (newRow ? null : (
+              <EmptyState icon={ListTodo} title="Nothing on your list yet"
+                description="Write down what you are doing today, or say it and Brenda writes it down, then press Start when you begin."
+                action={<Button size="sm" variant="secondary" onClick={openAdd}><Plus aria-hidden />Add your first to-do</Button>} />
+            )) : (
+              <ul className={cn("space-y-0.5", newRow ? "mt-1" : "mt-3")} aria-label="To-dos">
+                {shown.length === 0 && !(tab === "done" && doneToday.length) && !(tab === "todo" && adding) ? <li className="px-2 py-10 text-center text-sm font-normal text-secondary">{emptyLine}</li> : null}
                 {shown.map((t) => {
                   const running = session?.taskId === t.id;
-                  const overdue = t.due_at && new Date(t.due_at) < new Date() && t.status !== "completed";
+                  const overdue = isOverdue(t, nowMs);
                   const waiting = t.status === "in_review";
                   return (
-                    <li key={t.id} className={`relative -mx-2 flex items-center gap-3 rounded-[var(--radius-sm)] px-2 py-2.5 transition-colors duration-[var(--duration-fast)] hover:bg-wash ${running ? "bg-accent-soft/30" : ""} ${selected.has(t.id) ? "bg-wash" : ""}`}>
-                      {!waiting ? <input type="checkbox" aria-label={`Select ${t.title}`} checked={selected.has(t.id)} onChange={() => setSelected((sel) => { const n = new Set(sel); if (n.has(t.id)) n.delete(t.id); else n.add(t.id); return n; })} className="relative z-[1] shrink-0" /> : null}
-                      <button type="button" onClick={() => setOpen(t.id)} aria-haspopup="dialog" className="min-w-0 flex-1 text-left after:absolute after:inset-0 after:content-['']">
-                        <span className="flex flex-wrap items-center gap-x-2 gap-y-1"><span className={`truncate font-semibold ${waiting ? "text-fg-muted" : ""}`}>{t.title}</span>{running ? <Badge tone="success" dot>Working now</Badge> : waiting ? <Badge tone="info">Sent for check</Badge> : t.status === "blocked" ? <Badge tone="danger">Blocked</Badge> : t.status === "in_progress" ? <Badge tone="accent">Started</Badge> : null}</span>
-                        <span className="block truncate text-xs text-fg-subtle">{t.created_by !== membershipId ? `from ${t.created_by_name ?? "your team lead"}` : "your own to-do"}{t.due_at ? <span className={overdue ? "text-danger" : ""}> · {overdue ? "overdue" : "due"} {formatDateTime(t.due_at)}</span> : null}</span>
+                    <li key={t.id} className={cn("relative flex min-h-14 items-center gap-3 rounded-xl px-3 py-2 transition-colors duration-75 hover:bg-fill-1", selected.has(t.id) && "bg-fill-1")}>
+                      {!waiting ? <label className={HIT}><input type="checkbox" aria-label={`Select ${t.title}`} checked={selected.has(t.id)} onChange={() => toggle(t.id)} /></label> : <span className="size-4 shrink-0" aria-hidden />}
+                      <button type="button" onClick={() => setOpen(t.id)} aria-haspopup="dialog"
+                        className="min-w-0 flex-1 text-left outline-none after:absolute after:inset-0 after:rounded-xl after:content-[''] focus-visible:after:outline-2 focus-visible:after:-outline-offset-2 focus-visible:after:outline-[var(--ring)]">
+                        <span className="flex min-w-0 items-center gap-2"><span className={cn("truncate text-sm font-semibold", waiting ? "text-secondary" : "text-foreground")}>{t.title}</span><StatusBadge t={t} running={running} /></span>
+                        <span className="block truncate text-meta font-normal text-secondary">
+                          {t.created_by !== membershipId ? `From ${t.created_by_name ?? "your team lead"}` : "Your own to-do"}
+                          {t.due_at ? <span className={overdue ? "text-danger" : undefined}>, {overdue ? "overdue" : "due"} {formatDateTime(t.due_at, timeZone)}</span> : null}
+                        </span>
                       </button>
-                      <ProgressArc percent={t.progress_percent} size={40} className="relative z-[1]" />
+                      <ProgressArc percent={t.progress_percent} size={36} tone={running || t.status === "in_progress" ? "accent" : "default"} className="relative z-[1]" />
                     </li>
                   );
                 })}
                 {tab === "done" ? doneToday.map((t) => (
-                  <li key={t.id} className="flex items-center gap-3 py-3 text-fg-muted">
-                    <Badge tone="success"><Check className="size-3" aria-hidden /> Completed</Badge>
-                    <Link href={`/app/${orgSlug}/tasks/${t.id}`} className="min-w-0 flex-1 truncate line-through decoration-fg-faint hover:underline">{t.title}</Link>
-                    <span className="text-xs text-fg-subtle">{formatDateTime(t.completed_at)}</span>
+                  <li key={t.id} className="relative flex min-h-14 items-center gap-3 rounded-xl px-3 py-2 transition-colors duration-75 hover:bg-fill-1">
+                    <CircleCheck className="size-4 shrink-0 text-success" aria-hidden />
+                    <Link href={`/app/${orgSlug}/tasks/${t.id}`} className="min-w-0 flex-1 truncate text-sm font-medium text-secondary line-through decoration-faint outline-none after:absolute after:inset-0 after:rounded-xl hover:text-foreground focus-visible:after:outline-2 focus-visible:after:-outline-offset-2 focus-visible:after:outline-[var(--ring)]">{t.title}</Link>
+                    <span className="shrink-0 text-meta font-normal tabular-nums text-secondary">{formatDateTime(t.completed_at, timeZone)}</span>
+                    <Badge tone="success" className="hidden sm:inline-flex">Completed</Badge>
                   </li>
                 )) : null}
               </ul>
-            </div>
-          )}
+            )}
+          </div>
           <ConfirmDialog open={confirmDelete} onClose={() => setConfirmDelete(false)} title={`Delete ${chosen.length} to-do${chosen.length === 1 ? "" : "s"}?`} description="They leave your list. Their history is kept." confirmLabel="Delete"
-            onConfirm={async () => { const r = await api<{ done: number; failed: { title: string; reason: string }[] }>(`/api/orgs/${orgSlug}/tasks/bulk`, { method: "POST", body: { ids: chosen, action: "archive" }, retries: 0 }); if (r.done) successToast(`${r.done} to-do${r.done === 1 ? "" : "s"} deleted`); if (r.failed.length) setError(r.failed.map((f) => `${f.title}: ${f.reason}`).join(" ")); setSelected(new Set()); router.refresh(); }} />
-          {openRow ? <TodoSheet t={openRow} orgSlug={orgSlug} self={membershipId} running={session?.taskId === openRow.id} anyRunning={!!session} canRecord={canRecord}
-            onStart={(record) => { setOpen(null); start(openRow, record); }} onDone={() => { setOpen(null); void done(openRow); }} onSaved={(msg) => { setNotice(msg); router.refresh(); }} onClose={() => setOpen(null)} /> : null}
+            onConfirm={async () => {
+              setError(null); setNotice(null);
+              try {
+                const r = await api<{ done: number; failed: { title: string; reason: string }[] }>(`/api/orgs/${orgSlug}/tasks/bulk`, { method: "POST", body: { ids: chosen, action: "archive" }, retries: 0 });
+                if (r.done) successToast(`${r.done} to-do${r.done === 1 ? "" : "s"} deleted`);
+                if (r.failed.length) setError(r.failed.map((f) => `${f.title}: ${f.reason}`).join(" "));
+                setSelected(new Set()); router.refresh();
+              } catch (err) { setError(isApiFailure(err) ? `Nothing was deleted. ${err.error.message}` : "Nothing was deleted: cannot reach the server. Check your connection and try again."); }
+            }} />
+          {openRow ? <TodoSheet t={openRow} orgSlug={orgSlug} self={membershipId} running={session?.taskId === openRow.id} anyRunning={!!session} canRecord={canRecord} timeZone={timeZone} nowMs={nowMs}
+            onStart={(record) => { setOpen(null); void start(openRow, record); }} onDone={() => { setOpen(null); void done(openRow); }} onSaved={(msg) => { setNotice(msg); router.refresh(); }} onClose={() => setOpen(null)} /> : null}
         </section>
 
-        <PastTasks orgSlug={orgSlug} items={pastTasks} onCleared={(n) => { setNotice(`${n} past task${n === 1 ? "" : "s"} cleared from your list.`); router.refresh(); }} />
+        <PastTasks orgSlug={orgSlug} items={pastTasks} timeZone={timeZone} onCleared={(n) => { setNotice(`${n} past task${n === 1 ? "" : "s"} cleared from your list.`); router.refresh(); }} />
       </div>
 
-      <aside className="space-y-4">
-        <div className="tile p-5">
-          <h2 className="font-display text-lg">Daily report</h2>
-          <p className="mt-1 text-sm text-fg-muted">{reportStatus ? `Status: ${label(reportStatus)}.` : "Built from your sessions and notes. Add blockers and next priorities, then submit."}</p>
-          <Link href={`/app/${orgSlug}/timesheets?date=${today}`} className="mt-3 inline-block"><Button size="sm" variant={reportStatus === "approved" ? "subtle" : "primary"}>{reportStatus ? "Open report" : "Review and submit"}</Button></Link>
-        </div>
-        <div className="tile p-5 text-sm text-fg-muted">
-          <h2 className="font-display text-lg text-fg">How it works</h2>
-          <ol className="mt-2 list-decimal space-y-1.5 pl-4">
-            <li>Write your to-dos for today. Your team lead may add some too.</li>
-            <li>Press <strong className="text-fg">Start</strong> on the one you are working on{canRecord ? ", with or without screen recording" : ""}.</li>
-            <li>Press <strong className="text-fg">Done</strong> when you finish. It goes to your lead for a quick check, then shows as Completed.</li>
-            {assignable.length ? <li>As a team lead, use “For” to hand a to-do to someone on your team, or to anyone else in the organisation.</li> : null}
+      <aside aria-labelledby="how-heading">
+        <Card>
+          <CardHeader as="h2" size="sm" title={<span id="how-heading">How it works</span>} className="mb-3" />
+          <ol className="list-decimal space-y-2 pl-4 text-sm font-normal text-secondary marker:text-subtle">
+            <li>Press <strong className="font-medium text-foreground">+</strong> and write your to-dos for today, or dictate them and Brenda writes them down. Your team lead may add some too.</li>
+            <li>Press <strong className="font-medium text-foreground">Start</strong> on the one you are working on{canRecord ? ", with or without screen recording" : ""}.</li>
+            <li>Press <strong className="font-medium text-foreground">Mark done</strong> when you finish. It goes to your lead for a quick check, then shows as Completed.</li>
+            {assignable.length ? <li>As a team lead, use “For” on a new to-do to hand it to someone on your team, or to anyone else in the organisation, or say who it is for when you dictate.</li> : null}
           </ol>
-        </div>
+          {/* No daily report to write any more (owner decision, 6 October 2026); say so, since people were used to one. */}
+          <p className="mt-4 text-meta font-normal text-secondary">There is no daily report to write: your to-dos and timer are the record your team lead sees.</p>
+        </Card>
       </aside>
     </div>
   );
 }
 
-/** The to-do pop-up: what it is, how far along, and every action on it: start, edit, mark done. */
-function TodoSheet({ t, orgSlug, self, running, anyRunning, canRecord, onStart, onDone, onSaved, onClose }: { t: Row; orgSlug: string; self: string; running: boolean; anyRunning: boolean; canRecord: boolean; onStart: (record: boolean) => void; onDone: () => void; onSaved: (msg: string) => void; onClose: () => void }) {
+/** The to-do in a right-hand sheet: what it is, how far along, and every action on it: start, edit, mark done. */
+function TodoSheet({ t, orgSlug, self, running, anyRunning, canRecord, timeZone, nowMs, onStart, onDone, onSaved, onClose }: { t: Row; orgSlug: string; self: string; running: boolean; anyRunning: boolean; canRecord: boolean; timeZone: string; nowMs: number; onStart: (record: boolean) => void; onDone: () => void; onSaved: (msg: string) => void; onClose: () => void }) {
   const router = useRouter();
-  const ref = useRef<HTMLDialogElement>(null);
-  const titleId = useId();
   const [editing, setEditing] = useState(false);
   const [confirmDone, setConfirmDone] = useState(false);
   const [progress, setProgress] = useState<number | null>(null);
   const [version, setVersion] = useState(t.version);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  useEffect(() => { ref.current?.showModal(); }, []);
-  const overdue = t.due_at && new Date(t.due_at) < new Date() && t.status !== "completed";
+  const overdue = isOverdue(t, nowMs);
   const waiting = t.status === "in_review";
   const shownProgress = progress ?? t.progress_percent;
   const saveProgress = async (value: number) => {
@@ -235,52 +324,50 @@ function TodoSheet({ t, orgSlug, self, running, anyRunning, canRecord, onStart, 
     catch (err) { setProgress(null); setError(isApiFailure(err) ? err.error.message : "Cannot reach the server."); }
     finally { setSaving(false); }
   };
-  const fact = (icon: React.ReactNode, name: string, value: React.ReactNode) => (
-    <div className="flex items-start gap-2.5 rounded-[var(--radius-sm)] border border-border-soft bg-wash px-3 py-2"><span className="mt-0.5 text-fg-subtle">{icon}</span><span className="min-w-0"><span className="eyebrow block">{name}</span><span className="block truncate text-sm">{value}</span></span></div>
+  const footer = (
+    <>
+      <Link href={`/app/${orgSlug}/tasks/${t.id}`} className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "mr-auto")}>Full task and evidence<ArrowUpRight aria-hidden /></Link>
+      {waiting ? null : (
+        <>
+          {!running && !editing ? <EditButton iconOnly label="Edit to-do" onClick={() => setEditing(true)} /> : null}
+          {!running && canRecord ? <Button size="sm" variant="secondary" disabled={anyRunning} onClick={() => onStart(true)}><span className="size-2 rounded-full bg-danger" aria-hidden />Start and record</Button> : null}
+          {!running ? <Button size="sm" disabled={anyRunning} onClick={() => onStart(false)}><Play aria-hidden />Start</Button> : null}
+          {running || t.status === "in_progress" || t.status === "blocked" ? (confirmDone
+            ? <><Button size="sm" variant="ghost" onClick={() => setConfirmDone(false)}>Not yet</Button><Button size="sm" onClick={() => { setConfirmDone(false); onDone(); }}><Check aria-hidden />Yes, mark done</Button></>
+            : <Button size="sm" variant={running ? "primary" : "secondary"} onClick={() => setConfirmDone(true)}><Check aria-hidden />Mark done</Button>) : null}
+        </>
+      )}
+      {/* A disabled button cannot show its tooltip, so the reason is said in words. */}
+      {!waiting && !running && anyRunning ? <p className="w-full text-right text-meta font-normal text-secondary">Another to-do is on the clock. Stop it, or use Switch task on the timer, to start this one.</p> : null}
+    </>
   );
   return (
-    <dialog ref={ref} className="sheet !max-w-[min(92vw,36rem)]" aria-labelledby={titleId} onClose={onClose} onCancel={(e) => { e.preventDefault(); onClose(); }}>
-      <div className="grid gap-4 p-5">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="eyebrow">{t.created_by !== self ? `From ${t.created_by_name ?? "your team lead"}` : "Your own to-do"}</p>
-            <h2 id={titleId} className="mt-1 font-display text-xl leading-tight">{t.title}</h2>
-            <p className="mt-2 flex flex-wrap items-center gap-2">{running ? <Badge tone="success" dot>Working now</Badge> : waiting ? <Badge tone="info">Sent for check</Badge> : t.status === "blocked" ? <Badge tone="danger">Blocked</Badge> : t.status === "in_progress" ? <Badge tone="accent">Started</Badge> : <Badge>To do</Badge>}{overdue ? <Badge tone="danger">Overdue</Badge> : null}{t.capture_requirement === "required" ? <Badge tone="warning">recording required</Badge> : null}</p>
-          </div>
-          <Button type="button" variant="ghost" size="icon" aria-label="Close" onClick={onClose}><X className="size-4" aria-hidden /></Button>
-        </div>
+    <Sheet open onClose={onClose} title={t.title} description={t.created_by !== self ? `From ${t.created_by_name ?? "your team lead"}` : "Your own to-do"} footer={footer}>
+      <div className="grid gap-5">
+        <p className="flex flex-wrap items-center gap-2">
+          {running ? <Badge tone="success" dot>Working now</Badge> : waiting ? <Badge tone="warning">Sent for check</Badge> : t.status === "blocked" ? <Badge tone="danger">Blocked</Badge> : t.status === "in_progress" ? <Badge>Started</Badge> : <Badge tone="info">To do</Badge>}
+          {overdue ? <Badge tone="danger">Overdue</Badge> : null}
+          {t.capture_requirement === "required" ? <Badge tone="warning">Recording required</Badge> : null}
+        </p>
         {error ? <Alert tone="danger">{error}</Alert> : null}
-        {t.blocked_reason ? <p className="rounded-[var(--radius-sm)] border border-danger/40 bg-danger/10 px-3 py-2 text-sm"><strong>Blocked:</strong> {t.blocked_reason}</p> : null}
-        <div className="flex items-center gap-4 rounded-[var(--radius-sm)] border border-border-soft bg-wash px-3 py-2">
-          <ProgressArc percent={shownProgress} size={56} />
+        {t.blocked_reason ? <Alert tone="danger" title="Blocked">{t.blocked_reason}</Alert> : null}
+        <div className="flex items-center gap-4 rounded-xl bg-fill-0 p-4">
+          <ProgressArc percent={shownProgress} size={56} tone={running || t.status === "in_progress" ? "accent" : "default"} />
           <div className="min-w-0 flex-1">
-            <p className="eyebrow">How far along</p>
-            {!waiting ? <input type="range" min={0} max={100} step={5} value={shownProgress} disabled={saving} aria-label="Percentage done" className="mt-1 w-full accent-[var(--accent)]" onChange={(e) => setProgress(Number(e.target.value))} onMouseUp={(e) => void saveProgress(Number((e.target as HTMLInputElement).value))} onTouchEnd={(e) => void saveProgress(Number((e.target as HTMLInputElement).value))} onKeyUp={(e) => { if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"].includes(e.key)) void saveProgress(Number((e.target as HTMLInputElement).value)); }} />
-              : <p className="text-sm text-fg-muted">Waiting for the check.</p>}
+            <p className="text-sm font-medium text-foreground">How far along</p>
+            {!waiting ? <ProgressSlider className="mt-1" value={shownProgress} disabled={saving} onChange={setProgress} onCommit={(v) => void saveProgress(v)} />
+              : <p className="text-meta font-normal text-secondary">Waiting for the check.</p>}
           </div>
         </div>
-        <div className="grid grid-cols-2 gap-2">
-          {fact(<CalendarClock className="size-4" aria-hidden />, overdue ? "Overdue" : "Due", t.due_at ? <span className={`tabular-nums ${overdue ? "text-danger" : ""}`}>{formatDateTime(t.due_at)}</span> : "No date")}
-          {fact(<Hourglass className="size-4" aria-hidden />, "Estimated", t.estimate_minutes ? formatDuration(t.estimate_minutes * 60) : "Not set")}
-          {fact(<Timer className="size-4" aria-hidden />, "Tracked", t.tracked_seconds ? formatDuration(t.tracked_seconds) : "Nothing yet")}
-          {fact(<Check className="size-4" aria-hidden />, "Project", t.project_name)}
-        </div>
+        <DetailList>
+          <DetailRow label={overdue ? "Overdue" : "Due"}>{t.due_at ? <span className={cn("tabular-nums", overdue && "text-danger")}>{formatDateTime(t.due_at, timeZone)}</span> : <span className="text-secondary">No date</span>}</DetailRow>
+          <DetailRow label="Estimated">{t.estimate_minutes ? formatDuration(t.estimate_minutes * 60) : <span className="text-secondary">Not set</span>}</DetailRow>
+          <DetailRow label="Tracked">{t.tracked_seconds ? <span className="tabular-nums">{formatDuration(t.tracked_seconds)}</span> : <span className="text-secondary">Nothing yet</span>}</DetailRow>
+          <DetailRow label="Project">{t.project_name}</DetailRow>
+        </DetailList>
         {editing ? <EditTodo orgSlug={orgSlug} t={{ ...t, version }} onClose={() => setEditing(false)} onSaved={(m) => { setEditing(false); onSaved(m); onClose(); }} /> : null}
-        <div className="flex flex-wrap items-center gap-2 border-t border-border-soft pt-4">
-          <Link href={`/app/${orgSlug}/tasks/${t.id}`} className="link-action mr-auto"><ExternalLink className="size-3.5" aria-hidden />Full task and evidence</Link>
-          {waiting ? null : (
-            <>
-              {!running && !editing ? <EditButton iconOnly label="Edit to-do" onClick={() => setEditing(true)} /> : null}
-              {!running ? <Button size="sm" disabled={anyRunning} data-tip={anyRunning ? "Stop or switch the running timer first" : undefined} onClick={() => onStart(false)}><Play className="size-3.5" aria-hidden />Start</Button> : null}
-              {!running && canRecord ? <Button size="sm" variant="outline" disabled={anyRunning} onClick={() => onStart(true)}><Circle className="size-3 fill-danger text-danger" aria-hidden />Start and record</Button> : null}
-              {running || t.status === "in_progress" || t.status === "blocked" ? (confirmDone
-                ? <><Button size="sm" onClick={() => { setConfirmDone(false); onDone(); }}><Check className="size-4" aria-hidden />Yes, mark done</Button><Button size="sm" variant="ghost" onClick={() => setConfirmDone(false)}>Not yet</Button></>
-                : <Button size="sm" variant={running ? "primary" : "outline"} onClick={() => setConfirmDone(true)}><Check className="size-4" aria-hidden />Mark done</Button>) : null}
-            </>
-          )}
-        </div>
       </div>
-    </dialog>
+    </Sheet>
   );
 }
 
@@ -294,116 +381,308 @@ function toLocalInput(iso: string | null): string {
 function EditTodo({ orgSlug, t, onClose, onSaved }: { orgSlug: string; t: Row; onClose: () => void; onSaved: (msg: string) => void }) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
   return (
-    <form className="grid gap-3 rounded-[var(--radius-sm)] border border-border bg-inset p-3" onSubmit={async (e) => {
-      e.preventDefault(); setPending(true); setError(null);
+    <form className="grid gap-4 rounded-2xl border border-border p-4" aria-label="Edit to-do" noValidate onSubmit={async (e) => {
+      e.preventDefault();
       const f = new FormData(e.currentTarget);
+      const title = String(f.get("title") ?? "").trim();
+      if (!title) { setFieldErrors({ title: ["Give the to-do a name."] }); return; }
+      setPending(true); setError(null); setFieldErrors({});
       try {
-        await api(`/api/orgs/${orgSlug}/tasks/${t.id}`, { method: "PATCH", body: { expectedVersion: t.version, title: f.get("title"), dueAt: f.get("dueAt") ? new Date(String(f.get("dueAt"))).toISOString() : null, estimateMinutes: f.get("estimate") ? Number(f.get("estimate")) : null } });
+        await api(`/api/orgs/${orgSlug}/tasks/${t.id}`, { method: "PATCH", body: { expectedVersion: t.version, title, dueAt: f.get("dueAt") ? new Date(String(f.get("dueAt"))).toISOString() : null, estimateMinutes: f.get("estimate") ? Number(f.get("estimate")) : null } });
         onSaved("To-do updated.");
-      } catch (err) { setError(isApiFailure(err) ? err.error.message : "Cannot reach the server."); } finally { setPending(false); }
+      } catch (err) {
+        if (isApiFailure(err)) { setError(err.error.message); setFieldErrors(err.error.fieldErrors ?? {}); }
+        else setError("Cannot reach the server. Your changes are still here; try Save again.");
+      } finally { setPending(false); }
     }}>
+      <p className="text-sm font-semibold text-foreground">Edit to-do</p>
       {error ? <Alert tone="danger">{error}</Alert> : null}
-      <Field label="To-do" htmlFor={`title-${t.id}`}><Input id={`title-${t.id}`} name="title" defaultValue={t.title} required maxLength={200} /></Field>
-      <div className="grid gap-3 md:grid-cols-2">
-        <Field label="Due date and time" htmlFor={`due-${t.id}`} hint="a future date schedules it"><DatePicker mode="datetime" id={`due-${t.id}`} name="dueAt" defaultValue={toLocalInput(t.due_at)} /></Field>
-        <Field label="Estimated time" htmlFor={`est-${t.id}`} hint="optional"><DurationPicker id={`est-${t.id}`} name="estimate" defaultValue={t.estimate_minutes} /></Field>
+      <Field label="To-do" htmlFor={`title-${t.id}`} error={fieldErrors.title}><Input id={`title-${t.id}`} name="title" defaultValue={t.title} required maxLength={200} /></Field>
+      <div className="grid gap-4 md:grid-cols-2">
+        <Field label="Due date and time" htmlFor={`due-${t.id}`} hint="A future date schedules it" error={fieldErrors.dueAt}><DatePicker mode="datetime" id={`due-${t.id}`} name="dueAt" defaultValue={toLocalInput(t.due_at)} /></Field>
+        <Field label="Estimated time" htmlFor={`est-${t.id}`} hint="Optional" error={fieldErrors.estimateMinutes}><DurationPicker id={`est-${t.id}`} name="estimate" defaultValue={t.estimate_minutes} /></Field>
       </div>
-      <div className="flex justify-end gap-2"><Button type="button" size="sm" variant="ghost" onClick={onClose}>Cancel</Button><Button type="submit" size="sm" disabled={pending}>{pending ? "Saving…" : "Save"}</Button></div>
+      <div className="flex justify-end gap-2"><Button type="button" size="sm" variant="secondary" onClick={onClose}>Cancel</Button><Button type="submit" size="sm" loading={pending}>{pending ? "Saving…" : "Save"}</Button></div>
     </form>
   );
 }
 
 /** Past tasks (owner decision, 28 September 2026): the faces list, five at a time with View all, and one icon to clear. */
-function PastTasks({ orgSlug, items, onCleared }: { orgSlug: string; items: PastTask[]; onCleared: (n: number) => void }) {
+function PastTasks({ orgSlug, items, timeZone, onCleared }: { orgSlug: string; items: PastTask[]; timeZone: string; onCleared: (n: number) => void }) {
   const [pending, setPending] = useState(false);
   const [confirm, setConfirm] = useState(false);
   const [all, setAll] = useState(false);
   const [error, setError] = useState<string | null>(null);
   if (items.length === 0) return null;
   const shown = all ? items : items.slice(0, 5);
+  // The confirm sits beside the <details>, not in it: inside a closed one it would open unseen.
   return (
-    <details className="tile group p-4">
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-3">
-        <span className="flex items-center gap-2 font-display text-lg"><ChevronDown className="size-4 transition-transform duration-[var(--duration-fast)] group-open:rotate-180" aria-hidden />Past tasks <span className="text-sm text-fg-subtle tabular-nums">({items.length})</span></span>
+    <>
+    <details className="group">
+      <summary className="flex min-h-10 cursor-pointer list-none items-center justify-between gap-3 rounded-xl outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ring)] [&::-webkit-details-marker]:hidden">
         <span className="flex items-center gap-2">
-          <span className="hidden text-xs text-fg-subtle sm:inline">completed or removed earlier</span>
-          <IconButton aria-label="Clear past tasks" disabled={pending} onClick={(e) => { e.preventDefault(); setConfirm(true); }} className="size-9 text-danger hover:text-danger"><Trash2 className="size-4" aria-hidden /></IconButton>
+          <ChevronRight className="size-4 text-secondary transition-transform duration-150 group-open:rotate-90" aria-hidden />
+          <span className="type-section-title">Past tasks</span>
+          <CountPill count={items.length} />
+        </span>
+        <span className="flex items-center gap-2">
+          <span className="hidden text-meta font-normal text-secondary sm:inline">Completed or removed earlier</span>
+          <IconButton aria-label="Clear past tasks" disabled={pending} onClick={(e) => { e.preventDefault(); setConfirm(true); }} className="hover:text-danger"><Trash2 aria-hidden /></IconButton>
         </span>
       </summary>
       {error ? <Alert tone="danger" className="mt-3">{error}</Alert> : null}
-      <ul className="mt-3 divide-y divide-border-soft">{shown.map((t) => (
-        <li key={t.id} className="flex items-center gap-3 py-2.5">
-          <Avatar profileId={t.id} name={t.self_made ? "You" : t.created_by_name} size={32} className="opacity-70" />
+      <ul className="mt-2 space-y-0.5">{shown.map((t) => (
+        <li key={t.id} className="relative flex min-h-14 items-center gap-3 rounded-xl px-3 py-2 transition-colors duration-75 hover:bg-fill-1">
+          <Avatar profileId={t.id} name={t.self_made ? "You" : t.created_by_name} size={32} />
           <span className="min-w-0 flex-1">
-            <Link href={`/app/${orgSlug}/tasks/${t.id}`} className="block truncate text-sm font-medium text-fg hover:underline">{t.title}</Link>
-            <span className="block truncate text-xs text-fg-subtle">{t.self_made ? "your own to-do" : `from ${t.created_by_name}`}{t.tracked_seconds ? ` · ${formatDuration(t.tracked_seconds)} tracked` : ""}</span>
+            <Link href={`/app/${orgSlug}/tasks/${t.id}`} className="block truncate text-sm font-semibold text-foreground outline-none after:absolute after:inset-0 after:rounded-xl focus-visible:after:outline-2 focus-visible:after:-outline-offset-2 focus-visible:after:outline-[var(--ring)]">{t.title}</Link>
+            <span className="block truncate text-meta font-normal text-secondary">{t.self_made ? "Your own to-do" : `From ${t.created_by_name}`}{t.tracked_seconds ? `, ${formatDuration(t.tracked_seconds)} tracked` : ""}</span>
           </span>
-          <span className="flex shrink-0 items-center gap-3 text-right text-xs text-fg-muted tabular-nums">
-            <span className="hidden sm:block">{t.completed_at ? formatDateTime(t.completed_at) : t.archived_at ? formatDateTime(t.archived_at) : ""}</span>
-            {t.status === "completed" ? <Badge tone="success">Completed</Badge> : <Badge tone="neutral">Removed</Badge>}
+          <span className="flex shrink-0 items-center gap-3">
+            <span className="hidden text-meta font-normal tabular-nums text-secondary sm:block">{t.completed_at ? formatDateTime(t.completed_at, timeZone) : t.archived_at ? formatDateTime(t.archived_at, timeZone) : ""}</span>
+            {t.status === "completed" ? <Badge tone="success">Completed</Badge> : <Badge tone="info">Removed</Badge>}
           </span>
         </li>
       ))}</ul>
-      {items.length > 5 ? <div className="mt-3"><button type="button" className="link-action" onClick={() => setAll((v) => !v)}>{all ? "Show fewer" : `View all ${items.length}`}</button></div> : null}
-      <p className="mt-3 text-xs text-fg-subtle">Clearing only tidies your list. Records, reports and your team lead&apos;s views keep everything.</p>
-      <ConfirmDialog open={confirm} onClose={() => setConfirm(false)} title="Clear your past tasks?" description="They leave this list. Records, reports and your team lead's views keep everything." confirmLabel="Clear"
-        onConfirm={async () => { setPending(true); setError(null); try { const r = await api<{ cleared: number }>(`/api/orgs/${orgSlug}/todos/clear`, { method: "POST", body: {} }); onCleared(r.cleared); } catch (err) { setError(isApiFailure(err) ? err.error.message : "Cannot reach the server."); } finally { setPending(false); } }} />
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-2 px-1">
+        <p className="text-meta font-normal text-secondary">Clearing only tidies your list. Records, reports and your team lead&apos;s views keep everything.</p>
+        {items.length > 5 ? <Button size="xs" variant="ghost" onClick={() => setAll((v) => !v)}>{all ? "Show fewer" : `View all ${items.length}`}</Button> : null}
+      </div>
     </details>
+    <ConfirmDialog open={confirm} onClose={() => setConfirm(false)} title="Clear your past tasks?" description="They leave this list. Records, reports and your team lead's views keep everything." confirmLabel="Clear"
+        onConfirm={async () => { setPending(true); setError(null); try { const r = await api<{ cleared: number }>(`/api/orgs/${orgSlug}/todos/clear`, { method: "POST", body: {} }); onCleared(r.cleared); } catch (err) { setError(isApiFailure(err) ? err.error.message : "Nothing was cleared: cannot reach the server. Check your connection and try again."); } finally { setPending(false); } }} />
+    </>
   );
 }
 
+/** "Ada", "Ada and Ben", "Ada, Ben and Chloe". */
+const andList = (names: string[]) => (names.length < 2 ? names.join("") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`);
+
+/** "For" on a to-do (team leads): the team first, then the rest of the organisation. */
+function ForOptions({ people, me = "me" }: { people: Person[]; me?: string }) {
+  return (
+    <>
+      <option value="">For: {me}</option>
+      {people.some((p) => p.group !== "organisation") ? <optgroup label="Your team">{people.filter((p) => p.group !== "organisation").map((p) => <option key={p.id} value={p.id}>For: {p.display_name}</option>)}</optgroup> : null}
+      {people.some((p) => p.group === "organisation") ? <optgroup label="Others in the organisation">{people.filter((p) => p.group === "organisation").map((p) => <option key={p.id} value={p.id}>For: {p.display_name}{p.team_name ? ` (${p.team_name})` : ""}</option>)}</optgroup> : null}
+    </>
+  );
+}
+
+type Draft = ProposedTodo & { keep: boolean };
+
 /**
- * The simplest entry point: a title, Enter, done. "Details" adds a description and a deadline;
- * team leads also get "For", which hands the to-do to someone on their team (they are notified).
+ * Adding to-dos (owner decision, 5 October 2026). The "+" beside the list's title opens this row at the top of the
+ * list, drawn like the rows under it. Type and press Enter: the to-do is added and the row stays open for the next one;
+ * Escape or Cancel closes it, and so does leaving it empty. Dictate opens the voice card in the row (the notch's look,
+ * components/app/voice-capture); when you stop, Brenda's to-do planner turns your words into to-dos, shown as rows to
+ * untick or edit. Nothing is created until Add, and each one goes through the normal to-do endpoint, so assignees are
+ * notified the usual way. Dictation runs in the browser or on this computer (hooks/use-dictation); Boredroom uploads
+ * no audio. Team leads keep "For", to hand a to-do to someone, and can say who each one is for when dictating.
  */
-function QuickTodo({ orgSlug, assignable, onDone, onAssistant, assistantOpen }: { orgSlug: string; assignable: Person[]; onDone: (message?: string) => void; onAssistant: () => void; assistantOpen: boolean }) {
+function NewTodoRow({ orgSlug, assignable, aiConnected, timeZone, nudge, onAdded, onClose }: { orgSlug: string; assignable: Person[]; aiConnected: boolean; timeZone: string; nudge: number; onAdded: (message: string | null) => void;
+  /** `refocus`: closed from inside the row (Escape, Cancel), so the focus goes back to "+"; not when the focus left it. */
+  onClose: (refocus?: boolean) => void }) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const addAllRef = useRef<HTMLButtonElement>(null);
+  const errorId = useId();
   const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [dueAt, setDueAt] = useState("");
   const [assignee, setAssignee] = useState("");
-  const [details, setDetails] = useState(false);
+  // type: the box. stopping: the words are being written out after Stop. planning: Brenda is drafting. review: her drafts.
+  const [step, setStep] = useState<"type" | "stopping" | "planning" | "review">("type");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
+  const [announce, setAnnounce] = useState("");
+  // What was in the box when dictation began: Cancel puts it back.
+  const [before, setBefore] = useState("");
+  const [plan, setPlan] = useState<PlanResult | null>(null);
+  const [drafts, setDrafts] = useState<Draft[]>([]);
+  const dictation = useDictation(title, setTitle);
+  // Bumped by every Dictate and Cancel, so a stop or a plan that has been overtaken does nothing when it lands.
+  const run = useRef(0);
+  const planning = useRef<AbortController | null>(null);
+  // A press inside the row moves focus out of the box (Safari does not focus buttons); that is not leaving the row.
+  const pointerInside = useRef(false);
   const person = assignable.find((p) => p.id === assignee);
-  return (
-    <form className="grid gap-2" onSubmit={async (e) => {
-      e.preventDefault(); if (!title.trim()) return; setPending(true); setError(null); setFieldErrors({});
-      try {
-        await api(`/api/orgs/${orgSlug}/todos`, { method: "POST", body: { title: title.trim(), description: description.trim() || null, dueAt: dueAt ? new Date(dueAt).toISOString() : null, assigneeMembershipId: assignee || null } });
-        setTitle(""); setDescription(""); setDueAt("");
-        onDone(person ? `“${title.trim()}” was handed to ${person.display_name}; they have been notified.` : undefined);
+  const voice: "listening" | "working" | null = step === "stopping" || step === "planning" || dictation.busy ? "working" : dictation.listening ? "listening" : null;
+  const kept = drafts.filter((d) => d.keep && d.title.trim());
+  const shownError = error ?? (voice ? null : dictation.error);
+
+  // The cursor goes into the box when the row opens, when "+" is pressed again, and when the row is back to typing.
+  useEffect(() => { if (step === "type") inputRef.current?.focus(); }, [step, nudge]);
+  useEffect(() => { if (step === "review") addAllRef.current?.focus(); }, [step]);
+  useEffect(() => () => planning.current?.abort(), []);
+  const refocus = () => requestAnimationFrame(() => inputRef.current?.focus());
+
+  async function add(e: React.FormEvent) {
+    e.preventDefault();
+    const t = title.trim();
+    if (!t || pending) return;
+    setPending(true); setError(null);
+    try {
+      await api(`/api/orgs/${orgSlug}/todos`, { method: "POST", body: { title: t, assigneeMembershipId: assignee || null } });
+      setTitle("");
+      setAnnounce(`Added “${t}”. Type the next one, or press Escape to close.`);
+      onAdded(person ? `“${t}” was handed to ${person.display_name}; they have been notified.` : null);
+    } catch (err) {
+      setError(isApiFailure(err) ? err.error.fieldErrors?.title?.[0] ?? err.error.message : "Cannot reach the server. Your to-do is still here; press Enter to try again.");
+    } finally { setPending(false); inputRef.current?.focus(); }
+  }
+
+  async function startVoice() {
+    run.current++;
+    setError(null); setPlan(null); setDrafts([]);
+    setBefore(title);
+    await dictation.toggle();
+  }
+
+  /** Stop: the words are written out, then go to Brenda's planner, which drafts the to-dos. */
+  async function stopVoice() {
+    const token = ++run.current;
+    setStep("stopping");
+    const said = await dictation.stop();
+    if (token !== run.current) return;
+    if (said === null) { setStep("type"); refocus(); return; } // the dictation failed or was cancelled; it says why
+    const words = said.trim();
+    if (!words || words === before.trim()) { setStep("type"); setError("Nothing was heard. Check the microphone is not muted, then press Dictate again."); refocus(); return; }
+    setStep("planning");
+    const ctrl = new AbortController();
+    planning.current = ctrl;
+    try {
+      const r = await api<PlanResult>(`/api/orgs/${orgSlug}/assistant/plan`, { method: "POST", body: { text: words }, signal: ctrl.signal });
+      if (token !== run.current) return;
+      if (!r.items.length) {
+        setStep("type");
+        setError("Brenda found no to-dos in that. Say one task per sentence, like “Send the Acme invoice by Friday.” Your words are in the box to edit and add as they are.");
+        refocus();
+        return;
       }
-      catch (err) { if (isApiFailure(err)) { setError(err.error.message); setFieldErrors(err.error.fieldErrors ?? {}); } else setError("Cannot reach the server."); } finally { setPending(false); }
-    }}>
-      <div className="flex flex-wrap items-center gap-2">
-        <label htmlFor="quick-todo" className="sr-only">Add a to-do</label>
-        <div className="relative min-w-[240px] flex-1">
-          <Input id="quick-todo" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Add a to-do and press Enter…" maxLength={200} className="w-full pr-12" autoComplete="off" />
-          <button type="button" aria-label={assistantOpen ? "Close the assistant" : "Ask the assistant"} aria-expanded={assistantOpen} aria-controls="assistant-panel" onClick={onAssistant} className={`absolute right-1.5 top-1/2 grid size-8 -translate-y-1/2 place-items-center rounded-full transition-colors duration-[var(--duration-fast)] ${assistantOpen ? "bg-accent-soft text-accent" : "text-accent hover:bg-wash"}`}><Sparkles className="size-4" aria-hidden /></button>
+      setPlan(r);
+      setDrafts(r.items.map((it) => ({ ...it, keep: true })));
+      setStep("review");
+      setAnnounce(`Brenda drafted ${r.items.length} to-do${r.items.length === 1 ? "" : "s"}. Untick or edit them, then add.`);
+    } catch (err) {
+      if (token !== run.current) return;
+      setStep("type");
+      setError(`${isApiFailure(err) ? err.error.message : "Cannot reach the server."} Your words are in the box: edit them and press Enter, or dictate again.`);
+      refocus();
+    } finally { if (planning.current === ctrl) planning.current = null; }
+  }
+
+  /** Cancel while listening, writing out, drafting or reviewing: nothing is added and the box is as it was. */
+  function cancelVoice() {
+    const token = ++run.current;
+    const restore = before;
+    planning.current?.abort();
+    // The browser's engine can still deliver its last words for a moment after it stops: put the box back after that.
+    if (dictation.listening && dictation.engine === "browser") void dictation.stop().then(() => { if (token === run.current) setTitle(restore); });
+    else if (dictation.listening || dictation.busy) dictation.cancel();
+    setTitle(restore);
+    setPlan(null); setDrafts([]); setStep("type");
+    refocus();
+  }
+
+  async function addAll() {
+    if (!kept.length || pending) return;
+    setPending(true); setError(null);
+    let n = 0;
+    const handed = new Set<string>();
+    try {
+      for (const d of kept) {
+        await api(`/api/orgs/${orgSlug}/todos`, { method: "POST", body: { title: d.title.trim().slice(0, 200), description: d.description || null, dueAt: d.dueAt, assigneeMembershipId: d.assigneeMembershipId, estimateMinutes: d.estimateMinutes } });
+        n++;
+        const p = d.assigneeMembershipId ? assignable.find((x) => x.id === d.assigneeMembershipId) : null;
+        if (p) handed.add(p.display_name);
+      }
+      run.current++;
+      setTitle(""); setBefore(""); setPlan(null); setDrafts([]); setStep("type");
+      onAdded(`${n} to-do${n === 1 ? "" : "s"} added.${handed.size ? ` ${andList([...handed])} ${handed.size === 1 ? "has" : "have"} been notified.` : ""}`);
+    } catch (err) {
+      // The ones already added leave the review; the rest stay for another try.
+      const added = new Set(kept.slice(0, n));
+      setDrafts((cur) => cur.filter((d) => !added.has(d)));
+      setError(`${n ? `${n} added. ` : ""}${isApiFailure(err) ? err.error.message : "Cannot reach the server."} The rest are still here; press Add to try again.`);
+      if (n) onAdded(`${n} to-do${n === 1 ? "" : "s"} added.`);
+    } finally { setPending(false); }
+  }
+
+  const update = (i: number, patch: Partial<Draft>) => setDrafts((cur) => cur.map((d, j) => (j === i ? { ...d, ...patch } : d)));
+  const pct = dictation.progress !== null ? Math.round(dictation.progress * 100) : null;
+  const listeningHint = dictation.engine === "whisper"
+    ? `${pct !== null ? `Getting dictation ready (${pct}%). Keep talking.` : "Say your to-dos, one per sentence. Press Stop and they are written out on this computer."}${dictation.englishOnly ? " On-device dictation understands English only." : ""}`
+    : `Say your to-dos, one per sentence${assignable.length ? ", and who each one is for" : ""}. Press Stop when you are done.`;
+
+  return (
+    <div id="new-todo" className={cn("rounded-xl", voice ? "py-0.5" : step === "review" ? "border border-border p-3" : "bg-fill-1 px-3 py-1.5")}
+      onPointerDown={() => { pointerInside.current = true; window.addEventListener("pointerup", () => window.setTimeout(() => { pointerInside.current = false; }, 0), { once: true }); }}
+      onBlur={(e) => {
+        if (pointerInside.current || e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+        if (step === "type" && !voice && !pending && !title.trim()) onClose();
+      }}
+      onKeyDown={(e) => {
+        if (e.key !== "Escape") return;
+        e.preventDefault();
+        if (voice || step === "review") cancelVoice(); else onClose(true);
+      }}>
+      {/* Always mounted, so what happened in the row is announced (the voice card announces its own steps). */}
+      <p role="status" className="sr-only">{announce}</p>
+      {voice ? (
+        <VoiceCapture compact phase={voice}
+          title={step === "planning" ? "Brenda is writing your to-dos…" : undefined}
+          heard={step === "planning" ? title : dictation.heard || null}
+          hint={voice === "listening" ? listeningHint : step === "planning" ? "You check them before anything is added." : pct !== null ? `Getting dictation ready… ${pct}%` : undefined}
+          onStop={voice === "listening" ? () => void stopVoice() : undefined} onCancel={cancelVoice} />
+      ) : step === "review" && plan ? (
+        <div className="grid gap-2">
+          <p className="flex items-start gap-2.5 text-sm font-normal text-secondary">
+            <BrendaGlyph className="mt-0.5 size-4 shrink-0 text-foreground" aria-hidden />
+            <span>{plan.reply ?? `Here ${drafts.length === 1 ? "is the to-do" : `are the ${drafts.length} to-dos`} I heard. Untick any you don't want, or edit them, then add.`}</span>
+          </p>
+          <ul className="space-y-0.5" aria-label="Brenda's drafts">
+            {drafts.map((d, i) => {
+              const meta = [d.dueAt ? `due ${formatDateTime(d.dueAt, timeZone)}` : null, d.estimateMinutes ? `about ${formatDuration(d.estimateMinutes * 60)}` : null].filter(Boolean).join(", ");
+              return (
+                <li key={i} className={cn("flex flex-wrap items-start gap-x-3 gap-y-1.5 rounded-xl px-2 py-2 transition-colors duration-75", d.keep && "bg-fill-0")}>
+                  <input type="checkbox" checked={d.keep} onChange={(e) => update(i, { keep: e.target.checked })} aria-label={`Add “${d.title.trim() || `to-do ${i + 1}`}”`} className="mt-2" />
+                  <div className="min-w-0 flex-[1_1_12rem]">
+                    <input value={d.title} onChange={(e) => update(i, { title: e.target.value })} aria-label={`To-do ${i + 1}`} maxLength={200} autoComplete="off"
+                      className={cn("w-full border-b border-transparent bg-transparent py-1 text-sm font-semibold text-foreground outline-none transition-colors duration-75 hover:border-border-input focus:border-foreground", !d.keep && "text-subtle line-through")} />
+                    {meta ? <p className="text-meta font-normal tabular-nums text-secondary">{meta}</p> : null}
+                    {d.unmatchedAssignee ? <p className="text-meta font-normal text-warning">“{d.unmatchedAssignee}” is not someone you can hand to-dos to; choose who this one is for.</p> : null}
+                  </div>
+                  {assignable.length ? (
+                    <Select aria-label={`Who to-do ${i + 1} is for`} fieldSize="sm" className="w-40" value={d.assigneeMembershipId ?? ""} onChange={(e) => update(i, { assigneeMembershipId: e.target.value || null, unmatchedAssignee: null })}><ForOptions people={assignable} /></Select>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+          {plan.engine === "builtin" && (plan.note || !aiConnected) ? <p className="text-meta font-normal text-secondary">{plan.note ?? "Brenda's AI is not connected yet, so a simple built-in reader drafted these. An owner connects it under Settings."}</p> : null}
+          <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
+            <Button size="sm" variant="secondary" onClick={cancelVoice}>Cancel</Button>
+            <Button ref={addAllRef} size="sm" disabled={pending || !kept.length} loading={pending} onClick={() => void addAll()}>{pending ? "Adding…" : kept.length ? `Add ${kept.length} to-do${kept.length === 1 ? "" : "s"}` : "Nothing ticked"}</Button>
+          </div>
         </div>
-        {assignable.length ? (
-          <Select aria-label="For" className="h-11 w-44 py-1 text-sm" value={assignee} onChange={(e) => setAssignee(e.target.value)}>
-            <option value="">For: me</option>
-            {assignable.some((p) => p.group === "team") ? <optgroup label="Your team">{assignable.filter((p) => p.group !== "organisation").map((p) => <option key={p.id} value={p.id}>For: {p.display_name}</option>)}</optgroup> : null}
-            {assignable.some((p) => p.group === "organisation") ? <optgroup label="Others in the organisation">{assignable.filter((p) => p.group === "organisation").map((p) => <option key={p.id} value={p.id}>For: {p.display_name}{p.team_name ? ` (${p.team_name})` : ""}</option>)}</optgroup> : null}
-          </Select>
-        ) : null}
-        <Presence show={!!title.trim()}>
-          <span className="flex items-center gap-1.5">
-            <IconButton aria-label={details ? "Hide the date and details" : "Add a date and details"} aria-expanded={details} aria-controls="quick-details" onClick={() => setDetails((v) => !v)} className={details ? "border-accent/50 text-accent" : undefined}><CalendarClock className="size-4" aria-hidden /></IconButton>
-            <Button type="submit" disabled={pending || !title.trim()}><Plus className="size-4" aria-hidden />{pending ? "Adding…" : person ? "Hand out" : "Add"}</Button>
+      ) : (
+        <form onSubmit={add} className="flex min-h-11 flex-wrap items-center gap-x-3 gap-y-2">
+          {/* Where the row's checkbox will be, so the new to-do lines up with the ones under it. */}
+          <span aria-hidden className="size-4 shrink-0 rounded-[4px] border border-dashed border-border-input-hover" />
+          <input ref={inputRef} value={title} onChange={(e) => { setTitle(e.target.value); if (error) setError(null); if (dictation.error) dictation.clearError(); }} placeholder="What do you need to do?" aria-label="New to-do" maxLength={200} autoComplete="off"
+            aria-invalid={shownError ? true : undefined} aria-describedby={shownError ? errorId : undefined}
+            className="min-w-0 flex-[1_1_12rem] bg-transparent py-1.5 text-sm font-semibold text-foreground outline-none placeholder:font-normal placeholder:text-subtle" />
+          {/* Free to shrink and wrap on its own line: with "For" beside the buttons it is wider than a phone's row. */}
+          <span className="ml-auto flex max-w-full flex-wrap items-center justify-end gap-1.5">
+            {assignable.length ? <Select aria-label="For" fieldSize="sm" className="w-40" value={assignee} onChange={(e) => setAssignee(e.target.value)}><ForOptions people={assignable} /></Select> : null}
+            {dictation.supported ? <IconButton variant="round" aria-label="Dictate" data-tip="Dictate, and Brenda writes your to-dos" onClick={() => void startVoice()}><Mic aria-hidden /></IconButton> : null}
+            <Button size="sm" variant="ghost" onClick={() => onClose(true)}>Cancel</Button>
+            <Button type="submit" size="sm" disabled={pending || !title.trim()}>{pending ? "Adding…" : person ? "Hand out" : "Add"}</Button>
           </span>
-        </Presence>
-      </div>
-      <Expand show={details && !!title.trim()} id="quick-details">
-        <div className="grid gap-2 pt-1 md:grid-cols-[1fr_auto]">
-          <Field label="Description" htmlFor="quick-desc" hint="optional" error={fieldErrors.description}><Textarea id="quick-desc" value={description} onChange={(e) => setDescription(e.target.value)} rows={2} maxLength={4000} placeholder="What does done look like? Any links or context." /></Field>
-          <Field label="Due date and time" htmlFor="quick-due" hint="a future date schedules it" error={fieldErrors.dueAt}><DatePicker mode="datetime" id="quick-due" value={dueAt} onChange={(v) => setDueAt(v)} className="w-56" /></Field>
-        </div>
-      </Expand>
-      {error ? <Alert tone="danger">{error}</Alert> : null}
-    </form>
+        </form>
+      )}
+      {shownError ? <p id={errorId} role="alert" className="pb-1 pt-1.5 text-meta font-medium text-danger">{shownError}</p> : null}
+      {dictation.notice && !voice ? <p className="pb-1 text-meta font-normal text-secondary">{dictation.notice}</p> : null}
+    </div>
   );
 }

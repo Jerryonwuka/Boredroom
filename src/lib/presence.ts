@@ -6,7 +6,7 @@ export const PRESENCE: Record<Presence, { label: string; hint: string; color: st
   active: { label: "Active", hint: "Working and reachable", color: "var(--success)", live: true },
   away: { label: "Away", hint: "Stepped out for a while", color: "var(--warning)", live: false },
   busy: { label: "Do not disturb", hint: "Heads down; reply later", color: "var(--danger)", live: false },
-  offline: { label: "Offline", hint: "Not working now", color: "var(--fg-faint)", live: false },
+  offline: { label: "Offline", hint: "Not working now", color: "var(--faint)", live: false },
 };
 
 export function isPresence(v: unknown): v is Presence {

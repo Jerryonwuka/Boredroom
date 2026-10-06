@@ -16,6 +16,9 @@ export type TaskRow = {
   progress_percent: number;
 };
 
+/** Ids from a URL are checked before they reach a uuid column: a malformed one is "not found", not a database error. */
+const isUuid = (v: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
+
 const TASK_SELECT = `
   SELECT t.id, t.title, t.status, t.priority, t.category, t.project_id, p.name AS project_name,
          t.assignee_membership_id, pa.display_name AS assignee_name, t.reviewer_membership_id, pr.display_name AS reviewer_name,
@@ -42,11 +45,10 @@ export async function myDay(ctx: OrgContext) {
     const ownTodos = assigned.filter((t) => t.created_by === ctx.membership.id);
     const fromLeads = assigned.filter((t) => t.created_by !== ctx.membership.id);
     const overdue = assigned.filter((t) => t.due_at && new Date(t.due_at) < new Date());
-    const report = await db.maybeOne<{ id: string; status: string; current_version: number }>(`SELECT id, status, current_version FROM daily_reports WHERE membership_id = $1 AND local_date = $2`, [ctx.membership.id, today]);
     const todaySeconds = await db.one<{ n: number }>(
-      `SELECT COALESCE(SUM(EXTRACT(EPOCH FROM (LEAST(COALESCE(i.ended_at, now()), $2::timestamptz + interval '1 day') - GREATEST(i.started_at, $2::timestamptz))))::int, 0) AS n
-       FROM session_intervals i WHERE i.membership_id = $1 AND i.confirmation_status = 'confirmed' AND i.started_at < $2::timestamptz + interval '1 day' AND COALESCE(i.ended_at, now()) > $2::timestamptz`,
-      [ctx.membership.id, dayStartIso(today, ctx.org.timezone)]);
+      `SELECT COALESCE(SUM(EXTRACT(EPOCH FROM (LEAST(COALESCE(i.ended_at, now()), $3::timestamptz) - GREATEST(i.started_at, $2::timestamptz))))::int, 0) AS n
+       FROM session_intervals i WHERE i.membership_id = $1 AND i.confirmation_status = 'confirmed' AND i.started_at < $3::timestamptz AND COALESCE(i.ended_at, now()) > $2::timestamptz`,
+      [ctx.membership.id, dayStartIso(today, ctx.org.timezone), dayEndIso(today, ctx.org.timezone)]);
     const projects = await db.query<{ id: string; name: string }>(`SELECT p.id, p.name FROM projects p WHERE p.organisation_id = $1 AND p.status = 'active' AND (app_has_role($1, 'owner', 'hr', 'manager') OR EXISTS (SELECT 1 FROM project_members pm WHERE pm.project_id = p.id AND pm.membership_id = $2)) ORDER BY p.name`, [ctx.org.id, ctx.membership.id]);
     const members = await db.query<{ id: string; display_name: string }>(`SELECT m.id, pr.display_name FROM memberships m JOIN profiles pr ON pr.id = m.user_id WHERE m.organisation_id = $1 AND m.status = 'active' ORDER BY pr.display_name`, [ctx.org.id]);
     const doneToday = await db.query<{ id: string; title: string; completed_at: string }>(`SELECT id, title, completed_at FROM tasks WHERE assignee_membership_id = $1 AND status = 'completed' AND cleared_at IS NULL AND completed_at >= $2::timestamptz ORDER BY completed_at DESC LIMIT 10`, [ctx.membership.id, dayStartIso(today, ctx.org.timezone)]);
@@ -58,13 +60,16 @@ export async function myDay(ctx: OrgContext) {
        WHERE t.organisation_id = $1 AND t.assignee_membership_id = $2 AND t.cleared_at IS NULL
          AND ((t.status = 'completed' AND t.completed_at < $3::timestamptz) OR (t.archived_at IS NOT NULL AND t.status <> 'completed'))
        ORDER BY COALESCE(t.completed_at, t.archived_at) DESC LIMIT 50`, [ctx.org.id, ctx.membership.id, dayStartIso(today, ctx.org.timezone)]);
-    const policyAcknowledged = ctx.org.current_policy_id ? !!(await db.maybeOne(`SELECT 1 FROM policy_acknowledgements WHERE membership_id = $1 AND policy_id = $2`, [ctx.membership.id, ctx.org.current_policy_id])) : true;
-    return { today, planned, assigned, ownTodos, fromLeads, overdue, report, todaySeconds: todaySeconds.n, projects, members, doneToday, pastTasks, policyAcknowledged };
+    // No policy flag here any more: consent to recording is asked when a recorded session starts (capture.tsx reads the
+    // rules from the current-session payload), so My Day no longer gates on it (owner decision, 5 October 2026).
+    return { today, planned, assigned, ownTodos, fromLeads, overdue, todaySeconds: todaySeconds.n, projects, members, doneToday, pastTasks };
   });
 }
 
-import { localMidnight } from "@/server/lib/time";
+import { localMidnight, addDays } from "@/server/lib/time";
 function dayStartIso(date: string, tz: string) { return localMidnight(date, tz).toISOString(); }
+/** The next local midnight. Not the start plus 24 hours: a day the clocks change on is 23 or 25 hours long. */
+function dayEndIso(date: string, tz: string) { return localMidnight(addDays(date, 1), tz).toISOString(); }
 
 export async function listProjects(ctx: OrgContext) {
   return withUser(ctx.user.profileId, (db) => db.query<{ id: string; name: string; description: string | null; status: string; open_tasks: number; blocked_tasks: number; members: number; created_at: string }>(
@@ -76,6 +81,7 @@ export async function listProjects(ctx: OrgContext) {
 }
 
 export async function projectDetail(ctx: OrgContext, projectId: string) {
+  if (!isUuid(projectId)) return null;
   return withUser(ctx.user.profileId, async (db) => {
     const project = await db.maybeOne<{ id: string; name: string; description: string | null; status: string; requires_due_date: boolean; requires_estimate: boolean; created_by: string }>(`SELECT id, name, description, status, requires_due_date, requires_estimate, created_by FROM projects WHERE id = $1 AND organisation_id = $2`, [projectId, ctx.org.id]);
     if (!project) return null;
@@ -88,6 +94,7 @@ export async function projectDetail(ctx: OrgContext, projectId: string) {
 }
 
 export async function taskDetail(ctx: OrgContext, taskId: string) {
+  if (!isUuid(taskId)) return null;
   return withUser(ctx.user.profileId, async (db) => {
     const task = await db.maybeOne<TaskRow & { expected_output: string; created_by: string; created_by_name: string; completed_at: string | null; created_at: string; team_name: string | null; overdue: boolean }>(
       `${TASK_SELECT.replace("SELECT t.id,", "SELECT t.expected_output, pc.display_name AS created_by_name, t.completed_at, t.created_at, (t.due_at IS NOT NULL AND t.due_at < now() AND t.status <> 'completed') AS overdue, (SELECT string_agg(tt.name, ', ' ORDER BY tt.name) FROM team_members tm JOIN teams tt ON tt.id = tm.team_id WHERE tm.membership_id = t.assignee_membership_id AND tt.archived_at IS NULL) AS team_name, t.id,").replace("LEFT JOIN memberships mr", "JOIN memberships mc ON mc.id = t.created_by JOIN profiles pc ON pc.id = mc.user_id LEFT JOIN memberships mr")} WHERE t.id = $1 AND t.organisation_id = $2`, [taskId, ctx.org.id]);
@@ -126,8 +133,8 @@ export async function teamStatus(ctx: OrgContext, filters: { teamId?: string | n
       `SELECT m.id AS membership_id, pr.display_name, m.employee_code, m.role,
               COALESCE((SELECT array_agg(t.name ORDER BY t.name) FROM team_members tm JOIN teams t ON t.id = tm.team_id WHERE tm.membership_id = m.id), '{}') AS teams,
               s.id AS session_id, s.state AS session_state, s.task_id, tk.title AS task_title, s.started_at, s.last_heartbeat_at,
-              COALESCE((SELECT SUM(EXTRACT(EPOCH FROM (LEAST(COALESCE(i.ended_at, now()), $2::timestamptz + interval '1 day') - GREATEST(i.started_at, $2::timestamptz))))::int
-                        FROM session_intervals i WHERE i.membership_id = m.id AND i.confirmation_status = 'confirmed' AND i.started_at < $2::timestamptz + interval '1 day' AND COALESCE(i.ended_at, now()) > $2::timestamptz), 0) AS today_seconds,
+              COALESCE((SELECT SUM(EXTRACT(EPOCH FROM (LEAST(COALESCE(i.ended_at, now()), $4::timestamptz) - GREATEST(i.started_at, $2::timestamptz))))::int
+                        FROM session_intervals i WHERE i.membership_id = m.id AND i.confirmation_status = 'confirmed' AND i.started_at < $4::timestamptz AND COALESCE(i.ended_at, now()) > $2::timestamptz), 0) AS today_seconds,
               (SELECT count(*) FROM tasks t WHERE t.assignee_membership_id = m.id AND t.status = 'blocked' AND t.archived_at IS NULL)::int AS blocked_tasks,
               (SELECT count(*) FROM tasks t WHERE t.assignee_membership_id = m.id AND t.status IN ('todo','in_progress','blocked') AND t.archived_at IS NULL)::int AS open_tasks,
               (SELECT count(*) FROM tasks t WHERE t.assignee_membership_id = m.id AND t.status = 'in_review' AND t.archived_at IS NULL)::int AS in_review_tasks,
@@ -138,7 +145,7 @@ export async function teamStatus(ctx: OrgContext, filters: { teamId?: string | n
        WHERE m.organisation_id = $1 AND m.status = 'active'
          AND ($3::uuid IS NULL OR EXISTS (SELECT 1 FROM team_members tm WHERE tm.membership_id = m.id AND tm.team_id = $3))
          AND app_can_view_records($1, m.id)
-       ORDER BY (s.id IS NULL), pr.display_name`, [ctx.org.id, dayStart, filters.teamId ?? null]);
+       ORDER BY (s.id IS NULL), pr.display_name`, [ctx.org.id, dayStart, filters.teamId ?? null, dayEndIso(today, ctx.org.timezone)]);
     const teams = await db.query<{ id: string; name: string }>(`SELECT id, name FROM teams WHERE organisation_id = $1 AND archived_at IS NULL ORDER BY name`, [ctx.org.id]);
     const timings = await db.maybeOne<{ stale_after_seconds: number }>(`SELECT stale_after_seconds FROM policies WHERE id = $1`, [ctx.org.current_policy_id]);
     const now = await db.one<{ now: string }>(`SELECT now() AS now`);
@@ -200,12 +207,15 @@ export async function settingsView(ctx: OrgContext) {
   });
 }
 
+/**
+ * The current monitoring notice and recording rules, and when this person agreed to them (asked once, when a recorded
+ * session starts; there is no Policy page or general sign-off since 5 October 2026). Brenda's get_policy reads it.
+ */
 export async function policyView(ctx: OrgContext) {
   return withUser(ctx.user.profileId, async (db) => {
     const policy = await db.maybeOne<{ id: string; version: number; recording_mode: string; retention_days: number; notice_text: string; effective_at: string | null }>(`SELECT id, version, recording_mode, retention_days, notice_text, effective_at FROM policies WHERE id = $1`, [ctx.org.current_policy_id]);
-    const ack = await db.maybeOne<{ acknowledged_at: string }>(`SELECT acknowledged_at FROM policy_acknowledgements WHERE membership_id = $1 AND policy_id = $2`, [ctx.membership.id, ctx.org.current_policy_id]);
-    const history = await db.query<{ policy_id: string; version: number; acknowledged_at: string }>(`SELECT a.policy_id, p.version, a.acknowledged_at FROM policy_acknowledgements a JOIN policies p ON p.id = a.policy_id WHERE a.membership_id = $1 ORDER BY a.acknowledged_at DESC`, [ctx.membership.id]);
-    return { policy, acknowledgedAt: ack?.acknowledged_at ?? null, history };
+    const agreed = await db.maybeOne<{ acknowledged_at: string }>(`SELECT acknowledged_at FROM policy_acknowledgements WHERE membership_id = $1 AND policy_id = $2`, [ctx.membership.id, ctx.org.current_policy_id]);
+    return { policy, agreedAt: agreed?.acknowledged_at ?? null };
   });
 }
 
@@ -221,14 +231,8 @@ export async function reviewQueue(ctx: OrgContext) {
          AND (t.reviewer_membership_id = $2 OR app_has_role($1, 'owner', 'hr') OR app_manages($1, t.assignee_membership_id))
          AND NOT EXISTS (SELECT 1 FROM reviews r WHERE r.submission_id = s.id AND r.decision <> 'question')
        ORDER BY s.submitted_at`, [ctx.org.id, ctx.membership.id]);
-    const reports = await db.query<{ id: string; membership_id: string; display_name: string; local_date: string; current_version: number; total_seconds: number; blockers: string; next_priorities: string; submitted_at: string; has_adjustment: boolean }>(
-      `SELECT r.id, r.membership_id, pr.display_name, r.local_date, r.current_version, v.total_seconds, v.blockers, v.next_priorities, v.submitted_at, (v.adjustment_id IS NOT NULL) AS has_adjustment
-       FROM daily_reports r JOIN report_versions v ON v.report_id = r.id AND v.version = r.current_version
-       JOIN memberships m ON m.id = r.membership_id JOIN profiles pr ON pr.id = m.user_id
-       WHERE r.organisation_id = $1 AND r.status = 'submitted' AND r.membership_id <> $2 AND (app_has_role($1, 'owner', 'hr') OR app_manages($1, r.membership_id))
-       ORDER BY v.submitted_at`, [ctx.org.id, ctx.membership.id]);
-    const adjustments = await db.query<{ id: string; display_name: string; task_title: string; reason: string; evidence_note: string | null; proposed_intervals: { startedAt: string; endedAt: string }[]; original_count: number; created_at: string; report_id: string | null }>(
-      `SELECT a.id, pr.display_name, t.title AS task_title, a.reason, a.evidence_note, a.proposed_intervals, cardinality(a.original_interval_ids) AS original_count, a.created_at, a.report_id
+    const adjustments = await db.query<{ id: string; display_name: string; task_title: string; reason: string; evidence_note: string | null; proposed_intervals: { startedAt: string; endedAt: string }[]; original_count: number; created_at: string }>(
+      `SELECT a.id, pr.display_name, t.title AS task_title, a.reason, a.evidence_note, a.proposed_intervals, cardinality(a.original_interval_ids) AS original_count, a.created_at
        FROM time_adjustments a JOIN memberships m ON m.id = a.membership_id JOIN profiles pr ON pr.id = m.user_id JOIN tasks t ON t.id = a.task_id
        WHERE a.organisation_id = $1 AND a.status = 'pending' AND a.membership_id <> $2 AND (app_has_role($1, 'owner', 'hr') OR app_manages($1, a.membership_id)) ORDER BY a.created_at`, [ctx.org.id, ctx.membership.id]);
     const exceptions = await db.query<{ id: string; display_name: string; reason_code: string; reason: string; created_at: string; task_title: string | null }>(
@@ -241,19 +245,7 @@ export async function reviewQueue(ctx: OrgContext) {
     const overdue = await db.query<{ id: string; title: string; assignee_name: string; assignee_membership_id: string; assignee_profile_id: string; assignee_avatar_key: string | null; due_at: string; status: string }>(
       `SELECT t.id, t.title, pr.display_name AS assignee_name, m.id AS assignee_membership_id, pr.id AS assignee_profile_id, pr.avatar_key AS assignee_avatar_key, t.due_at, t.status FROM tasks t JOIN memberships m ON m.id = t.assignee_membership_id JOIN profiles pr ON pr.id = m.user_id
        WHERE t.organisation_id = $1 AND t.archived_at IS NULL AND t.status <> 'completed' AND t.due_at < now() AND (app_has_role($1, 'owner', 'hr') OR app_manages($1, t.assignee_membership_id)) ORDER BY t.due_at LIMIT 50`, [ctx.org.id]);
-    const missing = ctx.membership.role === "employee" ? [] : await db.query<{ membership_id: string; display_name: string; local_date: string }>(
-      `WITH sched AS (SELECT working_days FROM schedules WHERE organisation_id = $1 AND membership_id IS NULL ORDER BY effective_from DESC, created_at DESC LIMIT 1),
-       days AS (SELECT d::date AS local_date FROM generate_series((now() AT TIME ZONE $2)::date - 7, (now() AT TIME ZONE $2)::date - 1, interval '1 day') d)
-       SELECT m.id AS membership_id, pr.display_name, days.local_date::text
-       FROM memberships m JOIN profiles pr ON pr.id = m.user_id CROSS JOIN days, sched
-       WHERE m.organisation_id = $1 AND m.status = 'active' AND m.id <> $3 AND m.created_at::date <= days.local_date
-         AND EXTRACT(DOW FROM days.local_date)::int = ANY(sched.working_days)
-         AND (app_has_role($1, 'owner', 'hr') OR app_manages($1, m.id))
-         AND NOT EXISTS (SELECT 1 FROM daily_reports r WHERE r.membership_id = m.id AND r.local_date = days.local_date AND r.status <> 'draft')
-         AND NOT EXISTS (SELECT 1 FROM workday_exemptions e WHERE e.membership_id = m.id AND e.local_date = days.local_date)
-         AND EXISTS (SELECT 1 FROM session_intervals i WHERE i.membership_id = m.id AND i.started_at >= days.local_date - 1 AND i.started_at < days.local_date + 2)
-       ORDER BY days.local_date DESC, pr.display_name LIMIT 50`, [ctx.org.id, ctx.org.timezone, ctx.membership.id]);
-    return { submissions, reports, adjustments, exceptions, incidents, overdue, missing };
+    return { submissions, adjustments, exceptions, incidents, overdue };
   });
 }
 
@@ -262,9 +254,10 @@ export async function orgDashboard(ctx: OrgContext) {
   return withUser(ctx.user.profileId, async (db) => {
     const today = todayLocal(ctx.org.timezone);
     const dayStart = dayStartIso(today, ctx.org.timezone);
+    const dayEnd = dayEndIso(today, ctx.org.timezone);
     // Two statements: the figures (with the policy timing and the server clock folded in), then the three lists as JSON.
     // Each statement is a round trip to the database, and the database may be far away.
-    const counts = await db.one<{ people: number; teams: number; connected: number; working: number; tasks_done_today: number; tasks_done_total: number; tasks_open: number; tasks_blocked: number; tasks_in_review: number; seconds_today: number; reports_pending: number; stale: number; server_now: string }>(
+    const counts = await db.one<{ people: number; teams: number; connected: number; working: number; tasks_done_today: number; tasks_done_total: number; tasks_open: number; tasks_blocked: number; tasks_in_review: number; seconds_today: number; stale: number; server_now: string }>(
       `WITH pol AS (SELECT COALESCE((SELECT stale_after_seconds FROM policies WHERE id = $3::uuid), 90)::int AS stale)
        SELECT
          (SELECT stale FROM pol) AS stale, now()::text AS server_now,
@@ -277,10 +270,9 @@ export async function orgDashboard(ctx: OrgContext) {
          (SELECT count(*) FROM tasks t WHERE t.organisation_id = $1 AND t.status IN ('todo','in_progress') AND t.archived_at IS NULL)::int AS tasks_open,
          (SELECT count(*) FROM tasks t WHERE t.organisation_id = $1 AND t.status = 'blocked' AND t.archived_at IS NULL)::int AS tasks_blocked,
          (SELECT count(*) FROM tasks t WHERE t.organisation_id = $1 AND t.status = 'in_review' AND t.archived_at IS NULL)::int AS tasks_in_review,
-         COALESCE((SELECT SUM(EXTRACT(EPOCH FROM (LEAST(COALESCE(i.ended_at, now()), $2::timestamptz + interval '1 day') - GREATEST(i.started_at, $2::timestamptz))))::int
-                   FROM session_intervals i WHERE i.organisation_id = $1 AND i.confirmation_status = 'confirmed' AND i.started_at < $2::timestamptz + interval '1 day' AND COALESCE(i.ended_at, now()) > $2::timestamptz), 0) AS seconds_today,
-         (SELECT count(*) FROM daily_reports r WHERE r.organisation_id = $1 AND r.status = 'submitted')::int AS reports_pending`,
-      [ctx.org.id, dayStart, ctx.org.current_policy_id]);
+         COALESCE((SELECT SUM(EXTRACT(EPOCH FROM (LEAST(COALESCE(i.ended_at, now()), $4::timestamptz) - GREATEST(i.started_at, $2::timestamptz))))::int
+                   FROM session_intervals i WHERE i.organisation_id = $1 AND i.confirmation_status = 'confirmed' AND i.started_at < $4::timestamptz AND COALESCE(i.ended_at, now()) > $2::timestamptz), 0) AS seconds_today`,
+      [ctx.org.id, dayStart, ctx.org.current_policy_id, dayEnd]);
     const stale = counts.stale;
     type WorkingNow = { membership_id: string; display_name: string; team_names: string[]; state: string; task_id: string; task_title: string; task_progress: number; started_at: string; last_heartbeat_at: string; today_seconds: number };
     type TeamRow = { id: string; name: string; members: number; leads: string[]; lead_ids: string[]; open_tasks: number; blocked: number; working: number; project_id: string | null };
@@ -291,7 +283,7 @@ export async function orgDashboard(ctx: OrgContext) {
         SELECT m.id AS membership_id, pr.display_name,
               COALESCE((SELECT array_agg(t.name ORDER BY t.name) FROM team_members tm JOIN teams t ON t.id = tm.team_id WHERE tm.membership_id = m.id), '{}') AS team_names,
               s.state, s.task_id, tk.title AS task_title, tk.progress_percent::int AS task_progress, s.started_at, s.last_heartbeat_at,
-              COALESCE((SELECT SUM(EXTRACT(EPOCH FROM (LEAST(COALESCE(i.ended_at, now()), $2::timestamptz + interval '1 day') - GREATEST(i.started_at, $2::timestamptz))))::int FROM session_intervals i WHERE i.membership_id = m.id AND i.confirmation_status = 'confirmed' AND i.started_at < $2::timestamptz + interval '1 day' AND COALESCE(i.ended_at, now()) > $2::timestamptz), 0) AS today_seconds
+              COALESCE((SELECT SUM(EXTRACT(EPOCH FROM (LEAST(COALESCE(i.ended_at, now()), $3::timestamptz) - GREATEST(i.started_at, $2::timestamptz))))::int FROM session_intervals i WHERE i.membership_id = m.id AND i.confirmation_status = 'confirmed' AND i.started_at < $3::timestamptz AND COALESCE(i.ended_at, now()) > $2::timestamptz), 0) AS today_seconds
        FROM work_sessions s JOIN memberships m ON m.id = s.membership_id JOIN profiles pr ON pr.id = m.user_id JOIN tasks tk ON tk.id = s.task_id
        WHERE s.organisation_id = $1 AND s.state IN ('running','paused','interrupted') ORDER BY s.started_at) w) AS working_now,
        (SELECT json_agg(t2) FROM (
@@ -305,7 +297,7 @@ export async function orgDashboard(ctx: OrgContext) {
        FROM teams t WHERE t.organisation_id = $1 AND t.archived_at IS NULL ORDER BY t.name) t2) AS teams,
        (SELECT json_agg(d) FROM (
         SELECT t.id, t.title, pr.display_name AS assignee_name, t.completed_at FROM tasks t JOIN memberships m ON m.id = t.assignee_membership_id JOIN profiles pr ON pr.id = m.user_id
-        WHERE t.organisation_id = $1 AND t.status = 'completed' ORDER BY t.completed_at DESC LIMIT 8) d) AS recent_done`, [ctx.org.id, dayStart]);
+        WHERE t.organisation_id = $1 AND t.status = 'completed' ORDER BY t.completed_at DESC LIMIT 8) d) AS recent_done`, [ctx.org.id, dayStart, dayEnd]);
     // Timestamps inside json come back as ISO strings with an offset; normalise them to the same UTC form the type parsers produce.
     const iso = (s: string | null) => (s ? new Date(s).toISOString() : s);
     const workingNow = (lists.working_now ?? []).map((r) => ({ ...r, started_at: iso(r.started_at)!, last_heartbeat_at: iso(r.last_heartbeat_at)! }));
@@ -317,6 +309,7 @@ export async function orgDashboard(ctx: OrgContext) {
 
 /** Team board: the lead's working area (members, their tasks, who is on what). */
 export async function teamBoard(ctx: OrgContext, teamId: string) {
+  if (!isUuid(teamId)) return null;
   return withUser(ctx.user.profileId, async (db) => {
     const team = await db.maybeOne<{ id: string; name: string; project_id: string | null; project_name: string | null }>(`SELECT t.id, t.name, t.project_id, p.name AS project_name FROM teams t LEFT JOIN projects p ON p.id = t.project_id WHERE t.id = $1 AND t.organisation_id = $2 AND t.archived_at IS NULL`, [teamId, ctx.org.id]);
     if (!team) return null;
@@ -425,7 +418,7 @@ export async function workroomView(ctx: OrgContext, filters: { teamId?: string |
     const today = todayLocal(ctx.org.timezone);
     const dayStart = dayStartIso(today, ctx.org.timezone);
     const rows = await db.query<WorkroomRow>(
-      `WITH day AS (SELECT $2::timestamptz AS start_at, $2::timestamptz + interval '1 day' AS end_at)
+      `WITH day AS (SELECT $2::timestamptz AS start_at, $4::timestamptz AS end_at)
        SELECT * FROM (
        SELECT m.id AS membership_id, pr.display_name, m.employee_code, m.role,
               COALESCE((SELECT array_agg(t.name ORDER BY t.name) FROM team_members tm JOIN teams t ON t.id = tm.team_id WHERE tm.membership_id = m.id AND t.archived_at IS NULL), '{}') AS teams,
@@ -447,7 +440,7 @@ export async function workroomView(ctx: OrgContext, filters: { teamId?: string |
          AND ($3::uuid IS NULL OR EXISTS (SELECT 1 FROM team_members tm WHERE tm.membership_id = m.id AND tm.team_id = $3))
          AND app_can_view_records($1, m.id)) w
        ORDER BY CASE w.session_state WHEN 'running' THEN 0 WHEN 'paused' THEN 1 WHEN 'interrupted' THEN 1 ELSE 2 END, (w.first_start_today IS NULL), w.display_name`,
-      [ctx.org.id, dayStart, filters.teamId ?? null]);
+      [ctx.org.id, dayStart, filters.teamId ?? null, dayEndIso(today, ctx.org.timezone)]);
     const teams = await db.query<{ id: string; name: string }>(`SELECT id, name FROM teams WHERE organisation_id = $1 AND archived_at IS NULL ORDER BY name`, [ctx.org.id]);
     const timings = await db.maybeOne<{ stale_after_seconds: number }>(`SELECT stale_after_seconds FROM policies WHERE id = $1`, [ctx.org.current_policy_id]);
     const now = await db.one<{ now: string }>(`SELECT now() AS now`);
@@ -466,7 +459,7 @@ export async function workroomPerson(ctx: OrgContext, membershipId: string) {
     const person = all.rows.find((r) => r.membership_id === membershipId);
     if (!person) return null;
     const tasks = await db.query<WorkroomTaskRow>(
-      `WITH day AS (SELECT $2::timestamptz AS start_at, $2::timestamptz + interval '1 day' AS end_at)
+      `WITH day AS (SELECT $2::timestamptz AS start_at, $5::timestamptz AS end_at)
        SELECT t.id, t.title, t.status, p.name AS project_name, t.due_at, t.completed_at, pc.display_name AS created_by_name,
               COALESCE((SELECT SUM(EXTRACT(EPOCH FROM (LEAST(COALESCE(i.ended_at, now()), day.end_at) - GREATEST(i.started_at, day.start_at))))::int FROM session_intervals i, day WHERE i.task_id = t.id AND i.membership_id = $3 AND i.confirmation_status = 'confirmed' AND i.started_at < day.end_at AND COALESCE(i.ended_at, now()) > day.start_at), 0) AS seconds_today,
               (SELECT count(*) FROM work_sessions ws, day WHERE ws.task_id = t.id AND ws.membership_id = $3 AND ws.started_at >= day.start_at AND ws.started_at < day.end_at)::int AS sessions_today,
@@ -481,7 +474,7 @@ export async function workroomPerson(ctx: OrgContext, membershipId: string) {
               OR EXISTS (SELECT 1 FROM daily_plan_items d WHERE d.task_id = t.id AND d.membership_id = $3 AND d.local_date = $4::date)
               OR t.status IN ('in_progress','blocked','in_review'))
        ORDER BY current DESC, CASE t.status WHEN 'in_progress' THEN 0 WHEN 'blocked' THEN 1 WHEN 'todo' THEN 2 WHEN 'in_review' THEN 3 ELSE 4 END, seconds_today DESC, t.title`,
-      [ctx.org.id, dayStart, membershipId, today]);
+      [ctx.org.id, dayStart, membershipId, today, dayEndIso(today, ctx.org.timezone)]);
     const sessions = await db.query<{ id: string; task_id: string; task_title: string; state: string; started_at: string; ended_at: string | null; stop_outcome: string | null; stop_note: string | null; seconds: number; recordings: number }>(
       `SELECT s.id, s.task_id, t.title AS task_title, s.state, s.started_at, s.ended_at, s.stop_outcome, s.stop_note,
               COALESCE((SELECT SUM(EXTRACT(EPOCH FROM (COALESCE(i.ended_at, now()) - i.started_at)))::int FROM session_intervals i WHERE i.session_id = s.id AND i.confirmation_status = 'confirmed'), 0) AS seconds,

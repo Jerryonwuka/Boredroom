@@ -1,26 +1,33 @@
 "use client";
 
 /**
- * Brenda (owner decision, 3 October 2026): a floating sparkle bottom right on every page opens a side panel to talk to
- * her, typed or spoken. Her own-work actions come back as done lines; anything that lands on someone else comes back
- * as a prepared action with Confirm and Not now, and only runs when the person presses Confirm.
+ * Brenda (owner decision, 3 October 2026): a floating button bottom right on every page opens a side panel to talk to
+ * her, typed or spoken. The conversation itself (`brenda-chat.tsx`) is shared with Brenda Home.
+ *
+ * In the style of the desktop notch (owner decision, 4 October 2026): her living face on the button and in the header
+ * (poke her); her mood and a soft glow follow the conversation; the same small sounds, with a mute switch.
+ *
+ * Not on Brenda's own page (owner decision, 5 October 2026): that page is the conversation with her, so the floating
+ * button and its panel stay out of the way there.
+ *
+ * Its conversations are kept like the ones on Brenda's page (owner decision, 5 October 2026), and Past chats in the
+ * header opens her chat there with the list beside it (`?tab=history`). Dictating here shows the notch's voice card,
+ * as everywhere (it comes with the shared box).
+ *
+ * v4 (6 October 2026): the panel is the right-side sheet (spec §7 Dialogs): full height, 512px (the whole width of a
+ * phone), the canvas colour, a hairline on its left and the sheet shadow, over the grey overlay at 30% with no blur;
+ * its header is the sheet's (title 18/26 medium, the question in the secondary grey) with ghost icon buttons on the
+ * right. No glass and no glow. The floating button is a 56px circle on the popover surface with the toast shadow.
  */
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { useRouter } from "next/navigation";
-import { AlarmClock, ArrowUpRight, Check, Play, Plus, Sparkles, X, ShieldCheck } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { IconButton } from "@/components/ui/icon-button";
-import { Alert } from "@/components/ui/states";
-import { Presence } from "@/components/ui/motion";
-import { VoicePoweredOrb } from "@/components/ui/voice-powered-orb";
-import { PromptInputBox } from "@/components/ui/ai-prompt-box";
-import { TypingIndicator } from "@/components/ui/chat-messages";
-import { useDictation } from "@/hooks/use-dictation";
-import { api, isApiFailure } from "@/lib/api-client";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { History, MessageSquareText, Volume2, VolumeX, X } from "lucide-react";
+import { IconButton, ICON_BUTTON } from "@/components/ui/icon-button";
+import { BrendaFace } from "@/components/app/brenda-face";
+import { BrendaComposer, BrendaMessages, STARTERS, useBrendaChat } from "@/components/app/brenda-chat";
+import { playSound, soundsMuted, setSoundsMuted, subscribeSounds } from "@/lib/brenda-sound";
 import { cn } from "@/lib/utils";
-import type { Action, ChatResult, Proposal } from "@/server/services/copilot";
-
-type Msg = { role: "user" | "assistant"; content: string; actions?: Action[]; proposals?: (Proposal & { done?: string; pending?: boolean })[]; engine?: ChatResult["engine"]; note?: string | null };
 
 // Where the floating button sits. Dragged positions are remembered per browser; nothing set means bottom right.
 const POS_KEY = "boredroom-assistant-pos";
@@ -40,20 +47,13 @@ function useFloatingPosition() {
   return clamp(x, y);
 }
 
-const STARTERS: Record<"org" | "worker", string[]> = {
-  org: ["What's waiting for me today?", "Who is working right now?", "Which assignments has nobody picked up?", "Remind me to review the payroll at 4pm"],
-  worker: ["What's waiting for me today?", "What should I work on first?", "Start the timer on my highest-priority task", "Remind me to call Josh at 7"],
-};
-
 export function AssistantDrawer({ orgSlug, isOrg, firstName, floating = false }: { orgSlug: string; isOrg: boolean; firstName: string; floating?: boolean }) {
   const [open, setOpen] = useState(false);
-  const [messages, setMessages] = useState<Msg[]>([]);
-  const [text, setText] = useState("");
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [voiceActive, setVoiceActive] = useState(false);
-  const dictation = useDictation(text, setText);
-  const router = useRouter();
+  const onBrendaPage = /^\/app\/[^/]+\/home\/?$/.test(usePathname() ?? "");
+  const muted = useSyncExternalStore(subscribeSounds, soundsMuted, () => false);
+  // Y and N answer this panel's Confirm only while it is open and showing; on Brenda's page her own chat takes them.
+  const chat = useBrendaChat({ orgSlug, keysActive: open && !onBrendaPage, onLeave: () => setOpen(false) });
+  const { messages, pending, dictation, send, look } = chat;
   const listRef = useRef<HTMLDivElement>(null);
   const fabRef = useRef<HTMLButtonElement>(null);
   const pos = useFloatingPosition();
@@ -81,44 +81,14 @@ export function AssistantDrawer({ orgSlug, isOrg, firstName, floating = false }:
     setOpen((v) => !v);
   };
 
-  useEffect(() => { if (!open) return; const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { dictation.stop(); setOpen(false); } }; document.addEventListener("keydown", onKey); return () => document.removeEventListener("keydown", onKey); }, [open, dictation]);
+  const opened = useRef(false);
+  useEffect(() => { if (opened.current !== open) { if (open || opened.current) playSound(open ? "open" : "close"); opened.current = open; } }, [open]);
+  useEffect(() => { if (!open) return; const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { void dictation.stop(); setOpen(false); } }; document.addEventListener("keydown", onKey); return () => document.removeEventListener("keydown", onKey); }, [open, dictation]);
   useEffect(() => { listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: "smooth" }); }, [messages, pending]);
 
-  async function send(content = text) {
-    const q = content.trim();
-    if (!q || pending) return;
-    if (dictation.listening) dictation.stop();
-    const next: Msg[] = [...messages, { role: "user", content: q }];
-    setMessages(next); setText(""); setPending(true); setError(null);
-    try {
-      const r = await api<ChatResult>(`/api/orgs/${orgSlug}/assistant/chat`, { method: "POST", body: { messages: next.slice(-20).map((m) => ({ role: m.role, content: m.content })) }, retries: 0 });
-      setMessages((cur) => [...cur, { role: "assistant", content: r.reply, actions: r.actions, proposals: r.proposals, engine: r.engine, note: r.note }]);
-      if (r.actions?.length) router.refresh();
-    } catch (err) { setError(isApiFailure(err) ? err.error.message : "Cannot reach the server."); setMessages(next); }
-    finally { setPending(false); }
-  }
-
-  async function act(mi: number, pi: number, p: Proposal) {
-    const mark = (done: string) => setMessages((cur) => cur.map((m, i) => (i === mi && m.proposals ? { ...m, proposals: m.proposals.map((x, j) => (j === pi ? { ...x, done } : x)) } : m)));
-    setError(null);
-    try {
-      if (p.kind === "open") { setOpen(false); router.push(p.href); return; }
-      if (p.kind === "todo") { await api(`/api/orgs/${orgSlug}/todos`, { method: "POST", body: { title: p.title, description: p.description, dueAt: p.dueAt, assigneeMembershipId: p.assigneeMembershipId, estimateMinutes: p.estimateMinutes } }); mark("Added"); }
-      else if (p.kind === "clock_in") { await api(`/api/orgs/${orgSlug}/clock/in`, { method: "POST" }); mark("Clocked in"); }
-      else if (p.kind === "clock_out") { await api(`/api/orgs/${orgSlug}/clock/out`, { method: "POST" }); mark("Clocked out"); }
-      else if (p.kind === "start_timer") { await api(`/api/orgs/${orgSlug}/sessions/start`, { method: "POST", body: { taskId: p.taskId } }); mark("Started"); }
-      else if (p.kind === "confirm") {
-        const r = await api<{ actions: Action[]; error: string | null }>(`/api/orgs/${orgSlug}/brenda/confirm`, { method: "POST", body: { token: p.token }, retries: 0 });
-        if (r.error) { setError(r.error); return; }
-        mark("Done");
-        if (r.actions.length) setMessages((cur) => cur.map((m, i) => (i === mi ? { ...m, actions: [...(m.actions ?? []), ...r.actions] } : m)));
-      }
-      router.refresh();
-    } catch (err) { setError(isApiFailure(err) ? err.error.message : "Cannot reach the server."); }
-  }
-
   const starters = STARTERS[isOrg ? "org" : "worker"];
-  const close = () => { dictation.stop(); setOpen(false); };
+  const close = () => { void dictation.stop(); setOpen(false); };
+  if (onBrendaPage) return null;
 
   return (
     <>
@@ -127,88 +97,58 @@ export function AssistantDrawer({ orgSlug, isOrg, firstName, floating = false }:
           onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={() => { drag.current = null; }}
           onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpen((v) => !v); } }}
           style={pos ? { left: pos.x, top: pos.y, right: "auto", bottom: "auto" } : undefined}
-          className={cn("fixed bottom-6 right-6 z-[var(--z-sticky)] grid size-14 touch-none select-none place-items-center rounded-full border text-accent transition-[box-shadow,border-color] duration-[var(--duration)] ease-[var(--ease-out)] cursor-grab active:cursor-grabbing hover:border-accent focus-visible:outline-2 focus-visible:outline-[var(--border-strong)] focus-visible:outline-offset-2",
-            "border-accent/50 bg-[var(--btn-bg)]", open && !pos && "translate-x-[calc(-26rem+3.5rem)] md:translate-x-0")}>
-          <Sparkles className="size-6 pointer-events-none" aria-hidden />
+          className="fixed bottom-6 right-6 z-[var(--z-sticky)] grid size-14 cursor-grab touch-none select-none place-items-center rounded-full bg-popover shadow-toast transition-[background-color] duration-75 hover:bg-[color-mix(in_srgb,var(--foreground)_4.3%,var(--popover))] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ring)] active:cursor-grabbing">
+          <BrendaFace size="md" mood={look.mood} tone={look.tone} className="pointer-events-none" />
         </button>
       ) : (
-        <IconButton aria-label="Brenda" aria-expanded={open} aria-controls="assistant-drawer" onClick={() => setOpen((v) => !v)} className={cn(open && "border-accent/60 text-accent")}>
-          <Sparkles className="size-[18px]" aria-hidden />
+        <IconButton aria-label="Brenda" aria-expanded={open} aria-controls="assistant-drawer" onClick={() => setOpen((v) => !v)}>
+          <BrendaFace size="sm" mood={look.mood} tone={look.tone} />
         </IconButton>
       )}
-      {open ? <button type="button" aria-label="Close assistant" className="fixed inset-0 z-[var(--z-overlay)] bg-[var(--overlay)] md:bg-transparent" onClick={close} /> : null}
-      <aside id="assistant-drawer" role="dialog" aria-label="Brenda" aria-hidden={!open} data-refresh-safe
-        className={cn("fixed inset-y-0 right-0 z-[var(--z-dialog)] flex w-full max-w-[26rem] flex-col border-l border-border bg-bg-elevated shadow-[var(--card-shadow)] transition-transform duration-[var(--duration)] ease-[var(--ease-out)]", open ? "translate-x-0" : "translate-x-full")}>
-        <header className="flex items-center justify-between gap-3 border-b border-border-soft px-5 py-4">
-          <div className="flex items-center gap-3">
-            <div className="grid size-9 place-items-center rounded-full bg-accent-soft"><Sparkles className="size-4 text-accent" aria-hidden /></div>
-            <div><p className="eyebrow eyebrow-accent">Brenda</p><h2 className="font-display text-lg leading-tight">What do you need, {firstName}?</h2></div>
+      {open ? <button type="button" aria-label="Close Brenda" tabIndex={-1} className="fixed inset-0 z-[var(--z-overlay)] bg-overlay" onClick={close} /> : null}
+      {/* Closed, it only slides off screen: `inert` keeps its controls out of the Tab order and away from screen readers. */}
+      <aside id="assistant-drawer" role="dialog" aria-labelledby="assistant-drawer-title" aria-describedby="assistant-drawer-question" aria-hidden={!open} inert={!open} data-refresh-safe
+        className={cn("fixed inset-y-0 right-0 z-[var(--z-dialog)] flex w-[min(100vw,var(--sheet-width))] flex-col border-l border-border bg-background shadow-sheet transition-[translate,visibility] duration-[var(--duration-sheet)] ease-[var(--ease-out)]",
+          open ? "visible translate-x-0" : "invisible translate-x-full")}>
+        <header className="flex shrink-0 items-start gap-3 border-b border-border py-5 pl-6 pr-4">
+          <BrendaFace size="lg" mood={look.mood} tone={look.tone} interactive className="mt-0.5" />
+          <div className="min-w-0 flex-1">
+            <h2 id="assistant-drawer-title" className="type-dialog-title">Brenda</h2>
+            <p id="assistant-drawer-question" className="truncate text-sm font-medium text-secondary">What do you need, {firstName}?</p>
           </div>
-          <IconButton aria-label="Close" onClick={close}><X className="size-[18px]" aria-hidden /></IconButton>
+          <div className="flex shrink-0 items-center gap-1">
+            {/* Saves what is waiting first, so the list it opens already has this conversation. */}
+            <Link href={`/app/${orgSlug}/home?tab=history`} aria-label="Past chats" className={ICON_BUTTON} onClick={() => { chat.saveNow(); close(); }}>
+              <History aria-hidden />
+            </Link>
+            <IconButton aria-label={muted ? "Turn Brenda's sounds on" : "Turn Brenda's sounds off"} aria-pressed={!muted} onClick={() => { setSoundsMuted(!muted); if (muted) playSound("reply"); }}>
+              {muted ? <VolumeX aria-hidden /> : <Volume2 aria-hidden />}
+            </IconButton>
+            <IconButton aria-label="Close" onClick={close}><X aria-hidden /></IconButton>
+          </div>
         </header>
 
-        <div ref={listRef} className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
+        <div ref={listRef} className="scroll-thin min-h-0 flex-1 space-y-5 overflow-y-auto px-6 py-5">
           {messages.length === 0 ? (
-            <div className="space-y-3">
-              <p className="text-sm text-fg-muted">I&apos;m Brenda. Tell me what you need done and I&apos;ll take care of it: {isOrg ? "see what is waiting, assign work, follow up on tasks nobody picked up, message people, set reminders" : "see what is waiting, start and stop your timer, clock in, update your tasks, set reminders"}. I act as you, with your permissions, and I ask before anything that lands on someone else.</p>
-              <ul className="space-y-1.5">{starters.map((s) => <li key={s}><button type="button" className="chip chip-link w-full px-3 py-2 text-left text-sm" onClick={() => void send(s)}>{s}</button></li>)}</ul>
+            <div className="space-y-4">
+              <p className="text-sm font-normal text-secondary">I&apos;m Brenda. Tell me what you need done and I&apos;ll take care of it: {isOrg ? "see what is waiting, assign work, follow up on tasks nobody picked up, message people, set reminders" : "see what is waiting, start and stop your timer, clock in, update your tasks, set reminders"}. I act as you, with your permissions, and I ask before anything that lands on someone else.</p>
+              {/* Chips (spec §7): h40 r12 px12 outline, 14/20 medium. */}
+              <ul className="space-y-2">{starters.map((s) => (
+                <li key={s}>
+                  <button type="button" onClick={() => void send(s, false)}
+                    className="flex min-h-10 w-full items-center gap-2 rounded-xl border border-border-input bg-background px-3 py-2 text-left text-sm font-medium text-foreground transition-colors duration-75 hover:border-border-input-hover hover:bg-fill-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ring)]">
+                    <MessageSquareText className="size-[18px] shrink-0 text-secondary" aria-hidden /><span className="min-w-0 flex-1">{s}</span>
+                  </button>
+                </li>
+              ))}</ul>
             </div>
           ) : null}
-          {messages.map((m, mi) => (
-            <div key={mi} className={cn("flex", m.role === "user" ? "justify-end" : "justify-start")}>
-              <div className={cn("max-w-[90%] space-y-2", m.role === "user" ? "rounded-2xl rounded-tr-md border border-[var(--bubble-mine-border)] bg-[var(--bubble-mine)] px-3.5 py-2.5 text-sm text-fg" : "text-sm")}>
-                {m.role === "assistant" ? <div className="flex gap-2"><Sparkles className="mt-0.5 size-4 shrink-0 text-accent" aria-hidden /><p className="whitespace-pre-wrap">{m.content}</p></div> : <p className="whitespace-pre-wrap">{m.content}</p>}
-                {m.actions?.length ? (
-                  <ul className="space-y-1.5 pl-6">{m.actions.map((a, ai) => (
-                    <li key={ai} className="chip flex items-center gap-2 border-success/30 px-3 py-2 text-sm">
-                      <Check className="size-4 shrink-0 text-success" aria-hidden />
-                      <span className="min-w-0 flex-1 truncate">{a.summary}</span>
-                      {a.href ? <Button size="sm" variant="ghost" onClick={() => { setOpen(false); router.push(a.href!); }}>Open<ArrowUpRight className="size-3.5" aria-hidden /></Button> : null}
-                    </li>
-                  ))}</ul>
-                ) : null}
-                {m.proposals?.length ? (
-                  <ul className="space-y-1.5 pl-6">{m.proposals.map((p, pi) => p.kind === "confirm" ? (
-                    <li key={pi} className="rounded-[var(--radius-sm)] border border-accent/40 bg-accent-soft/40 px-3 py-2.5">
-                      <p className="flex items-start gap-2 text-sm"><ShieldCheck className="mt-0.5 size-4 shrink-0 text-accent" aria-hidden /><span className="min-w-0">{p.summary}</span></p>
-                      <div className="mt-2 flex items-center justify-end gap-2">
-                        {p.done ? <span className="text-xs text-fg-subtle">{p.done}</span> : <>
-                          <Button size="sm" variant="ghost" onClick={() => setMessages((cur) => cur.map((x, i) => (i === mi && x.proposals ? { ...x, proposals: x.proposals.map((y, j) => (j === pi ? { ...y, done: "Not done" } : y)) } : x)))}>Not now</Button>
-                          <Button size="sm" onClick={() => void act(mi, pi, p)}><Check className="size-3.5" aria-hidden />Confirm</Button>
-                        </>}
-                      </div>
-                    </li>
-                  ) : (
-                    <li key={pi} className="chip flex items-center justify-between gap-2 px-3 py-2">
-                      <span className="min-w-0 flex-1 truncate text-sm">
-                        {p.kind === "todo" ? <>{p.title}{p.assigneeName ? <span className="text-fg-subtle"> for {p.assigneeName}</span> : null}</> : p.kind === "clock_in" ? "Clock in" : p.kind === "clock_out" ? "Clock out" : p.kind === "start_timer" ? <>Start <span className="text-fg-muted">{p.taskTitle}</span></> : p.label}
-                      </span>
-                      {p.done ? <span className="text-xs text-success">{p.done}</span> : (
-                        <Button size="sm" variant={p.kind === "open" ? "subtle" : "primary"} onClick={() => void act(mi, pi, p)}>
-                          {p.kind === "todo" ? <><Plus className="size-3.5" aria-hidden />Add</> : p.kind === "start_timer" ? <><Play className="size-3.5" aria-hidden />Start</> : p.kind === "open" ? <>Open<ArrowUpRight className="size-3.5" aria-hidden /></> : <><AlarmClock className="size-3.5" aria-hidden />{p.kind === "clock_in" ? "Clock in" : "Clock out"}</>}
-                        </Button>
-                      )}
-                    </li>
-                  ))}</ul>
-                ) : null}
-                {m.role === "assistant" && (m.engine === "builtin" || m.note) ? <p className="eyebrow pl-6 normal-case tracking-normal">{m.note ?? "Brenda's built-in helper: the AI is not connected yet, so she suggests instead of acting."}</p> : null}
-              </div>
-            </div>
-          ))}
-          {pending ? <TypingIndicator /> : null}
-          <Presence show={!!error}><Alert tone="danger">{error}</Alert></Presence>
-          <Presence show={!!dictation.error}><Alert tone="warning">{dictation.error}</Alert></Presence>
+          <BrendaMessages chat={chat} onLeave={() => setOpen(false)} />
         </div>
 
-        <div className="border-t border-border-soft p-3">
-          <PromptInputBox value={text} onValueChange={setText} onSend={(m) => void send(m)} isLoading={pending} placeholder={isOrg ? "Tell Brenda what you need…" : "Tell Brenda what you need…"}
-            recording={dictation.listening} onToggleRecording={() => void dictation.toggle()} recordingSupported={dictation.supported !== false}
-            recordingView={
-              <div className="flex items-center gap-3 rounded-[16px] border border-accent/40 bg-accent-soft/40 p-2 pr-3">
-                <div className="size-14 shrink-0"><VoicePoweredOrb enableVoiceControl onVoiceDetected={setVoiceActive} className="rounded-full" /></div>
-                <p role="status" className="text-xs text-fg-muted">{voiceActive ? "Hearing you…" : dictation.heardWords ? `${dictation.heardWords} word${dictation.heardWords === 1 ? "" : "s"} so far. Press stop or send when you are done.` : "Listening. Speak naturally."}</p>
-              </div>
-            } />
+        {/* A solid strip with a hairline above: the conversation never shows through the box. */}
+        <div className="shrink-0 border-t border-border bg-background px-4 pb-4 pt-3">
+          <BrendaComposer chat={chat} />
         </div>
       </aside>
     </>

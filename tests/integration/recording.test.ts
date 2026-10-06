@@ -130,11 +130,15 @@ describe("A15 / A16 / A17 / A18 upload, playback, restriction, retention", () =>
 });
 
 describe("A22 duplicate reminder jobs", () => {
-  it("does not create duplicate notifications when the reminder handler runs twice", async () => {
-    const payload = { organisationId: a.ownerCtx.org.id, membershipId: a.employeeCtx.membership.id, localDate: "2026-09-10", slug: a.slug };
-    await handlers["report.reminder"](payload, { jobId: "x", attempt: 1 });
-    await handlers["report.reminder"](payload, { jobId: "x", attempt: 2 });
-    const n = await adminQuery("SELECT 1 FROM notifications WHERE recipient_membership_id = $1 AND type = 'report.reminder'", [a.employeeCtx.membership.id]);
+  // The daily-report reminder is gone with the staff report (owner decision, 6 October 2026); Brenda's personal
+  // reminders, sent by her tick job, are the reminder job now.
+  it("does not create duplicate notifications when the reminder job runs twice", async () => {
+    const [r] = await adminQuery<{ id: string }>("INSERT INTO brenda_reminders(organisation_id, membership_id, body, remind_at) VALUES ($1, $2, 'Call Josh', now() - interval '1 minute') RETURNING id", [a.ownerCtx.org.id, a.employeeCtx.membership.id]);
+    await handlers["brenda.tick"]({}, { jobId: "x", attempt: 1 });
+    // As if the first run's notification landed but marking the reminder sent did not.
+    await adminQuery("UPDATE brenda_reminders SET sent_at = NULL WHERE id = $1", [r.id]);
+    await handlers["brenda.tick"]({}, { jobId: "x", attempt: 2 });
+    const n = await adminQuery("SELECT 1 FROM notifications WHERE recipient_membership_id = $1 AND type = 'brenda.reminder' AND deduplication_key = $2", [a.employeeCtx.membership.id, `brenda.reminder:${r.id}`]);
     expect(n).toHaveLength(1);
   });
 });

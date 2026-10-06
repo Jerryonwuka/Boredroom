@@ -7,7 +7,7 @@ import { withUser, type Db } from "@/server/db";
 import type { OrgContext } from "@/server/lib/api";
 import { conflict, forbidden } from "@/server/lib/errors";
 import { audit } from "@/server/services/common";
-import { localMidnight, todayLocal, addDays, weekdayOf } from "@/server/lib/time";
+import { localTimeOn, todayLocal, addDays, weekdayOf } from "@/server/lib/time";
 
 export type Schedule = { timezone: string; working_days: number[]; start_local: string; end_local: string; clock_grace_minutes: number };
 export type AttendanceRow = {
@@ -21,10 +21,9 @@ export async function scheduleFor(db: Db, orgId: string, fallbackTz: string): Pr
   return s ?? { timezone: fallbackTz, working_days: [1, 2, 3, 4, 5], start_local: "09:00:00", end_local: "17:00:00", clock_grace_minutes: 0 };
 }
 
-/** The instant a local time-of-day falls on a local date (DST-safe). */
+/** The instant a local time-of-day falls on a local date (DST-safe: on a clock-change day it is not midnight plus the hours). */
 export function instantOf(dateStr: string, timeLocal: string, timeZone: string): Date {
-  const [h, m] = timeLocal.split(":").map(Number);
-  return new Date(localMidnight(dateStr, timeZone).getTime() + (h * 60 + m) * 60_000);
+  return localTimeOn(dateStr, timeLocal, timeZone);
 }
 
 export function statusOf(r: { clock_in_at: string; clock_out_at: string | null } | null): ClockStatus {
@@ -41,7 +40,9 @@ export async function clockIn(ctx: OrgContext, requestId?: string, opts: { by?: 
     const existing = await db.maybeOne<AttendanceRow>(`SELECT * FROM attendance_days WHERE membership_id = $1 AND local_date = $2`, [ctx.membership.id, today]);
     if (existing) return { record: existing, already: true as const };
     const start = instantOf(today, s.start_local, s.timezone).getTime() + s.clock_grace_minutes * 60_000;
-    const late = Math.max(0, Math.round((now.getTime() - start) / 1000));
+    // A day off is not late: someone choosing to work on a weekend is not flagged.
+    const workingDay = s.working_days.includes(weekdayOf(today));
+    const late = workingDay ? Math.max(0, Math.round((now.getTime() - start) / 1000)) : 0;
     const record = await db.one<AttendanceRow>(
       `INSERT INTO attendance_days(organisation_id, membership_id, local_date, timezone, scheduled_start, scheduled_end, grace_minutes, clock_in_at, late_seconds, clocked_in_by)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
@@ -63,7 +64,7 @@ export async function clockOut(ctx: OrgContext, requestId?: string) {
     const open = await db.maybeOne(`SELECT 1 FROM work_sessions WHERE membership_id = $1 AND state IN ('running','paused','interrupted')`, [ctx.membership.id]);
     if (open) throw conflict("SESSION_OPEN", "Stop your running timer before clocking out.");
     const end = instantOf(rec.local_date, rec.scheduled_end, rec.timezone).getTime();
-    const early = Math.max(0, Math.round((end - now.getTime()) / 1000));
+    const early = s.working_days.includes(weekdayOf(rec.local_date)) ? Math.max(0, Math.round((end - now.getTime()) / 1000)) : 0;
     const record = await db.one<AttendanceRow>(`UPDATE attendance_days SET clock_out_at = $2, left_early_seconds = $3 WHERE id = $1 RETURNING *`, [rec.id, now.toISOString(), early]);
     await audit(db, { organisationId: ctx.org.id, actorMembershipId: ctx.membership.id, action: "attendance.clock_out", subjectType: "attendance", subjectId: record.id, subjectMembershipId: ctx.membership.id, requestId, metadata: { localDate: today, leftEarlySeconds: early } });
     return { record, already: false as const };
@@ -114,7 +115,8 @@ export type BoardRow = {
 
 /**
  * Who has clocked in on a given day, who has not, and who has already left. Organisation accounts see everyone;
- * team leads see the people on their teams (and themselves). Staff have no board.
+ * team leads see the people on their teams (and themselves). Staff have no board. Only staff and team leads are listed:
+ * the organisation account (owner, HR) supervises and does not clock in, so it is never "Not clocked in".
  */
 export async function attendanceBoard(ctx: OrgContext, opts: { date?: string; teamId?: string | null } = {}) {
   if (ctx.membership.role === "employee") throw forbidden("Attendance boards are for team leads and organisation accounts.");
@@ -144,7 +146,7 @@ export async function attendanceBoard(ctx: OrgContext, opts: { date?: string; te
                    a.clock_in_at, a.clock_out_at, a.late_seconds, a.left_early_seconds
             FROM memberships m JOIN profiles pr ON pr.id = m.user_id
             LEFT JOIN attendance_days a ON a.membership_id = m.id AND a.local_date = (SELECT date FROM d)
-            WHERE m.organisation_id = $1 AND m.status = 'active' AND m.created_at < ((SELECT date FROM d) + 1)::timestamptz
+            WHERE m.organisation_id = $1 AND m.status = 'active' AND m.role IN ('employee','manager') AND m.created_at < ((SELECT date FROM d) + 1)::timestamptz
               AND ($3::boolean OR m.id = $4 OR app_manages($1, m.id))
               AND ($5::uuid IS NULL OR EXISTS (SELECT 1 FROM team_members tm WHERE tm.team_id = $5 AND tm.membership_id = m.id))) p) AS people,
          (SELECT json_agg(t ORDER BY t.name) FROM (
@@ -187,7 +189,7 @@ export async function attendanceMonth(ctx: OrgContext, opts: { month?: string | 
       `SELECT m.id AS membership_id, pr.display_name, m.employee_code, m.role, m.created_at::date::text AS joined,
               COALESCE((SELECT array_agg(t.name ORDER BY t.name) FROM team_members tm JOIN teams t ON t.id = tm.team_id WHERE tm.membership_id = m.id AND t.archived_at IS NULL), '{}') AS teams
        FROM memberships m JOIN profiles pr ON pr.id = m.user_id
-       WHERE m.organisation_id = $1 AND m.status = 'active' AND m.created_at < ($3::date + 1)::timestamptz
+       WHERE m.organisation_id = $1 AND m.status = 'active' AND m.role IN ('employee','manager') AND m.created_at < ($3::date + 1)::timestamptz
          AND ($4::boolean OR m.id = $5 OR app_manages($1, m.id))
          AND ($2::uuid IS NULL OR EXISTS (SELECT 1 FROM team_members tm WHERE tm.team_id = $2 AND tm.membership_id = m.id))
        ORDER BY pr.display_name`, [ctx.org.id, opts.teamId ?? null, range.to, isOrg, ctx.membership.id]);

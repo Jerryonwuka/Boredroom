@@ -219,7 +219,7 @@ export type IncomingMessage = { id: string; conversation_id: string; kind: Conve
 /** Messages from other people since `after`, in conversations the caller can read; feeds the toast. Withdrawn ones are left out. */
 export async function incomingMessages(ctx: OrgContext, after: string): Promise<IncomingMessage[]> {
   return withUser(ctx.user.profileId, (db) => db.query<IncomingMessage>(
-    `SELECT m.id, m.conversation_id, c.kind, CASE c.kind WHEN 'organisation' THEN 'Everyone' WHEN 'team' THEN t.name ELSE p.display_name END AS conversation_title,
+    `SELECT m.id, m.conversation_id, c.kind, CASE c.kind WHEN 'organisation' THEN 'Everyone' WHEN 'team' THEN t.name WHEN 'channel' THEN c.title ELSE p.display_name END AS conversation_title,
             p.display_name AS sender_name, p.id AS sender_profile_id, p.avatar_key AS sender_avatar_key, m.body, m.created_at
      FROM messages m
      JOIN conversations c ON c.id = m.conversation_id

@@ -1,17 +1,24 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
+/**
+ * Projects, v4: a new project and a new task open as right-hand sheets (the page behind stays put), archiving is one
+ * icon that asks first, and the members list is a card of rows with the access level beside each name.
+ */
+import { useId, useState } from "react";
 import { useRouter } from "next/navigation";
+import { Archive, Plus, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input, Textarea, Select, Field } from "@/components/ui/input";
-import { Alert } from "@/components/ui/states";
-import { Badge } from "@/components/ui/badge";
+import { Input, InputAdorned, Textarea, Select, Field } from "@/components/ui/input";
+import { Alert, EmptyState } from "@/components/ui/states";
+import { Badge, label } from "@/components/ui/badge";
+import { Card } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/switch";
+import { Sheet } from "@/components/ui/sheet";
 import { api, isApiFailure } from "@/lib/api-client";
 import { DatePicker } from "@/components/ui/date-picker";
 import { DurationPicker } from "@/components/ui/duration-picker";
-import { IconButton } from "@/components/ui/icon-button";
-import { ConfirmDialog } from "@/components/ui/confirm";
-import { Archive, X } from "lucide-react";
+import { ConfirmButton, ConfirmDialog } from "@/components/ui/confirm";
+import { Person } from "@/components/ui/person";
 
 function useForm() {
   const [pending, setPending] = useState(false);
@@ -20,31 +27,67 @@ function useForm() {
   async function submit<T>(fn: () => Promise<T>) {
     setPending(true); setError(null); setFieldErrors({});
     try { return await fn(); }
-    catch (err) { if (isApiFailure(err)) { setError(err.error.message); setFieldErrors(err.error.fieldErrors ?? {}); } else setError("Cannot reach the server."); return null; }
+    catch (err) { if (isApiFailure(err)) { setError(err.error.message); setFieldErrors(err.error.fieldErrors ?? {}); } else setError("Cannot reach the server. Check your connection and try again."); return null; }
     finally { setPending(false); }
   }
   return { pending, error, fieldErrors, submit };
 }
 
+/** A new project opens as a sheet, like a new task: the page behind stays put, and the form never pushes the header about. */
 export function NewProjectForm({ orgSlug, members }: { orgSlug: string; members: { id: string; display_name: string }[] }) {
-  const router = useRouter();
   const [open, setOpen] = useState(false);
-  const { pending, error, fieldErrors, submit } = useForm();
-  if (!open) return <Button onClick={() => setOpen(true)}>New project</Button>;
   return (
-    <form className="tile grid w-full gap-3 p-4 md:w-[520px]" onSubmit={async (e) => {
-      e.preventDefault();
-      const f = new FormData(e.currentTarget);
-      const r = await submit(() => api<{ id: string }>(`/api/orgs/${orgSlug}/projects`, { method: "POST", body: { name: f.get("name"), description: f.get("description") || undefined, requiresDueDate: f.get("requiresDueDate") === "on", requiresEstimate: f.get("requiresEstimate") === "on", memberIds: f.getAll("memberIds") } }));
-      if (r) router.push(`/app/${orgSlug}/projects/${r.id}`);
-    }}>
-      {error ? <Alert tone="danger">{error}</Alert> : null}
-      <Field label="Name" htmlFor="p-name" error={fieldErrors.name}><Input id="p-name" name="name" required maxLength={160} /></Field>
-      <Field label="Description" htmlFor="p-desc" hint="optional"><Textarea id="p-desc" name="description" maxLength={4000} /></Field>
-      <div className="flex gap-4 text-sm"><label className="flex items-center gap-2"><input type="checkbox" name="requiresDueDate" /> Tasks need a due date</label><label className="flex items-center gap-2"><input type="checkbox" name="requiresEstimate" /> Tasks need an estimate</label></div>
-      <Field label="Members" htmlFor="p-members" hint="you are added as lead"><select id="p-members" name="memberIds" multiple className="field" size={Math.min(6, Math.max(2, members.length))}>{members.map((m) => <option key={m.id} value={m.id}>{m.display_name}</option>)}</select></Field>
-      <div className="flex gap-2"><Button type="submit" disabled={pending}>{pending ? "Creating…" : "Create project"}</Button><Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button></div>
-    </form>
+    <>
+      <Button size="sm" onClick={() => setOpen(true)} aria-haspopup="dialog"><Plus aria-hidden />New project</Button>
+      {open ? <NewProjectSheet orgSlug={orgSlug} members={members} onClose={() => setOpen(false)} /> : null}
+    </>
+  );
+}
+
+function NewProjectSheet({ orgSlug, members, onClose }: { orgSlug: string; members: { id: string; display_name: string }[]; onClose: () => void }) {
+  const router = useRouter();
+  const formId = useId();
+  const { pending, error, fieldErrors, submit } = useForm();
+  const [q, setQ] = useState("");
+  const shown = members.filter((m) => m.display_name.toLowerCase().includes(q.trim().toLowerCase()));
+  return (
+    <Sheet open onClose={onClose} dismissible={false} title="New project" description="Tasks live inside projects. You are added as its lead."
+      footer={<><Button variant="secondary" onClick={onClose}>Cancel</Button><Button type="submit" form={formId} loading={pending}>{pending ? "Creating…" : "Create project"}</Button></>}>
+      <form id={formId} className="grid gap-5" onSubmit={async (e) => {
+        e.preventDefault();
+        const f = new FormData(e.currentTarget);
+        const r = await submit(() => api<{ id: string }>(`/api/orgs/${orgSlug}/projects`, { method: "POST", body: { name: f.get("name"), description: String(f.get("description") ?? "").trim() || undefined, requiresDueDate: f.get("requiresDueDate") === "on", requiresEstimate: f.get("requiresEstimate") === "on", memberIds: f.getAll("memberIds") } }));
+        if (r) router.push(`/app/${orgSlug}/projects/${r.id}`);
+      }}>
+        {error && !fieldErrors.name && !fieldErrors.description ? <Alert tone="danger">{error}</Alert> : null}
+        <Field label="Name" htmlFor="p-name" error={fieldErrors.name}><Input id="p-name" name="name" required maxLength={160} placeholder="e.g. Website relaunch" autoFocus /></Field>
+        <Field label="Description" htmlFor="p-desc" hint="Optional" error={fieldErrors.description}><Textarea id="p-desc" name="description" maxLength={4000} className="min-h-20" /></Field>
+        <fieldset className="grid gap-3">
+          <legend className="mb-1.5 text-sm font-medium text-foreground">Every task in it needs</legend>
+          <Checkbox name="requiresDueDate">A due date</Checkbox>
+          <Checkbox name="requiresEstimate">An estimate</Checkbox>
+        </fieldset>
+        {members.length ? (
+          <fieldset className="grid gap-2">
+            <legend className="mb-1.5 text-sm font-medium text-foreground">Members <span className="font-normal text-secondary">Optional; add more later</span></legend>
+            {members.length > 8 ? <InputAdorned value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a person" aria-label="Find a person" fieldSize="sm" prefix={<Search aria-hidden />} /> : null}
+            {/* Every box stays in the form while the list is narrowed, so a search never drops someone already ticked. */}
+            <ul className="prompt-scroll max-h-64 space-y-0.5 overflow-y-auto">
+              {members.map((m) => (
+                <li key={m.id} hidden={!shown.includes(m)}>
+                  <label className="flex min-h-10 cursor-pointer items-center gap-3 rounded-lg px-2 text-sm font-medium transition-colors duration-75 hover:bg-fill-1">
+                    <input type="checkbox" name="memberIds" value={m.id} />
+                    <span className="truncate">{m.display_name}</span>
+                  </label>
+                </li>
+              ))}
+              {shown.length === 0 ? <li className="px-2 py-4 text-sm font-normal text-secondary">Nobody matches.</li> : null}
+            </ul>
+            {fieldErrors.memberIds ? <p role="alert" className="text-meta font-medium text-danger">{fieldErrors.memberIds[0]}</p> : null}
+          </fieldset>
+        ) : null}
+      </form>
+    </Sheet>
   );
 }
 
@@ -52,7 +95,7 @@ export function NewTaskForm({ orgSlug, projectId, members, self, canAssignOthers
   const [open, setOpen] = useState(false);
   return (
     <>
-      <Button onClick={() => setOpen(true)} aria-haspopup="dialog">New task</Button>
+      <Button size="sm" onClick={() => setOpen(true)} aria-haspopup="dialog"><Plus aria-hidden />New task</Button>
       {open ? <NewTaskSheet orgSlug={orgSlug} projectId={projectId} members={members} self={self} canAssignOthers={canAssignOthers} requiresDueDate={requiresDueDate} requiresEstimate={requiresEstimate} onClose={() => setOpen(false)} /> : null}
     </>
   );
@@ -60,37 +103,35 @@ export function NewTaskForm({ orgSlug, projectId, members, self, canAssignOthers
 
 function NewTaskSheet({ orgSlug, projectId, members, self, canAssignOthers, requiresDueDate, requiresEstimate, onClose }: { orgSlug: string; projectId: string; members: { id: string; display_name: string }[]; self: string; canAssignOthers: boolean; requiresDueDate: boolean; requiresEstimate: boolean; onClose: () => void }) {
   const router = useRouter();
+  const formId = useId();
   const { pending, error, fieldErrors, submit } = useForm();
-  const ref = useRef<HTMLDialogElement>(null);
-  const titleId = useId();
-  useEffect(() => { ref.current?.showModal(); }, []);
+  const placed = ["title", "expectedOutput", "assigneeMembershipId", "reviewerMembershipId", "estimateMinutes", "dueAt"].some((k) => fieldErrors[k]?.length);
   return (
-    <dialog ref={ref} className="sheet !max-w-[min(92vw,40rem)]" aria-labelledby={titleId} onClose={onClose} onCancel={(e) => { e.preventDefault(); onClose(); }}>
-    <form className="grid gap-3 p-5" onSubmit={async (e) => {
-      e.preventDefault();
-      const f = new FormData(e.currentTarget);
-      const r = await submit(() => api<{ id: string }>(`/api/orgs/${orgSlug}/tasks`, { method: "POST", body: {
-        projectId, title: f.get("title"), expectedOutput: f.get("expectedOutput"), assigneeMembershipId: f.get("assigneeMembershipId") || self, reviewerMembershipId: f.get("reviewerMembershipId") || null,
-        category: f.get("category"), priority: f.get("priority"), estimateMinutes: f.get("estimateMinutes") ? Number(f.get("estimateMinutes")) : null,
-        dueAt: f.get("dueAt") ? new Date(String(f.get("dueAt"))).toISOString() : null, captureRequirement: f.get("captureRequirement") ?? "none", addToMyDay: false } }));
-      if (r) { onClose(); router.refresh(); }
-    }}>
-      <div className="flex items-start justify-between gap-3"><div><h2 id={titleId} className="font-display text-xl">New task in this project</h2><p className="mt-1 text-sm text-fg-muted">Say what a finished result looks like; the reviewer accepts against it.</p></div><Button type="button" variant="ghost" size="icon" aria-label="Close" onClick={onClose}><X className="size-4" aria-hidden /></Button></div>
-      {error ? <Alert tone="danger">{error}</Alert> : null}
-      <Field label="Title" htmlFor="t-title" error={fieldErrors.title}><Input id="t-title" name="title" required maxLength={200} /></Field>
-      <Field label="Expected output" htmlFor="t-out" hint="what the reviewer will accept" error={fieldErrors.expectedOutput}><Textarea id="t-out" name="expectedOutput" required maxLength={4000} /></Field>
-      <div className="grid gap-3 md:grid-cols-2">
-        <Field label="Assignee" htmlFor="t-assignee" error={fieldErrors.assigneeMembershipId}><Select id="t-assignee" name="assigneeMembershipId" defaultValue={self} disabled={!canAssignOthers}>{members.map((m) => <option key={m.id} value={m.id}>{m.display_name}</option>)}</Select></Field>
-        <Field label="Reviewer" htmlFor="t-reviewer" hint="must differ from assignee" error={fieldErrors.reviewerMembershipId}><Select id="t-reviewer" name="reviewerMembershipId" defaultValue=""><option value="">Choose later</option>{members.map((m) => <option key={m.id} value={m.id}>{m.display_name}</option>)}</Select></Field>
-        <Field label="Category" htmlFor="t-cat"><Select id="t-cat" name="category" defaultValue="work"><option value="work">Work</option><option value="meeting">Meeting</option><option value="offline">Offline work</option><option value="admin">Admin</option></Select></Field>
-        <Field label="Priority" htmlFor="t-pri"><Select id="t-pri" name="priority" defaultValue="normal"><option value="low">Low</option><option value="normal">Normal</option><option value="high">High</option><option value="urgent">Urgent</option></Select></Field>
-        <Field label="Estimated time" htmlFor="t-est" hint={requiresEstimate ? "required" : "optional"} error={fieldErrors.estimateMinutes}><DurationPicker id="t-est" name="estimateMinutes" required={requiresEstimate} /></Field>
-        <Field label="Due" htmlFor="t-due" hint={requiresDueDate ? "required" : "optional"} error={fieldErrors.dueAt}><DatePicker mode="datetime" id="t-due" name="dueAt" required={requiresDueDate} /></Field>
-        {canAssignOthers ? <Field label="Screen capture" htmlFor="t-cap" hint="only applies if policy enables recording"><Select id="t-cap" name="captureRequirement" defaultValue="none"><option value="none">Not requested</option><option value="optional">Optional</option><option value="required">Required on this task</option></Select></Field> : null}
-      </div>
-      <div className="flex justify-end gap-2"><Button type="button" variant="ghost" onClick={onClose}>Cancel</Button><Button type="submit" disabled={pending}>{pending ? "Creating…" : "Create task"}</Button></div>
-    </form>
-    </dialog>
+    <Sheet open onClose={onClose} dismissible={false} title="New task in this project" description="Say what a finished result looks like; the reviewer accepts against it."
+      footer={<><Button variant="secondary" onClick={onClose}>Cancel</Button><Button type="submit" form={formId} loading={pending}>{pending ? "Creating…" : "Create task"}</Button></>}>
+      <form id={formId} className="grid gap-4" onSubmit={async (e) => {
+        e.preventDefault();
+        const f = new FormData(e.currentTarget);
+        const r = await submit(() => api<{ id: string }>(`/api/orgs/${orgSlug}/tasks`, { method: "POST", body: {
+          projectId, title: f.get("title"), expectedOutput: f.get("expectedOutput"), assigneeMembershipId: f.get("assigneeMembershipId") || self, reviewerMembershipId: f.get("reviewerMembershipId") || null,
+          category: f.get("category"), priority: f.get("priority"), estimateMinutes: f.get("estimateMinutes") ? Number(f.get("estimateMinutes")) : null,
+          dueAt: f.get("dueAt") ? new Date(String(f.get("dueAt"))).toISOString() : null, captureRequirement: f.get("captureRequirement") ?? "none", addToMyDay: false } }));
+        if (r) { onClose(); router.refresh(); }
+      }}>
+        {error && !placed ? <Alert tone="danger">{error}</Alert> : null}
+        <Field label="Title" htmlFor="t-title" error={fieldErrors.title}><Input id="t-title" name="title" required maxLength={200} autoFocus /></Field>
+        <Field label="Expected output" htmlFor="t-out" hint="What the reviewer will accept" error={fieldErrors.expectedOutput}><Textarea id="t-out" name="expectedOutput" required maxLength={4000} /></Field>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Assignee" htmlFor="t-assignee" hint={canAssignOthers ? undefined : "You"} error={fieldErrors.assigneeMembershipId}><Select id="t-assignee" name="assigneeMembershipId" defaultValue={self} disabled={!canAssignOthers}>{members.map((m) => <option key={m.id} value={m.id}>{m.display_name}</option>)}</Select></Field>
+          <Field label="Reviewer" htmlFor="t-reviewer" hint="Not the assignee" error={fieldErrors.reviewerMembershipId}><Select id="t-reviewer" name="reviewerMembershipId" defaultValue=""><option value="">Choose later</option>{members.map((m) => <option key={m.id} value={m.id}>{m.display_name}</option>)}</Select></Field>
+          <Field label="Category" htmlFor="t-cat"><Select id="t-cat" name="category" defaultValue="work"><option value="work">Work</option><option value="meeting">Meeting</option><option value="offline">Offline work</option><option value="admin">Admin</option></Select></Field>
+          <Field label="Priority" htmlFor="t-pri"><Select id="t-pri" name="priority" defaultValue="normal"><option value="low">Low</option><option value="normal">Normal</option><option value="high">High</option><option value="urgent">Urgent</option></Select></Field>
+          <Field label="Estimated time" htmlFor="t-est" hint={requiresEstimate ? "Required" : "Optional"} error={fieldErrors.estimateMinutes}><DurationPicker id="t-est" name="estimateMinutes" required={requiresEstimate} /></Field>
+          <Field label="Due" htmlFor="t-due" hint={requiresDueDate ? "Required" : "Optional"} error={fieldErrors.dueAt}><DatePicker mode="datetime" id="t-due" name="dueAt" required={requiresDueDate} /></Field>
+        </div>
+        {canAssignOthers ? <Field label="Screen capture" htmlFor="t-cap" hint="Only applies if policy enables recording"><Select id="t-cap" name="captureRequirement" defaultValue="none"><option value="none">Not requested</option><option value="optional">Optional</option><option value="required">Required on this task</option></Select></Field> : null}
+      </form>
+    </Sheet>
   );
 }
 
@@ -102,37 +143,42 @@ export function ArchiveProjectButton({ orgSlug, projectId }: { orgSlug: string; 
   return (
     <div className="flex flex-col items-end gap-2">
       {error ? <Alert tone="danger">{error}</Alert> : null}
-      <IconButton aria-label="Archive project" disabled={pending} onClick={() => setConfirm(true)}><Archive className="size-4" aria-hidden /></IconButton>
+      <Button size="icon-sm" variant="secondary" aria-label="Archive project" aria-haspopup="dialog" disabled={pending} onClick={() => setConfirm(true)}><Archive aria-hidden /></Button>
       <ConfirmDialog open={confirm} onClose={() => setConfirm(false)} title="Archive this project?" description="No new work sessions can start on its tasks. Everything stays readable." confirmLabel="Archive project" onConfirm={async () => { const r = await submit(() => api(`/api/orgs/${orgSlug}/projects/${projectId}/archive`, { method: "POST" })); if (r) router.refresh(); }} />
     </div>
   );
 }
 
+const ACCESS: Record<string, string> = { lead: "Lead", contributor: "Contributor", viewer: "Viewer" };
+
 export function ProjectMembers({ orgSlug, projectId, members, allMembers, canManage }: { orgSlug: string; projectId: string; members: { membership_id: string; display_name: string; access_role: string }[]; allMembers: { id: string; display_name: string }[]; canManage: boolean }) {
   const router = useRouter();
   const { pending, error, submit } = useForm();
+  const ids = useId();
   const set = async (membershipId: string, accessRole: string) => { const r = await submit(() => api(`/api/orgs/${orgSlug}/projects/${projectId}/members`, { method: "POST", body: { membershipId, accessRole } })); if (r) router.refresh(); };
   const candidates = allMembers.filter((m) => !members.some((x) => x.membership_id === m.id));
   return (
-    <div className="tile p-4">
+    <Card>
       {error ? <Alert tone="danger" className="mb-3">{error}</Alert> : null}
-      <ul className="divide-y divide-border">
-        {members.map((m) => (
-          <li key={m.membership_id} className="flex items-center justify-between py-2">
-            <span>{m.display_name} <Badge className="ml-2">{m.access_role}</Badge></span>
-            {canManage ? <div className="flex gap-1">
-              <Select aria-label={`Access for ${m.display_name}`} className="h-9 w-40 py-1 text-sm" value={m.access_role} disabled={pending} onChange={(e) => set(m.membership_id, e.target.value)}><option value="lead">Lead</option><option value="contributor">Contributor</option><option value="viewer">Viewer</option></Select>
-              <Button size="sm" variant="ghost" disabled={pending} onClick={() => set(m.membership_id, "remove")}>Remove</Button>
-            </div> : null}
-          </li>
-        ))}
-      </ul>
+      {members.length === 0 ? <EmptyState compact icon3d="people" title="Nobody on this project yet" description={canManage ? "Add the people who work on it below; they see its tasks." : "A project lead adds people here."} /> : (
+        <ul className="-mx-2 space-y-0.5">
+          {members.map((m) => (
+            <li key={m.membership_id} className="flex min-h-14 flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-xl px-2 py-2">
+              <span className="flex min-w-0 items-center gap-3"><Person orgSlug={orgSlug} membershipId={m.membership_id} name={m.display_name} size={32} />{canManage ? null : <Badge>{ACCESS[m.access_role] ?? label(m.access_role)}</Badge>}</span>
+              {canManage ? <div className="flex items-center gap-1.5">
+                <Select aria-label={`Access for ${m.display_name}`} fieldSize="sm" className="w-36" value={m.access_role} disabled={pending} onChange={(e) => set(m.membership_id, e.target.value)}><option value="lead">Lead</option><option value="contributor">Contributor</option><option value="viewer">Viewer</option></Select>
+                <ConfirmButton size="sm" variant="ghost" disabled={pending} title={`Remove ${m.display_name} from this project?`} description="They leave the project's members. Tasks they hold, and everything they tracked, stay as they are." confirmLabel="Remove from project" onConfirm={() => set(m.membership_id, "remove")}>Remove</ConfirmButton>
+              </div> : null}
+            </li>
+          ))}
+        </ul>
+      )}
       {canManage && candidates.length ? (
-        <form className="mt-3 flex items-end gap-2" onSubmit={(e) => { e.preventDefault(); const f = new FormData(e.currentTarget); set(String(f.get("membershipId")), "contributor"); }}>
-          <Field label="Add member" htmlFor="pm-add"><Select id="pm-add" name="membershipId">{candidates.map((m) => <option key={m.id} value={m.id}>{m.display_name}</option>)}</Select></Field>
-          <Button type="submit" size="md" variant="outline" disabled={pending}>Add</Button>
+        <form className="mt-4 flex flex-wrap items-end gap-2 border-t border-border pt-4" onSubmit={(e) => { e.preventDefault(); const f = new FormData(e.currentTarget); void set(String(f.get("membershipId")), "contributor"); }}>
+          <div className="min-w-0 flex-1 sm:max-w-xs"><Field label="Add a member" htmlFor={`${ids}-add`}><Select id={`${ids}-add`} name="membershipId">{candidates.map((m) => <option key={m.id} value={m.id}>{m.display_name}</option>)}</Select></Field></div>
+          <Button type="submit" variant="secondary" loading={pending}>{pending ? "Adding…" : "Add"}</Button>
         </form>
       ) : null}
-    </div>
+    </Card>
   );
 }

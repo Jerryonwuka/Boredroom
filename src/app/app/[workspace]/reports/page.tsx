@@ -1,102 +1,11 @@
-import { workspacePage } from "@/server/lib/workspace-page";
-import { AppShell } from "@/components/app/shell";
-import { PageHeader, Card, CardHeader } from "@/components/ui/card";
-import { StatCard } from "@/components/ui/stat-card";
-import { DataTable } from "@/components/ui/table";
-import { Input, Select } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
-import { metrics } from "@/server/services/reports";
-import { withUser } from "@/server/db";
-import { todayLocal, addDays } from "@/server/lib/time";
-import { formatDuration, formatDateTime } from "@/lib/utils";
-import { ExemptionForm } from "@/components/app/exemption-form";
-import { RowList, Row, RowEmpty } from "@/components/ui/rows";
-import { Person } from "@/components/ui/person";
-import Link from "next/link";
-import { DatePicker } from "@/components/ui/date-picker";
-import { EmptyState } from "@/components/ui/states";
+import { redirect } from "next/navigation";
 
-/** Quick periods. They are filters, not resets: monthly views never wipe anything. */
-function periodPresets(today: string) {
-  const [y, m, d] = today.split("-").map(Number);
-  const dow = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
-  const monday = addDays(today, -((dow + 6) % 7));
-  const monthStart = `${today.slice(0, 8)}01`;
-  const prevMonthEnd = addDays(monthStart, -1);
-  const prevMonthStart = `${prevMonthEnd.slice(0, 8)}01`;
-  return [
-    { key: "week", label: "This week", from: monday, to: today },
-    { key: "last14", label: "Last 14 days", from: addDays(today, -13), to: today },
-    { key: "month", label: "This month", from: monthStart, to: today },
-    { key: "lastmonth", label: "Last month", from: prevMonthStart, to: prevMonthEnd },
-    { key: "quarter", label: "Last 90 days", from: addDays(today, -89), to: today },
-  ];
-}
-
-export const dynamic = "force-dynamic";
-export const metadata = { title: "Reports" };
-
-export default async function ReportsPage({ params, searchParams }: { params: Promise<{ workspace: string }>; searchParams: Promise<{ from?: string; to?: string; member?: string; project?: string; team?: string; period?: string }> }) {
+/**
+ * The Reports page is gone (owner decision, 5 October 2026): Brenda sends supervisors an end-of-day report of what
+ * their team did, and answers for any other period when asked. Old links land on Brenda with that question in her box.
+ * Staff write no daily report of their own either (owner decision, 6 October 2026).
+ */
+export default async function ReportsPage({ params }: { params: Promise<{ workspace: string }> }) {
   const { workspace } = await params;
-  const sp = await searchParams;
-  const { ctx, counts, teams: navTeams } = await workspacePage(workspace, `/app/${workspace}/reports`);
-  const today = todayLocal(ctx.org.timezone);
-  const periods = periodPresets(today);
-  const preset = periods.find((p) => p.key === sp.period);
-  const from = preset ? preset.from : sp.from && /^\d{4}-\d{2}-\d{2}$/.test(sp.from) ? sp.from : addDays(today, -13);
-  const to = preset ? preset.to : sp.to && /^\d{4}-\d{2}-\d{2}$/.test(sp.to) ? sp.to : today;
-  const isEmployee = ctx.membership.role === "employee";
-  const member = isEmployee ? ctx.membership.id : sp.member || null;
-  const [m, projects, teams, members] = await Promise.all([
-    metrics(ctx, { from, to, membershipId: member, projectId: sp.project || null, teamId: sp.team || null }),
-    withUser(ctx.user.profileId, (db) => db.query<{ id: string; name: string }>(`SELECT id, name FROM projects WHERE organisation_id = $1 ORDER BY name`, [ctx.org.id])),
-    withUser(ctx.user.profileId, (db) => db.query<{ id: string; name: string }>(`SELECT id, name FROM teams WHERE organisation_id = $1 AND archived_at IS NULL ORDER BY name`, [ctx.org.id])),
-    isEmployee ? Promise.resolve([]) : withUser(ctx.user.profileId, (db) => db.query<{ id: string; display_name: string }>(`SELECT m.id, pr.display_name FROM memberships m JOIN profiles pr ON pr.id = m.user_id WHERE m.organisation_id = $1 AND m.status = 'active' AND app_can_view_records($1, m.id) ORDER BY pr.display_name`, [ctx.org.id])),
-  ]);
-  const keep = [sp.member ? `&member=${sp.member}` : "", sp.team ? `&team=${sp.team}` : "", sp.project ? `&project=${sp.project}` : ""].join("");
-  const provisionalBy = new Map(m.provisional.map((p) => [p.membership_id, p.seconds]));
-  const onTime = m.delivery.with_due ? Math.round((m.delivery.on_time / m.delivery.with_due) * 100) : null;
-  return (
-    <AppShell ctx={ctx} counts={counts} teams={navTeams}>
-      <PageHeader icon="chart-ring" back={{ href: `/app/${ctx.org.slug}`, label: "Home" }} overline={`${from} to ${to}`} title="Reports" description="Transparent measures at employee, team and project scope. No composite score, no ranking by hours. Approved and provisional data are shown separately."
-        actions={<Link href={`/app/${ctx.org.slug}/timesheets`}><Button variant="outline" size="sm">{isEmployee ? "My timesheet" : "Timesheets, corrections and CSV export"}</Button></Link>} />
-      <form className="mb-6 flex flex-wrap items-end gap-2 text-sm">
-        <label><span className="block text-xs text-fg-subtle">From</span><DatePicker name="from" defaultValue={from} /></label>
-        <label><span className="block text-xs text-fg-subtle">To</span><DatePicker name="to" defaultValue={to} /></label>
-        {!isEmployee ? <label><span className="block text-xs text-fg-subtle">Member</span><Select name="member" defaultValue={sp.member ?? ""}><option value="">All in scope</option>{members.map((x) => <option key={x.id} value={x.id}>{x.display_name}</option>)}</Select></label> : null}
-        {!isEmployee ? <label><span className="block text-xs text-fg-subtle">Team</span><Select name="team" defaultValue={sp.team ?? ""}><option value="">All</option>{teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</Select></label> : null}
-        <label><span className="block text-xs text-fg-subtle">Project</span><Select name="project" defaultValue={sp.project ?? ""}><option value="">All</option>{projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</Select></label>
-        <Button type="submit" variant="outline" size="sm">Apply</Button>
-      </form>
-
-      <div className="mb-6 grid gap-4 md:grid-cols-3">
-        <StatCard label="Delivery" verdict={`${m.delivery.approved} approved`} rows={[{ label: "On time", value: m.delivery.on_time, share: onTime == null ? "n/a" : `${onTime}%`, tone: "success" }, { label: "With a due date", value: m.delivery.with_due, tone: "neutral" }]} />
-        <StatCard label="Estimates" verdict={m.delivery.est_count ? `${m.delivery.est_variance >= 0 ? "+" : "−"}${formatDuration(Math.abs(m.delivery.est_variance))}` : "n/a"} tone={m.delivery.est_count && m.delivery.est_variance > 0 ? "warning" : "default"} rows={[{ label: "Approved tasks with an estimate", value: m.delivery.est_count, tone: "info" }]} />
-        <StatCard label="Capture coverage" verdict={m.capture.tracked ? `${Math.min(100, Math.round((m.capture.recorded / m.capture.tracked) * 100))}%` : "n/a"} rows={[{ label: "Recording-required sessions", value: m.capture.tracked, tone: "neutral" }, { label: "Recorded", value: m.capture.recorded, tone: "success" }, ...(m.capture.pending ? [{ label: "Pending, so provisional", value: m.capture.pending, tone: "warning" as const }] : [])]} />
-      </div>
-      <p className="-mt-3 mb-6 text-xs text-fg-subtle">Delivery counts tasks by approval date; undated tasks are left out of the on-time share; tasks without estimates are left out of the variance. None of this is a productivity measure.</p>
-
-      <section className="mb-8">
-        <CardHeader title="Time allocation" description="Approved and provisional time per member." />
-        <DataTable caption="Approved and provisional time per member">
-          <thead><tr><th>Member</th><th>Approved tracked time</th><th>Approved days</th><th>Provisional (unapproved confirmed intervals)</th></tr></thead>
-          <tbody>{m.approvedTime.map((r) => <tr key={r.membership_id}><td>{r.display_name}</td><td className="font-semibold">{formatDuration(r.seconds)}</td><td>{r.days}</td><td className="text-fg-muted">{formatDuration(provisionalBy.get(r.membership_id) ?? 0)}</td></tr>)}</tbody>
-        </DataTable>
-      </section>
-
-      <div className="grid gap-6 md:grid-cols-2">
-        <Card>
-          <CardHeader title={`Open blockers (${m.blockers.length})`} />
-          <p className="text-xs text-fg-subtle">Age is elapsed wall-clock time since the task was marked blocked, not labour hours.</p>
-          <ul className="mt-2 space-y-1 text-sm">{m.blockers.length === 0 ? <li><EmptyState compact icon3d="flag-alert" title="Nothing blocked" /></li> : m.blockers.map((b) => <li key={b.id}><strong>{b.title}</strong>, {b.display_name}, since {formatDateTime(b.since, ctx.org.timezone)}{b.blocked_reason ? <p className="text-fg-muted">{b.blocked_reason}</p> : null}</li>)}</ul>
-        </Card>
-        <Card>
-          <CardHeader title="Report completeness" />
-          <p className="text-xs text-fg-subtle">Submitted reports ÷ expected workdays ({m.expectedDays}) under the saved schedule, minus authorised exemptions.</p>
-          <RowList className="mt-2">{m.completeness.length === 0 ? <RowEmpty icon3d="doc-link-check" title="Nobody in scope" /> : m.completeness.map((c) => { const expected = Math.max(0, m.expectedDays - c.exempt); const pct = expected ? Math.round((c.submitted / expected) * 100) : null; return <Row key={c.membership_id} leading={<Person orgSlug={ctx.org.slug} membershipId={c.membership_id} name={c.display_name} showName={false} size={32} />} title={c.display_name} meta={c.exempt ? `${c.exempt} exempt day${c.exempt === 1 ? "" : "s"}` : undefined} trailing={<><span className="eyebrow block">Reports</span><span className={pct !== null && pct < 50 ? "text-danger" : pct !== null && pct < 100 ? "text-warning" : "text-fg"}>{c.submitted} / {expected}{pct !== null ? ` (${pct}%)` : ""}</span></>} />; })}</RowList>
-          {!isEmployee && members.length ? <div className="mt-3"><ExemptionForm orgSlug={ctx.org.slug} members={members} /></div> : null}
-        </Card>
-      </div>
-    </AppShell>
-  );
+  redirect(`/app/${encodeURIComponent(workspace)}/home?ask=${encodeURIComponent("Summarise what my team got done this week.")}`);
 }

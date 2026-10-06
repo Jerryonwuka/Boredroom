@@ -209,7 +209,7 @@ export async function addComment(ctx: OrgContext, taskId: string, body: string) 
     if (!t) throw notFound("Task not found.");
     const c = await db.one<{ id: string }>(`INSERT INTO task_comments(organisation_id, task_id, author_membership_id, body) VALUES ($1, $2, $3, $4) RETURNING id`, [ctx.org.id, taskId, ctx.membership.id, body]);
     for (const r of [t.assignee_membership_id, t.reviewer_membership_id]) {
-      if (r && r !== ctx.membership.id) await notify(db, { organisationId: ctx.org.id, recipientMembershipId: r, type: "task.comment", title: `${ctx.user.displayName} commented on ${t.title}`, body: body.slice(0, 200), resourceType: "task", resourceId: taskId, href: `/app/${ctx.org.slug}/tasks/${taskId}`, dedupKey: `comment:${c.id}:${r}` });
+      if (r && r !== ctx.membership.id) await notify(db, { organisationId: ctx.org.id, recipientMembershipId: r, type: "task.comment", title: `${ctx.user.displayName} commented on ${t.title}`, body: body.slice(0, 200), resourceType: "task", resourceId: taskId, href: `/app/${ctx.org.slug}/tasks/${taskId}?panel=comments`, dedupKey: `comment:${c.id}:${r}` });
     }
     return c;
   });

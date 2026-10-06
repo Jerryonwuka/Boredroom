@@ -1,37 +1,67 @@
 "use client";
+import * as React from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { SlidingMarker } from "@/components/ui/motion";
+import { CountPill } from "@/components/ui/badge";
 
-export type Tab = { label: string; href?: string; value?: string; count?: number };
+export type Tab = { label: string; href?: string; value?: string; count?: number; icon?: React.ReactNode };
 
 /**
- * Tabs in one strip. The chosen one sits on an orange rounded rectangle (owner decision, 26 September 2026) that
- * slides between items; the rest are quiet. Link tabs (href) for pages that switch by URL; value tabs with onChange
- * for local state. Counts sit in a small pill after the label.
+ * Tabs, v4 (spec §6).
+ * - `underline` (default): 14/20 medium, secondary → foreground when active, padding 4px 0 10px, ~24px apart; the
+ *   active tab has a 1.5px underline in the foreground at 80% that slides between tabs; the row sits on a full-width
+ *   hairline (`bordered`, default true).
+ * - `pills`: the sub-nav look: 32px items, px8, r8; active fill-1 with the foreground, hover fill-0.
+ * Link tabs (`href`) for pages that switch by URL; value tabs (`value`) switch `?{param}=` or call `onChange` for local
+ * state. Counts sit in a CountPill. Arrow keys move between tabs; Home and End jump to the ends.
  */
-export function Tabs({ tabs, value, onChange, param = "tab", className, label = "Sections" }: { tabs: Tab[]; value?: string; onChange?: (v: string) => void; param?: string; className?: string; label?: string }) {
+export function Tabs({ tabs, value, onChange, param = "tab", className, label = "Sections", variant = "underline", bordered = true }: { tabs: Tab[]; value?: string; onChange?: (v: string) => void; param?: string; className?: string; label?: string; variant?: "underline" | "pills"; bordered?: boolean }) {
   const pathname = usePathname();
   const sp = useSearchParams();
+  const marker = `tabs-${React.useId()}`;
   const current = value ?? sp.get(param) ?? tabs[0]?.value ?? tabs[0]?.href;
+  const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    const keys = ["ArrowLeft", "ArrowRight", "Home", "End"];
+    if (!keys.includes(e.key)) return;
+    const items = Array.from(e.currentTarget.querySelectorAll<HTMLElement>("[role=tab]"));
+    const at = items.indexOf(document.activeElement as HTMLElement);
+    if (at < 0) return;
+    e.preventDefault();
+    const next = e.key === "Home" ? 0 : e.key === "End" ? items.length - 1 : (at + (e.key === "ArrowRight" ? 1 : -1) + items.length) % items.length;
+    items[next]?.focus();
+  };
+  const underline = variant === "underline";
+  // A page that knows its state passes `value`, so the default tab lights up even before the URL names it.
+  const isActive = (t: Tab) => {
+    const key = t.value ?? t.href ?? t.label;
+    return value !== undefined && t.value ? value === t.value : t.href ? pathname === t.href || ((sp.get(param) ?? "") === (t.value ?? "") && !!t.value) : current === key;
+  };
+  const activeIndex = tabs.findIndex(isActive);
   return (
-    <div role="tablist" aria-label={label} className={cn("inline-flex max-w-full gap-1 overflow-x-auto rounded-full border border-border bg-wash-soft p-1", className)}>
-      {tabs.map((t) => {
+    <div role="tablist" aria-label={label} onKeyDown={onKeyDown}
+      className={cn("flex max-w-full overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden", underline ? cn("gap-6", bordered && "shadow-[inset_0_-1px_0_var(--border)]") : "gap-1", className)}>
+      {tabs.map((t, i) => {
         const key = t.value ?? t.href ?? t.label;
-        // A page that knows its state passes `value`, so the default tab lights up even before the URL names it.
-        const active = value !== undefined && t.value ? value === t.value : t.href ? pathname === t.href || (sp.get(param) ?? "") === (t.value ?? "") && !!t.value : current === key;
+        const active = i === activeIndex;
+        // Roving focus: the active tab (or the first, when none is) is the one Tab stop; arrows move between them.
+        const tabIndex = i === Math.max(0, activeIndex) ? 0 : -1;
         const inner = (
           <>
-            {active ? <SlidingMarker layoutId="tabs-active" className="absolute inset-0 rounded-full border border-accent/50 bg-accent-soft" /> : null}
+            {active && !underline ? <SlidingMarker layoutId={marker} className="absolute inset-0 rounded-lg bg-fill-1" /> : null}
+            {t.icon ? <span className="relative inline-flex [&_svg]:size-4">{t.icon}</span> : null}
             <span className="relative">{t.label}</span>
-            {t.count ? <span className={cn("relative ml-2 whitespace-nowrap rounded-full px-1.5 py-px text-[11px] font-bold tabular-nums", active ? "bg-accent text-accent-fg" : "bg-accent-soft text-accent")}>{t.count}</span> : null}
+            {t.count ? <CountPill count={t.count} className="relative" /> : null}
+            {active && underline ? <SlidingMarker layoutId={marker} className="absolute inset-x-0 bottom-0 h-[1.5px] rounded-full bg-foreground/80" /> : null}
           </>
         );
-        const cls = cn("relative whitespace-nowrap rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors duration-[var(--duration-fast)]", active ? "text-accent" : "text-fg-muted hover:text-fg");
+        const cls = cn("relative inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap text-sm font-medium transition-colors duration-75 focus-visible:rounded-md focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--ring)]",
+          underline ? "pb-2.5 pt-1" : "h-8 rounded-lg px-2 hover:bg-fill-0 pointer-coarse:h-10",
+          active ? "text-foreground" : "text-secondary hover:text-foreground");
         return t.href
-          ? <Link key={key} role="tab" aria-selected={active} href={t.href} className={cls}>{inner}</Link>
-          : <button key={key} type="button" role="tab" aria-selected={active} onClick={() => onChange?.(key)} className={cls}>{inner}</button>;
+          ? <Link key={key} role="tab" aria-selected={active} tabIndex={tabIndex} href={t.href} className={cls}>{inner}</Link>
+          : <button key={key} type="button" role="tab" aria-selected={active} tabIndex={tabIndex} onClick={() => onChange?.(key)} className={cls}>{inner}</button>;
       })}
     </div>
   );

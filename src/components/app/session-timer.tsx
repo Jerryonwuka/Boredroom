@@ -1,20 +1,23 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Pause, Play, Square, ArrowLeftRight, WifiOff, Circle } from "lucide-react";
+import { Pause, Play, Square, ArrowLeftRight, CircleDashed } from "lucide-react";
 import { api, isApiFailure } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import { ProgressArc } from "@/components/ui/progress-arc";
-import { Badge, SESSION_STATE_TONE, label } from "@/components/ui/badge";
+import { label } from "@/components/ui/badge";
 import { Alert } from "@/components/ui/states";
 import { Textarea, Select, Field } from "@/components/ui/input";
-import { formatClock, formatDuration } from "@/lib/utils";
+import { Sheet } from "@/components/ui/sheet";
+import { ProgressSlider } from "@/components/app/progress-slider";
+import { cn, formatClock, formatDuration } from "@/lib/utils";
 import { Swap } from "@/components/ui/motion";
-import type { SessionView } from "@/server/services/sessions";
+import type { RecordingRules, SessionView } from "@/server/services/sessions";
 
-export type CurrentSessionPayload = { session: SessionView | null; elsewhere: { organisationName: string; organisationSlug: string } | null };
+/** `recording`: the workspace's recording rules and whether you have agreed (the consent prompt reads them). */
+export type CurrentSessionPayload = { session: SessionView | null; elsewhere: { organisationName: string; organisationSlug: string } | null; recording?: RecordingRules | null };
 export type StartableTask = { id: string; title: string; project_name: string; status: string; capture_requirement: string; estimate_minutes: number | null; progress_percent?: number; version?: number };
 
 /** Capture integration point (recording pilot). Returns the capture mode to start with, or null to abort. */
@@ -30,12 +33,12 @@ type Props = {
   captureDialog?: React.ReactNode;
   onSessionChange?: (s: SessionView | null) => void;
   recordingControls?: (session: SessionView) => React.ReactNode;
-  /** Confirmed seconds worked today; shown as the clock when no session runs. */
-  todaySeconds?: number;
 };
 
 type Conflict = { sessionId: string; taskId: string; state: string; sameTask: boolean; wantedTaskId: string };
 type StopDialogState = null | { mode: "stop" } | { mode: "switch"; nextTaskId: string };
+/** What the timer says while a request is out, so a disabled control never looks merely broken. */
+const BUSY: Record<string, string> = { start: "Starting…", pause: "Pausing…", resume: "Resuming…", stop: "Stopping…", switch: "Switching…" };
 
 /** Display counter rebuilt from authoritative state: confirmed seconds + elapsed since the server's own clock reading. */
 function elapsedFor(session: SessionView | null, nowMs: number | null, offsetMs: number): number {
@@ -45,7 +48,13 @@ function elapsedFor(session: SessionView | null, nowMs: number | null, offsetMs:
   return session.confirmedSeconds + Math.max(0, Math.floor((nowMs + offsetMs - serverNowAtFetch) / 1000));
 }
 
-export function SessionTimer({ orgSlug, initial, tasks, captureGate, onCaptureSession, captureDialog, onSessionChange, recordingControls, todaySeconds = 0 }: Props) {
+/**
+ * The running timer (owner decision, 5 October 2026: compact, and only while something is on the clock). v4: a stat
+ * card. The label ("On the clock", with a status dot and when it last synced) over the time in 24/30 bold mono, the
+ * task under it, the controls as 40px outline icon buttons on the right (named for screen readers and the tooltip),
+ * then "How far along". The estimate runs as a thin orange line along the bottom edge. Stop and Switch open a sheet.
+ */
+export function SessionTimer({ orgSlug, initial, tasks, captureGate, onCaptureSession, captureDialog, onSessionChange, recordingControls }: Props) {
   const router = useRouter();
   const [session, setSession] = useState<SessionView | null>(initial.session);
   const [nowMs, setNowMs] = useState<number | null>(null);
@@ -179,117 +188,131 @@ export function SessionTimer({ orgSlug, initial, tasks, captureGate, onCaptureSe
     catch (err) { setError(isApiFailure(err) ? err.error.message : "Cannot reach the server."); router.refresh(); }
   };
   const syncAgo = nowMs != null && lastHeartbeatOkMs != null ? Math.max(0, Math.round((nowMs - lastHeartbeatOkMs) / 1000)) : 0;
+  const live = session?.state === "running";
 
-  return (
-    <section aria-labelledby="timer-heading" className={`tile relative overflow-hidden p-5 md:p-6 ${session?.state === "running" ? "tile-glow" : ""}`}>
-      <Swap id={session ? `s:${session.id}` : "idle"} className="flex flex-wrap items-end justify-between gap-x-8 gap-y-4">
-        <div className="min-w-0 flex-1">
-          <h2 id="timer-heading" className="text-sm text-fg-muted">{session ? (session.state === "running" ? "On the clock" : session.state === "paused" ? "Paused on the clock" : "Connection interrupted") : "Not on the clock"}</h2>
-          {session ? (
-            <>
-              <p className="mt-1 truncate font-display text-2xl md:text-3xl">{session.taskTitle}</p>
-              <p className="mt-1 text-sm text-fg-muted">{session.projectName}{session.estimateMinutes ? `, estimated ${formatDuration(session.estimateMinutes * 60)}` : ""}</p>
-            </>
-          ) : <p className="mt-1 text-fg-muted">Press Start on a to-do below. {todaySeconds ? "The clock shows what you have worked today." : "The clock starts with your first task."}</p>}
-        </div>
-        <div className="text-right">
-          {session ? (
-            <>
-              <p className="font-display text-5xl leading-none tabular-nums md:text-6xl" aria-label={`Elapsed ${formatDuration(elapsed)}`}>{formatClock(elapsed)}</p>
-              <div className="mt-2 flex items-center justify-end gap-2 text-xs text-fg-subtle">
-                <Badge tone={SESSION_STATE_TONE[session.state]} dot>{label(session.state)}</Badge>
-                {session.state === "running" ? <span>synced {connectionLost ? "— connection lost" : `${syncAgo}s ago`}</span> : null}
-              </div>
-            </>
-          ) : (
-            <p className="font-display text-5xl leading-none tabular-nums text-fg-muted md:text-6xl" aria-label={`Worked today ${formatDuration(todaySeconds)}`}>{formatClock(todaySeconds)}</p>
-          )}
-        </div>
-      </Swap>
-      {session?.estimateMinutes ? (
-        <div className="mt-4 h-px w-full bg-border" aria-hidden>
-          <div className="h-px bg-accent transition-[width] duration-1000 ease-linear" style={{ width: `${Math.min(100, (elapsed / (session.estimateMinutes * 60)) * 100)}%` }} />
-        </div>
-      ) : null}
-
-      {elsewhere ? <Alert tone="warning" className="mt-4" title="Open session in another workspace">You have a session running in {elsewhere.organisationName}. Stop it there before starting work here. <a className="underline" href={`/app/${elsewhere.organisationSlug}/my-day`}>Open that workspace</a>.</Alert> : null}
-      {connectionLost ? <Alert tone="danger" className="mt-4" title="Connection lost"><span className="inline-flex items-center gap-2"><WifiOff className="h-4 w-4" aria-hidden />Heartbeats are not reaching the server. Confirmed time stops at the last acknowledged heartbeat; when you reconnect you can resume and request a correction for the gap. Nothing is credited automatically.</span></Alert> : null}
-      {session?.state === "interrupted" ? <Alert tone="warning" className="mt-4" title="Session interrupted">The server stopped receiving heartbeats. Confirmed time ends at the last heartbeat; {session.uncertainSeconds > 0 ? `${formatDuration(session.uncertainSeconds)} is marked uncertain` : "the gap will be marked uncertain when you resume or stop"}. Resume to continue, then file a time correction if you kept working.</Alert> : null}
-      {estimateReached && session?.state === "running" ? <Alert tone="info" className="mt-4" title="Estimate reached">You have passed the estimate for this task. Consider adding a progress note; the timer keeps running and this is not a judgement of your work.</Alert> : null}
-      {error ? <Alert tone="danger" className="mt-4">{error}</Alert> : null}
-
+  const alerts = (
+    <>
+      {elsewhere ? <Alert tone="warning" title="Open session in another workspace">You have a session running in {elsewhere.organisationName}. Stop it there before starting work here. <a className="font-medium text-foreground underline underline-offset-4" href={`/app/${elsewhere.organisationSlug}/my-day`}>Open that workspace</a>.</Alert> : null}
+      {connectionLost ? <Alert tone="danger" title="Connection lost">Heartbeats are not reaching the server. Confirmed time stops at the last acknowledged heartbeat; when you reconnect you can resume and request a correction for the gap. Nothing is credited automatically.</Alert> : null}
+      {session?.state === "interrupted" ? <Alert tone="warning" title="Session interrupted">The server stopped receiving heartbeats. Confirmed time ends at the last heartbeat; {session.uncertainSeconds > 0 ? `${formatDuration(session.uncertainSeconds)} is marked uncertain` : "the gap will be marked uncertain when you resume or stop"}. Resume to continue, then file a time correction if you kept working.</Alert> : null}
+      {estimateReached && live ? <Alert tone="info" title="Estimate reached">You have passed the estimate for this task. Consider adding a progress note; the timer keeps running and this is not a judgement of your work.</Alert> : null}
+      {error && !stopDialog ? <Alert tone="danger">{error}</Alert> : null}
       {conflict ? (
-        <div className="mt-4 rounded-xl border border-warning/40 bg-warning/10 p-4">
-          <p className="font-semibold">You already have an open session{conflict.sameTask ? " on this task" : ""}.</p>
-          <p className="text-sm text-fg-muted">State: {label(conflict.state)}. Resume it, or switch to the task you selected.</p>
+        <Alert tone="warning" title={`You already have an open session${conflict.sameTask ? " on this task" : ""}`}>
+          <p>State: {label(conflict.state)}. Resume it, or switch to the task you selected.</p>
           <div className="mt-3 flex flex-wrap gap-2">
             <Button size="sm" onClick={async () => { setConflict(null); await refetch(); }}>Show current session</Button>
-            {!conflict.sameTask && conflict.wantedTaskId ? <Button size="sm" variant="outline" onClick={() => { setConflict(null); setStopDialog({ mode: "switch", nextTaskId: conflict.wantedTaskId }); }}>Switch to selected task</Button> : null}
+            {!conflict.sameTask && conflict.wantedTaskId ? <Button size="sm" variant="secondary" onClick={() => { setConflict(null); setStopDialog({ mode: "switch", nextTaskId: conflict.wantedTaskId }); }}>Switch to selected task</Button> : null}
             <Button size="sm" variant="ghost" onClick={() => setConflict(null)}>Dismiss</Button>
           </div>
-        </div>
+        </Alert>
       ) : null}
+    </>
+  );
+  const hasAlerts = !!(elsewhere || connectionLost || session?.state === "interrupted" || (estimateReached && live) || (error && !stopDialog) || conflict);
 
-      {session ? (
-        <div className="mt-5 flex flex-wrap items-center gap-4">
-          <div className="flex items-center gap-2">
-            {session.state === "running" ? <IconButton aria-label="Pause" onClick={pause} disabled={!!busy}><Pause className="size-4" aria-hidden /></IconButton> : null}
-            {session.state === "paused" || session.state === "interrupted" ? <IconButton aria-label="Resume" onClick={resume} disabled={!!busy} className="!border-accent !bg-accent !text-accent-fg"><Play className="size-4" aria-hidden /></IconButton> : null}
-            <IconButton aria-label="Switch task" onClick={() => setStopDialog({ mode: "switch", nextTaskId: "" })} disabled={!!busy || tasks.filter((t) => t.id !== session.taskId).length === 0}><ArrowLeftRight className="size-4" aria-hidden /></IconButton>
-            <IconButton aria-label="Stop the session" onClick={() => setStopDialog({ mode: "stop" })} disabled={!!busy} className="border-danger/40 bg-danger/10 text-danger hover:border-danger/70 hover:bg-danger/15 hover:text-danger"><Square className="size-4" aria-hidden /></IconButton>
-            {recordingControls ? recordingControls(session) : null}
+  // Nothing on the clock (owner decision, 5 October 2026): no card and no idle clock, the page header already says how
+  // long you worked today. Only what a Start needs to say is shown: that it is starting, a problem, the recording dialog.
+  if (!session) {
+    const starting = !!busy?.startsWith("start:");
+    if (!starting && !hasAlerts && !captureDialog) return null;
+    return (
+      <div className="space-y-3">
+        {starting ? <p role="status" className="inline-flex h-8 items-center gap-2 rounded-[10px] bg-fill-0 px-3 text-meta font-medium text-secondary"><span className="size-1.5 rounded-full bg-success" aria-hidden />Starting the timer…</p> : null}
+        {alerts}
+        {captureDialog}
+      </div>
+    );
+  }
+
+  const canSwitch = tasks.some((t) => t.id !== session.taskId);
+  const paused = session.state === "paused" || session.state === "interrupted";
+  return (
+    <section aria-labelledby="timer-heading" className="card-stat relative overflow-hidden">
+      <Swap id={`s:${session.id}`} className="flex flex-wrap items-start justify-between gap-x-6 gap-y-4">
+        <div className="min-w-0 flex-[1_1_16rem]">
+          <h2 id="timer-heading" className="flex flex-wrap items-center gap-x-2 text-sm font-medium text-secondary">
+            <span className={cn("size-2 shrink-0 rounded-full", live ? "bg-success" : session.state === "paused" ? "bg-warning" : "bg-danger")} aria-hidden />
+            {live ? "On the clock" : session.state === "paused" ? "Paused" : "Connection interrupted"}
+            {live ? <span className="text-meta font-normal text-subtle">{connectionLost ? "connection lost" : `synced ${syncAgo}s ago`}</span> : null}
+          </h2>
+          <p role="timer" className={cn("type-stat mt-1 font-mono", !live && "text-secondary")} aria-label={`Elapsed ${formatDuration(elapsed)}`}>{formatClock(elapsed)}</p>
+          <p className="mt-3 truncate text-sm font-semibold text-foreground">{session.taskTitle}</p>
+          <p className="truncate text-meta font-normal text-secondary">{session.projectName}{session.estimateMinutes ? `, estimated ${formatDuration(session.estimateMinutes * 60)}` : ""}</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {live ? <IconButton variant="outline" aria-label="Pause" onClick={pause} disabled={!!busy}><Pause aria-hidden /></IconButton> : null}
+          {paused ? <Button size="icon" aria-label="Resume" onClick={resume} disabled={!!busy}><Play aria-hidden /></Button> : null}
+          <IconButton variant="outline" aria-label="Switch task" onClick={() => setStopDialog({ mode: "switch", nextTaskId: "" })} disabled={!!busy || !canSwitch} aria-describedby={canSwitch ? undefined : "timer-no-switch"}><ArrowLeftRight aria-hidden /></IconButton>
+          <IconButton variant="outline" aria-label="Stop" className="text-danger hover:text-danger" onClick={() => setStopDialog({ mode: "stop" })} disabled={!!busy}><Square className="fill-current !size-3.5" aria-hidden /></IconButton>
+          {recordingControls ? recordingControls(session) : null}
+          {!canSwitch ? <span id="timer-no-switch" className="sr-only">Nothing else on your list to switch to.</span> : null}
+        </div>
+      </Swap>
+
+      {busy ? <p role="status" className="mt-3 text-meta font-normal text-secondary">{BUSY[busy.startsWith("start:") ? "start" : busy] ?? "Working…"}</p> : null}
+      {hasAlerts ? <div className="mt-4 space-y-2">{alerts}</div> : null}
+
+      {current?.version !== undefined ? (
+        <div className="mt-4 flex items-center gap-3 sm:max-w-sm">
+          <ProgressArc percent={shownProgress} size={36} tone="accent" />
+          <div className="min-w-0 flex-1">
+            <span aria-hidden className="block text-meta font-medium text-secondary">How far along</span>
+            <ProgressSlider label="How far along" value={shownProgress}
+              onChange={(v) => setProgress({ taskId: session.taskId, value: v, version: progress?.taskId === session.taskId ? progress.version : current.version! })}
+              onCommit={(v) => void saveProgress(v)} />
           </div>
-          {current?.version !== undefined ? (
-            <div className="flex min-w-[220px] flex-1 items-center gap-3 rounded-[var(--radius-sm)] border border-border-soft bg-wash px-3 py-2">
-              <ProgressArc percent={shownProgress} size={44} />
-              <div className="min-w-0 flex-1">
-                <p className="eyebrow">How far along</p>
-                <input type="range" min={0} max={100} step={5} value={shownProgress} aria-label="Percentage done" className="mt-1 w-full accent-[var(--accent)]" onChange={(e) => setProgress({ taskId: session.taskId, value: Number(e.target.value), version: progress?.taskId === session.taskId ? progress.version : current.version! })} onMouseUp={(e) => void saveProgress(Number((e.target as HTMLInputElement).value))} onTouchEnd={(e) => void saveProgress(Number((e.target as HTMLInputElement).value))} onKeyUp={(e) => { if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"].includes(e.key)) void saveProgress(Number((e.target as HTMLInputElement).value)); }} />
-              </div>
-            </div>
-          ) : null}
         </div>
       ) : null}
 
       {stopDialog ? (
-        <StopDialog mode={stopDialog.mode} nextTaskId={stopDialog.mode === "switch" ? stopDialog.nextTaskId : ""} tasks={tasks.filter((t) => t.id !== session?.taskId)} busy={!!busy}
-          onCancel={() => setStopDialog(null)} onStop={stop} onSwitch={doSwitch} />
+        <StopDialog mode={stopDialog.mode} nextTaskId={stopDialog.mode === "switch" ? stopDialog.nextTaskId : ""} tasks={tasks.filter((t) => t.id !== session.taskId)} busy={!!busy} error={error}
+          onCancel={() => { setStopDialog(null); setError(null); }} onStop={stop} onSwitch={doSwitch} />
       ) : null}
       {captureDialog}
-      {current?.capture_requirement === "required" && session?.captureMode === "exception" ? <p className="mt-3 inline-flex items-center gap-2 text-xs text-warning"><Circle className="h-3 w-3" aria-hidden />Tracked under a capture exception: time is provisional pending review; no recording exists for this session.</p> : null}
+      {current?.capture_requirement === "required" && session.captureMode === "exception" ? <p className="mt-3 inline-flex items-center gap-2 text-meta font-normal text-warning"><CircleDashed className="size-3.5" aria-hidden />Tracked under a capture exception: time is provisional pending review; no recording exists for this session.</p> : null}
+      {session.estimateMinutes ? (
+        // The estimate as a thin line along the bottom edge; it grows by transform, so the browser only composites it.
+        <div className="absolute inset-x-0 bottom-0 h-0.5 overflow-hidden bg-fill-1" aria-hidden>
+          <div className="h-full origin-left bg-accent transition-transform duration-1000 ease-linear" style={{ transform: `scaleX(${Math.min(1, elapsed / (session.estimateMinutes * 60))})` }} />
+        </div>
+      ) : null}
     </section>
   );
 }
 
-function StopDialog({ mode, nextTaskId, tasks, busy, onCancel, onStop, onSwitch }: { mode: "stop" | "switch"; nextTaskId: string; tasks: StartableTask[]; busy: boolean; onCancel: () => void; onStop: (note: string, outcome: string) => void; onSwitch: (nextTaskId: string, note: string) => void }) {
+/** Stop or Switch, in a right-hand sheet: a progress note, and what happens to the task (stop) or the next task (switch). */
+function StopDialog({ mode, nextTaskId, tasks, busy, error, onCancel, onStop, onSwitch }: { mode: "stop" | "switch"; nextTaskId: string; tasks: StartableTask[]; busy: boolean; error: string | null; onCancel: () => void; onStop: (note: string, outcome: string) => void; onSwitch: (nextTaskId: string, note: string) => void }) {
   const [note, setNote] = useState("");
   const [outcome, setOutcome] = useState("continue_later");
   const [next, setNext] = useState(nextTaskId || tasks[0]?.id || "");
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => { ref.current?.querySelector<HTMLElement>("textarea, select")?.focus(); }, []);
   return (
-    <div ref={ref} role="dialog" aria-modal="false" aria-labelledby="stop-heading" className="mt-5 rounded-xl border border-border-strong bg-inset p-4" onKeyDown={(e) => { if (e.key === "Escape") onCancel(); }}>
-      <h3 id="stop-heading" className="font-semibold">{mode === "stop" ? "Stop session" : "Switch task"}</h3>
-      <p className="text-sm text-fg-muted">{mode === "stop" ? "Add a short progress note and choose what happens to the task." : "The current session closes and a new one starts on the selected task, in one step."}</p>
-      <div className="mt-3 grid gap-3">
+    <Sheet open size="sm" onClose={onCancel} dismissible={false}
+      title={mode === "stop" ? "Stop session" : "Switch task"}
+      description={mode === "stop" ? "Add a short progress note and choose what happens to the task." : "The current session closes and a new one starts on the selected task, in one step."}
+      footer={<>
+        <Button variant="secondary" disabled={busy} onClick={onCancel}>Cancel</Button>
+        {mode === "stop"
+          ? <Button variant="destructive" loading={busy} onClick={() => onStop(note, outcome)}>{busy ? "Stopping…" : "Stop session"}</Button>
+          : <Button loading={busy} disabled={!next} onClick={() => onSwitch(next, note)}>{busy ? "Switching…" : "Switch"}</Button>}
+      </>}>
+      <div className="grid gap-4">
+        {error ? <Alert tone="danger">{error}</Alert> : null}
         {mode === "switch" ? (
           <Field label="Next task" htmlFor="next-task"><Select id="next-task" value={next} onChange={(e) => setNext(e.target.value)}>{tasks.map((t) => <option key={t.id} value={t.id}>{t.title} — {t.project_name}</option>)}</Select></Field>
         ) : null}
-        <Field label="Progress note" htmlFor="stop-note" hint={mode === "stop" ? "recommended" : "optional"}><Textarea id="stop-note" value={note} onChange={(e) => setNote(e.target.value)} maxLength={2000} placeholder="What did you get done? What is next?" /></Field>
-        {mode === "stop" && outcome === "completed" ? <p className="text-xs text-fg-muted">Your own to-dos are completed straight away. A task your team lead gave you goes to them for a quick check first.</p> : null}
+        <Field label="Progress note" htmlFor="stop-note" hint={mode === "stop" ? "Recommended" : "Optional"}><Textarea id="stop-note" value={note} onChange={(e) => setNote(e.target.value)} maxLength={2000} placeholder="What did you get done? What is next?" /></Field>
         {mode === "stop" ? (
-          <Field label="Task outcome" htmlFor="outcome"><Select id="outcome" value={outcome} onChange={(e) => setOutcome(e.target.value)}>
-            <option value="continue_later">Continue later</option>
-            <option value="completed">Done — mark the task completed</option>
-            <option value="blocked">Blocked — needs help</option>
-            <option value="ready_for_review">Ready for review — attach evidence next</option>
-          </Select></Field>
+          <Field label="Task outcome" htmlFor="outcome" description={outcome === "completed" ? "Your own to-dos are completed straight away. A task your team lead gave you goes to them for a quick check first." : undefined}>
+            <Select id="outcome" value={outcome} onChange={(e) => setOutcome(e.target.value)}>
+              <option value="continue_later">Continue later</option>
+              <option value="completed">Done: mark the task completed</option>
+              <option value="blocked">Blocked: needs help</option>
+              <option value="ready_for_review">Ready for review: attach evidence next</option>
+            </Select>
+          </Field>
         ) : null}
       </div>
-      <div className="mt-4 flex gap-2">
-        {mode === "stop" ? <Button variant="danger" disabled={busy} onClick={() => onStop(note, outcome)}>Stop session</Button> : <Button disabled={busy || !next} onClick={() => onSwitch(next, note)}>Switch</Button>}
-        <Button variant="ghost" onClick={onCancel}>Cancel</Button>
-      </div>
-    </div>
+    </Sheet>
   );
 }

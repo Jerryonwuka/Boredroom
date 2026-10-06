@@ -4,6 +4,9 @@
  * Records a voice note with the browser's MediaRecorder. Start opens the microphone; stop hands back the audio and
  * its length in seconds; cancel throws it away. The type is whatever the browser can produce (webm/opus in Chrome
  * and Firefox, mp4 in Safari). Nothing leaves the browser until the note is sent.
+ *
+ * The open microphone is handed out as `stream`, so the voice card measures its level from it instead of opening a
+ * second one. At the ten-minute limit the recording is handed to `onLimit` (the composer sends it); without one it stops.
  */
 import { useEffect, useRef, useState } from "react";
 
@@ -18,8 +21,42 @@ export function describeMicError(err: unknown): string {
   return `Could not open the microphone (${name ?? "unknown error"}).`;
 }
 
-export function useVoiceRecorder() {
+function browserName(): string {
+  if (typeof navigator === "undefined") return "your browser";
+  const ua = navigator.userAgent;
+  if ((navigator as unknown as { brave?: unknown }).brave) return "Brave";
+  if (/Edg\//.test(ua)) return "Microsoft Edge";
+  if (/Arc\//.test(ua)) return "Arc";
+  if (/Firefox\//.test(ua)) return "Firefox";
+  if (/Chrome\//.test(ua)) return "Google Chrome";
+  if (/Safari\//.test(ua)) return "Safari";
+  return "your browser";
+}
+
+/**
+ * Says which of the two gates refused the microphone. The browser's own setting for this site shows up as "denied" in
+ * the Permissions API; when the site is allowed (or never asked) and the microphone is still refused, it is the
+ * operating system blocking the whole browser (on a Mac: Privacy and Security, Microphone), which no site setting fixes.
+ */
+export async function diagnoseMicError(err: unknown): Promise<string> {
+  const name = (err as { name?: string })?.name;
+  if (name !== "NotAllowedError" && name !== "SecurityError") return describeMicError(err);
+  const browser = browserName();
+  let state: string | null = null;
+  try { state = (await navigator.permissions.query({ name: "microphone" as PermissionName })).state; } catch { /* not supported */ }
+  const mac = /Mac/.test(navigator.platform || navigator.userAgent);
+  if (state === "denied") return `${browser} has blocked the microphone for ${location.host}. Click the icon at the left of the address bar, set Microphone to Allow, then reload the page.`;
+  if (state === "granted" || state === "prompt") {
+    return mac
+      ? `macOS is not letting ${browser} use the microphone. Open System Settings, Privacy and Security, Microphone, switch ${browser} on, then quit ${browser} completely and open it again.`
+      : `Your system is not letting ${browser} use the microphone. Check the microphone privacy settings for ${browser}, then restart it.`;
+  }
+  return describeMicError(err);
+}
+
+export function useVoiceRecorder({ onLimit }: { /** Called once when the recording reaches MAX_SECONDS. */ onLimit?: () => void } = {}) {
   const [recording, setRecording] = useState(false);
+  const [live, setLive] = useState<MediaStream | null>(null);
   const [seconds, setSeconds] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const rec = useRef<MediaRecorder | null>(null);
@@ -27,12 +64,14 @@ export function useVoiceRecorder() {
   const chunks = useRef<Blob[]>([]);
   const startedAt = useRef(0);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const limitListener = useRef(onLimit);
+  useEffect(() => { limitListener.current = onLimit; });
 
   const release = () => {
     if (timer.current) clearInterval(timer.current); timer.current = null;
     stream.current?.getTracks().forEach((t) => t.stop()); stream.current = null;
     rec.current = null;
-    setRecording(false);
+    setRecording(false); setLive(null);
   };
   useEffect(() => () => { try { rec.current?.stop(); } catch { /* not started */ } release(); }, []);
 
@@ -53,14 +92,17 @@ export function useVoiceRecorder() {
       rec.current = r;
       startedAt.current = Date.now();
       setSeconds(0);
-      setRecording(true);
+      setRecording(true); setLive(s);
       timer.current = setInterval(() => {
         const s = Math.floor((Date.now() - startedAt.current) / 1000);
         setSeconds(s);
-        if (s >= MAX_SECONDS) void stop();
+        if (s < MAX_SECONDS) return;
+        // Once only: the clock stops here, and the note goes to whoever sends it rather than being dropped.
+        if (timer.current) clearInterval(timer.current); timer.current = null;
+        if (limitListener.current) limitListener.current(); else void stop();
       }, 250);
       return true;
-    } catch (err) { setError(describeMicError(err)); release(); return false; }
+    } catch (err) { release(); setError(await diagnoseMicError(err)); return false; }
   }
 
   /** Stops and returns the note, or null when nothing was recorded. */
@@ -81,5 +123,5 @@ export function useVoiceRecorder() {
 
   function cancel() { const r = rec.current; if (r && r.state !== "inactive") { r.onstop = null; r.stop(); } chunks.current = []; release(); }
 
-  return { supported, recording, seconds, error, clearError: () => setError(null), start, stop, cancel };
+  return { supported, recording, seconds, error, clearError: () => setError(null), start, stop, cancel, /** The open microphone while recording, else null. */ stream: live };
 }

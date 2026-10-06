@@ -1,165 +1,144 @@
-# Boredroom design system, version 2
+# Boredroom design system, version 4
 
-The look the landing page arrived at on 23 and 24 September 2026, made into the system for the whole product. It is modelled on resend.com: true black, white and grey type, hairline borders, solid dark cards with a top highlight, one orange, 3D glass icons, and motion that answers something. `src/app/globals.css` holds the values; `src/components/ui/` holds the parts; `.claude/skills/boredroom-ui/SKILL.md` makes them the rule. Version 1 (dark greys, glow tiles, tracked-caps eyebrows) is superseded.
+Owner decision, 6 October 2026: "Study ElevenLabs' dashboard deeply … replicate the design style, spacing, alignment, text formatting, use of numbers, button styles, design layout, text sizes and styles … ignore the current design system totally." And: "Keep orange as our accent colour." v4 is the ElevenLabs app's design language, measured from the live app with computed styles, with Boredroom orange wherever they use their blue. We copy the language (tokens, proportions, behaviours), never their brand (no logo, no Waldenburg files, no images, no copy).
 
-## Foundations
+- Values: `src/app/globals.css` (source of truth). Parts: `src/components/ui/`. Every part in every state, dark and light: **`/dev/design`** (development only), with a sample app frame in `src/app/dev/design/app-frame.tsx`.
+- Where this document and an older comment disagree, this document and `globals.css` win. Versions 1 to 3 (glow tiles, solid dark cards, the "Digital" aurora and gradient) are retired.
 
-### Colour
+## Principles
 
-| Token | Value | Use |
-| --- | --- | --- |
-| `--bg` | `#000000` | The canvas. True black, never a tinted near-black. |
-| `--bg-elevated` | `#121212` | Cards, through `.tile` (a `#151515` to `#0f0f0f` gradient). |
-| `--bg-surface` | `#181818` | Small surfaces inside a card (`.panel`). |
-| `--bg-popover` | `#1a1a1a` | Menus and dialogs. |
-| `--bg-inset` | `#0a0a0a` | Inputs: darker than their surroundings because they receive content. |
-| `--border-soft` / `--border` / `--border-strong` | white at 7% / 12% / 18% | Hairlines. Emphasis comes from space and weight before lines. |
-| `--fg` / `--fg-muted` / `--fg-subtle` / `--fg-faint` | `#fff` / `#a1a1a1` / `#6b6b6b` / `#4a4a4a` | Four text tiers: primary, secondary, metadata, disabled. |
-| `--accent` / `--accent-hover` / `--accent-fg` | `#ff6c02` / `#ff8226` / `#140700` | The one orange. On the live thing, the primary action, the active nav icon, a verdict that needs eyes. About 10% of any screen. |
-| `--success` `--warning` `--danger` `--info` | green, amber, red, blue, slightly desaturated | Status only. Never decoration. |
+1. **Monochrome.** Near-black canvas, white text, greys made of white at low alpha. Hierarchy comes from colour (100% / 64% / 53% white), not size.
+2. **Hairlines, not shadows.** Every edge is 1px of white at 7.5% (`--border`); inputs and outline buttons 10%. Shadows are tiny "natural" stacks you barely see in dark.
+3. **Quiet density.** Interface text is Inter 14/20 medium. Page titles use the display face.
+4. **Primary = solid white with near-black text** (inverted in light). Secondary = outline. Tertiary = ghost.
+5. **Orange is rare:** the focus ring, "New" badges, one standout action per screen (accent button), the logo's dot, live/recording marks. Status colours (green, amber, red) only on small dots, badges and status charts.
+6. **No** gradients, glass, glow, aurora, text gradients, tracked uppercase labels or middle-dot meta lines. The one blur is the top bar (canvas at 90% + blur 8px). The one measured gradient is the barely visible fill on a tool-tile square.
+7. **Fast, calm motion:** colours 75ms; tabs, menus, tooltips 150–200ms; sheets 300ms ease-out. Nothing bounces or scales on press. `prefers-reduced-motion` turns movement off.
 
-Sidebar and mobile header sit on `--sidebar` (`#050505`), one step off the canvas, so the content column reads as the page.
+## Tokens
 
-Surfaces bind to tokens too, so a theme changes values and nothing else: `--surface-top/-bottom` (the `.tile` gradient), `--surface-hover-*`, `--btn-*` and `--btn-hover-*` (the button gradient), `--avatar-*`, four washes (`--wash-soft`, `--wash`, `--wash-strong`, `--wash-active`, white at 3/5/8/10% in dark, black at 2.5/4/6/8% in light; utilities `bg-wash-*`), `--highlight` (the 1px top highlight inside surfaces), `--overlay` (dialog backdrops) and `--media` (video letterboxing, black in both themes). Never write `bg-white/10` or a hex in a component; pick the token.
+Themes live on `[data-theme]` (`html` carries it; any element can nest the other theme). Tailwind utilities exist for every colour: `bg-background`, `text-secondary`, `border-border`, `bg-fill-1`, `text-accent`…
 
-### Light theme
+| Token | Dark | Light | Use |
+|---|---|---|---|
+| `--background` | `#0F0F10` | `#FFFFFF` | Canvas, cards, outline buttons, dialogs |
+| `--sidebar` | `#171717` | `#FAFAFA` | Sidebar panel |
+| `--foreground` | `#FFFFFF` | `#0F0F10` | Text, primary fill |
+| `--secondary` | white 64% | black 53% | Nav items, descriptions, icons, table headers |
+| `--subtle` | white 53% | black 44% | Placeholders, metric and control labels |
+| `--faint` | white 32% | black 25% | Disabled text |
+| `--border` | white 7.5% | black 7.5% | Every hairline (a bare `border` draws it) |
+| `--border-input` / `-hover` | white 10% / 16% | black 10% / 16% | Inputs, outline buttons |
+| `--fill-0` / `--fill-075` / `--fill-1` / `--fill-150` | white 2.4 / 3 / 4.3 / 7% | black 2 / 3 / 4.3 / 6% | Section cards and metric cells / count pill / hover, active nav, badges / pressed |
+| `--surface` | fill-1 over the canvas, solid | same | Anything that must not let content through (docked composers) |
+| `--popover` | `#2E2E2E` | `#FFFFFF` + shadow | Menus, popovers |
+| `--toast` | `hsl(0 0% 23% / .85)` | `#FFFFFF` | Toasts, tooltips |
+| `--overlay` | `#3B3B3B` at 30% | ink at 20% | Behind dialogs; never blurred |
+| `--primary` / `-hover` / `-fg` | white / `#CFCFCF` / `#0F0F10` | `#0F0F10` / `#2E2E2E` / white | The primary button |
+| `--accent` / `-hover` | `#FF6C02` / `#FF7F24` | `#F25F00` / `#DB5600` | Orange |
+| `--accent-fg` | `#0F0F10` | `#0F0F10` | Text on orange (white on orange fails contrast) |
+| `--accent-soft` / `--accent-text` | `#4A1F04` / `#FF9A4D` | `#FFE9D9` / `#B54400` | "New" badge; rare accent links |
+| `--accent-tint` | orange 10% | orange 8% | Accent-tinted notice card (with a hairline) |
+| `--ring` | orange 50% | orange 50% | Focus ring: 2px, offset 2px, keyboard only |
+| `--success` `--warning` `--danger` | `hsl(142 71% 45%)` `hsl(38 92% 50%)` `hsl(0 84% 60%)` | darker for contrast | Status only; soft fills 10–15% |
+| `--info` | `#A3A3A3` | `#6B6B6B` | No blue in v4: "info" is a neutral grey |
+| `--gray-75/100/150/600` | `#212121 #2E2E2E #3B3B3B #A3A3A3` | light equivalents | Utilities are **`grey-*`** (`bg-grey-100`), so Tailwind's own `gray-*` stays intact |
 
-`:root[data-theme="light"]` restates the same tokens on paper white: canvas `#f4f4f2`, cards white, inputs `#f1f1ef`, hairlines black at 6/10/18%, text `#111` / `#5a5a5a` / `#8a8a8a` / `#b4b4b4`. Orange is unchanged; the four status colours darken (`#178f5d`, `#a86d0f`, `#d23c3c`, `#2b6cd9`) so they keep contrast on white. The `dark:` variant follows `data-theme`, not the operating system, so vendored components switch with the page. Dark is the default; the choice is stored in `localStorage` under `boredroom-theme`, applied by an inline script in the root layout before first paint, and changed with `ThemeToggle` (a sun or moon `IconButton`), which sits in the workspace top bar, the landing header, the auth pages and the workspace picker.
+Layout tokens: `--header-height: 50px`, `--sidebar-width: 16rem`, `--sidebar-width-collapsed: 3.5rem`, `--page-x: 20px`, `--sheet-width: 512px`. Elevation: `shadow-natural-xs`, `shadow-chart`, `shadow-sheet`, `shadow-toast` (variables `--elev-*`). Motion: `--duration-fast` 75ms, `--duration` 150ms, `--duration-menu` 180ms, `--duration-sheet` 300ms, `--ease-out`. Z-index: `--z-raised` 10 → `--z-toast` 60.
 
-### Type
+## Type
 
-Cal Sans for display (headings, verdicts, the clock), Manrope for everything else. Sentence case everywhere. No tracked capitals except the 11px label on a stat card, which is the one place a label needs to recede below its verdict.
+Inter (variable) for the interface, Geist for display (standing in for ElevenLabs' proprietary Waldenburg, same sizes and tracking), Geist Mono for code, IDs, count chips and timers. Numbers in tables and counts are tabular. Sentence case everywhere.
 
-| Role | Size and weight |
-| --- | --- |
-| Page title | Cal Sans 30/38px, tracking -0.02em |
-| Section title in a page | Cal Sans 18 to 22px |
-| Verdict (stat card) | Cal Sans 28px |
-| Clock | Cal Sans 48 to 96px, tabular, the accent when running |
-| Body | Manrope 15 to 16px, line height 1.5 |
-| Card text | Manrope 14 to 15px, `--fg-muted`, line height 1.6 |
-| Metadata | Manrope 12 to 13px, `--fg-subtle` |
+| Role | Style | Class / utilities |
+|---|---|---|
+| Home headline | display 28/36 400, −0.21px, centred, balanced | `.type-headline` (`text-3xl font-display`) |
+| Page title (h1) | display 24/30 400, −0.15px | `.type-page-title` (h1 default) |
+| Section title (h2) | 18/26 600, −0.045px, 14px below | `.type-section-title` (h2 default), `SectionTitle` |
+| Dialog / sheet title | 18/26 500 | `.type-dialog-title` |
+| Stat value | 24/30 700, −0.15px, tabular | `.type-stat` |
+| Metric value | 18/26 500, tabular | `.type-metric` |
+| Body, UI, buttons, nav, labels | 14/20 500 | body default, `text-sm font-medium` |
+| Paragraphs, descriptions | 14/20 400, secondary | `.type-paragraph` |
+| Row subtitle, meta | 13/19.5 400, secondary | `.type-meta`, `text-meta` |
+| Metric label | 13/19.5 500, subtle | `.type-metric-label` |
+| Caption, badge, control label | 12/16 500, +0.03px | `.type-caption`, `text-xs` |
+| Tiny badge | 10/16 600 | `.type-tiny`, `text-2xs` |
+| Kbd | 11px 500 in a 20px r6 fill-1 chip | `Kbd`, `.kbd` |
+| Code | mono 13.6/19 | `.type-code` |
+| Long-form input | 16/24 400 | `text-base` |
 
-Headings use `text-wrap: balance`, paragraphs `text-wrap: pretty`, numbers `tabular-nums`.
+## Radius, spacing, elevation
 
-### Surfaces
+Radius: 6 (mono chip, kbd, small select); 7 (segmented items); 8 (28px buttons, nav links, menu items: `rounded-lg`); 10 (32–36px buttons, inputs, icon buttons: `rounded-[10px]` or `rounded-sm`); 12 (40px buttons and inputs, stat cards, menus, tool squares: `rounded-xl`); 16 (chart cards, dialogs: `rounded-2xl`); 24 (section cards: `rounded-3xl`); 26 (prompt pill); full (badges, switches, round prompt actions). Tailwind's scale is kept except `rounded-sm`, which is 10px.
 
-| Class | What it is |
-| --- | --- |
-| `.tile` | A card: dark gradient, hairline, inset top highlight, a soft shadow beneath. `tile-link` lifts 1px and brightens on hover. `tile-active` marks the one live row with an accent edge. `tile-glow` is reserved for the running session and page headers. |
-| `.chip` | A row, chip, input strip or pill inside a card: 5% white wash and a 10% hairline. `chip-link` brightens on hover. |
-| `.panel` | An inner panel on `--bg-surface`, 12px radius. |
-| `.icon-tile` | The lit square that holds a 3D icon, with an orange glow beneath it. |
-| `.hairline-grid` / `.hairline-cell` | Cells split by 1px lines drawn from the gap, one rounded border round the set. Hover tints the cell, lifts and tilts the icon, warms the title. |
+Spacing base 4px. Page sides 20px; top bar 50px; sections 32–48px apart; grid gaps 12px. Card padding: 20 (stat, chart), 24 (section), 16 (tiles, metric cells), 12 (sidebar notice).
 
-No glass. Backdrop blur was tried on 24 September and removed by owner decision; the sticky landing header is the only element that keeps one.
+## Layout
 
-### Radius, spacing, depth
-
-Radius: 10px small controls and rows, 16px buttons and cards, 24px hairline grids and dialogs, pills for tabs and badges. Nested radius equals the outer minus the padding.
-Spacing on a 4px base: 12 to 20px inside components, 24 to 32px between blocks, 96 to 144px between landing sections.
-Depth is borders plus the card highlight and one soft shadow. No drop shadows on controls, no gradient washes as decoration.
-
-### Motion
-
-`motion` (the Framer engine) through the primitives in `src/components/ui/motion.tsx`; landing reveals in `src/components/landing/reveal.tsx`.
-
-- One entrance per page: `PageRise` lifts the main column's children 6px with a 40ms stagger. Landing sections use `Reveal`, the blur-to-sharp rise, once each.
-- Everything else answers an action: `Presence` for notices, `Expand` for panels, `AnimatedList` for rows that leave, `Swap` for the clock's faces, `SlidingMarker` for the nav pill and tabs.
-- No control animates on its own; buttons only respond to hover and press.
-- Hover is a hint: cards lift 1px, rows brighten, hairline cells lift their icon. Budget 120 to 350ms, transform and opacity, `--ease-out`.
-- `prefers-reduced-motion` stops the marquees, aurora and icon transitions, and `MotionConfig` drops movement.
-
-### Icons
-
-Two sets with two jobs. The 3D orange-glass set in `public/icons/` (typed in `ICON_3D`, rendered by `Icon3D` and `IconTile`) marks places: a page header, a section opener, an empty state, a feature card. The lucide line set marks controls: nav items, buttons, table actions. Never a 3D icon inside a button or a table row.
-
-| Name | Meaning |
-| --- | --- |
-| `day-checklist` | My Day, to-dos, planning |
-| `stopwatch` | Timer, sessions, time |
-| `clock-in` / `clock-out` | Clocking |
-| `calendar-clock` | Attendance, schedule, retention |
-| `eye-dashboard` | Workroom, dashboard |
-| `eye-checklist` | Reviews, playback |
-| `card-check` | Tasks, done |
-| `doc-link-check` / `box-doc-check` | Submissions and links / deliverables and uploads |
-| `chat` | Messages |
-| `people` | Teams and people |
-| `person-laptop` | A staff member |
-| `screen-record` / `video-people` | Recording / recordings and meetings |
-| `shield-check` | Policy, fairness, approvals, permission |
-| `flag-alert` | Blocked, flagged |
-| `chart-ring` | Reports |
-| `focus-target` | Focus, everything in view |
-| `desk` | Workspace, organisation |
+- **Shell:** fixed sidebar 256px on `--sidebar` with a right hairline, collapsible. Logo row at the top (`<LogoArt height={16} />`; collapsed: `variant="mark"` at 18px). Nav items 32px tall, 4px apart, inset 12px, px8, gap 8, 18px icon in the secondary grey, label 14/20 medium secondary; hover and active: fill-1 + foreground. Section label ("Pinned") 14/20 medium secondary. At the bottom: a `card-tint` notice and the workspace row (32px, 20px avatar).
+- **Top bar:** fixed, 50px, from the sidebar's edge; the canvas at 90% with blur(8px) and a bottom hairline; three columns: sidebar toggle + breadcrumb (14/20 medium, secondary, current page foreground, 14px chevrons) | centred search button (32px, ~230px, r12, outline, "Search everything…" 13px + ⌘ K) | small outline buttons, 32px icon buttons, a 32px avatar. Mark it `data-app-topbar` (see Brenda below).
+- **Page:** padding-top = header height, sides 20px, full width. `PageHeader`: display title + right-aligned actions, optional description, then underline tabs on a full-width hairline.
+- **Brenda's page (home):** centred column; the display headline; 20px below, the prompt pill (max 650px); about 40px below, Brenda's asks as tool tiles; then lists under underline tabs. Her chat: full height, past chats as a left list in sub-nav item style (a sheet on small screens).
+- **Dashboards:** stat cards, the analytics card with its metric strip, filter controls, tables. **Settings and forms:** sheets, inputs, switches, segmented controls; page headers with tabs for sub-sections.
+- Logo: always `<Logo />` / `<LogoArt />` from `src/components/logo.tsx` (the owner's artwork; the single icon is "B." via `variant="mark"`). Never type the wordmark.
 
 ## Components (`src/components/ui/`)
 
-| Component | Use |
-| --- | --- |
-| `Button` | One surface for every button (`.btn`): a dark fill one step above the card, a hairline, a top highlight, 16px corners (10px at the small size), white text. `primary` adds an orange hairline and fills orange with a soft glow on hover, `outline` and `subtle` are the plain surface, `ghost` is text only, `danger` reads red. Nothing animates on its own. Sizes sm 36, md 44, lg 56, icon 40. |
-| `Card`, `CardHeader` | A `.tile` with 20px padding; header with title, one-line description, an action. |
-| `PageHeader` | Optional 3D `icon` in a tile, title, description, actions, back link. |
-| `StatCard` | The verdict card: label, verdict word or figure, rows of dot, label, count, share. Three across the top of a page. |
-| `Ledger` | A strip of display figures when there is no verdict to give. |
-| `Badge` | Status pills; `TASK_STATUS_TONE`, `SESSION_STATE_TONE`, `REPORT_STATUS_TONE` map states to tones. A pill is always one line (`whitespace-nowrap`), as is every chip and tab; a table cell that holds only a badge, a figure or a time does not wrap either. |
-| `DataTable` | Hairline table inside a tile; quiet 12px header, 13px dividers, hover tint. |
-| `Tabs` | Pill tabs with a sliding active pill; link tabs by URL or value tabs by state; counts in small pills. |
-| `HairlineGrid`, `GridCell` | Equal things in a hairline grid with a 3D icon each. |
-| `AreaChart`, `BarChart`, `Donut`, `SegmentBar`, `Legend` (`ui/charts`) | Dependency-free SVG charts for the Control Center (owner decision, 25 September 2026: graphs before number tiles). Lines and bars in the accent, other series in info/success/warning, hairline gridlines, 11px subtle axis labels, a shared legend row of dot, label, value, share. Every chart carries a title for screen readers and a quiet "nothing yet" state when all values are zero. Server-rendered; no hover state beyond native tooltips. |
-| `DatePicker` (`ui/date-picker`) | Every date, month and date-and-time field (owner decision, 25 September 2026: no native pickers). A `.field` button that opens a calendar: month name and year, Monday-first grid, today ringed in orange, the chosen day filled orange, faint neighbouring-month days, Clear and Today, a time row and Done for date-and-time, a 3×4 month grid for month mode. Arrow keys move, Enter picks, Escape closes; fixed-positioned so it works inside sheets; flips above the field near the bottom of the window. Writes the native string formats to a hidden input under `name`, so forms and query parameters are unchanged. `size="sm"` for filter bars. |
-| `Switch`, `Segmented`, `InputAdorned`, `EditButton` | The second set of controls (owner decision, 25 September 2026: fields and edits should look the part). `Switch` is a checkbox drawn as a pill with a sliding knob, label on the left, hint under it. `Segmented` is a radio group drawn as pills in one strip, with optional tone on the chosen pill. `InputAdorned` is a field with a prefix or suffix inside it (currency, unit, path). `EditButton` is the one edit affordance on the platform: a small pill with a pencil that warms to orange and tilts on hover; `iconOnly` for tight rows. Every Edit in the Control Center opens an `EditSheet` through it. |
-| `Input`, `Select`, `Textarea`, `Label`, `Field` | Every control is a `.field` (globals.css, owner decision 25 September 2026): 40px, 10px corners, inset with a 1px inner shadow and the same top highlight the search bar and buttons carry, hairline brightens on hover, a soft grey ring on focus (no orange, no glow), custom chevron on selects, accent on native pickers. `.field-sm` is the 36px pill for filter bars (`inputCls` in `components/admin/fields.tsx`; filter bars sit on a `.chip` strip). Checkboxes and radios are drawn globally: 18px, inset, orange when checked. A bare `<input>` anywhere takes `className="field"`; never restyle one by hand. `Field` links errors to controls. |
-| `EmptyState`, `ErrorState`, `PermissionDenied`, `OfflineState`, `Alert`, `Skeleton` | Every empty state names one next action and may carry a 3D icon (`icon3d`). |
-| `ConfirmDialog`, `ConfirmButton` | Native `<dialog>` for every destructive or irreversible action. |
-| `Icon3D`, `IconTile` | The 3D icon set, bare or in its lit tile. |
-| `Eyebrow` (`.eyebrow`) | Micro information: dates, sync times, zones, section labels, engine notes. 11px, semibold, spaced 0.08em, uppercase, `--fg-subtle`. Never body-sized. `Overline` is the accent version above a page title; `PageHeader meta=` sets one under the description. |
-| `VoicePoweredOrb` | The dictation orb (OGL shader, orange by default): shown while the microphone is open in the assistant and the My Day panel; it turns and ripples with the voice. Opens its own microphone; nothing is recorded. |
-| `Sidebar` (`components/app`) | Expanded: the list with the sliding pill. Collapsed: a dock of 44px icon tiles that lift and scale on hover, each with its label beside it. The state lives on `<html data-sidebar>` and in `localStorage` (`boredroom-sidebar`), applied before first paint. Icons everywhere lift a pixel on hover, as in the dock reference in `ui/dock.tsx`. |
-| `TopBar` search and assistant | The gooey search input (Aceternity) opens to 260px and lists pages at once, then tasks, people, projects and teams from `/api/orgs/:org/search`. The sparkle opens the assistant drawer (`AssistantDrawer`): a side panel to ask for anything; with Claude connected the assistant does the work and replies list what it did as green check lines (with Open links); the built-in helper offers buttons instead. |
-| `PresenceDot`, `PresenceLabel`, `Avatar presence=` | Work status: active (live green, a ring that swells and fades), away (amber), do not disturb (red), offline (grey). The dot sits on the avatar's bottom-right edge with a ring in the surface colour. Set from the top-bar profile panel or the profile page (`PresencePicker`). |
-| `MessageBubble`, `TypingIndicator` (`ui/chat-messages`) | Chat bubbles: the person's own on the right in a dark shade of the orange (`--bubble-mine`, `#3d2412`, with an orange hairline) and white text; other people's on the left in grey (`--bubble-theirs`, `#1f1f1f`) with the avatar beside the last bubble of a run. Light theme: pale orange and light grey. Runs within five minutes group. Withdrawn is a dashed empty bubble. |
-| `PromptInputBox` (`ui/ai-prompt-box`) | The assistant's composer: a 22px-rounded surface with a growing textarea, a microphone that hands over to dictation (the orb appears above), and a round send button that turns orange when there is text. Tooltips from Radix. |
-| Message toasts (`app/message-toasts`, sonner) | Bottom left: the sender's picture, "New message from …", two lines of the message, Reply and Later. Never for the thread on screen. Follows the theme. |
-| `VoiceNote` (`components/app`) | A voice note in a bubble: an orange play button, a thin progress bar that seeks, the time. The composer records one with the microphone button: the orb, a timer, Cancel or Send. |
-| `IconButton`, `ThemeToggle` | The round 40px icon button on the button surface; the toggle flips `data-theme` and remembers it. |
-| `Avatar` | A person: their picture from `/api/avatars/:id`, else initials on a dark disc. 32px in lists, 38px in the top bar, 96px on the profile page. |
-| `TopBar` (`components/app`) | The top-right cluster on every workspace page: round 40px icon buttons for notifications (unread count in an orange pill), settings (organisation accounts) and the person. Each opens a `.tile` panel below it; one open at a time. Notifications and settings live here, not in the sidebar. |
-| Motion primitives | `MotionRoot`, `PageRise`, `Rise`, `Presence`, `Expand`, `AnimatedList`, `AnimatedRow`, `Swap`, `SlidingMarker`. |
+| Part | Import | Notes |
+|---|---|---|
+| `Button`, `buttonVariants` | `button` | variants `primary` `secondary` (=`outline`) `ghost` `subtle` `accent` `danger` `destructive` `link`; sizes `xs` 28, `sm` 32, `md` 36, `lg` 40, `tile` 56, `icon-xs` 28, `icon-sm` 32, `icon` 40, `icon-round` 36; `loading` |
+| `IconButton`, `ICON_BUTTON` | `icon-button` | `variant` ghost (32, r10) / outline (40, r12) / round (36); `size` xs/sm/md; needs `aria-label` |
+| `Input` `Textarea` `Select` `InputAdorned` `Label` `Field` | `input` | `.field` h36 r10; `fieldSize` xs 24 / sm 32 / md 36 / lg 40; `Field` links `description` and `error` to the control |
+| `Switch` `Checkbox` `Radio` | `switch` | Switch 36×20 (bare without children); checkbox/radio 16px |
+| `Segmented` | `segmented` | fill-1 r10 p2, items h28 r7 |
+| `Tabs` | `tabs` | `variant` underline (default) / pills; counts; arrow keys |
+| `Badge` `NewBadge` `CountPill` `MonoChip` `Kbd` | `badge` | plus `TASK_STATUS_TONE` (monochrome first), `SESSION_STATE_TONE`, `taskStatusLabel` |
+| `Card` `SectionCard` `Panel`/`ChartCard` `CardHeader` `SectionTitle` `Overline` `Eyebrow` `Ledger` `PageHeader` | `card` | Card `variant` panel / section / stat / tint / plain |
+| `StatCard` | `stat-card` | `value` (or v3 `verdict`), `icon`, `action`, `hint`, `rows`, `actions`, `href` |
+| `AnalyticsCard` `MetricStrip` | `analytics-card` | metrics with server-rendered `content`; or `href` metrics |
+| `FilterControl` `FilterSelect` `FilterBar` | `filter-control` | `autoSubmit` for GET forms |
+| `ToolTile` `ToolTileRow` `ToolSquare` `QuickLink` | `tool-tile` | Brenda's asks; tiles fill the prompt, never send |
+| `ListRow` `RowList` `Row` `RowEmpty` | `rows` | 64px rows separated by space |
+| `DataTable` | `table` | `table.data`: 36px head, 48px rows, no lines; `fit` |
+| `EmptyState` `ErrorState` `PermissionDenied` `OfflineState` `Alert` `Skeleton` | `states` | line icons (`icon`, or a v3 `icon3d` name) |
+| `Sheet` `Dialog` | `sheet` | right sheet 512px (sm 400, lg 720); centred dialog 440px |
+| `ConfirmDialog` `ConfirmButton` | `confirm` | centred r16; destructive = red fill; focus starts on Cancel |
+| `Menu` `MenuItem` `MenuSeparator` `MenuLabel` `Popover` | `menu` | popover surface r12 p4; items h32 r8; keyboard |
+| Tooltips | `tooltips` (`TooltipLayer`, mounted in the root layout) | the one system: from `aria-label`, or `data-tip`; `data-tip-side="right"` |
+| `notify` `successToast` `ToastCard` | `toast` | toast surface, status dot with a 15% halo |
+| `Avatar` `PresenceDot` `Person` | `avatar`, `presence`, `person` | solid grey-100 disc |
+| `PromptInputBox` `PromptAction` | `ai-prompt-box` | the home pill: r26, solid fill-1, round 36px actions, white Send; VoiceCapture while dictating |
+| `DatePicker` `TimePicker` `DurationPicker` | `date-picker` … | `size` xs/sm/md; choice = inverted primary |
+| `ProgressArc` | `progress-arc` | foreground arc, green at 100, `tone="accent"` |
+| `AreaChart` `BarChart` `Donut` `SegmentBar` `Sparkline` `Legend` | `charts` | foreground and greys, one orange highlight (bars: `highlight`, last by default) |
+| `Icon3D` `IconTile` `LINE_ICON` | `icon` | v3 names now draw line icons |
+| `HairlineGrid` `GridCell`, `EditButton`, `BackLink`, `AutoSubmitSelect`, motion helpers | … | restyled, same props |
 
-Aceternity pieces (`src/components/aceternity/`, vendored) that belong to the system: `moving-border` (through `LitTile`, the travelling light on a feature card), `flip-words`, `typewriter-effect`, `container-scroll-animation`, `background-ripple-effect`, `3d-card` and `glowing-effect` (through `GlassCard`, landing only, tilt kept subtle). The rest of the pack is available but not part of the system until a screen needs it.
+Icons: lucide, 16px in controls, 18px in nav and prompt actions, 20px in tool squares, 24px in quick links; 1.5–2 stroke. No generic AI icons (no Sparkles, Bot, Wand, Stars, Brain): `BrendaGlyph` or `BrendaFace` mean Brenda.
 
-## The frame
+## Brenda contract (kept)
 
-The sidebar is sticky and the full viewport tall; its list scrolls inside it, so every page is one click away without scrolling. The top bar is a 64px rectangle on the sidebar surface, sticky, with the workspace name on the left and search, theme, notifications, settings and the person on the right. The assistant is a floating orange-ringed sparkle bottom right on every page (`AssistantDrawer floating`). Messages is a `bleed` page: it fills the area under the top bar with the conversation list on the left and the thread on the right, and the page itself does not scroll.
+While her chat is open the app's top bar is hidden and her header sits at the top: her page sets `<html data-brenda-chat>`, and `html:has([data-brenda-chat-view])` covers the first paint. globals.css hides any `[data-app-topbar]` (the top bar carries it), zeroes `#main` padding and width cap, and sizes `#workspace-sidebar` to the screen less `--shell-banners`. No animation between her home and the chat. The composer never lets messages show through (`bg-surface`, solid). The floating Brenda button and drawer do not appear on her page.
 
-## Email
+## Legacy classes and tokens (Control Center and landing page only)
 
-One template for every email (`src/server/lib/emails.ts`, `renderEmail`): the black canvas, the wordmark, a 560px card (`#121212`, 1px `#2a2a2a`, 20px corners) with an orange eyebrow, a 28px display title, 16px grey body (`#a1a1a1`), one orange button (`#ff6c02` on `#140700`, 14px corners) with the link repeated beneath it, an inset facts table (label as eyebrow, value in white), a subtle note and a footer with the reason. Tables and inline styles only; no CSS variables, no images that need the app's origin. Every email has a plain-text twin. Add a new email as a builder in that file and preview it on `/dev/emails`.
+The workspace app, the entry screens, `/dev/*` and `src/components/ui` use v4 classes and tokens only; the integration pass on 6 October 2026 migrated the last users and deleted the unused aliases. What remains is kept only for the two areas not yet redesigned, and each rule goes with its last user:
 
-## Control Center
+- globals.css §6 (classes): `.tile`, `.tile-link`, `.chip`, `.chip-link`, `.panel`, `.btn` (colours only), `.glass-panel`, `.sidebar-glass`, `.topbar-glass`, `.eyebrow`, `.eyebrow-accent`, `.link-action`, `.num`: the Control Center (`src/app/admin`, `src/components/admin`); `.tile` also draws the landing page's vendored phone menu (`src/components/aceternity/resizable-navbar.tsx`).
+- globals.css §2 and the legacy part of `@theme` (tokens): `--bg`, `--bg-elevated`, `--bg-inset`, `--border-soft`, `--border-strong`, `--fg`, `--fg-muted`, `--fg-subtle`, `--fg-faint`, `--wash-soft`, `--wash`, `--wash-strong`, `--wash-active`, `--highlight`, `--btn-bg`, `--radius-sm`, `--radius` and their utilities (`text-fg-muted`, `border-border-soft`, `bg-wash` …). The landing page re-declares them with its v3 values (§8).
 
-The internal console at `/admin` is the same system on the same tokens: a fixed sidebar of sections grouped by purpose (Overview, Money, Product, Growth, Platform), a 64px top bar with global search and the launch state as a badge, and pages built from `PageHeader`, `StatCard`, `Ledger`, `DataTable`, `Tabs` and `Card`. Filters are a row of small labelled controls with one Apply button; lists page server-side; every mutation is an `AdminAction` (a button, a confirmation dialog for anything that changes a tenant, and a reason field for anything audited) or a `JsonForm`. Nothing in the console is a ranking of people or organisations; health profiles read as operational facts.
+New code never uses any of these. `cn()` (`src/lib/utils.ts`) knows the v4 scale: `text-meta` and `text-2xs` are font sizes and the named shadows are shadows, so merging them never drops a colour.
 
-## Page anatomy
+## Desktop notch
 
-1. `PageHeader` with the page's 3D icon, title and one line. Actions on the right: one primary at most.
-2. If the page has figures, three `StatCard`s, or a `Ledger` when nothing is a verdict.
-3. The focal block: the room (Workroom), the day (My Day), the list (Tasks), the two switches (Settings).
-4. Supporting blocks as `Card`s or a `HairlineGrid`, then tables.
-5. Empty states in place of blocks, never a blank.
+The Tauri notch (`desktop/`) follows v4 through its own stylesheet, `desktop/src/style.css`, which copies the dark tokens from `globals.css` (it cannot import the web's CSS). Change a token in both places. Its deliberate differences: the island itself stays true black to meet the screen's notch, buttons are pills, and the compact bar text is 13/16 to fit a 24px menu bar. Its app icon stays as it is until the owner supplies a vector or high-resolution "B." mark.
 
-Focal point per screen: My Day is the clock; Team board is the task list; Dashboard is who is working now; Settings is the two switches at the top.
+## Not part of v4 (yet)
 
-## Copy
-
-Sentence case. Plain verbs on buttons that say what happens (Save changes, Send invitation, Clock in). Meta text reads as prose: commas, not middle dots; no arrows after links; no monospace for data. Errors say what went wrong and what to do. Empty states invite one action.
+- **Landing page** (`src/app/page.tsx`, `src/components/landing`, `.lp-*`): keeps its v3 look. While it is on screen (`:root:has(.lp)`) the legacy tokens take their v3 values back, and `.lp` restores Geist 15px body type and Tailwind's default type scale.
+- **Control Center** (`src/app/admin`, `src/components/admin`): renders through the legacy aliases above (v4-ish) until it is redesigned.
 
 ## Accessibility floor
 
-Every control has a name. Toggles carry `aria-expanded` and `aria-controls`. Errors are linked to their field. Everything is keyboard reachable: buttons and links show a quiet grey ring when focus arrives from the keyboard, never from a click, and text fields only brighten their hairline (owner decision, 24 September 2026: no orange focus rectangles anywhere). Colour never carries meaning alone: a badge has a word, a dot has a label. Body text 15px or larger, 4.5:1 or better on black.
-
-## Landing page
-
-The landing page (`src/app/page.tsx`, `src/components/landing/`) is where the system came from and still carries its own `.lp-*` classes for the marketing-only pieces (hero grid, marquees, aurora). Its cards, buttons and icon tiles now share the product values (`--card-shadow`, the shimmer, the icon tile); the aliases will fold into the shared classes as screens are rebuilt.
+Accessible names on every control (icon buttons need `aria-label`; the tooltip reads it), `aria-expanded`/`aria-controls` on toggles, errors linked to fields, focus visible from the keyboard (orange ring), dialogs on the native `<dialog>`, a word beside every colour, 40px touch targets on small controls (`pointer: coarse`), both themes, 400px wide without sideways scroll, reduced motion respected. Destructive actions go through `ConfirmButton`.

@@ -13,6 +13,7 @@ import { issueSession } from "@/server/auth";
 import { storage } from "@/server/lib/storage";
 import { contactRegistered } from "@/server/admin/marketing";
 import { registrationOpen } from "@/server/admin/settings";
+import { safeNextPath } from "@/components/auth/next-path";
 
 export const OAUTH_COOKIE = "boredroom_oauth";
 const AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
@@ -39,8 +40,41 @@ export function beginGoogleSignIn(next: string | null) {
   return { url: `${AUTH_URL}?${params}`, cookie: JSON.stringify({ state, nonce, next: safeNext(next), at: Date.now() }) };
 }
 
+/** A path on this site, resolved the way a browser reads it ("/\host" and "/<tab>/host" lead elsewhere), or the workspace list. */
 export function safeNext(next: string | null | undefined) {
-  return next && next.startsWith("/") && !next.startsWith("//") ? next : "/app";
+  return safeNextPath(next);
+}
+
+/**
+ * Why a Google sign-in did not finish, as a short fixed code in the address (/login?google=<code>) and the words the
+ * sign-in page shows for it. A code, not the message itself, so nobody can craft a link that puts their own text on
+ * our sign-in page.
+ */
+export const GOOGLE_FAILURE = {
+  cancelled: "Google sign-in was cancelled.",
+  timeout: "The sign-in took too long. Try again.",
+  mismatch: "The sign-in did not match the one that was started. Try again.",
+  email: "Google did not confirm an email address for this account.",
+  suspended: "This account is suspended. Contact support if you think this is a mistake.",
+  closed: "Boredroom is not open for new accounts yet. Join the waitlist and we will email you when it is.",
+  failed: "Google could not sign you in. Try again.",
+} as const;
+export type GoogleFailure = keyof typeof GOOGLE_FAILURE;
+
+/** The code for an error thrown while finishing the sign-in. */
+export function googleFailureCode(err: unknown): GoogleFailure {
+  const code = err instanceof AppError ? err.code : "";
+  if (code === "REGISTRATION_CLOSED") return "closed";
+  if (code.startsWith("ACCOUNT_")) return "suspended";
+  if (code === "GOOGLE_EMAIL") return "email";
+  if (err instanceof AppError && err.message.startsWith("The sign-in did not match")) return "mismatch";
+  return "failed";
+}
+
+/** The words for a code read from the address; anything unknown reads as a plain failure. */
+export function googleFailureText(code: string | undefined): string | null {
+  if (!code) return null;
+  return Object.hasOwn(GOOGLE_FAILURE, code) ? GOOGLE_FAILURE[code as GoogleFailure] : GOOGLE_FAILURE.failed;
 }
 
 type Claims = { iss: string; aud: string; sub: string; email?: string; email_verified?: boolean; name?: string; picture?: string; nonce?: string; exp: number; iat: number };

@@ -5,11 +5,14 @@
  * accessible name but no visible text and a small label pops up under it, so a plus, a pencil or a bell explains
  * itself. One listener for the whole page: nothing to wire per button. The name comes from `aria-label`, so the
  * tooltip and the screen reader always say the same thing; `data-tip` overrides it when the wording should differ.
- * Anything inside `[data-no-tip]` (a face with its own hover card) is left alone.
+ * Anything inside `[data-no-tip]` (a face with its own hover card) is left alone. `data-tip-side="right"` puts the
+ * label beside the control instead of under it (the collapsed sidebar's dock).
+ * v4: the one tooltip system in the app; the toast surface, r8, px8 py4, 12/16 medium (globals.css `.tip`).
  */
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { liftToTopLayer, popoverHost } from "@/components/ui/top-layer";
+import { cn } from "@/lib/utils";
 
 const TARGET = "button, a, summary, [role='button'], [role='menuitem'], [role='tab']";
 const OPEN_DELAY = 320;   // long enough that skimming the mouse over a row never flashes labels
@@ -28,7 +31,7 @@ function labelFor(node: Element | null): { el: HTMLElement; text: string } | nul
   return { el, text: label };
 }
 
-type Tip = { text: string; top: number; left: number; up: boolean; host: HTMLElement };
+type Tip = { text: string; top: number; left: number; side: "below" | "above" | "right"; host: HTMLElement };
 
 export function TooltipLayer() {
   const [tip, setTip] = useState<Tip | null>(null);
@@ -43,8 +46,8 @@ export function TooltipLayer() {
     const place = (el: HTMLElement, text: string) => {
       const r = el.getBoundingClientRect();
       if (r.width === 0 && r.height === 0) return;
-      const up = r.bottom + 44 > window.innerHeight;
-      setTip({ text, up, top: up ? r.top - 8 : r.bottom + 8, left: r.left + r.width / 2, host: popoverHost(el) });
+      if (el.dataset.tipSide === "right") setTip({ text, side: "right", top: r.top + r.height / 2, left: r.right + 10, host: popoverHost(el) });
+      else { const up = r.bottom + 44 > window.innerHeight; setTip({ text, side: up ? "above" : "below", top: up ? r.top - 8 : r.bottom + 8, left: r.left + r.width / 2, host: popoverHost(el) }); }
       if (stay) window.clearTimeout(stay);
       stay = window.setTimeout(() => { stay = null; setTip(null); }, STAY);
     };
@@ -85,7 +88,7 @@ export function TooltipLayer() {
 
   if (!tip || typeof document === "undefined") return null;
   return createPortal(
-    <div ref={liftToTopLayer} role="tooltip" className={tip.up ? "top-pop tip tip-up" : "top-pop tip"} style={{ top: tip.up ? undefined : tip.top, bottom: tip.up ? window.innerHeight - tip.top : undefined, left: tip.left }}>
+    <div ref={liftToTopLayer} role="tooltip" className={cn("top-pop tip", tip.side === "above" && "tip-up", tip.side === "right" && "tip-right")} style={{ top: tip.side === "above" ? undefined : tip.top, bottom: tip.side === "above" ? window.innerHeight - tip.top : undefined, left: tip.left }}>
       {tip.text}
     </div>,
     tip.host,

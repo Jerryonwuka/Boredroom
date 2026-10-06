@@ -36,7 +36,8 @@ export async function joinViaInvitation(inviter: OrgContext, user: FixtureUser, 
   const inv = await createInvitation(inviter, { email: user.email, role, teamId: teamId ?? null, employeeCode: employeeCode ?? null }, { send: false });
   await acceptInvitation(user.profileId, user.email, inv.token!);
   const ctx = await contextFor(user, inviter.org.slug);
-  // Fixture members have read the initial notice (as they would during onboarding).
+  // Fixture members have already agreed to the initial recording rules, as if they had recorded once before (the
+  // tests start recorded sessions straight away). Real members are asked when their first recorded session starts.
   await acknowledgePolicy(ctx);
   return ctx;
 }

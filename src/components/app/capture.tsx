@@ -6,16 +6,23 @@
  * - Chunks (~10 s) are buffered in IndexedDB, uploaded with bounded concurrency/retry,
  *   kept until the server acknowledges them; 100 MB pending warns, 200 MB stops capture.
  * - Every recorder instance is its own server-side recording (segment). Resume = new instance.
+ * - Consent (owner decision, 5 October 2026: no Policy page, no general sign-off): the first time someone starts a
+ *   session that will record their screen, and again whenever the recording rules change, a one-time prompt says
+ *   plainly what is recorded and kept. "I agree" saves the agreement and opens the screen picker in the same click;
+ *   Cancel records nothing, and the focus goes back to the control that asked. Unrecorded sessions never ask. The
+ *   server refuses recording without it either way. The whole monitoring notice is one press away in the prompt, and
+ *   always readable on the person's profile (Recording and privacy), recording or not.
  */
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { Circle, Square, AlertTriangle, X } from "lucide-react";
+import { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { Circle, Square, X } from "lucide-react";
 import { IconButton } from "@/components/ui/icon-button";
 import { api, isApiFailure } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
 import { Alert } from "@/components/ui/states";
 import { Textarea, Select, Field } from "@/components/ui/input";
 import type { StartableTask, CaptureGate } from "@/components/app/session-timer";
-import type { SessionView } from "@/server/services/sessions";
+import type { SessionView, RecordingRules } from "@/server/services/sessions";
+import { cn } from "@/lib/utils";
 
 const WARN_BYTES = 100 * 1024 * 1024;
 const STOP_BYTES = 200 * 1024 * 1024;
@@ -53,14 +60,35 @@ export function captureSupport() {
   return { supported: true, mime };
 }
 
+// Whether this browser can record, read only in the browser. The server cannot know, so it answers null, and so does
+// the first render in the browser while the page hydrates; the real answer follows a moment later. Reading
+// captureSupport() straight in render made the server say "unavailable" and the browser say "Record screen".
+const noSubscribe = () => () => undefined;
+const supportedNow = () => captureSupport().supported;
+const supportedOnServer = () => null;
+export function useCaptureSupported(): boolean | null {
+  return useSyncExternalStore(noSubscribe, supportedNow, supportedOnServer);
+}
+
 type CaptureState = {
   status: "idle" | "requesting" | "recording" | "uploading" | "error";
   recordingId: string | null; sessionId: string | null; sourceLabel: string | null;
   pendingBytes: number; uploadedChunks: number; error: string | null; segments: number;
 };
 
+/** null: Cancel was pressed. picked: the prompt was shown, and its "I agree" already opened the screen picker. */
+type Consent = { picked: boolean } | null;
+
 type Ctx = {
   state: CaptureState;
+  /**
+   * Resolves once the person has agreed to the current recording rules, asking first when they have not. Call it
+   * before anything that records ("Start and record", Record screen); when the prompt was shown, the screen picker
+   * has been opened too and its stream waits in pendingStream.
+   */
+  ensureConsent: () => Promise<Consent>;
+  /** Record screen on a running session: asks for consent when needed, then records. */
+  record: (session: SessionView) => Promise<void>;
   startCapture: (sessionId: string) => Promise<boolean>;
   stopCapture: (reason: "stopped" | "interrupted" | "failed") => Promise<void>;
   requestPermissionOnly: () => Promise<{ stream: MediaStream; label: string } | null>;
@@ -71,11 +99,22 @@ type Ctx = {
 };
 const CaptureContext = createContext<Ctx | null>(null);
 
-export function CaptureProvider({ orgSlug, recordingMode, children }: { orgSlug: string; recordingMode: string; children: React.ReactNode }) {
+/**
+ * `rules` is what the page already knows (the `recording` part of the current-session payload); without it the provider
+ * reads it once from the server when recording is on.
+ */
+export function CaptureProvider({ orgSlug, recordingMode, rules: initialRules, children }: { orgSlug: string; recordingMode: string; rules?: RecordingRules | null; children: React.ReactNode }) {
   const [state, setState] = useState<CaptureState>({ status: "idle", recordingId: null, sessionId: null, sourceLabel: null, pendingBytes: 0, uploadedChunks: 0, error: null, segments: 0 });
   const recorder = useRef<MediaRecorder | null>(null);
   const stream = useRef<MediaStream | null>(null);
   const pendingStream = useRef<MediaStream | null>(null);
+  const pendingLabel = useRef<string | null>(null);
+  // The rules live in a ref so a start that follows an agreement in the same moment sees it (no stale closure).
+  // undefined: not read yet (or the read failed); null: the workspace has no rules, so nothing can record.
+  const rules = useRef<RecordingRules | null | undefined>(initialRules);
+  const rulesRead = useRef<Promise<RecordingRules | null | undefined> | null>(null);
+  // `from`: the control that asked (Record screen, Start), where the focus goes back when the prompt closes.
+  const [asking, setAsking] = useState<{ rules: RecordingRules; resolve: (c: Consent) => void; from: HTMLElement | null } | null>(null);
   const queue = useRef<PendingChunk[]>([]);
   const inflight = useRef(0);
   const seq = useRef(0);
@@ -127,6 +166,7 @@ export function CaptureProvider({ orgSlug, recordingMode, children }: { orgSlug:
       const settings = track.getSettings() as MediaTrackSettings & { displaySurface?: string };
       const label = `${settings.displaySurface ?? "unknown"}${track.label ? `: ${track.label}` : ""}`;
       pendingStream.current = s;
+      pendingLabel.current = label;
       patch({ status: "idle" });
       return { stream: s, label };
     } catch (err) {
@@ -160,12 +200,20 @@ export function CaptureProvider({ orgSlug, recordingMode, children }: { orgSlug:
     } finally { stopping.current = false; }
   }, [finalise]);
 
+  // The recording rules, read once from the server (the current-session payload carries them) and again after they change.
+  const readRules = useCallback(() => {
+    rulesRead.current ??= api<{ recording?: RecordingRules | null }>(`/api/orgs/${orgSlug}/sessions/current`)
+      .then((r) => { rules.current = r.recording ?? null; return rules.current; })
+      .catch(() => { rulesRead.current = null; return undefined; });
+    return rulesRead.current;
+  }, [orgSlug]);
+
   const startCapture = useCallback(async (sessionId: string): Promise<boolean> => {
     const support = captureSupport();
     if (!support.supported) { patch({ status: "error", error: support.reason ?? "Unsupported" }); return false; }
     let s = pendingStream.current;
-    let label = state.sourceLabel ?? "unknown";
-    pendingStream.current = null;
+    let label = pendingLabel.current ?? state.sourceLabel ?? "unknown";
+    pendingStream.current = null; pendingLabel.current = null;
     if (!s || !s.active) { const p = await requestPermissionOnly(); if (!p) return false; s = p.stream; label = p.label; pendingStream.current = null; }
     const track = s.getVideoTracks()[0];
     const surface = ((track.getSettings() as MediaTrackSettings & { displaySurface?: string }).displaySurface ?? "unknown");
@@ -174,7 +222,12 @@ export function CaptureProvider({ orgSlug, recordingMode, children }: { orgSlug:
     let created: { id: string };
     try {
       created = await api(`/api/orgs/${orgSlug}/recordings`, { method: "POST", body: { sessionId, recorderInstance, mimeType: support.mime, sourceType, sourceLabel: label.slice(0, 200) }, retries: 1 });
-    } catch (err) { s.getTracks().forEach((t) => t.stop()); patch({ status: "error", error: isApiFailure(err) ? err.error.message : "Could not register the recording." }); return false; }
+    } catch (err) {
+      s.getTracks().forEach((t) => t.stop());
+      // The rules changed since this page read them: ask again on the next press instead of showing the server's refusal.
+      if (isApiFailure(err) && err.error.code === "POLICY_NOT_ACKNOWLEDGED") { rules.current = undefined; rulesRead.current = null; void readRules(); patch({ status: "error", error: "Your organisation changed its recording rules. Press Record screen to read them and agree." }); return false; }
+      patch({ status: "error", error: isApiFailure(err) ? err.error.message : "Could not register the recording." }); return false;
+    }
     recId.current = created.id; seq.current = 0; declared.current = 0; stopping.current = false;
     const mr = new MediaRecorder(s, { mimeType: support.mime, videoBitsPerSecond: 800_000 });
     recorder.current = mr; stream.current = s;
@@ -194,7 +247,7 @@ export function CaptureProvider({ orgSlug, recordingMode, children }: { orgSlug:
     mr.start(CHUNK_MS);
     setState((st) => ({ ...st, status: "recording", recordingId: created.id, sessionId, sourceLabel: label, error: null, segments: st.segments + 1 }));
     return true;
-  }, [orgSlug, pump, requestPermissionOnly, state.sourceLabel, stopCapture]);
+  }, [orgSlug, pump, readRules, requestPermissionOnly, state.sourceLabel, stopCapture]);
 
   // Recover chunks left in IndexedDB by a previous page (best effort; recordings may already be partial).
   useEffect(() => {
@@ -211,33 +264,149 @@ export function CaptureProvider({ orgSlug, recordingMode, children }: { orgSlug:
   }, []);
 
   const dismissError = useCallback(() => setState((s) => ({ ...s, status: "idle", error: null })), []);
-  const value = useMemo<Ctx>(() => ({ state, startCapture, stopCapture, requestPermissionOnly, dismissError, pendingStream, orgSlug, recordingMode }), [state, startCapture, stopCapture, requestPermissionOnly, dismissError, orgSlug, recordingMode]);
-  return <CaptureContext.Provider value={value}>{children}<RecordingIndicator /></CaptureContext.Provider>;
+
+  // ---- Consent ---------------------------------------------------------------
+  // Read ahead while recording is on, so pressing Start or Record does not wait on the network before the screen picker
+  // (browsers only open it straight after a click).
+  useEffect(() => { if (recordingMode !== "disabled" && rules.current === undefined) void readRules(); }, [recordingMode, readRules]);
+
+  /** Saves the agreement. Agreeing also lets an open session that started without it record (see acknowledgePolicy). */
+  const agree = useCallback(async () => {
+    await api(`/api/orgs/${orgSlug}/policy/acknowledge`, { method: "POST", retries: 1 });
+    if (rules.current) rules.current = { ...rules.current, agreed: true };
+  }, [orgSlug]);
+
+  const ensureConsent = useCallback(async (): Promise<Consent> => {
+    // Read before anything is awaited, while the focus is still on the control that was pressed.
+    const active = document.activeElement;
+    const from = active instanceof HTMLElement && active !== document.body ? active : null;
+    const known = rules.current !== undefined ? rules.current : await readRules();
+    if (known === undefined) { patch({ status: "error", error: "Cannot reach the server to check the recording rules. Check your connection and try again." }); return null; }
+    if (!known || known.agreed) return { picked: false };
+    return new Promise<Consent>((resolve) => setAsking({ rules: known, resolve, from }));
+  }, [readRules]);
+
+  const record = useCallback(async (session: SessionView) => {
+    const consent = await ensureConsent();
+    if (!consent) return;
+    if (consent.picked) { if (!pendingStream.current) return; } // the picker was closed; the indicator says so
+    else if (session.captureMode === "none") {
+      // Started before they agreed, and they have agreed since (another tab, another device): agreeing again lets this
+      // session record. The picker opens in the same click.
+      const picking = requestPermissionOnly();
+      try { await agree(); } catch (err) { (await picking)?.stream.getTracks().forEach((t) => t.stop()); pendingStream.current = null; patch({ status: "error", error: isApiFailure(err) ? err.error.message : "Cannot reach the server. Check your connection and try again." }); return; }
+      if (!(await picking)) return;
+    }
+    await startCapture(session.id);
+  }, [ensureConsent, requestPermissionOnly, agree, startCapture]);
+
+  const consentEl = asking ? (
+    <ConsentDialog rules={asking.rules} returnTo={asking.from}
+      onAgree={async () => {
+        // The click that agrees also opens the screen picker: browsers only allow it straight after a press.
+        const picking = requestPermissionOnly();
+        try { await agree(); }
+        catch (err) { (await picking)?.stream.getTracks().forEach((t) => t.stop()); pendingStream.current = null; pendingLabel.current = null; dismissError(); throw err; }
+        await picking;
+        asking.resolve({ picked: true }); setAsking(null);
+      }}
+      onCancel={() => { asking.resolve(null); setAsking(null); }} />
+  ) : null;
+
+  const value = useMemo<Ctx>(() => ({ state, ensureConsent, record, startCapture, stopCapture, requestPermissionOnly, dismissError, pendingStream, orgSlug, recordingMode }), [state, ensureConsent, record, startCapture, stopCapture, requestPermissionOnly, dismissError, orgSlug, recordingMode]);
+  return <CaptureContext.Provider value={value}>{children}<RecordingIndicator />{consentEl}</CaptureContext.Provider>;
 }
 
+/**
+ * The one-time recording consent (owner decision, 5 October 2026), v4: a centred dialog (r16, a hairline, the canvas
+ * colour over the plain overlay). Plain words from the workspace's own rules, the full notice one press away, and two
+ * choices: an outline Cancel and the white I agree. Focus starts on Cancel so Enter never agrees by accident. The
+ * provider takes the prompt away (it is not closed), so the focus is handed back to `returnTo`, the control that asked,
+ * rather than left on the page.
+ */
+function ConsentDialog({ rules, returnTo, onAgree, onCancel }: { rules: RecordingRules; returnTo: HTMLElement | null; onAgree: () => Promise<void>; onCancel: () => void }) {
+  const ref = useRef<HTMLDialogElement>(null);
+  const cancelRef = useRef<HTMLButtonElement>(null);
+  const titleId = useId();
+  const descId = useId();
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    const d = ref.current;
+    if (d && !d.open) { d.showModal(); cancelRef.current?.focus(); }
+    // By the time this runs on the way out the dialog has left the page, so the page behind is no longer inert.
+    return () => { if (returnTo?.isConnected) returnTo.focus(); };
+  }, [returnTo]);
+  const days = `${rules.retentionDays} day${rules.retentionDays === 1 ? "" : "s"}`;
+  const facts: [string, string][] = [
+    ["Recorded", "The screen, window or tab you choose, as video only, while your timer runs and the red recording sign shows."],
+    ["Never recorded", "Sound, your keystrokes, screens you did not choose, or anything while no timer runs."],
+    ["Kept", `For ${days}, then deleted automatically.`],
+    ["Who can watch", "You, your team lead, your organisation's owner and HR, and anyone they give access to. Every viewing is logged, and you can flag a recording as sensitive to lock it."],
+  ];
+  return (
+    <dialog ref={ref} className="modal !max-w-[min(calc(100vw-32px),30rem)]" aria-labelledby={titleId} aria-describedby={descId} onCancel={(e) => { e.preventDefault(); if (!pending) onCancel(); }}>
+      <div className="grid gap-5 p-6">
+        <div>
+          <h2 id={titleId} className="type-dialog-title">Before your screen is recorded</h2>
+          <p id={descId} className="mt-1.5 text-sm font-medium text-secondary">
+            {rules.mode === "required_on_designated_tasks" ? "Some tasks need a recording while you work on them; on the rest, recording is your choice." : "Recording is your choice: it starts only when you choose a screen, and you can stop it at any time."}{" "}
+            You are asked once, and again only if these rules change.
+          </p>
+        </div>
+        <dl className="grid gap-3 text-sm">
+          {facts.map(([k, v]) => <div key={k} className="grid gap-0.5 sm:grid-cols-[7.5rem_minmax(0,1fr)] sm:gap-3"><dt className="font-medium text-foreground">{k}</dt><dd className="font-normal text-secondary">{v}</dd></div>)}
+        </dl>
+        {rules.notice ? (
+          <details className="rounded-xl border border-border bg-fill-0 px-4 py-3 text-sm">
+            <summary className="cursor-pointer font-medium text-foreground">Read the full notice</summary>
+            {/* The whole notice, as the organisation wrote it; long ones scroll here (from the keyboard too). */}
+            <div role="region" aria-label="Full monitoring notice" tabIndex={0} className="mt-2 max-h-[min(40dvh,20rem)] overflow-y-auto whitespace-pre-wrap font-normal text-secondary focus-visible:rounded-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ring)]">{rules.notice}</div>
+          </details>
+        ) : null}
+        <p className="text-xs font-medium text-subtle">The notice, and whether you agreed, stay on your profile under Recording and privacy.</p>
+        {error ? <Alert tone="danger">{error}</Alert> : null}
+        <div className="flex flex-wrap justify-end gap-2">
+          <Button ref={cancelRef} type="button" variant="secondary" disabled={pending} onClick={onCancel}>Cancel</Button>
+          <Button type="button" loading={pending} onClick={async () => {
+            setPending(true); setError(null);
+            try { await onAgree(); }
+            catch (err) { setError(isApiFailure(err) ? err.error.message : "Cannot reach the server. Nothing was saved; try again."); setPending(false); }
+          }}>{pending ? "Choose a screen…" : "I agree"}</Button>
+        </div>
+      </div>
+    </dialog>
+  );
+}
+
+/**
+ * The recording sign, v4: a toast in the bottom right (the toast surface, r12) with a status dot (red and pulsing while
+ * recording, amber when something stopped it), what is happening, and Stop. It stays while recording or uploading.
+ */
 function RecordingIndicator() {
   const c = useContext(CaptureContext);
   if (!c || c.state.status === "idle") return null;
   const mb = (c.state.pendingBytes / 1048576).toFixed(1);
   const problem = c.state.status === "error";
+  const recording = c.state.status === "recording";
   return (
-    <div role="status" aria-live="polite" className={`fixed bottom-[max(1rem,env(safe-area-inset-bottom))] right-[max(1rem,env(safe-area-inset-right))] z-[var(--z-toast)] flex max-w-md items-center gap-3 rounded-full border bg-popover px-4 py-2.5 shadow-[var(--card-shadow)] ${problem ? "border-warning/50" : "border-danger/50"}`}>
-      {c.state.status === "recording" ? <Circle className="rec-dot h-3 w-3 fill-danger text-danger" aria-hidden /> : <AlertTriangle className="h-4 w-4 shrink-0 text-warning" aria-hidden />}
-      <div className="min-w-0 text-sm">
-        <p className="font-semibold">{c.state.status === "recording" ? "Recording screen" : c.state.status === "uploading" ? "Uploading recording" : c.state.status === "requesting" ? "Choose what to share" : "Recording did not start"}</p>
+    <div role="status" aria-live="polite" className="toast-surface fixed bottom-[max(1rem,env(safe-area-inset-bottom))] right-[max(1rem,env(safe-area-inset-right))] z-[var(--z-toast)] flex w-[360px] max-w-[calc(100vw-2rem)] items-start gap-3 px-4 py-3">
+      <span className={cn("mt-[7px] size-2 shrink-0 rounded-full", recording ? "rec-dot bg-danger shadow-[0_0_0_3px_color-mix(in_srgb,var(--danger)_15%,transparent)]" : problem ? "bg-warning shadow-[0_0_0_3px_color-mix(in_srgb,var(--warning)_15%,transparent)]" : "bg-secondary shadow-[0_0_0_3px_var(--fill-1)]")} aria-hidden />
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium text-foreground">{recording ? "Recording screen" : c.state.status === "uploading" ? "Uploading recording" : c.state.status === "requesting" ? "Choose what to share" : "Recording did not start"}</p>
         {problem
-          ? <p className="text-xs text-fg-muted">{c.state.error ?? "Something stopped the recording."} Your time keeps tracking without it.</p>
-          : <p className="text-xs text-fg-muted">{c.state.sourceLabel ? `${c.state.sourceLabel}, ` : ""}{c.state.uploadedChunks} chunks sent, {mb} MB pending{c.state.pendingBytes > WARN_BYTES ? ", high" : ""}</p>}
+          ? <p className="mt-0.5 text-sm font-normal text-[var(--toast-description)]">{c.state.error ?? "Something stopped the recording."} Your time keeps tracking without it.</p>
+          : <p className="mt-0.5 truncate text-sm font-normal text-[var(--toast-description)]">{c.state.sourceLabel ? `${c.state.sourceLabel}, ` : ""}<span className="tabular-nums">{c.state.uploadedChunks}</span> chunks sent, <span className="tabular-nums">{mb}</span> MB pending{c.state.pendingBytes > WARN_BYTES ? ", high" : ""}</p>}
       </div>
-      {c.state.status === "recording" ? <Button size="sm" variant="danger" onClick={() => c.stopCapture("stopped")}><Square className="h-3 w-3" aria-hidden />Stop</Button> : null}
-      {problem ? <button type="button" aria-label="Dismiss" onClick={() => c.dismissError()} className="grid size-8 shrink-0 place-items-center rounded-full text-fg-subtle transition-colors duration-[var(--duration-fast)] hover:bg-wash hover:text-fg"><X className="size-4" aria-hidden /></button> : null}
+      {recording ? <Button size="xs" variant="danger" className="shrink-0" onClick={() => c.stopCapture("stopped")}><Square className="fill-current" aria-hidden />Stop</Button> : null}
+      {problem ? <IconButton aria-label="Dismiss" size="xs" className="-mr-1 shrink-0" onClick={() => c.dismissError()}><X aria-hidden /></IconButton> : null}
     </div>
   );
 }
 
 /**
- * Gate used by the timer before starting/switching/resuming: obtains permission for
- * required/optional capture first, and offers an exception path when denied or unsupported.
+ * Gate used by the timer before starting/switching/resuming: asks for consent to the recording rules (once per
+ * version) and screen permission for required capture first, and offers an exception path when denied or unsupported.
  */
 export function useCaptureGate() {
   const c = useContext(CaptureContext);
@@ -245,12 +414,16 @@ export function useCaptureGate() {
   const captureGate: CaptureGate = useCallback(async (task) => {
     if (!c) return { captureMode: "none" };
     const required = task.capture_requirement === "required" && c.recordingMode === "required_on_designated_tasks";
-    // Optional recording never prompts at Start: the server marks the session as allowed to record and the
-    // member presses "Record screen" in the timer when they want to. Only designated-required tasks gate here.
+    // Optional recording never prompts at Start: the member presses "Record screen" in the timer when they want to,
+    // and that press asks for consent if they have not agreed yet. Only designated-required tasks gate here.
     if (!required) return { captureMode: "none" };
     const support = captureSupport();
     if (!support.supported) return new Promise((resolve) => setDialog({ task, resolve, reason: support.reason ?? "Unsupported browser" }));
-    const perm = await c.requestPermissionOnly();
+    // Consent first, once per version of the rules; Cancel means the timer does not start. Agreeing opens the picker,
+    // and a screen already chosen ("Start and record") is used rather than asking again.
+    const consent = await c.ensureConsent();
+    if (!consent) return null;
+    const perm = c.pendingStream.current?.active ? true : consent.picked ? null : await c.requestPermissionOnly();
     if (perm) return { captureMode: "required" };
     return new Promise((resolve) => setDialog({ task, resolve, reason: c.state.error ?? "Screen sharing was declined." }));
   }, [c]);
@@ -267,52 +440,69 @@ export function useCaptureGate() {
     if ((!s || s.state !== "running") && c.state.status === "recording") void c.stopCapture("stopped");
   }, [c]);
 
+  const supported = useCaptureSupported();
   const recordingControls = useCallback((session: SessionView) => {
     if (!c || c.recordingMode === "disabled") return null;
     if (session.state !== "running") return null;
     if (session.captureMode === "exception") return null;
-    if (session.captureMode === "none") {
-      // Recording is allowed by policy but this session cannot record: the member had not acknowledged the current notice when it started.
-      return <span className="inline-flex items-center gap-2 text-xs text-warning"><Circle className="h-3 w-3" aria-hidden />This session started before you acknowledged the monitoring notice. <a className="underline" href={`/app/${c.orgSlug}/policy?next=/app/${c.orgSlug}/my-day`}>Acknowledge it</a>, then stop and start the timer to record.</span>;
-    }
-    if (c.state.status === "recording") return <IconButton aria-label="Stop recording" onClick={() => c.stopCapture("stopped")} className="border-danger/60 text-danger hover:text-danger"><span className="relative grid place-items-center"><Circle className="size-4 fill-danger text-danger animate-pulse" aria-hidden /><Square className="absolute size-2 fill-current" aria-hidden /></span></IconButton>;
+    // A session that started before the person agreed to the rules ("none") records too: Record screen asks first.
+    if (c.state.status === "recording") return <IconButton aria-label="Stop recording" onClick={() => c.stopCapture("stopped")} className="text-danger hover:text-danger"><span className="relative grid place-items-center"><Circle className="rec-dot fill-danger text-danger" aria-hidden /><Square className="absolute !size-2 fill-background text-background" aria-hidden /></span></IconButton>;
+    // Nothing until the browser has said whether it can record (see useCaptureSupported), so the server's render and
+    // the browser's first render agree.
+    if (supported === null) return null;
     const support = captureSupport();
-    if (!support.supported) return <span className="max-w-sm text-xs text-warning">Screen recording unavailable here: {support.reason} {typeof window !== "undefined" && !window.isSecureContext ? `Open the app at http://localhost:${window.location.port || "3000"} (or an https:// address) instead of ${window.location.host}.` : "Use Chrome or Edge on a computer."}</span>;
-    return <IconButton aria-label={c.state.status === "requesting" ? "Choose a screen…" : "Record screen"} disabled={c.state.status === "requesting"} onClick={() => c.startCapture(session.id)}><Circle className="size-4 fill-danger text-danger" aria-hidden /></IconButton>;
-  }, [c]);
+    if (!support.supported) return <span className="flex max-w-sm items-start gap-2 text-xs font-medium text-secondary"><span className="mt-[5px] size-1.5 shrink-0 rounded-full bg-warning" aria-hidden /><span>Screen recording unavailable here: {support.reason} {typeof window !== "undefined" && !window.isSecureContext ? `Open the app at http://localhost:${window.location.port || "3000"} (or an https:// address) instead of ${window.location.host}.` : "Use Chrome or Edge on a computer."}</span></span>;
+    return <IconButton aria-label={c.state.status === "requesting" ? "Choose a screen…" : "Record screen"} disabled={c.state.status === "requesting"} onClick={() => void c.record(session)}><Circle className="fill-danger text-danger" aria-hidden /></IconButton>;
+  }, [c, supported]);
 
   const dialogEl = useMemo(() => dialog ? <ExceptionDialog orgSlug={c!.orgSlug} task={dialog.task} reason={dialog.reason} onResolve={(v) => { dialog.resolve(v); setDialog(null); }} onRetry={async () => { const p = await c!.requestPermissionOnly(); if (p) { dialog.resolve({ captureMode: "required" }); setDialog(null); } }} /> : null, [dialog, c]);
   return { captureGate, onSession, dialogEl, recordingControls };
 }
 
-function ExceptionDialog({ orgSlug, task, reason, onResolve, onRetry }: { orgSlug: string; task: StartableTask; reason: string; onResolve: (v: { captureMode: "exception"; captureExceptionId: string } | null) => void; onRetry: () => void }) {
-  const [pending, setPending] = useState(false);
+/**
+ * Recording is required and could not start: retry, or ask for an exception. A centred v4 dialog on the native
+ * <dialog> (focus trapped, Escape cancels): the reason in an amber notice, the form, then Cancel, Retry and the white
+ * primary.
+ */
+function ExceptionDialog({ orgSlug, task, reason, onResolve, onRetry }: { orgSlug: string; task: StartableTask; reason: string; onResolve: (v: { captureMode: "exception"; captureExceptionId: string } | null) => void; onRetry: () => Promise<void> }) {
+  const ref = useRef<HTMLDialogElement>(null);
+  const titleId = useId();
+  const descId = useId();
+  const [pending, setPending] = useState<null | "request" | "retry">(null);
   const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
+  useEffect(() => { const d = ref.current; if (d && !d.open) d.showModal(); }, []);
   return (
-    <div role="dialog" aria-modal="true" aria-labelledby="cex-title" className="fixed inset-0 z-[var(--z-dialog)] flex items-center justify-center bg-[var(--overlay)] p-4 overscroll-contain">
-      <form className="tile w-full max-w-lg p-6" onSubmit={async (e) => {
-        e.preventDefault(); setPending(true); setError(null);
+    <dialog ref={ref} className="modal !max-w-[min(calc(100vw-32px),32rem)]" aria-labelledby={titleId} aria-describedby={descId} onCancel={(e) => { e.preventDefault(); onResolve(null); }}>
+      <form className="grid gap-5 p-6" noValidate onSubmit={async (e) => {
+        e.preventDefault();
         const f = new FormData(e.currentTarget);
+        const details = String(f.get("reason") ?? "").trim();
+        if (!details) { setFieldErrors({ reason: ["Say what happened, so the reviewer can approve the time."] }); return; }
+        setPending("request"); setError(null); setFieldErrors({});
         try {
-          const r = await api<{ id: string }>(`/api/orgs/${orgSlug}/capture-exceptions`, { method: "POST", body: { taskId: task.id, reasonCode: f.get("reasonCode"), reason: f.get("reason") } });
+          const r = await api<{ id: string }>(`/api/orgs/${orgSlug}/capture-exceptions`, { method: "POST", body: { taskId: task.id, reasonCode: f.get("reasonCode"), reason: details } });
           onResolve({ captureMode: "exception", captureExceptionId: r.id });
-        } catch (err) { setError(isApiFailure(err) ? err.error.message : "Cannot reach the server."); } finally { setPending(false); }
+        } catch (err) {
+          if (isApiFailure(err)) { setError(err.error.message); setFieldErrors(err.error.fieldErrors ?? {}); }
+          else setError("Cannot reach the server. Check your connection and try again.");
+        } finally { setPending(null); }
       }}>
-        <h2 id="cex-title" className="text-xl font-display">Recording is required for this task</h2>
-        <Alert tone="warning" className="mt-3">{reason}</Alert>
-        <p className="mt-3 text-sm text-fg-muted">You can retry screen sharing, or request an exception. With an exception your time is tracked but marked provisional pending review, and no recording is claimed to exist.</p>
-        <div className="mt-4 grid gap-3">
-          <Field label="Reason" htmlFor="cex-code"><Select id="cex-code" name="reasonCode" defaultValue="permission_denied"><option value="permission_denied">Permission denied</option><option value="unsupported_browser">Unsupported browser</option><option value="capture_failed">Capture failed</option><option value="quota_exceeded">Upload quota exceeded</option><option value="sensitive_context">Sensitive context on screen</option><option value="other">Other</option></Select></Field>
-          <Field label="Details" htmlFor="cex-reason"><Textarea id="cex-reason" name="reason" required maxLength={2000} /></Field>
+        <div>
+          <h2 id={titleId} className="type-dialog-title">Recording is required for this task</h2>
+          <p id={descId} className="mt-1.5 text-sm font-medium text-secondary">You can retry screen sharing, or request an exception. With an exception your time is tracked but marked provisional pending review, and no recording is claimed to exist.</p>
         </div>
-        {error ? <Alert tone="danger" className="mt-3">{error}</Alert> : null}
-        <div className="mt-4 flex flex-wrap gap-2">
-          <Button type="button" variant="outline" onClick={onRetry}>Retry screen sharing</Button>
-          <Button type="submit" disabled={pending}>{pending ? "Requesting…" : "Request exception and start"}</Button>
-          <Button type="button" variant="ghost" onClick={() => onResolve(null)}>Cancel</Button>
+        <Alert tone="warning">{reason}</Alert>
+        <Field label="Reason" htmlFor="cex-code" error={fieldErrors.reasonCode}><Select id="cex-code" name="reasonCode" defaultValue="permission_denied"><option value="permission_denied">Permission denied</option><option value="unsupported_browser">Unsupported browser</option><option value="capture_failed">Capture failed</option><option value="quota_exceeded">Upload quota exceeded</option><option value="sensitive_context">Sensitive context on screen</option><option value="other">Other</option></Select></Field>
+        <Field label="Details" htmlFor="cex-reason" error={fieldErrors.reason}><Textarea id="cex-reason" name="reason" maxLength={2000} placeholder="What stopped the recording?" /></Field>
+        {error ? <Alert tone="danger">{error}</Alert> : null}
+        <div className="flex flex-wrap justify-end gap-2">
+          <Button type="button" variant="ghost" disabled={!!pending} onClick={() => onResolve(null)}>Cancel</Button>
+          <Button type="button" variant="secondary" disabled={!!pending} loading={pending === "retry"} onClick={async () => { setPending("retry"); try { await onRetry(); } finally { setPending(null); } }}>{pending === "retry" ? "Opening the screen picker…" : "Retry screen sharing"}</Button>
+          <Button type="submit" disabled={!!pending} loading={pending === "request"}>{pending === "request" ? "Requesting…" : "Request exception and start"}</Button>
         </div>
       </form>
-    </div>
+    </dialog>
   );
 }
 

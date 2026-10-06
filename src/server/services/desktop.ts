@@ -19,6 +19,7 @@ import { AppError, invalid, notFound } from "@/server/lib/errors";
 import { briefing, brendaPrefs, brendaSettings } from "@/server/services/brenda";
 import { currentSession } from "@/server/services/sessions";
 import { myClock } from "@/server/services/attendance";
+import { teamStatus } from "@/server/services/views";
 
 const CODE_TTL_SECONDS = 10 * 60;
 const DESKTOP_SESSION_DAYS = 90;
@@ -120,17 +121,19 @@ export async function revokeDevice(user: CurrentUser, sessionId: string) {
  */
 export async function desktopState(ctx: OrgContext) {
   const worker = ctx.membership.role === "employee" || ctx.membership.role === "manager";
-  const [brief, session, clock, extra] = await Promise.all([
+  const lead = ctx.membership.role !== "employee";
+  const [brief, session, clock, team, extra] = await Promise.all([
     briefing(ctx),
     worker ? currentSession(ctx) : Promise.resolve(null),
     worker ? myClock(ctx) : Promise.resolve(null),
+    lead ? teamStatus(ctx) : Promise.resolve(null),
     withUser(ctx.user.profileId, async (db) => ({
       settings: await brendaSettings(db, ctx.org.id),
       prefs: await brendaPrefs(db, ctx.membership.id),
       notifications: await db.query<{ id: string; type: string; title: string; body: string | null; href: string | null; created_at: string }>(
         `SELECT id, type, title, body, href, created_at FROM notifications WHERE recipient_membership_id = $1 AND read_at IS NULL ORDER BY created_at DESC LIMIT 10`, [ctx.membership.id]),
-      progress: await db.query<{ id: string; progress_percent: number; version: number }>(
-        `SELECT id, progress_percent::int AS progress_percent, version FROM tasks WHERE assignee_membership_id = $1 AND status IN ('todo','in_progress','blocked') AND archived_at IS NULL`, [ctx.membership.id]),
+      progress: await db.query<{ id: string; title: string; due_at: string | null; progress_percent: number; version: number }>(
+        `SELECT id, title, due_at, progress_percent::int AS progress_percent, version FROM tasks WHERE assignee_membership_id = $1 AND status IN ('todo','in_progress','blocked') AND archived_at IS NULL ORDER BY due_at NULLS LAST, created_at DESC`, [ctx.membership.id]),
     })),
   ]);
   const s = session?.session ?? null;
@@ -145,5 +148,11 @@ export async function desktopState(ctx: OrgContext) {
     timer: s ? { id: s.id, version: s.version, state: s.state, taskId: s.taskId, taskTitle: s.taskTitle, confirmedSeconds: s.confirmedSeconds, openIntervalStartedAt: s.openIntervalStartedAt, serverNow: s.serverNow, estimateMinutes: s.estimateMinutes, progress: running?.progress_percent ?? 0, taskVersion: running?.version ?? null } : null,
     briefing: brief,
     notifications: extra.notifications,
+    // The person's own open tasks, soonest due first: where a dropped file can go.
+    myTasks: worker ? extra.progress.slice(0, 8).map((t) => ({ id: t.id, title: t.title, due: t.due_at })) : [],
+    // Team leads and organisation accounts: who is working right now, for the small faces in the notch.
+    team: team ? team.rows.filter((r) => r.membership_id !== ctx.membership.id)
+      .sort((a, b) => Number(!!b.session_state) - Number(!!a.session_state) || a.display_name.localeCompare(b.display_name))
+      .slice(0, 8).map((r) => ({ id: r.membership_id, name: r.display_name, state: r.session_state ?? null, task: r.task_title ?? null })) : [],
   };
 }

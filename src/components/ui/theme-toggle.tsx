@@ -10,7 +10,8 @@ import { IconButton } from "@/components/ui/icon-button";
 
 export type Theme = "light" | "dark";
 export const THEME_KEY = "boredroom-theme";
-const THEME_COLOR: Record<Theme, string> = { dark: "#000000", light: "#f4f4f2" };
+// The browser chrome matches the canvas (`--background` in globals.css, v4).
+const THEME_COLOR: Record<Theme, string> = { dark: "#0f0f10", light: "#ffffff" };
 
 export function applyTheme(theme: Theme) {
   document.documentElement.dataset.theme = theme;
@@ -35,7 +36,7 @@ export function ThemeToggle({ className }: { className?: string }) {
   const next: Theme = theme === "dark" ? "light" : "dark";
   return (
     <IconButton className={className} aria-label={next === "light" ? "Switch to light mode" : "Switch to dark mode"} title={next === "light" ? "Light mode" : "Dark mode"} onClick={() => applyTheme(next)}>
-      {theme === "dark" ? <Sun className="size-[18px]" aria-hidden /> : <Moon className="size-[18px]" aria-hidden />}
+      {theme === "dark" ? <Sun aria-hidden /> : <Moon aria-hidden />}
     </IconButton>
   );
 }

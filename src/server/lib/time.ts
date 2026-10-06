@@ -55,6 +55,23 @@ export function localMidnight(dateStr: string, timeZone: string): Date {
   return new Date(t);
 }
 
+/**
+ * The instant a local wall-clock time ("HH:MM") falls on a local date, DST-safe: on a clock-change day it is not local
+ * midnight plus the hours. A time the clocks skip going forward reads with the offset before the change (01:30 on a
+ * spring-forward night is 02:30 new time); a time that happens twice when they go back is the first of the two.
+ */
+export function localTimeOn(dateStr: string, time: string, timeZone: string): Date {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const [hh, mm = 0] = time.split(":").map(Number);
+  const wall = Date.UTC(y, m - 1, d, hh, mm);
+  const before = offsetAt(new Date(wall - 12 * 3_600_000), timeZone);
+  const after = offsetAt(new Date(wall + 12 * 3_600_000), timeZone);
+  const fits = (offset: number) => offsetAt(new Date(wall - offset), timeZone) === offset;
+  if (fits(before)) return new Date(wall - before);
+  if (fits(after)) return new Date(wall - after);
+  return new Date(wall - before);
+}
+
 export function addDays(dateStr: string, days: number): string {
   const [y, m, d] = dateStr.split("-").map(Number);
   const t = new Date(Date.UTC(y, m - 1, d + days));

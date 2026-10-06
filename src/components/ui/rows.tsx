@@ -4,11 +4,35 @@ import { EmptyState } from "@/components/ui/states";
 import type { Icon3DName } from "@/components/ui/icon";
 
 /**
- * A defined list (owner decision, 25 September 2026): every row has a place for who, what, a little context and a
- * value on the right, separated by hairlines, brightening on hover. Replaces the "title, name, due date" sentence.
+ * Lists, v4 (spec §7 Lists): rows are separated by spacing, never lines.
+ *
+ * `ListRow`: the 64px row: a 40px leading thumb (an Avatar size 40, or a ToolSquare), the title 14/20 semibold
+ * (truncates), a subtitle 13/19.5 regular in the secondary grey, an optional meta line (13px, secondary; put a
+ * CountPill in it), and a trailing slot (a value, a Badge, a ghost "…" IconButton). As a link (`href`) or a button
+ * (`onClick`) the whole row takes a fill-1 plate on hover.
+ *
+ * `RowList` / `Row`: the denser v3 list (40px rows, 14px title, 13px meta), kept with the same props, now without lines.
  */
+export function ListRow({ leading, title, subtitle, meta, trailing, href, onClick, className, active = false }: { leading?: React.ReactNode; title: React.ReactNode; subtitle?: React.ReactNode; meta?: React.ReactNode; trailing?: React.ReactNode; href?: string; onClick?: () => void; className?: string; active?: boolean }) {
+  const body = (
+    <>
+      {leading ? <div className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-xl">{leading}</div> : null}
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-semibold text-foreground">{title}</p>
+        {subtitle ? <p className="truncate text-meta font-normal text-secondary">{subtitle}</p> : null}
+        {meta ? <div className="mt-0.5 flex min-w-0 items-center gap-1.5 truncate text-meta font-normal text-secondary">{meta}</div> : null}
+      </div>
+      {trailing ? <div className="flex shrink-0 items-center gap-2 text-sm tabular-nums text-secondary">{trailing}</div> : null}
+    </>
+  );
+  const cls = cn("flex min-h-16 w-full items-center gap-3 rounded-xl px-2 py-3 text-left", (href || onClick) && "transition-colors duration-75 hover:bg-fill-1 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--ring)]", active && "bg-fill-1", className);
+  if (href) return <li className="list-none"><Link href={href} className={cls} aria-current={active ? "page" : undefined}>{body}</Link></li>;
+  if (onClick) return <li className="list-none"><button type="button" onClick={onClick} className={cls} aria-pressed={active || undefined}>{body}</button></li>;
+  return <li className={cn("list-none", cls)}>{body}</li>;
+}
+
 export function RowList({ children, className }: { children: React.ReactNode; className?: string }) {
-  return <ul className={cn("divide-y divide-border-soft", className)}>{children}</ul>;
+  return <ul className={cn("space-y-0.5", className)}>{children}</ul>;
 }
 
 export function Row({ leading, title, meta, trailing, href, className }: { leading?: React.ReactNode; title: React.ReactNode; meta?: React.ReactNode; trailing?: React.ReactNode; href?: string; className?: string }) {
@@ -16,17 +40,17 @@ export function Row({ leading, title, meta, trailing, href, className }: { leadi
     <>
       {leading ? <div className="shrink-0">{leading}</div> : null}
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium text-fg">{title}</p>
-        {meta ? <p className="truncate text-xs text-fg-subtle">{meta}</p> : null}
+        <p className="truncate text-sm font-medium text-foreground">{title}</p>
+        {meta ? <p className="truncate text-meta font-normal text-secondary">{meta}</p> : null}
       </div>
-      {trailing ? <div className="shrink-0 text-right text-xs text-fg-muted tabular-nums">{trailing}</div> : null}
+      {trailing ? <div className="shrink-0 text-right text-meta font-normal tabular-nums text-secondary">{trailing}</div> : null}
     </>
   );
-  const cls = cn("flex items-center gap-3 px-2 py-2.5 transition-colors duration-[var(--duration-fast)]", href && "-mx-2 rounded-[var(--radius-sm)] hover:bg-wash", className);
+  const cls = cn("flex items-center gap-3 px-2 py-2", href && "-mx-2 rounded-[10px] transition-colors duration-75 hover:bg-fill-1", className);
   return <li>{href ? <Link href={href} className={cls}>{body}</Link> : <div className={cls}>{body}</div>}</li>;
 }
 
-/** The empty row (owner decision, 26 September 2026): one of our icons and a short line, never a bare "None." */
+/** The empty row: a line icon and a short line, never a bare "None." */
 export function RowEmpty({ title = "Nothing here yet", icon3d = "box-doc-check", description }: { title?: string; icon3d?: Icon3DName; description?: string }) {
   return <li><EmptyState compact icon3d={icon3d} title={title} description={description} /></li>;
 }

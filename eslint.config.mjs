@@ -16,6 +16,10 @@ const eslintConfig = defineConfig([
     // Third-party code kept close to upstream; it is not held to this project's lint rules.
     "src/components/aceternity/**",
     "src/hooks/use-outside-click.tsx",
+    // The desktop app's Rust build output (whisper.cpp's CMake writes files ending in .ts).
+    "desktop/src-tauri/target/**",
+    // The on-device dictation runtime, copied from onnxruntime-web (scripts/copy-speech-runtime.mjs).
+    "public/speech/**",
   ]),
 ]);
 

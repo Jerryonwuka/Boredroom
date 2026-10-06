@@ -17,15 +17,15 @@ export default function DevEmailsPage() {
   ];
   return (
     <main id="main" className="mx-auto max-w-5xl px-4 py-10">
-      <div className="mb-6 flex items-center justify-between"><Logo /><span className="text-sm text-fg-subtle">Email templates</span></div>
-      <h1 className="font-display text-2xl">Every email, as sent</h1>
-      <p className="mt-1 text-sm text-fg-muted">Rendered from <code>src/server/lib/emails.ts</code> with sample links. The plain-text twin sits under each one.</p>
+      <div className="mb-6 flex items-center justify-between"><Logo /><span className="text-meta font-normal text-subtle">Email templates</span></div>
+      <h1 className="type-page-title">Every email, as sent</h1>
+      <p className="mt-1 type-paragraph">Rendered from <code>src/server/lib/emails.ts</code> with sample links. The plain-text twin sits under each one.</p>
       <div className="mt-6 grid gap-8">
         {samples.map((s) => (
-          <section key={s.name} className="tile overflow-hidden">
-            <h2 className="border-b border-border-soft px-5 py-3 font-display text-lg">{s.name}</h2>
+          <section key={s.name} className="card-panel overflow-hidden p-0">
+            <h2 className="type-section-title border-b border-border px-5 py-3">{s.name}</h2>
             <iframe title={s.name} srcDoc={s.html} sandbox="" className="h-[720px] w-full bg-black" />
-            <details className="border-t border-border-soft px-5 py-3"><summary className="cursor-pointer text-sm text-fg-muted">Plain text</summary><pre className="mt-2 whitespace-pre-wrap text-xs text-fg-subtle">{s.text}</pre></details>
+            <details className="border-t border-border px-5 py-3"><summary className="cursor-pointer text-sm text-secondary">Plain text</summary><pre className="mt-2 whitespace-pre-wrap text-xs font-normal text-secondary">{s.text}</pre></details>
           </section>
         ))}
       </div>
