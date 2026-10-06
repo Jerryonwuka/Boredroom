@@ -1,30 +1,43 @@
 import Link from "next/link";
-import { Logo } from "@/components/logo";
+import { CalendarDays, ChartPie, CircleQuestionMark, CreditCard, ListTodo, MessageSquare, ShieldCheck, Target, Timer, Users } from "lucide-react";
 import { MotionRoot } from "@/components/ui/motion";
-import { Hero } from "@/components/landing/hero";
+import { Badge } from "@/components/ui/badge";
+import { LINE_ICON, type Icon3DName } from "@/components/ui/icon";
+import { ToolSquare } from "@/components/ui/tool-tile";
+import { Hero, heroButton } from "@/components/landing/hero";
 import { QuestionsMarquee } from "@/components/landing/marquee";
 import { JoinDemo } from "@/components/landing/join-demo";
 import { DayDemo } from "@/components/landing/day-demo";
 import { Panels } from "@/components/landing/panels";
-import { AttendanceMock, MessagesMock, MyDayMock, ReportsMock } from "@/components/landing/mocks";
+import { AttendanceMock, MyDayMock, ReportsMock } from "@/components/landing/mocks";
+import { MessagesDemo } from "@/components/landing/messages-demo";
+import { DashboardDemo } from "@/components/landing/dashboard-demo";
 import { Moments } from "@/components/landing/moments";
-import { LitTile } from "@/components/landing/lit-tile";
-import { Reveal, RevealGroup, RevealItem } from "@/components/landing/reveal";
 import { WaitlistForm } from "@/components/landing/waitlist-form";
 import { Pricing } from "@/components/landing/pricing";
-import { publicPlans } from "@/server/services/pricing";
-import { SectionTitle } from "@/components/landing/section-title";
-import { GlassCard } from "@/components/landing/glass-card";
+import { Faq } from "@/components/landing/faq";
 import { SiteNav } from "@/components/landing/site-nav";
-import { SiteBackground } from "@/components/landing/site-background";
+import { SiteFooter } from "@/components/landing/footer";
+import { FeatureCard, FeatureText, SectionTitle, WRAP } from "@/components/landing/parts";
+import { publicPlans } from "@/server/services/pricing";
 import { getCurrentUser } from "@/server/auth";
 import { launchSettings, landingSettings } from "@/server/admin/settings";
+import { cn } from "@/lib/utils";
 
 export const metadata = { title: "Boredroom · Know what your remote team is doing" };
 
+/*
+  The public landing page, design system v4 (owner request, 6 October 2026): the app's own language on the dark
+  canvas. Display headlines in Geist 400, 18/28 secondary lines, hairline cards (r16–r28, 20–24px in), and product
+  views built from the real v4 parts (the app frame on Brenda's home, stat cards, the analytics card with its orange
+  highlight, a table, underline tabs, the segmented control) instead of screenshots or 3D icons. Orange follows the
+  accent rules: the one standout per screen is the waitlist call to action (waitlist mode) or nothing; everything else
+  orange is a live, active or chosen mark inside a product view. Light theme follows the toggle (the v4 tokens).
+*/
+
 const WAYS_IN = ["Join code", "Join link", "Email invitation", "Teams", "Team leads", "Owner", "HR", "Staff", "One workspace per company", "Sealed from every other"];
 
-const FAIR = [
+const FAIR: { icon: Icon3DName; t: string; d: string }[] = [
   { icon: "shield-check", t: "Consent before any recording", d: "Each person reads exactly what is recorded about them, and agrees, before their screen is first recorded." },
   { icon: "flag-alert", t: "No productivity score", d: "Timers, heartbeats, logins and recordings are never treated as proof of work." },
   { icon: "stopwatch", t: "Uncertain time gets a question", d: "A gap leads to a clarification request, not a penalty." },
@@ -36,13 +49,13 @@ const FAIR = [
   { icon: "people", t: "Organisations are sealed", d: "Row-level security keeps each company's data apart, even from privileged code." },
 ];
 
-const CONTROL = [
+const CONTROL: { icon: Icon3DName; t: string; d: string }[] = [
   { icon: "eye-dashboard", t: "Workroom", d: "Who is working now, on what, for how long. Status comes from timers, nothing else." },
-  { icon: "clock-in", t: "Attendance", d: "Clock-ins against your schedule, late arrivals by the minute, the month at a glance." },
+  { icon: "calendar-clock", t: "Attendance", d: "Clock-ins against your schedule, late arrivals by the minute, the month at a glance." },
   { icon: "chat", t: "Messages", d: "Ask for an update with the task attached. Direct threads stay between two people." },
 ];
 
-const FAQ = [
+const FAQ: [string, string][] = [
   ["Do my staff know they are being tracked?", "Yes. Before anyone's screen is recorded for the first time, they read exactly what is recorded, who can watch it and how long it is kept, and agree to it. They are asked again whenever the rules change."],
   ["Is screen recording mandatory?", "No. It is off until an owner turns it on. Even then nothing records until the person presses Record screen and picks what to share, and a visible indicator runs the whole time."],
   ["Can a team lead read private messages?", "No. A direct thread is readable only by the two people in it. Team channels are readable by that team. Nothing crosses organisations."],
@@ -50,202 +63,185 @@ const FAQ = [
   ["When does it launch?", "Boredroom is in a private pilot. Create an organisation account to start with your own team."],
 ];
 
+const SECTION = "py-20 sm:py-28";
+
+/** A 40px tool square with a line icon by its v3 name. */
+function LineSquare({ name }: { name: Icon3DName }) {
+  const Icon = LINE_ICON[name];
+  return <ToolSquare><Icon aria-hidden /></ToolSquare>;
+}
+
 export default async function LandingPage() {
   // The public page never fails over the database: a slow or absent connection means the defaults (live mode).
   const [user, launch, copy, plans] = await Promise.all([getCurrentUser().catch(() => null), launchSettings().catch(() => ({ mode: "live" as const, waitlist_open: true, app_access: true })), landingSettings().catch(() => ({ headline: "", subheadline: "", cta: "" })), publicPlans().catch(() => [])]);
   const waitlist = launch.mode === "waitlist";
   return (
     <MotionRoot>
-      <SiteBackground />
-      <div className="lp relative z-[1]">
+      <div className="lp min-h-dvh overflow-x-clip bg-background text-foreground">
         <SiteNav signedIn={!!user} waitlist={waitlist} />
 
         <main id="main">
           <Hero signedIn={!!user} waitlist={waitlist} copy={copy} />
 
-          <section aria-labelledby="questions" className="py-10 md:py-14">
-            <Reveal><p id="questions" className="lp-muted mb-8 text-center text-[15px]">Questions leads stop sending once the room is visible.</p></Reveal>
+          <section aria-labelledby="questions" className="pt-20 sm:pt-28">
+            <p id="questions" className={cn(WRAP, "mb-6 text-center text-sm font-medium text-secondary")}>Questions leads stop sending once the room is visible.</p>
             <QuestionsMarquee />
           </section>
 
-          <section id="how" className="py-24 md:py-36">
-            <div className="mx-auto grid max-w-6xl items-center gap-12 px-6 md:grid-cols-2 md:gap-16">
-              <Reveal>
-                <span className="lp-icon mb-8"><img src="/icons/people.png" alt="" loading="lazy" /></span>
-                <h2 className="text-balance font-display text-4xl leading-[1.06] tracking-[-0.02em] md:text-[56px]">Get everyone in, in minutes</h2>
-                <p className="lp-muted mt-5 max-w-lg text-pretty text-lg leading-relaxed">Create the organisation, make your teams, put a lead on each, then share one code. Staff can only join through it, and they land in the right team with the right role.</p>
-                <ul className="mt-7 flex flex-wrap gap-2" aria-label="Ways in and roles">
-                  {WAYS_IN.map((w) => <li key={w} className="lp-card-sm px-3 py-1.5 text-sm lp-muted">{w}</li>)}
+          <section id="how" aria-labelledby="how-title" className={SECTION}>
+            <div className={cn(WRAP, "grid items-center gap-12 md:grid-cols-2 lg:gap-16")}>
+              <div className="min-w-0">
+                <SectionTitle id="how-title" align="left" icon={<Users aria-hidden />} title="Get everyone in, in minutes"
+                  sub="Create the organisation, make your teams, put a lead on each, then share one code. Staff can only join through it, and they land in the right team with the right role." />
+                <ul className="lp-reveal mt-7 flex flex-wrap gap-2" aria-label="Ways in and roles">
+                  {WAYS_IN.map((w) => <li key={w} className="inline-flex h-8 items-center rounded-full bg-fill-1 px-3 text-meta font-medium text-secondary">{w}</li>)}
                 </ul>
-              </Reveal>
-              <Reveal delay={0.15}><JoinDemo /></Reveal>
+              </div>
+              <JoinDemo />
             </div>
           </section>
 
-          <section id="product" className="py-24 md:py-36">
-            <div className="mx-auto max-w-6xl px-6">
-              <SectionTitle icon="day-checklist" title="Built for the people doing the work" sub="A staff member's whole day is one card: type a to-do, press Start, press Done. Everything a lead needs to know comes from that, and reaches them live." />
-              <Reveal className="mt-16" delay={0.1}><DayDemo /></Reveal>
-              <Reveal className="mt-4" delay={0.1}><Panels /></Reveal>
+          <section id="product" aria-labelledby="product-title" className={SECTION}>
+            <div className={WRAP}>
+              <SectionTitle id="product-title" icon={<ListTodo aria-hidden />} title="Built for the people doing the work"
+                sub="A staff member's whole day is one card: type a to-do, press Start, press Done. Everything a lead needs to know comes from that, and reaches them live." />
+              <div className="mt-14"><DayDemo /></div>
+              <div className="mt-3"><Panels /></div>
             </div>
           </section>
 
-          <section className="py-24 md:py-36">
-            <div className="mx-auto max-w-6xl px-6">
-              <div className="grid items-center gap-12 md:grid-cols-2 md:gap-16">
-                <Reveal>
-                  <span className="lp-icon mb-8"><img src="/icons/stopwatch.png" alt="" loading="lazy" /></span>
-                  <h2 className="text-balance font-display text-4xl leading-[1.06] tracking-[-0.02em] md:text-[56px]">A day planned in one line</h2>
-                  <p className="lp-muted mt-5 max-w-lg text-pretty text-lg leading-relaxed">No forms. Type what needs doing and it is planned for today with the right reviewer. The clock is the page: it runs on the task you started, pauses when you do, and Done hands the work over in one step.</p>
-                  <p className="lp-muted mt-4 max-w-lg text-pretty text-lg leading-relaxed">Dictate a note and the assistant turns it into to-dos you confirm. Leads can hand a to-do to anyone on their team the same way.</p>
-                </Reveal>
-                <Reveal delay={0.15}><MyDayMock /></Reveal>
+          <section aria-labelledby="day-title" className={SECTION}>
+            <div className={cn(WRAP, "grid items-center gap-12 md:grid-cols-2 lg:gap-16")}>
+              <div className="lp-reveal min-w-0">
+                <ToolSquare className="mb-6"><Timer aria-hidden /></ToolSquare>
+                <h2 id="day-title" className="lp-h2">A day planned in one line</h2>
+                <p className="lp-sub mt-4 max-w-lg">No forms. Type what needs doing and it is planned for today with the right reviewer. The clock is the page: it runs on the task you started, pauses when you do, and Done hands the work over in one step.</p>
+                <p className="lp-sub mt-4 max-w-lg">Dictate a note and the assistant turns it into to-dos you confirm. Leads can hand a to-do to anyone on their team the same way.</p>
               </div>
+              <MyDayMock />
+            </div>
+          </section>
 
-              <div className="mt-28 md:mt-36">
-                <SectionTitle icon="chart-ring" title="Go beyond the timer" sub="Attendance against the schedule you set, and reports that add up only confirmed time." />
-                <RevealGroup className="mt-14 grid gap-4 md:grid-cols-2" stagger={0.12}>
-                  <RevealItem>
-                    <GlassCard bodyClassName="p-6 md:p-8">
-                      <AttendanceMock />
-                      <h3 className="mt-6 font-display text-2xl">Attendance</h3>
-                      <p className="lp-muted mt-2 text-pretty leading-relaxed">Set a clock-in time, a clock-out time and a grace period. Everyone clocks in and out; a late arrival is recorded by the minute, and the month view shows every person, every day.</p>
-                    </GlassCard>
-                  </RevealItem>
-                  <RevealItem>
-                    <GlassCard bodyClassName="p-6 md:p-8">
-                      <ReportsMock />
-                      <h3 className="mt-6 font-display text-2xl">Reports and timesheets</h3>
-                      <p className="lp-muted mt-2 text-pretty leading-relaxed">At the end of each day Brenda sends every supervisor a report of what their team did, so nobody writes one. Timesheets count only confirmed time, a correction counts once a lead approves it, and the CSV export adds up to the same totals.</p>
-                    </GlassCard>
-                  </RevealItem>
-                </RevealGroup>
-              </div>
-
-              <div className="mt-28 grid items-center gap-12 md:mt-36 md:grid-cols-2 md:gap-16">
-                <Reveal className="md:order-2">
-                  <span className="lp-icon mb-8"><img src="/icons/chat.png" alt="" loading="lazy" /></span>
-                  <h2 className="text-balance font-display text-4xl leading-[1.06] tracking-[-0.02em] md:text-[56px]">Ask, with the task attached</h2>
-                  <p className="lp-muted mt-5 max-w-lg text-pretty text-lg leading-relaxed">A direct thread with anyone, a channel per team, and one for everyone. &ldquo;Ask for an update&rdquo; opens the thread with the task attached and the question ready. Direct messages are readable only by the two people in them, not by the lead, not by the owner.</p>
-                </Reveal>
-                <Reveal className="md:order-1" delay={0.15}><MessagesMock /></Reveal>
+          <section aria-labelledby="beyond-title" className={SECTION}>
+            <div className={WRAP}>
+              <SectionTitle id="beyond-title" icon={<ChartPie aria-hidden />} title="Go beyond the timer" sub="Attendance against the schedule you set, and reports that add up only confirmed time." />
+              <div className="mt-14 grid gap-3 md:grid-cols-2">
+                <FeatureCard>
+                  <AttendanceMock />
+                  <FeatureText title="Attendance">Set a clock-in time, a clock-out time and a grace period. Everyone clocks in and out; a late arrival is recorded by the minute, and the month view shows every person, every day.</FeatureText>
+                </FeatureCard>
+                <FeatureCard>
+                  <ReportsMock />
+                  <FeatureText title="Reports and timesheets">At the end of each day Brenda sends every supervisor a report of what their team did, so nobody writes one. Timesheets count only confirmed time, a correction counts once a lead approves it, and the CSV export adds up to the same totals.</FeatureText>
+                </FeatureCard>
               </div>
             </div>
           </section>
 
-          <section id="fair" className="py-24 md:py-36">
-            <div className="mx-auto max-w-6xl px-6">
-              <SectionTitle icon="shield-check" title="Fair to the people being watched" sub="Monitoring only works when everyone knows the rules. These are written into the product, not the marketing." />
-              <RevealGroup as="ul" className="lp-table mt-16 sm:grid-cols-2 lg:grid-cols-3" stagger={0.05}>
+          <section aria-labelledby="ask-title" className={SECTION}>
+            <div className={cn(WRAP, "grid items-center gap-12 md:grid-cols-2 lg:gap-16")}>
+              <div className="lp-reveal min-w-0 md:order-2">
+                <ToolSquare className="mb-6"><MessageSquare aria-hidden /></ToolSquare>
+                <h2 id="ask-title" className="lp-h2">Ask, with the task attached</h2>
+                <p className="lp-sub mt-4 max-w-lg">A direct thread with anyone, a channel per team, and one for everyone. &ldquo;Ask for an update&rdquo; opens the thread with the task attached and the question ready. Direct messages are readable only by the two people in them, not by the lead, not by the owner.</p>
+              </div>
+              <div className="min-w-0 md:order-1"><MessagesDemo /></div>
+            </div>
+          </section>
+
+          <section id="fair" aria-labelledby="fair-title" className={SECTION}>
+            <div className={WRAP}>
+              <SectionTitle id="fair-title" icon={<ShieldCheck aria-hidden />} title="Fair to the people being watched" sub="Monitoring only works when everyone knows the rules. These are written into the product, not the marketing." />
+              {/* Hairline grid: 1px gaps over the border colour; the ninth rule spans both columns on two-column screens. */}
+              <ul className="lp-reveal mt-14 grid gap-px overflow-hidden rounded-[20px] border border-border bg-border sm:grid-cols-2 lg:grid-cols-3">
                 {FAIR.map((f) => (
-                  <RevealItem as="li" key={f.t} className="lp-cell">
-                    <img src={`/icons/${f.icon}.png`} alt="" className="h-14 w-14 object-contain" loading="lazy" />
-                    <h3 className="mt-5 text-lg font-semibold">{f.t}</h3>
-                    <p className="lp-muted mt-2 text-pretty leading-relaxed">{f.d}</p>
-                  </RevealItem>
+                  <li key={f.t} className="bg-background p-6 sm:last:col-span-2 lg:last:col-span-1">
+                    <LineSquare name={f.icon} />
+                    <h3 className="mt-5 text-base font-semibold text-foreground">{f.t}</h3>
+                    <p className="lp-text mt-1.5">{f.d}</p>
+                  </li>
                 ))}
-              </RevealGroup>
+              </ul>
             </div>
           </section>
 
-          <section className="py-16 md:py-24">
-            <Reveal className="mx-auto max-w-4xl px-6 text-center">
-              <p className="text-balance font-display text-3xl leading-[1.2] md:text-[44px]">&ldquo;Timers, heartbeats, recordings and logins are never treated as proof of productivity. Unlogged or uncertain work leads to a question, not a penalty.&rdquo;</p>
-              <p className="lp-muted mt-8 text-[15px]">From the monitoring notice every member reads before they are recorded</p>
-            </Reveal>
+          <section aria-label="From the monitoring notice" className="py-16 sm:py-24">
+            <figure className={cn(WRAP, "lp-reveal max-w-4xl text-center")}>
+              <blockquote className="font-display text-[28px] font-normal leading-9 tracking-[-0.02em] text-balance text-foreground sm:text-[40px] sm:leading-[48px]">&ldquo;Timers, heartbeats, recordings and logins are never treated as proof of productivity. Unlogged or uncertain work leads to a question, not a penalty.&rdquo;</blockquote>
+              <figcaption className="mt-6 text-sm font-normal text-secondary">From the monitoring notice every member reads before they are recorded</figcaption>
+            </figure>
           </section>
 
-          <section id="control" className="py-24 md:py-36">
-            <div className="mx-auto max-w-6xl px-6">
-              <SectionTitle icon="focus-target" title="Everything in view" sub="The room, the day and the conversation, live, for owners, HR and team leads. Staff see their own day and nothing else's." />
-              <RevealGroup className="mt-14 grid gap-4 md:grid-cols-3" stagger={0.1}>
-                {CONTROL.map((c, i) => (
-                  <RevealItem key={c.t}>
-                    <LitTile duration={6500 + i * 900} className="h-full">
-                      <div className="flex items-center gap-4 p-6">
-                        <img src={`/icons/${c.icon}.png`} alt="" className="h-12 w-12 shrink-0 object-contain" loading="lazy" />
-                        <div><p className="text-lg font-semibold">{c.t}</p><p className="lp-muted mt-1 text-pretty text-sm leading-relaxed">{c.d}</p></div>
-                      </div>
-                    </LitTile>
-                  </RevealItem>
+          <section id="control" aria-labelledby="control-title" className={SECTION}>
+            <div className={WRAP}>
+              <SectionTitle id="control-title" icon={<Target aria-hidden />} title="Everything in view" sub="The room, the day and the conversation, live, for owners, HR and team leads. Staff see their own day and nothing else's." />
+              <div className="mt-14"><DashboardDemo /></div>
+              <ul className="mt-3 grid gap-3 md:grid-cols-3">
+                {CONTROL.map((c) => (
+                  <li key={c.t} className="lp-reveal flex gap-4 rounded-[20px] border border-border bg-fill-0 p-5">
+                    <LineSquare name={c.icon} />
+                    <div className="min-w-0">
+                      <h3 className="text-base font-semibold text-foreground">{c.t}</h3>
+                      <p className="lp-text mt-1">{c.d}</p>
+                    </div>
+                  </li>
                 ))}
-              </RevealGroup>
-
+              </ul>
             </div>
           </section>
 
-          <section className="py-24 md:py-36">
-            <div className="mx-auto max-w-6xl px-6">
-              <SectionTitle icon="desk" title="A week in the room" sub="Not what people say about it. What it records, in the order it happens." />
-              <Reveal className="mt-14" delay={0.1}><Moments /></Reveal>
+          <section aria-labelledby="week-title" className={SECTION}>
+            <div className={WRAP}>
+              <SectionTitle id="week-title" icon={<CalendarDays aria-hidden />} title="A week in the room" sub="Not what people say about it. What it records, in the order it happens." />
+              <div className="lp-reveal mt-14"><Moments /></div>
             </div>
           </section>
 
-          <section id="pricing" className="py-24 md:py-36">
-            <div className="mx-auto max-w-6xl px-6">
-              <SectionTitle icon="card-check" title="Pay per workspace, not per glance" sub="Start free with one workspace. Move to Pro when you run several teams, or talk to us when you run a company of them." />
-              <Reveal delay={0.1} className="mt-14"><Pricing plans={plans} waitlist={waitlist} signedIn={!!user} /></Reveal>
+          <section id="pricing" aria-labelledby="pricing-title" className={SECTION}>
+            <div className={WRAP}>
+              <SectionTitle id="pricing-title" icon={<CreditCard aria-hidden />} title="Pay per workspace, not per glance" sub="Start free with one workspace. Move to Pro when you run several teams, or talk to us when you run a company of them." />
+              <div className="mt-12"><Pricing plans={plans} waitlist={waitlist} signedIn={!!user} /></div>
             </div>
           </section>
 
-          <section id="faq" className="py-24 md:py-36">
-            <div className="mx-auto grid max-w-6xl gap-12 px-6 md:grid-cols-[1fr_1.4fr] md:gap-16">
-              <SectionTitle align="left" icon="eye-checklist" title="Questions, answered" sub="The ones owners and staff ask before a pilot." />
-              <Reveal delay={0.1}>
-                <div className="lp-faq lp-glass divide-y lp-line rounded-2xl px-6">
-                  {FAQ.map(([q, a]) => (
-                    <details key={q} className="group py-1">
-                      <summary className="flex cursor-pointer list-none items-center justify-between gap-6 py-4 text-left text-[17px] font-semibold">
-                        <span>{q}</span>
-                        <span aria-hidden className="relative h-4 w-4 shrink-0 lp-muted transition-transform duration-300 group-open:rotate-45"><span className="absolute left-1/2 top-0 h-4 w-px -translate-x-1/2 bg-current" /><span className="absolute left-0 top-1/2 h-px w-4 -translate-y-1/2 bg-current" /></span>
-                      </summary>
-                      <p className="lp-muted pb-5 pr-10 text-pretty leading-relaxed">{a}</p>
-                    </details>
-                  ))}
-                </div>
-              </Reveal>
+          <section id="faq" aria-labelledby="faq-title" className={SECTION}>
+            <div className={cn(WRAP, "grid gap-10 md:grid-cols-[1fr_1.4fr] md:gap-16")}>
+              <SectionTitle id="faq-title" align="left" icon={<CircleQuestionMark aria-hidden />} title="Questions, answered" sub="The ones owners and staff ask before a pilot." />
+              <Faq items={FAQ} />
             </div>
           </section>
 
-          <section className="relative isolate overflow-hidden py-32 md:py-44">
-            <div aria-hidden className="lp-grid absolute inset-0 opacity-70" />
-            <div aria-hidden className="lp-glow absolute left-1/2 top-full h-[600px] w-[1100px] -translate-x-1/2 -translate-y-1/2 rounded-full" />
-            {waitlist && !user ? (
-              /* Waitlist mode (owner decision, 25 September 2026): the closing section carries the form, copy on the left, form on the right. */
-              <Reveal className="relative mx-auto grid max-w-6xl items-center gap-10 px-6 md:grid-cols-[1.05fr_0.95fr] md:gap-14">
-                <div className="text-left">
-                  <p className="text-balance font-display text-[48px] leading-[0.98] tracking-[-0.03em] md:text-[72px]">{copy.headline || <>Know what your<br />remote team is doing</>}</p>
-                  <p className="lp-muted mt-7 max-w-lg text-pretty text-lg leading-relaxed">{copy.subheadline || "Boredroom is opening soon. Leave your details and you get one email the morning it opens, with a code for your team."}</p>
-                  <p className="lp-faint mt-6 inline-flex items-center gap-2 lp-glass rounded-full px-3 py-1.5 text-xs"><span className="h-1.5 w-1.5 rounded-full bg-accent" aria-hidden />Opening soon</p>
-                </div>
-                <div className="w-full md:max-w-md md:justify-self-end"><WaitlistForm cta={copy.cta || "Join the waitlist"} /></div>
-              </Reveal>
-            ) : (
-              <Reveal className="relative mx-auto max-w-5xl px-6 text-center">
-                <p className="text-balance font-display text-[52px] leading-[0.98] tracking-[-0.03em] md:text-[96px]">Know what your<br />remote team is doing</p>
-                <p className="lp-muted mx-auto mt-7 max-w-xl text-pretty text-lg leading-relaxed">Create a workspace, add your team with one code, and watch the room fill up the first morning.</p>
-                <div className="mt-9 flex flex-wrap justify-center gap-3">
-                  {waitlist ? <Link href="/app" className="lp-btn lp-btn-primary">Open your workspace</Link> : <Link href="/signup?intent=org" className="lp-btn lp-btn-primary">Get started</Link>}
-                  <Link href="/join" className="lp-btn lp-btn-secondary">Join with a code</Link>
-                </div>
-              </Reveal>
-            )}
+          <section aria-labelledby="close-title" className="pt-8 sm:pt-12">
+            <div className={WRAP}>
+              <div className="lp-reveal rounded-[22px] border border-border bg-fill-0 px-5 py-12 sm:rounded-[28px] sm:px-12 sm:py-20">
+                {waitlist && !user ? (
+                  /* Waitlist mode (owner decision, 25 September 2026): the closing section carries the form, copy on the left, form on the right. */
+                  <div className="grid items-center gap-10 md:grid-cols-[1.05fr_0.95fr] md:gap-14">
+                    <div className="min-w-0">
+                      <h2 id="close-title" className="lp-h2 lg:text-[56px] lg:leading-[60px]">{copy.headline || <>Know what your<br className="max-sm:hidden" /> remote team is doing</>}</h2>
+                      <p className="lp-sub mt-5 max-w-lg">{copy.subheadline || "Boredroom is opening soon. Leave your details and you get one email the morning it opens, with a code for your team."}</p>
+                      <Badge size="lg" dot className="mt-6">Opening soon</Badge>
+                    </div>
+                    <div className="w-full min-w-0 rounded-[20px] border border-border bg-background p-5 shadow-chart sm:p-6 md:max-w-md md:justify-self-end">
+                      <WaitlistForm cta={copy.cta || "Join the waitlist"} />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mx-auto max-w-3xl text-center">
+                    <h2 id="close-title" className="lp-display">Know what your<br className="max-sm:hidden" /> remote team is doing</h2>
+                    <p className="lp-lead mx-auto mt-6 max-w-xl">Create a workspace, add your team with one code, and watch the room fill up the first morning.</p>
+                    <div className="mt-8 flex flex-wrap justify-center gap-3">
+                      {waitlist ? <Link href="/app" className={heroButton("primary")}>Open your workspace</Link> : <Link href="/signup?intent=org" className={heroButton("primary")}>Get started</Link>}
+                      <Link href="/join" className={heroButton("secondary")}>Join with a code</Link>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
           </section>
         </main>
 
-        <footer className="lp-glass mt-8 rounded-t-[32px] border-b-0">
-          <div className="mx-auto grid max-w-6xl gap-10 px-6 py-14 text-sm md:grid-cols-[1.4fr_1fr_1fr_1fr]">
-            <div className="max-w-xs">
-              <Logo />
-              <p className="lp-muted mt-4 text-pretty leading-relaxed">A live view of what your remote team plans, works on and delivers. No status meeting required.</p>
-              <p className="mt-6 inline-flex items-center gap-2 lp-glass rounded-full px-3 py-1.5 text-xs lp-muted"><span className="h-1.5 w-1.5 rounded-full bg-success" aria-hidden />Private pilot, accepting workspaces</p>
-            </div>
-            <nav aria-label="Product" className="space-y-3"><p className="font-semibold">Product</p><a href="#how" className="lp-muted block hover:text-fg">How it works</a><a href="#product" className="lp-muted block hover:text-fg">The day</a><a href="#control" className="lp-muted block hover:text-fg">Everything in view</a><a href="#fair" className="lp-muted block hover:text-fg">Fairness</a></nav>
-            <nav aria-label="Account" className="space-y-3"><p className="font-semibold">Account</p><Link href="/login" className="lp-muted block hover:text-fg">Log in</Link><Link href="/signup?intent=org" className="lp-muted block hover:text-fg">Create an organisation</Link><Link href="/join" className="lp-muted block hover:text-fg">Join with a code</Link><Link href="/recover" className="lp-muted block hover:text-fg">Recover a password</Link></nav>
-            <nav aria-label="Help" className="space-y-3"><p className="font-semibold">Help</p><a href="#faq" className="lp-muted block hover:text-fg">FAQ</a><a href="#fair" className="lp-muted block hover:text-fg">What is recorded</a><a href="mailto:jonwuka@xsitecapital.com" className="lp-muted block hover:text-fg">Contact</a></nav>
-          </div>
-          <div className="border-t lp-line-soft"><p className="lp-faint mx-auto max-w-6xl px-6 py-6 text-xs">Boredroom, 2026. Built for teams that are out of sight, not out of the loop.</p></div>
-        </footer>
+        <SiteFooter />
       </div>
     </MotionRoot>
   );

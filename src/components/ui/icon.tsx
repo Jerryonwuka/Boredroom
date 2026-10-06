@@ -7,8 +7,9 @@ import { ToolSquare } from "@/components/ui/tool-tile";
 
 /**
  * The v3 3D icon names, kept so callers compile. v4 is monochrome (owner decision, 6 October 2026): every name now
- * draws a line icon (lucide, 1.5 stroke) in the secondary grey, and IconTile draws it in the v4 tool square. The PNGs
- * in public/icons stay for the landing page only.
+ * draws a line icon (lucide, 1.5 stroke) in the secondary grey, and IconTile draws it in the v4 tool square. Nothing
+ * uses the v3 PNGs in public/icons any more (the landing page moved to v4 on 6 October 2026); they stay until the
+ * owner decides to remove them.
  */
 export const ICON_3D = {
   "flag-alert": "Blocked, flagged, needs attention",

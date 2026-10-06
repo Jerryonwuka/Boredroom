@@ -6,6 +6,8 @@
  * button | the icon buttons: theme, notifications (a popover with the recent ones), settings for the people who run
  * the workspace (a menu), and the person's avatar (a popover: who they are, their work status, their links, sign out).
  * Below lg the search is an icon on the right. Pop-ups close on Escape (focus back on their button) and a click outside.
+ * Accent rules (6 October 2026): the unread dot on the bell and beside each unread notification is orange (attention);
+ * the work-status picker's chosen status keeps its own status colour (status meaning wins over accent).
  *
  * `data-app-topbar` is the hook Brenda's chat uses to hide the bar while it is open (globals.css).
  */

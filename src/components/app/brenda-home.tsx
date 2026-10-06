@@ -40,6 +40,7 @@ import { StatCard } from "@/components/ui/stat-card";
 import { Badge, CountPill } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { EmptyState } from "@/components/ui/states";
+import { LiveIndicator, StatusDot } from "@/components/ui/status-dot";
 import { BrendaGlyph } from "@/components/app/brenda-glyph";
 import { BrendaCharacter, type BrendaCharacterHandle } from "@/components/app/brenda-character";
 import { BrendaFace } from "@/components/app/brenda-face";
@@ -271,8 +272,10 @@ export function BrendaHome({ data }: { data: HomeData }) {
           <div className="card-tint mt-5 w-full max-w-[650px] px-4 py-3 text-left">
             <p className="text-sm font-medium text-foreground">Brenda isn&apos;t part of this workspace&apos;s plan yet.</p>
             <p className="mt-0.5 text-meta font-normal text-secondary">
-              {role === "owner" ? <>She does the work for your people: plans their day, follows up and writes documents. <Link className="font-medium text-accent-text hover:underline" href="/app/billing">Upgrade the plan</Link></> : "Ask your organisation owner to add her."}
+              {role === "owner" ? "She does the work for your people: plans their day, follows up and writes documents." : "Ask your organisation owner to add her."}
             </p>
+            {/* The one standout on this screen (accent rules): there is no Send to press without her. */}
+            {role === "owner" ? <Link className={`${buttonVariants({ variant: "accent", size: "sm" })} mt-3`} href="/app/billing">Upgrade the plan</Link> : null}
           </div>
         )}
       </section>
@@ -397,7 +400,7 @@ function DayTab({ data, base }: { data: HomeData; base: string }) {
               trailing={c?.status === "in" ? <Badge tone="success" dot>In</Badge> : c?.workingDay && c.status === "not_in" ? <Badge tone="warning" dot>Not in</Badge> : <ChevronRight className="size-4" aria-hidden />} />
             {t ? (
               <ListRow href={`${base}/tasks/${t.taskId}`} leading={<ToolSquare><Timer aria-hidden /></ToolSquare>} title={t.task}
-                subtitle={t.state === "running" ? "Your timer is running" : "Your timer is paused"} trailing={<Badge tone={t.state === "running" ? "success" : "warning"} dot>{t.state === "running" ? "Running" : "Paused"}</Badge>} />
+                subtitle={t.state === "running" ? "Your timer is running" : "Your timer is paused"} trailing={t.state === "running" ? <LiveIndicator>Running</LiveIndicator> : <Badge tone="warning" dot>Paused</Badge>} />
             ) : (
               <ListRow leading={<ToolSquare><Timer aria-hidden /></ToolSquare>} title="No timer running"
                 subtitle={brief.openTasks ? `${plural(brief.openTasks, "open task")}. Ask me which to start.` : "No open tasks. Tell me what you're working on."} />
@@ -442,7 +445,10 @@ function TeamTab({ data, base }: { data: HomeData; base: string }) {
             {people.slice(0, 8).map((w) => (
               <ListRow key={w.id} leading={<Avatar profileId={w.id} name={w.name} size={40} />} title={w.name}
                 subtitle={`${w.state === "running" ? "Working on" : "Paused on"} ${w.task ?? "a task"}`}
-                trailing={<><span className="hidden tabular-nums sm:inline">{formatDuration(w.todaySeconds)}</span><Badge tone={w.state === "running" ? "success" : "warning"} dot>{w.state === "running" ? "Working" : "Paused"}</Badge></>} />
+                trailing={<><span className="hidden tabular-nums sm:inline">{formatDuration(w.todaySeconds)}</span>{w.state === "running"
+                  // Many people at once: a still orange dot each (live), the word in the quiet grey, so the list stays calm.
+                  ? <Badge><StatusDot tone="live" pulse={false} size={6} />Working</Badge>
+                  : <Badge tone="warning" dot>Paused</Badge>}</>} />
             ))}
           </ul>
         ) : <EmptyState compact icon={Users} title="Nobody has a timer running" description="When someone starts work on a task, they show up here." />}
@@ -471,7 +477,8 @@ function ChatView({ data, chat, box, onBack, onNewChat, history, sheet, onSheet,
   const panel = useRef<HTMLElement>(null);
   const backdrop = useRef<HTMLButtonElement>(null);
   const status = chat.pending ? "Working on it…" : chat.waitingAt >= 0 ? "Waiting for your answer" : chat.error ? "Something went wrong" : chat.dictation.listening ? "Listening" : "Here for you";
-  const dot = chat.pending || chat.dictation.listening ? "bg-accent" : chat.error ? "bg-danger" : chat.waitingAt >= 0 ? "bg-warning" : "bg-success";
+  // Listening or working is live (orange, breathing); an error, a question waiting and idle keep their status colours.
+  const dot = chat.pending || chat.dictation.listening ? "live" : chat.error ? "danger" : chat.waitingAt >= 0 ? "warning" : "success";
   const empty = chat.messages.length === 0 && !chat.pending && !chat.error;
   // Past chats open as a sheet over the chat (small screens): a modal one.
   const small = useSyncExternalStore(subscribeSmall, smallNow, smallOnServer);
@@ -548,7 +555,7 @@ function ChatView({ data, chat, box, onBack, onNewChat, history, sheet, onSheet,
         <div className="ml-1 min-w-0 flex-1">
           <h1 className="font-sans text-sm font-semibold tracking-normal text-foreground">Brenda</h1>
           <p role="status" className="flex items-center gap-1.5 truncate text-xs font-normal text-secondary">
-            <span className={cn("size-1.5 shrink-0 rounded-full", dot)} aria-hidden />{status}
+            <StatusDot tone={dot} size={6} />{status}
           </p>
         </div>
         <IconButton ref={sheetButton} className="lg:hidden" aria-label="Past chats" aria-expanded={sheet} aria-controls="brenda-past-chats" onClick={() => (sheet ? onSheet(false) : openSheet())}>

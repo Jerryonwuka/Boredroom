@@ -60,6 +60,8 @@ const EMPTY: Record<Filter, { title: string; description: string }> = {
  * action, "Mark all as read"; then a calm list grouped by day (Today, Yesterday, Earlier), rows separated by spacing,
  * not lines. Each row: an orange unread dot, a 32px line-icon square, the title (foreground while unread, secondary
  * once read), the body, the kind, and the time on the right with "Mark read". The whole row opens its link.
+ * Calm by design (accent rules, 6 October 2026): orange is only the small dot on an unread row and the Unread count;
+ * read rows carry none, and no text is ever orange.
  */
 export default async function NotificationsPage({ params, searchParams }: { params: Promise<{ workspace: string }>; searchParams: Promise<{ show?: string }> }) {
   const { workspace } = await params;
@@ -86,7 +88,7 @@ export default async function NotificationsPage({ params, searchParams }: { para
       <PageHeader title="Notifications" description="Assignments, review requests, decisions, blockers and reminders. Email delivery is optional and off in the pilot."
         actions={unreadItems.length ? <MarkAllRead orgSlug={ctx.org.slug} ids={unreadItems.map((n) => n.id)} /> : undefined}
         tabsLabel="Show" tabValue={show} tabParam="show"
-        tabs={FILTERS.map((f) => ({ label: f.label, value: f.value, href: f.value === "all" ? `${base}/notifications` : `${base}/notifications?show=${f.value}`, count: f.value === "unread" ? unreadItems.length : undefined }))} />
+        tabs={FILTERS.map((f) => ({ label: f.label, value: f.value, href: f.value === "all" ? `${base}/notifications` : `${base}/notifications?show=${f.value}`, count: f.value === "unread" ? unreadItems.length : undefined, attention: f.value === "unread" }))} />
       {shown.length === 0 ? (
         <EmptyState icon={Bell} title={EMPTY[show].title} description={EMPTY[show].description}
           action={show === "all" ? <Link href={`${base}/home`} className={buttonVariants({ size: "sm", variant: "secondary" })}>Back to Brenda</Link> : <Link href={`${base}/notifications`} className={buttonVariants({ size: "sm", variant: "secondary" })}>Show all</Link>} />

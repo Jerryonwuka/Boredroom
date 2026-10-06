@@ -1,9 +1,11 @@
 import { cn } from "@/lib/utils";
 
 /**
- * Small, dependency-free charts: plain SVG, server-rendered, coloured by the design tokens. v4 is monochrome with one
- * orange highlight: lines in the foreground and greys, bars in grey with the highlighted bar (the current period, by
- * default the last) in orange; status colours only where the data is a status split (Donut, SegmentBar). Grid lines
+ * Small, dependency-free charts: plain SVG, server-rendered, coloured by the design tokens. v4 with the accent rules
+ * (6 October 2026): the highlight series is orange, everything else grey. AreaChart draws its first series (the
+ * selected metric, "this week") in orange and the others in greys, its latest point marked; BarChart draws grey bars
+ * with the highlighted bar (today, the current period: by default the last) in orange; Sparkline is a foreground line
+ * with its latest point in orange. Status colours only where the data is a status split (Donut, SegmentBar). Grid lines
  * are hairlines, axis labels 12px in the subtle grey at any width. No gradients. Each chart degrades to a quiet
  * "nothing yet" line when every value is zero. Values arrive already counted; the charts only scale.
  */
@@ -11,8 +13,8 @@ import { cn } from "@/lib/utils";
 export type Tone = "accent" | "foreground" | "neutral" | "subtle" | "info" | "success" | "warning" | "danger";
 const COLOR: Record<Tone, string> = { accent: "var(--accent)", foreground: "var(--foreground)", neutral: "var(--gray-600)", subtle: "var(--subtle)", info: "var(--info)", success: "var(--success)", warning: "var(--warning)", danger: "var(--danger)" };
 const DOT: Record<Tone, string> = { accent: "bg-accent", foreground: "bg-foreground", neutral: "bg-grey-600", subtle: "bg-subtle", info: "bg-info", success: "bg-success", warning: "bg-warning", danger: "bg-danger" };
-/** Default series colours: the foreground, then greys. Pass `tone: "accent"` to highlight a series. */
-const SERIES: Tone[] = ["foreground", "neutral", "subtle"];
+/** Default series colours: the highlight (first) series orange, then greys. Pass `tone` on a series to choose. */
+const SERIES: Tone[] = ["accent", "neutral", "subtle"];
 
 export type Series = { label: string; values: number[]; tone?: Tone };
 
@@ -211,8 +213,9 @@ export function SegmentBar({ items, format = (n: number) => String(n), title, cl
   );
 }
 
-/** A tiny line for a stat card or a table cell: no axis, the last point marked. */
+/** A tiny line for a stat card or a table cell: no axis, the last point (now) marked in orange. */
 export function Sparkline({ values, tone = "foreground", width = 96, height = 28, label, className }: { values: number[]; tone?: Tone; width?: number; height?: number; label: string; className?: string }) {
+  const mark = tone === "foreground" || tone === "neutral" || tone === "subtle" ? "accent" : tone;
   const n = values.length;
   const max = Math.max(1, ...values);
   const min = Math.min(0, ...values);
@@ -222,7 +225,7 @@ export function Sparkline({ values, tone = "foreground", width = 96, height = 28
   return (
     <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="img" aria-label={label} className={cn("shrink-0 overflow-visible", className)}>
       {n ? <path d={d} fill="none" stroke={COLOR[tone]} strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" /> : null}
-      {n ? <circle cx={x(n - 1)} cy={y(values[n - 1])} r={2.5} fill={COLOR[tone]} /> : null}
+      {n ? <circle cx={x(n - 1)} cy={y(values[n - 1])} r={2.5} fill={COLOR[mark]} /> : null}
     </svg>
   );
 }

@@ -1,10 +1,13 @@
+import { Workflow } from "lucide-react";
 import { requireAdmin, can } from "@/server/admin/auth";
 import { listAutomations, listTemplates } from "@/server/admin/marketing";
-import { PageHeader, Card, CardHeader } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/card";
 import { DataTable } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { EmptyState } from "@/components/ui/states";
 import { AutomationForm } from "@/components/admin/marketing-forms";
-import { EditSheet } from "@/components/admin/actions";
+import { EditSheet, SheetButton } from "@/components/admin/actions";
+import { MARKETING_TABS } from "@/components/admin/fields";
 import { num } from "@/lib/format";
 import { relativeTime } from "@/lib/utils";
 
@@ -17,11 +20,25 @@ export default async function AutomationsPage() {
   const editable = can(admin, "marketing.create");
   return (
     <>
-      <PageHeader icon="calendar-clock" title="Automations" description="Lifecycle and billing emails that run from platform events (at once) or from the daily scheduler (account age, inactivity, expiry). Each runs once per person or subscription; lifecycle mail respects unsubscribes, billing mail does not." />
-      <DataTable caption="Automations" className="mb-6"><thead><tr><th>Automation</th><th>Trigger</th><th>Template</th><th>State</th><th>Runs</th><th>Last run</th>{editable ? <th></th> : null}</tr></thead>
-        <tbody>{autos.map((a) => <tr key={a.id}><td className="font-semibold">{a.name}</td><td className="text-sm">{LABEL[a.trigger] ?? a.trigger}{a.trigger_value != null ? ` ${a.trigger_value} day${a.trigger_value === 1 ? "" : "s"}` : ""}</td><td className="text-sm">{a.template_name}</td><td>{a.enabled ? <Badge tone="success">on</Badge> : <Badge tone="neutral">off</Badge>}</td><td className="tabular-nums">{num(a.runs)}</td><td className="text-sm text-fg-muted">{a.last_run ? relativeTime(a.last_run) : "never"}</td>{editable ? <td><EditSheet title="Edit automation"><AutomationForm automation={a} templates={templates} /></EditSheet></td> : null}</tr>)}</tbody>
-      </DataTable>
-      {editable ? <Card><CardHeader title="New automation" /><AutomationForm templates={templates} /></Card> : null}
+      <PageHeader title="Automations" description="Lifecycle and billing emails that run from platform events (at once) or from the daily scheduler (account age, inactivity, expiry). Each runs once per person or subscription; lifecycle mail respects unsubscribes, billing mail does not."
+        actions={editable ? <SheetButton label="New automation" icon="plus" variant="accent" title="New automation"><AutomationForm templates={templates} /></SheetButton> : null}
+        tabs={MARKETING_TABS} tabsLabel="Marketing sections" />
+      {autos.length === 0 ? <EmptyState icon={Workflow} title="No automations yet" description="Lifecycle and billing emails appear here once they exist." /> : (
+        <DataTable caption="Automations">
+          <thead><tr><th>Automation</th><th>Trigger</th><th>Template</th><th>State</th><th>Runs</th><th>Last run</th>{editable ? <th><span className="sr-only">Actions</span></th> : null}</tr></thead>
+          <tbody>{autos.map((a) => (
+            <tr key={a.id}>
+              <td className="font-medium">{a.name}</td>
+              <td>{LABEL[a.trigger] ?? a.trigger}{a.trigger_value != null ? ` ${a.trigger_value} day${a.trigger_value === 1 ? "" : "s"}` : ""}</td>
+              <td>{a.template_name}</td>
+              <td>{a.enabled ? <Badge tone="success" dot>On</Badge> : <Badge>Off</Badge>}</td>
+              <td className="tabular-nums">{num(a.runs)}</td>
+              <td className="text-secondary">{a.last_run ? relativeTime(a.last_run) : "Never"}</td>
+              {editable ? <td className="text-right"><EditSheet title="Edit automation"><AutomationForm automation={a} templates={templates} /></EditSheet></td> : null}
+            </tr>
+          ))}</tbody>
+        </DataTable>
+      )}
     </>
   );
 }

@@ -16,7 +16,7 @@ export default function DevMailPage() {
     <main id="main" className="mx-auto max-w-3xl px-4 py-10">
       <div className="mb-6 flex items-center justify-between"><Logo /><span className="text-meta font-normal text-subtle">Local mail sink: {dir}</span></div>
       <h1 className="type-page-title">Development inbox</h1>
-      <p className="mt-1 type-paragraph">Nothing here was sent to a real mailbox. Links point at this local server. Every template is on <a className="underline" href="/dev/emails">/dev/emails</a>.</p>
+      <p className="mt-1 type-paragraph">Nothing here was sent to a real mailbox. Links point at this local server. Every template is on <a className="link-inline" href="/dev/emails">/dev/emails</a>.</p>
       <div className="mt-6 space-y-3">
         {messages.length === 0 ? <p className="card-panel type-paragraph">No messages yet.</p> : messages.map((m) => (
           <details key={m.id} className="card-panel p-4">

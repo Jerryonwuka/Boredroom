@@ -5,8 +5,13 @@
  * the ElevenLabs app (6 October 2026). Min-height 52, r26, fill-1 laid solid over the canvas (so messages never show
  * through when it docks over a chat), a 7.5% ring and the natural shadow; 16/24 text; round 36px actions: an optional
  * `leading` slot on the left (a "+"), and on the right an optional `trailing` slot (a small badge chip), the microphone
- * (ghost) and Send (the white primary with a near-black arrow, grey while there is nothing to send). The textarea grows
- * to `maxHeight` and the actions stay on its last line. Enter sends, Shift+Enter breaks the line.
+ * (ghost) and Send. The textarea grows to `maxHeight` and the actions stay on its last line. Enter sends, Shift+Enter
+ * breaks the line.
+ *
+ * Accent rules (owner decision, 6 October 2026): while the pill has focus its 1px ring turns orange (--accent-ring);
+ * Send is orange with a near-black arrow when there is something to send (the screen's standout action), grey when the
+ * box is empty or a reply is on its way. While dictating (live) the ring stays orange and the microphone becomes an
+ * orange stop square on a quiet grey disc, so the one solid orange button is still Send.
  *
  * While dictating, the notch's voice card sits above the text, inside the pill (owner decision, 5 October 2026;
  * VoiceCapture). The page-wide tooltip layer labels the microphone and Send from their accessible names.
@@ -25,7 +30,7 @@ function usePromptInput() { return React.useContext(PromptInputContext); }
 export function PromptInput({ className, isLoading = false, maxHeight = 200, value, onValueChange, onSubmit, children, disabled = false }: { className?: string; isLoading?: boolean; maxHeight?: number; value: string; onValueChange: (v: string) => void; onSubmit?: () => void; children: React.ReactNode; disabled?: boolean }) {
   return (
     <PromptInputContext.Provider value={{ isLoading, value, setValue: onValueChange, maxHeight, onSubmit, disabled }}>
-      <div className={cn("w-full rounded-[26px] bg-surface shadow-[0_0_0_1px_var(--border),var(--elev-natural-xs)] transition-shadow duration-150 focus-within:shadow-[0_0_0_1px_var(--border-input-hover),var(--elev-natural-xs)]", className)}>
+      <div className={cn("w-full rounded-[26px] bg-surface shadow-[0_0_0_1px_var(--border),var(--elev-natural-xs)] transition-shadow duration-150 focus-within:shadow-[0_0_0_1px_var(--accent-ring),var(--elev-natural-xs)]", className)}>
         {children}
       </div>
     </PromptInputContext.Provider>
@@ -101,7 +106,7 @@ export const PromptInputBox = React.forwardRef<HTMLDivElement, PromptInputBoxPro
     : null;
   return (
     <div ref={ref} className="w-full">
-      <PromptInput value={value} onValueChange={onValueChange} isLoading={isLoading} onSubmit={submit} maxHeight={maxHeight} className={cn(recording && "shadow-[0_0_0_1px_var(--ring),var(--elev-natural-xs)] focus-within:shadow-[0_0_0_1px_var(--ring),var(--elev-natural-xs)]", className)} disabled={isLoading}>
+      <PromptInput value={value} onValueChange={onValueChange} isLoading={isLoading} onSubmit={submit} maxHeight={maxHeight} className={cn(recording && "shadow-[0_0_0_1px_var(--accent-ring),var(--elev-natural-xs)] focus-within:shadow-[0_0_0_1px_var(--accent-ring),var(--elev-natural-xs)]", className)} disabled={isLoading}>
         {voice ? <div className="px-2 pt-2">{voice}</div> : null}
         <div className="flex items-end gap-1 p-2">
           {leading ? <PromptInputActions className="shrink-0">{leading}</PromptInputActions> : null}
@@ -111,14 +116,14 @@ export const PromptInputBox = React.forwardRef<HTMLDivElement, PromptInputBoxPro
             {mic ? (
               <button type="button" onClick={onToggleRecording} disabled={transcribing} aria-pressed={recording} aria-label={recording ? "Stop dictating" : "Dictate"}
                 className={cn("grid size-9 place-items-center rounded-full transition-colors duration-75 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ring)] disabled:cursor-not-allowed disabled:opacity-50",
-                  recording ? "bg-danger/15 text-danger hover:bg-danger/20" : "text-secondary hover:bg-fill-1 hover:text-foreground")}>
+                  recording ? "bg-fill-1 text-accent hover:bg-fill-150" : "text-secondary hover:bg-fill-1 hover:text-foreground")}>
                 {recording ? <Square className="size-3.5 fill-current" aria-hidden /> : <Mic className="size-[18px]" aria-hidden />}
               </button>
             ) : null}
             {/* The tooltip layer reads the accessible name; `data-tip` says more while dictating, where Send also stops the microphone. */}
             <button type="button" onClick={submit} disabled={isLoading || !hasContent} aria-label="Send" data-tip={recording ? "Stop dictating and send" : undefined}
               className={cn("grid size-9 place-items-center rounded-full transition-colors duration-75 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ring)] disabled:cursor-not-allowed",
-                hasContent && !isLoading ? "bg-primary text-primary-fg hover:bg-primary-hover" : "bg-fill-150 text-subtle")}>
+                hasContent && !isLoading ? "bg-accent text-accent-fg hover:bg-accent-hover" : "bg-fill-150 text-subtle")}>
               {isLoading ? <Square className="size-3 animate-pulse fill-current" aria-hidden /> : <ArrowUp className="size-[18px]" strokeWidth={2.25} aria-hidden />}
             </button>
           </PromptInputActions>

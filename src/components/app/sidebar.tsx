@@ -3,9 +3,11 @@
 /**
  * The workspace sidebar, v4 (spec §6, owner decision 6 October 2026): a 256px panel on the sidebar grey with a hairline
  * on its right. The logo row is 50px, level with the top bar. Nav items are 32px tall with 4px between them, inset 12px:
- * an 18px icon and the label, both in the secondary grey; hover and the current page get fill-1 and the foreground.
- * Groups after the first carry a quiet label ("Work", "Records"). Counts are tiny pills. At the bottom: a notice card
- * when the plan needs a word (accent tint), then the workspace row, which opens the workspace menu.
+ * an 18px icon and the label, both in the secondary grey; hover and the current page get fill-1 and the foreground,
+ * and the current page's icon turns orange (accent rules, owner decision 6 October 2026; its label stays the
+ * foreground). Groups after the first carry a quiet label ("Work", "Records"). Counts are unread messages and reviews
+ * waiting, so they are orange attention pills. At the bottom: a notice card when the plan needs a word (accent tint),
+ * then the workspace row, which opens the workspace menu.
  *
  * Collapsed, it is a 56px rail: the "B." mark, the icons alone (their labels as tooltips to the right), a hairline
  * between groups, a small orange dot for a count, and the workspace avatar. The choice lives on <html data-sidebar>
@@ -105,10 +107,10 @@ export function WorkspaceNav({ items, variant = "rail" }: { items: NavItem[]; va
                 return (
                   <li key={it.href}>
                     <Link href={it.href} aria-current={active ? "page" : undefined} data-tip={collapsed ? (it.badge ? `${it.label}, ${it.badge}` : it.label) : undefined} data-tip-side="right"
-                      className={cn(ITEM, active ? "bg-fill-1 text-foreground" : "text-secondary hover:bg-fill-1 hover:text-foreground", rail ? ITEM_RAIL : "pointer-coarse:h-10")}>
+                      className={cn(ITEM, active ? "bg-fill-1 text-foreground [&>svg]:text-accent" : "text-secondary hover:bg-fill-1 hover:text-foreground", rail ? ITEM_RAIL : "pointer-coarse:h-10")}>
                       <Icon aria-hidden />
                       <span className={cn("min-w-0 flex-1 truncate", rail && "in-data-[sidebar=collapsed]:sr-only")}>{it.label}</span>
-                      {it.badge ? <CountPill count={it.badge} className={cn(rail && "in-data-[sidebar=collapsed]:sr-only")} /> : null}
+                      {it.badge ? <CountPill count={it.badge} tone="attention" className={cn(rail && "in-data-[sidebar=collapsed]:sr-only")} /> : null}
                       {it.badge && rail ? <span aria-hidden className="absolute right-1 top-1 hidden size-1.5 rounded-full bg-accent in-data-[sidebar=collapsed]:block" /> : null}
                     </Link>
                   </li>

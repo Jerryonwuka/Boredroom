@@ -183,7 +183,7 @@ export function MenuItem({ children, onSelect, href, icon, kbd, tone, disabled =
     <>
       {icon}
       <span className="min-w-0 flex-1 truncate">{children}</span>
-      {checked ? <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden className="!size-4 !text-foreground"><path d="M20 6 9 17l-5-5" /></svg> : null}
+      {checked ? <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden className="!size-4 !text-accent"><path d="M20 6 9 17l-5-5" /></svg> : null}
       {kbd ? <span className="kbd ml-auto">{kbd}</span> : null}
     </>
   );

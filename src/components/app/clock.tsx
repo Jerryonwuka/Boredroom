@@ -43,7 +43,8 @@ const noClock = () => null;
 const DOT = { default: "bg-subtle", warning: "bg-warning", danger: "bg-danger", success: "bg-success" } as const;
 
 /**
- * The clock button, v4. Clock in is the white primary; late and very late say so in its label, with the lateness
+ * The clock button, v4. Clock in is the orange standout (accent rules, 6 October 2026: the one thing to do on the
+ * screens it sits on); late and very late say so in its label, with the lateness
  * spelled out beside an amber or red dot underneath. Once in, Clock out is the red outline (the danger button) until
  * the day's end, naming the end time and that leaving early is flagged; after the end it is a plain outline. The
  * buttons live on the Clock in page and on Brenda's page (owner decision, 5 October 2026).
@@ -65,7 +66,7 @@ export function ClockButtons({ orgSlug, status, timerOpen, size = "lg", timing }
   return (
     <div className="flex flex-col items-start gap-2.5">
       {status === "not_in" ? (
-        <Button size={size} loading={pending} aria-describedby={describedBy} onClick={() => call("in")}>
+        <Button size={size} variant="accent" loading={pending} aria-describedby={describedBy} onClick={() => call("in")}>
           {pending ? null : <LogIn aria-hidden />}{pending ? "Clocking in…" : state.tone === "danger" ? "Clock in, very late" : state.tone === "warning" ? "Clock in, late" : "Clock in"}
         </Button>
       ) : null}

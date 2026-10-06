@@ -57,7 +57,7 @@ which signs the app out at once. The tray menu also has **Sign out of this compu
 Off until the person turns it on (the mic button on a card, or **Turn voice on** in the tray). Then:
 
 1. Hold **Option+Space** (Alt+Space on Windows) and speak. The microphone records only while the keys are held, up to
-   30 seconds, and the notch shows "Mic on" with a pulsing red dot.
+   30 seconds, and the notch shows "Mic on" with a pulsing orange dot.
 2. Let go. whisper.cpp turns the audio into text on this computer (`ggml-base.en.bin`, about 148 MB, downloaded once
    from Hugging Face into the app's data folder). No audio leaves the computer.
 3. The text goes to `POST /api/orgs/:org/assistant/chat` with the last few spoken turns, so Brenda acts with the
@@ -70,7 +70,7 @@ Off until the person turns it on (the mic button on a card, or **Turn voice on**
 The bundled app asks for microphone access the first time (`Info.plist`). "Hey Brenda" (Porcupine) comes next and only
 replaces the trigger in step 1.
 
-The voice card (the round orb whose orange dot and ring swell with your voice, "Mic on" with a red dot, your words in
+The voice card (the round orb whose orange dot and ring swell with your voice, "Mic on" with an orange dot, your words in
 italic quotes, the shimmer while she works, a faint orange wash while the microphone is open) matches dictation and
 voice notes in the web app (`src/components/app/voice-capture.tsx`, the compact card): change one, change the other.
 
@@ -86,12 +86,19 @@ code) are bundled in `src/fonts` (SIL Open Font License, `OFL.txt`); the notch l
 - **Surfaces:** panels, fields and outline buttons are near-black #0F0F10 with white 7.5% to 10% hairlines. Lists sit in
   one panel with calm 32px rows and no lines between them. The prompt is the web's prompt pill at the notch's size.
 - **Buttons:** 28px pills, 13px medium. The primary is white with near-black text, the secondary is outline, the ghost is
-  text in secondary, and danger is outline with red text. The send button is round, white once there is something to
-  send and grey until then.
+  text in secondary, and danger is outline with red text. Each card may have one orange button (`.btn.accent`, orange
+  with near-black text) for its one thing to do: Link to Boredroom, Open Boredroom, Start on the briefing, Resume on a
+  paused timer, Turn on voice. Save, OK, Done, Got it, Confirm and Send for review stay white. The send button is
+  round, orange once there is something to send and grey until then; while it is orange, the card's other orange
+  button turns white, so two never show at once.
 - **Badges:** neutral on fill-1, green and amber as 12% washes. The orange "New" badge is used for a new task, and the same
   orange on dark brown for the unread count.
-- **Orange, used rarely:** the focus ring (2px at 50%), the unread count, the open microphone (orb, ring and wash), and
-  the timer's estimate hairline and progress ring.
+- **Orange marks what is live, active or the one thing to do** (the web's accent rules, `docs/design-system.md`): the
+  focus ring (2px at 50%) and the ask box's ring while it has focus, the unread count, the running timer's breathing
+  dot and its digits (on the timer card and in the compact bar), Brenda listening ("Mic on", the orb, ring and wash)
+  and working, download and upload bars, teammates' running dots, the timer's estimate hairline and progress ring
+  (green when done), the one orange button per card, and the underline of a hovered link. Paused stays amber and
+  interrupted red: status meaning wins over orange.
 - **No gradients, glass or glow,** apart from the four the web keeps for Brenda: the orb's tool-tile fill, the waiting
   shimmer, the listening wash, and the soft light around her face for a reminder, success, a Confirm or an error.
 - **Type:** copy is sentence case, in Brenda's voice, with commas rather than middle dots.
@@ -107,7 +114,8 @@ high-resolution "B." mark: the current artwork is only 58px tall, too small for 
 `preview.html` runs the notch in an ordinary browser with sample data
 (`?state=link|compact|briefing|timer|paused|reminder|report|lead|idle`) and can open one of Brenda's cards on top
 (`&card=listening|working|thinking|reply|confirm|offer|error|drop|voice-off`; `&confirm=already` answers the Confirm as
-already done). Serve this folder with any static server and open it; it is not part of the app.
+already done; `&typed=…` fills the open card's ask box, to show Send turning orange). Serve this folder with any
+static server and open it; it is not part of the app.
 
 ## Build installers
 
@@ -133,7 +141,7 @@ Also:
 - **Drop a file on Brenda** to attach it to one of your open tasks and send it for review (PDF, PNG, JPEG, WebP, TXT,
   up to 25 MB). Rust keeps the paths of what was dropped and uploads only those (`files.rs`), through the normal task
   upload, then the page submits the task with an optional note.
-- **Teammates' faces:** team leads and organisation accounts see a small face per person working (green dot running,
+- **Teammates' faces:** team leads and organisation accounts see a small face per person working (orange dot running,
   amber paused, red interrupted, as on the web's timer) in the compact bar, and an outline chip per teammate in the day
   card that opens the Workroom.
 - **Tucks away when idle** (no card, no timer, nothing unread) to a thin sliver, and peeks out when the pointer reaches

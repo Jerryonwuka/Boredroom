@@ -12,7 +12,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { LiveClock, LiveBadge, LiveSync, LiveRefresh, StatusDot } from "@/components/app/live";
 import { workroomView, workroomStatus, type WorkroomStatus } from "@/server/services/views";
 import { uuid } from "@/server/lib/api";
-import { formatDuration, formatDateTime, relativeTime, cn } from "@/lib/utils";
+import { formatDuration, formatDateTime, relativeTime } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Workroom" };
@@ -20,8 +20,9 @@ export const metadata = { title: "Workroom" };
 /** A duration as a figure: "0h" when nothing is recorded yet, else "3h 05m" (formatDuration). */
 const hours = (s: number) => (s > 0 ? formatDuration(s) : "0h");
 
-const STATUS: Record<WorkroomStatus, { label: string; tone: "success" | "warning" | "neutral" }> = {
-  active: { label: "Active", tone: "success" },
+// Active is a running timer: live, so orange (accent rules, 6 October 2026); paused keeps amber.
+const STATUS: Record<WorkroomStatus, { label: string; tone: "live" | "warning" | "neutral" }> = {
+  active: { label: "Active", tone: "live" },
   paused: { label: "Paused", tone: "warning" },
   clocked_out: { label: "Off the clock", tone: "neutral" },
   not_started: { label: "Not started today", tone: "neutral" },
@@ -31,14 +32,15 @@ type Tab = (typeof TABS)[number];
 
 /**
  * Who is working right now, v4: the page title with underline tabs (Started today, Working now, Everyone), a Team
- * filter, four stat cards, then one 64px row per person: their face, what they are on, a green breathing dot while
- * they work, and the session clock on the right. A row opens that person's whole day.
+ * filter, four stat cards, then one 64px row per person: their face, what they are on, an orange dot while they work
+ * (still: the "Live" line under the title is the one that breathes, so a full room stays calm), and the session clock
+ * on the right in the foreground. A recording in progress is an orange badge. A row opens that person's whole day.
  */
 export default async function WorkroomPage({ params, searchParams }: { params: Promise<{ workspace: string }>; searchParams: Promise<{ team?: string; show?: string; tab?: string }> }) {
   const { workspace } = await params;
   const sp = await searchParams;
   const { ctx, counts, teams: navTeams } = await workspacePage(workspace, `/app/${workspace}/workroom`);
-  if (ctx.membership.role === "employee") return <AppShell ctx={ctx} counts={counts} teams={navTeams}><PermissionDenied description="The Workroom is for team leads and the organisation account. Your own day is on My Day." /></AppShell>;
+  if (ctx.membership.role === "employee") return <AppShell ctx={ctx} counts={counts} teams={navTeams}><PageHeader title="Workroom" divider /><PermissionDenied description="The Workroom is for team leads and the organisation account. Your own day is on My Day." /></AppShell>;
   // A team id from the address bar is checked before it reaches a uuid column: a mistyped link shows everyone.
   const teamId = sp.team && uuid.safeParse(sp.team).success ? sp.team : null;
   const data = await workroomView(ctx, { teamId });
@@ -108,10 +110,10 @@ export default async function WorkroomPage({ params, searchParams }: { params: P
                 leading={<Avatar profileId={r.membership_id} name={r.display_name} size={40} />}
                 title={<span className="inline-flex max-w-full items-center gap-2"><span className="truncate">{r.display_name}</span>{r.recording_live ? <LiveBadge /> : null}</span>}
                 subtitle={r.task_title ?? (r.status === "clocked_out" ? `Last active ${r.last_activity_at ? relativeTime(r.last_activity_at, now) : "earlier today"}` : "No session today yet")}
-                meta={<><StatusDot tone={st.tone} live={running} className="ml-1" /><span className="truncate">{phrase}, {r.teams.join(", ") || "no team"}, {r.role === "manager" ? "team lead" : "staff"}</span></>}
+                meta={<><StatusDot tone={st.tone} pulse={false} className="ml-1" /><span className="truncate">{phrase}, {r.teams.join(", ") || "no team"}, {r.role === "manager" ? "team lead" : "staff"}</span></>}
                 trailing={
                   <span className="flex flex-col items-end">
-                    {r.task_title ? <LiveClock seconds={r.session_seconds} serverNow={data.serverNow} running={running} className={cn("text-sm", running ? "text-foreground" : "text-secondary")} /> : <span className="font-mono text-sm text-secondary">{formatDuration(r.today_seconds)}</span>}
+                    {r.task_title ? <LiveClock seconds={r.session_seconds} serverNow={data.serverNow} running={running} quiet className="text-sm" /> : <span className="font-mono text-sm text-secondary">{formatDuration(r.today_seconds)}</span>}
                     <span className="text-xs text-subtle">{r.task_title ? <><span className="tabular-nums">{formatDuration(r.today_seconds)}</span> today</> : "today"}</span>
                   </span>
                 } />

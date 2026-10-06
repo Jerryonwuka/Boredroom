@@ -8,25 +8,27 @@ test("A24: employee plans, starts, pauses, stops and submits; manager reviews; C
   await signIn(page, "ada@company-a.test");
   await page.goto("/app/company-a/my-day");
   await expect(page.getByRole("heading", { name: /Welcome, Ada/ })).toBeVisible();
-  // Start the homepage task from the assigned list.
+  // Start the homepage task. It is due in three days, so it waits on the Upcoming tab; a to-do opens in a sheet, whose
+  // Start begins the timer without recording ("Start and record" is the separate button beside it).
+  await page.getByRole("tab", { name: /Upcoming/ }).click();
   const row = page.getByRole("listitem").filter({ hasText: "Homepage design" }).first();
-  await row.getByRole("button", { name: "Start", exact: true }).click();
-  // With recording on, Start asks whether to record the screen; start without recording.
-  const plain = row.getByRole("button", { name: "Start", exact: true });
-  if (await row.getByRole("button", { name: "Start and record screen" }).isVisible().catch(() => false)) await plain.click();
-  await expect(page.getByText("Running", { exact: true })).toBeVisible();
+  await row.getByRole("button", { name: /Homepage design/ }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Start", exact: true }).click();
+  // The timer card says "On the clock" while it runs.
+  const onTheClock = page.getByRole("heading", { name: /On the clock/ });
+  await expect(onTheClock).toBeVisible();
   await expect(page.getByLabel(/Elapsed/)).toBeVisible();
   // The display counter is rebuilt from server state and advances while running.
   await expect(page.getByLabel(/Elapsed/)).not.toHaveText("00:00:00", { timeout: 15000 });
   // Reload preserves the same session (A07).
   await page.reload();
-  await expect(page.getByText("Running", { exact: true })).toBeVisible();
+  await expect(onTheClock).toBeVisible();
   // Pause / resume via keyboard focus + Enter.
   await page.getByRole("button", { name: "Pause" }).focus();
   await page.keyboard.press("Enter");
-  await expect(page.getByText("Paused", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Paused" })).toBeVisible();
   await page.getByRole("button", { name: "Resume" }).click();
-  await expect(page.getByText("Running", { exact: true })).toBeVisible();
+  await expect(onTheClock).toBeVisible();
   // Switch to the meeting task.
   await page.getByRole("button", { name: "Switch task" }).click();
   await page.getByLabel("Next task").selectOption({ label: "Client kickoff meeting — Website relaunch" });
@@ -39,24 +41,26 @@ test("A24: employee plans, starts, pauses, stops and submits; manager reviews; C
   // My Day shows no idle clock (owner decision, 5 October 2026): the timer card goes once the session stops.
   await expect(page.locator("section[aria-labelledby=timer-heading]")).toHaveCount(0);
 
-  // Submit the homepage task with a Figma link.
+  // Submit the homepage task with a Figma link. On the project's board a task opens in a sheet, which links to the full task.
   await page.goto("/app/company-a/projects");
   await page.getByRole("link", { name: "Website relaunch" }).click();
-  await page.getByRole("link", { name: "Homepage design" }).click();
+  await page.getByRole("button", { name: "Homepage design" }).click();
+  await page.getByRole("dialog").getByRole("link", { name: /Open the full task/ }).click();
   await page.waitForURL(/\/tasks\//);
   const taskUrl = page.url();
   await page.getByRole("button", { name: /Submit for review/ }).click();
   await page.getByLabel(/Progress note/).fill("Desktop and mobile layouts done");
   await page.getByRole("button", { name: "Add link" }).click();
-  await page.getByLabel("Link URL").fill("https://www.figma.com/file/abc/homepage");
-  await page.getByLabel("Link note").fill("Homepage v1");
+  await page.getByLabel("Link 1 address").fill("https://www.figma.com/file/abc/homepage");
+  await page.getByLabel("Link 1 note").fill("Homepage v1");
   await page.getByRole("button", { name: "Submit for review", exact: true }).click();
-  await expect(page.getByText("In review").first()).toBeVisible();
+  // In review reads "Sent for check" everywhere (TASK_STATUS_LABEL).
+  await expect(page.getByText("Sent for check").first()).toBeVisible();
   await expect(page.getByRole("heading", { name: "Revision 1", exact: true })).toBeVisible();
 
   // No daily report to submit (owner decision, 6 October 2026): the timesheet shows the confirmed time as it is.
   await page.goto("/app/company-a/timesheets");
-  await expect(page.getByText("Confirmed time", { exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Confirmed time" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Submit report" })).toHaveCount(0);
 
   // David reviews: changes requested, then approve after resubmission.
@@ -64,13 +68,15 @@ test("A24: employee plans, starts, pauses, stops and submits; manager reviews; C
   const david = await ctx2.newPage();
   await signIn(david, "david@company-a.test");
   await david.goto("/app/company-a/reviews");
-  await expect(david.getByText("Homepage design")).toBeVisible();
-  await david.getByRole("link", { name: "Open task to review evidence" }).click();
+  // A submission opens in a sheet; its footer links to the full task, where the review form waits.
+  await david.getByRole("button", { name: "Homepage design" }).first().click();
+  await david.getByRole("dialog").getByRole("link", { name: /Open the full task/ }).click();
   await david.waitForURL(/\/tasks\//);
   await expect(david.getByRole("heading", { name: "Review revision 1" })).toBeVisible();
   await david.getByLabel("Decision").selectOption("changes_requested");
   await david.getByLabel(/^Note/).fill("Add the mobile nav");
-  await david.getByRole("button", { name: "Submit review" }).click();
+  // The button names the decision: "Request changes", "Approve" or "Ask the question".
+  await david.getByRole("button", { name: "Request changes" }).click();
   await expect(david.getByRole("heading", { name: "Review revision 1" })).toBeHidden();
   await expect(david.getByText("Changes requested").first()).toBeVisible();
 
@@ -78,23 +84,23 @@ test("A24: employee plans, starts, pauses, stops and submits; manager reviews; C
   await page.getByRole("button", { name: /Submit for review \(revision 2\)/ }).click();
   await page.getByLabel(/Progress note/).fill("Mobile nav added");
   await page.getByRole("button", { name: "Add link" }).click();
-  await page.getByLabel("Link URL").fill("https://www.figma.com/file/abc/homepage?v=2");
+  await page.getByLabel("Link 1 address").fill("https://www.figma.com/file/abc/homepage?v=2");
   await page.getByRole("button", { name: "Submit for review", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Revision 2", exact: true })).toBeVisible();
 
   await david.reload();
   await expect(david.getByRole("heading", { name: "Review revision 2" })).toBeVisible();
   await david.getByLabel("Decision").selectOption("approved");
-  await david.getByRole("button", { name: "Submit review" }).click();
+  await david.getByRole("button", { name: "Approve", exact: true }).click();
   await expect(david.getByRole("heading", { name: "Review revision 2" })).toBeHidden();
   await expect(david.getByRole("button", { name: "Reopen completed task" })).toBeVisible();
   // Both revisions preserved.
   await expect(david.getByRole("heading", { name: "Revision 1", exact: true })).toBeVisible();
   await expect(david.getByRole("heading", { name: "Revision 2", exact: true })).toBeVisible();
 
-  // Team dashboard shows Ada.
+  // The team view (/team now opens the Workroom) shows Ada, who worked today.
   await david.goto("/app/company-a/team");
-  await expect(david.getByRole("link", { name: "Ada Employee" })).toBeVisible();
+  await expect(david.getByRole("link", { name: /Ada Employee/ }).first()).toBeVisible();
 
   // CSV export as HR: confirmed time, with no report to approve first.
   const ctx3 = await browser.newContext();
@@ -141,7 +147,8 @@ test("A03 invitation lifecycle in the browser with the local mail sink", async (
   const nb = await browser.newContext();
   const np = await nb.newPage();
   await np.goto(`/invite/${token}`);
-  await np.getByRole("button", { name: "Create account" }).click();
+  // Signed out, the invitation offers "Create account" as a link to sign-up.
+  await np.getByRole("link", { name: "Create account" }).click();
   await np.getByLabel("Your name").fill("New Bie");
   await np.getByLabel("Work email").fill("newbie@company-a.test");
   await np.getByLabel("Password").fill(PASSWORD);
@@ -165,14 +172,17 @@ test("Messages: Ada asks David for an update across the organisation; David sees
   await signIn(page, "ada@company-a.test");
   await page.goto("/app/company-a/messages");
   await expect(page.getByRole("heading", { name: "Messages" })).toBeVisible();
-  await page.getByRole("button", { name: "New message" }).click();
+  // One "New" menu: a channel, or a message to someone.
+  await page.getByRole("button", { name: "New", exact: true }).click();
+  await page.getByRole("menuitem", { name: /Message someone/ }).click();
   await page.getByLabel("Search people").fill("David");
   await page.getByRole("button", { name: /David Manager/ }).click();
   await expect(page.getByRole("heading", { name: "David Manager" })).toBeVisible();
   await page.getByRole("textbox", { name: "Message" }).fill("Hi David, how far with the homepage review?");
   await page.keyboard.press("Enter");
   await expect(page.getByText("Hi David, how far with the homepage review?")).toBeVisible();
-  await expect(page.getByText("You", { exact: true })).toBeVisible();
+  // Your own bubbles carry no name; the conversation list says it was you.
+  await expect(page.getByText("You: Hi David, how far with the homepage review?")).toBeVisible();
 
   await page.context().clearCookies();
   await signIn(page, "david@company-a.test");
@@ -190,29 +200,33 @@ test("Tasks: David creates a task from the Tasks page and assigns it to Ada; Ada
   await signIn(page, "david@company-a.test");
   await page.goto("/app/company-a/tasks");
   await expect(page.getByRole("heading", { name: "Tasks" })).toBeVisible();
-  await page.getByRole("button", { name: "Add new task" }).click();
+  await page.getByRole("button", { name: "New task" }).click();
   await page.getByLabel("What needs doing").fill("Update the pricing table");
   await page.getByLabel("Details").fill("Use the new tiers from finance.");
   await page.getByLabel("Assign to").selectOption({ label: "Ada Employee (Design)" });
   await page.getByLabel("Priority").selectOption("high");
   await page.getByRole("button", { name: "Create and assign" }).click();
-  await expect(page.getByText("Task created and assigned to Ada Employee.")).toBeVisible();
+  await expect(page.getByText("Task assigned to Ada Employee")).toBeVisible();
   const row = page.getByRole("row").filter({ hasText: "Update the pricing table" });
   await expect(row).toContainText("Ada Employee");
-  await expect(row).toContainText("High");
+  // The priority is in the task's sheet, not on the row.
+  await row.getByRole("button", { name: "Update the pricing table" }).click();
+  await expect(page.getByRole("dialog")).toContainText("High priority");
+  await page.keyboard.press("Escape");
 
   await page.context().clearCookies();
   await signIn(page, "ada@company-a.test");
   await page.goto("/app/company-a/tasks");
   await expect(page.getByRole("heading", { name: "Your tasks" })).toBeVisible();
   const mine = page.getByRole("row").filter({ hasText: "Update the pricing table" });
-  await expect(mine).toContainText("from David Manager");
+  // On your own list the row names who handed it to you.
+  await expect(mine).toContainText("David Manager");
   await mine.getByRole("button", { name: "Start" }).click();
   await page.waitForURL(/my-day/);
-  await expect(page.getByText("Running", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /On the clock/ })).toBeVisible();
   await expect(page.getByText("Update the pricing table").first()).toBeVisible();
   // Leave the clock stopped for any test that follows.
-  await page.getByRole("button", { name: "Stop" }).click();
+  await page.getByRole("button", { name: "Stop", exact: true }).click();
   const dialog = page.getByRole("dialog");
   if (await dialog.isVisible().catch(() => false)) await dialog.getByRole("button", { name: /Stop/ }).click();
 });
@@ -256,15 +270,16 @@ test("Tasks: a team lead hands a task up to the owner, who marks it done from th
   await page.context().clearCookies();
   await signIn(page, "david@company-a.test");
   await page.goto("/app/company-a/tasks");
-  await page.getByRole("button", { name: "Add new task" }).click();
+  await page.getByRole("button", { name: "New task" }).click();
   await page.getByLabel("What needs doing").fill("Approve the Q4 design budget");
   await page.getByLabel("Assign to").selectOption({ label: "Olu Owner (Organisation owner)" });
   await page.getByRole("button", { name: "Create and assign" }).click();
-  await expect(page.getByText("Task created and assigned to Olu Owner.")).toBeVisible();
+  await expect(page.getByText("Task assigned to Olu Owner")).toBeVisible();
 
   await page.context().clearCookies();
   await signIn(page, "owner@company-a.test");
-  await page.goto("/app/company-a/tasks");
+  // The To do tab: once marked done the task leaves it (All would keep it, as Sent for check).
+  await page.goto("/app/company-a/tasks?status=open");
   const row = page.getByRole("row").filter({ hasText: "Approve the Q4 design budget" });
   await expect(row).toContainText("You");
   await row.getByRole("button", { name: "Mark done" }).click();
@@ -277,11 +292,11 @@ test("Tasks: the owner adds a task from the Tasks page and assigns it to Ben", a
   await page.context().clearCookies();
   await signIn(page, "owner@company-a.test");
   await page.goto("/app/company-a/tasks");
-  await page.getByRole("button", { name: "Add new task" }).click();
+  await page.getByRole("button", { name: "New task" }).click();
   await page.getByLabel("What needs doing").fill("Prepare the board pack");
   await page.getByLabel("Assign to").selectOption({ label: "Ben Employee (Design)" });
   await page.getByRole("button", { name: "Create and assign" }).click();
-  await expect(page.getByText("Task created and assigned to Ben Employee.")).toBeVisible();
+  await expect(page.getByText("Task assigned to Ben Employee")).toBeVisible();
   await expect(page.getByRole("row").filter({ hasText: "Prepare the board pack" })).toContainText("Ben Employee");
 });
 
@@ -302,7 +317,8 @@ test("Clocking: Ada clocks in on the Clock in page, sees her status, and the own
   await expect(page.getByRole("heading", { name: "Attendance" })).toBeVisible();
   const row = page.getByRole("row").filter({ hasText: "Ada Employee" });
   await expect(row).toContainText("Clocked in");
-  await page.getByRole("link", { name: /Not clocked in/ }).click();
+  // The status tabs are links drawn as tabs (role "tab").
+  await page.getByRole("tab", { name: /Not clocked in/ }).click();
   await expect(page.getByRole("row").filter({ hasText: "Ben Employee" })).toBeVisible();
   await expect(page.getByRole("row").filter({ hasText: "Ada Employee" })).toHaveCount(0);
   // The organisation account supervises and does not clock in: its Clock in page leads to Attendance.

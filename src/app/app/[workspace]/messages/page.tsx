@@ -81,7 +81,8 @@ export default async function MessagesPage({ params, searchParams }: { params: P
 
   const preview = (c: ConversationSummary) => (c.last_body === null ? (c.subtitle ?? "") : c.last_body === "" ? "Message withdrawn" : `${c.last_sender_name === ctx.user.displayName ? "You" : (c.last_sender_name ?? "").split(" ")[0]}: ${c.last_body}`);
 
-  // A conversation in the list: a sub-navigation row (r8, fill-0 on hover, fill-1 when open). The leading 32px is the
+  // A conversation in the list: a sub-navigation row (r8, fill-0 on hover, fill-1 and the orange marker when open; an
+  // unread count is an orange pill, accent rules 6 October 2026). The leading 32px is the
   // person (with their status dot) or the room's sign; the name, then the last line said; the time and the unread
   // count on the right. The "…" for the row's actions sits over the right edge on hover and keyboard focus.
   const Item = ({ c }: { c: ConversationSummary }) => {
@@ -90,7 +91,7 @@ export default async function MessagesPage({ params, searchParams }: { params: P
     return (
       <li className="group relative">
         <Link href={`${base}/messages?c=${c.id}`} aria-current={active ? "page" : undefined}
-          className={cn("relative flex items-center gap-2.5 rounded-lg px-2 py-2 transition-colors duration-75 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--ring)]", active ? "bg-fill-1" : "hover:bg-fill-0", c.muted && "opacity-60")}>
+          className={cn("relative flex items-center gap-2.5 rounded-lg px-2 py-2 transition-colors duration-75 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--ring)]", active ? "selected-marker bg-fill-1" : "hover:bg-fill-0", c.muted && "opacity-60")}>
           {Icon ? <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-fill-1 text-secondary"><Icon className="size-4" aria-hidden /></span>
             : <Avatar profileId={c.other_profile_id ?? c.id} name={c.title} avatarKey={c.other_avatar_key} presence={c.other_presence ?? "offline"} size={32} />}
           <span className="min-w-0 flex-1">

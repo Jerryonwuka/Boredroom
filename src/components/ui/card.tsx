@@ -85,7 +85,7 @@ export function Ledger({ items, className }: { items: { label: string; value: Re
         const body = (
           <>
             <dt className="truncate text-sm font-medium text-secondary">{it.label}</dt>
-            <dd className={cn("type-stat mt-1", it.tone === "accent" && "text-accent", it.tone === "danger" && "text-danger")}>{it.value}</dd>
+            <dd className={cn("type-stat mt-1", it.tone === "accent" && "text-accent-text", it.tone === "danger" && "text-danger")}>{it.value}</dd>
             {it.note ? <dd className="mt-1 truncate text-meta font-normal text-secondary">{it.note}</dd> : null}
           </>
         );
@@ -102,6 +102,9 @@ export function Ledger({ items, className }: { items: { label: string; value: Re
  * one primary at most), an optional description and meta line, then an optional row of underline tabs on a full-width
  * hairline. `nav` replaces the tabs with any row (a sub-nav, a filter bar). `divider` draws the hairline without tabs.
  * Link tabs (`href`) switch pages; value tabs switch `?{tabParam}=`; `onTabChange` (client callers) switches local state.
+ * From sm the actions sit right of the title, with the description and meta under both. On a phone they come last,
+ * under the description and meta, instead of wrapping in between the title and its description. The DOM order is
+ * title, description, meta, actions, so the reading and tab order match what a phone shows.
  */
 export function PageHeader({ overline, title, description, meta, actions, back, tabs, tabValue, tabParam, onTabChange, tabsLabel, nav, divider = false, className }: {
   overline?: React.ReactNode; title: React.ReactNode; description?: React.ReactNode;
@@ -115,12 +118,12 @@ export function PageHeader({ overline, title, description, meta, actions, back, 
     <header className={cn("mb-8", divider && !tabs && !nav && "border-b border-border pb-5", className)}>
       {back ? <BackLink href={back.href} label={back.label} /> : null}
       {overline ? <Overline className="mb-1">{overline}</Overline> : null}
-      <div className="flex min-h-9 flex-wrap items-center justify-between gap-x-4 gap-y-3">
-        <h1 className="type-page-title min-w-0 break-words">{title}</h1>
-        {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
+      <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-x-4">
+        <div className="flex min-h-9 min-w-0 items-center"><h1 className="type-page-title min-w-0 break-words">{title}</h1></div>
+        {description ? <p className="mt-1 max-w-2xl text-sm font-normal text-secondary sm:col-span-2">{description}</p> : null}
+        {meta ? <p className="type-caption mt-1.5 text-subtle sm:col-span-2">{meta}</p> : null}
+        {actions ? <div className="mt-3 flex flex-wrap items-center gap-2 sm:col-start-2 sm:row-start-1 sm:mt-0 sm:justify-end">{actions}</div> : null}
       </div>
-      {description ? <p className="mt-1 max-w-2xl text-sm font-normal text-secondary">{description}</p> : null}
-      {meta ? <p className="type-caption mt-1.5 text-subtle">{meta}</p> : null}
       {tabs ? <Tabs className="mt-5" tabs={tabs} value={tabValue} param={tabParam} onChange={onTabChange} label={tabsLabel ?? "Sections"} /> : null}
       {!tabs && nav ? <div className="mt-5">{nav}</div> : null}
     </header>

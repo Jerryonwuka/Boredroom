@@ -1,10 +1,13 @@
 import { redirect } from "next/navigation";
+import Link from "next/link";
+import { Lock } from "lucide-react";
 import { getAdmin } from "@/server/admin/auth";
 import { getCurrentUser } from "@/server/auth";
 import { launchSettings } from "@/server/admin/settings";
 import { AdminShell } from "@/components/admin/shell";
 import { Logo } from "@/components/logo";
-import Link from "next/link";
+import { buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: { default: "Control Center", template: "%s · Control Center" } };
@@ -16,11 +19,12 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     const user = await getCurrentUser();
     if (!user) redirect("/login?next=/admin");
     return (
-      <main className="mx-auto max-w-lg px-4 py-24 text-center">
-        <Logo />
-        <h1 className="mt-8 font-display text-2xl">This area is for Boredroom administrators</h1>
-        <p className="mt-2 text-fg-muted">You are signed in as {user.email}, which is not an administrator account. If it should be, a super admin adds it under Admins and permissions, or the address goes in PLATFORM_SUPER_ADMINS on the server.</p>
-        <Link href="/app" className="btn mt-6 inline-flex h-11 items-center rounded-[var(--radius)] px-5 text-sm font-semibold">Back to the app</Link>
+      <main id="main" className="mx-auto flex min-h-dvh max-w-md flex-col items-center justify-center px-5 py-24 text-center">
+        <Logo href="/app" height={18} />
+        <span aria-hidden className="mt-10 grid size-12 place-items-center rounded-xl bg-fill-1 text-secondary shadow-[0_0_0_1px_var(--border)] [&_svg]:size-6"><Lock strokeWidth={1.75} /></span>
+        <h1 className="type-page-title mt-4">This area is for Boredroom administrators</h1>
+        <p className="mt-2 text-sm font-normal text-secondary">You are signed in as <span className="font-medium text-foreground">{user.email}</span>, which is not an administrator account. If it should be, ask a super admin to add it under Admins and permissions.</p>
+        <Link href="/app" className={cn(buttonVariants({ variant: "primary" }), "mt-6")}>Back to the app</Link>
       </main>
     );
   }

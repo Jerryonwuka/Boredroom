@@ -9,8 +9,13 @@
  * page shows your clock. The timer card appears only while something is on the clock.
  *
  * v4: the timer as a stat card, the to-dos under underline tabs with counts, rows of 56px (title 14/20 semibold, meta
- * 13px secondary, a small status badge, the progress arc in orange while in progress), no lines between them. A to-do
- * opens in a right-hand sheet.
+ * 13px secondary, a small status badge, a quiet progress arc), no lines between them. A to-do opens in a right-hand
+ * sheet.
+ *
+ * Accent rules (owner decision, 6 October 2026): orange marks what is live and the one thing to do. The running to-do
+ * (its "Working now" badge and its arc), the timer (dot, digits, progress), the tabs' underline, and in a to-do's sheet
+ * its Start, the standout action. Every other arc on the list is quiet (`tone="neutral"`); an overdue date is a small red
+ * dot beside the word, never red text.
  */
 import { useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
@@ -24,6 +29,7 @@ import { VoiceCapture } from "@/components/app/voice-capture";
 import { BrendaGlyph } from "@/components/app/brenda-glyph";
 import { ProgressSlider } from "@/components/app/progress-slider";
 import { DetailList, DetailRow } from "@/components/app/detail-list";
+import { DueDate, OverdueDot } from "@/components/app/due";
 import { useDictation } from "@/hooks/use-dictation";
 import { Presence } from "@/components/ui/motion";
 import { Tabs } from "@/components/ui/tabs";
@@ -85,7 +91,7 @@ const HIT = "relative z-[1] -m-3 inline-grid size-10 shrink-0 cursor-pointer pla
 
 /** A to-do's status as a small badge (none while it simply waits to start). */
 function StatusBadge({ t, running }: { t: Row; running: boolean }) {
-  if (running) return <Badge tone="success" dot>Working now</Badge>;
+  if (running) return <Badge tone="accent" dot>Working now</Badge>;
   if (t.status === "in_review") return <Badge tone="warning">Sent for check</Badge>;
   if (t.status === "blocked") return <Badge tone="danger">Blocked</Badge>;
   if (t.status === "in_progress") return <Badge>Started</Badge>;
@@ -238,7 +244,7 @@ function Board({ orgSlug, today, initialSession, planned, ownTodos, fromLeads, d
             {!hasList ? (newRow ? null : (
               <EmptyState icon={ListTodo} title="Nothing on your list yet"
                 description="Write down what you are doing today, or say it and Brenda writes it down, then press Start when you begin."
-                action={<Button size="sm" variant="secondary" onClick={openAdd}><Plus aria-hidden />Add your first to-do</Button>} />
+                action={<Button size="sm" variant="accent" onClick={openAdd}><Plus aria-hidden />Add your first to-do</Button>} />
             )) : (
               <ul className={cn("space-y-0.5", newRow ? "mt-1" : "mt-3")} aria-label="To-dos">
                 {shown.length === 0 && !(tab === "done" && doneToday.length) && !(tab === "todo" && adding) ? <li className="px-2 py-10 text-center text-sm font-normal text-secondary">{emptyLine}</li> : null}
@@ -254,10 +260,10 @@ function Board({ orgSlug, today, initialSession, planned, ownTodos, fromLeads, d
                         <span className="flex min-w-0 items-center gap-2"><span className={cn("truncate text-sm font-semibold", waiting ? "text-secondary" : "text-foreground")}>{t.title}</span><StatusBadge t={t} running={running} /></span>
                         <span className="block truncate text-meta font-normal text-secondary">
                           {t.created_by !== membershipId ? `From ${t.created_by_name ?? "your team lead"}` : "Your own to-do"}
-                          {t.due_at ? <span className={overdue ? "text-danger" : undefined}>, {overdue ? "overdue" : "due"} {formatDateTime(t.due_at, timeZone)}</span> : null}
+                          {t.due_at ? <>, {overdue ? <><OverdueDot className="mr-1" />overdue since</> : "due"} <span className="tabular-nums">{formatDateTime(t.due_at, timeZone)}</span></> : null}
                         </span>
                       </button>
-                      <ProgressArc percent={t.progress_percent} size={36} tone={running || t.status === "in_progress" ? "accent" : "default"} className="relative z-[1]" />
+                      <ProgressArc percent={t.progress_percent} size={36} tone={running ? "accent" : "neutral"} className="relative z-[1]" />
                     </li>
                   );
                 })}
@@ -330,8 +336,9 @@ function TodoSheet({ t, orgSlug, self, running, anyRunning, canRecord, timeZone,
       {waiting ? null : (
         <>
           {!running && !editing ? <EditButton iconOnly label="Edit to-do" onClick={() => setEditing(true)} /> : null}
-          {!running && canRecord ? <Button size="sm" variant="secondary" disabled={anyRunning} onClick={() => onStart(true)}><span className="size-2 rounded-full bg-danger" aria-hidden />Start and record</Button> : null}
-          {!running ? <Button size="sm" disabled={anyRunning} onClick={() => onStart(false)}><Play aria-hidden />Start</Button> : null}
+          {!running && canRecord ? <Button size="sm" variant="secondary" disabled={anyRunning} onClick={() => onStart(true)}><span className="size-2 rounded-full bg-current" aria-hidden />Start and record</Button> : null}
+          {/* The sheet's one standout (accent rules): Start on this to-do. */}
+          {!running ? <Button size="sm" variant="accent" disabled={anyRunning} onClick={() => onStart(false)}><Play aria-hidden />Start</Button> : null}
           {running || t.status === "in_progress" || t.status === "blocked" ? (confirmDone
             ? <><Button size="sm" variant="ghost" onClick={() => setConfirmDone(false)}>Not yet</Button><Button size="sm" onClick={() => { setConfirmDone(false); onDone(); }}><Check aria-hidden />Yes, mark done</Button></>
             : <Button size="sm" variant={running ? "primary" : "secondary"} onClick={() => setConfirmDone(true)}><Check aria-hidden />Mark done</Button>) : null}
@@ -345,7 +352,7 @@ function TodoSheet({ t, orgSlug, self, running, anyRunning, canRecord, timeZone,
     <Sheet open onClose={onClose} title={t.title} description={t.created_by !== self ? `From ${t.created_by_name ?? "your team lead"}` : "Your own to-do"} footer={footer}>
       <div className="grid gap-5">
         <p className="flex flex-wrap items-center gap-2">
-          {running ? <Badge tone="success" dot>Working now</Badge> : waiting ? <Badge tone="warning">Sent for check</Badge> : t.status === "blocked" ? <Badge tone="danger">Blocked</Badge> : t.status === "in_progress" ? <Badge>Started</Badge> : <Badge tone="info">To do</Badge>}
+          {running ? <Badge tone="accent" dot>Working now</Badge> : waiting ? <Badge tone="warning">Sent for check</Badge> : t.status === "blocked" ? <Badge tone="danger">Blocked</Badge> : t.status === "in_progress" ? <Badge>Started</Badge> : <Badge tone="info">To do</Badge>}
           {overdue ? <Badge tone="danger">Overdue</Badge> : null}
           {t.capture_requirement === "required" ? <Badge tone="warning">Recording required</Badge> : null}
         </p>
@@ -360,7 +367,7 @@ function TodoSheet({ t, orgSlug, self, running, anyRunning, canRecord, timeZone,
           </div>
         </div>
         <DetailList>
-          <DetailRow label={overdue ? "Overdue" : "Due"}>{t.due_at ? <span className={cn("tabular-nums", overdue && "text-danger")}>{formatDateTime(t.due_at, timeZone)}</span> : <span className="text-secondary">No date</span>}</DetailRow>
+          <DetailRow label={overdue ? "Overdue" : "Due"}>{t.due_at ? <DueDate iso={t.due_at} timeZone={timeZone} overdue={overdue} srLabel={false} /> : <span className="text-secondary">No date</span>}</DetailRow>
           <DetailRow label="Estimated">{t.estimate_minutes ? formatDuration(t.estimate_minutes * 60) : <span className="text-secondary">Not set</span>}</DetailRow>
           <DetailRow label="Tracked">{t.tracked_seconds ? <span className="tabular-nums">{formatDuration(t.tracked_seconds)}</span> : <span className="text-secondary">Nothing yet</span>}</DetailRow>
           <DetailRow label="Project">{t.project_name}</DetailRow>

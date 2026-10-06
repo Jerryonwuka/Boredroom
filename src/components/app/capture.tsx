@@ -339,7 +339,7 @@ function ConsentDialog({ rules, returnTo, onAgree, onCancel }: { rules: Recordin
   }, [returnTo]);
   const days = `${rules.retentionDays} day${rules.retentionDays === 1 ? "" : "s"}`;
   const facts: [string, string][] = [
-    ["Recorded", "The screen, window or tab you choose, as video only, while your timer runs and the red recording sign shows."],
+    ["Recorded", "The screen, window or tab you choose, as video only, while your timer runs and the orange recording sign shows."],
     ["Never recorded", "Sound, your keystrokes, screens you did not choose, or anything while no timer runs."],
     ["Kept", `For ${days}, then deleted automatically.`],
     ["Who can watch", "You, your team lead, your organisation's owner and HR, and anyone they give access to. Every viewing is logged, and you can flag a recording as sensitive to lock it."],
@@ -380,8 +380,9 @@ function ConsentDialog({ rules, returnTo, onAgree, onCancel }: { rules: Recordin
 }
 
 /**
- * The recording sign, v4: a toast in the bottom right (the toast surface, r12) with a status dot (red and pulsing while
- * recording, amber when something stopped it), what is happening, and Stop. It stays while recording or uploading.
+ * The recording sign, v4: a toast in the bottom right (the toast surface, r12) with a status dot (orange and pulsing
+ * while recording: a recording is live, accent rules 6 October 2026; amber when something stopped it), what is
+ * happening, and Stop. It stays while recording or uploading.
  */
 function RecordingIndicator() {
   const c = useContext(CaptureContext);
@@ -391,14 +392,14 @@ function RecordingIndicator() {
   const recording = c.state.status === "recording";
   return (
     <div role="status" aria-live="polite" className="toast-surface fixed bottom-[max(1rem,env(safe-area-inset-bottom))] right-[max(1rem,env(safe-area-inset-right))] z-[var(--z-toast)] flex w-[360px] max-w-[calc(100vw-2rem)] items-start gap-3 px-4 py-3">
-      <span className={cn("mt-[7px] size-2 shrink-0 rounded-full", recording ? "rec-dot bg-danger shadow-[0_0_0_3px_color-mix(in_srgb,var(--danger)_15%,transparent)]" : problem ? "bg-warning shadow-[0_0_0_3px_color-mix(in_srgb,var(--warning)_15%,transparent)]" : "bg-secondary shadow-[0_0_0_3px_var(--fill-1)]")} aria-hidden />
+      <span className={cn("mt-[7px] size-2 shrink-0 rounded-full", recording ? "rec-dot bg-accent shadow-[0_0_0_3px_color-mix(in_srgb,var(--accent)_15%,transparent)]" : problem ? "bg-warning shadow-[0_0_0_3px_color-mix(in_srgb,var(--warning)_15%,transparent)]" : "bg-secondary shadow-[0_0_0_3px_var(--fill-1)]")} aria-hidden />
       <div className="min-w-0 flex-1">
         <p className="text-sm font-medium text-foreground">{recording ? "Recording screen" : c.state.status === "uploading" ? "Uploading recording" : c.state.status === "requesting" ? "Choose what to share" : "Recording did not start"}</p>
         {problem
           ? <p className="mt-0.5 text-sm font-normal text-[var(--toast-description)]">{c.state.error ?? "Something stopped the recording."} Your time keeps tracking without it.</p>
           : <p className="mt-0.5 truncate text-sm font-normal text-[var(--toast-description)]">{c.state.sourceLabel ? `${c.state.sourceLabel}, ` : ""}<span className="tabular-nums">{c.state.uploadedChunks}</span> chunks sent, <span className="tabular-nums">{mb}</span> MB pending{c.state.pendingBytes > WARN_BYTES ? ", high" : ""}</p>}
       </div>
-      {recording ? <Button size="xs" variant="danger" className="shrink-0" onClick={() => c.stopCapture("stopped")}><Square className="fill-current" aria-hidden />Stop</Button> : null}
+      {recording ? <Button size="xs" variant="secondary" className="shrink-0" onClick={() => c.stopCapture("stopped")}><Square className="fill-current" aria-hidden />Stop</Button> : null}
       {problem ? <IconButton aria-label="Dismiss" size="xs" className="-mr-1 shrink-0" onClick={() => c.dismissError()}><X aria-hidden /></IconButton> : null}
     </div>
   );
@@ -446,13 +447,13 @@ export function useCaptureGate() {
     if (session.state !== "running") return null;
     if (session.captureMode === "exception") return null;
     // A session that started before the person agreed to the rules ("none") records too: Record screen asks first.
-    if (c.state.status === "recording") return <IconButton aria-label="Stop recording" onClick={() => c.stopCapture("stopped")} className="text-danger hover:text-danger"><span className="relative grid place-items-center"><Circle className="rec-dot fill-danger text-danger" aria-hidden /><Square className="absolute !size-2 fill-background text-background" aria-hidden /></span></IconButton>;
+    if (c.state.status === "recording") return <IconButton aria-label="Stop recording" onClick={() => c.stopCapture("stopped")} className="text-accent hover:text-accent"><span className="relative grid place-items-center"><Circle className="rec-dot fill-accent text-accent" aria-hidden /><Square className="absolute !size-2 fill-background text-background" aria-hidden /></span></IconButton>;
     // Nothing until the browser has said whether it can record (see useCaptureSupported), so the server's render and
     // the browser's first render agree.
     if (supported === null) return null;
     const support = captureSupport();
     if (!support.supported) return <span className="flex max-w-sm items-start gap-2 text-xs font-medium text-secondary"><span className="mt-[5px] size-1.5 shrink-0 rounded-full bg-warning" aria-hidden /><span>Screen recording unavailable here: {support.reason} {typeof window !== "undefined" && !window.isSecureContext ? `Open the app at http://localhost:${window.location.port || "3000"} (or an https:// address) instead of ${window.location.host}.` : "Use Chrome or Edge on a computer."}</span></span>;
-    return <IconButton aria-label={c.state.status === "requesting" ? "Choose a screen…" : "Record screen"} disabled={c.state.status === "requesting"} onClick={() => void c.record(session)}><Circle className="fill-danger text-danger" aria-hidden /></IconButton>;
+    return <IconButton aria-label={c.state.status === "requesting" ? "Choose a screen…" : "Record screen"} disabled={c.state.status === "requesting"} onClick={() => void c.record(session)}><Circle className="fill-current" aria-hidden /></IconButton>;
   }, [c, supported]);
 
   const dialogEl = useMemo(() => dialog ? <ExceptionDialog orgSlug={c!.orgSlug} task={dialog.task} reason={dialog.reason} onResolve={(v) => { dialog.resolve(v); setDialog(null); }} onRetry={async () => { const p = await c!.requestPermissionOnly(); if (p) { dialog.resolve({ captureMode: "required" }); setDialog(null); } }} /> : null, [dialog, c]);

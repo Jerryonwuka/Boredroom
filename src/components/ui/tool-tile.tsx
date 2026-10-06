@@ -7,16 +7,28 @@ import { cn } from "@/lib/utils";
  *
  * `ToolSquare`: the 40×40 r12 square that holds a tool's icon: fill-1 over the canvas, darkening slightly towards the
  * bottom (fill-1 → fill-150, the one measured gradient in the app; barely visible), a 7.5% ring and the natural
- * shadow, the 20px icon in grey-600.
+ * shadow, the 20px icon in grey-600. `tone="accent"`: the orange-tinted square with an orange icon (the empty-state
+ * look), for the rare thumb that marks something live or new.
  *
- * `ToolTile`: the square with its label (14/20 medium, foreground) 10px under it, at least 81px wide; a longer label
- * widens the tile rather than breaking onto two lines. On hover a r16 fill-1
- * plate appears behind the whole tile, reaching 8px above/below and 14px to the sides. A button (`onClick`) or a link
- * (`href`). On Brenda's home these fill the prompt box with a suggestion; they never send.
+ * `ToolTile`: the square with its label (14/20 medium, foreground) 10px under it, at least 81px wide, the label on one
+ * line. On hover a r16 fill-1 plate appears behind the whole tile, reaching 8px above/below and 14px to the sides, and
+ * the icon turns orange (also on keyboard focus and while `active`; accent rules, 6 October 2026). A button (`onClick`)
+ * or a link (`href`). On Brenda's home these fill the prompt box with a suggestion; they never send.
+ *
+ * `ToolTileRow`: lays the tiles out in equal columns as wide as the widest label, so the squares are evenly spaced
+ * (owner request, 6 October 2026), centred; one row when it fits, else a balanced grid of three (globals.css
+ * `.tool-tile-grid` has the widths). Keep labels short (up to about 13 characters, 110px).
  *
  * `QuickLink`: the list tile: h56 p16 r12 outline, a 24px icon in the secondary grey, a 14/20 medium label.
  */
-export function ToolSquare({ children, size = 40, className }: { children: React.ReactNode; size?: number; className?: string }) {
+export function ToolSquare({ children, size = 40, tone = "neutral", className }: { children: React.ReactNode; size?: number; tone?: "neutral" | "accent"; className?: string }) {
+  if (tone === "accent") {
+    return (
+      <span aria-hidden className={cn("relative grid shrink-0 place-items-center rounded-xl bg-accent-tint text-accent-text shadow-[0_0_0_1px_var(--border)] [&_svg]:size-5", className)} style={{ width: size, height: size }}>
+        {children}
+      </span>
+    );
+  }
   return (
     <span aria-hidden className={cn("relative grid shrink-0 place-items-center rounded-xl bg-background text-grey-600 shadow-[0_0_0_1px_var(--border),var(--elev-natural-xs)] [&_svg]:size-5", className)}
       style={{ width: size, height: size, backgroundImage: "linear-gradient(to bottom, var(--fill-1), var(--fill-150))" }}>
@@ -35,15 +47,29 @@ export function ToolTile({ icon, label, href, className, active = false, type = 
     active && "before:opacity-100",
     className,
   );
-  const body = (<><ToolSquare>{icon}</ToolSquare><span className="w-full whitespace-nowrap leading-5">{label}</span></>);
+  const body = (
+    <>
+      <ToolSquare className={cn("transition-colors duration-75 group-hover:text-accent group-focus-visible:text-accent", active && "text-accent")}>{icon}</ToolSquare>
+      <span className="w-full whitespace-nowrap leading-5">{label}</span>
+    </>
+  );
   return href
     ? <Link href={href} className={cls} aria-current={active ? "page" : undefined}>{body}</Link>
     : <button type={type} className={cls} aria-pressed={active || undefined} {...button}>{body}</button>;
 }
 
-/** A row of tool tiles, centred, wrapping on narrow screens (16px apart, 20px between rows). */
+/**
+ * A row of tool tiles: equal columns sized to the widest label, centred, 16px apart in one row; on a narrow row a
+ * balanced grid of three (two for four tiles), 10px apart with 20px between rows, its short last row centred. The
+ * outer box is a container (it takes the full width it is given); the count picks the layout.
+ */
 export function ToolTileRow({ children, className, label }: { children: React.ReactNode; className?: string; label?: string }) {
-  return <div role={label ? "group" : undefined} aria-label={label} className={cn("flex flex-wrap justify-center gap-x-4 gap-y-5", className)}>{children}</div>;
+  const count = React.Children.toArray(children).length;
+  return (
+    <div className={cn("tool-tile-row", className)}>
+      <div role={label ? "group" : undefined} aria-label={label} data-count={count} className="tool-tile-grid">{children}</div>
+    </div>
+  );
 }
 
 export function QuickLink({ icon, label, href, onClick, className, trailing }: { icon?: React.ReactNode; label: React.ReactNode; href?: string; onClick?: () => void; className?: string; trailing?: React.ReactNode }) {

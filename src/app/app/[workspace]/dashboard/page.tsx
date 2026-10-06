@@ -41,12 +41,16 @@ const shiftMonth = (m: string, by: number) => { const [y, mo] = m.split("-").map
  * cards for right now, the analytics card (a metric strip over a monochrome chart of the month, today in orange) with
  * its Month and Team filters, then who is working and what was finished. The other tabs hold the full tables.
  * Nothing here is a productivity score: every figure comes from clocks, timers and tasks.
+ *
+ * Accent rules (6 October 2026): the "Live" line, the tabs' and the metric strip's underline, today's bar, the review
+ * queue's waiting count, and a still orange dot for each person working. With that many, the lists stay quiet: the
+ * clocks keep the foreground (`quiet`), the arcs in the Working now table are neutral, and "Add people" stays white.
  */
 export default async function DashboardPage({ params, searchParams }: { params: Promise<{ workspace: string }>; searchParams: Promise<{ tab?: string; month?: string; team?: string }> }) {
   const { workspace } = await params;
   const sp = await searchParams;
   const { ctx, counts, teams } = await workspacePage(workspace, `/app/${workspace}/dashboard`);
-  if (!["owner", "hr"].includes(ctx.membership.role)) return <AppShell ctx={ctx} counts={counts} teams={teams}><PermissionDenied description="The organisation dashboard is for the organisation account (owners and HR). Team leads use their team board; staff use My Day." /></AppShell>;
+  if (!["owner", "hr"].includes(ctx.membership.role)) return <AppShell ctx={ctx} counts={counts} teams={teams}><PageHeader title="Dashboard" divider /><PermissionDenied description="The organisation dashboard is for the organisation account (owners and HR). Team leads use their team board; staff use My Day." /></AppShell>;
   const tab: Tab = (TABS as readonly string[]).includes(sp.tab ?? "") ? (sp.tab as Tab) : "overview";
   // A team id from the address bar is checked before it reaches a uuid column: a mistyped link shows everyone.
   const teamId = sp.team && uuid.safeParse(sp.team).success ? sp.team : null;
@@ -71,7 +75,7 @@ export default async function DashboardPage({ params, searchParams }: { params: 
       <PageHeader title="Dashboard" description={<>{ctx.org.name}, {formatLongDate(d.today)}. From clocks, timers and tasks; nothing here is a productivity score.</>}
         meta={<LiveSync at={fmtTime(d.serverNow, tz)} note="updates as people clock in, start and finish" />}
         actions={<>
-          <Link href={`${base}/reviews`} className={buttonVariants({ variant: "secondary", size: "sm" })}><ClipboardCheck aria-hidden />Review queue{counts.attention ? <CountPill count={counts.attention} /> : null}</Link>
+          <Link href={`${base}/reviews`} className={buttonVariants({ variant: "secondary", size: "sm" })}><ClipboardCheck aria-hidden />Review queue{counts.attention ? <CountPill count={counts.attention} tone="attention" /> : null}</Link>
           <Link href={`${base}/people`} className={buttonVariants({ size: "sm" })}>Add people</Link>
         </>}
         tabsLabel="Dashboard sections" tabValue={tab}
@@ -113,8 +117,8 @@ export default async function DashboardPage({ params, searchParams }: { params: 
                         <ListRow key={w.membership_id} href={`${base}/workroom/${w.membership_id}`}
                           leading={<Avatar profileId={w.membership_id} name={w.display_name} size={40} />}
                           title={w.display_name} subtitle={w.task_title}
-                          meta={<><StatusDot tone={running ? "success" : lost ? "danger" : "warning"} live={running} className="ml-1" /><span className="truncate">{lost ? "Connection lost" : running ? `Working since ${since(w.started_at)}` : `${label(w.state)}, started ${since(w.started_at)}`}</span></>}
-                          trailing={<LiveClock seconds={w.today_seconds} serverNow={d.serverNow} running={running} className={running ? "text-foreground" : "text-secondary"} />} />
+                          meta={<><StatusDot tone={running ? "live" : lost ? "danger" : "warning"} pulse={false} className="ml-1" /><span className="truncate">{lost ? "Connection lost" : running ? `Working since ${since(w.started_at)}` : `${label(w.state)}, started ${since(w.started_at)}`}</span></>}
+                          trailing={<LiveClock seconds={w.today_seconds} serverNow={d.serverNow} running={running} quiet />} />
                       );
                     })}
                   </ul>
@@ -153,11 +157,11 @@ export default async function DashboardPage({ params, searchParams }: { params: 
                 <tr key={w.membership_id}>
                   <td><Person orgSlug={ctx.org.slug} membershipId={w.membership_id} name={w.display_name} href={`${base}/workroom/${w.membership_id}`} /></td>
                   <td className="text-secondary">{w.team_names.join(", ") || "None"}</td>
-                  <td><Badge tone={lost ? "danger" : SESSION_STATE_TONE[w.state]} dot>{lost ? "Connection lost" : label(w.state)}</Badge></td>
-                  <td><span className="flex items-center gap-2.5"><ProgressArc percent={w.task_progress} size={28} /><TaskPeekLink orgSlug={ctx.org.slug} viewer={viewer} task={{ id: w.task_id, title: w.task_title }} className="font-medium" /></span></td>
+                  <td><Badge tone={lost ? "danger" : running ? "accent" : SESSION_STATE_TONE[w.state]} dot>{lost ? "Connection lost" : label(w.state)}</Badge></td>
+                  <td><span className="flex items-center gap-2.5"><ProgressArc percent={w.task_progress} size={28} tone="neutral" /><TaskPeekLink orgSlug={ctx.org.slug} viewer={viewer} task={{ id: w.task_id, title: w.task_title }} className="font-medium" /></span></td>
                   <td className="tabular-nums text-secondary">{since(w.started_at)}</td>
                   <td className="text-secondary">{relativeTime(w.last_heartbeat_at, now)}</td>
-                  <td className="text-right"><LiveClock seconds={w.today_seconds} serverNow={d.serverNow} running={running} className={running ? "text-foreground" : "text-secondary"} /></td>
+                  <td className="text-right"><LiveClock seconds={w.today_seconds} serverNow={d.serverNow} running={running} quiet /></td>
                 </tr>
               );
             })}</tbody>

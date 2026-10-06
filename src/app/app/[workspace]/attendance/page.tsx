@@ -31,13 +31,14 @@ type Tab = "in" | "not_in" | "out" | "all";
 /**
  * Attendance, v4: who has clocked in, who has not, who has left, on any day, or a whole month as a grid. The filter
  * bar holds View (Day or Month), the day or month, and Team; each applies itself. Day view: four stat cards and a calm
- * table under the status tabs. Month view: the totals and one narrow cell per day.
+ * table under the status tabs. Month view: the totals and one narrow cell per day, today's column in orange (accent
+ * rules, 6 October 2026: the current day in a calendar). Green, amber and the ring keep their status meaning.
  */
 export default async function AttendancePage({ params, searchParams }: { params: Promise<{ workspace: string }>; searchParams: Promise<{ tab?: string; date?: string; team?: string; view?: string; month?: string }> }) {
   const { workspace } = await params;
   const sp = await searchParams;
   const { ctx, counts, teams } = await workspacePage(workspace, `/app/${workspace}/attendance`);
-  if (ctx.membership.role === "employee") return <AppShell ctx={ctx} counts={counts} teams={teams}><PermissionDenied description="Attendance is for team leads and organisation accounts. Your own clock is under Clock in." /></AppShell>;
+  if (ctx.membership.role === "employee") return <AppShell ctx={ctx} counts={counts} teams={teams}><PageHeader title="Attendance" divider /><PermissionDenied description="Attendance is for team leads and organisation accounts. Your own clock is under Clock in." /></AppShell>;
   const base = `/app/${ctx.org.slug}`;
   // A team id from the address bar is checked before it reaches a uuid column: a mistyped link shows everyone.
   const teamId = sp.team && uuid.safeParse(sp.team).success ? sp.team : null;
@@ -80,7 +81,7 @@ export default async function AttendancePage({ params, searchParams }: { params:
             {/* table.data's own th and td rules sit outside the cascade layers, so a utility on a header cell only wins with "!". */}
             <thead><tr>
               <th className="sticky left-0 z-[var(--z-raised)] !bg-background">Person</th>
-              {m.days.map((d) => <th key={d} className={cn("day tabular-nums !text-xs !font-normal", !m.workingDays.includes(d) && "!text-faint", d === m.today && "!font-semibold !text-accent")}><span className="sr-only">{formatLongDate(d)}</span><span aria-hidden>{Number(d.slice(8))}</span></th>)}
+              {m.days.map((d) => <th key={d} className={cn("day tabular-nums !text-xs !font-normal", !m.workingDays.includes(d) && "!text-faint", d === m.today && "!font-semibold !text-accent-text")}><span className="sr-only">{formatLongDate(d)}</span><span aria-hidden>{Number(d.slice(8))}</span></th>)}
               <th className="!text-right">In</th><th className="!text-right">Late</th><th className="!text-right">Missed</th><th className="!text-right">Hours</th>
             </tr></thead>
             <tbody>{m.rows.map((r) => (

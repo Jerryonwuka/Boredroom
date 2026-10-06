@@ -1,68 +1,57 @@
-"use client";
 import Link from "next/link";
 import Image from "next/image";
-import { motion } from "motion/react";
-import { BackgroundRippleEffect } from "@/components/aceternity/background-ripple-effect";
-import { ContainerScroll } from "@/components/aceternity/container-scroll-animation";
-import { FlipWords } from "@/components/aceternity/flip-words";
-import { DashboardMock } from "@/components/landing/mocks";
+import { ChevronRight } from "lucide-react";
+import { buttonVariants } from "@/components/ui/button";
 import { WaitlistLink } from "@/components/landing/waitlist-link";
-
-/** The pill above the headline: a waitlist link in waitlist mode, a sign-up link otherwise. */
-function Pill({ href, className, children }: { href: string; className?: string; children: React.ReactNode }) {
-  return href === "#waitlist" ? <WaitlistLink className={className}>{children}</WaitlistLink> : <Link href={href} className={className}>{children}</Link>;
-}
+import { HeroFrame } from "@/components/landing/hero-frame";
+import { WRAP } from "@/components/landing/parts";
+import { cn } from "@/lib/utils";
 
 export type LandingCopy = { headline: string; subheadline: string; cta: string };
 
-const EASE = [0.23, 1, 0.32, 1] as const;
 /** The faces in the trust pill above the headline; served from public/users. */
 const USERS = [1, 2, 3, 4, 5].map((n) => `/users/user-${n}.jpg`);
-const rise = (delay: number) => ({ initial: { opacity: 0, y: 24, filter: "blur(10px)" }, animate: { opacity: 1, y: 0, filter: "blur(0px)" }, transition: { duration: 0.9, ease: EASE, delay } });
 
-/** The hero copy. It is the scroll container's title, so it drifts up as the dashboard rises to meet the header. */
-function HeroCopy({ signedIn, waitlist, copy }: { signedIn: boolean; waitlist: boolean; copy: LandingCopy }) {
-  return (
-    <div className="pointer-events-none relative mx-auto max-w-6xl px-6 pt-8 text-center md:pt-14">
-      <motion.div {...rise(0)} className="pointer-events-auto">
-        <Pill href={waitlist ? "#waitlist" : "/signup?intent=org"} className="lp-muted inline-flex items-center gap-3 lp-glass rounded-full py-1.5 pl-2 pr-4 text-sm transition-colors hover:text-fg">
-          <span className="flex -space-x-2.5" aria-hidden>
-            {USERS.map((src, i) => <Image key={src} src={src} alt="" width={28} height={28} priority className="h-7 w-7 rounded-full border-2 border-bg object-cover" style={{ zIndex: USERS.length - i }} />)}
-          </span>
-          <span>{waitlist ? "Opening soon. Join the waitlist." : <>Trusted by <strong className="font-semibold text-fg">10k+</strong> users.</>}</span>
-        </Pill>
-      </motion.div>
-      <motion.h1 {...rise(0.1)} className="mx-auto mt-8 max-w-5xl font-display text-[52px] leading-[1.02] tracking-[-0.03em] md:text-[96px]">
-        {waitlist && copy.headline ? copy.headline : <>Know what your<br />team is{" "}<FlipWords words={["doing", "stuck on"]} duration={3000} className="text-accent" /></>}
-      </motion.h1>
-      <motion.p {...rise(0.2)} className="lp-muted mx-auto mt-7 max-w-2xl text-pretty text-lg leading-relaxed md:text-xl">
-        {waitlist && copy.subheadline ? copy.subheadline : "What people plan, the time they put in, what they deliver and what their lead accepts, in one place, live. Without check-in calls, and without a productivity score."}
-      </motion.p>
-      {/* In waitlist mode the form lives in the closing section (#waitlist); the hero only points there. */}
-      <motion.div {...rise(0.3)} className="pointer-events-auto mt-9 flex flex-wrap justify-center gap-3">
-        {signedIn ? <Link href="/app" className="lp-btn lp-btn-primary">Open your workspace</Link>
-          : waitlist ? <WaitlistLink className="lp-btn lp-btn-primary">{copy.cta || "Join the waitlist"}</WaitlistLink>
-          : <Link href="/signup?intent=org" className="lp-btn lp-btn-primary">Get started</Link>}
-        <a href="#how" className="lp-btn lp-btn-secondary">How it works</a>
-      </motion.div>
-    </div>
-  );
-}
+/** The hero's buttons: the v4 lg button a little larger for the page (44px, 15px). */
+export const heroButton = (variant: "primary" | "secondary" | "accent") => cn(buttonVariants({ variant, size: "lg" }), "h-11 px-5 text-[15px]");
 
+/**
+ * The hero, v4 (owner request, 6 October 2026): a quiet pill, the display headline (Geist 400, 40 → 72px, tight, white),
+ * the 18/28 line under it, the call to action and an outline "How it works", then the product itself (HeroFrame).
+ * The call to action is the screen's one orange button only in waitlist mode (joining the waitlist is the one thing to
+ * do); signed in, or when the app is open, it is the white primary. In waitlist mode the form lives in the closing
+ * section (#waitlist) and the hero points there. Server-rendered: the copy paints with the HTML, nothing waits for JS.
+ */
 export function Hero({ signedIn, waitlist = false, copy = { headline: "", subheadline: "", cta: "" } }: { signedIn: boolean; waitlist?: boolean; copy?: LandingCopy }) {
+  const pill = "inline-flex h-8 max-w-full items-center gap-2 rounded-full border border-border-input bg-background py-1 pl-1 pr-2.5 text-meta font-medium text-secondary transition-colors duration-75 hover:border-border-input-hover hover:text-foreground";
+  const pillBody = (
+    <>
+      <span className="flex shrink-0 -space-x-1.5" aria-hidden>
+        {USERS.map((src, i) => <Image key={src} src={src} alt="" width={22} height={22} loading="eager" className="relative size-[22px] rounded-full object-cover ring-2 ring-background" style={{ zIndex: USERS.length - i }} />)}
+      </span>
+      <span className="truncate">{waitlist ? "Opening soon. Join the waitlist." : <>Trusted by <strong className="font-semibold text-foreground">10k+</strong> users.</>}</span>
+      <ChevronRight className="size-3.5 shrink-0" aria-hidden />
+    </>
+  );
   return (
-    <section className="relative isolate overflow-hidden">
-      {/* The ripple grid: hover lights a cell, a click sends a ring out. Sits under the copy, above the sky. */}
-      <div aria-hidden className="absolute inset-x-0 top-0 h-[760px] [mask-image:linear-gradient(to_bottom,#000,transparent_95%)]">
-        <BackgroundRippleEffect rows={10} cols={40} cellSize={56} />
+    <section aria-labelledby="hero-title" className="pt-14 sm:pt-20 lg:pt-24">
+      <div className={cn(WRAP, "text-center")}>
+        {waitlist ? <WaitlistLink className={pill}>{pillBody}</WaitlistLink> : <Link href="/signup?intent=org" className={pill}>{pillBody}</Link>}
+        <h1 id="hero-title" className="lp-display mx-auto mt-6 max-w-4xl">
+          {waitlist && copy.headline ? copy.headline : <>Know what your<br className="max-sm:hidden" /> team is doing</>}
+        </h1>
+        <p className="lp-lead mx-auto mt-5 max-w-[640px]">
+          {waitlist && copy.subheadline ? copy.subheadline : "What people plan, the time they put in, what they deliver and what their lead accepts, in one place, live. Without check-in calls, and without a productivity score."}
+        </p>
+        <div className="mt-8 flex flex-wrap justify-center gap-3">
+          {signedIn ? <Link href="/app" className={heroButton("primary")}>Open your workspace</Link>
+            : waitlist ? <WaitlistLink className={heroButton("accent")}>{copy.cta || "Join the waitlist"}</WaitlistLink>
+            : <Link href="/signup?intent=org" className={heroButton("primary")}>Get started</Link>}
+          <a href="#how" className={heroButton("secondary")}>How it works</a>
+        </div>
       </div>
-      <div aria-hidden className="lp-glow pointer-events-none absolute left-1/2 top-[-160px] h-[520px] w-[900px] -translate-x-1/2 rounded-full opacity-70" />
-      <div className="pointer-events-none relative">
-        <ContainerScroll titleComponent={<HeroCopy signedIn={signedIn} waitlist={waitlist} copy={copy} />}>
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 1, delay: 0.4 }} className="h-full" aria-hidden>
-            <DashboardMock />
-          </motion.div>
-        </ContainerScroll>
+      <div className={cn(WRAP, "mt-14 sm:mt-16")}>
+        <HeroFrame />
       </div>
     </section>
   );

@@ -13,11 +13,13 @@ import { Alert } from "@/components/ui/states";
 import { Person } from "@/components/ui/person";
 import { taskDetail } from "@/server/services/views";
 import { listSessionRecordings } from "@/server/services/recording";
-import { cn, formatDateTime, formatDuration } from "@/lib/utils";
+import { formatDateTime, formatDuration } from "@/lib/utils";
 import { TaskActions, SubmissionForm, ReviewForm, DeliverableList, ReopenForm } from "@/components/app/task-forms";
 import { TaskPanels } from "@/components/app/task-panels";
 import { SessionRecordings } from "@/components/app/recording-panel";
 import { DetailList, DetailRow } from "@/components/app/detail-list";
+import { DueDate } from "@/components/app/due";
+import { ProgressBar } from "@/components/ui/progress-arc";
 
 export const dynamic = "force-dynamic";
 
@@ -42,6 +44,8 @@ const statusLabel = taskStatusLabel;
  * submission and review forms, the evidence, the work sessions) and a details panel on the right (time tracked against
  * the estimate, then label and value rows). Its discussion and status history open as sheets from two buttons in the
  * header (owner decision, 5 October 2026), and `?panel=comments` or `?panel=history` opens one on arrival.
+ * Accent rules (6 October 2026): the time against the estimate is an orange progress bar, a running session is live
+ * (orange), an overdue date is a red dot beside the "Overdue" label, and links in running text underline in orange.
  */
 export default async function TaskPage({ params, searchParams }: { params: Promise<{ workspace: string; id: string }>; searchParams: Promise<{ submit?: string; panel?: string }> }) {
   const { workspace, id } = await params;
@@ -95,16 +99,15 @@ export default async function TaskPage({ params, searchParams }: { params: Promi
             <p className="type-stat mt-1">{formatDuration(task.tracked_seconds)}</p>
             <p className="mt-1 text-meta font-normal text-secondary">{estimate ? `of ${formatDuration(estimate)} estimated` : "No estimate set"}</p>
             {estimate ? (
-              <div className="mt-3 h-1 overflow-hidden rounded-full bg-fill-1" role="img" aria-label={`${Math.round(share * 100)}% of the estimate tracked`}>
-                <div className={cn("h-full rounded-full", task.status === "in_progress" ? "bg-accent" : "bg-foreground")} style={{ width: `${share * 100}%` }} />
-              </div>
+              // Passing the estimate is not a success, so a full bar stays orange.
+              <ProgressBar className="mt-3" size="sm" value={task.tracked_seconds} max={estimate} doneTone="accent" label="Time tracked against the estimate" valueText={`${Math.round(share * 100)}% of the estimate tracked`} />
             ) : null}
             <DetailList className="mt-5">
               <DetailRow label="Held by"><Person orgSlug={ctx.org.slug} membershipId={task.assignee_membership_id} name={task.assignee_name} size={20} you={isAssignee} /></DetailRow>
               <DetailRow label="Checked by">{task.reviewer_membership_id && task.reviewer_name ? <Person orgSlug={ctx.org.slug} membershipId={task.reviewer_membership_id} name={task.reviewer_name} size={20} you={isReviewer} /> : <span className="text-secondary">Nobody yet</span>}</DetailRow>
               <DetailRow label="Created by">{task.created_by_name}</DetailRow>
-              <DetailRow label="Project"><Link href={`${base}/projects/${task.project_id}`} className="underline decoration-border-input-hover underline-offset-4 transition-colors hover:decoration-foreground">{task.project_name}</Link></DetailRow>
-              <DetailRow label={overdue ? "Overdue" : "Due"}>{task.due_at ? <span className={cn("tabular-nums", overdue && "text-danger")}>{formatDateTime(task.due_at, tz)}</span> : <span className="text-secondary">No date</span>}</DetailRow>
+              <DetailRow label="Project"><Link href={`${base}/projects/${task.project_id}`} className="link-inline">{task.project_name}</Link></DetailRow>
+              <DetailRow label={overdue ? "Overdue" : "Due"}>{task.due_at ? <DueDate iso={task.due_at} timeZone={tz} overdue={overdue} srLabel={false} /> : <span className="text-secondary">No date</span>}</DetailRow>
               <DetailRow label="Completed">{task.completed_at ? <span className="tabular-nums">{formatDateTime(task.completed_at, tz)}</span> : <span className="text-secondary">Not yet</span>}</DetailRow>
               <DetailRow label="Priority">{label(task.priority)}</DetailRow>
               <DetailRow label="Category">{label(task.category)}</DetailRow>
@@ -157,14 +160,14 @@ export default async function TaskPage({ params, searchParams }: { params: Promi
 
           <section aria-labelledby="sessions-heading">
             <SectionTitle id="sessions-heading" title="Work sessions" />
-            {sessions.length === 0 ? <p className="rounded-2xl border border-border px-5 py-8 text-center text-sm font-normal text-secondary">{isAssignee && !isOrgAccount && !task.archived_at && ["todo", "in_progress", "blocked"].includes(task.status) ? <>No work sessions yet. Start this task from <Link href={`${base}/my-day`} className="font-medium text-foreground underline underline-offset-4">My Day</Link> and the clock runs on it.</> : "No work sessions yet."}</p> : (
+            {sessions.length === 0 ? <p className="rounded-2xl border border-border px-5 py-8 text-center text-sm font-normal text-secondary">{isAssignee && !isOrgAccount && !task.archived_at && ["todo", "in_progress", "blocked"].includes(task.status) ? <>No work sessions yet. Start this task from <Link href={`${base}/my-day`} className="link-inline">My Day</Link> and the clock runs on it.</> : "No work sessions yet."}</p> : (
               <DataTable caption="Sessions on this task">
                 <thead><tr><th>Started</th><th>Ended</th><th>State</th><th className="text-right">Confirmed</th><th className="text-right">Uncertain</th><th>Outcome</th></tr></thead>
                 <tbody>{sessions.map((s) => (
                   <tr key={s.id}>
                     <td><span className="tabular-nums">{formatDateTime(s.started_at, tz)}</span><p className="text-meta text-secondary">{s.member_name}</p></td>
                     <td className="tabular-nums">{s.ended_at ? formatDateTime(s.ended_at, tz) : <span className="text-subtle">Open</span>}</td>
-                    <td><Badge tone={SESSION_STATE_TONE[s.state]}>{label(s.state)}</Badge></td>
+                    <td>{s.state === "running" ? <Badge tone="accent" dot>Running</Badge> : <Badge tone={SESSION_STATE_TONE[s.state]}>{label(s.state)}</Badge>}</td>
                     <td className="text-right tabular-nums">{formatDuration(s.confirmed_seconds)}</td>
                     <td className="text-right tabular-nums">{s.uncertain_seconds ? <span className="text-warning">{formatDuration(s.uncertain_seconds)}</span> : <span className="text-subtle">None</span>}</td>
                     <td className="wrap">{s.stop_outcome ? label(s.stop_outcome) : <span className="text-subtle">Not stopped</span>}{recordingsBySession[s.id]?.length ? <SessionRecordings orgSlug={ctx.org.slug} recordings={recordingsBySession[s.id]} own={isAssignee} timeZone={ctx.org.timezone} /> : null}</td>

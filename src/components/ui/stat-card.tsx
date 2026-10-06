@@ -21,7 +21,7 @@ export function StatCard({ label, value, verdict, tone = "default", rows = [], h
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="truncate text-sm font-medium text-secondary">{label}</p>
-          <p className={cn("type-stat mt-1 break-words", tone === "accent" && "text-accent", tone === "danger" && "text-danger", tone === "warning" && "text-warning", tone === "success" && "text-success")}>{figure}</p>
+          <p className={cn("type-stat mt-1 break-words", tone === "accent" && "text-accent-text", tone === "danger" && "text-danger", tone === "warning" && "text-warning", tone === "success" && "text-success")}>{figure}</p>
           {hint ? <p className="mt-1 text-meta font-normal text-secondary">{hint}</p> : null}
         </div>
         {side}

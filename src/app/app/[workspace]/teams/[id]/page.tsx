@@ -96,8 +96,9 @@ export default async function TeamBoardPage({ params, searchParams }: { params: 
                     {isOrgAdmin ? <TeamMemberActions orgSlug={ctx.org.slug} teamId={team.id} membershipId={m.membership_id} name={m.display_name} isManager={m.is_manager} /> : null}
                   </div>
                   <div className="mt-4 flex min-w-0 flex-wrap items-center gap-2">
-                    {m.is_manager ? <Badge tone="accent">Team lead</Badge> : <Badge>Staff</Badge>}
-                    {m.session_state ? <Badge tone={SESSION_STATE_TONE[m.session_state]} dot>{label(m.session_state)}</Badge> : <Badge tone="info">Not on the clock</Badge>}
+                    {/* Accent rules (6 October 2026): a role is not orange (never decoration); a running timer is (live). */}
+                    {m.is_manager ? <Badge>Team lead</Badge> : <Badge tone="info">Staff</Badge>}
+                    {m.session_state ? <Badge tone={m.session_state === "running" ? "accent" : SESSION_STATE_TONE[m.session_state]} dot>{label(m.session_state)}</Badge> : <Badge tone="info">Not on the clock</Badge>}
                   </div>
                   <p className="mt-2 truncate text-meta font-normal text-secondary">{m.session_state && m.task_title ? m.task_title : "No task running"}</p>
                   <dl className="mt-auto grid grid-cols-3 gap-3 pt-5">

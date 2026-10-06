@@ -7,6 +7,11 @@
  * row at the bottom. Top bar 50px, the canvas at 90% with an 8px blur and a bottom hairline, three columns: sidebar
  * toggle + breadcrumb | centred search (230px, 32px, r12, ⌘ K) | small outline buttons, icon buttons, a 32px avatar.
  * The page: 20px sides, the page header with underline tabs, stat cards, the analytics card, a section title and a table.
+ *
+ * Accent rules (6 October 2026), five touches here: the current page's nav icon, the unread count on Messages (an
+ * attention pill), the bell's unread dot, the active tab's underline, and the analytics card (the chosen metric's line
+ * and its orange highlight series). The page's standout action would be a sixth: here "New task" stays the white
+ * primary. The sidebar's trial card (accent tint) shows only while a trial runs, so it is left out of this sample.
  */
 import * as React from "react";
 import { Bell, CalendarClock, ChevronRight, Clock, Ellipsis, FileText, Folder, Hourglass, ListTodo, MessageSquare, PanelLeft, Plus, Search, SquareCheckBig, Timer, TriangleAlert, Users } from "lucide-react";
@@ -20,7 +25,6 @@ import { PageHeader, SectionTitle } from "@/components/ui/card";
 import { StatCard } from "@/components/ui/stat-card";
 import { AnalyticsCard } from "@/components/ui/analytics-card";
 import { FilterSelect } from "@/components/ui/filter-control";
-import { Segmented } from "@/components/ui/segmented";
 import { DataTable } from "@/components/ui/table";
 import { Switch } from "@/components/ui/switch";
 import { AreaChart, BarChart } from "@/components/ui/charts";
@@ -32,7 +36,7 @@ const NAV = [
   { label: "My Day", icon: ListTodo, active: false },
   { label: "Clock in", icon: Clock, active: false },
   { label: "Dashboard", icon: Folder, active: true },
-  { label: "Tasks", icon: SquareCheckBig, active: false, count: 12 },
+  { label: "Tasks", icon: SquareCheckBig, active: false },
   { label: "Messages", icon: MessageSquare, active: false, count: 3 },
   { label: "People", icon: Users, active: false },
   { label: "Attendance", icon: CalendarClock, active: false },
@@ -64,10 +68,10 @@ export function SampleAppFrame() {
             <ul className="space-y-1">
               {NAV.map(({ label, icon: Icon, active, count }) => (
                 <li key={label}>
-                  <a href="#frame" aria-current={active ? "page" : undefined} className={cn("flex h-8 items-center gap-2 rounded-lg px-2 text-sm font-medium transition-colors duration-75 [&_svg]:size-[18px] [&_svg]:shrink-0", active ? "bg-fill-1 text-foreground" : "text-secondary hover:bg-fill-1 hover:text-foreground")}>
+                  <a href="#frame" aria-current={active ? "page" : undefined} className={cn("flex h-8 items-center gap-2 rounded-lg px-2 text-sm font-medium transition-colors duration-75 [&>svg]:size-[18px] [&>svg]:shrink-0", active ? "bg-fill-1 text-foreground [&>svg]:text-accent" : "text-secondary hover:bg-fill-1 hover:text-foreground")}>
                     <Icon aria-hidden />
                     <span className="min-w-0 flex-1 truncate">{label}</span>
-                    {count ? <CountPill count={count} /> : null}
+                    {count ? <CountPill count={count} tone="attention" /> : null}
                   </a>
                 </li>
               ))}
@@ -80,11 +84,6 @@ export function SampleAppFrame() {
             </ul>
           </nav>
           <div className="space-y-2 p-3">
-            <div className="card-tint">
-              <p className="text-sm font-medium text-foreground">Trial: 9 days left</p>
-              <p className="mt-0.5 text-meta font-normal text-secondary">Choose a plan to keep recordings and reports.</p>
-              <a href="#frame" className="mt-2 inline-flex text-meta font-medium text-accent-text hover:underline">See plans</a>
-            </div>
             <button type="button" className="flex h-8 w-full items-center gap-2 rounded-lg px-2 text-sm font-medium text-foreground transition-colors duration-75 hover:bg-fill-1">
               <Avatar profileId="sample-workspace" name="Company A" size={20} />
               <span className="min-w-0 flex-1 truncate text-left">Company A</span>
@@ -113,7 +112,7 @@ export function SampleAppFrame() {
               <Button variant="secondary" size="sm" className="hidden lg:inline-flex">Feedback</Button>
               <Button variant="secondary" size="sm" className="hidden lg:inline-flex">Docs</Button>
               <IconButton aria-label="Search" className="sm:hidden"><Search aria-hidden /></IconButton>
-              <IconButton aria-label="Notifications"><Bell aria-hidden /></IconButton>
+              <IconButton aria-label="Notifications, 2 unread"><Bell aria-hidden /><span aria-hidden className="absolute right-[7px] top-[7px] size-2 rounded-full bg-accent ring-2 ring-background" /></IconButton>
               <Avatar profileId="sample-owner" name="Owner Admin" size={32} />
             </div>
           </header>
@@ -133,13 +132,13 @@ export function SampleAppFrame() {
             <AnalyticsCard className="mt-3" label="This week"
               toolbar={<>
                 <FilterSelect label="Team" options={[{ value: "all", label: "All teams" }, { value: "design", label: "Design" }, { value: "eng", label: "Engineering" }]} defaultValue="all" />
-                <Segmented aria-label="Range" value={range} onChange={setRange} options={[{ value: "day", label: "Day" }, { value: "week", label: "Week" }, { value: "month", label: "Month" }]} />
+                <FilterSelect label="Range" value={range} onChange={(e) => setRange(e.target.value)} options={[{ value: "day", label: "Day" }, { value: "week", label: "Week" }, { value: "month", label: "Month" }]} />
               </>}
               metrics={[
                 { key: "hours", label: "Hours logged", value: "312.5", content: <AreaChart title="Hours logged by day" labels={DAYS} series={[{ label: "Hours", values: [52, 61, 58, 66, 49, 14, 12] }, { label: "Last week", values: [48, 55, 60, 52, 47, 9, 4] }]} /> },
                 { key: "tasks", label: "Tasks done", value: "86", content: <BarChart title="Tasks done by day" labels={DAYS} values={[12, 18, 15, 21, 14, 3, 3]} highlight={3} /> },
                 { key: "late", label: "Late clock-ins", value: "4", content: <BarChart title="Late clock-ins by day" labels={DAYS} values={[1, 0, 2, 0, 1, 0, 0]} highlight={-1} /> },
-                { key: "focus", label: "Focus time", value: "61%", content: <AreaChart title="Focus time share" labels={DAYS} series={[{ label: "Focus", values: [58, 63, 60, 66, 59, 40, 35], tone: "accent" }]} format={(n) => `${Math.round(n)}%`} /> },
+                { key: "focus", label: "Focus time", value: "61%", content: <AreaChart title="Focus time share" labels={DAYS} series={[{ label: "Focus", values: [58, 63, 60, 66, 59, 40, 35] }]} format={(n) => `${Math.round(n)}%`} /> },
               ]} />
 
             <SectionTitle className="mt-10" title="Team today" action={<Button variant="ghost" size="sm">View all</Button>} />

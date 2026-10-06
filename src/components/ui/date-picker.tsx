@@ -6,8 +6,9 @@
  * under the given `name`, in the same strings the native inputs used (yyyy-mm-dd, yyyy-mm, yyyy-mm-ddThh:mm), so
  * every form and query parameter keeps working. Works uncontrolled (defaultValue) or controlled (value/onChange).
  * The heading is a button: days → months → years, so any date is three taps away rather than a long scroll. The
- * calendar sits on the v4 popover surface; the chosen day is the inverted primary (white, near-black figure), today a
- * 16% ring. `size`: xs (24px, inside a FilterControl), sm (32px), md (36px).
+ * calendar sits on the v4 popover surface; the chosen day is the inverted primary (white, near-black figure), today
+ * (and this month, this year) is set in orange (accent rules: the current day in calendars). `size`: xs (24px, inside
+ * a FilterControl), sm (32px), md (36px).
  */
 import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 import { AnimatePresence, motion } from "motion/react";
@@ -169,13 +170,13 @@ export function DatePicker({ name, id, mode = "date", value, defaultValue, onCha
             {level === "years" ? (
               <div className="grid grid-cols-3 gap-1" role="listbox" aria-label="Year">
                 {years.map((y) => { const sel = view.getFullYear() === y; const now = today.getFullYear() === y; const off = yearOutside(y); return (
-                  <button key={y} type="button" role="option" aria-selected={sel} disabled={off} onClick={() => pickYear(y)} className={cn(cellBtn, sel ? "bg-primary font-semibold text-primary-fg" : "hover:bg-fill-1", now && !sel && "ring-1 ring-inset ring-border-input-hover", off && "opacity-30")}>{y}</button>
+                  <button key={y} type="button" role="option" aria-selected={sel} disabled={off} onClick={() => pickYear(y)} className={cn(cellBtn, sel ? "bg-primary font-semibold text-primary-fg" : "hover:bg-fill-1", now && !sel && "font-semibold text-accent-text shadow-[inset_0_0_0_1px_var(--accent-ring)]", off && "opacity-30")}>{y}</button>
                 ); })}
               </div>
             ) : level === "months" ? (
               <div className="grid grid-cols-3 gap-1" role="listbox" aria-label="Month">
                 {MONTHS.map((m, i) => { const d = new Date(view.getFullYear(), i, 1); const sel = !!date && date.getFullYear() === d.getFullYear() && date.getMonth() === i; const now = today.getFullYear() === d.getFullYear() && today.getMonth() === i; const off = mode === "month" ? outside(d) : yearOutside(d.getFullYear()); return (
-                  <button key={m} type="button" role="option" aria-selected={sel} disabled={off} onClick={() => pickMonth(i)} className={cn(cellBtn, sel ? "bg-primary font-semibold text-primary-fg" : "hover:bg-fill-1", now && !sel && "ring-1 ring-inset ring-border-input-hover", off && "opacity-30")}>{m.slice(0, 3)}</button>
+                  <button key={m} type="button" role="option" aria-selected={sel} disabled={off} onClick={() => pickMonth(i)} className={cn(cellBtn, sel ? "bg-primary font-semibold text-primary-fg" : "hover:bg-fill-1", now && !sel && "font-semibold text-accent-text", off && "opacity-30")}>{m.slice(0, 3)}</button>
                 ); })}
               </div>
             ) : (
@@ -183,8 +184,8 @@ export function DatePicker({ name, id, mode = "date", value, defaultValue, onCha
                 <div className="mb-1 grid grid-cols-7 text-center">{DAYS.map((d) => <span key={d} className="py-1 text-xs font-medium text-subtle">{d}</span>)}</div>
                 <div ref={grid} role="grid" aria-label={`${MONTHS[view.getMonth()]} ${view.getFullYear()}`} className="grid grid-cols-7 gap-y-0.5" onKeyDown={move}>
                   {cells(view).map((d) => { const inMonth = d.getMonth() === view.getMonth(); const sel = !!date && sameDay(d, date); const now = sameDay(d, today); const off = outside(d); const focus = focusDay ? sameDay(d, focusDay) : sel; return (
-                    <button key={ymd(d)} type="button" role="gridcell" data-day={ymd(d)} tabIndex={focus ? 0 : -1} disabled={off} aria-selected={sel} aria-label={d.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })} onFocus={() => setFocusDay(d)} onClick={() => pick(d)}
-                      className={cn("mx-auto grid size-9 place-items-center rounded-[10px] text-sm tabular-nums transition-colors duration-75", sel ? "bg-primary font-semibold text-primary-fg" : "hover:bg-fill-1", !inMonth && !sel && "text-faint", now && !sel && "ring-1 ring-inset ring-border-input-hover font-semibold", off && "opacity-30 hover:bg-transparent")}>{d.getDate()}</button>
+                    <button key={ymd(d)} type="button" role="gridcell" data-day={ymd(d)} tabIndex={focus ? 0 : -1} disabled={off} aria-selected={sel} aria-current={now ? "date" : undefined} aria-label={d.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })} onFocus={() => setFocusDay(d)} onClick={() => pick(d)}
+                      className={cn("mx-auto grid size-9 place-items-center rounded-[10px] text-sm tabular-nums transition-colors duration-75", sel ? "bg-primary font-semibold text-primary-fg" : "hover:bg-fill-1", !inMonth && !sel && "text-faint", now && !sel && "font-semibold text-accent-text", off && "opacity-30 hover:bg-transparent")}>{d.getDate()}</button>
                   ); })}
                 </div>
                 {mode === "datetime" ? (

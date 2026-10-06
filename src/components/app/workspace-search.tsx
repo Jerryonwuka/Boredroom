@@ -12,6 +12,9 @@
  * on, the last row hands the question to her.
  *
  * Controlled: the top bar owns `open`, so its phone search icon and the wide button open the same palette.
+ *
+ * Accent rules (6 October 2026): the button's keyboard focus ring is orange; in the palette the magnifier turns orange
+ * while the field has focus, and the highlighted result (the one Enter opens) carries the 2px orange marker.
  */
 import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
@@ -41,7 +44,7 @@ export function SearchTrigger({ onOpen, className }: { onOpen: () => void; class
   const mod = useModKey();
   return (
     <button type="button" onClick={onOpen} aria-haspopup="dialog" aria-controls={SEARCH_DIALOG_ID} aria-keyshortcuts={mod === "⌘" ? "Meta+K" : "Control+K"}
-      className={cn("flex h-8 w-[230px] items-center gap-2 rounded-xl border border-border-input bg-background pl-3 pr-1.5 text-meta font-normal text-secondary transition-colors duration-75 hover:border-border-input-hover hover:text-foreground", className)}>
+      className={cn("flex h-8 w-[230px] items-center gap-2 rounded-xl border border-border-input bg-background pl-3 pr-1.5 text-meta font-normal text-secondary transition-colors duration-75 hover:border-border-input-hover hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ring)]", className)}>
       <Search className="size-4 shrink-0" aria-hidden />
       <span className="min-w-0 flex-1 truncate text-left">Search everything…</span>
       <span className="flex shrink-0 gap-1" aria-hidden><Kbd>{mod}</Kbd><Kbd>K</Kbd></span>
@@ -139,8 +142,8 @@ export function WorkspaceSearch({ orgSlug, pages, brenda = false, open, onOpenCh
       className="popover-surface fixed inset-x-0 bottom-auto top-[min(12dvh,120px)] m-0 mx-auto h-fit max-h-[min(560px,calc(100dvh-24px))] w-[min(640px,calc(100vw-24px))] max-w-none overflow-hidden border-0 p-0 text-foreground backdrop:bg-overlay open:flex open:animate-[pop-in_var(--duration-menu)_var(--ease-out)_both] open:flex-col">
       {open ? (
         <>
-          <div className="flex h-12 shrink-0 items-center gap-2.5 border-b border-border px-4">
-            <Search className="size-4 shrink-0 text-secondary" aria-hidden />
+          <div className="group/field flex h-12 shrink-0 items-center gap-2.5 border-b border-border px-4">
+            <Search className="size-4 shrink-0 text-secondary transition-colors duration-75 group-focus-within/field:text-accent" aria-hidden />
             <input ref={input} autoFocus type="text" role="combobox" aria-expanded aria-controls={listId} aria-autocomplete="list" aria-activedescendant={hits[at] ? optionId(at) : undefined}
               aria-label={FIELD_NAME} placeholder="Search pages, tasks, people…" autoComplete="off" spellCheck={false} enterKeyHint="go"
               value={q} onChange={(e) => { setQ(e.target.value); setActive(0); }} onKeyDown={onKeyDown}
@@ -159,7 +162,7 @@ export function WorkspaceSearch({ orgSlug, pages, brenda = false, open, onOpenCh
                     const Icon = ICON[hit.kind];
                     return (
                       <div key={`${hit.kind}-${hit.id}`} id={optionId(index)} role="option" aria-selected={index === at} data-active={index === at ? "" : undefined}
-                        onMouseMove={() => { if (index !== at) setActive(index); }} onClick={() => go(hit)} className="menu-item">
+                        onMouseMove={() => { if (index !== at) setActive(index); }} onClick={() => go(hit)} className={cn("menu-item", index === at && "selected-marker")}>
                         <Icon aria-hidden />
                         <span className="min-w-0 flex-1 truncate">{hit.title}</span>
                         {hit.hint ? <span className="ml-3 max-w-[45%] shrink-0 truncate text-meta font-normal text-secondary">{hit.hint}</span> : null}

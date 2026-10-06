@@ -6,16 +6,18 @@ import { cn } from "@/lib/utils";
 import { SlidingMarker } from "@/components/ui/motion";
 import { CountPill } from "@/components/ui/badge";
 
-export type Tab = { label: string; href?: string; value?: string; count?: number; icon?: React.ReactNode };
+export type Tab = { label: string; href?: string; value?: string; count?: number; /** The count asks for action (unread, waiting): an orange pill. */ attention?: boolean; icon?: React.ReactNode };
 
 /**
  * Tabs, v4 (spec §6).
  * - `underline` (default): 14/20 medium, secondary → foreground when active, padding 4px 0 10px, ~24px apart; the
- *   active tab has a 1.5px underline in the foreground at 80% that slides between tabs; the row sits on a full-width
- *   hairline (`bordered`, default true).
- * - `pills`: the sub-nav look: 32px items, px8, r8; active fill-1 with the foreground, hover fill-0.
+ *   active tab has a 1.5px ORANGE underline (accent rules, 6 October 2026; the label stays the foreground) that slides
+ *   between tabs; the row sits on a full-width hairline (`bordered`, default true).
+ * - `pills`: the sub-nav look in a row: 32px items, px8, r8; active fill-1 with the foreground, hover fill-0. Neutral:
+ *   a vertical sub-nav (SubNavItem) carries the orange marker instead.
  * Link tabs (`href`) for pages that switch by URL; value tabs (`value`) switch `?{param}=` or call `onChange` for local
- * state. Counts sit in a CountPill. Arrow keys move between tabs; Home and End jump to the ends.
+ * state. Counts sit in a CountPill (orange with `attention: true`). Arrow keys move between tabs; Home and End jump to
+ * the ends.
  */
 export function Tabs({ tabs, value, onChange, param = "tab", className, label = "Sections", variant = "underline", bordered = true }: { tabs: Tab[]; value?: string; onChange?: (v: string) => void; param?: string; className?: string; label?: string; variant?: "underline" | "pills"; bordered?: boolean }) {
   const pathname = usePathname();
@@ -52,8 +54,8 @@ export function Tabs({ tabs, value, onChange, param = "tab", className, label = 
             {active && !underline ? <SlidingMarker layoutId={marker} className="absolute inset-0 rounded-lg bg-fill-1" /> : null}
             {t.icon ? <span className="relative inline-flex [&_svg]:size-4">{t.icon}</span> : null}
             <span className="relative">{t.label}</span>
-            {t.count ? <CountPill count={t.count} className="relative" /> : null}
-            {active && underline ? <SlidingMarker layoutId={marker} className="absolute inset-x-0 bottom-0 h-[1.5px] rounded-full bg-foreground/80" /> : null}
+            {t.count ? <CountPill count={t.count} tone={t.attention ? "attention" : "neutral"} className="relative" /> : null}
+            {active && underline ? <SlidingMarker layoutId={marker} className="absolute inset-x-0 bottom-0 h-[1.5px] rounded-full bg-accent" /> : null}
           </>
         );
         const cls = cn("relative inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap text-sm font-medium transition-colors duration-75 focus-visible:rounded-md focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--ring)]",

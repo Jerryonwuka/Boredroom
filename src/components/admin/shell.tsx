@@ -1,13 +1,16 @@
 import Link from "next/link";
-import { Logo } from "@/components/logo";
+import { Search } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { ICON_BUTTON } from "@/components/ui/icon-button";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
-import { AdminNav, AdminMobileMenu, type AdminNavGroup } from "@/components/admin/nav";
+import { MotionRoot, PageRise } from "@/components/ui/motion";
+import { AdminAccount, AdminBreadcrumb, AdminMobileNav, AdminSidebar, AdminSidebarToggle, type AdminNavGroup, type AdminPage } from "@/components/admin/nav";
 import { AdminSearch } from "@/components/admin/search";
+import { AdminToaster } from "@/components/admin/actions";
 import { ROLE_LABEL, type Permission } from "@/server/admin/permissions";
 import type { Admin } from "@/server/admin/auth";
 import type { LaunchSettings } from "@/server/admin/settings";
-import { MotionRoot, PageRise } from "@/components/ui/motion";
+import { cn } from "@/lib/utils";
 
 const NAV: { title: string; items: { label: string; href: string; icon: AdminNavGroup["items"][number]["icon"]; permission: Permission }[] }[] = [
   { title: "Overview", items: [
@@ -38,40 +41,61 @@ const NAV: { title: string; items: { label: string; href: string; icon: AdminNav
   ] },
 ];
 
-const MODE_TONE = { waitlist: "warning", live: "success", maintenance: "danger" } as const;
+/** Pages inside a section, so the breadcrumb reads "Marketing › Campaigns" rather than the section alone. */
+const SUB_PAGES: (AdminPage & { permission: Permission })[] = [
+  { label: "Contacts", href: "/admin/marketing/contacts", group: "Marketing", permission: "marketing.view" },
+  { label: "Segments", href: "/admin/marketing/segments", group: "Marketing", permission: "marketing.view" },
+  { label: "Campaigns", href: "/admin/marketing/campaigns", group: "Marketing", permission: "marketing.view" },
+  { label: "Automations", href: "/admin/marketing/automations", group: "Marketing", permission: "marketing.view" },
+  { label: "Templates", href: "/admin/marketing/templates", group: "Marketing", permission: "marketing.view" },
+  { label: "Search", href: "/admin/search", group: "Control Center", permission: "dashboard.view" },
+];
 
-/** The Control Center frame: a fixed sidebar of sections the administrator may see, a top bar with search and the launch state. */
-export function AdminShell({ admin, launch, children, title }: { admin: Admin; launch: LaunchSettings; children: React.ReactNode; title?: string }) {
-  const groups: AdminNavGroup[] = NAV.map((g) => ({ title: g.title, items: g.items.filter((i) => admin.permissions.has(i.permission)) })).filter((g) => g.items.length);
+/** The launch state in the top bar: its status colour on a dot, the word beside it (status meaning, not accent). */
+const MODE = { waitlist: { tone: "warning", label: "Waitlist" }, live: { tone: "success", label: "Live" }, maintenance: { tone: "danger", label: "Maintenance" } } as const;
+
+/**
+ * The Control Center frame, v4 (spec §6; the workspace app's frame): the 256px sidebar of the sections the
+ * administrator may see (a 56px rail when collapsed, a sheet from the left below md), the 50px top bar (the canvas at
+ * 90% with an 8px blur and a hairline: the sidebar toggle and breadcrumb | the centred search | the launch state, the
+ * theme and the account), and the page at full width with 20px sides and 24px under the bar. Toasts float bottom left.
+ */
+export function AdminShell({ admin, launch, children }: { admin: Admin; launch: LaunchSettings; children: React.ReactNode }) {
+  const groups: AdminNavGroup[] = NAV.map((g) => ({ title: g.title, items: g.items.filter((i) => admin.permissions.has(i.permission)).map(({ label, href, icon }) => ({ label, href, icon })) })).filter((g) => g.items.length);
+  const pages: AdminPage[] = [
+    ...groups.flatMap((g) => g.items.map((i) => ({ label: i.label, href: i.href, group: g.title }))),
+    ...SUB_PAGES.filter((p) => admin.permissions.has(p.permission)).map(({ label, href, group }) => ({ label, href, group })),
+  ];
+  const mode = MODE[launch.mode];
   return (
     <MotionRoot>
-    <div className="flex min-h-dvh">
-      <aside className="sidebar-glass sticky top-0 hidden h-dvh w-64 shrink-0 flex-col border-r border-border-soft px-3 py-5 md:flex">
-        <div className="mb-1 px-2"><Logo href="/admin" /></div>
-        <p className="eyebrow eyebrow-accent mb-5 px-2">Control Center</p>
-        <div className="min-h-0 flex-1 overflow-y-auto"><AdminNav groups={groups} /></div>
-        <div className="mt-4 border-t border-border-soft px-2 pt-3 text-xs text-fg-subtle">
-          <p className="truncate font-semibold text-fg-muted">{admin.user.displayName}</p>
-          <p className="truncate">{ROLE_LABEL[admin.role]}</p>
-          <Link href="/app" className="link-action mt-2">Back to the app</Link>
+      <div className="flex min-h-dvh">
+        <AdminSidebar groups={groups} />
+        <div className="flex min-w-0 flex-1 flex-col">
+          <header className={cn("sticky top-0 z-[var(--z-sticky)] isolate grid h-[50px] shrink-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b border-border px-3",
+            "before:pointer-events-none before:absolute before:inset-0 before:-z-10 before:bg-[var(--header-bg)] before:backdrop-blur-[8px] lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]")}>
+            <div className="flex min-w-0 items-center gap-2">
+              <AdminMobileNav groups={groups} className="md:hidden" />
+              <AdminSidebarToggle className="hidden md:inline-flex" />
+              <AdminBreadcrumb pages={pages} />
+            </div>
+            <div className="hidden justify-center lg:flex">
+              <AdminSearch />
+            </div>
+            <div className="flex items-center justify-end gap-1">
+              {admin.permissions.has("launch.view")
+                ? <Link href="/admin/launch" aria-label={`Launch state: ${mode.label}`} className="mr-1 hidden rounded-full sm:inline-flex"><Badge tone={mode.tone} dot>{mode.label}</Badge></Link>
+                : <span className="mr-1 hidden sm:inline-flex"><Badge tone={mode.tone} dot>{mode.label}</Badge></span>}
+              <Link href="/admin/search" aria-label="Search" className={cn(ICON_BUTTON, "lg:hidden")}><Search aria-hidden /></Link>
+              {/* On phones the theme switch lives in the menu, so the bar fits a 375px screen. */}
+              <ThemeToggle className="hidden sm:inline-flex" />
+              <AdminAccount profileId={admin.user.profileId} name={admin.user.displayName} email={admin.user.email} avatarKey={admin.user.avatarKey} role={ROLE_LABEL[admin.role]} />
+            </div>
+          </header>
+          <main id="main" className="w-full min-w-0 flex-1 px-5 pb-16 pt-6"><PageRise>{children}</PageRise></main>
         </div>
-      </aside>
-      <div className="flex min-w-0 flex-1 flex-col">
-        <header className="topbar-glass sticky top-0 z-[var(--z-sticky)] flex h-16 shrink-0 items-center justify-between gap-4 border-b border-border-soft px-4 md:px-6">
-          <div className="flex min-w-0 items-center gap-3">
-            <Logo href="/admin" className="md:hidden" />
-            <div className="hidden min-w-0 md:block"><p className="eyebrow">Boredroom</p><p className="truncate text-sm font-semibold leading-tight">{title ?? "Control Center"}</p></div>
-            <Link href="/admin/launch" title="Launch state" className="hidden sm:block"><Badge tone={MODE_TONE[launch.mode]} dot>{launch.mode.toUpperCase()}</Badge></Link>
-          </div>
-          <div className="flex items-center gap-2">
-            <AdminSearch />
-            <ThemeToggle />
-            <div className="md:hidden"><AdminMobileMenu groups={groups} footer={<><p className="font-semibold">{admin.user.displayName}</p><p className="text-fg-subtle">{ROLE_LABEL[admin.role]}</p><Link href="/app" className="link-action mt-2">Back to the app</Link></>} /></div>
-          </div>
-        </header>
-        <main id="main" className="mx-auto w-full max-w-7xl flex-1 px-4 py-6 md:px-8 md:py-8"><PageRise>{children}</PageRise></main>
       </div>
-    </div>
+      <AdminToaster />
     </MotionRoot>
   );
 }

@@ -36,8 +36,9 @@ type Team = { id: string; name: string; member_count?: number };
 const ROLE_LABEL: Record<string, string> = { owner: "Organisation owner", hr: "HR administrator", manager: "Team lead", employee: "Staff" };
 
 /**
- * "Add new person" (owner decision, 26 September 2026: a pop-up with email, role, team, employee ID), v4: the white
- * primary in the page header opens a side sheet; Cancel and Invite sit in its footer; a green-dot toast confirms.
+ * "Add new person" (owner decision, 26 September 2026: a pop-up with email, role, team, employee ID), v4: the page
+ * header's one orange standout ("Add people", accent rules 6 October 2026) opens a side sheet; Cancel and Invite sit in
+ * its footer; a green-dot toast confirms.
  */
 export function InviteForm({ orgSlug, teams, isOwner, label = "Invite someone" }: { orgSlug: string; teams: Team[]; isOwner: boolean; label?: string }) {
   const [open, setOpen] = useState(false);
@@ -46,7 +47,7 @@ export function InviteForm({ orgSlug, teams, isOwner, label = "Invite someone" }
   const close = () => { if (!pending) setOpen(false); };
   return (
     <>
-      <Button size="sm" onClick={() => { reset(); setOpen(true); }} aria-haspopup="dialog"><Plus aria-hidden />{label}</Button>
+      <Button size="sm" variant="accent" onClick={() => { reset(); setOpen(true); }} aria-haspopup="dialog"><Plus aria-hidden />{label}</Button>
       <Sheet open={open} onClose={close} title="Add a person" description="They get an email link that creates their account with this role and team. For quick joining, share the join code instead."
         footer={<><Button variant="secondary" disabled={pending} onClick={close}>Cancel</Button><Button type="submit" form={formId} loading={pending}>{pending ? "Sending…" : "Invite"}</Button></>}>
         <form id={formId} className="grid gap-5" onSubmit={(e) => { e.preventDefault(); const f = new FormData(e.currentTarget); void submit(() => api(`/api/orgs/${orgSlug}/invitations`, { method: "POST", body: { email: f.get("email"), role: f.get("role"), teamId: f.get("teamId") || null, employeeCode: f.get("employeeCode") || null } }), () => { successToast(`Invitation sent to ${String(f.get("email"))}`); setOpen(false); }); }}>
@@ -129,7 +130,7 @@ function TeamSheet({ open, orgSlug, member, teams, onClose }: { open: boolean; o
             <ul className="-mx-2 grid gap-0.5">
               {member.teams.map((t) => (
                 <li key={t.id} className="flex min-h-10 flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-lg px-2 py-1 text-sm">
-                  <span className="flex min-w-0 items-center gap-2 font-medium text-foreground"><span className="truncate">{t.name}</span>{t.is_manager ? <Badge tone="accent" size="sm">Team lead</Badge> : null}</span>
+                  <span className="flex min-w-0 items-center gap-2 font-medium text-foreground"><span className="truncate">{t.name}</span>{t.is_manager ? <Badge size="sm">Team lead</Badge> : null}</span>
                   <span className="flex items-center gap-1">
                     <Button size="xs" variant="ghost" disabled={pending} onClick={() => call(t.id, { isManager: !t.is_manager })}>{t.is_manager ? "Make member" : "Make team lead"}</Button>
                     <Button size="xs" variant="ghost" className="text-danger hover:text-danger" disabled={pending} onClick={() => call(t.id, { isManager: false, remove: true })} aria-label={`Remove from ${t.name}`}>Remove</Button>
@@ -172,7 +173,7 @@ export function InvitationRow({ orgSlug, id, email, role, team, state, expires, 
 }
 
 /** "Add new team" (owner decision, 26 September 2026: a pop-up with the one field that matters); opens the new team. */
-export function NewTeamForm({ orgSlug, variant = "primary" }: { orgSlug: string; variant?: "primary" | "secondary" }) {
+export function NewTeamForm({ orgSlug, variant = "accent" }: { orgSlug: string; variant?: "accent" | "primary" | "secondary" }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const { pending, error, fieldErrors, submit, reset } = useForm();

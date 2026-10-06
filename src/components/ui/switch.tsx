@@ -22,7 +22,8 @@ export function Switch({ className, children, hint, ...props }: React.InputHTMLA
 
 /**
  * A checkbox with its label (14/20 medium) and an optional `hint` under it. The box is drawn by globals.css (16px, r4;
- * checked = the foreground with the mark in the canvas colour), so a bare <input type="checkbox"> matches too.
+ * checked = orange with a near-black mark: choice and completion are accent marks, owner decision 6 October 2026), so
+ * a bare <input type="checkbox"> matches too. Switches stay white.
  */
 export const Checkbox = React.forwardRef<HTMLInputElement, Omit<React.InputHTMLAttributes<HTMLInputElement>, "type"> & { hint?: React.ReactNode }>(function Checkbox({ className, children, hint, ...props }, ref) {
   if (!children) return <input ref={ref} type="checkbox" className={className} {...props} />;
@@ -37,7 +38,7 @@ export const Checkbox = React.forwardRef<HTMLInputElement, Omit<React.InputHTMLA
   );
 });
 
-/** A radio with its label, drawn like the checkbox (a dot in the foreground when chosen). */
+/** A radio with its label, drawn like the checkbox (an orange ring and dot when chosen). */
 export const Radio = React.forwardRef<HTMLInputElement, Omit<React.InputHTMLAttributes<HTMLInputElement>, "type"> & { hint?: React.ReactNode }>(function Radio({ className, children, hint, ...props }, ref) {
   return (
     <label className={cn("flex cursor-pointer items-start gap-2.5", props.disabled && "cursor-not-allowed opacity-60", className)}>

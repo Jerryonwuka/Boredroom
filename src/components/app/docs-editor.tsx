@@ -138,7 +138,7 @@ function SaveStatus({ status, blankTitle, onRetry }: { status: Status; blankTitl
   return (
     <p role="status" aria-live="polite" className="inline-flex min-h-8 items-center gap-1.5 whitespace-nowrap text-meta font-normal text-secondary">
       {status === "saving" || status === "dirty" ? <><LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden />Saving…</>
-        : status === "error" ? <><CircleAlert className="size-3.5 text-danger" aria-hidden /><span className="text-danger">Couldn&apos;t save.</span><button type="button" onClick={onRetry} className="ml-1 font-medium text-foreground underline underline-offset-4">Retry</button></>
+        : status === "error" ? <><CircleAlert className="size-3.5 text-danger" aria-hidden /><span className="text-danger">Couldn&apos;t save.</span><button type="button" onClick={onRetry} className="link-inline ml-1">Retry</button></>
         : status === "conflict" ? <><CircleAlert className="size-3.5 text-warning" aria-hidden /><span className="text-warning">Not saved, changed elsewhere</span></>
         : blankTitle ? <><CircleAlert className="size-3.5 text-warning" aria-hidden />Needs a title</>
         : <><Check className="size-3.5 text-success" aria-hidden />Saved</>}

@@ -3,8 +3,17 @@
    src/app/globals.css, its source of truth (docs/design-system.md). Inter 14/20 medium for words, Geist Mono for the
    numbers that matter. Surfaces are near-black #0F0F10 with white 7.5% hairlines, and greys are white at low alpha
    (64% secondary, 53% subtle). The primary button is white with near-black text; secondary is outline and tertiary is
-   ghost. Orange appears only where it counts: the focus ring, the unread count, the open microphone and the timer's
-   estimate and progress. No gradients, glass or glow, except the four the web keeps for Brenda: the orb's tool-tile
+   ghost. Orange follows the web's accent rules (owner decision, 6 October 2026; docs/design-system.md, "Accent rules"):
+   it marks what is live, active, chosen or the one thing to do, never decoration, and status meaning wins over it.
+   - Live and now: a running timer's dot (it breathes) and digits, the open microphone ("Mic on", the orb, its ring and
+     wash), Brenda working (the orb's dot), a teammate's running timer.
+   - The one standout action per card is an orange pill with near-black text (`.btn.accent`): Send once there are words,
+     Start on the briefing, Resume on a paused timer, Link to Boredroom / Open Boredroom, Turn on voice. Every other
+     primary stays white, and while the ask box holds words Send is the only orange button (the other one turns white).
+   - Progress: the estimate hairline, the progress ring (green once done), download and upload bars.
+   - Attention: the unread count and the "New task" badge (orange on dark brown); the ask pill's focus ring; a link's
+     underline on hover; the keyboard focus ring.
+   No gradients, glass or glow, except the four the web keeps for Brenda: the orb's tool-tile
    fill, the shimmer on waiting text, the orange wash while the microphone is open, and the soft light around her face.
    The window is a fixed transparent stage. The island inside it changes shape, with motion values after Coucou by
    Louis Raillé (MIT); its shape, motion and timings are unchanged. */
@@ -42,10 +51,13 @@
   --fill-1: rgb(255 255 255 / .043);
   --fill-150: rgb(255 255 255 / .07);
   --primary: #fff; --primary-hover: #cfcfcf; --primary-fg: #0f0f10;
-  --accent: #ff6c02;
-  --accent-soft: #4a1f04;                 /* the "New" badge fill */
-  --accent-text: #ff9a4d;                 /* the "New" badge text */
-  --ring: rgb(255 108 2 / .5);            /* the focus ring */
+  --accent: #ff6c02;                      /* fills and marks: the standout button, live dots, progress */
+  --accent-hover: #ff7f24;
+  --accent-fg: #0f0f10;                   /* near-black on orange: white on orange fails contrast */
+  --accent-soft: #4a1f04;                 /* the "New" badge and unread count fill */
+  --accent-text: #ff9a4d;                 /* orange text: the badge, a running timer's digits */
+  --accent-ring: rgb(255 108 2 / .6);     /* the 1px ring of the focused ask pill */
+  --ring: rgb(255 108 2);                 /* the focus ring: solid, 6.8:1 on the panel (WCAG 1.4.11 asks 3:1) */
   --success: hsl(142 71% 45%); --warning: hsl(38 92% 50%); --danger: hsl(0 84% 60%);
   --elev-natural-xs: 0 0 0 1px rgb(0 0 0 / .06), 0 1px 1px -0.5px rgb(0 0 0 / .06), 0 3px 3px -1.5px rgb(0 0 0 / .06);
   /* The open island floats like a toast: a half-pixel edge and one soft drop (globals.css --elev-toast, without the
@@ -144,6 +156,8 @@ svg.ic { width: 14px; height: 14px; flex: none; }
 .cap { margin-top: 2px; font-size: 12px; line-height: 16px; font-weight: 400; letter-spacing: .03px; color: var(--secondary); }
 .tiny { font-size: 13px; line-height: 16px; font-weight: 500; color: var(--secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tiny .clock { color: var(--foreground); }
+/* A running timer's digits are orange (live); paused or interrupted they stay white. */
+.tiny .clock.live { color: var(--accent-text); }
 .clock, .num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 .err { font-size: 13px; line-height: 19.5px; font-weight: 400; color: var(--danger); }
 .note { font-size: 12px; line-height: 16px; font-weight: 400; color: var(--subtle); }
@@ -158,9 +172,10 @@ svg.ic { width: 14px; height: 14px; flex: none; }
 .pill.ok { color: var(--success); background: color-mix(in srgb, var(--success) 12%, transparent); }
 .pill.warn { color: var(--warning); background: color-mix(in srgb, var(--warning) 12%, transparent); }
 .pill.acc { color: var(--accent-text); background: var(--accent-soft); }
-/* "Mic on", as on the web's voice card: a red dot with a 15% halo that pulses, and the words in secondary. */
+/* "Mic on", as on the web's voice card: a dot with a 15% halo that pulses, and the words in secondary. The open
+   microphone is live, so the dot is orange (accent rules), not red. */
 .mic { display: inline-flex; align-items: center; gap: 6px; flex: none; white-space: nowrap; font-size: 12px; line-height: 16px; font-weight: 500; color: var(--secondary); }
-.rec-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--danger); box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 15%, transparent); animation: rec-pulse 1.4s ease-in-out infinite; }
+.rec-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 15%, transparent); animation: rec-pulse 1.4s ease-in-out infinite; }
 @keyframes rec-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
 /* The unread count in the compact bar: the "New" badge's orange on dark brown, 10/16 semibold. */
 .count { display: inline-flex; align-items: center; justify-content: center; flex: none; box-sizing: border-box; min-width: 16px; height: 16px; padding: 0 5px; border-radius: 9999px;
@@ -181,6 +196,13 @@ svg.ic { width: 14px; height: 14px; flex: none; }
 .btn.ghost:hover { background: var(--fill-1); color: var(--foreground); }
 .btn.danger { color: var(--danger); }
 .btn.danger:hover { border-color: color-mix(in srgb, var(--danger) 40%, transparent); background: color-mix(in srgb, var(--danger) 10%, transparent); }
+/* The standout action, one per card at most (accent rules): orange with near-black text, a lighter orange on hover.
+   It is marked `btn primary accent`, so disabled it greys like any primary. While the ask box holds words its Send is
+   the standout, and the card's other orange button goes back to white, so two never show at once. */
+.btn.accent { background: var(--accent); border-color: transparent; color: var(--accent-fg); }
+.btn.accent:hover { background: var(--accent-hover); }
+.notch:has(.ask .field:not(:placeholder-shown)) .btn.accent:not(.icon-send):not(:disabled) { background: var(--primary); color: var(--primary-fg); }
+.notch:has(.ask .field:not(:placeholder-shown)) .btn.accent:not(.icon-send):not(:disabled):hover { background: var(--primary-hover); }
 .btn:disabled { opacity: .5; cursor: default; pointer-events: none; }
 .btn.primary:disabled { opacity: 1; background: var(--border-input-hover); color: var(--subtle); }
 .btn .ic { width: 14px; height: 14px; }
@@ -189,8 +211,9 @@ svg.ic { width: 14px; height: 14px; flex: none; }
 /* The talk button while voice is off: a round 28px ghost icon button on the left of the actions. */
 .btn.icon { width: 28px; padding: 0; margin-right: auto; }
 .btn.icon .ic { width: 16px; height: 16px; }
-.link { all: unset; color: var(--secondary); font-size: 13px; line-height: 20px; font-weight: 500; cursor: pointer; text-decoration: underline; text-decoration-color: var(--border-input-hover); text-underline-offset: 3px; transition: color var(--fast) var(--ease); }
-.link:hover { color: var(--foreground); }
+/* A link: its underline turns orange on hover, as links in running text do on the web (`.link-inline`). */
+.link { all: unset; color: var(--secondary); font-size: 13px; line-height: 20px; font-weight: 500; cursor: pointer; text-decoration: underline; text-decoration-color: var(--border-input-hover); text-underline-offset: 3px; transition: color var(--fast) var(--ease), text-decoration-color var(--fast) var(--ease); }
+.link:hover { color: var(--foreground); text-decoration-color: var(--accent); }
 .link:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; border-radius: 4px; }
 
 /* Lists inside a card: one near-black panel with a hairline, calm 32px rows with no lines between them. */
@@ -240,18 +263,23 @@ select.field option { background: var(--popover); color: var(--foreground); }
 @keyframes countdown { from { transform: scaleX(1); } to { transform: scaleX(0); } }
 
 /* The running timer, as on My Day's timer card: the task, its state as a dot and a word, the clock in Geist Mono at
-   the stat size (24/30 bold), the estimate as an orange hairline that fills, and the progress ring. */
+   the stat size (24/30 bold), the estimate as an orange hairline that fills, and the progress ring. Running is live:
+   the dot is orange and breathes (the web's `StatusDot tone="live"`, a ring that swells and fades) and the digits are
+   orange; paused stays amber with dimmed digits, interrupted red (status meaning wins over accent). */
 .status { display: inline-flex; align-items: center; gap: 6px; }
 .status .d { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--danger); }
-.status .d.running { background: var(--success); }
+.status .d.running { background: var(--accent); animation: live-ping 2s cubic-bezier(0, 0, .2, 1) infinite; }
 .status .d.paused { background: var(--warning); }
+/* The breathing ring, drawn as a spreading shadow in --accent (#ff6c02) from 60% to nothing. */
+@keyframes live-ping { 0% { box-shadow: 0 0 0 0 rgb(255 108 2 / .6); } 75%, 100% { box-shadow: 0 0 0 5px rgb(255 108 2 / 0); } }
 .big { flex: none; font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.15px; color: var(--foreground); }
+.big.live { color: var(--accent-text); }
 .big.dim { color: var(--secondary); }
 .est { height: 2px; border-radius: 2px; background: var(--fill-1); overflow: hidden; }
 .est i { display: block; height: 100%; background: var(--accent); transform-origin: left center; transition: transform 1s linear; }
-/* Download and upload progress: white on a 7% track. */
+/* Download and upload progress: orange on a 7% track (the web's ProgressBar). */
 .bar { height: 4px; border-radius: 9999px; background: var(--fill-150); overflow: hidden; }
-.bar i { display: block; height: 100%; border-radius: inherit; background: var(--foreground); transition: width .25s var(--ease); }
+.bar i { display: block; height: 100%; border-radius: inherit; background: var(--accent); transition: width .25s var(--ease); }
 
 /* Keys: 11px medium in a 20px rounded-6 chip (18px inside a sentence). */
 kbd { display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; min-width: 20px; height: 20px; padding: 0 5px; border-radius: var(--radius-chip); vertical-align: middle;
@@ -263,14 +291,14 @@ kbd { display: inline-flex; align-items: center; justify-content: center; box-si
 
 /* The voice card, as on the web (src/components/app/voice-capture.tsx, compact): the orb is the tool-tile square made
    round. Listening, an orange dot swells with the voice and a thin orange ring widens around it (the page sets --lvl from
-   the microphone level); working, a white dot breathes. */
+   the microphone level); working, the orange dot breathes (Brenda working is live, accent rules). */
 .orb { --lvl: .1; position: relative; width: 32px; height: 32px; flex: none; border-radius: 50%; display: grid; place-items: center;
   background: linear-gradient(to bottom, var(--fill-1), var(--fill-150)), var(--background); box-shadow: 0 0 0 1px var(--border), var(--elev-natural-xs); }
 .orb i { width: 12px; height: 12px; border-radius: 50%; background: var(--foreground); }
 .orb.live i { background: var(--accent); transform: scale(calc(.75 + var(--lvl) * .9)); transition: transform 90ms linear; }
 .orb.live::before { content: ""; position: absolute; inset: 0; border-radius: 50%; border: 1px solid var(--accent); opacity: calc(.12 + var(--lvl) * .6); transform: scale(calc(1 + var(--lvl) * .3));
   transition: opacity 90ms linear, transform 90ms linear; }
-.orb.think i { animation: breathe 1.1s var(--ease) infinite alternate; }
+.orb.think i { background: var(--accent); animation: breathe 1.1s var(--ease) infinite alternate; }
 @keyframes breathe { from { transform: scale(.6); opacity: .45; } to { transform: scale(1); opacity: .9; } }
 .said { font-size: 13px; line-height: 19.5px; font-weight: 400; font-style: italic; color: var(--secondary); }
 .reply { margin-top: 4px; font-size: 14px; line-height: 20px; font-weight: 400; color: var(--foreground); white-space: pre-line; max-height: 140px; overflow: auto; -webkit-user-select: text; user-select: text; }
@@ -281,14 +309,15 @@ kbd { display: inline-flex; align-items: center; justify-content: center; box-si
 .confirm .sub { display: flex; gap: 10px; align-items: flex-start; font-size: 14px; line-height: 20px; color: var(--foreground); }
 .confirm .sub .ic { width: 16px; height: 16px; margin-top: 2px; color: var(--warning); }
 
-/* Typing to Brenda: the web's prompt pill at the notch's size (a solid fill-1 surface with a hairline ring), and a
-   round 32px send button, white with a near-black arrow once there is something to send, grey until then. */
+/* Typing to Brenda: the web's prompt pill at the notch's size (a solid fill-1 surface with a hairline ring that turns
+   orange while it has focus), and a round 32px send button, orange with a near-black arrow once there is something to
+   send (the card's standout action then), grey until then. */
 .ask { display: flex; gap: 4px; align-items: center; margin: 0; padding: 4px; border-radius: 9999px; background: var(--surface); box-shadow: 0 0 0 1px var(--border), var(--elev-natural-xs); transition: box-shadow .15s var(--ease); }
-.ask:focus-within { box-shadow: 0 0 0 1px var(--border-input-hover), var(--elev-natural-xs); }
+.ask:focus-within { box-shadow: 0 0 0 1px var(--accent-ring), var(--elev-natural-xs); }
 .ask .field, .ask .field:hover, .ask .field:focus { flex: 1; height: 32px; padding: 0 8px 0 12px; border: 0; border-radius: 9999px; background: transparent; box-shadow: none; }
 .ask .icon-send { width: 32px; height: 32px; padding: 0; border: 0; border-radius: 50%; flex: none; }
 .ask .icon-send .ic { width: 16px; height: 16px; stroke-width: 2.25; }
-.ask:has(.field:placeholder-shown) .icon-send { background: var(--fill-150); color: var(--subtle); }
+.ask:has(.field:placeholder-shown) .icon-send, .ask:has(.field:placeholder-shown) .icon-send:hover { background: var(--fill-150); color: var(--subtle); }
 
 /* Tucked away: a thin black sliver at the top edge; the pointer reaching the top of the screen brings Brenda back. */
 .island .notch, .island::before, .island::after, .countdown { transition: opacity .2s ease; }
@@ -296,11 +325,11 @@ kbd { display: inline-flex; align-items: center; justify-content: center; box-si
 .island.tucked .notch, .island.tucked::before, .island.tucked::after, .island.tucked .countdown { opacity: 0; pointer-events: none; }
 
 /* Teammates' small faces (team leads and organisation accounts), flat in each person's colour, with a dot for their
-   timer: green running, amber paused, red interrupted (the web's timer dots). */
+   timer: orange running (live, accent rules), amber paused, red interrupted. The dot stays still at this size. */
 .face.mini { width: 16px; height: 12px; background: color-mix(in srgb, var(--c) 72%, var(--face)); animation: none; box-shadow: none !important; }
 .face.mini .eyes { gap: 3px; transform: translate(calc(var(--lx) * 1px), calc(var(--ly) * .8px)); }
 .face.mini .eyes span { width: 2px; height: 3px; border-radius: 1px; }
-.face.mini .st { position: absolute; top: -3px; right: -3px; width: 6px; height: 6px; border-radius: 50%; border: 1.5px solid var(--island); background: var(--success); }
+.face.mini .st { position: absolute; top: -3px; right: -3px; width: 6px; height: 6px; border-radius: 50%; border: 1.5px solid var(--island); background: var(--accent); }
 .face.mini .st.paused { background: var(--warning); }
 .face.mini .st.interrupted { background: var(--danger); }
 .minis { display: inline-flex; padding-left: 2px; }

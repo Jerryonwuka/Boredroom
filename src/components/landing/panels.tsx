@@ -1,10 +1,15 @@
 "use client";
-import { GlassCard } from "@/components/landing/glass-card";
-import { useEffect, useState } from "react";
-import { motion, useReducedMotion } from "motion/react";
+import { useEffect, useRef, useState } from "react";
+import { useInView, useReducedMotion } from "motion/react";
+import { LINE_ICON, type Icon3DName } from "@/components/ui/icon";
+import { Badge } from "@/components/ui/badge";
+import { LiveIndicator } from "@/components/ui/status-dot";
+import { ToolSquare } from "@/components/ui/tool-tile";
+import { buttonVariants } from "@/components/ui/button";
+import { FAKE_BUTTON, FeatureCard, FeatureText, Pane } from "@/components/landing/parts";
 import { cn } from "@/lib/utils";
 
-const EVENTS = [
+const EVENTS: { icon: Icon3DName; name: string; text: string }[] = [
   { icon: "clock-in", name: "Clocked in", text: "Ada, 08:58, on time" },
   { icon: "stopwatch", name: "Started", text: "Homepage design, estimate 2h 30m" },
   { icon: "screen-record", name: "Recording", text: "Ben shares a window, segment 2" },
@@ -13,45 +18,77 @@ const EVENTS = [
   { icon: "shield-check", name: "Approved", text: "Task completed, history kept" },
 ];
 
-/** Two panels side by side, like Resend's Test mode and Modular webhooks: recording by consent, and live events. */
+const SEGMENTS: [string, React.ReactNode][] = [
+  ["Segment 1, 24 min", <Badge key="1" tone="success" dot>Ready to watch</Badge>],
+  ["Segment 2, 6 min, sharing stopped", <Badge key="2" tone="warning" dot>Interrupted</Badge>],
+  ["Segment 3", <Badge key="3" tone="neutral">Recording</Badge>],
+];
+
+/**
+ * Two feature cards side by side: recording by consent (the task's running timer and the recording mark in orange,
+ * live; the segments' states in their status colours) and every change as it happens (the current event carries the
+ * orange selected marker and moves down the list while the card is on screen; still under reduced motion).
+ */
 export function Panels() {
+  const ref = useRef<HTMLDivElement>(null);
+  const inView = useInView(ref, { margin: "-80px" });
   const reduced = useReducedMotion();
   const [active, setActive] = useState(0);
   useEffect(() => {
-    if (reduced) return;
+    if (reduced || !inView) return;
     const id = setInterval(() => setActive((a) => (a + 1) % EVENTS.length), 1700);
     return () => clearInterval(id);
-  }, [reduced]);
+  }, [reduced, inView]);
   return (
-    <div className="grid gap-4 md:grid-cols-2">
-      <GlassCard tilt={false} bodyClassName="flex h-full flex-col p-6 md:p-8">
-        <div className="lp-card-sm flex-1 p-5">
-          <div className="flex items-center justify-between gap-3">
-            <div><p className="lp-muted text-sm">Brand deck, revision 2</p><p className="mt-1 font-display text-4xl leading-none tabular-nums text-accent">0:47:31</p></div>
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-danger/50 px-2.5 py-1 text-xs font-semibold text-danger"><span className="rec-dot h-1.5 w-1.5 rounded-full bg-danger" aria-hidden />REC 12:08</span>
+    <div ref={ref} className="grid gap-3 md:grid-cols-2">
+      <FeatureCard>
+        <Pane className="flex-1 p-5">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="truncate text-sm font-medium text-secondary">Brand deck, revision 2</p>
+              <p className="mt-1 font-mono text-[32px] leading-none tabular-nums text-accent-text">0:47:31</p>
+            </div>
+            <LiveIndicator className="mt-0.5">Recording, 12:08</LiveIndicator>
           </div>
-          <div className="mt-5 flex flex-wrap gap-2"><span className="lp-btn lp-btn-secondary lp-btn-sm">Stop recording</span><span className="lp-btn lp-btn-secondary lp-btn-sm">Pause</span></div>
-          <ul className="mt-5 space-y-2 text-sm">
-            {[["Segment 1, 24 min", "Ready to watch", "text-success"], ["Segment 2, 6 min, sharing stopped", "Interrupted", "text-warning"], ["Segment 3", "Recording", "text-danger"]].map(([a, b, c]) => (
-              <li key={a} className="flex items-center justify-between lp-glass rounded-lg px-3 py-2"><span>{a}</span><span className={cn("text-xs font-semibold", c)}>{b}</span></li>
+          <div className="mt-5 flex flex-wrap gap-2">
+            <span className={cn(buttonVariants({ variant: "secondary", size: "xs" }), FAKE_BUTTON)}>Stop recording</span>
+            <span className={cn(buttonVariants({ variant: "secondary", size: "xs" }), FAKE_BUTTON)}>Pause</span>
+          </div>
+          <ul className="mt-5 space-y-1">
+            {SEGMENTS.map(([label, badge]) => (
+              <li key={label} className="flex items-center justify-between gap-3 rounded-xl bg-fill-0 px-3 py-2.5">
+                <span className="min-w-0 truncate text-sm font-medium text-foreground">{label}</span>
+                {badge}
+              </li>
             ))}
           </ul>
-        </div>
-        <h3 className="mt-6 font-display text-2xl">Recording, only on a press</h3>
-        <p className="lp-muted mt-2 text-pretty leading-relaxed">Off until an owner turns it on. Even then nothing records until the person presses Record screen and picks what to share. A red indicator shows the whole time, and stopping the share ends the segment honestly.</p>
-      </GlassCard>
-      <GlassCard tilt={false} bodyClassName="flex h-full flex-col p-6 md:p-8">
-        <ul className="flex-1 space-y-2" aria-label="Events as they happen">
-          {EVENTS.map((e, i) => (
-            <motion.li key={e.name} animate={{ opacity: reduced || active === i ? 1 : 0.45, scale: active === i ? 1 : 0.985 }} transition={{ duration: 0.35 }} className={cn("lp-card-sm flex items-center gap-3 px-3 py-2.5", active === i && "border-[rgba(255,108,2,0.5)]")}>
-              <img src={`/icons/${e.icon}.png`} alt="" className="h-9 w-9 object-contain" />
-              <span className="min-w-0"><span className="block text-sm font-semibold">{e.name}</span><span className="lp-muted block truncate text-xs">{e.text}</span></span>
-            </motion.li>
-          ))}
-        </ul>
-        <h3 className="mt-6 font-display text-2xl">Every change, the second it happens</h3>
-        <p className="lp-muted mt-2 text-pretty leading-relaxed">Clock-ins, starts, pauses, submissions and decisions reach every open screen within seconds. Reconnect and the page refetches the truth, so nothing shown is stale.</p>
-      </GlassCard>
+        </Pane>
+        <FeatureText title="Recording, only on a press">
+          Off until an owner turns it on. Even then nothing records until the person presses Record screen and picks what to share. An indicator shows the whole time, and stopping the share ends the segment honestly.
+        </FeatureText>
+      </FeatureCard>
+      <FeatureCard>
+        <Pane className="flex-1 p-2">
+          <ul className="space-y-0.5" aria-label="Events as they happen">
+            {EVENTS.map((e, i) => {
+              const Icon = LINE_ICON[e.icon];
+              const on = active === i;
+              return (
+                <li key={e.name} className={cn("flex items-center gap-3 rounded-xl px-3 py-2 transition-colors duration-200", on && "selected-marker bg-fill-1")}>
+                  <ToolSquare size={36} className={cn("[&_svg]:size-[18px]", on && "text-foreground")}><Icon aria-hidden /></ToolSquare>
+                  <span className="min-w-0">
+                    <span className="block text-sm font-semibold text-foreground">{e.name}</span>
+                    <span className="block truncate text-meta font-normal text-secondary">{e.text}</span>
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        </Pane>
+        <FeatureText title="Every change, the second it happens">
+          Clock-ins, starts, pauses, submissions and decisions reach every open screen within seconds. Reconnect and the page refetches the truth, so nothing shown is stale.
+        </FeatureText>
+      </FeatureCard>
     </div>
   );
 }

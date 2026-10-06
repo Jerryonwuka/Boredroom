@@ -4,9 +4,10 @@ import { cn } from "@/lib/utils";
 
 /**
  * A text link on the way in (footers, notices, alerts): the foreground colour, medium weight, with a quiet underline
- * that turns solid on hover, so it reads as a link in a sentence without colour alone.
+ * that turns orange on hover (accent rules, 6 October 2026: links in running text), so it reads as a link in a
+ * sentence without colour alone.
  */
-export const AUTH_LINK = "rounded-[4px] font-medium text-foreground underline decoration-border-input-hover underline-offset-4 transition-colors duration-75 hover:decoration-foreground";
+export const AUTH_LINK = "rounded-[4px] font-medium text-foreground underline decoration-border-input-hover underline-offset-4 transition-colors duration-75 hover:decoration-accent";
 
 /**
  * The heading of an entry screen (v4, spec §3): an optional step count in the secondary grey ("Step 1 of 2", never a

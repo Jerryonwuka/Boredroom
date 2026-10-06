@@ -26,10 +26,11 @@ const shiftMonth = (m: string, by: number) => { const [y, mo] = m.split("-").map
 type Event = { at: number; time: string; label: string; detail?: React.ReactNode; kind: "plan" | "in" | "now" | "out" };
 
 /**
- * Your clock, v4: one focused card with where you stand today, the clock button (the white primary) and today's
+ * Your clock, v4: one focused card with where you stand today, the clock button (Clock in is the screen's one orange
+ * button, accent rules 6 October 2026) and today's
  * timeline (work starts, you clocked in, now, you clocked out, work ends); the rules beside it; then the month's
- * history as a metric strip and a calm table. The organisation account supervises and does not clock in: its view of
- * the clock is Attendance.
+ * history as a metric strip and a calm table. While you are clocked in the time so far and "Now" on the timeline are
+ * orange (live). The organisation account supervises and does not clock in: its view of the clock is Attendance.
  */
 export default async function ClockPage({ params, searchParams }: { params: Promise<{ workspace: string }>; searchParams: Promise<{ month?: string }> }) {
   const { workspace } = await params;
@@ -75,12 +76,12 @@ export default async function ClockPage({ params, searchParams }: { params: Prom
             <div className="mt-2 flex flex-wrap items-start justify-between gap-x-8 gap-y-5">
               <div className="min-w-0">
                 {c.status === "not_in" ? <><p className="font-display text-3xl font-normal">Not clocked in</p><p className="mt-1 text-sm font-normal text-secondary">{lateNow ? <>The day started at <span className="tabular-nums">{hhmm(c.schedule.start_local)}</span>. Clocking in now counts as late.</> : <>Clock in by <span className="tabular-nums">{hhmm(c.schedule.start_local)}</span> to be on time.</>}</p></> : null}
-                {c.status === "in" && r ? <><p className="font-display text-3xl font-normal">Clocked in <span className="tabular-nums">{timeOf(r.clock_in_at, tz)}</span></p><p className="mt-2 flex flex-wrap items-center gap-2 text-sm font-normal text-secondary">{lateBadge}<span><span className="tabular-nums text-foreground">{formatDuration(onTheClock)}</span> on the clock so far</span></p></> : null}
+                {c.status === "in" && r ? <><p className="font-display text-3xl font-normal">Clocked in <span className="tabular-nums">{timeOf(r.clock_in_at, tz)}</span></p><p className="mt-2 flex flex-wrap items-center gap-2 text-sm font-normal text-secondary">{lateBadge}<span><span className="tabular-nums text-accent-text">{formatDuration(onTheClock)}</span> on the clock so far</span></p></> : null}
                 {c.status === "out" && r ? <><p className="font-display text-3xl font-normal"><span className="tabular-nums">{timeOf(r.clock_in_at, tz)}</span> to <span className="tabular-nums">{timeOf(r.clock_out_at!, tz)}</span></p><p className="mt-2 flex flex-wrap items-center gap-2 text-sm font-normal text-secondary">{lateBadge}{(r.left_early_seconds ?? 0) > 0 ? <Badge tone="info">Left {formatDuration(r.left_early_seconds!)} early</Badge> : null}<span><span className="tabular-nums text-foreground">{formatDuration(onTheClock)}</span> on the clock</span></p></> : null}
               </div>
               <ClockButtons orgSlug={ctx.org.slug} status={c.status} timerOpen={c.timerOpen} timing={{ startAt: c.scheduledStartAt, endAt: c.scheduledEndAt, graceMinutes: c.schedule.clock_grace_minutes, timeZone: tz }} />
             </div>
-            {c.timerOpen && c.status === "in" ? <p className="mt-4 text-meta font-normal text-secondary">A task timer is running; stop it on <Link href={`/app/${ctx.org.slug}/my-day`} className="font-medium text-foreground underline underline-offset-2">My Day</Link> before clocking out.</p> : null}
+            {c.timerOpen && c.status === "in" ? <p className="mt-4 text-meta font-normal text-secondary">A task timer is running; stop it on <Link href={`/app/${ctx.org.slug}/my-day`} className="link-inline">My Day</Link> before clocking out.</p> : null}
 
             <div className="mt-6 border-t border-border pt-5">
               <h2 className="mb-3 text-sm font-semibold text-foreground">Today</h2>

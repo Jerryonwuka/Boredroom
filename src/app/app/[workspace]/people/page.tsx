@@ -24,14 +24,14 @@ type TabKey = (typeof TABS)[number]["key"];
 const ROLE = { owner: "Organisation owner", hr: "HR administrator", manager: "Team lead", employee: "Staff" } as Record<string, string>;
 
 /**
- * People and teams, v4: the title with underline tabs (Teams, People, Invitations) and the tab's one primary action on
- * the right; calm tables underneath. The People tab opens with the join code in a section card.
+ * People and teams, v4: the title with underline tabs (Teams, People, Invitations) and the tab's one action on the
+ * right, the screen's orange standout (accent rules, 6 October 2026: "Add people"); calm tables underneath. The People tab opens with the join code in a section card.
  */
 export default async function PeoplePage({ params, searchParams }: { params: Promise<{ workspace: string }>; searchParams: Promise<{ tab?: string }> }) {
   const { workspace } = await params;
   const sp = await searchParams;
   const { ctx, counts, teams: navTeams } = await workspacePage(workspace, `/app/${workspace}/people`);
-  if (!["owner", "hr"].includes(ctx.membership.role)) return <AppShell ctx={ctx} counts={counts} teams={navTeams}><PermissionDenied /></AppShell>;
+  if (!["owner", "hr"].includes(ctx.membership.role)) return <AppShell ctx={ctx} counts={counts} teams={navTeams}><PageHeader title="People and teams" divider /><PermissionDenied /></AppShell>;
   const { members, invitations, teams, joinCode } = await peopleView(ctx);
   const isOwner = ctx.membership.role === "owner";
   const tab: TabKey = TABS.some((t) => t.key === sp.tab) ? (sp.tab as TabKey) : "teams";
@@ -50,7 +50,7 @@ export default async function PeoplePage({ params, searchParams }: { params: Pro
       {tab === "teams" ? (
         <section aria-labelledby="teams-heading">
           <h2 id="teams-heading" className="sr-only">Teams</h2>
-          {teams.length === 0 ? <EmptyState icon3d="people" title="No teams yet" description="Create teams such as Design, Tech or Branding, then open one to add people and choose its lead." action={<NewTeamForm orgSlug={ctx.org.slug} variant="secondary" />} /> : (
+          {teams.length === 0 ? <EmptyState icon3d="people" title="No teams yet" description="Create teams such as Design, Tech or Branding, then open one to add people and choose its lead." action={<NewTeamForm orgSlug={ctx.org.slug} />} /> : (
             <DataTable caption="Teams">
               <thead><tr><th>Team</th><th>Team lead</th><th className="!text-right">Members</th><th><span className="sr-only">Open</span></th></tr></thead>
               <tbody>{teams.map((t) => (

@@ -18,6 +18,9 @@
  * phone), the canvas colour, a hairline on its left and the sheet shadow, over the grey overlay at 30% with no blur;
  * its header is the sheet's (title 18/26 medium, the question in the secondary grey) with ghost icon buttons on the
  * right. No glass and no glow. The floating button is a 56px circle on the popover surface with the toast shadow.
+ *
+ * The starter prompts fill the box, like the asks on Brenda's page (polish, 6 October 2026): the words can be edited
+ * and nothing is sent until the person presses Send.
  */
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
@@ -53,9 +56,18 @@ export function AssistantDrawer({ orgSlug, isOrg, firstName, floating = false }:
   const muted = useSyncExternalStore(subscribeSounds, soundsMuted, () => false);
   // Y and N answer this panel's Confirm only while it is open and showing; on Brenda's page her own chat takes them.
   const chat = useBrendaChat({ orgSlug, keysActive: open && !onBrendaPage, onLeave: () => setOpen(false) });
-  const { messages, pending, dictation, send, look } = chat;
+  const { messages, pending, dictation, look } = chat;
   const listRef = useRef<HTMLDivElement>(null);
   const fabRef = useRef<HTMLButtonElement>(null);
+  const boxRef = useRef<HTMLDivElement>(null);
+  /** A starter's words go in the box, the cursor at their end, to edit and send; never sent from here. */
+  const fill = (words: string) => {
+    chat.setText(words);
+    const field = boxRef.current?.querySelector("textarea");
+    if (!field) return;
+    field.focus();
+    requestAnimationFrame(() => { const n = field.value.length; field.setSelectionRange(n, n); });
+  };
   const pos = useFloatingPosition();
   // A press that travels more than a few pixels is a drag: the button follows the pointer and the spot is saved on release.
   const drag = useRef<{ startX: number; startY: number; originX: number; originY: number; moved: boolean } | null>(null);
@@ -135,7 +147,7 @@ export function AssistantDrawer({ orgSlug, isOrg, firstName, floating = false }:
               {/* Chips (spec §7): h40 r12 px12 outline, 14/20 medium. */}
               <ul className="space-y-2">{starters.map((s) => (
                 <li key={s}>
-                  <button type="button" onClick={() => void send(s, false)}
+                  <button type="button" onClick={() => fill(s)}
                     className="flex min-h-10 w-full items-center gap-2 rounded-xl border border-border-input bg-background px-3 py-2 text-left text-sm font-medium text-foreground transition-colors duration-75 hover:border-border-input-hover hover:bg-fill-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ring)]">
                     <MessageSquareText className="size-[18px] shrink-0 text-secondary" aria-hidden /><span className="min-w-0 flex-1">{s}</span>
                   </button>
@@ -147,7 +159,7 @@ export function AssistantDrawer({ orgSlug, isOrg, firstName, floating = false }:
         </div>
 
         {/* A solid strip with a hairline above: the conversation never shows through the box. */}
-        <div className="shrink-0 border-t border-border bg-background px-4 pb-4 pt-3">
+        <div ref={boxRef} className="shrink-0 border-t border-border bg-background px-4 pb-4 pt-3">
           <BrendaComposer chat={chat} />
         </div>
       </aside>

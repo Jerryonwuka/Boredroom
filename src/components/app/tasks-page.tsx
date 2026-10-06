@@ -2,9 +2,14 @@
 
 /**
  * Tasks, v4: the list as a calm table (no lines, 48px rows, title 14/20 semibold with a 13px meta line, status as a
- * small badge, the progress arc in orange while in progress), a search box and filter controls in a toolbar row, and a
- * quiet bar for the ticked rows. Every task opens in a right-hand sheet (owner decision, 26 September 2026: a pop-up
- * for the rest); creating, reassigning and the task's details are sheets too.
+ * small badge, a quiet progress arc), a search box and filter controls in a toolbar row, and a quiet bar for the ticked
+ * rows. Every task opens in a right-hand sheet (owner decision, 26 September 2026: a pop-up for the rest); creating,
+ * reassigning and the task's details are sheets too.
+ *
+ * Accent rules (owner decision, 6 October 2026): the running task is orange (its "Working now" badge and its arc); the
+ * other arcs stay quiet. On your own list only the next to-do's Start is the orange standout; every other row has a
+ * quiet ghost Start (polish: a white Start on every row was too loud). An overdue date is a small red dot beside the
+ * word, never red text.
  */
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -27,6 +32,7 @@ import { ProgressArc } from "@/components/ui/progress-arc";
 import { successToast } from "@/components/ui/toast";
 import { ProgressSlider } from "@/components/app/progress-slider";
 import { DetailList, DetailRow } from "@/components/app/detail-list";
+import { DueDate, OverdueDot } from "@/components/app/due";
 import { api, isApiFailure } from "@/lib/api-client";
 import { cn, formatDateTime, formatDuration } from "@/lib/utils";
 import type { TaskListRow } from "@/server/services/views";
@@ -51,7 +57,8 @@ export function NewAssignedTask({ orgSlug, people, self, selfName, canKeep = tru
   const [open, setOpen] = useState(false);
   return (
     <>
-      <Button size="sm" onClick={() => setOpen(true)} aria-haspopup="dialog"><Plus aria-hidden />New task</Button>
+      {/* The Tasks page's one standout action for whoever hands out work (accent rules, 6 October 2026). */}
+      <Button size="sm" variant="accent" onClick={() => setOpen(true)} aria-haspopup="dialog"><Plus aria-hidden />New task</Button>
       {open ? <NewTaskSheet orgSlug={orgSlug} people={people} self={self} selfName={selfName} canKeep={canKeep} projects={projects} onClose={() => setOpen(false)} /> : null}
     </>
   );
@@ -143,6 +150,9 @@ export function TaskTable({ orgSlug, rows, viewer, mine, runningTaskId, people, 
   const toggle = (id: string) => setSelected((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   // The action column is wide enough for a worded button (Start, Mark done, Open the clock) only when a row has one.
   const wideAction = mine || rows.some((r) => r.assignee_membership_id === viewer.membershipId && OPEN.includes(r.status));
+  // Your next to-do (nothing running): the first one already started, else the first waiting to start. Its Start is
+  // the screen's one orange button; the rest are quiet.
+  const nextId = mine && !runningTaskId ? (visible.find((r) => r.status === "in_progress") ?? visible.find((r) => r.status === "todo"))?.id ?? null : null;
   const bulk = async (body: { action: "archive" | "reassign"; assigneeMembershipId?: string }) => {
     setPending(true); setError(null);
     try {
@@ -176,7 +186,7 @@ export function TaskTable({ orgSlug, rows, viewer, mine, runningTaskId, people, 
       </Presence>
       {reassign ? <ReassignSheet people={people} count={chosen.length} pending={pending} onClose={() => setReassign(false)} onConfirm={async (id) => { await bulk({ action: "reassign", assigneeMembershipId: id }); setReassign(false); }} /> : null}
       {visible.length === 0 ? (
-        <p className="py-12 text-center text-sm font-normal text-secondary">No task matches “{query.trim()}”. <button type="button" className="font-medium text-foreground underline underline-offset-4" onClick={() => setQuery("")}>Clear the search</button></p>
+        <p className="py-12 text-center text-sm font-normal text-secondary">No task matches “{query.trim()}”. <button type="button" className="link-inline" onClick={() => setQuery("")}>Clear the search</button></p>
       ) : (
         // The columns follow the room the table has (it sits beside the sidebar from md up): below lg the status moves
         // under the title, below xl the date joins the line under it, so the task's name keeps its width.
@@ -191,7 +201,7 @@ export function TaskTable({ orgSlug, rows, viewer, mine, runningTaskId, people, 
             const faceId = mine ? t.created_by : t.assignee_membership_id;
             const faceName = mine ? t.created_by_name : t.assignee_name;
             const personName = mine ? (t.created_by === viewer.membershipId ? "You" : t.created_by_name) : (isMe ? "You" : t.assignee_name);
-            const badge = running ? <Badge tone="success" dot>Working now</Badge> : <Badge tone={TASK_STATUS_TONE[t.status]}>{statusLabel(t.status)}</Badge>;
+            const badge = running ? <Badge tone="accent" dot>Working now</Badge> : <Badge tone={TASK_STATUS_TONE[t.status]}>{statusLabel(t.status)}</Badge>;
             return (
               <tr key={t.id} className={cn(selected.has(t.id) && "bg-fill-1")}>
                 {canBulk ? <td><label className={HIT}><input type="checkbox" aria-label={`Select ${t.title}`} checked={selected.has(t.id)} onChange={() => toggle(t.id)} /></label></td> : null}
@@ -200,19 +210,19 @@ export function TaskTable({ orgSlug, rows, viewer, mine, runningTaskId, people, 
                     <div className="hidden shrink-0 sm:block"><Person orgSlug={orgSlug} membershipId={faceId} name={faceName} showName={false} size={28} /></div>
                     <div className="min-w-0">
                       <button type="button" onClick={() => setPeek(t)} aria-haspopup="dialog" className="block max-w-full truncate text-left text-sm font-semibold text-foreground underline-offset-4 hover:underline">{t.title}</button>
-                      <p className={cn("truncate text-meta font-normal", t.overdue ? "text-danger" : "text-secondary")}>
+                      <p className="truncate text-meta font-normal text-secondary">
                         {personName}
-                        {t.due_at ? <span className="xl:hidden">{`, ${t.overdue ? "overdue since" : "due"} ${formatDateTime(t.due_at, viewer.timezone)}`}</span> : null}
+                        {t.due_at ? <span className="xl:hidden">, {t.overdue ? <><OverdueDot className="mr-1" />overdue since</> : "due"} <span className="tabular-nums">{formatDateTime(t.due_at, viewer.timezone)}</span></span> : null}
                         {t.overdue ? <span className="hidden xl:inline">, overdue</span> : null}
                       </p>
                       <div className="mt-1.5 lg:hidden">{badge}</div>
                     </div>
                   </div>
                 </td>
-                <td className="hidden xl:table-cell">{t.due_at ? <span className={cn("tabular-nums", t.overdue ? "text-danger" : "text-secondary")}>{formatDateTime(t.due_at, viewer.timezone)}</span> : <span className="text-subtle">No date</span>}</td>
-                <td className="hidden lg:table-cell"><span className="flex items-center gap-2.5">{badge}{t.progress_percent > 0 || t.status === "in_progress" ? <ProgressArc percent={t.progress_percent} size={32} tone={running || t.status === "in_progress" ? "accent" : "default"} /> : null}</span></td>
+                <td className="hidden xl:table-cell">{t.due_at ? <DueDate iso={t.due_at} timeZone={viewer.timezone} overdue={t.overdue} className="text-secondary" /> : <span className="text-subtle">No date</span>}</td>
+                <td className="hidden lg:table-cell"><span className="flex items-center gap-2.5">{badge}{t.progress_percent > 0 || t.status === "in_progress" ? <ProgressArc percent={t.progress_percent} size={32} tone={running ? "accent" : "neutral"} /> : null}</span></td>
                 <td className="text-right">
-                  {mine && t.status !== "completed" && t.status !== "in_review" ? <PickUpTask orgSlug={orgSlug} taskId={t.id} running={running} anyRunning={!!runningTaskId} /> : null}
+                  {mine && t.status !== "completed" && t.status !== "in_review" ? <PickUpTask orgSlug={orgSlug} taskId={t.id} running={running} anyRunning={!!runningTaskId} standout={t.id === nextId} /> : null}
                   {!mine && isMe && OPEN.includes(t.status) ? <MarkDone orgSlug={orgSlug} taskId={t.id} /> : null}
                   {!mine && !isMe && t.status !== "completed" ? <Link href={`/app/${orgSlug}/messages?to=${t.assignee_membership_id}&task=${t.id}`} aria-label="Ask for an update" className={ICON_BUTTON}><MessageSquareText aria-hidden /></Link> : null}
                 </td>
@@ -301,7 +311,7 @@ export function TaskSheet({ orgSlug, row, viewer, mine = false, running = false,
       </Link>
       {detail?.canManage && status !== "in_progress" ? <IconButton aria-label="Delete task" className="hover:text-danger" onClick={() => setConfirm("delete")}><Trash2 aria-hidden /></IconButton> : null}
       {!mine && !isMe && t.assignee_membership_id && status !== "completed" ? <Link href={`/app/${orgSlug}/messages?to=${t.assignee_membership_id}&task=${t.id}`} className={buttonVariants({ variant: "secondary", size: "sm" })}><MessageSquareText aria-hidden />Ask for an update</Link> : null}
-      {mine && status !== "completed" && status !== "in_review" ? <PickUpTask orgSlug={orgSlug} taskId={t.id} running={running} anyRunning={anyRunning} /> : null}
+      {mine && status !== "completed" && status !== "in_review" ? <PickUpTask orgSlug={orgSlug} taskId={t.id} running={running} anyRunning={anyRunning} standout /> : null}
       {!mine && isMe && OPEN.includes(status) ? <MarkDone orgSlug={orgSlug} taskId={t.id} /> : null}
     </>
   );
@@ -312,7 +322,7 @@ export function TaskSheet({ orgSlug, row, viewer, mine = false, running = false,
     <Sheet open onClose={onClose} title={t.title} description={t.project_name ?? "Task"} footer={footer}>
       <div className="grid gap-6">
         <p className="flex flex-wrap items-center gap-2">
-          <Badge tone={running ? "success" : TASK_STATUS_TONE[status]} dot={running}>{running ? "Working now" : statusLabel(status)}</Badge>
+          <Badge tone={running ? "accent" : TASK_STATUS_TONE[status]} dot={running}>{running ? "Working now" : statusLabel(status)}</Badge>
           {priority !== "normal" ? <Badge tone={priority === "urgent" ? "danger" : priority === "high" ? "warning" : "neutral"}>{label(priority)} priority</Badge> : null}
           {overdue ? <Badge tone="danger">Overdue</Badge> : null}
         </p>
@@ -329,7 +339,7 @@ export function TaskSheet({ orgSlug, row, viewer, mine = false, running = false,
         </section>
         {shownProgress > 0 || canSetProgress || status === "in_progress" ? (
           <div className="flex items-center gap-4 rounded-xl bg-fill-0 p-4">
-            <ProgressArc percent={shownProgress} size={56} tone={running || status === "in_progress" ? "accent" : "default"} />
+            <ProgressArc percent={shownProgress} size={56} />
             <div className="min-w-0 flex-1">
               <p className="text-sm font-medium text-foreground">How far along</p>
               {canSetProgress ? <ProgressSlider className="mt-1" value={shownProgress} disabled={savingProgress} onChange={setProgress} onCommit={(v) => void saveProgress(v)} />
@@ -338,7 +348,7 @@ export function TaskSheet({ orgSlug, row, viewer, mine = false, running = false,
           </div>
         ) : null}
         <DetailList>
-          <DetailRow label={overdue ? "Overdue" : "Due"}>{t.due_at ? <span className={cn("tabular-nums", overdue && "text-danger")}>{formatDateTime(t.due_at, tz)}</span> : <span className="text-secondary">No date</span>}</DetailRow>
+          <DetailRow label={overdue ? "Overdue" : "Due"}>{t.due_at ? <DueDate iso={t.due_at} timeZone={tz} overdue={overdue} srLabel={false} /> : <span className="text-secondary">No date</span>}</DetailRow>
           <DetailRow label="Estimated">{durationLabel(t.estimate_minutes) || <span className="text-secondary">Not set</span>}</DetailRow>
           <DetailRow label="Tracked">{t.tracked_seconds ? <span className="tabular-nums">{formatDuration(t.tracked_seconds)}</span> : <span className="text-secondary">Nothing yet</span>}</DetailRow>
           <DetailRow label="Team">{t.team_name ?? <span className="text-secondary">No team</span>}</DetailRow>
@@ -376,15 +386,19 @@ export function MarkDone({ orgSlug, taskId }: { orgSlug: string; taskId: string 
   );
 }
 
-/** Staff pick a task up: the timer starts on it and My Day opens with the clock running. */
-export function PickUpTask({ orgSlug, taskId, running, anyRunning }: { orgSlug: string; taskId: string; running: boolean; anyRunning: boolean }) {
+/**
+ * Staff pick a task up: the timer starts on it and My Day opens with the clock running. `standout`: the screen's one
+ * orange Start (the next to-do on a list, the task open in a sheet); otherwise a quiet ghost Start, so a list of them
+ * stays calm. While another task runs it is a switch icon button.
+ */
+export function PickUpTask({ orgSlug, taskId, running, anyRunning, standout = false }: { orgSlug: string; taskId: string; running: boolean; anyRunning: boolean; standout?: boolean }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   if (running) return <Link href={`/app/${orgSlug}/my-day`} className={buttonVariants({ variant: "ghost", size: "sm" })}>Open the clock</Link>;
   return (
     <div className="inline-flex flex-col items-end gap-1">
-      <Button size={anyRunning ? "icon-sm" : "sm"} variant={anyRunning ? "secondary" : "primary"} disabled={pending} data-tip={anyRunning ? "Your timer is on another task; this switches it here" : undefined} onClick={async () => {
+      <Button size={anyRunning ? "icon-sm" : "sm"} variant={anyRunning ? "ghost" : standout ? "accent" : "ghost"} disabled={pending} data-tip={anyRunning ? "Your timer is on another task; this switches it here" : undefined} onClick={async () => {
         setPending(true); setError(null);
         try {
           if (anyRunning) {
@@ -491,7 +505,7 @@ export function TaskBoard({ orgSlug, tasks, viewer, showProject = false, recordi
                       footer={<>
                         <Avatar profileId={t.assignee_membership_id} name={t.assignee_name} size={20} />
                         <span className="min-w-0 flex-1 truncate">{t.assignee_membership_id === viewer.membershipId ? "You" : t.assignee_name}</span>
-                        {t.due_at ? <span className={cn("shrink-0 tabular-nums", t.overdue && "text-danger")}><span className="sr-only">{t.overdue ? "Overdue, due " : "Due "}</span>{formatDateTime(t.due_at, viewer.timezone)}</span> : null}
+                        {t.due_at ? t.overdue ? <DueDate iso={t.due_at} timeZone={viewer.timezone} overdue className="shrink-0" /> : <span className="shrink-0 tabular-nums"><span className="sr-only">Due </span>{formatDateTime(t.due_at, viewer.timezone)}</span> : null}
                       </>} />
                   );
                 })}

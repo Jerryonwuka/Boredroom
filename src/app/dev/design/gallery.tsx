@@ -9,8 +9,9 @@
 import * as React from "react";
 import { Toaster } from "sonner";
 import {
-  ArrowUpRight, Bell, CalendarClock, Clock, Copy, Ellipsis, FileText, Hourglass, Inbox, ListTodo, MessageSquare, Pencil,
-  Plus, Search, Settings, SquareCheckBig, Trash2, TriangleAlert, Users,
+  AlarmClock, ArrowUpRight, Bell, CalendarCheck, CalendarClock, CircleAlert, ClipboardCheck, Clock, Copy, CreditCard, Ellipsis, FileText, Folder,
+  Hourglass, Inbox, LayoutDashboard, ListOrdered, ListTodo, MessageSquare, MessageSquareReply, Pause, Pencil, Plus, Search, Settings,
+  SquareCheckBig, Trash2, TriangleAlert, Users,
 } from "lucide-react";
 import { BrendaGlyph } from "@/components/app/brenda-glyph";
 import { VoiceCapture } from "@/components/app/voice-capture";
@@ -30,9 +31,11 @@ import { FilterBar, FilterControl, FilterSelect } from "@/components/ui/filter-c
 import { IconButton } from "@/components/ui/icon-button";
 import { Field, Input, InputAdorned, Select, Textarea } from "@/components/ui/input";
 import { Menu, MenuItem, MenuLabel, MenuSeparator, Popover } from "@/components/ui/menu";
-import { ProgressArc } from "@/components/ui/progress-arc";
-import { ListRow, Row, RowList } from "@/components/ui/rows";
+import { ProgressArc, ProgressBar } from "@/components/ui/progress-arc";
+import { ListRow, Row, RowList, SubNavItem } from "@/components/ui/rows";
 import { Segmented } from "@/components/ui/segmented";
+import { Slider } from "@/components/ui/slider";
+import { LiveIndicator, StatusDot } from "@/components/ui/status-dot";
 import { Dialog, Sheet } from "@/components/ui/sheet";
 import { StatCard } from "@/components/ui/stat-card";
 import { Alert, EmptyState, Skeleton } from "@/components/ui/states";
@@ -49,7 +52,7 @@ import { SampleAppFrame } from "./app-frame";
 type Theme = "dark" | "light";
 
 const SECTIONS = [
-  ["foundations", "Foundations"], ["type", "Type"], ["buttons", "Buttons"], ["inputs", "Inputs"], ["selection", "Selection"],
+  ["foundations", "Foundations"], ["accents", "Accents"], ["type", "Type"], ["buttons", "Buttons"], ["inputs", "Inputs"], ["selection", "Selection"],
   ["tabs", "Tabs"], ["badges", "Badges"], ["cards", "Cards"], ["stats", "Stat cards"], ["analytics", "Analytics"],
   ["filters", "Filters"], ["tiles", "Tool tiles"], ["lists", "Lists"], ["tables", "Tables"], ["feedback", "Feedback"],
   ["overlays", "Overlays"], ["pickers", "Pickers"], ["prompt", "Prompt"], ["charts", "Charts"], ["frame", "App frame"],
@@ -89,7 +92,8 @@ const SWATCHES: [string, string][] = [
   ["--foreground", "Foreground"], ["--secondary", "Secondary 64%"], ["--subtle", "Subtle 53%"], ["--faint", "Faint"],
   ["--border", "Border 7.5%"], ["--border-input", "Input 10%"], ["--border-input-hover", "Input hover 16%"],
   ["--fill-0", "fill-0"], ["--fill-1", "fill-1"], ["--fill-150", "fill-150"],
-  ["--primary", "Primary"], ["--accent", "Accent"], ["--accent-soft", "Accent soft"], ["--accent-text", "Accent text"], ["--accent-tint", "Accent tint"],
+  ["--primary", "Primary"], ["--accent", "Accent"], ["--accent-hover", "Accent hover"], ["--accent-soft", "Accent soft"], ["--accent-text", "Accent text"],
+  ["--accent-tint", "Accent tint"], ["--accent-ring", "Accent ring"],
   ["--success", "Success"], ["--warning", "Warning"], ["--danger", "Danger"],
 ];
 
@@ -152,6 +156,147 @@ function TypeScale() {
   );
 }
 
+// ---- Accents ----------------------------------------------------------------------------------------------------------
+
+/** One accent rule: its name on the left, the parts that carry it on the right. */
+function Rule({ name, children }: { name: string; children: React.ReactNode }) {
+  return (
+    <div className="grid gap-x-6 gap-y-2 border-t border-border pt-4 first:border-t-0 first:pt-0 lg:grid-cols-[160px_minmax(0,1fr)]">
+      <Cap className="pt-1.5">{name}</Cap>
+      <div className="flex min-w-0 flex-wrap items-center gap-x-5 gap-y-3">{children}</div>
+    </div>
+  );
+}
+
+const NAV_SAMPLE = [
+  { label: "Dashboard", icon: LayoutDashboard, active: true },
+  { label: "Messages", icon: MessageSquare, count: 3 },
+  { label: "Tasks", icon: ListTodo },
+];
+
+function Accents() {
+  const [tab, setTab] = React.useState<Record<Theme, string>>({ dark: "overview", light: "overview" });
+  const [range, setRange] = React.useState<Record<Theme, string>>({ dark: "week", light: "week" });
+  const [ask, setAsk] = React.useState<Record<Theme, string>>({ dark: "Plan my day", light: "" });
+  return (
+    <Section id="accents" title="Accents" description="Orange marks what is live, active, chosen or the one thing to do; never decoration. A typical screen has 3 to 6 small touches. Status colours keep their meaning. Rules: docs/design-system.md, “Accent rules”.">
+      <Both>
+        {(t) => (
+          <div className="space-y-4">
+            <Rule name="Navigation">
+              <ul className="w-52 space-y-1 rounded-xl bg-sidebar p-2" aria-label={`Sample navigation (${t})`}>
+                {NAV_SAMPLE.map(({ label, icon: Icon, active, count }) => (
+                  <li key={label}>
+                    <a href="#accents" aria-current={active ? "page" : undefined} className={cn("flex h-8 items-center gap-2 rounded-lg px-2 text-sm font-medium transition-colors duration-75 [&>svg]:size-[18px]", active ? "bg-fill-1 text-foreground [&>svg]:text-accent" : "text-secondary hover:bg-fill-1 hover:text-foreground")}>
+                      <Icon aria-hidden /><span className="min-w-0 flex-1 truncate">{label}</span>{count ? <CountPill count={count} tone="attention" /> : null}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+              <div className="min-w-0 flex-1 space-y-3">
+                <Tabs label={`Accent tabs (${t})`} value={tab[t]} onChange={(v) => setTab({ ...tab, [t]: v })} tabs={[{ label: "Overview", value: "overview" }, { label: "Reviews", value: "reviews", count: 2, attention: true }, { label: "All tasks", value: "all", count: 48 }]} />
+                <Cap>Active icon orange (label foreground); attention counts orange, plain totals grey; the active tab&apos;s 1.5px underline orange.</Cap>
+              </div>
+            </Rule>
+            <Rule name="Counts and badges">
+              <span className="flex items-center gap-1.5 text-sm">All tasks <CountPill count={48} /></span>
+              <span className="flex items-center gap-1.5 text-sm">Unread <CountPill count={3} tone="attention" /></span>
+              <Badge tone="attention">2 waiting for you</Badge>
+              <span className="flex items-center gap-1.5 text-sm">Docs <NewBadge /></span>
+            </Rule>
+            <Rule name="The standout action">
+              <Button variant="accent"><Plus aria-hidden />New document</Button>
+              <Button variant="secondary">Import</Button>
+              <Button>Save</Button>
+              <Cap className="basis-full">One per screen at most; every other primary stays white.</Cap>
+            </Rule>
+            <Rule name="Live and now">
+              <span className="inline-flex items-center gap-2"><StatusDot tone="live" label="Timer running" /><span className="font-mono text-sm tabular-nums text-accent-text">01:24:09</span></span>
+              <LiveIndicator>Recording</LiveIndicator>
+              <span className="inline-flex items-center gap-2 text-xs font-medium text-secondary"><StatusDot tone="live" />Live, last sync 10:42</span>
+              <span className="inline-flex items-center gap-2 text-xs font-medium text-secondary"><StatusDot tone="success" />Working (green stays green)</span>
+            </Rule>
+            <Rule name="Progress">
+              <div className="w-44 space-y-1.5"><ProgressBar value={3} max={5} label={`Setup progress (${t})`} valueText="3 of 5 steps done" /><Cap>3 of 5 done</Cap></div>
+              <ProgressArc percent={60} size={36} />
+              <ProgressArc percent={100} size={36} />
+              <div className="w-44"><Slider aria-label={`Percentage done (${t})`} defaultValue={40} step={5} /></div>
+            </Rule>
+            <Rule name="Choice and completion">
+              <Checkbox defaultChecked>Sent the invoice</Checkbox>
+              <Radio name={`acc-radio-${t}`} defaultChecked>Only my team</Radio>
+              <Segmented aria-label={`Range (${t})`} value={range[t]} onChange={(v) => setRange({ ...range, [t]: v })} options={[{ value: "day", label: "Day" }, { value: "week", label: "Week" }, { value: "month", label: "Month" }]} />
+              <span className="inline-flex items-center gap-2"><Switch aria-label={`Switch stays white (${t})`} defaultChecked /><Cap>switches stay white</Cap></span>
+            </Rule>
+            <Rule name="Selected row, sub-nav">
+              <ul className="w-full max-w-xs">
+                <ListRow active onClick={() => {}} leading={<ToolSquare><FileText /></ToolSquare>} title="Weekly report" subtitle="Open now" />
+                <ListRow onClick={() => {}} leading={<ToolSquare><FileText /></ToolSquare>} title="Brand deck" subtitle="Edited yesterday" />
+              </ul>
+              <nav aria-label={`Sample sub-navigation (${t})`} className="w-44 space-y-0.5">
+                <SubNavItem active icon={<Settings aria-hidden />}>General</SubNavItem>
+                <SubNavItem icon={<Users aria-hidden />}>People</SubNavItem>
+                <SubNavItem icon={<CreditCard aria-hidden />}>Billing</SubNavItem>
+              </nav>
+            </Rule>
+            <Rule name="Charts">
+              <div className="w-full max-w-sm"><BarChart title={`Hours by day (${t})`} labels={DAYS} values={[6, 7.5, 8, 7, 3.5, 0, 0]} highlight={4} height={120} /></div>
+              <Cap>Today (the highlight series) orange, the rest grey.</Cap>
+            </Rule>
+            <Rule name="Brenda">
+              <div className="w-full max-w-md"><PromptInputBox value={ask[t]} onValueChange={(v) => setAsk({ ...ask, [t]: v })} onSend={() => setAsk({ ...ask, [t]: "" })} label={`Accent prompt (${t})`} placeholder="Ask Brenda…" /></div>
+              <ToolTile icon={<ListOrdered aria-hidden />} label="Plan my day" active />
+              <Cap className="basis-full">Focus the pill: its ring turns orange. Send is orange with text, grey when empty. A tool tile&apos;s icon turns orange on hover and focus.</Cap>
+            </Rule>
+            <Rule name="Links, empty states">
+              <p className="type-paragraph max-w-xs">Check the <a href="#accents" className="link-inline">working hours</a> before you change a timesheet.</p>
+              <div className="rounded-xl border border-border"><EmptyState compact icon={Inbox} title="No messages yet" description="When someone writes, it shows here." /></div>
+            </Rule>
+          </div>
+        )}
+      </Both>
+      <Both>
+        {(t) => <SampleScreen theme={t} />}
+      </Both>
+    </Section>
+  );
+}
+
+/** A sample screen with five touches of orange: the tab underline, the running timer, the standout Start, a ticked to-do and progress. */
+function SampleScreen({ theme }: { theme: Theme }) {
+  const [tab, setTab] = React.useState("today");
+  return (
+    <div className="space-y-4">
+      <Cap>Sample screen, 5 touches: tab underline, running timer, the one orange button, a ticked to-do, today&apos;s progress.</Cap>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="type-page-title">My Day</p>
+        <Button size="sm" variant="secondary"><Plus aria-hidden />Add a to-do</Button>
+      </div>
+      <Tabs label={`My Day (${theme})`} value={tab} onChange={setTab} tabs={[{ label: "Today", value: "today", count: 4 }, { label: "This week", value: "week" }, { label: "Done", value: "done" }]} />
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between gap-3"><span className="text-sm font-medium">Today&apos;s progress</span><span className="text-meta font-normal tabular-nums text-secondary">1 of 4 done</span></div>
+        <ProgressBar value={1} max={4} label={`Today's progress (${theme})`} valueText="1 of 4 to-dos done" />
+      </div>
+      <ul className="space-y-0.5">
+        <li className="flex min-h-14 items-center gap-3 rounded-xl px-2 py-2">
+          <StatusDot tone="live" label="Timer running" />
+          <div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">Homepage redesign</p><p className="text-meta font-normal text-secondary">Working for <span className="font-mono tabular-nums text-accent-text">01:24:09</span></p></div>
+          <Button size="sm" variant="secondary"><Pause aria-hidden />Pause</Button>
+        </li>
+        <li className="flex min-h-14 items-center gap-3 rounded-xl px-2 py-2">
+          <span className="size-2 shrink-0 rounded-full bg-faint" aria-hidden />
+          <div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">Review the brand deck</p><p className="text-meta font-normal text-secondary">Next, due 15:00</p></div>
+          <Button size="sm" variant="accent">Start</Button>
+        </li>
+        <li className="flex min-h-14 items-center gap-3 rounded-xl px-2 py-2">
+          <Checkbox aria-label="Send the invoice, done" defaultChecked />
+          <div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold text-secondary line-through decoration-[var(--faint)]">Send the invoice</p><p className="text-meta font-normal text-secondary">Done at 09:40</p></div>
+        </li>
+      </ul>
+    </div>
+  );
+}
+
 // ---- Buttons ----------------------------------------------------------------------------------------------------------
 
 const VARIANTS = ["primary", "secondary", "ghost", "subtle", "accent", "danger", "destructive", "link"] as const;
@@ -163,7 +308,7 @@ const FOCUS = "outline-2 outline-offset-2 outline-[var(--ring)]";
 
 function Buttons() {
   return (
-    <Section id="buttons" title="Buttons" description="Primary is white (one per view); secondary is the outline; accent (orange, near-black text) at most once per screen.">
+    <Section id="buttons" title="Buttons" description="Primary is white (one per view); secondary is the outline; accent (orange, near-black text) is the one standout action, at most once per screen.">
       <Both>
         {() => (
           <div className="space-y-6">
@@ -247,7 +392,7 @@ function Inputs() {
 
 function Selection() {
   return (
-    <Section id="selection" title="Selection" description="Switch 36×20 (on = foreground), checkbox and radio 16px, segmented (fill-1 r10 p2; items h28 r7).">
+    <Section id="selection" title="Selection" description="Switch 36×20 (on = foreground, stays white); checkbox and radio 16px, orange when checked; segmented (fill-1 r10 p2; items h28 r7), an orange dot on the chosen item, a status colour instead on a status choice.">
       <Both>
         {(t) => (
           <div className="grid gap-6 sm:grid-cols-2">
@@ -281,11 +426,11 @@ function TabsDemo() {
   const [a, setA] = React.useState<Record<Theme, string>>({ dark: "overview", light: "overview" });
   const [b, setB] = React.useState<Record<Theme, string>>({ dark: "all", light: "all" });
   return (
-    <Section id="tabs" title="Tabs" description="Underline (default): 14/20 medium, 24px apart, a 1.5px underline that slides, on a hairline. Pills: the sub-nav look.">
+    <Section id="tabs" title="Tabs" description="Underline (default): 14/20 medium, 24px apart, a 1.5px orange underline that slides, on a hairline; counts grey, or orange with attention. Pills: the sub-nav look in a row, neutral.">
       <Both>
         {(t) => (
           <div className="space-y-6">
-            <Tabs label="Underline tabs" value={a[t]} onChange={(v) => setA({ ...a, [t]: v })} tabs={[{ label: "Overview", value: "overview" }, { label: "Hours", value: "hours" }, { label: "Attendance", value: "attendance", count: 2 }, { label: "Blocked", value: "blocked", count: 14 }]} />
+            <Tabs label="Underline tabs" value={a[t]} onChange={(v) => setA({ ...a, [t]: v })} tabs={[{ label: "Overview", value: "overview" }, { label: "Hours", value: "hours" }, { label: "Attendance", value: "attendance", count: 2, attention: true }, { label: "Blocked", value: "blocked", count: 14 }]} />
             <Tabs label="Pill tabs" variant="pills" value={b[t]} onChange={(v) => setB({ ...b, [t]: v })} tabs={[{ label: "All", value: "all" }, { label: "Mine", value: "mine", count: 5 }, { label: "Done", value: "done" }]} />
           </div>
         )}
@@ -296,17 +441,18 @@ function TabsDemo() {
 
 function Badges() {
   return (
-    <Section id="badges" title="Badges" description="Pills h20 12/16; status tones as a 12% wash; New is the h16 orange tag. Counts, mono chips and keys.">
+    <Section id="badges" title="Badges" description="Pills h20 12/16; status tones as a 12% wash; accent (alias attention) and New are orange. Counts: grey totals, orange attention. Mono chips and keys.">
       <Both>
         {() => (
           <div className="space-y-3">
             <div className="flex flex-wrap items-center gap-2">
-              <Badge>Neutral</Badge><Badge tone="accent">Accent</Badge><Badge tone="success" dot>Running</Badge><Badge tone="warning" dot>Paused</Badge>
+              <Badge>Neutral</Badge><Badge tone="accent">Accent</Badge><Badge tone="attention">Attention</Badge><Badge tone="success" dot>Running</Badge><Badge tone="warning" dot>Paused</Badge>
               <Badge tone="danger" dot>Blocked</Badge><Badge tone="info">To do</Badge><Badge size="lg">Large</Badge><Badge size="sm">Small</Badge><NewBadge />
             </div>
             <div className="flex flex-wrap items-center gap-3">
               <span className="flex items-center gap-1.5 text-sm">Tasks <CountPill count={12} /></span>
               <span className="flex items-center gap-1.5 text-sm">Inbox <CountPill count={240} /></span>
+              <span className="flex items-center gap-1.5 text-sm">Unread <CountPill count={3} tone="attention" /></span>
               <MonoChip>BR-1042</MonoChip><MonoChip>3</MonoChip>
               <span className="flex gap-1"><Kbd>⌘</Kbd><Kbd>K</Kbd></span><Kbd>Esc</Kbd>
             </div>
@@ -359,7 +505,7 @@ const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 function Analytics() {
   return (
-    <Section id="analytics" title="Analytics card" description="A strip of metric tabs (p16, fill-0, 10% line; chosen = canvas + 1.5px foreground line) over the chart. MetricStrip also stands alone.">
+    <Section id="analytics" title="Analytics card" description="A strip of metric tabs (p16, fill-0, 10% line; chosen = canvas + 1.5px orange line) over the chart, whose highlight series is orange. MetricStrip also stands alone.">
       <Both>
         {() => (
           <div className="space-y-4">
@@ -395,13 +541,35 @@ function Filters() {
   );
 }
 
+/** Brenda's asks exactly as her home shows them (src/components/app/brenda-home.tsx), for the spacing check. */
+const LEAD_ASKS = [
+  { icon: Users, label: "Who's working" }, { icon: ClipboardCheck, label: "Week summary" }, { icon: MessageSquareReply, label: "Chase work" },
+  { icon: FileText, label: "Write a doc" }, { icon: CircleAlert, label: "Who's late" },
+];
+const WORKER_ASKS = [
+  { icon: ListOrdered, label: "Plan my day" }, { icon: CalendarCheck, label: "Due today" }, { icon: MessageSquareReply, label: "Follow up" },
+  { icon: FileText, label: "Write a doc" }, { icon: AlarmClock, label: "Remind me" },
+];
+
 function Tiles() {
   return (
-    <Section id="tiles" title="Tool tiles and quick links" description="Tool tile: a 40×40 r12 square (20px icon), the label 10px under it, 81px wide; a r16 fill-1 plate on hover. Quick link: h56 p16 r12 outline.">
+    <Section id="tiles" title="Tool tiles and quick links" description="Tool tile: a 40×40 r12 square (20px icon), the label 10px under it, at least 81px wide; a r16 fill-1 plate and an orange icon on hover. ToolTileRow: equal columns as wide as the widest label, so the squares are evenly spaced; one row when it fits, else a balanced grid of three. Quick link: h56 p16 r12 outline.">
+      <Card className="space-y-8">
+        <div><Cap className="mb-4 text-center">Brenda&apos;s home, team lead: five equal columns (the widest label, “Week summary”, sets them), 16px apart</Cap>
+          <ToolTileRow label="Ask Brenda, team lead">{LEAD_ASKS.map((a) => <ToolTile key={a.label} icon={<a.icon aria-hidden />} label={a.label} />)}</ToolTileRow></div>
+        <div><Cap className="mb-4 text-center">Staff: the same rule, narrower columns (“Plan my day”)</Cap>
+          <ToolTileRow label="Ask Brenda, staff">{WORKER_ASKS.map((a) => <ToolTile key={a.label} icon={<a.icon aria-hidden />} label={a.label} />)}</ToolTileRow></div>
+      </Card>
       <Both>
-        {() => (
+        {(t) => (
           <div className="space-y-6">
-            <ToolTileRow label="Ask Brenda">
+            <div className="flex flex-wrap items-start justify-center gap-8">
+              <div className="w-[337px] max-w-full rounded-xl border border-dashed border-border-input py-4"><Cap className="mb-3 text-center">A 375px phone: three columns, the last row centred</Cap>
+                <ToolTileRow label={`Ask Brenda, phone (${t})`}>{LEAD_ASKS.map((a) => <ToolTile key={a.label} icon={<a.icon aria-hidden />} label={a.label} />)}</ToolTileRow></div>
+              <div className="w-[300px] max-w-full rounded-xl border border-dashed border-border-input py-4"><Cap className="mb-3 text-center">Below 332px: two columns</Cap>
+                <ToolTileRow label={`Ask Brenda, small phone (${t})`}>{LEAD_ASKS.map((a) => <ToolTile key={a.label} icon={<a.icon aria-hidden />} label={a.label} />)}</ToolTileRow></div>
+            </div>
+            <ToolTileRow label={`Six tiles (${t})`}>
               <ToolTile icon={<ListTodo />} label="Plan my day" />
               <ToolTile icon={<Clock />} label="Clock in" />
               <ToolTile icon={<SquareCheckBig />} label="New task" active />
@@ -411,9 +579,9 @@ function Tiles() {
             </ToolTileRow>
             <div className="grid gap-2 sm:grid-cols-2">
               <QuickLink icon={<Users />} label="People" href="#tiles" />
-              <QuickLink icon={<CalendarClock />} label="Attendance" href="#tiles" trailing={<CountPill count={2} />} />
+              <QuickLink icon={<CalendarClock />} label="Attendance" href="#tiles" trailing={<CountPill count={2} tone="attention" />} />
             </div>
-            <div className="flex items-center gap-3"><ToolSquare><BrendaGlyph /></ToolSquare><Cap>ToolSquare on its own (ListRow thumbs, IconTile)</Cap></div>
+            <div className="flex flex-wrap items-center gap-3"><ToolSquare><BrendaGlyph /></ToolSquare><ToolSquare tone="accent"><Inbox /></ToolSquare><Cap>ToolSquare on its own (ListRow thumbs, IconTile); tone=&quot;accent&quot; for the rare live or new thumb</Cap></div>
           </div>
         )}
       </Both>
@@ -423,7 +591,7 @@ function Tiles() {
 
 function Lists() {
   return (
-    <Section id="lists" title="Lists" description="ListRow: 64px, a 40px thumb, title 14/20 semibold, subtitle 13 secondary, meta with a count; separated by space, never lines.">
+    <Section id="lists" title="Lists" description="ListRow: 64px, a 40px thumb, title 14/20 semibold, subtitle 13 secondary, meta with a count; separated by space, never lines; the selected row (active) has the 2px orange marker. SubNavItem: the 32px sub-nav item, the chosen one with the marker.">
       <Both>
         {(t) => (
           <div className="space-y-5">
@@ -432,6 +600,20 @@ function Lists() {
               <ListRow onClick={() => {}} leading={<ToolSquare><FileText /></ToolSquare>} title="Weekly report draft" subtitle="Edited 12 minutes ago" trailing={<Ellipsis className="size-4" aria-hidden />} />
               <ListRow active leading={<ToolSquare><BrendaGlyph /></ToolSquare>} title="Brenda" subtitle="Your day is planned" trailing="09:12" />
             </ul>
+            <div className="flex flex-wrap gap-8">
+              <nav aria-label={`Settings sections (${t})`} className="w-48 space-y-0.5">
+                <Cap className="mb-1.5">SubNavItem</Cap>
+                <SubNavItem active icon={<Settings aria-hidden />}>General</SubNavItem>
+                <SubNavItem icon={<Users aria-hidden />} count={2} attention>People</SubNavItem>
+                <SubNavItem icon={<Folder aria-hidden />} count={14}>Projects</SubNavItem>
+                <SubNavItem icon={<CreditCard aria-hidden />}>Billing</SubNavItem>
+              </nav>
+              <div className="w-48 space-y-0.5">
+                <Cap className="mb-1.5">.subnav-item, hand-built</Cap>
+                <a href="#lists" className="subnav-item" aria-current="page"><Folder aria-hidden />All docs</a>
+                <a href="#lists" className="subnav-item"><Folder aria-hidden />Shared with me</a>
+              </div>
+            </div>
             <div><Cap className="mb-1">RowList (dense, v3 props)</Cap><RowList><Row title="Send the invoice" meta="Due today" trailing="17:00" /><Row title="Review the brand deck" meta="Waiting for David" trailing="Fri" href="#lists" /></RowList></div>
           </div>
         )}
@@ -469,7 +651,7 @@ function Tables() {
 
 function Feedback() {
   return (
-    <Section id="feedback" title="Feedback" description="Alerts, empty states, skeletons, toasts, progress.">
+    <Section id="feedback" title="Feedback" description="Alerts; empty states (the icon in an orange-tinted square; errors red, a locked state grey); skeletons, toasts; progress fills in orange and turns green when done.">
       <Both>
         {() => (
           <div className="space-y-5">
@@ -482,6 +664,8 @@ function Feedback() {
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="rounded-xl border border-border"><EmptyState icon={Inbox} title="No messages yet" description="When someone writes to you, it shows here." action={<Button size="sm" variant="secondary">Write a message</Button>} /></div>
               <div className="rounded-xl border border-border"><EmptyState compact icon3d="card-check" title="Nothing due today" description="Enjoy the quiet." /></div>
+              <div className="rounded-xl border border-border"><EmptyState compact tone="danger" icon={TriangleAlert} title="Something went wrong" description="ErrorState: status wins over accent." /></div>
+              <div className="rounded-xl border border-border"><EmptyState compact tone="neutral" icon={Settings} title="Permission denied" description="PermissionDenied: a quiet grey square." /></div>
             </div>
             <div className="space-y-2"><Skeleton className="h-4 w-2/3" /><Skeleton className="h-4 w-1/2" /><Skeleton className="h-24 w-full rounded-xl" /></div>
             <div className="flex flex-wrap gap-3 [&>*]:max-w-full">
@@ -489,7 +673,12 @@ function Feedback() {
               <ToastCard title="Clocked out" tone="neutral" />
               <ToastCard title="Upload failed" description="The file is larger than 50 MB." tone="danger" />
             </div>
-            <div className="flex items-center gap-4"><ProgressArc percent={0} /><ProgressArc percent={45} /><ProgressArc percent={72} tone="accent" /><ProgressArc percent={100} /><Button variant="secondary" loading>Uploading…</Button></div>
+            <div className="flex flex-wrap items-center gap-4"><ProgressArc percent={0} /><ProgressArc percent={45} /><ProgressArc percent={72} tone="neutral" /><ProgressArc percent={100} /><Button variant="secondary" loading>Uploading…</Button></div>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="space-y-1.5"><Cap>ProgressBar 3 of 5</Cap><ProgressBar value={3} max={5} label="Setup progress" valueText="3 of 5 steps done" /></div>
+              <div className="space-y-1.5"><Cap>Done (green)</Cap><ProgressBar value={5} max={5} label="Setup done" /></div>
+              <div className="space-y-1.5"><Cap>Slider</Cap><Slider aria-label="Percentage done" defaultValue={65} step={5} /></div>
+            </div>
           </div>
         )}
       </Both>
@@ -597,7 +786,7 @@ function Prompt() {
     return () => window.clearInterval(id);
   }, [rec]);
   return (
-    <Section id="prompt" title="Prompt" description="The home prompt pill: min-h 52, r26, solid fill-1, 16/24 text, round 36px actions; Send is the white primary. Suggestions fill the box, never send.">
+    <Section id="prompt" title="Prompt" description="The home prompt pill: min-h 52, r26, solid fill-1, 16/24 text, round 36px actions; an orange ring while focused; Send orange with text, grey when empty. Suggestions fill the box, never send.">
       <Both>
         {(t) => (
           <div className="space-y-5">
@@ -624,7 +813,7 @@ function Prompt() {
 
 function Charts() {
   return (
-    <Section id="charts" title="Charts" description="Monochrome: the foreground and greys, one orange highlight; hairline grids; status colours only for status splits.">
+    <Section id="charts" title="Charts" description="The highlight series orange (the selected metric, today, the current period), the rest grey; a sparkline's latest point orange; hairline grids; status colours only for status splits.">
       <Both>
         {() => (
           <div className="grid gap-6 sm:grid-cols-2">
@@ -662,6 +851,7 @@ export function DesignGallery() {
         <PageHeader title="Design system v4" description="The ElevenLabs app's design language with Boredroom orange (owner decision, 6 October 2026). Every part in src/components/ui, in each state, dark and light. Rules: docs/design-system.md." divider
           actions={<><Button variant="secondary" size="sm" onClick={() => document.getElementById("frame")?.scrollIntoView()}>App frame</Button><Button size="sm" onClick={() => document.getElementById("buttons")?.scrollIntoView()}>Parts</Button></>} />
         <Foundations />
+        <Accents />
         <TypeScale />
         <Buttons />
         <Inputs />

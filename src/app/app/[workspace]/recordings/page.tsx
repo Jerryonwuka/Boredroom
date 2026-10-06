@@ -35,7 +35,7 @@ export default async function RecordingsPage({ params, searchParams }: { params:
   const { ctx, counts, teams: navTeams } = await workspacePage(workspace, `/app/${workspace}/recordings`);
   const role = ctx.membership.role;
   if (!ctx.plan.features.VIDEO_RECORDING) return <AppShell ctx={ctx} counts={counts} teams={navTeams}><UpgradeGate feature="VIDEO_RECORDING" orgSlug={ctx.org.slug} planName={ctx.plan.plan?.name ?? null} upgradeTo={ctx.plan.upgradeTo} isOwner={role === "owner" || role === "hr"} lapsed={ctx.plan.lapsed} /></AppShell>;
-  if (role === "employee") return <AppShell ctx={ctx} counts={counts} teams={navTeams}><PermissionDenied description="Your own recordings are listed on each task you recorded. Team leads and the organisation account see recordings here." /></AppShell>;
+  if (role === "employee") return <AppShell ctx={ctx} counts={counts} teams={navTeams}><PageHeader title="Recordings" divider /><PermissionDenied description="Your own recordings are listed on each task you recorded. Team leads and the organisation account see recordings here." /></AppShell>;
   const isOrg = role === "owner" || role === "hr";
   // Ids from the address bar are checked before they reach a uuid column: a mistyped link shows everyone, not an error.
   const teamId = idOrNull(sp.team);

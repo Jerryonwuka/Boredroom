@@ -24,19 +24,21 @@ export const metadata = { title: "Workroom" };
 /** A duration as a figure: "0h" when nothing is recorded yet, else "3h 05m" (formatDuration). */
 const hours = (s: number) => (s > 0 ? formatDuration(s) : "0h");
 
-const STATUS = { active: { label: "Active", tone: "success" as const }, paused: { label: "Paused", tone: "warning" as const }, clocked_out: { label: "Off the clock", tone: "neutral" as const }, not_started: { label: "Not started today", tone: "neutral" as const } };
+// Active is a running timer: live, so orange (accent rules, 6 October 2026); paused keeps amber.
+const STATUS = { active: { label: "Active", tone: "accent" as const }, paused: { label: "Paused", tone: "warning" as const }, clocked_out: { label: "Off the clock", tone: "neutral" as const }, not_started: { label: "Not started today", tone: "neutral" as const } };
 const TABS = ["tasks", "sessions", "recordings"] as const;
 type Tab = (typeof TABS)[number];
 
 /**
  * One person's day, v4: their name with tabs for Tasks, Sessions and Recordings, the live session clock in the first
- * stat card, then calm tables. Everything here happened today.
+ * stat card (orange digits while it runs), then calm tables. Everything here happened today. Orange marks only what
+ * is live: their status while active, a recording in progress, the running clock, the task they are on now.
  */
 export default async function WorkroomPersonPage({ params, searchParams }: { params: Promise<{ workspace: string; member: string }>; searchParams: Promise<{ tab?: string }> }) {
   const { workspace, member } = await params;
   const sp = await searchParams;
   const { ctx, counts, teams } = await workspacePage(workspace, `/app/${workspace}/workroom/${member}`);
-  if (ctx.membership.role === "employee") return <AppShell ctx={ctx} counts={counts} teams={teams}><PermissionDenied description="A person's day is for their team lead and the organisation account. Your own day is on My Day." /></AppShell>;
+  if (ctx.membership.role === "employee") return <AppShell ctx={ctx} counts={counts} teams={teams}><PageHeader title="Workroom" divider /><PermissionDenied description="A person's day is for their team lead and the organisation account. Your own day is on My Day." /></AppShell>;
   const data = await workroomPerson(ctx, member);
   if (!data) notFound();
   const { person, tasks, sessions } = data;
@@ -75,8 +77,8 @@ export default async function WorkroomPersonPage({ params, searchParams }: { par
       <div className="@container mb-10">
         <div className="grid grid-cols-1 gap-3 @md:grid-cols-2 @4xl:grid-cols-4">
           <StatCard label={person.task_title ? (running ? "Working on now" : "Paused on") : "Right now"} icon={<Timer />}
-            value={person.task_title ? <LiveClock seconds={person.session_seconds} serverNow={data.serverNow} running={running} className={running ? undefined : "text-secondary"} /> : status === "clocked_out" ? "Off the clock" : "No session yet"}
-            hint={person.task_title ? <><Link href={`${base}/tasks/${person.task_id}`} className="font-medium text-foreground hover:underline">{person.task_title}</Link>, since <span className="tabular-nums">{person.started_at ? at(person.started_at) : "earlier"}</span></> : undefined} />
+            value={person.task_title ? <LiveClock seconds={person.session_seconds} serverNow={data.serverNow} running={running} /> : status === "clocked_out" ? "Off the clock" : "No session yet"}
+            hint={person.task_title ? <><Link href={`${base}/tasks/${person.task_id}`} className="link-inline">{person.task_title}</Link>, since <span className="tabular-nums">{person.started_at ? at(person.started_at) : "earlier"}</span></> : undefined} />
           <StatCard label="Time today" value={hours(person.today_seconds)} icon={<Hourglass />} hint={person.first_start_today ? <>First start <span className="tabular-nums">{at(person.first_start_today)}</span>, <span className="tabular-nums">{sessions.length}</span> session{sessions.length === 1 ? "" : "s"}</> : "No session yet today"} />
           <StatCard label="Tasks today" value={tasks.length} icon={<SquareCheckBig />} hint={<><span className="tabular-nums">{finished.length}</span> done, <span className="tabular-nums">{inCheck.length}</span> sent for check</>} />
           <StatCard label="Recordings today" value={recordings.length} icon={<Video />} hint={person.recording_live ? "Recording now" : "None running"} />
@@ -93,7 +95,7 @@ export default async function WorkroomPersonPage({ params, searchParams }: { par
                   <TaskPeekLink orgSlug={ctx.org.slug} viewer={viewer} task={{ id: t.id, title: t.title, status: t.status, due_at: t.due_at, project_name: t.project_name }} className="font-medium" />
                   <p className="text-meta text-secondary">{t.project_name}{t.created_by_name !== person.display_name ? `, from ${t.created_by_name}` : ""}{t.due_at ? `, due ${formatDateTime(t.due_at, tz)}` : ""}</p>
                 </td>
-                <td>{t.current ? <Badge tone="success" dot>Working now</Badge> : <Badge tone={TASK_STATUS_TONE[t.status]}>{taskStatusLabel(t.status)}</Badge>}</td>
+                <td>{t.current ? <Badge tone="accent" dot>Working now</Badge> : <Badge tone={TASK_STATUS_TONE[t.status]}>{taskStatusLabel(t.status)}</Badge>}</td>
                 <td className="text-right tabular-nums">{formatDuration(t.seconds_today)}</td>
                 <td className="text-right tabular-nums">{t.sessions_today}</td>
                 <td className="tabular-nums text-secondary">{t.first_started_today ? at(t.first_started_today) : "None"}</td>
@@ -111,7 +113,7 @@ export default async function WorkroomPersonPage({ params, searchParams }: { par
             <thead><tr><th>State</th><th>Task</th><th className="!text-right">Length</th><th>From</th><th>To</th><th>Outcome</th><th>Recordings</th></tr></thead>
             <tbody>{sessions.map((s) => (
               <tr key={s.id}>
-                <td><Badge tone={SESSION_STATE_TONE[s.state]} dot>{label(s.state)}</Badge></td>
+                <td><Badge tone={s.state === "running" ? "accent" : SESSION_STATE_TONE[s.state]} dot>{label(s.state)}</Badge></td>
                 <td><Link href={`${base}/tasks/${s.task_id}`} className="font-medium hover:underline">{s.task_title}</Link>{s.stop_note ? <p className="text-meta text-secondary">{s.stop_note}</p> : null}</td>
                 <td className="text-right tabular-nums">{formatDuration(s.seconds)}</td>
                 <td className="tabular-nums text-secondary">{at(s.started_at)}</td>

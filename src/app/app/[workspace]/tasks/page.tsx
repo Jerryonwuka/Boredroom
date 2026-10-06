@@ -32,7 +32,8 @@ export default async function TasksPage({ params, searchParams }: { params: Prom
     { value: "all", label: "All", count: data.counts.open + data.counts.check + data.counts.done, href: href("all") },
     ...(!mine ? [{ value: "assigned", label: "Assigned", count: data.counts.assigned, href: href("assigned") }] : []),
     { value: "open", label: "To do", count: data.counts.open, href: href("open") },
-    { value: "check", label: "Sent for check", count: data.counts.check, href: href("check") },
+    // For a team lead these wait on them (orange, accent rules); for staff they wait on someone else (a plain count).
+    { value: "check", label: "Sent for check", count: data.counts.check, attention: lead, href: href("check") },
     { value: "done", label: "Done", count: data.counts.done, href: href("done") },
   ];
   const empty = { all: mine ? "Nothing assigned to you right now" : "No tasks yet", assigned: "You have not handed out a task yet", open: mine ? "Nothing to do right now" : "No open tasks", check: "Nothing waiting for a check", done: "Nothing finished yet" }[status];

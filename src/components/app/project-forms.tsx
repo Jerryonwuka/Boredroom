@@ -38,7 +38,8 @@ export function NewProjectForm({ orgSlug, members }: { orgSlug: string; members:
   const [open, setOpen] = useState(false);
   return (
     <>
-      <Button size="sm" onClick={() => setOpen(true)} aria-haspopup="dialog"><Plus aria-hidden />New project</Button>
+      {/* The Projects page's one standout action (accent rules, 6 October 2026). */}
+      <Button size="sm" variant="accent" onClick={() => setOpen(true)} aria-haspopup="dialog"><Plus aria-hidden />New project</Button>
       {open ? <NewProjectSheet orgSlug={orgSlug} members={members} onClose={() => setOpen(false)} /> : null}
     </>
   );

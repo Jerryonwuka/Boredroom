@@ -19,7 +19,7 @@ export function UpgradeGate({ feature, orgSlug, planName, upgradeTo, isOwner, la
   const what = FEATURE_LABELS[feature] ?? feature.replace(/_/g, " ").toLowerCase();
   return (
     <div className="mx-auto flex max-w-md flex-col items-center px-2 pb-12 pt-16 text-center">
-      <ToolSquare size={48}><Lock aria-hidden /></ToolSquare>
+      <ToolSquare size={48} tone="accent"><Lock aria-hidden /></ToolSquare>
       <Badge className="mt-6">{upgradeTo ? `Part of ${upgradeTo}` : "Not on this plan"}</Badge>
       {/* The gate stands in for the whole page, so its title is the page's heading. */}
       <h1 className="type-page-title mt-3">The {planName ?? "current"} plan does not include {midSentence(what)}</h1>

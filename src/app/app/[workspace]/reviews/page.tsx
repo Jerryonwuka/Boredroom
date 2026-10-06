@@ -14,6 +14,7 @@ import { formatDateTime } from "@/lib/utils";
 import { DecisionForm } from "@/components/app/small-actions";
 import { SubmissionButton, DecisionSheetButton } from "@/components/app/review-sheet";
 import { TaskPeekLink } from "@/components/app/tasks-page";
+import { DueDate } from "@/components/app/due";
 import { taskViewer } from "@/server/lib/task-viewer";
 
 export const dynamic = "force-dynamic";
@@ -27,6 +28,11 @@ type Tab = "all" | "submissions" | "corrections" | "exceptions" | "incidents" | 
  * with its details and the decision. No daily reports, no Missing reports and no day exemptions here any more (owner
  * decision, 6 October 2026): staff no longer write a daily report, and Brenda's end-of-day report tells team leads what
  * their teams did. Leads keep deciding on submitted work, time corrections and capture exceptions.
+ *
+ * Accent rules (6 October 2026): for the team lead who decides, each kind's tab count is orange (attention); for everyone
+ * else they are plain totals. The "All" sum and the section-title counts repeat those numbers, so they stay neutral (the
+ * orange budget: four orange 3s on one screen read as busy). Overdue dates are a small red dot beside the date, never
+ * red text.
  */
 export default async function ReviewsPage({ params, searchParams }: { params: Promise<{ workspace: string }>; searchParams: Promise<{ tab?: string }> }) {
   const { workspace } = await params;
@@ -43,12 +49,12 @@ export default async function ReviewsPage({ params, searchParams }: { params: Pr
   const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
   const clear = total === 0 && q.overdue.length === 0;
   const showOverdue = q.overdue.length > 0 || !isEmployee;
-  const tabs: { value: Tab; label: string; count?: number; href: string }[] = [
+  const tabs: { value: Tab; label: string; count?: number; attention?: boolean; href: string }[] = [
     { value: "all", label: "All", count: total, href: `${base}/reviews` },
-    { value: "submissions", label: "Submissions", count: q.submissions.length, href: `${base}/reviews?tab=submissions` },
-    { value: "corrections", label: "Time corrections", count: q.adjustments.length, href: `${base}/reviews?tab=corrections` },
-    { value: "exceptions", label: "Capture exceptions", count: q.exceptions.length, href: `${base}/reviews?tab=exceptions` },
-    ...(q.incidents.length ? [{ value: "incidents" as const, label: "Privacy incidents", count: q.incidents.length, href: `${base}/reviews?tab=incidents` }] : []),
+    { value: "submissions", label: "Submissions", count: q.submissions.length, attention: decides, href: `${base}/reviews?tab=submissions` },
+    { value: "corrections", label: "Time corrections", count: q.adjustments.length, attention: decides, href: `${base}/reviews?tab=corrections` },
+    { value: "exceptions", label: "Capture exceptions", count: q.exceptions.length, attention: decides, href: `${base}/reviews?tab=exceptions` },
+    ...(q.incidents.length ? [{ value: "incidents" as const, label: "Privacy incidents", count: q.incidents.length, attention: !isEmployee, href: `${base}/reviews?tab=incidents` }] : []),
     ...(showOverdue ? [{ value: "overdue" as const, label: "Overdue", count: q.overdue.length, href: `${base}/reviews?tab=overdue` }] : []),
   ];
   const tab: Tab = tabs.some((t) => t.value === sp.tab) ? (sp.tab as Tab) : "all";
@@ -193,9 +199,9 @@ export default async function ReviewsPage({ params, searchParams }: { params: Pr
                       <td><span className="flex min-w-0 items-center gap-2.5"><Person orgSlug={ctx.org.slug} membershipId={t.assignee_membership_id} name={t.assignee_name} profileId={t.assignee_profile_id} avatarKey={t.assignee_avatar_key} showName={false} size={28} /><span className="truncate font-medium">{t.assignee_name}</span></span></td>
                       <td>
                         <TaskPeekLink orgSlug={ctx.org.slug} viewer={viewer} task={{ id: t.id, title: t.title, status: t.status, due_at: t.due_at, assignee_membership_id: t.assignee_membership_id, assignee_name: t.assignee_name, overdue: true }} className="block max-w-full truncate text-sm" />
-                        <p className="text-meta tabular-nums text-danger md:hidden">Due {formatDateTime(t.due_at, tz)}</p>
+                        <p className="text-meta text-secondary md:hidden">Due <DueDate iso={t.due_at} timeZone={tz} overdue srLabel={false} /></p>
                       </td>
-                      <td className="hidden tabular-nums text-danger md:table-cell">{formatDateTime(t.due_at, tz)}</td>
+                      <td className="hidden text-secondary md:table-cell"><DueDate iso={t.due_at} timeZone={tz} overdue /></td>
                     </tr>
                   ))}</tbody>
                 </DataTable>

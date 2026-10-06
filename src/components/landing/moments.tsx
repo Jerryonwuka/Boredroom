@@ -1,5 +1,14 @@
-/** Three columns of the week's moments sliding past, like a wall of testimonials, except every card is something the product records. */
-const COLS: { icon: string; text: string; meta: string }[][] = [
+import { LINE_ICON, type Icon3DName } from "@/components/ui/icon";
+import { ToolSquare } from "@/components/ui/tool-tile";
+import { PauseMotion } from "@/components/landing/pause-motion";
+
+/**
+ * Three columns of the week's moments sliding past, like a wall of testimonials, except every card is something the
+ * product records. v4 rows: a 40px tool square with the line icon, the moment 14/20 medium, its detail 13px secondary,
+ * on the canvas colour with a hairline (r12). Pure CSS (globals.css §6 `.lp-mq-y`): pauses on hover or with the Pause
+ * button under it, still under reduced motion. Decorative repetition, so hidden from assistive technology as before.
+ */
+const COLS: { icon: Icon3DName; text: string; meta: string }[][] = [
   [
     { icon: "clock-in", text: "Ada clocked in at 08:58", meta: "On time, Design" },
     { icon: "stopwatch", text: "Homepage design started", meta: "Estimate 2h 30m" },
@@ -28,19 +37,28 @@ const COLS: { icon: string; text: string; meta: string }[][] = [
 
 export function Moments() {
   return (
-    <div className="lp-mq-y grid h-[520px] gap-4 overflow-hidden md:grid-cols-3" aria-hidden>
-      {COLS.map((col, c) => (
-        <div key={c} className={c === 2 ? "hidden md:block" : c === 1 ? "hidden sm:block" : ""}>
-          <ul className={`lp-mq-y-track space-y-4 ${c === 1 ? "reverse" : ""}`} style={{ "--marquee-duration": `${34 + c * 6}s` } as React.CSSProperties}>
-            {[...col, ...col].map((m, i) => (
-              <li key={i} className="lp-card flex items-center gap-4 p-4">
-                <img src={`/icons/${m.icon}.png`} alt="" className="h-12 w-12 shrink-0 object-contain" loading="lazy" />
-                <span className="min-w-0"><span className="block text-[15px]">{m.text}</span><span className="lp-muted block text-sm">{m.meta}</span></span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ))}
+    <div>
+      <div className="lp-mq-y grid h-[480px] gap-3 overflow-hidden sm:grid-cols-2 md:grid-cols-3" aria-hidden>
+        {COLS.map((col, c) => (
+          <div key={c} className={c === 2 ? "hidden md:block" : c === 1 ? "hidden sm:block" : undefined}>
+            <ul className={`lp-mq-y-track space-y-3 pb-3 ${c === 1 ? "reverse" : ""}`} style={{ "--marquee-duration": `${34 + c * 6}s` } as React.CSSProperties}>
+              {[...col, ...col].map((m, i) => {
+                const Icon = LINE_ICON[m.icon];
+                return (
+                  <li key={i} className="flex items-center gap-3 rounded-xl border border-border bg-background p-3 shadow-natural-xs">
+                    <ToolSquare><Icon /></ToolSquare>
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-medium text-foreground">{m.text}</span>
+                      <span className="block truncate text-meta font-normal text-secondary">{m.meta}</span>
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        ))}
+      </div>
+      <div className="mt-2 flex justify-end"><PauseMotion /></div>
     </div>
   );
 }

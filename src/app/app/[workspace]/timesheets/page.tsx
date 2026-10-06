@@ -27,10 +27,30 @@ const timeOf = (iso: string, tz: string) => new Intl.DateTimeFormat("en-GB", { t
 const shortDay = (d: string) => new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" }).format(new Date(`${d}T00:00:00Z`));
 const ADJUSTMENT_TONE: Record<string, "success" | "danger" | "warning"> = { approved: "success", rejected: "danger" };
 
+/** A short duration for the chart's ticks and bars: "45s", "1m 17s", "12m", "1h 05m" (formatDuration from an hour). */
+const short = (s: number) => {
+  const sec = Math.max(0, Math.round(s));
+  if (sec < 60) return `${sec}s`;
+  if (sec < 3600) return sec % 60 ? `${Math.floor(sec / 60)}m ${sec % 60}s` : `${sec / 60}m`;
+  return formatDuration(sec);
+};
+
+/**
+ * The fortnight's bars in a unit that shows what is there (polish, 6 October 2026): bars rounded to a tenth of an hour
+ * drew a fortnight of a few minutes as nothing at all, beside a "Last 14 days" of "1m 17s". Under an hour at most the
+ * bars are minutes; otherwise hours, unrounded. The chart says "No confirmed time" only when there truly is none.
+ */
+function fortnightBars(seconds: number[]) {
+  const top = Math.max(0, ...seconds);
+  return top < 3600
+    ? { values: seconds.map((x) => x / 60), format: (n: number) => (n === 0 ? "0m" : short(n * 60)) }
+    : { values: seconds.map((x) => x / 3600), format: (n: number) => (n === 0 ? "0h" : n * 3600 < 3600 ? short(n * 3600) : `${Math.round(n * 10) / 10}h`) };
+}
+
 /**
  * One person's confirmed time for a day, and corrections to it, v4: the filter bar (Person, Day), a metric strip over
  * the last 14 days as bars (the chosen day in orange), then the day's intervals as a calm table with the totals by task,
- * and the recent days and corrections beside them. There is no daily report to submit here (owner decision,
+ * and the recent days (the chosen one with the orange marker) and corrections beside them. There is no daily report to submit here (owner decision,
  * 6 October 2026): the time counts as it is confirmed, and Brenda's end-of-day report tells team leads what their teams did.
  */
 export default async function TimesheetsPage({ params, searchParams }: { params: Promise<{ workspace: string }>; searchParams: Promise<{ member?: string; date?: string }> }) {
@@ -62,6 +82,7 @@ export default async function TimesheetsPage({ params, searchParams }: { params:
   const secondsOn = new Map(recent.map((r) => [r.local_date, r.seconds]));
   const totalFortnight = recent.reduce((a, r) => a + r.seconds, 0);
   const daysWorked = recent.filter((r) => r.seconds > 0).length;
+  const bars = fortnightBars(fortnight.map((d) => secondsOn.get(d) ?? 0));
   const uncertainSeconds = day ? day.uncertain.reduce((a, e) => a + e.seconds, 0) : 0;
   const canExport = ["owner", "hr", "manager"].includes(ctx.membership.role);
   return (
@@ -74,7 +95,7 @@ export default async function TimesheetsPage({ params, searchParams }: { params:
         </> : undefined} />
       <MemberDatePicker orgSlug={ctx.org.slug} members={members} membershipId={membershipId} date={date} prev={addDays(date, -1)} next={addDays(date, 1)} today={today} />
       {!data || !day ? (
-        <Alert tone="danger" title="You cannot view this person's timesheet">Timesheets are open to the person, their team lead, HR and the owner. <Link href={`${base}/timesheets`} className="font-medium text-foreground underline underline-offset-2">Open your own timesheet</Link>.</Alert>
+        <Alert tone="danger" title="You cannot view this person's timesheet">Timesheets are open to the person, their team lead, HR and the owner. <Link href={`${base}/timesheets`} className="link-inline">Open your own timesheet</Link>.</Alert>
       ) : (
         <>
           <section aria-label="Confirmed time" className="mb-10 overflow-hidden rounded-2xl border border-border bg-background shadow-chart">
@@ -86,7 +107,7 @@ export default async function TimesheetsPage({ params, searchParams }: { params:
                 ...(uncertainSeconds ? [{ key: "uncertain", label: "Uncertain", value: formatDuration(uncertainSeconds), hint: "Not credited until corrected" }] : []),
               ]} />
             <div className="p-5">
-              <BarChart title="Confirmed hours, last 14 days" labels={fortnight.map((d) => String(Number(d.slice(8))))} values={fortnight.map((d) => Math.round((secondsOn.get(d) ?? 0) / 360) / 10)} highlight={fortnight.indexOf(date)} format={(n) => `${Math.round(n * 10) / 10}h`} empty="No confirmed time in the last two weeks." />
+              <BarChart title="Confirmed time, last 14 days" labels={fortnight.map((d) => String(Number(d.slice(8))))} values={bars.values} highlight={fortnight.indexOf(date)} format={bars.format} empty="No confirmed time in the last two weeks." />
             </div>
           </section>
 
@@ -154,7 +175,7 @@ export default async function TimesheetsPage({ params, searchParams }: { params:
                     <ul>{recent.map((r) => (
                       <li key={r.local_date}>
                         <Link href={`${base}/timesheets?member=${membershipId}&date=${r.local_date}`} aria-current={r.local_date === date ? "date" : undefined}
-                          className={cn("flex h-8 items-center justify-between gap-3 rounded-lg px-2 text-sm font-medium transition-colors duration-75 hover:bg-fill-1 hover:text-foreground pointer-coarse:h-10", r.local_date === date ? "bg-fill-1 text-foreground" : "text-secondary")}>
+                          className={cn("flex h-8 items-center justify-between gap-3 rounded-lg px-2 text-sm font-medium transition-colors duration-75 hover:bg-fill-1 hover:text-foreground pointer-coarse:h-10", r.local_date === date ? "selected-marker bg-fill-1 text-foreground" : "text-secondary")}>
                           <span>{shortDay(r.local_date)}</span>
                           <span className="tabular-nums">{formatDuration(r.seconds)}</span>
                         </Link>

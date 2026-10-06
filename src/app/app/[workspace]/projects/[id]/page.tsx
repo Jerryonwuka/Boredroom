@@ -10,6 +10,7 @@ import { PageHeader, SectionTitle } from "@/components/ui/card";
 import { Badge, CountPill } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/states";
+import { ProgressBar } from "@/components/ui/progress-arc";
 import { FilterBar, FilterSelect } from "@/components/ui/filter-control";
 import { TaskBoard } from "@/components/app/tasks-page";
 import { taskViewer } from "@/server/lib/task-viewer";
@@ -57,6 +58,9 @@ export default async function ProjectPage({ params, searchParams }: { params: Pr
   const viewer = taskViewer(ctx);
   const archived = project.status === "archived";
   const base = `/app/${ctx.org.slug}`;
+  // How far the project has come (accent rules, 6 October 2026: progress fills in orange, green once all is done).
+  const current = tasks.filter((t) => !t.archived_at);
+  const done = current.filter((t) => t.status === "completed").length;
   return (
     <AppShell ctx={ctx} counts={counts} teams={teams}>
       <PageHeader back={{ href: `${base}/projects`, label: "All projects" }} title={project.name}
@@ -80,6 +84,12 @@ export default async function ProjectPage({ params, searchParams }: { params: Pr
               {sp.status || sp.assignee ? <Link href={`${base}/projects/${project.id}`} className={buttonVariants({ variant: "ghost", size: "xs" })}>Clear</Link> : null}
             </FilterBar>
           ) : undefined} />
+        {current.length ? (
+          <div className="mb-4 flex max-w-sm items-center gap-3">
+            <ProgressBar value={done} max={current.length} label="Project progress" valueText={`${done} of ${current.length} tasks completed`} />
+            <span className="shrink-0 text-meta font-normal tabular-nums text-secondary">{done} of {current.length} completed</span>
+          </div>
+        ) : null}
         {tasks.length === 0
           ? <EmptyState icon={ListTodo} title="No tasks in this project yet" description={canCreate && !archived ? "Press New task and say what a finished result looks like; the reviewer accepts against it." : "Tasks filed in this project appear here."} />
           : visible.length === 0

@@ -6,6 +6,7 @@ import { orgContext } from "@/server/lib/api";
 import { withUser } from "@/server/db";
 import { AppShell } from "@/components/app/shell";
 import { EmptyState } from "@/components/ui/states";
+import { PageHeader } from "@/components/ui/card";
 import { buttonVariants } from "@/components/ui/button";
 import { DocsEditor } from "@/components/app/docs-editor";
 import { getDoc, listDocs } from "@/server/services/docs";
@@ -39,6 +40,7 @@ export default async function DocPage({ params, searchParams }: { params: Promis
   if (!doc) {
     return (
       <AppShell ctx={ctx} counts={counts} teams={teams}>
+        <PageHeader title="Docs" divider />
         <EmptyState icon3d="box-doc-check" title="This document isn't available"
           description="It may have been archived, or it isn't shared with you. Ask the person who wrote it to share it with your team or with everyone."
           action={<Link href={`${base}/docs`} className={buttonVariants({ variant: "secondary", size: "sm" })}>Back to Docs</Link>} />

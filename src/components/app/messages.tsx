@@ -154,16 +154,17 @@ export function Composer({ orgSlug, conversationId, task, prefill, placeholder, 
         </Presence>
         <Presence show={!!shownError}><p id={errId} role="alert" className="mb-2 pl-1 text-meta font-medium text-danger">{shownError}</p></Presence>
         <div className={cn("rounded-[26px] bg-surface transition-shadow duration-150",
-          card ? "shadow-[0_0_0_1px_var(--ring),var(--elev-natural-xs)]" : "shadow-[0_0_0_1px_var(--border),var(--elev-natural-xs)] focus-within:shadow-[0_0_0_1px_var(--border-input-hover),var(--elev-natural-xs)]")}>
+          // Accent rules (6 October 2026), as on Brenda's prompt pill: an orange ring while it has focus or records.
+          card ? "shadow-[0_0_0_1px_var(--accent-ring),var(--elev-natural-xs)]" : "shadow-[0_0_0_1px_var(--border),var(--elev-natural-xs)] focus-within:shadow-[0_0_0_1px_var(--accent-ring),var(--elev-natural-xs)]")}>
           {/* Recording a voice note: the notch's voice card (owner decision, 5 October 2026), its level read from the recorder's own microphone. */}
           {card ? (
             <div className="p-2">
               <VoiceCapture phase={voice.recording ? "listening" : "working"} title={voice.recording ? "Recording…" : "Sending your voice note…"} stream={voice.stream} className="rounded-[20px]"
-                hint={voice.recording ? <><span role="timer" className="tabular-nums text-foreground">{fmt(voice.seconds)}</span> of {fmt(MAX_SECONDS)}</> : <><span className="tabular-nums">{fmt(voice.seconds)}</span> recorded</>}
+                hint={voice.recording ? <><span role="timer" className="tabular-nums text-accent-text">{fmt(voice.seconds)}</span> of {fmt(MAX_SECONDS)}</> : <><span className="tabular-nums">{fmt(voice.seconds)}</span> recorded</>}
                 actions={voice.recording ? <>
                   <Button type="button" size="md" variant="ghost" onClick={() => voice.cancel()} disabled={sendingVoice}><Trash2 aria-hidden />Cancel</Button>
                   {/* Under a second there is nothing to send yet: it says so (aria-disabled) but keeps the focus it was given. */}
-                  <Button ref={sendNote} type="button" size="md" onClick={() => { if (voice.seconds >= 1) void sendVoice(); }} disabled={sendingVoice} aria-disabled={voice.seconds < 1 || undefined}
+                  <Button ref={sendNote} type="button" size="md" variant="accent" onClick={() => { if (voice.seconds >= 1) void sendVoice(); }} disabled={sendingVoice} aria-disabled={voice.seconds < 1 || undefined}
                     className="aria-disabled:pointer-events-auto aria-disabled:cursor-not-allowed aria-disabled:opacity-50"><ArrowUp aria-hidden />Send</Button>
                 </> : null} />
             </div>
@@ -177,7 +178,7 @@ export function Composer({ orgSlug, conversationId, task, prefill, placeholder, 
               {canRecord && !body.trim() ? <PromptAction aria-label="Record a voice note" disabled={pending} onClick={() => void voice.start()}><Mic aria-hidden /></PromptAction> : null}
               <button type="submit" aria-label={pending ? "Sending" : "Send"} disabled={!ready}
                 className={cn("grid size-9 shrink-0 place-items-center rounded-full transition-colors duration-75 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ring)] disabled:cursor-not-allowed",
-                  ready ? "bg-primary text-primary-fg hover:bg-primary-hover" : "bg-fill-150 text-subtle")}>
+                  ready ? "bg-accent text-accent-fg hover:bg-accent-hover" : "bg-fill-150 text-subtle")}>
                 {pending ? <Loader2 className="size-4 animate-spin" aria-hidden /> : <ArrowUp className="size-[18px]" strokeWidth={2.25} aria-hidden />}
               </button>
             </div>

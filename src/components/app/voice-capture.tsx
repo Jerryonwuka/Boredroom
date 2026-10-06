@@ -8,7 +8,7 @@
  * v4 (6 October 2026): monochrome like the rest of the app. The orb is the tool-tile square made round (the canvas with
  * a barely-there vertical fill, a 7.5% ring, the natural shadow); while listening its orange dot (the accent: a live
  * microphone) swells with the voice and a thin orange ring widens around it; while working a foreground dot breathes.
- * "Mic on" is a red status dot with a 15% halo and 12/16 text, as status shows everywhere in v4. The card is fill-0
+ * "Mic on" is an orange status dot with a 15% halo and 12/16 text (a live microphone: accent rules, 6 October 2026). The card is fill-0
  * with a hairline, r16 (r18 inside the prompt pill, concentric with its r26), and keeps its faint orange light rising
  * from the bottom while the microphone is open (`.brenda-wash`, globals.css).
  *
@@ -159,7 +159,7 @@ export function VoiceCapture({ phase, title, hint, heard, level, onStop, onCance
         </div>
         {listening ? (
           <span className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap text-xs font-medium text-secondary">
-            <span className="rec-dot size-1.5 rounded-full bg-danger shadow-[0_0_0_3px_color-mix(in_srgb,var(--danger)_15%,transparent)]" aria-hidden />Mic on
+            <span className="rec-dot size-1.5 rounded-full bg-accent shadow-[0_0_0_3px_color-mix(in_srgb,var(--accent)_15%,transparent)]" aria-hidden />Mic on
           </span>
         ) : null}
       </div>

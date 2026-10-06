@@ -14,6 +14,7 @@ import { Sheet } from "@/components/ui/sheet";
 import { ProgressSlider } from "@/components/app/progress-slider";
 import { cn, formatClock, formatDuration } from "@/lib/utils";
 import { Swap } from "@/components/ui/motion";
+import { StatusDot } from "@/components/ui/status-dot";
 import type { RecordingRules, SessionView } from "@/server/services/sessions";
 
 /** `recording`: the workspace's recording rules and whether you have agreed (the consent prompt reads them). */
@@ -192,7 +193,7 @@ export function SessionTimer({ orgSlug, initial, tasks, captureGate, onCaptureSe
 
   const alerts = (
     <>
-      {elsewhere ? <Alert tone="warning" title="Open session in another workspace">You have a session running in {elsewhere.organisationName}. Stop it there before starting work here. <a className="font-medium text-foreground underline underline-offset-4" href={`/app/${elsewhere.organisationSlug}/my-day`}>Open that workspace</a>.</Alert> : null}
+      {elsewhere ? <Alert tone="warning" title="Open session in another workspace">You have a session running in {elsewhere.organisationName}. Stop it there before starting work here. <a className="link-inline" href={`/app/${elsewhere.organisationSlug}/my-day`}>Open that workspace</a>.</Alert> : null}
       {connectionLost ? <Alert tone="danger" title="Connection lost">Heartbeats are not reaching the server. Confirmed time stops at the last acknowledged heartbeat; when you reconnect you can resume and request a correction for the gap. Nothing is credited automatically.</Alert> : null}
       {session?.state === "interrupted" ? <Alert tone="warning" title="Session interrupted">The server stopped receiving heartbeats. Confirmed time ends at the last heartbeat; {session.uncertainSeconds > 0 ? `${formatDuration(session.uncertainSeconds)} is marked uncertain` : "the gap will be marked uncertain when you resume or stop"}. Resume to continue, then file a time correction if you kept working.</Alert> : null}
       {estimateReached && live ? <Alert tone="info" title="Estimate reached">You have passed the estimate for this task. Consider adding a progress note; the timer keeps running and this is not a judgement of your work.</Alert> : null}
@@ -218,7 +219,7 @@ export function SessionTimer({ orgSlug, initial, tasks, captureGate, onCaptureSe
     if (!starting && !hasAlerts && !captureDialog) return null;
     return (
       <div className="space-y-3">
-        {starting ? <p role="status" className="inline-flex h-8 items-center gap-2 rounded-[10px] bg-fill-0 px-3 text-meta font-medium text-secondary"><span className="size-1.5 rounded-full bg-success" aria-hidden />Starting the timer…</p> : null}
+        {starting ? <p role="status" className="inline-flex h-8 items-center gap-2 rounded-[10px] bg-fill-0 px-3 text-meta font-medium text-secondary"><StatusDot tone="live" size={6} />Starting the timer…</p> : null}
         {alerts}
         {captureDialog}
       </div>
@@ -232,17 +233,18 @@ export function SessionTimer({ orgSlug, initial, tasks, captureGate, onCaptureSe
       <Swap id={`s:${session.id}`} className="flex flex-wrap items-start justify-between gap-x-6 gap-y-4">
         <div className="min-w-0 flex-[1_1_16rem]">
           <h2 id="timer-heading" className="flex flex-wrap items-center gap-x-2 text-sm font-medium text-secondary">
-            <span className={cn("size-2 shrink-0 rounded-full", live ? "bg-success" : session.state === "paused" ? "bg-warning" : "bg-danger")} aria-hidden />
+            {/* Accent rules (6 October 2026): a running timer is live, so its dot and digits are orange; paused stays amber. */}
+            <StatusDot tone={live ? "live" : session.state === "paused" ? "warning" : "danger"} />
             {live ? "On the clock" : session.state === "paused" ? "Paused" : "Connection interrupted"}
             {live ? <span className="text-meta font-normal text-subtle">{connectionLost ? "connection lost" : `synced ${syncAgo}s ago`}</span> : null}
           </h2>
-          <p role="timer" className={cn("type-stat mt-1 font-mono", !live && "text-secondary")} aria-label={`Elapsed ${formatDuration(elapsed)}`}>{formatClock(elapsed)}</p>
+          <p role="timer" className={cn("type-stat mt-1 font-mono", live ? "text-accent-text" : "text-secondary")} aria-label={`Elapsed ${formatDuration(elapsed)}`}>{formatClock(elapsed)}</p>
           <p className="mt-3 truncate text-sm font-semibold text-foreground">{session.taskTitle}</p>
           <p className="truncate text-meta font-normal text-secondary">{session.projectName}{session.estimateMinutes ? `, estimated ${formatDuration(session.estimateMinutes * 60)}` : ""}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {live ? <IconButton variant="outline" aria-label="Pause" onClick={pause} disabled={!!busy}><Pause aria-hidden /></IconButton> : null}
-          {paused ? <Button size="icon" aria-label="Resume" onClick={resume} disabled={!!busy}><Play aria-hidden /></Button> : null}
+          {paused ? <Button size="icon" variant="accent" aria-label="Resume" onClick={resume} disabled={!!busy}><Play aria-hidden /></Button> : null}
           <IconButton variant="outline" aria-label="Switch task" onClick={() => setStopDialog({ mode: "switch", nextTaskId: "" })} disabled={!!busy || !canSwitch} aria-describedby={canSwitch ? undefined : "timer-no-switch"}><ArrowLeftRight aria-hidden /></IconButton>
           <IconButton variant="outline" aria-label="Stop" className="text-danger hover:text-danger" onClick={() => setStopDialog({ mode: "stop" })} disabled={!!busy}><Square className="fill-current !size-3.5" aria-hidden /></IconButton>
           {recordingControls ? recordingControls(session) : null}

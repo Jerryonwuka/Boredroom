@@ -4,8 +4,12 @@
  * Docs, the library (owner decision, 5 October 2026): every document the person can see, pinned ones first. v4: a
  * folder sub-nav on the left (32px items, the chosen one on fill-1; a row of pills on a phone), a search box in the
  * toolbar that narrows as you type (it lives in ?q= so a search can be shared or reloaded), and the documents as rows:
- * a 40px square, the title 14/20 semibold, a line of the text, who can see it and when it changed. One primary button
- * opens a fresh document in the editor. Brenda writes here too, so the empty state points at her.
+ * a 40px square, the title 14/20 semibold, a line of the text, who can see it and when it changed. One button opens a
+ * fresh document in the editor. Brenda writes here too, so the empty state points at her.
+ *
+ * Accent rules (owner decision, 6 October 2026): "New document" is the screen's one orange button; the chosen folder
+ * has the 2px orange marker. The empty library offers Brenda and writing one yourself as two outline buttons, so the
+ * page never shows two primaries (polish, 6 October 2026).
  */
 import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
@@ -48,7 +52,7 @@ export function DocsHeader(props: React.ComponentProps<typeof PageHeader>) {
 }
 
 /** Creates a blank document (in the folder being looked at, if any) and opens it in the editor. */
-export function NewDocButton({ orgSlug, folder = null, variant = "primary", size = "sm", label = "New document" }: { orgSlug: string; folder?: string | null; variant?: "primary" | "outline"; size?: "sm" | "md"; label?: string }) {
+export function NewDocButton({ orgSlug, folder = null, variant = "accent", size = "sm", label = "New document" }: { orgSlug: string; folder?: string | null; variant?: "accent" | "primary" | "outline"; size?: "sm" | "md"; label?: string }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -128,7 +132,7 @@ export function DocsLibrary({ orgSlug, docs, folders, q, folder, now, viewerMemb
         <h2 id="docs-empty-heading" className="type-section-title mt-6">Nothing written yet</h2>
         <p className="mt-1 max-w-md text-balance text-sm font-normal text-secondary">Start a document yourself, or let Brenda draft it. She writes handbooks, checklists and meeting notes, and files them here for you.</p>
         <div className="mt-6 flex flex-wrap items-start justify-center gap-2">
-          <Link href={`${base}/home?ask=${encodeURIComponent("Write our onboarding checklist for new starters and save it in Docs.")}`} className={buttonVariants({ variant: "primary", size: "sm" })}>
+          <Link href={`${base}/home?ask=${encodeURIComponent("Write our onboarding checklist for new starters and save it in Docs.")}`} className={buttonVariants({ variant: "secondary", size: "sm" })}>
             <BrendaGlyph aria-hidden />Ask Brenda to write your onboarding checklist
           </Link>
           <NewDocButton orgSlug={orgSlug} variant="outline" label="Write one yourself" />
@@ -177,7 +181,7 @@ export function DocsLibrary({ orgSlug, docs, folders, q, folder, now, viewerMemb
               <ul className="mt-1 space-y-0.5">
                 {ordered.map((d) => <DocRow key={d.id} doc={d} base={base} now={now} mine={d.createdBy.membershipId === viewerMembershipId} />)}
               </ul>
-              {q ? <p className="mt-4 text-meta font-normal text-secondary"><Link href={hrefFor({ q: "" })} onClick={() => setQuery("")} className="font-medium text-foreground underline underline-offset-4">Clear search</Link></p> : null}
+              {q ? <p className="mt-4 text-meta font-normal text-secondary"><Link href={hrefFor({ q: "" })} onClick={() => setQuery("")} className="link-inline">Clear search</Link></p> : null}
             </>
           )}
         </div>
@@ -186,13 +190,13 @@ export function DocsLibrary({ orgSlug, docs, folders, q, folder, now, viewerMemb
   );
 }
 
-/** A folder in the sub-nav: 32px, r8; the chosen one on fill-1 in the foreground (a pill on a phone). */
+/** A folder in the sub-nav: 32px, r8; the chosen one on fill-1 in the foreground with the orange marker (a pill on a phone). */
 function FolderLink({ href, active, label, count, all = false }: { href: string; active: boolean; label: string; count?: number; all?: boolean }) {
   const Icon = all ? FileText : Folder;
   return (
     <Link href={href} scroll={false} aria-current={active ? "page" : undefined}
       className={cn("flex h-8 max-w-[16rem] items-center gap-2 whitespace-nowrap rounded-lg px-2 text-sm font-medium transition-colors duration-75 pointer-coarse:h-10 md:max-w-none [&_svg]:size-4 [&_svg]:shrink-0",
-        active ? "bg-fill-1 text-foreground" : "text-secondary hover:bg-fill-0 hover:text-foreground")}>
+        active ? "selected-marker bg-fill-1 text-foreground" : "text-secondary hover:bg-fill-0 hover:text-foreground")}>
       <Icon aria-hidden />
       <span className="min-w-0 flex-1 truncate">{label}</span>
       {count ? <CountPill count={count} /> : null}

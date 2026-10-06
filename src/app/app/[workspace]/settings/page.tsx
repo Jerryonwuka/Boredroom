@@ -7,6 +7,7 @@ import { PageHeader } from "@/components/ui/card";
 import { buttonVariants } from "@/components/ui/button";
 import { PermissionDenied, Alert } from "@/components/ui/states";
 import { Badge } from "@/components/ui/badge";
+import { ProgressBar } from "@/components/ui/progress-arc";
 import { settingsView } from "@/server/services/views";
 import { OrgSettingsForm, ScheduleForm, PolicyForm, GrantsPanel, AssistantConnectionForm, RecordingSwitch, SettingsSection, SettingsGroup, SettingsRow, SettingsFooter } from "@/components/app/settings-forms";
 import { assistantStatus } from "@/server/services/orgs";
@@ -46,7 +47,7 @@ export default async function SettingsPage({ params, searchParams }: { params: P
   const { workspace } = await params;
   const sp = await searchParams;
   const { ctx, counts, teams: navTeams } = await workspacePage(workspace, `/app/${workspace}/settings`);
-  if (!["owner", "hr"].includes(ctx.membership.role)) return <AppShell ctx={ctx} counts={counts} teams={navTeams}><PermissionDenied description="Settings are for the organisation account (owners and HR). Your own picture, name and status are under Your profile." /></AppShell>;
+  if (!["owner", "hr"].includes(ctx.membership.role)) return <AppShell ctx={ctx} counts={counts} teams={navTeams}><PageHeader title="Settings" divider /><PermissionDenied description="Settings are for the organisation account (owners and HR). Your own picture, name and status are under Your profile." /></AppShell>;
   const isOwner = ctx.membership.role === "owner";
   const base = `/app/${ctx.org.slug}`;
   const section: SectionKey = SECTIONS.some((s) => s.key === sp.section) ? (sp.section as SectionKey) : sp.billing || sp.plan ? "billing" : "general";
@@ -76,14 +77,15 @@ export default async function SettingsPage({ params, searchParams }: { params: P
           <SettingsSection id="setup" title="Setup" description="What a new workspace needs before people start." action={<span className="text-sm font-medium tabular-nums text-secondary">{done} of {checklist.length} done</span>}>
             <SettingsGroup>
               <div className="px-5 py-4">
-                <div role="progressbar" aria-label="Setup progress" aria-valuemin={0} aria-valuemax={checklist.length} aria-valuenow={done} aria-valuetext={`${done} of ${checklist.length} steps done`} className="h-1.5 overflow-hidden rounded-full bg-fill-1">
-                  <div className="h-full rounded-full bg-foreground" style={{ width: `${Math.round((done / checklist.length) * 100)}%` }} />
-                </div>
+                {/* Accent rules (6 October 2026): progress fills in orange (green once everything is done). A done step is a
+                    quiet filled circle with a tick: six orange discs in a column broke the orange budget, and the bar
+                    already carries the progress. */}
+                <ProgressBar value={done} max={checklist.length} label="Setup progress" valueText={`${done} of ${checklist.length} steps done`} />
               </div>
               <ul className="divide-y divide-border">
                 {checklist.map((i) => (
                   <li key={i.label} className="flex min-h-12 items-center gap-3 px-5 py-2.5">
-                    <span aria-hidden className={cn("grid size-5 shrink-0 place-items-center rounded-full", i.done ? "bg-foreground text-background" : "border border-border-input-hover")}>{i.done ? <Check className="size-3" strokeWidth={3} /> : null}</span>
+                    <span aria-hidden className={cn("grid size-5 shrink-0 place-items-center rounded-full", i.done ? "bg-fill-150 text-foreground" : "border border-border-input-hover")}>{i.done ? <Check className="size-3" strokeWidth={3} /> : null}</span>
                     <span className={cn("min-w-0 flex-1 text-sm", i.done ? "font-medium text-foreground" : "font-normal text-secondary")}>{i.label}<span className="sr-only">{i.done ? ", done" : ", to do"}</span></span>
                     {!i.done && i.href ? <Link href={i.href} className={buttonVariants({ variant: "ghost", size: "xs" })}>{i.go}</Link> : null}
                   </li>
@@ -183,7 +185,7 @@ export default async function SettingsPage({ params, searchParams }: { params: P
       <PageHeader title="Settings" description="How the workspace runs: working hours, screen recording, Brenda, the plan and your linked computers. Every change is audited." divider />
       {sp.setup ? <Alert tone="success" className="mb-6" title="Workspace ready">Work through the setup list to finish.</Alert> : null}
       <div className="grid gap-6 md:grid-cols-[12.5rem_minmax(0,1fr)] md:gap-10">
-        {/* Sub-navigation (spec §6): 32px items, r8, fill-1 for the open one, fill-0 on hover; a scrolling row on a phone. */}
+        {/* Sub-navigation (spec §6): 32px items, r8, fill-1 and the orange marker for the open one, fill-0 on hover; a scrolling row on a phone. */}
         <nav aria-label="Settings sections" className="-mx-1 min-w-0 md:sticky md:top-[calc(var(--header-height)+1.5rem)] md:mx-0 md:self-start">
           <ul className="flex gap-1 overflow-x-auto px-1 pb-1 [scrollbar-width:none] md:flex-col md:overflow-visible md:px-0 md:pb-0 [&::-webkit-scrollbar]:hidden">
             {SECTIONS.map((s) => {
@@ -191,7 +193,7 @@ export default async function SettingsPage({ params, searchParams }: { params: P
               return (
                 <li key={s.key} className="shrink-0">
                   <Link href={href(s.key)} aria-current={active ? "page" : undefined}
-                    className={cn("flex h-8 items-center gap-2 whitespace-nowrap rounded-lg px-2 text-sm font-medium transition-colors duration-75 pointer-coarse:h-10 [&_svg]:size-4 [&_svg]:shrink-0", active ? "bg-fill-1 text-foreground [&_svg]:text-foreground" : "text-secondary hover:bg-fill-0 hover:text-foreground [&_svg]:text-secondary")}>
+                    className={cn("flex h-8 items-center gap-2 whitespace-nowrap rounded-lg px-2 text-sm font-medium transition-colors duration-75 pointer-coarse:h-10 [&_svg]:size-4 [&_svg]:shrink-0", active ? "selected-marker bg-fill-1 text-foreground [&_svg]:text-foreground" : "text-secondary hover:bg-fill-0 hover:text-foreground [&_svg]:text-secondary")}>
                     {s.icon}{s.label}
                   </Link>
                 </li>

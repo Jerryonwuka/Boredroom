@@ -9,7 +9,8 @@
  *
  * v4 (6 October 2026): the column is styled like the spec's sub-navigation. A 50px title row that lines up with her
  * chat header, a 32px search field, then rows of r8 with 8px sides: the title 14/20 medium, the preview 13/19.5 in the
- * secondary grey, the time 12/16 subtle. The open row is fill-1, a hovered one fill-0; Delete (a 28px ghost icon
+ * secondary grey, the time 12/16 subtle. The open row is fill-1 with the 2px orange marker on its left edge (accent
+ * rules, 6 October 2026: the chosen sub-nav item), a hovered one fill-0; Delete (a 28px ghost icon
  * button) shows on the open row, under the pointer and on focus, and always on touch screens.
  */
 import { useId, useRef, useState, useSyncExternalStore } from "react";
@@ -104,7 +105,7 @@ export function BrendaHistory({ conversations, now, currentId, opening, error, o
                   <button type="button" data-chat-row aria-describedby={`${uid}-${c.id}`} aria-busy={busy || undefined} aria-current={current || undefined}
                     onClick={() => onOpen(c.id)}
                     className={cn("block w-full rounded-lg py-2 pl-2 pr-9 text-left transition-colors duration-75 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--ring)]",
-                      current ? "bg-fill-1" : "hover:bg-fill-0")}>
+                      current ? "selected-marker bg-fill-1" : "hover:bg-fill-0")}>
                     <span className="block truncate text-sm font-medium text-foreground">{c.title}</span>
                     <span id={`${uid}-${c.id}`} className="block truncate text-meta font-normal text-secondary">
                       {current ? <span className="sr-only">Open now. </span> : null}{c.preview || "No reply yet"}

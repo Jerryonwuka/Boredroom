@@ -6,6 +6,9 @@ import { Check, Minus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { FEATURE_LABELS, type PublicPlan } from "@/lib/plans";
 import { WaitlistLink } from "@/components/landing/waitlist-link";
+import { Segmented } from "@/components/ui/segmented";
+import { Badge } from "@/components/ui/badge";
+import { buttonVariants } from "@/components/ui/button";
 
 function money(minor: number, currency: string) {
   const major = minor / 100;
@@ -15,57 +18,64 @@ function money(minor: number, currency: string) {
 const gb = (bytes: number) => `${Math.round(bytes / 1024 / 1024 / 1024)} GB`;
 
 /**
- * The pricing cards (owner decision, 25 September 2026): every active plan, the middle one lit as the usual choice,
- * a monthly/yearly switch, and the limits that matter first: workspaces, people, storage. The flags a plan turns
- * on are listed with a tick; the ones it does not are shown struck through so the difference is visible at a glance.
+ * The pricing cards (owner decision, 25 September 2026), v4: every active plan as a plan card (r20, a hairline, 24px
+ * in), the middle one the usual choice (a stronger hairline on fill-0, its tag the orange "New"-style badge and the
+ * card's button the white primary; the others outline), a Monthly/Yearly segmented control (the chosen option's
+ * orange dot), and the limits that matter first: workspaces, people, storage. The flags a plan turns on carry a tick;
+ * the ones it does not are struck through in grey so the difference is visible at a glance.
  */
 export function Pricing({ plans, waitlist, signedIn }: { plans: PublicPlan[]; waitlist: boolean; signedIn: boolean }) {
-  const [yearly, setYearly] = useState(false);
+  const [period, setPeriod] = useState<"monthly" | "yearly">("monthly");
+  const yearly = period === "yearly";
   const featured = plans.length >= 2 ? plans[Math.min(1, plans.length - 1)].code : plans[0]?.code;
   const keys = Object.keys(FEATURE_LABELS).filter((k) => plans.some((p) => k in p.features));
   if (plans.length === 0) return null;
   return (
     <div>
-      <div className="mx-auto mb-10 flex w-fit items-center gap-1 lp-glass rounded-full p-1 text-sm" role="radiogroup" aria-label="Billing period">
-        {(["monthly", "yearly"] as const).map((v) => { const on = yearly === (v === "yearly"); return (
-          <button key={v} type="button" role="radio" aria-checked={on} onClick={() => setYearly(v === "yearly")} className={cn("rounded-full px-4 py-1.5 font-medium transition-colors duration-150", on ? "bg-fg text-bg" : "lp-muted hover:text-fg")}>
-            {v === "monthly" ? "Monthly" : <>Yearly <span className={cn("ml-1 text-xs", on ? "opacity-70" : "text-accent")}>2 months free</span></>}
-          </button>
-        ); })}
+      <div className="flex justify-center">
+        <Segmented name="billing-period" aria-label="Billing period" value={period} onChange={(v) => setPeriod(v === "yearly" ? "yearly" : "monthly")}
+          options={[{ value: "monthly", label: "Monthly" }, { value: "yearly", label: <>Yearly <Badge tone="accent" size="sm">2 months free</Badge></> }]} />
       </div>
-      <div className="grid gap-5 md:grid-cols-3">
+      <div className="mt-10 grid gap-3 md:grid-cols-3">
         {plans.map((p) => {
           const hot = p.code === featured;
           const price = yearly ? p.annual_price / 12 : p.monthly_price;
           const free = p.monthly_price === 0 && p.annual_price === 0;
           const cta = signedIn ? { href: `/app/billing?plan=${p.code}`, label: free ? "Use Free" : `Choose ${p.name}` } : waitlist ? null : { href: `/signup?intent=org&plan=${p.code}`, label: free ? "Start for free" : p.max_workspaces === null ? "Talk to us" : `Start with ${p.name}` };
+          const button = cn(buttonVariants({ variant: hot ? "primary" : "secondary", size: "lg" }), "w-full");
           return (
-            <div key={p.code} className={cn("relative flex flex-col rounded-[24px] border p-7", hot ? "lp-card border-accent/60 shadow-[0_0_80px_-30px_var(--accent)]" : "lp-glass lp-line")}>
-              {hot ? <span className="absolute -top-3 left-7 rounded-full bg-accent px-3 py-1 text-xs font-semibold text-accent-fg">Most teams choose this</span> : null}
-              <p className="font-display text-2xl">{p.name}</p>
-              {p.description ? <p className="lp-muted mt-1 text-sm">{p.description}</p> : null}
-              <p className="mt-6 flex items-baseline gap-1.5">
-                <span className="font-display text-[44px] leading-none tracking-[-0.02em] tabular-nums">{free ? "Free" : money(price, p.currency)}</span>
-                {!free ? <span className="lp-faint text-sm">/ month{yearly ? ", billed yearly" : ""}</span> : null}
+            <div key={p.code} className={cn("lp-reveal flex min-w-0 flex-col rounded-[20px] border p-6", hot ? "border-border-input-hover bg-fill-0 shadow-chart" : "border-border bg-background")}>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="lp-h3">{p.name}</p>
+                {hot ? <Badge tone="accent">Most teams choose this</Badge> : null}
+              </div>
+              {p.description ? <p className="mt-1 text-sm font-normal text-secondary">{p.description}</p> : null}
+              <p className="mt-6 flex flex-wrap items-baseline gap-x-1.5 gap-y-1">
+                <span className="font-display text-[40px] leading-none tracking-[-0.02em] tabular-nums text-foreground">{free ? "Free" : money(price, p.currency)}</span>
+                {!free ? <span className="text-sm font-normal text-secondary">/ month{yearly ? ", billed yearly" : ""}</span> : null}
               </p>
-              {!free && yearly ? <p className="lp-faint mt-1 text-xs">{money(p.annual_price, p.currency)} a year</p> : !free && p.trial_days ? <p className="mt-1 text-xs text-accent">{p.trial_days}-day free trial</p> : <p className="lp-faint mt-1 text-xs">{free ? "No card needed" : " "}</p>}
-              <ul className="mt-6 flex-1 space-y-2 border-t lp-line-soft pt-5 text-sm">
-                <li className="flex items-center gap-2"><Check className="size-4 shrink-0 text-accent" aria-hidden /><span><strong className="font-semibold">{p.max_workspaces === null ? "Unlimited" : p.max_workspaces}</strong> workspace{p.max_workspaces === 1 ? "" : "s"}</span></li>
-                <li className="flex items-center gap-2"><Check className="size-4 shrink-0 text-accent" aria-hidden /><span><strong className="font-semibold">{p.max_users === null ? "Unlimited" : p.max_users}</strong> people per workspace</span></li>
-                <li className="flex items-center gap-2"><Check className="size-4 shrink-0 text-accent" aria-hidden /><span><strong className="font-semibold">{p.max_storage_bytes === null ? "Unlimited" : gb(p.max_storage_bytes)}</strong> recording storage</span></li>
+              <p className="mt-2 min-h-4 text-xs font-normal text-secondary">
+                {!free && yearly ? `${money(p.annual_price, p.currency)} a year` : !free && p.trial_days ? `${p.trial_days}-day free trial` : free ? "No card needed" : ""}
+              </p>
+              <ul className="mt-6 flex-1 space-y-2.5 border-t border-border pt-5 text-sm font-normal text-foreground">
+                <li className="flex items-center gap-2.5"><Check className="size-4 shrink-0" aria-hidden /><span><strong className="font-semibold">{p.max_workspaces === null ? "Unlimited" : p.max_workspaces}</strong> workspace{p.max_workspaces === 1 ? "" : "s"}</span></li>
+                <li className="flex items-center gap-2.5"><Check className="size-4 shrink-0" aria-hidden /><span><strong className="font-semibold">{p.max_users === null ? "Unlimited" : p.max_users}</strong> people per workspace</span></li>
+                <li className="flex items-center gap-2.5"><Check className="size-4 shrink-0" aria-hidden /><span><strong className="font-semibold">{p.max_storage_bytes === null ? "Unlimited" : gb(p.max_storage_bytes)}</strong> recording storage</span></li>
                 {keys.map((k) => { const on = !!p.features[k]; return (
-                  <li key={k} className={cn("flex items-center gap-2", !on && "lp-faint")}>{on ? <Check className="size-4 shrink-0 text-accent" aria-hidden /> : <Minus className="size-4 shrink-0" aria-hidden />}<span className={cn(!on && "line-through decoration-[var(--lp-faint)]")}>{FEATURE_LABELS[k]}</span></li>
+                  <li key={k} className={cn("flex items-center gap-2.5", !on && "text-subtle")}>
+                    {on ? <Check className="size-4 shrink-0" aria-hidden /> : <Minus className="size-4 shrink-0" aria-hidden />}
+                    <span className={cn(!on && "line-through decoration-subtle")}>{FEATURE_LABELS[k]}{on ? null : <span className="sr-only"> (not included)</span>}</span>
+                  </li>
                 ); })}
               </ul>
-              <div className="mt-8 pt-2">
-                {cta ? <Link href={cta.href} className={cn("lp-btn w-full", hot ? "lp-btn-primary" : "lp-btn-secondary")}>{cta.label}</Link>
-                  : <WaitlistLink className={cn("lp-btn w-full", hot ? "lp-btn-primary" : "lp-btn-secondary")}>Join the waitlist</WaitlistLink>}
+              <div className="mt-8">
+                {cta ? <Link href={cta.href} className={button}>{cta.label}</Link> : <WaitlistLink className={button}>Join the waitlist</WaitlistLink>}
               </div>
             </div>
           );
         })}
       </div>
-      <p className="lp-faint mx-auto mt-8 max-w-2xl text-center text-sm">Prices are per workspace. A person may own one workspace on Free, five on Pro and as many as they need on Enterprise; joining someone else&apos;s workspace is always free.</p>
+      <p className="mx-auto mt-8 max-w-2xl text-center text-sm font-normal text-secondary">Prices are per workspace. A person may own one workspace on Free, five on Pro and as many as they need on Enterprise; joining someone else&apos;s workspace is always free.</p>
     </div>
   );
 }

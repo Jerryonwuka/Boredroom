@@ -28,6 +28,13 @@
 // on fill-1, orange only for focus, the unread count, the open microphone and the timer's estimate and progress. The
 // voice card matches the web's (src/components/app/voice-capture.tsx) in the same restyle. Only the markup changed here;
 // shape, motion and behaviour are as they were.
+//
+// The accent rules (owner decision, 6 October 2026: "it looks too monochromatic, let's add nice accents of orange"):
+// orange marks what is live, active, chosen or the one thing to do, as on the web (docs/design-system.md). Here that is
+// a running timer's dot and digits (`live`), Brenda listening or working, teammates' running timers, progress, the
+// unread count, the ask pill's focus ring, and one standout button per card (`btn primary accent`): Send once there are
+// words, Start on the briefing, Resume on a paused timer, Link to Boredroom / Open Boredroom, Turn on voice. style.css
+// turns the card's other orange button white while Send is lit. Only classes changed; behaviour is as it was.
 
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
@@ -68,7 +75,7 @@ const REPLY_CLOSE_MS = 16_000;
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 /** Brenda's face. mood: happy | alert | sad | think | listen; tone: the glow (accent, ok, warn, bad; blue and violet draw none). */
 const face = (o = {}) => `<span class="face ${o.small ? "small" : ""} ${o.mood ?? ""}" ${o.tone ? `data-tone="${esc(o.tone)}"` : ""}><span class="eyes"><span></span><span></span></span>${o.dot ? `<i class="dot ${esc(o.dot)}"></i>` : ""}</span>`;
-/** A teammate's small face, in a colour of their own (style.css `--mate-*`), with a dot when their timer is running (green), paused (amber) or interrupted (red). */
+/** A teammate's small face, in a colour of their own (style.css `--mate-*`), with a dot when their timer is running (orange), paused (amber) or interrupted (red). */
 const MATES = 8;
 const hue = (id) => `var(--mate-${[...String(id)].reduce((a, c) => a + c.charCodeAt(0), 0) % MATES})`;
 const who = (p) => `${esc(p.name)}${p.task ? `, ${esc(p.task)}` : ""}`;
@@ -252,7 +259,7 @@ function compactView() {
   const unread = (data?.notifications ?? []).filter((n) => !shown.has(n.id)).length;
   const dot = data?.me?.presence ?? "active";
   let text = "All clear";
-  if (t) text = `<span class="clock" id="tclock">${hms(elapsed())}</span>&ensp;${esc(t.taskTitle)}`;
+  if (t) text = `<span class="clock ${t.state === "running" ? "live" : ""}" id="tclock">${hms(elapsed())}</span>&ensp;${esc(t.taskTitle)}`;
   else if (b && (b.overdue.length || b.dueToday.length)) text = [b.dueToday.length ? `${b.dueToday.length} due today` : "", b.overdue.length ? `${b.overdue.length} overdue` : ""].filter(Boolean).join(", ");
   else if (data?.clock?.status === "not_in" && data.clock.workingDay) text = "Not clocked in yet";
   const working = (data?.team ?? []).filter((p) => p.state === "running" || p.state === "paused").slice(0, 3);
@@ -268,12 +275,12 @@ function linkView() {
   if (!link) {
     return `<div class="row fade">${face(moodOf())}<div class="grow"><p class="title">Hi, I'm Brenda.</p><p class="sub">Link me to your Boredroom and I'll keep your day in view up here.</p></div></div>
       ${error ? `<p class="err">${esc(error)}</p>` : ""}
-      <div class="actions"><button class="link" data-act="server">${esc(config?.baseUrl ?? "boredroom.cc")}</button><span class="grow"></span><button class="btn primary" data-act="link-start" ${busy ? "disabled" : ""}>Link to Boredroom</button></div>`;
+      <div class="actions"><button class="link" data-act="server">${esc(config?.baseUrl ?? "boredroom.cc")}</button><span class="grow"></span><button class="btn primary accent" data-act="link-start" ${busy ? "disabled" : ""}>Link to Boredroom</button></div>`;
   }
   return `<div class="row fade">${face(moodOf())}<div class="grow"><p class="title">Approve this code in Boredroom</p><p class="sub">Check it matches, pick your workspace, approve. I'll be ready in a few seconds.</p></div></div>
     <div class="code fade">${esc(link.userCode)}</div>
     ${error ? `<p class="err">${esc(error)}</p>` : ""}
-    <div class="actions"><button class="btn ghost" data-act="link-cancel">Cancel</button><button class="btn primary" data-act="link-open">Open Boredroom</button></div>`;
+    <div class="actions"><button class="btn ghost" data-act="link-cancel">Cancel</button><button class="btn primary accent" data-act="link-open">Open Boredroom</button></div>`;
 }
 
 function cardView() {
@@ -299,20 +306,21 @@ function cardView() {
       ${items.length ? `<ul class="list fade">${items.map((i) => `<li><span class="t">${esc(i.t.title)}</span><span class="k ${i.bad ? "bad" : ""}">${esc(i.k)}</span></li>`).join("")}</ul>` : ""}
       ${teamView()}
       ${askBox()}
-      <div class="actions">${talkButton()}<button class="btn ghost" data-act="close">Later</button><button class="btn" data-act="open-href" data-href="/app/${esc(config.workspaceSlug)}/tasks">Tasks</button>${first && !data.timer && data.clock ? `<button class="btn primary" data-act="start" data-id="${esc(first.id)}" ${busy ? "disabled" : ""}>Start ${esc(first.title.length > 22 ? `${first.title.slice(0, 21)}…` : first.title)}</button>` : ""}</div>`;
+      <div class="actions">${talkButton()}<button class="btn ghost" data-act="close">Later</button><button class="btn" data-act="open-href" data-href="/app/${esc(config.workspaceSlug)}/tasks">Tasks</button>${first && !data.timer && data.clock ? `<button class="btn primary accent" data-act="start" data-id="${esc(first.id)}" ${busy ? "disabled" : ""}>Start ${esc(first.title.length > 22 ? `${first.title.slice(0, 21)}…` : first.title)}</button>` : ""}</div>`;
   }
   if (card.kind === "home") {
     const t = data?.timer;
     if (t) {
       // Laid out like My Day's timer card: the task and its state on the left, the clock large on the right, the
-      // estimate as an orange hairline underneath, and the controls with their words on them.
+      // estimate as an orange hairline underneath, and the controls with their words on them. Running, the dot and
+      // digits are orange (live); paused, Resume is the card's orange standout action.
       const live = t.state === "running";
       const state = live ? "On the clock" : t.state === "paused" ? "Paused" : "Connection interrupted";
       const share = estimateShare();
-      return `<div class="row fade">${face({ ...moodOf(), dot: data.me.presence })}<div class="grow"><p class="title">${esc(t.taskTitle)}</p><p class="sub"><span class="status"><span class="d ${esc(t.state)}"></span>${state}</span>${t.estimateMinutes ? `, estimated ${dur(t.estimateMinutes)}` : ""}</p></div><span class="big ${live ? "" : "dim"}" id="tclock" role="timer">${hms(elapsed())}</span>${t.taskVersion ? `<button class="ring-btn" data-act="progress" title="Add 10% progress" aria-label="Add 10% progress">${ring(t.progress)}</button>` : ""}</div>
+      return `<div class="row fade">${face({ ...moodOf(), dot: data.me.presence })}<div class="grow"><p class="title">${esc(t.taskTitle)}</p><p class="sub"><span class="status"><span class="d ${esc(t.state)}"></span>${state}</span>${t.estimateMinutes ? `, estimated ${dur(t.estimateMinutes)}` : ""}</p></div><span class="big ${live ? "live" : "dim"}" id="tclock" role="timer">${hms(elapsed())}</span>${t.taskVersion ? `<button class="ring-btn" data-act="progress" title="Add 10% progress" aria-label="Add 10% progress">${ring(t.progress)}</button>` : ""}</div>
         ${share !== null ? `<div class="est fade" aria-hidden="true"><i id="testimate" style="transform:scaleX(${share.toFixed(3)})"></i></div>` : ""}
         ${askBox()}
-        <div class="actions">${talkButton()}<button class="btn ghost" data-act="briefing">Today</button>${live ? `<button class="btn" data-act="pause" ${busy ? "disabled" : ""}>${icon("pause")}Pause</button>` : `<button class="btn primary" data-act="resume" ${busy ? "disabled" : ""}>${icon("play")}Resume</button>`}<button class="btn danger" data-act="stop" ${busy ? "disabled" : ""}>${icon("stop")}Stop</button></div>`;
+        <div class="actions">${talkButton()}<button class="btn ghost" data-act="briefing">Today</button>${live ? `<button class="btn" data-act="pause" ${busy ? "disabled" : ""}>${icon("pause")}Pause</button>` : `<button class="btn primary accent" data-act="resume" ${busy ? "disabled" : ""}>${icon("play")}Resume</button>`}<button class="btn danger" data-act="stop" ${busy ? "disabled" : ""}>${icon("stop")}Stop</button></div>`;
     }
     card = { kind: "briefing" };
     return cardView();
@@ -456,10 +464,10 @@ async function start() {
 
 const mic = icon("mic");
 
-/** Typing to Brenda: the same chat as talking, without the spoken reply. The send button lights up once there are words. */
+/** Typing to Brenda: the same chat as talking, without the spoken reply. The send button lights up orange once there are words. */
 function askBox(placeholder = "Ask Brenda…") {
   if (data && !data.brendaEnabled) return "";
-  return `<form class="ask fade" data-ask><input class="field" id="ask" name="q" maxlength="4000" placeholder="${esc(placeholder)}" autocomplete="off" spellcheck="true" aria-label="Message Brenda"><button class="btn primary icon-send" aria-label="Send" title="Send">${icon("send")}</button></form>`;
+  return `<form class="ask fade" data-ask><input class="field" id="ask" name="q" maxlength="4000" placeholder="${esc(placeholder)}" autocomplete="off" spellcheck="true" aria-label="Message Brenda"><button class="btn accent icon-send" aria-label="Send" title="Send">${icon("send")}</button></form>`;
 }
 
 el.addEventListener("submit", (e) => {
@@ -517,7 +525,7 @@ function voiceView() {
   }
   if (c.phase === "off") {
     return `<div class="row fade">${face(moodOf())}<div class="grow"><p class="title">Talk to Brenda</p><p class="sub">Hold <kbd>${esc(voice.shortcut)}</kbd>, say what you need, let go. I only listen while you hold the keys, and your voice is turned into text on this computer. The first time, I download a 148 MB speech model.</p></div></div>
-      <div class="actions"><button class="btn ghost" data-act="close">Not now</button><button class="btn primary" data-act="voice-on">Turn on voice</button></div>`;
+      <div class="actions"><button class="btn ghost" data-act="close">Not now</button><button class="btn primary accent" data-act="voice-on">Turn on voice</button></div>`;
   }
   if (c.phase === "downloading") {
     const p = Math.round((c.progress ?? 0) * 100);

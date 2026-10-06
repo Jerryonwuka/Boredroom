@@ -9,7 +9,7 @@ import { ProfileForm } from "@/components/app/profile-form";
 import { SettingsSection, SettingsGroup, SettingsRow } from "@/components/app/settings-forms";
 import { myProfile } from "@/server/services/profile";
 import { policyView } from "@/server/services/views";
-import { formatDateTime, formatLongDate } from "@/lib/utils";
+import { cn, formatDateTime, formatLongDate } from "@/lib/utils";
 import { brendaOverview } from "@/server/services/brenda";
 import { BrendaMyPrefs } from "@/components/app/brenda";
 import { BrendaFace } from "@/components/app/brenda-face";
@@ -73,13 +73,13 @@ export default async function ProfilePage({ params }: { params: Promise<{ worksp
                 return (
                   <li key={w.id}>
                     {/* The whole row is the link, so the press target matches what lights up on hover. */}
-                    <Link href={`/app/${w.slug}`} aria-current={here ? "page" : undefined} className="flex min-h-16 items-center gap-3 px-5 py-3 transition-colors duration-75 hover:bg-fill-0 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--ring)]">
+                    <Link href={`/app/${w.slug}`} aria-current={here ? "page" : undefined} className={cn("flex min-h-16 items-center gap-3 px-5 py-3 transition-colors duration-75 hover:bg-fill-0 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--ring)]", here && "selected-marker")}>
                       <Avatar profileId={w.id} name={w.name} size={32} />
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-sm font-semibold text-foreground">{w.name}</span>
                         <span className="block truncate text-meta font-normal text-secondary">ID <span className="font-mono tabular-nums">{w.employeeCode}</span>{w.teams.length ? `, ${w.teams.join(", ")}` : ""}</span>
                       </span>
-                      <span className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">{here ? <Badge tone="success" dot>Open now</Badge> : null}<Badge>{ROLE_LABEL[w.role] ?? w.role}</Badge></span>
+                      <span className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">{here ? <Badge>Open now</Badge> : null}<Badge>{ROLE_LABEL[w.role] ?? w.role}</Badge></span>
                     </Link>
                   </li>
                 );
@@ -118,14 +118,14 @@ function RecordingAndPrivacy({ ctx, privacy }: { ctx: OrgContext; privacy: Await
   const recording = ctx.plan.features.VIDEO_RECORDING === true && policy.recording_mode !== "disabled";
   const days = `${policy.retention_days} day${policy.retention_days === 1 ? "" : "s"}`;
   const facts: [string, string][] = recording ? [
-    ["Recorded", "The screen, window or tab you choose, as video only, while your timer runs and the red recording sign shows."],
+    ["Recorded", "The screen, window or tab you choose, as video only, while your timer runs and the orange recording sign shows."],
     ["Never recorded", "Sound, your keystrokes, screens you did not choose, or anything while no timer runs."],
     ["Kept", `For ${days}, then deleted automatically.`],
     ["Who can watch", "You, your team lead, your organisation's owner and HR, and anyone they give access to. Every viewing is logged, and you can flag a recording as sensitive to lock it."],
   ] : [];
   return (
     <SettingsSection id="recording" title="Recording and privacy"
-      description={sets ? <>The notice everyone in the workspace reads before their screen is recorded. You can change the rules in <Link href={`/app/${ctx.org.slug}/settings?section=recording`} className="font-medium text-foreground underline-offset-2 hover:underline">Settings</Link>.</> : "What this workspace may record about you, and the notice you are asked to agree to before it does."}>
+      description={sets ? <>The notice everyone in the workspace reads before their screen is recorded. You can change the rules in <Link href={`/app/${ctx.org.slug}/settings?section=recording`} className="link-inline">Settings</Link>.</> : "What this workspace may record about you, and the notice you are asked to agree to before it does."}>
       <SettingsGroup>
         <SettingsRow label="Recording here" align="text">{recording ? MODE[policy.recording_mode] ?? MODE.optional : MODE.disabled}</SettingsRow>
         {facts.map(([k, v]) => <SettingsRow key={k} label={k} align="text"><span className="text-secondary">{v}</span></SettingsRow>)}

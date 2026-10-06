@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Button } from "@/components/ui/button";
 import { Input, InputAdorned, Field, Select } from "@/components/ui/input";
 import { Alert } from "@/components/ui/states";
+import { ProgressBar } from "@/components/ui/progress-arc";
 import { api } from "@/lib/api-client";
 import { check, useSubmit } from "@/components/auth/forms";
 import { AuthHeading } from "@/components/auth/auth-shell";
@@ -64,6 +65,8 @@ export function OnboardingForm() {
       <AuthHeading ref={headingRef} step={`Step ${view} of 2`}
         title={view === 1 ? "Name your workspace" : "Set the company time zone"}
         subtitle={view === 1 ? "You will be its first owner. Your team opens it at the address below." : "You can change it, and the work schedule, later in Settings."} />
+      {/* How far through (accent rules, 6 October 2026: progress fills in orange); the step count above says it in words. */}
+      <ProgressBar size="sm" value={view} max={2} doneTone="accent" label="Workspace setup" valueText={`Step ${view} of 2`} className="mx-auto -mt-4 mb-8 max-w-24" />
       <form ref={formRef} className="flex flex-col gap-4" noValidate onSubmit={async (e) => {
         e.preventDefault();
         const form = e.currentTarget;
@@ -109,7 +112,7 @@ export function OnboardingForm() {
         ) : (
           <div className="mt-2 flex gap-2">
             <Button variant="outline" size="lg" disabled={pending} onClick={() => { moved.current = true; setStep(1); }}>Back</Button>
-            <Button type="submit" size="lg" className="min-w-0 flex-1" loading={pending}>{pending ? "Creating workspace…" : "Create workspace"}</Button>
+            <Button type="submit" size="lg" variant="accent" className="min-w-0 flex-1" loading={pending}>{pending ? "Creating workspace…" : "Create workspace"}</Button>
           </div>
         )}
       </form>

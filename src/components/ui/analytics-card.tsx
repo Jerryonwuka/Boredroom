@@ -3,8 +3,9 @@
 /**
  * The analytics card and its metric strip, v4 (spec §7 "Chart/analytics card"). The card is r16, the canvas colour, a
  * hairline and the chart shadow. Along its top runs a strip of metric tabs: each cell p16 on fill-0 with a 10% line
- * under it; the chosen one sits on the canvas colour with a 1.5px foreground line. Label 13/19.5 medium, subtle (the
- * foreground when chosen); value 18/26 medium, tabular. Under the strip, p20: an optional title row with a toolbar
+ * under it; the chosen one sits on the canvas colour with a 1.5px ORANGE line (an active tab, the accent rules). Label
+ * 13/19.5 medium, subtle (the foreground when chosen); value 18/26 medium, tabular. The chosen metric's chart draws
+ * its highlight series in orange (the charts' default). Under the strip, p20: an optional title row with a toolbar
  * (FilterControls, a Segmented), then the chosen metric's `content` (usually a chart).
  *
  * Works from server pages: pass each metric's chart as `content` (rendered on the server) and the card switches
@@ -34,7 +35,7 @@ export function MetricStrip({ metrics, value, onChange, label = "Metrics", class
   };
   const cell = (active: boolean) => cn(
     "flex min-w-[9.5rem] flex-1 flex-col items-start gap-0.5 p-4 text-left transition-colors duration-75",
-    active ? "bg-background shadow-[inset_0_-1.5px_0_var(--foreground)]" : "bg-fill-0 shadow-[inset_0_-1px_0_var(--border-input)]",
+    active ? "bg-background shadow-[inset_0_-1.5px_0_var(--accent)]" : "bg-fill-0 shadow-[inset_0_-1px_0_var(--border-input)]",
     interactive && !active && "hover:bg-fill-1",
     interactive && "focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--ring)]",
   );

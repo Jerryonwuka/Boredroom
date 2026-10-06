@@ -4,17 +4,28 @@ import { LINE_ICON, type Icon3DName } from "@/components/ui/icon";
 
 type IconComponent = React.ComponentType<{ className?: string; strokeWidth?: number; "aria-hidden"?: boolean }>;
 
+/** The icon square's look per tone: the accent tint by default; status meaning wins over accent. */
+const SQUARE = {
+  accent: "bg-accent-tint text-accent-text",
+  neutral: "bg-fill-1 text-secondary",
+  warning: "bg-warning/10 text-warning",
+  danger: "bg-danger/10 text-danger",
+} as const;
+
 /**
- * An empty state, v4 (spec §7): centred, a line icon (~48px, 1.25 stroke, secondary), the title 14/20 medium, the
- * description 14/20 regular in the secondary grey (max 448px, balanced), and one optional next action (an outline
- * button). No card of its own. `icon3d` names a v3 icon and draws its line equivalent; `icon` takes any line icon
- * (BrendaGlyph for Brenda). `compact` for inside a card or a list: a 32px icon and less height.
+ * An empty state, v4 with the accent rules (6 October 2026): centred, the line icon in a small orange-tinted square
+ * (48px r12 with a 24px icon; compact 36px r10 with 18px), the title 14/20 medium, the description 14/20 regular in the
+ * secondary grey (max 448px, balanced), and one optional next action (an outline button). No card of its own. `icon3d`
+ * names a v3 icon and draws its line equivalent; `icon` takes any line icon (BrendaGlyph for Brenda). `compact` for
+ * inside a card or a list. `tone`: `accent` (default), `neutral` (a locked or quiet state), `warning`, `danger` (errors).
  */
-export function EmptyState({ title, description, action, icon, icon3d, className, compact = false }: { title: string; description?: React.ReactNode; action?: React.ReactNode; icon?: IconComponent; icon3d?: Icon3DName; className?: string; compact?: boolean }) {
+export function EmptyState({ title, description, action, icon, icon3d, className, compact = false, tone = "accent" }: { title: string; description?: React.ReactNode; action?: React.ReactNode; icon?: IconComponent; icon3d?: Icon3DName; className?: string; compact?: boolean; tone?: keyof typeof SQUARE }) {
   const Icon: IconComponent = icon ?? (icon3d ? LINE_ICON[icon3d] : Inbox);
   return (
     <div className={cn("flex flex-col items-center justify-center text-center", compact ? "px-4 py-6" : "px-6 py-12", className)}>
-      <Icon className={cn("text-secondary", compact ? "mb-2 size-8" : "mb-4 size-12")} strokeWidth={1.25} aria-hidden />
+      <span aria-hidden className={cn("grid shrink-0 place-items-center shadow-[0_0_0_1px_var(--border)]", SQUARE[tone], compact ? "mb-2.5 size-9 rounded-[10px] [&_svg]:size-[18px]" : "mb-4 size-12 rounded-xl [&_svg]:size-6")}>
+        <Icon strokeWidth={1.75} aria-hidden />
+      </span>
       <p className="text-sm font-medium text-foreground">{title}</p>
       {description ? <p className="mt-1 max-w-md text-balance text-sm font-normal text-secondary">{description}</p> : null}
       {action ? <div className={compact ? "mt-3" : "mt-4"}>{action}</div> : null}
@@ -23,15 +34,15 @@ export function EmptyState({ title, description, action, icon, icon3d, className
 }
 
 export function ErrorState({ title = "Something went wrong", description, action }: { title?: string; description?: string; action?: React.ReactNode }) {
-  return <EmptyState icon={TriangleAlert} title={title} description={description} action={action} />;
+  return <EmptyState tone="danger" icon={TriangleAlert} title={title} description={description} action={action} />;
 }
 
 export function PermissionDenied({ description = "You do not have access to this area. Ask a workspace owner if you think you should." }: { description?: string }) {
-  return <EmptyState icon={Lock} title="Permission denied" description={description} />;
+  return <EmptyState tone="neutral" icon={Lock} title="Permission denied" description={description} />;
 }
 
 export function OfflineState() {
-  return <EmptyState icon={WifiOff} title="Connection lost" description="Boredroom cannot reach the server. Your timer state is kept on the server; reconnect to continue." />;
+  return <EmptyState tone="warning" icon={WifiOff} title="Connection lost" description="Boredroom cannot reach the server. Your timer state is kept on the server; reconnect to continue." />;
 }
 
 /**

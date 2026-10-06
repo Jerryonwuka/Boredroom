@@ -3,9 +3,10 @@ import { cn } from "@/lib/utils";
 
 /**
  * A segmented control, v4 (globals.css `.segmented`): fill-1 r10 p2 holding 28px items (r7, 14/20 medium, secondary);
- * the chosen one sits on the canvas colour with a hairline. Behaves like a radio group and submits under `name` like
- * one; with a `name`, arrow keys move the choice (native radio behaviour). Controlled (`value`/`onChange`) or not (`defaultValue`).
- * A tone colours the chosen item's label (a status choice).
+ * the chosen one sits on the canvas colour with a hairline and a small orange dot grows in before its label (the
+ * choice mark, accent rules 6 October 2026). Behaves like a radio group and submits under `name` like one; with a
+ * `name`, arrow keys move the choice (native radio behaviour). Controlled (`value`/`onChange`) or not (`defaultValue`).
+ * A status tone colours the chosen item's label instead of the dot (status meaning wins over accent).
  */
 export function Segmented({ name, options, defaultValue, value, onChange, className, disabled, "aria-label": ariaLabel }: {
   name?: string; options: { value: string; label: React.ReactNode; tone?: "success" | "warning" | "danger" | "neutral"; disabled?: boolean }[];
