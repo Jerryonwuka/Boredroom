@@ -40,7 +40,7 @@ describe("tasks page", () => {
     const ben = await tasksView(a.managerCtx, { who: a.employee2Ctx.membership.id });
     expect(ben.who).toBe(a.employee2Ctx.membership.id);
     expect(ben.tasks.map((x) => x.title)).toEqual(["Pricing page copy"]);
-    expect(ben.counts).toEqual({ open: 1, check: 0, done: 0 });
+    expect(ben.counts).toEqual({ open: 1, check: 0, done: 0, assigned: 1 });
     // An unknown id is ignored rather than leaking.
     const outside = await tasksView(a.managerCtx, { who: "00000000-0000-4000-8000-000000000000" });
     expect(outside.who).toBeNull();

@@ -171,6 +171,15 @@ The owner asked for Brenda's tab to look "just like" a reference AI chat home, "
 - **One microphone per recording:** dictation and the voice recorder share their open stream (`shareMicrophone` / `useSharedMicrophone`, `hooks/use-voice-recorder`), so the waveform, the level meters and Brenda's character measure it and never open a second one.
 - The faint orange wash rising from the bottom while the microphone is open (`.brenda-wash`) stays. The waveform's edge fade is a mask drawn on its canvas, as ElevenLabs draws it, not a decorative gradient. Reduced motion: still bars and a steady dot.
 
+## Her look (owner design, 7 October 2026)
+
+The owner supplied her character as artwork (a flat version and a glossy 3D render) and asked for it to move the way Coucou's Mochi does. She is a **white sphere with a black bean-shaped visor** (rounded over each eye, a soft dip between them, a broad curve beneath) and **two white pill eyes** behind it. The same look everywhere she appears:
+
+- **Her drawn character** (`lib/brenda-character/engine`, `BrendaCharacter`): glossy, lit from the upper left; the visor slides across the sphere and foreshortens as she looks, the eyes move a little further than the visor and glow; her mood is a light beneath her, a rim light along the bottom of the sphere and a tint in her eyes (white at rest). Every state, expression and reaction is as before; only the drawing changed.
+- **Her face** (`BrendaFace`, `.brenda-face` in globals.css; `.face` in the notch): the same sphere at 18, 26 and 34px (22 and 28 in the notch), the visor as a dark shape with its dip cut out by a mask, white eyes; visor and eyes follow the pointer together, clipped to the sphere. Teammates' small faces in the notch (`.face.mini`) keep their own flat coloured shape.
+- **Her glyph** (`BrendaGlyph`): a 9.5px circle outline with the visor filled in `currentColor` and the eyes cut out of it (a mask of its own per icon), so it still takes the icon colour rules.
+- Coucou's code is MIT; its character, sounds and artwork are reserved by its author and are not used. Brenda's shape is the owner's.
+
 ## Her reactions (owner request, 7 October 2026)
 
 "I want Brenda to give reactions when you do actions: when typing, she'll look like she's looking at what you're typing; when you're sending a voice note she'll look like she's listening." She is one person: every face and character of hers on the page reacts at once (`attention` in `lib/brenda-character/engine`, fed by her box through `useReadAlong` in `brenda-chat`).

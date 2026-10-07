@@ -597,24 +597,28 @@ html[data-brenda-chat] #main, html:has([data-brenda-chat-view]) #main { padding:
    as --shell-banners. The chat is that much shorter than the screen, and so is the sidebar beside it. */
 html[data-brenda-chat] #workspace-sidebar, html:has([data-brenda-chat-view]) #workspace-sidebar { height: calc(100dvh - var(--shell-banners, 0px)); }
 
-/* Her face (owner decision, 4 October 2026): the same character as the desktop notch, white, monochrome. Her eyes
-   follow the pointer (--lx/--ly, set by brenda-face.tsx), she blinks and breathes. Her glow, if any, is the accent. */
-.brenda-face { --lx: 0; --ly: 0; --glow: transparent; position: relative; display: inline-grid; place-content: center; flex: none; border-radius: 30%;
-  background: #fff; box-shadow: 0 0 0 1px var(--border-input), var(--elev-natural-xs), 0 0 12px -2px var(--glow); /* the ring and the lift keep her white face visible on the white light canvas */
+/* Her face (owner decision, 4 October 2026; her look, 7 October 2026): the same character as the desktop notch, a white
+   sphere with a black visor and white pill eyes behind it. The visor and eyes follow the pointer together (--lx/--ly, set
+   by brenda-face.tsx), she blinks and breathes. Her glow, if any, is the accent. */
+.brenda-face { --lx: 0; --ly: 0; --glow: transparent; position: relative; display: inline-block; flex: none; border-radius: 50%; overflow: hidden;
+  background: radial-gradient(circle at 32% 26%, #fff 0 30%, #ececf0 72%, #c9cad1 100%); box-shadow: 0 0 0 1px var(--border-input), var(--elev-natural-xs), 0 0 12px -2px var(--glow); /* the ring and the lift keep her white face visible on the white light canvas */
   transition: transform 250ms var(--ease-out), rotate 250ms var(--ease-out), translate 160ms var(--ease-out), box-shadow 400ms var(--ease-out); animation: brenda-breathe 3.6s ease-in-out infinite; }
-.brenda-face .eyes { display: grid; grid-auto-flow: column; transform: translate(calc(var(--lx) * var(--reach-x)), calc(var(--ly) * var(--reach-y))); }
-.brenda-face .eyes > span { background: #111; border-radius: 2px; transition: transform 70ms ease, height 200ms var(--ease-out), scale 150ms var(--ease-out); }
-.brenda-face-sm { width: 20px; height: 15px; --reach-x: 2px; --reach-y: 1.5px; }
-.brenda-face-sm .eyes { gap: 4px; } .brenda-face-sm .eyes > span { width: 2.5px; height: 4px; }
-.brenda-face-md { width: 30px; height: 22px; --reach-x: 3px; --reach-y: 2px; }
-.brenda-face-md .eyes { gap: 5px; } .brenda-face-md .eyes > span { width: 3.5px; height: 5.5px; }
-.brenda-face-lg { width: 38px; height: 28px; --reach-x: 3.5px; --reach-y: 2.5px; }
-.brenda-face-lg .eyes { gap: 7px; } .brenda-face-lg .eyes > span { width: 4.5px; height: 7px; }
+.brenda-face .eyes { position: absolute; left: 10%; width: 80%; top: 16%; height: 37%; display: flex; align-items: center; justify-content: center;
+  background: #0b0b0e; border-radius: 46% 46% 50% 50% / 46% 46% 62% 62%;
+  -webkit-mask: radial-gradient(ellipse 17% 16% at 50% 0, #0000 94%, #000); mask: radial-gradient(ellipse 17% 16% at 50% 0, #0000 94%, #000); /* the soft dip between the eyes */ transform: translate(calc(var(--lx) * var(--reach-x)), calc(var(--ly) * var(--reach-y))); }
+
+.brenda-face .eyes > span { background: #fff; border-radius: 2px; box-shadow: 0 0 2px rgb(255 255 255 / .6); transition: transform 70ms ease, height 200ms var(--ease-out), scale 150ms var(--ease-out); }
+.brenda-face-sm { width: 18px; height: 18px; --reach-x: 1.5px; --reach-y: 1.2px; }
+.brenda-face-sm .eyes { gap: 4.5px; } .brenda-face-sm .eyes > span { width: 1.6px; height: 3.2px; }
+.brenda-face-md { width: 26px; height: 26px; --reach-x: 2.5px; --reach-y: 1.8px; }
+.brenda-face-md .eyes { gap: 6.5px; } .brenda-face-md .eyes > span { width: 2.4px; height: 4.6px; }
+.brenda-face-lg { width: 34px; height: 34px; --reach-x: 3px; --reach-y: 2.2px; }
+.brenda-face-lg .eyes { gap: 8.5px; } .brenda-face-lg .eyes > span { width: 3px; height: 6px; }
 .brenda-face.blink .eyes > span { transform: scaleY(.12); }
 .brenda-face[data-tone="accent"] { --glow: var(--accent); } .brenda-face[data-tone="ok"] { --glow: var(--success); }
 .brenda-face[data-tone="warn"] { --glow: var(--warning); } .brenda-face[data-tone="bad"] { --glow: var(--danger); }
 .brenda-face[data-tone="blue"], .brenda-face[data-tone="violet"] { --glow: transparent; }
-.brenda-face.happy .eyes > span { height: 3px; width: 6px; background: transparent; border: 2px solid #111; border-bottom: 0; border-radius: 6px 6px 0 0; }
+.brenda-face.happy .eyes > span { height: 3px; width: 6px; background: transparent; box-shadow: none; border: 2px solid #fff; border-bottom: 0; border-radius: 6px 6px 0 0; }
 .brenda-face-sm.happy .eyes > span { width: 4px; height: 2px; border-width: 1.5px; }
 .brenda-face.sad .eyes > span { height: 2px; border-radius: 1px; }
 .brenda-face.alert { animation: brenda-hop 600ms var(--ease-out) 1, brenda-breathe 3.6s ease-in-out 600ms infinite; }
@@ -630,9 +634,9 @@ html[data-brenda-chat] #workspace-sidebar, html:has([data-brenda-chat-view]) #wo
 .brenda-face.squash .eyes > span { height: 2px; }
 .brenda-face.squash .eyes > span:first-child { transform: rotate(18deg); } .brenda-face.squash .eyes > span:last-child { transform: rotate(-18deg); }
 .brenda-face.dizzy { animation: brenda-wobble 450ms ease-in-out infinite alternate; }
-.brenda-face.dizzy .eyes > span { width: 6px; height: 6px; border-radius: 50%; background: transparent; border: 1.5px solid #111; border-right-color: transparent; animation: brenda-spin 550ms linear infinite; }
+.brenda-face.dizzy .eyes > span { width: 5px; height: 5px; border-radius: 50%; background: transparent; box-shadow: none; border: 1.5px solid #fff; border-right-color: transparent; animation: brenda-spin 550ms linear infinite; }
 .brenda-face.love { --glow: var(--accent); }
-.brenda-face.love .eyes > span { width: 7px; height: 7px; border-radius: 0; background: var(--accent); clip-path: path("M3.5 6.5 L0.8 3.7 A1.7 1.7 0 0 1 3.5 1.4 A1.7 1.7 0 0 1 6.2 3.7 Z"); animation: brenda-thump 700ms ease-in-out infinite; }
+.brenda-face.love .eyes > span { width: 7px; height: 7px; box-shadow: none; border-radius: 0; background: var(--accent); clip-path: path("M3.5 6.5 L0.8 3.7 A1.7 1.7 0 0 1 3.5 1.4 A1.7 1.7 0 0 1 6.2 3.7 Z"); animation: brenda-thump 700ms ease-in-out infinite; }
 @keyframes brenda-breathe { 0%, 100% { scale: 1; } 50% { scale: 1.035; } }
 @keyframes brenda-hop { 0% { translate: 0 0; } 35% { translate: 0 -4px; } 70% { translate: 0 1px; } 100% { translate: 0 0; } }
 @keyframes brenda-scan { 0%, 100% { translate: 0 0; } 50% { translate: -2px 0; } }

@@ -3,9 +3,13 @@ import { migrate } from "../../db/scripts/migrate";
 
 export const adminUrl = () => process.env.TEST_DATABASE_ADMIN_URL!;
 
-/** Rebuilds the test schema once per test file. */
+/**
+ * Rebuilds the test schema once per test file. The Free plan's seat cap (5 people, migration 0021) is lifted here
+ * because the workflow fixtures build workspaces with more people than that; the app's own limit is unchanged.
+ */
 export async function resetTestDatabase() {
   await migrate(adminUrl(), { reset: true, quiet: true });
+  await adminQuery("UPDATE plans SET max_users = NULL WHERE code = 'free'");
 }
 
 export async function adminQuery<T = Record<string, unknown>>(sql: string, params: unknown[] = []): Promise<T[]> {

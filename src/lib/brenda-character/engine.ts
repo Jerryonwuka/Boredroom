@@ -1,7 +1,10 @@
 /**
- * Brenda, drawn (owner decision, 5 October 2026). A small canvas engine for Boredroom's AI teammate: her white rounded
- * "screen" face with pill eyes (her own design), eyes projected onto a curved surface so they slide and foreshorten as
- * she looks around, blinking, breathing, a soft glow in the colour of her mood, particles, and a set of expressions.
+ * Brenda, drawn (owner decision, 5 October 2026). A small canvas engine for Boredroom's AI teammate. Her look (owner
+ * design, 7 October 2026, from the owner's artwork): a glossy white sphere with a black bean-shaped visor and two white
+ * pill eyes glowing behind it. The visor turns with her head, sliding across the sphere and foreshortening as she looks
+ * around (and going round the back when she spins); the eyes sit a little deeper and move a little further. She blinks,
+ * breathes, has a soft glow and rim light in the colour of her mood (which also tints her eyes), particles, and a set
+ * of expressions.
  *
  * The techniques (eyes on a sphere with yaw and pitch, tweened squash and stretch, frame-rate independent smoothing,
  * particle bursts) follow the MIT-licensed engine of Coucou by Louis Raillé (github.com/Louis-CFM/coucou). Coucou's
@@ -54,10 +57,31 @@ export const STATES: Record<BrendaState, StateCfg> = {
   proud:     { eye: "star",   glow: "#ffc857", tint: 0.18, tilt: -0.08, sparkles: true },
 };
 
-const INK = "#14151c";
-const EYE_W = 0.24, EYE_H = 0.3, EYE_SPREAD = 0.4, EYE_PITCH = -0.06;
-const FACE_TOP: RGB = [1, 1, 1];
-const FACE_BOTTOM: RGB = [0.9, 0.886, 0.87];
+// Her look (owner design, 7 October 2026): a glossy white sphere with a black bean-shaped visor, two white pill eyes
+// glowing behind the glass. Proportions are fractions of the sphere's radius, measured from the owner's artwork.
+const VISOR_INK = "#0b0b0e";
+const VISOR_W = 0.8, VISOR_TOP = -0.42, VISOR_DIP = -0.28, VISOR_BOTTOM = 0.44;
+const VISOR_REACH = 0.62, VISOR_PITCH = Math.asin(0.19 / VISOR_REACH);   // the visor's centre sits 0.19 R above the middle
+const EYE_W = 0.15, EYE_H = 0.31, EYE_SPREAD = 0.42, EYE_Y = -0.04;
+const BODY_LIGHT: RGB = [1, 1, 1];
+const BODY_MID: RGB = [0.965, 0.965, 0.973];
+const BODY_SHADE: RGB = [0.87, 0.875, 0.895];
+const BODY_RIM: RGB = [0.72, 0.725, 0.76];
+
+/** The visor, centred on the origin: rounded lobes over each eye, a soft dip between them, a broad curve beneath. */
+function visorPath(R: number): Path2D {
+  const a = VISOR_W * R, t = VISOR_TOP * R, d = VISOR_DIP * R, b = VISOR_BOTTOM * R, m = -0.02 * R;
+  const v = new Path2D();
+  v.moveTo(-a, m);
+  v.bezierCurveTo(-a, t * 0.9, -a * 0.8, t, -a * 0.5, t);
+  v.bezierCurveTo(-a * 0.28, t, -a * 0.16, d, 0, d);
+  v.bezierCurveTo(a * 0.16, d, a * 0.28, t, a * 0.5, t);
+  v.bezierCurveTo(a * 0.8, t, a, t * 0.9, a, m);
+  v.bezierCurveTo(a, b * 0.8, a * 0.62, b, 0, b);
+  v.bezierCurveTo(-a * 0.62, b, -a, b * 0.8, -a, m);
+  v.closePath();
+  return v;
+}
 const SPARK = ["#ff6c02", "#ff3d81", "#7c5cff", "#ffc857"];
 
 type Ease = (t: number) => number;
@@ -277,12 +301,12 @@ export class BrendaEngine {
   /** Draws into a canvas of W×H CSS pixels (the caller applies the device pixel ratio). */
   draw(x: CanvasRenderingContext2D, W: number, H: number) {
     x.clearRect(0, 0, W, H);
-    const R = Math.min(W / 1.9, H / 1.6) * 0.62;   // face width is about 1.4 R
-    const fw = R * 1.4, fh = R * 1.04, fr = R * 0.36;
+    const R = Math.min(W, H) * 0.34;   // the sphere's radius: room around her for the glow, hops and particles
     const cx = W / 2 + this.ox * R, cy = H / 2 + this.oy * R + R * 0.04;
+    const eyeInk = mix([1, 1, 1], this.glow, Math.min(1, this.tint * 1.6));
 
     // The mood light beneath her.
-    const g = x.createRadialGradient(cx, cy + fh * 0.42, R * 0.1, cx, cy + fh * 0.42, R * 1.35);
+    const g = x.createRadialGradient(cx, cy + R * 0.2, R * 0.6, cx, cy + R * 0.2, R * 1.3);
     g.addColorStop(0, rgba(this.glow, 0.42 + this.heard * 0.28)); g.addColorStop(1, rgba(this.glow, 0));
     x.fillStyle = g; x.fillRect(0, 0, W, H);
 
@@ -291,70 +315,84 @@ export class BrendaEngine {
     x.rotate(this.tilt);
     x.scale(this.sx, this.sy);
 
-    const face = new Path2D(); roundRect(face, -fw / 2, -fh / 2, fw, fh, fr);
-    // Soft glow around the rim.
-    x.save(); x.shadowColor = rgba(this.glow, 0.55 + this.heard * 0.25); x.shadowBlur = R * (0.35 + this.heard * 0.2); x.fillStyle = "#fff"; x.fill(face); x.restore();
-    // Face: warm white, a mood tint rising from the bottom, shade at the edges, a highlight up and to the right.
-    const fg = x.createLinearGradient(fw * 0.4, -fh * 0.6, -fw * 0.4, fh * 0.6);
-    fg.addColorStop(0, rgba(FACE_TOP)); fg.addColorStop(1, rgba(FACE_BOTTOM));
-    x.fillStyle = fg; x.fill(face);
+    // The sphere: glossy white, lit from the upper left, shading to a cool grey at the lower right rim.
+    const body = new Path2D(); body.arc(0, 0, R, 0, Math.PI * 2);
+    x.save(); x.shadowColor = rgba(this.glow, 0.5 + this.heard * 0.25); x.shadowBlur = R * (0.3 + this.heard * 0.2); x.fillStyle = "#fff"; x.fill(body); x.restore();
+    const bg = x.createRadialGradient(-R * 0.34, -R * 0.42, 0, -R * 0.1, -R * 0.12, R * 1.18);
+    bg.addColorStop(0, rgba(BODY_LIGHT)); bg.addColorStop(0.5, rgba(BODY_MID)); bg.addColorStop(0.85, rgba(BODY_SHADE)); bg.addColorStop(1, rgba(BODY_RIM));
+    x.fillStyle = bg; x.fill(body);
+    // Her mood as a rim light along the bottom of the sphere.
     if (this.tint > 0.01) {
-      const tg = x.createLinearGradient(0, fh / 2, 0, -fh / 2);
-      tg.addColorStop(0, rgba(this.glow, 0.7 * this.tint)); tg.addColorStop(0.75, rgba(this.glow, 0));
-      x.fillStyle = tg; x.fill(face);
+      const tg = x.createRadialGradient(0, R * 0.2, R * 0.55, 0, R * 0.2, R * 1.05);
+      tg.addColorStop(0, rgba(this.glow, 0)); tg.addColorStop(1, rgba(this.glow, 0.55 * this.tint));
+      x.fillStyle = tg; x.fill(body);
     }
-    const sh = x.createRadialGradient(0, 0, R * 0.2, 0, 0, R * 1.05);
-    sh.addColorStop(0, "rgba(0,0,0,0)"); sh.addColorStop(0.7, "rgba(0,0,0,0)"); sh.addColorStop(1, "rgba(20,20,40,0.16)");
-    x.fillStyle = sh; x.fill(face);
-    const hl = x.createRadialGradient(fw * 0.26, -fh * 0.3, 0, fw * 0.26, -fh * 0.3, R * 0.55);
-    hl.addColorStop(0, "rgba(255,255,255,0.75)"); hl.addColorStop(1, "rgba(255,255,255,0)");
-    x.fillStyle = hl; x.fill(face);
-    x.lineWidth = Math.max(1, R * 0.02); x.strokeStyle = "rgba(20,24,40,0.08)"; x.stroke(face);
+    // The gloss: a soft sheen up and to the left, and a crisp highlight inside it.
+    const sheen = x.createRadialGradient(-R * 0.42, -R * 0.55, 0, -R * 0.42, -R * 0.55, R * 0.6);
+    sheen.addColorStop(0, "rgba(255,255,255,0.95)"); sheen.addColorStop(1, "rgba(255,255,255,0)");
+    x.fillStyle = sheen; x.fill(body);
+    x.lineWidth = Math.max(1, R * 0.015); x.strokeStyle = "rgba(20,24,40,0.1)"; x.stroke(body);
 
-    // Eyes on a curved surface: yaw and pitch move them across the face, foreshortened near the edges.
-    const shape = this.override ?? this.cfg.eye;
-    x.save(); x.clip(face);
-    x.fillStyle = INK; x.strokeStyle = INK;
-    const rx = fw * 0.5, ry = fh * 0.5;
-    for (const sd of [-1, 1]) {
-      const eyeYaw = sd * EYE_SPREAD + this.yaw;
-      let eyePitch = EYE_PITCH + this.pitch + this.roll;
-      eyePitch = ((((eyePitch + Math.PI) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)) - Math.PI;
-      const cp = Math.cos(eyePitch);
-      if (Math.cos(eyeYaw) * cp <= 0.05) continue;
-      const ex = Math.sin(eyeYaw) * cp * rx * 1.05;
-      const ey = -Math.sin(eyePitch) * ry * 1.1;
-      x.save();
-      x.translate(ex, ey);
-      x.scale(Math.max(0.2, Math.cos(eyeYaw)), Math.max(0.2, cp));
-      this.eye(x, shape, R * EYE_W * this.eyeScale, R * EYE_H * this.eyeScale, sd);
+    // The visor turns with her head: it slides across the sphere and foreshortens as it nears the edge, and goes round
+    // the back when she spins.
+    let p = VISOR_PITCH + this.pitch + this.roll;
+    p = ((((p + Math.PI) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)) - Math.PI;
+    const cy0 = Math.cos(this.yaw), cp = Math.cos(p);
+    if (cy0 * cp > 0.05) {
+      x.save(); x.clip(body);
+      x.translate(Math.sin(this.yaw) * cp * R * VISOR_REACH, -Math.sin(p) * R * VISOR_REACH);
+      x.scale(Math.max(0.2, cy0), Math.max(0.2, cp / Math.cos(VISOR_PITCH)));
+      const visor = visorPath(R);
+      // The lip where the visor sits into the shell, then the black glass.
+      x.save(); x.shadowColor = "rgba(30,32,44,0.45)"; x.shadowBlur = R * 0.06; x.shadowOffsetY = R * 0.015; x.fillStyle = VISOR_INK; x.fill(visor); x.restore();
+      const vg = x.createRadialGradient(0, R * 0.05, R * 0.1, 0, 0, R * 0.85);
+      vg.addColorStop(0, "#0a0a0d"); vg.addColorStop(1, "#24252c");
+      x.fillStyle = vg; x.fill(visor);
+      x.save(); x.clip(visor);
+      // The glass catches the light: a wide sheen across the top and a bevel just inside the rim.
+      const gl = x.createLinearGradient(0, -R * 0.4, 0, R * 0.05);
+      gl.addColorStop(0, "rgba(255,255,255,0.2)"); gl.addColorStop(1, "rgba(255,255,255,0)");
+      x.fillStyle = gl; x.fillRect(-R, -R * 0.45, R * 2, R * 0.5);
+      x.lineWidth = R * 0.035; x.strokeStyle = "rgba(255,255,255,0.12)"; x.stroke(visor);
+      // Eyes behind the glass: they move a little further than the visor (they sit deeper), glow softly and keep
+      // every expression.
+      const shape = this.override ?? this.cfg.eye;
+      x.fillStyle = rgba(eyeInk); x.strokeStyle = rgba(eyeInk);
+      x.shadowColor = rgba(eyeInk, 0.85); x.shadowBlur = R * 0.08;
+      const px = Math.sin(this.yaw) * R * 0.07, py = -Math.sin(this.pitch) * R * 0.05;
+      for (const sd of [-1, 1]) {
+        x.save();
+        x.translate(sd * R * EYE_SPREAD + px, R * EYE_Y + py);
+        this.eye(x, shape, R * EYE_W * this.eyeScale, R * EYE_H * this.eyeScale, sd, rgba(eyeInk));
+        x.restore();
+      }
+      x.restore();
       x.restore();
     }
-    x.restore();
     x.restore();
 
     this.drawParticles(x, R, cx, cy);
   }
 
-  private eye(x: CanvasRenderingContext2D, shape: EyeShape, w: number, h: number, sd: number): void {
+  private eye(x: CanvasRenderingContext2D, shape: EyeShape, w: number, h: number, sd: number, ink: string): void {
     const t = nowS();
     switch (shape) {
-      case "wide": return this.eye(x, "pill", w * 1.14, h * 1.12, sd);
+      case "wide": return this.eye(x, "pill", w * 1.14, h * 1.12, sd, ink);
       case "pill": { const hh = Math.max(h * this.open, w * 0.28); x.beginPath(); roundRect(x, -w / 2, -hh / 2, w, hh, Math.min(w / 2, hh / 2)); x.fill(); return; }
-      case "dot": x.beginPath(); x.arc(0, 0, w * 0.42, 0, Math.PI * 2); x.fill(); return;
-      case "line": x.rotate(-sd * 0.25); x.beginPath(); roundRect(x, -w * 0.8, -w * 0.2, w * 1.6, w * 0.4, w * 0.2); x.fill(); return;
-      case "flat": x.beginPath(); roundRect(x, -w * 0.72, -w * 0.18, w * 1.44, w * 0.36, w * 0.18); x.fill(); return;
-      case "happy": x.lineWidth = w * 0.48; x.lineCap = "round"; x.beginPath(); x.arc(0, h * 0.2, w * 0.8, Math.PI * 1.12, Math.PI * 1.88); x.stroke(); return;
-      case "closed": x.lineWidth = w * 0.34; x.lineCap = "round"; x.beginPath(); x.arc(0, -h * 0.08, w * 0.76, Math.PI * 0.15, Math.PI * 0.85); x.stroke(); return;
-      case "tired": x.beginPath(); roundRect(x, -w / 2, -h * 0.02, w, h * 0.36, w / 2); x.fill(); x.beginPath(); roundRect(x, -w * 0.62, -h * 0.1, w * 1.24, w * 0.2, w * 0.1); x.fill(); return;
-      case "wink": if (sd < 0) return this.eye(x, "pill", w, h, sd); return this.eye(x, "happy", w, h, sd);
+      case "dot": x.beginPath(); x.arc(0, 0, w * 0.6, 0, Math.PI * 2); x.fill(); return;
+      case "line": x.rotate(-sd * 0.25); x.beginPath(); roundRect(x, -w * 0.9, -w * 0.25, w * 1.8, w * 0.5, w * 0.25); x.fill(); return;
+      case "flat": x.beginPath(); roundRect(x, -w * 0.9, -w * 0.25, w * 1.8, w * 0.5, w * 0.25); x.fill(); return;
+      case "happy": x.lineWidth = w * 0.6; x.lineCap = "round"; x.beginPath(); x.arc(0, h * 0.2, w * 1.05, Math.PI * 1.12, Math.PI * 1.88); x.stroke(); return;
+      case "closed": x.lineWidth = w * 0.45; x.lineCap = "round"; x.beginPath(); x.arc(0, -h * 0.12, w, Math.PI * 0.15, Math.PI * 0.85); x.stroke(); return;
+      case "tired": x.beginPath(); roundRect(x, -w / 2, -h * 0.02, w, h * 0.36, w / 2); x.fill(); x.beginPath(); roundRect(x, -w * 0.8, -h * 0.12, w * 1.6, w * 0.26, w * 0.13); x.fill(); return;
+      case "wink": if (sd < 0) return this.eye(x, "pill", w, h, sd, ink); return this.eye(x, "happy", w, h, sd, ink);
       case "spiral": {
-        x.lineWidth = w * 0.2; x.lineCap = "round"; x.beginPath();
-        for (let a = 0; a < 4.4 * Math.PI; a += 0.2) { const r = w * 0.06 + a * w * 0.056; const aa = a + t * 9 * sd; const px = Math.cos(aa) * r, py = Math.sin(aa) * r; if (a === 0) x.moveTo(px, py); else x.lineTo(px, py); }
+        x.lineWidth = w * 0.26; x.lineCap = "round"; x.beginPath();
+        for (let a = 0; a < 4.4 * Math.PI; a += 0.2) { const r = w * 0.08 + a * w * 0.075; const aa = a + t * 9 * sd; const px = Math.cos(aa) * r, py = Math.sin(aa) * r; if (a === 0) x.moveTo(px, py); else x.lineTo(px, py); }
         x.stroke(); return;
       }
-      case "heart": x.fillStyle = "#ff4d6d"; x.scale(1 + Math.sin(t * 9) * 0.08, 1 + Math.sin(t * 9) * 0.08); heart(x, w * 1.25); x.fill(); x.fillStyle = INK; return;
-      case "star": x.fillStyle = "#f7b32b"; x.rotate(t * 1.5 * sd); star(x, w * 1.05, w * 0.46); x.fill(); x.fillStyle = INK; return;
+      case "heart": x.fillStyle = "#ff4d6d"; x.shadowColor = "rgba(255,77,109,0.8)"; x.scale(1 + Math.sin(t * 9) * 0.08, 1 + Math.sin(t * 9) * 0.08); heart(x, w * 1.6); x.fill(); x.fillStyle = ink; return;
+      case "star": x.fillStyle = "#f7b32b"; x.shadowColor = "rgba(247,179,43,0.8)"; x.rotate(t * 1.5 * sd); star(x, w * 1.35, w * 0.6); x.fill(); x.fillStyle = ink; return;
     }
   }
 
