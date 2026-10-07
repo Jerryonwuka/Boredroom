@@ -13,8 +13,10 @@
  * box is empty or a reply is on its way. While dictating (live) the ring stays orange and the microphone becomes an
  * orange stop square on a quiet grey disc, so the one solid orange button is still Send.
  *
- * While dictating, the notch's voice card sits above the text, inside the pill (owner decision, 5 October 2026;
- * VoiceCapture). The page-wide tooltip layer labels the microphone and Send from their accessible names.
+ * While dictating, the voice card sits above the text, inside the pill (owner decision, 5 October 2026; VoiceCapture),
+ * in ElevenLabs' recording look since 7 October 2026: the live time, the live waveform scrolling with the voice (read
+ * from the dictation's own microphone, which it shares), and Cancel; the microphone button is the Stop. The page-wide
+ * tooltip layer labels the microphone and Send from their accessible names.
  *
  * `variant="hero"` is Brenda's home box (owner decision, 7 October 2026: her home "just like" the reference AI chat
  * home, in our orange): r16, a 1px orange-tinted hairline with a faint orange glow inside it, translucent over her home

@@ -5,7 +5,9 @@
  * her, typed or spoken. The conversation itself (`brenda-chat.tsx`) is shared with Brenda Home.
  *
  * In the style of the desktop notch (owner decision, 4 October 2026): her living face on the button and in the header
- * (poke her); her mood and a soft glow follow the conversation; the same small sounds, with a mute switch.
+ * (poke her); her mood and a soft glow follow the conversation; the same small sounds, with a mute switch. Her faces
+ * react as on her page (owner request, 7 October 2026): they read along while you type in the box (eyes on the caret),
+ * listen while you dictate (head tilted, eyes wide), think while she works and smile at her reply (brenda-chat).
  *
  * Not on Brenda's own page (owner decision, 5 October 2026): that page is the conversation with her, so the floating
  * button and its panel stay out of the way there.

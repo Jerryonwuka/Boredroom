@@ -7,7 +7,9 @@
  * Her own-work actions come back as done lines; anything that lands on someone else comes back as a prepared action
  * with Confirm and Not now, and only runs when the person presses Confirm (Y and N work too, when not typing). Her mood
  * follows the conversation: thinking while she works, cross on an error, alert while something waits for a yes,
- * pleased when her latest answer did something, listening while you dictate.
+ * pleased when her latest answer did something, listening while you dictate. Her reactions (owner request, 7 October
+ * 2026): she reads along while you type in her box (`useReadAlong`, which tells every face of hers on the page where
+ * the caret is), and a reply pleases her for a moment, something done is a celebration (`reaction`).
  *
  * Every conversation is kept (owner decision, 5 October 2026: past chats you can carry on or delete): it is saved after
  * its first exchange and again after each later one and each Confirm or Not now, privately to the person
@@ -35,7 +37,7 @@ import { playSound } from "@/lib/brenda-sound";
 import { useDictation } from "@/hooks/use-dictation";
 import { api, isApiFailure, type ApiFailure } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
-import type { BrendaState } from "@/lib/brenda-character/engine";
+import { attention, READ_BLUR_HOLD_MS, type BrendaState, type ReadCue } from "@/lib/brenda-character/engine";
 import type { Action, ChatResult, Proposal } from "@/server/services/copilot";
 import type { Conversation, ConversationSummary, StoredMessage } from "@/server/services/brenda-history";
 
@@ -51,6 +53,8 @@ export const STARTERS: Record<"org" | "worker", string[]> = {
 const KEEP = { messages: 200, content: 8000, title: 200 };
 /** How long the chat waits after a change before saving, so a burst of changes is one save. */
 const SAVE_DELAY = 600;
+/** How long her faces show a passing reaction (pleased by a reply). */
+const REACTION_MS = 1800;
 // Told to every chat on the page (Brenda's page and the drawer, which stays mounted under it) when a conversation is
 // deleted, or saved by one of them.
 const DELETED_EVENT = "boredroom:brenda-chat-deleted";
@@ -252,6 +256,16 @@ export function useBrendaChat({ orgSlug, keysActive = true, onLeave, initialText
   // Said quietly when another window's copy of this conversation stood over a change made here (CHANGED_ELSEWHERE).
   const [notice, setNotice] = useState<string | null>(null);
   const [conversationId, setConversationId] = useState<string | null>(opened?.id ?? null);
+  // Her passing reaction to what just arrived: a reply pleases her (her faces smile for a moment), something done is a
+  // celebration. Each one is a new object, so her drawn character plays it once (brenda-home).
+  const [reaction, setReaction] = useState<{ kind: "pleased" | "celebrate" } | null>(null);
+  const reactionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const react = (kind: "pleased" | "celebrate") => {
+    setReaction({ kind });
+    if (reactionTimer.current) clearTimeout(reactionTimer.current);
+    reactionTimer.current = setTimeout(() => setReaction(null), REACTION_MS);
+  };
+  useEffect(() => () => { if (reactionTimer.current) clearTimeout(reactionTimer.current); }, []);
   const dictation = useDictation(text, setText);
   const router = useRouter();
   // Set before the first await, so a double press cannot send twice while dictation is being written out.
@@ -314,7 +328,10 @@ export function useBrendaChat({ orgSlug, keysActive = true, onLeave, initialText
         const r = await api<ChatResult>(`/api/orgs/${orgSlug}/assistant/chat`, { method: "POST", body: { messages: next.slice(-20).map((m) => ({ role: m.role, content: m.content })) }, retries: 0 });
         if (epoch.current !== mine) { if (r.actions?.length) router.refresh(); return; }
         setMessages((cur) => [...cur, { role: "assistant", content: r.reply, actions: r.actions, proposals: r.proposals, engine: r.engine, note: r.note }]);
-        playSound(r.proposals?.some((p) => p.kind === "confirm") ? "attention" : r.actions?.length ? "success" : "reply");
+        const asks = r.proposals?.some((p) => p.kind === "confirm");
+        playSound(asks ? "attention" : r.actions?.length ? "success" : "reply");
+        // Waiting for a yes is her alert look; otherwise a reply pleases her and something done is a celebration.
+        if (!asks) react(r.actions?.length ? "celebrate" : "pleased");
         if (r.actions?.length) router.refresh();
       } catch (err) {
         // The message stays on screen as it is (setting it again would undo what changed meanwhile, such as another
@@ -346,6 +363,7 @@ export function useBrendaChat({ orgSlug, keysActive = true, onLeave, initialText
         if (r.error) { setError(r.error); playSound("error"); return; }
         mark(mi, pi, "Done");
         playSound("success");
+        react(r.actions.length ? "celebrate" : "pleased");
         if (r.actions.length) setMessages((cur) => cur.map((m, i) => (i === mi ? { ...m, actions: [...(m.actions ?? []), ...r.actions] } : m)));
       }
       router.refresh();
@@ -369,7 +387,7 @@ export function useBrendaChat({ orgSlug, keysActive = true, onLeave, initialText
     loading.current += 1;
     slot.current = new ConversationSaver(orgSlug, afterSave, afterConflict, next);
     dictation.cancel();
-    setMessages(next?.messages ?? []); setText(""); setError(null); setNotice(null); setPending(false);
+    setMessages(next?.messages ?? []); setText(""); setError(null); setNotice(null); setPending(false); setReaction(null);
     setConversationId(next?.id ?? null);
   }
 
@@ -448,7 +466,8 @@ export function useBrendaChat({ orgSlug, keysActive = true, onLeave, initialText
     : waitingAt >= 0 ? { mood: "alert", tone: "warn" }
     : last?.role === "assistant" && last.actions?.length ? { mood: "happy", tone: "ok" }
     : dictation.busy ? { mood: "think", tone: "accent" }
-    : dictation.listening ? { mood: "listen", tone: "accent" } : { mood: null, tone: null };
+    : dictation.listening ? { mood: "listen", tone: "accent" }
+    : reaction?.kind === "pleased" ? { mood: "happy", tone: null } : { mood: null, tone: null };
   /** The same mood for the drawn character. */
   const state: BrendaState = pending ? "thinking" : error ? "error" : waitingAt >= 0 ? "alert"
     : last?.role === "assistant" && last.actions?.length ? "happy" : dictation.busy ? "working" : dictation.listening ? "listening" : "idle";
@@ -467,7 +486,7 @@ export function useBrendaChat({ orgSlug, keysActive = true, onLeave, initialText
     return () => document.removeEventListener("keydown", onKey);
   });
 
-  return { messages, text, setText, pending, error, notice, dictation, send, act, decline, reset, load, remove, saveNow, conversationId, look, state, lastIndex, waitingAt };
+  return { messages, text, setText, pending, error, notice, dictation, send, act, decline, reset, load, remove, saveNow, conversationId, look, state, reaction, lastIndex, waitingAt };
 }
 
 export type BrendaChat = ReturnType<typeof useBrendaChat>;
@@ -582,9 +601,94 @@ export function DictationNotes({ chat, className }: { chat: BrendaChat; classNam
   );
 }
 
+// ---- Reading along ------------------------------------------------------------------------------------------------
+
+const MIRRORED = ["boxSizing", "width", "paddingTop", "paddingRight", "paddingBottom", "paddingLeft", "borderTopWidth", "borderRightWidth", "borderBottomWidth", "borderLeftWidth",
+  "fontFamily", "fontSize", "fontStyle", "fontWeight", "fontVariant", "fontStretch", "lineHeight", "letterSpacing", "wordSpacing", "textTransform", "textIndent", "tabSize"] as const;
+let mirror: HTMLDivElement | null = null;
+
+/**
+ * Where the caret is in a textarea, in viewport coordinates: a hidden copy of the field, laid out the same, measured up
+ * to the caret (so wrapped lines and new lines count), less the field's own scroll; kept inside the field.
+ */
+export function caretPoint(field: HTMLTextAreaElement): { x: number; y: number } {
+  const r = field.getBoundingClientRect();
+  const cs = getComputedStyle(field);
+  const m = (mirror ??= document.createElement("div"));
+  for (const p of MIRRORED) m.style[p] = cs[p];
+  Object.assign(m.style, { position: "fixed", top: "0", left: "-10000px", height: "auto", overflow: "hidden", visibility: "hidden", pointerEvents: "none", whiteSpace: "pre-wrap", overflowWrap: "break-word" });
+  m.textContent = field.value.slice(0, field.selectionEnd ?? field.value.length);
+  const mark = m.appendChild(document.createElement("span"));
+  mark.textContent = "\u200b"; // the caret: a zero-width space has a line's height and no width
+  document.body.appendChild(m);
+  const x = r.left + (parseFloat(cs.borderLeftWidth) || 0) + mark.offsetLeft - field.scrollLeft;
+  const y = r.top + (parseFloat(cs.borderTopWidth) || 0) + mark.offsetTop + mark.offsetHeight / 2 - field.scrollTop;
+  m.remove();
+  return { x: Math.min(Math.max(x, r.left), r.right), y: Math.min(Math.max(y, r.top), r.bottom) };
+}
+
+/** At least this many characters arriving at once (a paste, a drop) make her blink in surprise. */
+const PASTE_CHARS = 40;
+const CUE_RANK: Record<ReadCue, number> = { key: 1, beat: 2, paste: 3 };
+
+/**
+ * Lets her read along while someone types in a box inside the element these handlers go on (owner request, 7 October
+ * 2026: "when typing, she'll look like she's looking at what you're typing"). Each change tells the page-wide
+ * `attention` (lib/brenda-character/engine) where the caret is, once a frame at most, with a cue: a character (`key`),
+ * every three to five words a `beat` (a nod or a blink), a paste or drop of 40 characters or more (`paste`, a surprised
+ * blink). Moving the caret with the keys while she reads moves her eyes too. She keeps looking a moment after the last
+ * key and after the box loses the focus; a message sent (BrendaComposer) or the box going away ends it at once. Words
+ * that arrive by dictation or a chip are not typing: she does not read those along.
+ */
+export function useReadAlong() {
+  const words = useRef({ count: 0, next: 3 });
+  const lengths = useRef(new WeakMap<HTMLTextAreaElement, number>());
+  const queued = useRef<{ field: HTMLTextAreaElement; cue: ReadCue | null } | null>(null);
+  useEffect(() => () => attention.release(), []);
+
+  const publish = (field: HTMLTextAreaElement, cue: ReadCue | null) => {
+    const q = queued.current;
+    if (q) { q.field = field; if (cue && (!q.cue || CUE_RANK[cue] > CUE_RANK[q.cue])) q.cue = cue; return; }
+    queued.current = { field, cue };
+    requestAnimationFrame(() => {
+      const next = queued.current; queued.current = null;
+      // Not once the box has gone, or while it waits for her reply (disabled).
+      if (next && next.field.isConnected && !next.field.disabled) attention.read(caretPoint(next.field), next.cue);
+    });
+  };
+
+  return {
+    onFocus: (e: React.FocusEvent<HTMLElement>) => { if (e.target instanceof HTMLTextAreaElement) lengths.current.set(e.target, e.target.value.length); },
+    onInput: (e: React.FormEvent<HTMLElement>) => {
+      const field = e.target;
+      if (!(field instanceof HTMLTextAreaElement)) return;
+      const ev = e.nativeEvent as InputEvent;
+      const type = ev.inputType ?? "";
+      const added = field.value.length - (lengths.current.get(field) ?? field.value.length);
+      lengths.current.set(field, field.value.length);
+      let cue: ReadCue = "key";
+      if (/^insertFrom(Paste|Drop)/.test(type) && added >= PASTE_CHARS) cue = "paste";
+      else if ((type === "insertText" && !!ev.data && /\s$/.test(ev.data)) || type === "insertLineBreak") {
+        // A word just ended (a space or a new line after one): every few words, a beat.
+        const before = field.value[(field.selectionEnd ?? field.value.length) - 2];
+        if (before && !/\s/.test(before) && ++words.current.count >= words.current.next) {
+          words.current = { count: 0, next: 3 + Math.floor(Math.random() * 3) };
+          cue = "beat";
+        }
+      }
+      publish(field, cue);
+    },
+    onKeyUp: (e: React.KeyboardEvent<HTMLElement>) => {
+      if (attention.gaze && e.target instanceof HTMLTextAreaElement && /^(Arrow|Home$|End$|Page)/.test(e.key)) publish(e.target, null);
+    },
+    onBlur: (e: React.FocusEvent<HTMLElement>) => { if (e.target instanceof HTMLTextAreaElement) attention.release(READ_BLUR_HOLD_MS); },
+  };
+}
+
 /**
  * The box: the home prompt pill (the drawer), or on Brenda's page her hero box (`variant="hero"`: `size="md"` on her
- * home screen, `"sm"` docked under her chat; owner decision, 7 October 2026). Type, or press the microphone and talk.
+ * home screen, `"sm"` docked under her chat; owner decision, 7 October 2026). Type (she reads along: `useReadAlong`), or
+ * press the microphone and talk (she listens: `chat.state` and `chat.look`).
  * While you talk, and while your words are written out, the box shows the notch's voice card (CONTRACT B:
  * PromptInputBox draws it from `recordingHint` and `transcribing`). `onSend` replaces plain sending (Brenda's page opens
  * the full chat first). `leading` takes the pill's round "+" on the left (the hero box's "More asks" on its bottom
@@ -595,6 +699,9 @@ export function BrendaComposer({ chat, placeholder = "Tell Brenda what you needâ
   leading?: React.ReactNode; trailing?: React.ReactNode; variant?: "pill" | "hero"; size?: "md" | "sm";
 }) {
   const { text, setText, send, pending, dictation } = chat;
+  // She reads along as you type here; once it is sent she stops reading and gets to work.
+  const readAlong = useReadAlong();
+  const submit = (m: string) => { attention.release(); if (onSend) onSend(m); else void send(m, true); };
   // How far the on-device model has come while it downloads, announced in quarter steps only (the card is a live region).
   const pct = dictation.progress !== null ? Math.round(dictation.progress * 100) : null;
   const ready = pct !== null ? <><span className="tabular-nums" aria-hidden>{pct}%</span><span className="sr-only">{Math.floor(pct / 25) * 25}%</span></> : null;
@@ -605,9 +712,12 @@ export function BrendaComposer({ chat, placeholder = "Tell Brenda what you needâ
       ? <>{ready ? <>Getting dictation ready in the background ({ready}). </> : null}Press stop or send when you&apos;re done and I&apos;ll write it out, on this computer.{dictation.englishOnly ? " On-device dictation understands English only." : null}</>
       : "Speak naturally. Press stop or send when you're done.";
   return (
-    <PromptInputBox value={text} onValueChange={setText} onSend={(m) => (onSend ? onSend(m) : void send(m, true))} isLoading={pending} placeholder={placeholder} className={className} label={label}
-      recording={dictation.listening} transcribing={dictation.busy} onToggleRecording={() => void dictation.toggle()} recordingSupported={dictation.supported !== false}
-      recordingPlaceholder={dictation.engine === "whisper" ? "Listeningâ€¦ your words appear when you stop" : undefined}
-      recordingHint={hint} recordingHeard={dictation.heard || null} onCancelRecording={() => dictation.cancel()} leading={leading} trailing={trailing} variant={variant} size={size} />
+    // No box of its own (`contents`): it only hears the typing in the box.
+    <div className="contents" {...readAlong}>
+      <PromptInputBox value={text} onValueChange={setText} onSend={submit} isLoading={pending} placeholder={placeholder} className={className} label={label}
+        recording={dictation.listening} transcribing={dictation.busy} onToggleRecording={() => void dictation.toggle()} recordingSupported={dictation.supported !== false}
+        recordingPlaceholder={dictation.engine === "whisper" ? "Listeningâ€¦ your words appear when you stop" : undefined}
+        recordingHint={hint} recordingHeard={dictation.heard || null} onCancelRecording={() => dictation.cancel()} leading={leading} trailing={trailing} variant={variant} size={size} />
+    </div>
   );
 }

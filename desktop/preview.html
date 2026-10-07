@@ -1,9 +1,11 @@
 <!doctype html>
 <!-- Layout preview of the notch in an ordinary browser, with sample data. Not part of the app.
-     ?state=link|compact|briefing|timer|paused|reminder|report|lead|idle picks the data; ?card=listening|working|thinking|reply|confirm|offer|error|drop|voice-off
+     ?state=link|compact|briefing|timer|paused|reminder|report|lead|idle picks the data; ?card=listening|working|thinking|reply|confirm|offer|error|drop|voice-off|typing
      opens one of Brenda's cards on top of it (?confirm=already answers its Confirm as already done; ?card=listening feeds the
-     orb a changing microphone level). ?typed=some words types into the open card's ask box, to see Send turn orange and
-     the card's other orange button (Start, Resume) go white. The backdrop is a flat grey desktop with a menu bar strip, so
+     waveform and her listening face a speech-like microphone level every 70 ms, as Rust does; ?card=working listens for
+     two seconds, then writes the words out, to see the bars turn into the travelling wave; ?card=typing types a question
+     into the ask box letter by letter, to see her eyes read along). ?typed=some words types into the open card's ask box,
+     to see Send turn orange and the card's other orange button (Start, Resume) go white. The backdrop is a flat grey desktop with a menu bar strip, so
      the black island reads as it does on screen. -->
 <html lang="en"><head><meta charset="utf-8"><title>Brenda notch preview</title><link rel="stylesheet" href="src/style.css">
 <style>html,body{background:#3b3b3b!important;height:100%;overflow:hidden!important} body::before{content:"";position:fixed;inset:0 0 auto;height:40px;background:rgb(0 0 0 / .28);box-shadow:inset 0 -1px 0 rgb(255 255 255 / .075)} #stage{position:relative;width:480px;height:440px;margin:0 auto;outline:1px dashed rgb(255 255 255 / .1)}</style></head>
@@ -62,10 +64,14 @@ try { if (!q.has("keep")) localStorage.clear(); } catch {}
 // Preview only: feed the cursor the way Rust does, in stage coordinates, and open the card named by ?card=.
 addEventListener("mousemove", (e) => window.__h?.["brenda://cursor"]?.({ payload: { x: e.clientX, y: e.clientY } }));
 const voiceEvent = (payload) => window.__h?.["brenda://voice"]?.({ payload });
+// A speech-like level, as Rust sends it while the keys are held: syllables, short pauses, a little room noise.
+let said = 0;
+const speech = () => { said += 0.07; const syllable = Math.max(0, Math.sin(said * 9) * Math.sin(said * 2.3 + 1)); const talking = Math.sin(said * 0.7) > -0.55 ? 1 : 0.08; return Math.min(1, 0.03 + syllable * 0.8 * talking + Math.random() * 0.06); };
+const talkFor = (ms) => { voiceEvent({ phase: "listening", level: 0 }); const every = setInterval(() => voiceEvent({ phase: "listening", level: speech() }), 70); if (ms) setTimeout(() => { clearInterval(every); voiceEvent({ phase: "transcribing" }); }, ms); };
 setTimeout(() => {
   const c = q.get("card");
-  if (c === "listening") { voiceEvent({ phase: "listening", level: 0.55 }); setInterval(() => voiceEvent({ phase: "listening", level: Math.random() * 0.8 }), 140); }
-  if (c === "working") { voiceEvent({ phase: "transcribing" }); }
+  if (c === "listening") talkFor(0);
+  if (c === "working") talkFor(2000);
   if (c === "thinking") openCard({ kind: "voice", phase: "thinking", heard: "What is Ben working on?", sticky: true });
   if (c === "reply") ask("What is Ben working on?", { spoken: false });
   if (c === "confirm") ask("Give Ada the brand deck review for tomorrow at 3", { spoken: false });
@@ -74,6 +80,15 @@ setTimeout(() => {
   if (c === "voice-off") voiceEvent({ phase: "off" });
   if (c === "drop") window.__h?.["brenda://drag"]?.({ payload: { phase: "drop", x: 240, y: 20, count: 2, files: [{ index: 0, name: "onboarding-flow-v3.pdf", size: 1843200, problem: null }, { index: 1, name: "notes.docx", size: 20480, problem: "Only PDF, PNG, JPEG, WebP and TXT files." }] } });
 }, 400);
+// ?card=typing: a question typed letter by letter into the open card's ask box (the timer card opens first for a timer).
+if (q.get("card") === "typing") setTimeout(() => {
+  if (["timer", "paused"].includes(state) && card?.kind !== "home") openCard({ kind: "home" });
+  const a = document.getElementById("ask"), words = "What is Ben working on today?";
+  if (!a) return;
+  a.focus();
+  let i = 0;
+  const next = setInterval(() => { a.value = words.slice(0, ++i); a.dispatchEvent(new Event("input", { bubbles: true })); if (i >= words.length) clearInterval(next); }, 140);
+}, 1200);
 // ?typed=: words in the ask box of whatever card is open (the timer card opens first for ?state=timer|paused).
 if (q.get("typed")) setTimeout(() => {
   if (["timer", "paused"].includes(state) && card?.kind !== "home") openCard({ kind: "home" });

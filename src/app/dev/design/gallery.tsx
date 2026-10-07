@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { BrendaGlyph } from "@/components/app/brenda-glyph";
 import { VoiceCapture } from "@/components/app/voice-capture";
+import { LiveWaveform } from "@/components/ui/live-waveform";
 import { Logo } from "@/components/logo";
 import { PromptAction, PromptInputBox, PromptTextAction } from "@/components/ui/ai-prompt-box";
 import { AnalyticsCard, MetricStrip } from "@/components/ui/analytics-card";
@@ -796,7 +797,7 @@ function Prompt() {
     return () => window.clearInterval(id);
   }, [rec]);
   return (
-    <Section id="prompt" title="Prompt" description="The prompt pill (the drawer): min-h 52, r26, solid fill-1, 16/24 text, round 36px actions; an orange ring while focused; Send orange with text, grey when empty. Below it, Brenda's hero box (variant “hero”) on her home panel, and its small docked size. Suggestions fill the box, never send.">
+    <Section id="prompt" title="Prompt" description="The prompt pill (the drawer): min-h 52, r26, solid fill-1, 16/24 text, round 36px actions; an orange ring while focused; Send orange with text, grey when empty. Below it, Brenda's hero box (variant “hero”) on her home panel, and its small docked size. Suggestions fill the box, never send. Last, the recording look (ElevenLabs'): VoiceCapture and LiveWaveform.">
       <Both>
         {(t) => (
           <div className="space-y-5">
@@ -840,7 +841,43 @@ function Prompt() {
           </div>
         )}
       </Both>
+      <Both>{(t) => <Recording t={t} />}</Both>
     </Section>
+  );
+}
+
+/**
+ * The recording look (owner decision, 7 October 2026: ElevenLabs'): the voice card listening and working, and the bare
+ * live waveform's three states. A sample voice level feeds them, so the gallery never opens a microphone.
+ */
+function Recording({ t }: { t: Theme }) {
+  const [speaking, setSpeaking] = React.useState(true);
+  const [level, setLevel] = React.useState(0);
+  React.useEffect(() => {
+    if (!speaking) return;
+    const id = window.setInterval(() => {
+      const s = Date.now() / 1000;
+      setLevel(Math.max(0, Math.min(1, 0.25 + Math.sin(s * 2.1) * 0.35 + Math.sin(s * 5.3) * 0.2)));
+    }, 70);
+    return () => window.clearInterval(id);
+  }, [speaking]);
+  const heard = speaking ? level : 0;
+  return (
+    <div className="space-y-3">
+      <Cap>Recording: the live dot and the time in orange, the live waveform (thin bars scrolling in from the right with the voice, edges fading), Cancel and Stop; working, the time stops and the bars become a travelling wave. Reduced motion: still bars.</Cap>
+      <Button size="sm" variant="secondary" aria-pressed={speaking} onClick={() => setSpeaking((v) => !v)}>{speaking ? "Pause the sample voice" : "Play a sample voice"}</Button>
+      <VoiceCapture phase="listening" level={heard} onStop={() => {}} onCancel={() => {}} className="max-w-[650px]" />
+      <VoiceCapture phase="working" seconds={7} heard="Move the design review to Thursday" hint="Writing out what you said, on this computer." className="max-w-[650px]" />
+      <VoiceCapture compact phase="listening" level={heard} heard="Move the design review to Thursday" onStop={() => {}} onCancel={() => {}} className="max-w-[420px]" />
+      <div className="grid gap-3 sm:grid-cols-3">
+        {([["Listening", { active: true, level: heard }], ["Working", { processing: true }], ["Off", {}]] as const).map(([name, props]) => (
+          <figure key={name} className="rounded-xl border border-border p-3">
+            <LiveWaveform {...props} aria-label={`${name} waveform (${t})`} className="h-9" />
+            <figcaption className="mt-2 text-xs font-medium text-secondary">{name}</figcaption>
+          </figure>
+        ))}
+      </div>
+    </div>
   );
 }
 

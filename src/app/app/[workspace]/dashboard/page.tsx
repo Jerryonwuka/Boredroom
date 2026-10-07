@@ -20,8 +20,10 @@ import { buttonVariants } from "@/components/ui/button";
 import { Avatar } from "@/components/ui/avatar";
 import { Person } from "@/components/ui/person";
 import { LiveClock, LiveSync, LiveRefresh, StatusDot } from "@/components/app/live";
+import { YourDaySection } from "@/components/app/your-day";
 import { orgDashboard } from "@/server/services/views";
 import { attendanceBoard, attendanceMonth } from "@/server/services/attendance";
+import { briefing } from "@/server/services/brenda";
 import { uuid } from "@/server/lib/api";
 import { formatDuration, formatDateTime, relativeTime, formatLongDate, cn } from "@/lib/utils";
 
@@ -45,6 +47,10 @@ const shiftMonth = (m: string, by: number) => { const [y, mo] = m.split("-").map
  * Accent rules (6 October 2026): the "Live" line, the tabs' and the metric strip's underline, today's bar, the review
  * queue's waiting count, and a still orange dot for each person working. With that many, the lists stay quiet: the
  * clocks keep the foreground (`quiet`), the arcs in the Working now table are neutral, and "Add people" stays white.
+ *
+ * "Your day" closes the overview (owner request, 7 October 2026: the section under Brenda's home panel moved to My Day,
+ * and owners and HR are sent here from My Day): your own work from Brenda's briefing, what is due or overdue, waiting
+ * for your check, or handed out and not picked up. Its Team view is not repeated: the cards and lists above cover it.
  */
 export default async function DashboardPage({ params, searchParams }: { params: Promise<{ workspace: string }>; searchParams: Promise<{ tab?: string; month?: string; team?: string }> }) {
   const { workspace } = await params;
@@ -54,7 +60,11 @@ export default async function DashboardPage({ params, searchParams }: { params: 
   const tab: Tab = (TABS as readonly string[]).includes(sp.tab ?? "") ? (sp.tab as Tab) : "overview";
   // A team id from the address bar is checked before it reaches a uuid column: a mistyped link shows everyone.
   const teamId = sp.team && uuid.safeParse(sp.team).success ? sp.team : null;
-  const [d, att, m] = await Promise.all([orgDashboard(ctx), attendanceBoard(ctx), tab === "overview" ? attendanceMonth(ctx, { month: sp.month, teamId }) : Promise.resolve(null)]);
+  const [d, att, m, brief] = await Promise.all([
+    orgDashboard(ctx), attendanceBoard(ctx),
+    tab === "overview" ? attendanceMonth(ctx, { month: sp.month, teamId }) : Promise.resolve(null),
+    tab === "overview" ? briefing(ctx) : Promise.resolve(null),
+  ]);
   const base = `/app/${ctx.org.slug}`;
   const tz = ctx.org.timezone;
   const now = new Date(d.serverNow).getTime();
@@ -143,6 +153,8 @@ export default async function DashboardPage({ params, searchParams }: { params: 
               </section>
             </div>
           </div>
+
+          {brief ? <YourDaySection className="mt-12" orgSlug={ctx.org.slug} role={ctx.membership.role} brief={brief} timeZone={tz} /> : null}
         </>
       ) : null}
 

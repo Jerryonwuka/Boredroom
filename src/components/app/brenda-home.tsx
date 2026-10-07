@@ -13,10 +13,10 @@
  * organisation, Brenda settings on the right); her live character floating in a glowing orange orb, the greeting and
  * the display headline "What do you want to do today?"; then, anchored to the bottom, her quick asks as chips, her hero
  * box (PromptInputBox variant="hero": her glyph, room for a few lines, "More asks" on the left of its bottom row, the
- * microphone and the orange Send on the right) and three action cards. Under the panel, as before, underline tabs:
- * "Your day" (stat cards and calm 64px list rows) and, for team leads and the organisation, "Team". The chips, the
- * cards and the "More asks" menu fill the box so the words can be edited; they never send (owner decision, 5 October
- * 2026).
+ * microphone and the orange Send on the right) and three action cards. Nothing sits under the panel any more: "Your
+ * day" and "Team" moved to My Day, and for owners and HR to the Dashboard (owner request, 7 October 2026;
+ * components/app/your-day). The chips, the cards and the "More asks" menu fill the box so the words can be edited;
+ * they never send (owner decision, 5 October 2026).
  *
  * The chat (owner decisions, 5 October 2026): from your first message the page becomes a full conversation with her,
  * at once, with no animation between the two. Her own header takes the very top of the screen (the app's top bar
@@ -32,41 +32,31 @@
 import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import {
-  AlarmClock, ArrowLeft, CalendarCheck, ChevronRight, CircleAlert, ClipboardCheck, Clock, FileText, History, ListOrdered, ListPlus,
+  AlarmClock, ArrowLeft, CalendarCheck, CircleAlert, ClipboardCheck, Clock, FileText, History, ListOrdered, ListPlus,
   MessageSquareReply, MessagesSquare, Play, Plus, Send, Settings, Timer, UserPlus, Users,
 } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import { PromptTextAction } from "@/components/ui/ai-prompt-box";
 import { Menu, MenuItem, MenuLabel } from "@/components/ui/menu";
-import { ToolSquare, ToolTile, ToolTileRow } from "@/components/ui/tool-tile";
-import { ListRow } from "@/components/ui/rows";
-import { Tabs } from "@/components/ui/tabs";
-import { StatCard } from "@/components/ui/stat-card";
-import { Badge, CountPill } from "@/components/ui/badge";
-import { Avatar } from "@/components/ui/avatar";
-import { EmptyState } from "@/components/ui/states";
-import { LiveIndicator, StatusDot, type StatusTone } from "@/components/ui/status-dot";
-import { BrendaGlyph } from "@/components/app/brenda-glyph";
+import { ToolTile, ToolTileRow } from "@/components/ui/tool-tile";
+import { CountPill } from "@/components/ui/badge";
+import { StatusDot, type StatusTone } from "@/components/ui/status-dot";
 import { BrendaCharacter, type BrendaCharacterHandle } from "@/components/app/brenda-character";
 import { BrendaFace } from "@/components/app/brenda-face";
 import { BrendaComposer, BrendaMessages, DictationNotes, useBrendaChat, type BrendaChat } from "@/components/app/brenda-chat";
 import { BrendaHistory } from "@/components/app/brenda-history";
 import { isApiFailure } from "@/lib/api-client";
-import { cn, formatDuration } from "@/lib/utils";
-import type { briefing } from "@/server/services/brenda";
+import { cn } from "@/lib/utils";
 import type { Conversation, ConversationSummary } from "@/server/services/brenda-history";
 
-type Brief = Awaited<ReturnType<typeof briefing>>;
 export type HomeData = {
   orgSlug: string; firstName: string; role: "owner" | "hr" | "manager" | "employee";
-  greeting: string; dateLabel: string; aiEnabled: boolean; brief: Brief;
+  greeting: string; dateLabel: string; aiEnabled: boolean;
   /** Her engine: Claude when the organisation's assistant is connected (its own key or the server's), else the built-in helper. */
   assistantConfigured: boolean;
   /** A request handed over by a link elsewhere (`?ask=`), placed in the box for the person to send. */
   ask?: string;
-  working: { id: string; name: string; state: string | null; task: string | null; todaySeconds: number }[];
-  attendance: { in: number; out: number; late: number; notIn: number } | null;
   /** The person's past chats, the most recently active first. */
   history: ConversationSummary[];
   /** The server's clock when the page rendered, to the minute (so "last active" reads the same on both sides). */
@@ -142,8 +132,6 @@ function moreAsks(role: HomeData["role"]): Ask[] {
   ];
 }
 
-const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
-
 // Under lg, past chats are a sheet over the chat rather than a column beside it. The server renders the column.
 const SMALL = "(max-width: 1023.98px)";
 const subscribeSmall = (cb: () => void) => { const m = window.matchMedia(SMALL); m.addEventListener("change", cb); return () => m.removeEventListener("change", cb); };
@@ -157,8 +145,6 @@ function focusBoxIn(el: HTMLElement | null) {
   field.focus();
   requestAnimationFrame(() => { const n = field.value.length; field.setSelectionRange(n, n); });
 }
-
-type HomeTab = "day" | "team";
 
 export function BrendaHome({ data }: { data: HomeData }) {
   const { role } = data;
@@ -177,7 +163,6 @@ export function BrendaHome({ data }: { data: HomeData }) {
   const [sheet, setSheet] = useState(openOnList);
   const [opening, setOpening] = useState<string | null>(null);
   const [listError, setListError] = useState<string | null>(data.chatMissing ? "That chat is no longer here. It may have been deleted." : null);
-  const [tab, setTab] = useState<HomeTab>("day");
   const resumeButton = useRef<HTMLButtonElement>(null);
   const pastChatsButton = useRef<HTMLButtonElement>(null);
   const base = `/app/${data.orgSlug}`;
@@ -241,11 +226,11 @@ export function BrendaHome({ data }: { data: HomeData }) {
     window.history.replaceState(null, "", url);
   }, [chatting, chat.conversationId, hasConversation]);
 
-  // A wink hello, and a little celebration whenever she has just done something.
+  // A wink hello; then her reactions (owner request, 7 October 2026): pleased by each reply she gives, a little
+  // celebration whenever she has just done something. Reading along as you type and listening while you dictate come
+  // with her box and her state (brenda-chat, brenda-character).
   useEffect(() => { const t = setTimeout(() => character.current?.emote("wink"), 900); return () => clearTimeout(t); }, []);
-  const last = chat.messages[chat.messages.length - 1];
-  const didSomething = last?.role === "assistant" && (last.actions?.length ?? 0) > 0;
-  useEffect(() => { if (didSomething) character.current?.emote("celebrate"); }, [didSomething, chat.messages.length]);
+  useEffect(() => { if (chat.reaction) character.current?.emote(chat.reaction.kind); }, [chat.reaction]);
 
   // Opening the chat keeps the cursor in the box, and it returns there once she has answered (the box is disabled
   // while she works), unless you have since moved to something else, or past chats cover it (small screens, where
@@ -268,11 +253,6 @@ export function BrendaHome({ data }: { data: HomeData }) {
 
   const kind = lead ? "lead" : "worker";
   const isOrg = role === "owner" || role === "hr";
-  const tabs = [
-    { label: "Your day", value: "day" },
-    ...(lead ? [{ label: "Team", value: "team" }] : []),
-  ];
-  const tabLabel = tabs.find((t) => t.value === tab)?.label ?? "Your day";
   // Her character is monochrome like the rest of v4 (her light takes the orb's orange); the orb brightens while she
   // listens (a live microphone).
   const listening = chat.state === "listening";
@@ -284,7 +264,9 @@ export function BrendaHome({ data }: { data: HomeData }) {
   const iconOnPhones = "max-sm:w-8 max-sm:px-0 max-sm:pointer-coarse:w-10";
 
   return (
-    <div className="w-full pb-16">
+    // Only her panel (owner request, 7 October 2026: "Your day" moved to My Day). #main keeps 64px under every page;
+    // the negative margin takes 44px of it back, so the panel ends 20px from the bottom of the screen, as at its sides.
+    <div className="-mb-11 w-full">
       {/* Her panel fills the screen under the top bar (20px from it and from the bottom, as from the sides). */}
       <section aria-labelledby="home-ask" className="brenda-panel -mt-1 flex min-h-[calc(100dvh-var(--header-height)-var(--shell-banners,0px)-40px)] flex-col p-3 sm:p-4 lg:p-5">
         <div className="flex flex-wrap items-center gap-2">
@@ -318,7 +300,8 @@ export function BrendaHome({ data }: { data: HomeData }) {
 
         <div className="flex flex-1 flex-col items-center justify-center px-1 pb-8 pt-10 text-center">
           <div className="brenda-orb" data-live={listening || undefined}>
-            <BrendaCharacter ref={character} state={chat.state} size={72} interactive label="Brenda" className={cn(!listening && "grayscale")} />
+            {/* While you dictate she listens to the dictation's own microphone (its level widens her eyes and lifts her light). */}
+            <BrendaCharacter ref={character} state={chat.state} size={72} interactive label="Brenda" stream={chat.dictation.stream} className={cn(!listening && "grayscale")} />
           </div>
           <p className="mt-6 text-sm font-medium text-secondary">{data.greeting}, {data.firstName}. It&apos;s {data.dateLabel}.</p>
           <h1 id="home-ask" className="type-headline mt-1 sm:text-[32px] sm:leading-10">What do you want to do today?</h1>
@@ -353,14 +336,6 @@ export function BrendaHome({ data }: { data: HomeData }) {
               {role === "owner" ? <Link className={`${buttonVariants({ variant: "accent", size: "sm" })} mt-3`} href="/app/billing">Upgrade the plan</Link> : null}
             </div>
           )}
-        </div>
-      </section>
-
-      <section className="mx-auto mt-12 w-full max-w-[1040px]" aria-labelledby={tabs.length > 1 ? undefined : "home-day"}>
-        {/* One section (staff) is a plain title; tabs only when there is something to switch to. */}
-        {tabs.length > 1 ? <Tabs tabs={tabs} value={tab} onChange={(v) => setTab(v as HomeTab)} label="Brenda's home" /> : <h2 id="home-day" className="type-section-title mb-3.5">Your day</h2>}
-        <div role={tabs.length > 1 ? "tabpanel" : undefined} aria-label={tabs.length > 1 ? tabLabel : undefined} className={tabs.length > 1 ? "pt-6" : "pt-1"}>
-          {tab === "team" ? <TeamTab data={data} base={base} /> : <DayTab data={data} base={base} />}
         </div>
       </section>
     </div>
@@ -400,162 +375,6 @@ function MoreMenu({ role, onPick }: { role: HomeData["role"]; onPick: (prompt: s
       <MenuLabel>Ask Brenda to…</MenuLabel>
       {moreAsks(role).map((a) => <MenuItem key={a.label} icon={<a.icon aria-hidden />} onSelect={() => onPick(a.prompt)}>{a.label}</MenuItem>)}
     </Menu>
-  );
-}
-
-// ---- The tabs under her box -----------------------------------------------------------------------------------------
-
-const timeOf = (iso: string) => new Date(iso).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
-const dayOf = (iso: string) => new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short" }).format(new Date(iso));
-
-/** Stat cards in a row: two across on a phone, all of them from lg. */
-function StatRow({ stats }: { stats: { label: string; value: React.ReactNode; hint?: React.ReactNode }[] }) {
-  return (
-    <div className={cn("grid grid-cols-2 gap-3", stats.length >= 4 ? "lg:grid-cols-4" : "lg:grid-cols-3")}>
-      {stats.map((s) => <StatCard key={s.label} label={s.label} value={s.value} hint={s.hint} />)}
-    </div>
-  );
-}
-
-/** A list under a quiet label (14/20 medium, secondary) with its count; a link to the rest when there are more. */
-function DayList({ title, count, children, more }: { title: string; count?: number; children: React.ReactNode; more?: { href: string; count: number } }) {
-  return (
-    <section aria-label={title} className="min-w-0">
-      <h2 className="mb-1 flex items-center gap-2 px-2 text-sm font-medium tracking-normal text-secondary">{title}{count ? <CountPill count={count} /> : null}</h2>
-      <ul>{children}</ul>
-      {more && more.count > 0 ? <Link href={more.href} className={`${buttonVariants({ variant: "ghost", size: "xs" })} ml-1 mt-1`}>{plural(more.count, "more task")}<ChevronRight aria-hidden /></Link> : null}
-    </section>
-  );
-}
-
-const SHOW = 4;
-
-/** Your day: the figures, then where you are now (your clock and timer) and what is waiting on you. */
-function DayTab({ data, base }: { data: HomeData; base: string }) {
-  const { brief, role } = data;
-  const worker = role === "employee" || role === "manager";
-  const c = brief.clock, t = brief.timer;
-  const stats = worker
-    ? [
-      { label: "Open tasks", value: brief.openTasks },
-      { label: "Due today", value: brief.dueToday.length },
-      { label: "Overdue", value: brief.overdue.length },
-      role === "manager" ? { label: "To check", value: brief.waitingForYourReview.length } : { label: "Reminders", value: brief.remindersToday.length },
-    ]
-    : [
-      { label: "Due today", value: brief.dueToday.length },
-      { label: "Overdue", value: brief.overdue.length },
-      { label: "To check", value: brief.waitingForYourReview.length },
-      { label: "Not picked up", value: brief.assignmentsNotPickedUp.length },
-    ];
-  const clockTitle = !c ? "Your clock" : !c.workingDay ? "Not a working day" : c.status === "in" ? "Clocked in" : c.status === "out" ? "Clocked out for today" : "Not clocked in yet";
-  const lists = [
-    brief.dueToday.length ? (
-      <DayList key="due" title="Due today" count={brief.dueToday.length} more={{ href: `${base}/tasks`, count: brief.dueToday.length - SHOW }}>
-        {brief.dueToday.slice(0, SHOW).map((x) => (
-          <ListRow key={x.id} href={`${base}/tasks/${x.id}`} leading={<ToolSquare><CalendarCheck aria-hidden /></ToolSquare>} title={x.title}
-            subtitle={<>{x.due ? <>Due at <time suppressHydrationWarning dateTime={x.due}>{timeOf(x.due)}</time></> : "Due today"}{x.progress ? `, ${x.progress}% done` : ""}</>} />
-        ))}
-      </DayList>
-    ) : null,
-    brief.overdue.length ? (
-      <DayList key="overdue" title="Overdue" count={brief.overdue.length} more={{ href: `${base}/tasks`, count: brief.overdue.length - SHOW }}>
-        {brief.overdue.slice(0, SHOW).map((x) => (
-          <ListRow key={x.id} href={`${base}/tasks/${x.id}`} leading={<ToolSquare><CircleAlert aria-hidden /></ToolSquare>} title={x.title}
-            subtitle={x.due ? <>Was due <time suppressHydrationWarning dateTime={x.due}>{dayOf(x.due)}</time></> : "Overdue"} trailing={<Badge tone="danger" dot>Overdue</Badge>} />
-        ))}
-      </DayList>
-    ) : null,
-    brief.waitingForYourReview.length ? (
-      <DayList key="review" title="Waiting for your check" count={brief.waitingForYourReview.length} more={{ href: `${base}/tasks`, count: brief.waitingForYourReview.length - SHOW }}>
-        {brief.waitingForYourReview.slice(0, SHOW).map((x) => (
-          <ListRow key={x.taskId} href={`${base}/tasks/${x.taskId}`} leading={<ToolSquare><ClipboardCheck aria-hidden /></ToolSquare>} title={x.title} subtitle={`From ${x.from}`} trailing={<ChevronRight className="size-4" aria-hidden />} />
-        ))}
-      </DayList>
-    ) : null,
-    brief.assignmentsNotPickedUp.length ? (
-      <DayList key="unpicked" title="Nobody has picked up" count={brief.assignmentsNotPickedUp.length} more={{ href: `${base}/tasks`, count: brief.assignmentsNotPickedUp.length - SHOW }}>
-        {brief.assignmentsNotPickedUp.slice(0, SHOW).map((x) => (
-          <ListRow key={x.id} href={`${base}/tasks/${x.id}`} leading={<ToolSquare><Users aria-hidden /></ToolSquare>} title={x.title} subtitle={`Assigned to ${x.assignee}`} trailing={<ChevronRight className="size-4" aria-hidden />} />
-        ))}
-      </DayList>
-    ) : null,
-    brief.remindersToday.length ? (
-      <DayList key="reminders" title="Reminders" count={brief.remindersToday.length}>
-        {brief.remindersToday.slice(0, SHOW).map((r) => (
-          <ListRow key={r.id} leading={<ToolSquare><AlarmClock aria-hidden /></ToolSquare>} title={r.body} subtitle={<>At <time suppressHydrationWarning dateTime={r.at}>{timeOf(r.at)}</time></>} />
-        ))}
-      </DayList>
-    ) : null,
-  ].filter(Boolean);
-
-  return (
-    <div className="space-y-8">
-      <StatRow stats={stats} />
-      <div className="grid gap-x-8 gap-y-8 lg:grid-cols-2">
-        {/* Everyone who clocks in sees their clock and timer here (My Day no longer shows the clock); clocking itself
-            happens on the Clock in page, or by asking her. The organisation account does not clock in. */}
-        {worker ? (
-          <DayList title="Now">
-            <ListRow href={`${base}/clock`} leading={<ToolSquare><Clock aria-hidden /></ToolSquare>} title={clockTitle}
-              subtitle={c?.workingDay ? <>Working hours <span className="tabular-nums">{c.workStarts.slice(0, 5)}–{c.workEnds.slice(0, 5)}</span></> : "Open the Clock in page"}
-              trailing={c?.status === "in" ? <Badge tone="success" dot>In</Badge> : c?.workingDay && c.status === "not_in" ? <Badge tone="warning" dot>Not in</Badge> : <ChevronRight className="size-4" aria-hidden />} />
-            {t ? (
-              <ListRow href={`${base}/tasks/${t.taskId}`} leading={<ToolSquare><Timer aria-hidden /></ToolSquare>} title={t.task}
-                subtitle={t.state === "running" ? "Your timer is running" : "Your timer is paused"} trailing={t.state === "running" ? <LiveIndicator>Running</LiveIndicator> : <Badge tone="warning" dot>Paused</Badge>} />
-            ) : (
-              <ListRow leading={<ToolSquare><Timer aria-hidden /></ToolSquare>} title="No timer running"
-                subtitle={brief.openTasks ? `${plural(brief.openTasks, "open task")}. Ask me which to start.` : "No open tasks. Tell me what you're working on."} />
-            )}
-          </DayList>
-        ) : null}
-        {lists}
-      </div>
-      {!lists.length ? <EmptyState compact icon={BrendaGlyph} title="All clear" description="Nothing is waiting on you right now. Ask me for anything you need." /> : null}
-    </div>
-  );
-}
-
-/** Team, for team leads and the organisation: who is working now, and (for the organisation) today's attendance. */
-function TeamTab({ data, base }: { data: HomeData; base: string }) {
-  const running = data.working.filter((w) => w.state === "running");
-  const paused = data.working.filter((w) => w.state === "paused");
-  const a = data.attendance;
-  const stats = a
-    ? [
-      { label: "Working now", value: running.length, hint: paused.length ? `${paused.length} paused` : undefined },
-      { label: "Clocked in", value: a.in + a.out },
-      { label: "Late", value: a.late },
-      { label: "Not in yet", value: a.notIn },
-    ]
-    : [
-      { label: "Working now", value: running.length },
-      { label: "Paused", value: paused.length },
-      { label: "In your team", value: data.working.length },
-    ];
-  const people = [...running, ...paused];
-  return (
-    <div className="space-y-8">
-      <StatRow stats={stats} />
-      <section aria-label="Working now" className="min-w-0">
-        <div className="mb-1 flex items-center justify-between gap-3 px-2">
-          <h2 className="flex items-center gap-2 text-sm font-medium tracking-normal text-secondary">Working now<CountPill count={people.length} /></h2>
-          <Link href={`${base}/workroom`} className={buttonVariants({ variant: "ghost", size: "xs" })}>Open the workroom<ChevronRight aria-hidden /></Link>
-        </div>
-        {people.length ? (
-          <ul className="grid gap-x-8 lg:grid-cols-2">
-            {people.slice(0, 8).map((w) => (
-              <ListRow key={w.id} leading={<Avatar profileId={w.id} name={w.name} size={40} />} title={w.name}
-                subtitle={`${w.state === "running" ? "Working on" : "Paused on"} ${w.task ?? "a task"}`}
-                trailing={<><span className="hidden tabular-nums sm:inline">{formatDuration(w.todaySeconds)}</span>{w.state === "running"
-                  // Many people at once: a still orange dot each (live), the word in the quiet grey, so the list stays calm.
-                  ? <Badge><StatusDot tone="live" pulse={false} size={6} />Working</Badge>
-                  : <Badge tone="warning" dot>Paused</Badge>}</>} />
-            ))}
-          </ul>
-        ) : <EmptyState compact icon={Users} title="Nobody has a timer running" description="When someone starts work on a task, they show up here." />}
-      </section>
-    </div>
   );
 }
 

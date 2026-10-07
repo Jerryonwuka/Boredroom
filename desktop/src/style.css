@@ -5,8 +5,8 @@
    (64% secondary, 53% subtle). The primary button is white with near-black text; secondary is outline and tertiary is
    ghost. Orange follows the web's accent rules (owner decision, 6 October 2026; docs/design-system.md, "Accent rules"):
    it marks what is live, active, chosen or the one thing to do, never decoration, and status meaning wins over it.
-   - Live and now: a running timer's dot (it breathes) and digits, the open microphone ("Mic on", the orb, its ring and
-     wash), Brenda working (the orb's dot), a teammate's running timer.
+   - Live and now: a running timer's dot (it breathes) and digits, the open microphone (the live dot and the recording
+     time beside the waveform, and the wash), voice getting ready (the orb's dot), a teammate's running timer.
    - The one standout action per card is an orange pill with near-black text (`.btn.accent`): Send once there are words,
      Start on the briefing, Resume on a paused timer, Link to Boredroom / Open Boredroom, Turn on voice. Every other
      primary stays white, and while the ask box holds words Send is the only orange button (the other one turns white).
@@ -14,7 +14,8 @@
    - Attention: the unread count and the "New task" badge (orange on dark brown); the ask pill's focus ring; a link's
      underline on hover; the keyboard focus ring.
    No gradients, glass or glow, except the four the web keeps for Brenda: the orb's tool-tile
-   fill, the shimmer on waiting text, the orange wash while the microphone is open, and the soft light around her face.
+   fill, the shimmer on waiting text, the orange wash while the microphone is open, and the soft light around her face
+   (and the waveform's edge fade, drawn on its canvas, as ElevenLabs draws it).
    The window is a fixed transparent stage. The island inside it changes shape, with motion values after Coucou by
    Louis Raillé (MIT); its shape, motion and timings are unchanged. */
 
@@ -96,7 +97,7 @@ svg.ic { width: 14px; height: 14px; flex: none; }
 .island::after { right: -12px; background: radial-gradient(circle at 100% 100%, transparent 11.5px, var(--island) 12px); }
 /* While the microphone is open, the voice card's wash (the web's `.brenda-wash`): a faint orange light rising from the
    bottom. Nothing else tints the island. */
-.island.open:has(.orb.live) { background: radial-gradient(420px 200px at 50% 112%, color-mix(in srgb, var(--accent) 12%, transparent), transparent 72%), var(--island); }
+.island.open:has(.wave.live) { background: radial-gradient(420px 200px at 50% 112%, color-mix(in srgb, var(--accent) 12%, transparent), transparent 72%), var(--island); }
 
 .notch { position: absolute; top: 0; left: 50%; transform: translateX(-50%); box-sizing: border-box; width: 420px; color: var(--foreground); padding: 12px 16px 16px; display: grid; gap: 12px; overflow: hidden; }
 .notch.compact { padding: 0 12px; height: var(--compact-h, 40px); align-content: center; cursor: pointer; }
@@ -138,7 +139,13 @@ svg.ic { width: 14px; height: 14px; flex: none; }
 .face.sad .eyes span { height: 2px; border-radius: 1px; }
 .face.alert { animation: hop .6s var(--spring) 1, face-breathe 3.6s ease-in-out .6s infinite; }
 .face.alert .eyes span { height: 7px; }
-.face.listen .eyes span { height: 7px; width: 5px; border-radius: 3px; }
+/* Listening (owner decision, 7 October 2026: "when you're sending a voice note she'll do like she's listening"): her eyes
+   widen and swell with the voice, and her glow with them; main.js sets --lvl (0 to 1) from the microphone level. */
+.face.listen { --lvl: 0; box-shadow: 0 0 0 1px var(--border), 0 0 calc(10px + var(--lvl) * 14px) calc(-2px + var(--lvl) * 3px) var(--glow); transition: transform .25s var(--spring), box-shadow 90ms linear; }
+.face.listen .eyes span { height: 7px; width: 5px; border-radius: 3px; scale: 1 calc(1 + var(--lvl) * .45);
+  transition: transform 70ms ease, scale 90ms linear, height .2s var(--ease), border-radius .2s var(--ease); }
+/* An answer pleases her: happy eyes (the mood above) and one small hop as it arrives. */
+.face.pleased { animation: hop .6s var(--spring) 1, face-breathe 3.6s ease-in-out .6s infinite; }
 .face.think .eyes { transform: translate(2.5px, -2px); }
 .face.think .eyes span { animation: scan 1.8s ease-in-out infinite; }
 .face.gulp .eyes span { width: 5px; height: 6px; border-radius: 50%; }
@@ -172,9 +179,11 @@ svg.ic { width: 14px; height: 14px; flex: none; }
 .pill.ok { color: var(--success); background: color-mix(in srgb, var(--success) 12%, transparent); }
 .pill.warn { color: var(--warning); background: color-mix(in srgb, var(--warning) 12%, transparent); }
 .pill.acc { color: var(--accent-text); background: var(--accent-soft); }
-/* "Mic on", as on the web's voice card: a dot with a 15% halo that pulses, and the words in secondary. The open
-   microphone is live, so the dot is orange (accent rules), not red. */
+/* The recording mark, as on the web's voice card: a dot with a 15% halo that pulses and the time in Geist Mono. The open
+   microphone is live, so the dot and the running digits are orange (accent rules), not red; stopped, the time is grey. */
 .mic { display: inline-flex; align-items: center; gap: 6px; flex: none; white-space: nowrap; font-size: 12px; line-height: 16px; font-weight: 500; color: var(--secondary); }
+.mic .clock { font-size: 13px; line-height: 16px; color: var(--secondary); }
+.mic .clock.live { color: var(--accent-text); }
 .rec-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 15%, transparent); animation: rec-pulse 1.4s ease-in-out infinite; }
 @keyframes rec-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
 /* The unread count in the compact bar: the "New" badge's orange on dark brown, 10/16 semibold. */
@@ -289,15 +298,17 @@ kbd { display: inline-flex; align-items: center; justify-content: center; box-si
 .hint { display: inline-flex; align-items: center; gap: 6px; margin-right: auto; color: var(--secondary); }
 .hint .ic { width: 16px; height: 16px; }
 
-/* The voice card, as on the web (src/components/app/voice-capture.tsx, compact): the orb is the tool-tile square made
-   round. Listening, an orange dot swells with the voice and a thin orange ring widens around it (the page sets --lvl from
-   the microphone level); working, the orange dot breathes (Brenda working is live, accent rules). */
-.orb { --lvl: .1; position: relative; width: 32px; height: 32px; flex: none; border-radius: 50%; display: grid; place-items: center;
+/* The voice card, as on the web (src/components/app/voice-capture.tsx) in ElevenLabs' recording look (owner decision,
+   7 October 2026): Brenda's face listening, the live dot and the time, and under them the live waveform, a 40px strip of
+   thin white bars drawn on a canvas by main.js (`Wave`), its edges fading into the island. While the words are written
+   out the strip becomes a slow travelling wave. */
+.wave { height: 40px; margin: -2px 0; }
+.wave canvas { display: block; width: 100%; height: 100%; color: var(--foreground); }
+/* The orb, the tool-tile square made round, stays for the speech model's download: its orange dot breathes (getting
+   ready is live, accent rules). */
+.orb { position: relative; width: 32px; height: 32px; flex: none; border-radius: 50%; display: grid; place-items: center;
   background: linear-gradient(to bottom, var(--fill-1), var(--fill-150)), var(--background); box-shadow: 0 0 0 1px var(--border), var(--elev-natural-xs); }
 .orb i { width: 12px; height: 12px; border-radius: 50%; background: var(--foreground); }
-.orb.live i { background: var(--accent); transform: scale(calc(.75 + var(--lvl) * .9)); transition: transform 90ms linear; }
-.orb.live::before { content: ""; position: absolute; inset: 0; border-radius: 50%; border: 1px solid var(--accent); opacity: calc(.12 + var(--lvl) * .6); transform: scale(calc(1 + var(--lvl) * .3));
-  transition: opacity 90ms linear, transform 90ms linear; }
 .orb.think i { background: var(--accent); animation: breathe 1.1s var(--ease) infinite alternate; }
 @keyframes breathe { from { transform: scale(.6); opacity: .45; } to { transform: scale(1); opacity: .9; } }
 .said { font-size: 13px; line-height: 19.5px; font-weight: 400; font-style: italic; color: var(--secondary); }
@@ -364,11 +375,11 @@ kbd { display: inline-flex; align-items: center; justify-content: center; box-si
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes thump { 0%, 100% { scale: 1; } 50% { scale: 1.25; } }
 
-/* Reduced motion: nothing animates or slides. The orb's dot keeps one size and only the ring's strength follows the
-   voice, as on the web; the waiting text is plain. */
+/* Reduced motion: nothing animates or slides. The waveform's bars stand still and only their strength follows the voice
+   (main.js), as on the web; listening, her eyes keep their size and only her glow follows it; the waiting text is plain. */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
   .shimmer { -webkit-text-fill-color: currentColor; }
-  .orb.live i, .orb.live::before { transform: none; }
+  .face.listen .eyes span { scale: none; }
   .orb.think i { opacity: .8; }
 }

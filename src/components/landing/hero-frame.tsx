@@ -1,12 +1,10 @@
-import { Activity, ArrowUp, Bell, CalendarCheck, ChevronRight, ChevronsUpDown, CircleAlert, ClipboardCheck, ClipboardList, FileText, FolderKanban, History, LayoutDashboard, ListChecks, MessageSquare, MessageSquareReply, Mic, PanelLeft, Plus, Search, Timer, Users, UsersRound, Video, type LucideIcon } from "lucide-react";
+import { Activity, ArrowUp, Bell, ChevronRight, ChevronsUpDown, CircleAlert, ClipboardCheck, ClipboardList, FileText, FolderKanban, History, LayoutDashboard, ListChecks, MessageSquare, MessageSquareReply, Mic, PanelLeft, Plus, Search, Users, UsersRound, Video, type LucideIcon } from "lucide-react";
 import { LogoArt } from "@/components/logo";
 import { BrendaGlyph } from "@/components/app/brenda-glyph";
 import { BrendaFace } from "@/components/app/brenda-face";
 import { Avatar } from "@/components/ui/avatar";
-import { Badge, CountPill, Kbd } from "@/components/ui/badge";
-import { ListRow } from "@/components/ui/rows";
-import { StatusDot } from "@/components/ui/status-dot";
-import { ToolSquare, ToolTile, ToolTileRow } from "@/components/ui/tool-tile";
+import { CountPill, Kbd } from "@/components/ui/badge";
+import { ToolTile, ToolTileRow } from "@/components/ui/tool-tile";
 import { Stage } from "@/components/landing/parts";
 import { cn } from "@/lib/utils";
 
@@ -15,14 +13,22 @@ import { cn } from "@/lib/utils";
  * sizes. The sidebar (the organisation menu, Brenda first, her icon orange as the current page, Messages with an
  * orange unread count), the 50px top bar (breadcrumb, search, bell, avatar), her face and the headline, the prompt
  * pill (empty, so Send is grey: the page's one orange button is the call to action above), her five asks as tool
- * tiles, and "Your day" under underline tabs with a running timer. A picture, not a control: `inert` and hidden from
- * assistive technology (the hero copy says the same in words). Below 768px the sidebar folds away as it does in the app.
+ * tiles, and her three action cards (nothing under them: "Your day" moved to My Day, owner request 7 October 2026).
+ * A picture, not a control: `inert` and hidden from assistive technology (the hero copy says the same in words). Below
+ * 768px the sidebar folds away as it does in the app.
  */
 type NavIcon = LucideIcon | typeof BrendaGlyph;
 const NAV: { group?: string; items: { label: string; icon: NavIcon; active?: boolean; count?: number }[] }[] = [
   { items: [{ label: "Brenda", icon: BrendaGlyph, active: true }, { label: "Dashboard", icon: LayoutDashboard }, { label: "Attendance", icon: ClipboardList }, { label: "Workroom", icon: Activity }] },
   { group: "Work", items: [{ label: "Tasks", icon: ListChecks }, { label: "Messages", icon: MessageSquare, count: 3 }, { label: "Docs", icon: FileText }, { label: "Reviews", icon: ClipboardCheck }, { label: "Projects", icon: FolderKanban }] },
   { group: "Organisation", items: [{ label: "People and teams", icon: UsersRound }, { label: "Recordings", icon: Video }, { label: "Timesheets", icon: History }] },
+];
+
+/** A team lead's three action cards under her box, as on Brenda's home (components/app/brenda-home, CARDS.lead). */
+const CARDS: { icon: LucideIcon; title: string; line: string; action: string }[] = [
+  { icon: ClipboardCheck, title: "Week summary", line: "What the team got done this week.", action: "Summarise" },
+  { icon: MessageSquareReply, title: "Chase work", line: "Assignments nobody has picked up yet.", action: "Chase it" },
+  { icon: FileText, title: "Write a doc", line: "A brief, a policy or notes, drafted with you.", action: "Draft it" },
 ];
 
 /** A team lead's asks, as on Brenda's home. */
@@ -123,17 +129,19 @@ export function HeroFrame() {
               {ASKS.map((a) => <ToolTile key={a.label} icon={<a.icon aria-hidden />} label={a.label} tabIndex={-1} />)}
             </ToolTileRow>
           </div>
-          <div className="mx-auto w-full max-w-[720px] px-4 pb-6 pt-8 sm:px-8">
-            <div className="flex gap-6 shadow-[inset_0_-1px_0_var(--border)]">
-              <span className="relative pb-2.5 pt-1 text-sm font-medium text-foreground">Your day<span className="absolute inset-x-0 bottom-0 h-[1.5px] rounded-full bg-accent" /></span>
-              <span className="pb-2.5 pt-1 text-sm font-medium text-secondary">Team</span>
-            </div>
-            <ul className="pt-3">
-              <ListRow leading={<ToolSquare><Timer /></ToolSquare>} title="Homepage design" subtitle="Running, estimate 2h 30m"
-                trailing={<span className="flex items-center gap-2 font-mono text-accent-text"><StatusDot tone="live" />1:42:07</span>} />
-              <ListRow leading={<ToolSquare><ClipboardCheck /></ToolSquare>} title="Brand deck, revision 2" subtitle="From Ben, waiting for your check"
-                trailing={<Badge tone="warning" className="max-sm:hidden">Sent for check</Badge>} />
-              <ListRow leading={<ToolSquare><CalendarCheck /></ToolSquare>} title="Client kickoff notes" subtitle="Due today" trailing={<ChevronRight className="size-4" />} />
+          {/* Under her box, as on her home: the three action cards (nothing under them: "Your day" lives on My Day). */}
+          <div className="@container mx-auto w-full max-w-[720px] px-4 pb-6 pt-8 sm:px-8">
+            <ul className="grid gap-3 @xl:grid-cols-3">
+              {CARDS.map((c) => (
+                <li key={c.title} className="flex min-w-0 flex-col rounded-2xl border border-border bg-fill-0 p-4">
+                  <span className="flex items-start justify-between gap-3">
+                    <span className="grid size-8 shrink-0 place-items-center rounded-lg border border-border bg-background text-secondary [&_svg]:size-4"><c.icon /></span>
+                    <span className="inline-flex h-6 shrink-0 items-center rounded-full bg-fill-1 px-2.5 text-xs font-medium text-foreground">{c.action}</span>
+                  </span>
+                  <span className="mt-3 text-sm font-semibold text-foreground">{c.title}</span>
+                  <span className="mt-0.5 text-meta font-normal text-secondary">{c.line}</span>
+                </li>
+              ))}
             </ul>
           </div>
         </div>

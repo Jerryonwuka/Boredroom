@@ -601,9 +601,9 @@ html[data-brenda-chat] #workspace-sidebar, html:has([data-brenda-chat-view]) #wo
    follow the pointer (--lx/--ly, set by brenda-face.tsx), she blinks and breathes. Her glow, if any, is the accent. */
 .brenda-face { --lx: 0; --ly: 0; --glow: transparent; position: relative; display: inline-grid; place-content: center; flex: none; border-radius: 30%;
   background: #fff; box-shadow: 0 0 0 1px var(--border-input), var(--elev-natural-xs), 0 0 12px -2px var(--glow); /* the ring and the lift keep her white face visible on the white light canvas */
-  transition: transform 250ms var(--ease-out), box-shadow 400ms var(--ease-out); animation: brenda-breathe 3.6s ease-in-out infinite; }
+  transition: transform 250ms var(--ease-out), rotate 250ms var(--ease-out), translate 160ms var(--ease-out), box-shadow 400ms var(--ease-out); animation: brenda-breathe 3.6s ease-in-out infinite; }
 .brenda-face .eyes { display: grid; grid-auto-flow: column; transform: translate(calc(var(--lx) * var(--reach-x)), calc(var(--ly) * var(--reach-y))); }
-.brenda-face .eyes > span { background: #111; border-radius: 2px; transition: transform 70ms ease, height 200ms var(--ease-out); }
+.brenda-face .eyes > span { background: #111; border-radius: 2px; transition: transform 70ms ease, height 200ms var(--ease-out), scale 150ms var(--ease-out); }
 .brenda-face-sm { width: 20px; height: 15px; --reach-x: 2px; --reach-y: 1.5px; }
 .brenda-face-sm .eyes { gap: 4px; } .brenda-face-sm .eyes > span { width: 2.5px; height: 4px; }
 .brenda-face-md { width: 30px; height: 22px; --reach-x: 3px; --reach-y: 2px; }
@@ -620,7 +620,12 @@ html[data-brenda-chat] #workspace-sidebar, html:has([data-brenda-chat-view]) #wo
 .brenda-face.alert { animation: brenda-hop 600ms var(--ease-out) 1, brenda-breathe 3.6s ease-in-out 600ms infinite; }
 .brenda-face.think .eyes { transform: translate(calc(var(--reach-x) * .8), calc(var(--reach-y) * -1)); }
 .brenda-face.think .eyes > span { animation: brenda-scan 1.8s ease-in-out infinite; }
-.brenda-face.listen .eyes > span { border-radius: 40%; scale: 1.15; }
+/* Listening (dictating): her head tilts and her wide eyes pulse gently, as if catching every word (7 October 2026). */
+.brenda-face.listen { rotate: 6deg; }
+.brenda-face.listen .eyes > span { border-radius: 40%; scale: 1.15; animation: brenda-listen 1.5s ease-in-out infinite; }
+/* Reading along as someone types to her (brenda-face.tsx): a small nod every few words, a surprised look at a paste. */
+.brenda-face.nod { translate: 0 1.5px; }
+.brenda-face.startle .eyes > span { scale: 1.35; }
 .brenda-face.squash { animation: brenda-squash 320ms var(--ease-out) 1; }
 .brenda-face.squash .eyes > span { height: 2px; }
 .brenda-face.squash .eyes > span:first-child { transform: rotate(18deg); } .brenda-face.squash .eyes > span:last-child { transform: rotate(-18deg); }
@@ -635,6 +640,7 @@ html[data-brenda-chat] #workspace-sidebar, html:has([data-brenda-chat-view]) #wo
 @keyframes brenda-wobble { from { rotate: -9deg; } to { rotate: 9deg; } }
 @keyframes brenda-spin { to { transform: rotate(360deg); } }
 @keyframes brenda-thump { 0%, 100% { scale: 1; } 50% { scale: 1.25; } }
+@keyframes brenda-listen { 0%, 100% { scale: 1.12; } 50% { scale: 1.28; } }
 /* Waiting text: a light sweep across grey (the notch's shimmer). A loading indicator, not decoration. */
 .brenda-shimmer { background: linear-gradient(90deg, var(--subtle) 0%, var(--foreground) 40%, var(--subtle) 70%); background-size: 260% 100%; -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; animation: brenda-shimmer 2.2s linear infinite; }
 @keyframes brenda-shimmer { from { background-position: 130% 0; } to { background-position: -130% 0; } }

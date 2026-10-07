@@ -35,6 +35,14 @@
 // unread count, the ask pill's focus ring, and one standout button per card (`btn primary accent`): Send once there are
 // words, Start on the briefing, Resume on a paused timer, Link to Boredroom / Open Boredroom, Turn on voice. style.css
 // turns the card's other orange button white while Send is lit. Only classes changed; behaviour is as it was.
+//
+// The recording look and her reactions (owner decisions, 7 October 2026: "I want our voice note recording to look exactly
+// like ElevenLabs' one, the whole wave thing when recording, let the change also reflect in the notch", and "I want
+// Brenda to give reactions when you do actions"). While the talk keys are held the voice card shows the live waveform
+// (`Wave` below, the web's src/components/ui/live-waveform.tsx in plain JavaScript) with the time running beside the
+// orange live dot, and Brenda listens: her eyes widen and swell with the voice, her glow with them. While the person
+// types in the ask box her eyes read along, following the caret; once it is sent she thinks; a reply pleases her. The
+// island's shape, hover-open, click-through and every action are as they were.
 
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
@@ -61,6 +69,7 @@ let voice = { enabled: false, modelReady: false, downloading: false, shortcut: "
 let talk = [];              // the spoken conversation so far, forgotten after a few quiet minutes
 let talkAt = 0;
 let cursor = null;          // the cursor in window coordinates, from Rust (for the eyes and hover)
+let gaze = null;            // the caret in the ask box while the person types to her (she reads along), or null
 let viewKey = "";           // which view is showing; content animates in only when it changes
 let wasOpen = false;
 let tucked = false, tuckTimer = null, alwaysVisible = false;
@@ -170,7 +179,9 @@ function moodOf() {
     if (card.phase === "ready") return { mood: "happy", tone: "ok" };
     if (card.phase === "reply") {
       if ((card.proposals ?? []).some((p) => p.kind === "confirm")) return { mood: "alert", tone: "warn" };
-      if (card.actions?.length) return { mood: "happy", tone: "ok" };
+      // An answer pleases her: happy eyes and a small hop as it arrives (green glow when she did something).
+      if (card.actions?.length) return { mood: "happy pleased", tone: "ok" };
+      return { mood: "happy pleased" };
     }
   }
   return {};
@@ -240,6 +251,7 @@ function render() {
     viewKey = key;
     el.classList.remove("enter"); void el.offsetWidth; el.classList.add("enter");
   }
+  if (gaze && document.activeElement?.id !== "ask") gaze = null; // the box she was reading has gone
   fit();
   applyFx();
   stepFace();
@@ -499,15 +511,24 @@ function talkButton() {
 /** What Brenda said, readable aloud: no markdown marks, links as their words. */
 const plain = (s) => String(s ?? "").replace(/\[([^\]]+)\]\([^)]+\)/g, "$1").replace(/[*_`#>]+/g, "").replace(/\s+\n/g, "\n").trim();
 
+/** The voice card's time, m:ss: running while listening, stopped once the keys come up. */
+const mss = (s) => `${Math.floor(s / 60)}:${pad(s % 60)}`;
+const voiceSeconds = (c) => (c?.startedAt ? Math.max(0, Math.floor(((c.endedAt ?? Date.now()) - c.startedAt) / 1000)) : 0);
+
 function voiceView() {
   const c = card;
   if (c.phase === "listening") {
-    const lvl = Math.max(0.08, c.level ?? 0);
-    return `<div class="row fade"><span class="orb live" id="orb" style="--lvl:${lvl.toFixed(2)}"><i></i></span><div class="grow"><p class="title">Listening…</p><p class="cap">Let go of <kbd>${esc(voice.shortcut)}</kbd> when you're done.</p></div><span class="mic"><span class="rec-dot"></span>Mic on</span></div>`;
+    // ElevenLabs' recording look, as on the web's voice card: Brenda listening, the orange live dot with the time, and
+    // under them the live waveform scrolling with the voice.
+    return `<div class="row fade">${face(moodOf())}<div class="grow"><p class="title">Listening…</p><p class="cap">Let go of <kbd>${esc(voice.shortcut)}</kbd> when you're done.</p></div><span class="mic"><span class="rec-dot"></span><span class="clock live" id="vtime" role="timer">${mss(voiceSeconds(c))}</span></span></div>
+      <div class="wave live fade" aria-hidden="true"><canvas id="wave"></canvas></div>`;
   }
   if (c.phase === "transcribing" || c.phase === "thinking") {
-    // As the web's voice card: what is happening first (shimmering), then the words heard, in italic quotes.
-    return `<div class="row fade"><span class="orb think"><i></i></span><div class="grow"><p class="title shimmer">${c.phase === "transcribing" ? "Getting your words…" : "Brenda is on it…"}</p>${c.heard ? `<p class="said">“${esc(c.heard)}”</p>` : ""}</div></div>`;
+    // She thinks; what is happening first (shimmering), then the words heard, in italic quotes. While the words are
+    // written out the waveform carries on as a slow travelling wave and the time stays where it stopped.
+    const words = c.phase === "transcribing";
+    return `<div class="row fade">${face(moodOf())}<div class="grow"><p class="title shimmer">${words ? "Getting your words…" : "Brenda is on it…"}</p>${c.heard ? `<p class="said">“${esc(c.heard)}”</p>` : ""}</div>${words && c.startedAt ? `<span class="mic"><span class="clock">${mss(voiceSeconds(c))}</span></span>` : ""}</div>
+      ${words ? `<div class="wave fade" aria-hidden="true"><canvas id="wave"></canvas></div>` : ""}`;
   }
   if (c.phase === "reply") {
     const proposals = c.proposals ?? [];
@@ -746,6 +767,133 @@ async function openChat() {
   closeCard();
 }
 
+// ---- the live waveform -------------------------------------------------------------------------------------------
+// ElevenLabs' recording look in the notch (owner decision, 7 October 2026). A plain-JavaScript port of the web's
+// src/components/ui/live-waveform.tsx, which adapts ElevenLabs UI's live-waveform (https://github.com/elevenlabs/ui,
+// apps/www/registry/elevenlabs-ui/ui/live-waveform.tsx; MIT licence, notice below). Thin rounded white bars on a centre
+// line scroll in from the right, one every 30 ms, each as tall as the voice was loud then (the level Rust sends about
+// every 70 ms while the keys are held, eased: quick to rise, slow to fall), softer when quiet (0.4 + 0.6 × level), the
+// edges fading out; slots not heard yet are quiet dots. While the words are written out the bars become ElevenLabs'
+// travelling "processing" wave, blended over about a second from what was last heard. Reduced motion keeps the bars
+// still and lets only their strength follow the voice. The loop runs only while a card with the strip (#wave) shows,
+// and it also keeps the voice card's time (#vtime) up to date.
+//
+// MIT License
+//
+// Copyright (c) 2025 Eleven Labs Inc.
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
+// documentation files (the "Software"), to deal in the Software without restriction, including without limitation the
+// rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit
+// persons to whom the Software is furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all copies or substantial portions of the
+// Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE
+// WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+// COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+// OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+const Wave = (() => {
+  // 2px bars 1px apart, never shorter than 4px (silence is a row of short bars), as ElevenLabs' recording parts.
+  const BAR = 2, GAP = 1, STEP = BAR + GAP, MIN = 4, RATE = 30, FADE = 20;
+  const reduce = window.matchMedia ? window.matchMedia("(prefers-reduced-motion: reduce)") : null;
+  let mode = "idle";        // live | processing | idle
+  let hist = [];            // what was heard, newest last
+  let from = [];            // what was heard when the processing wave began, to blend from
+  let target = 0, smooth = 0, lastPush = 0, since = 0, raf = 0, shownSecs = -1;
+  /** A fixed, speech-like outline for the still bars of reduced motion, taller towards the middle. */
+  const still = (i, n) => Math.max(0.15, (1 - Math.abs((i - n / 2) / (n / 2)) * 0.5) * (0.55 + 0.45 * Math.abs(Math.sin(i * 1.7) * Math.cos(i * 0.6))));
+  const kick = () => { if (!raf) raf = requestAnimationFrame(frame); };
+
+  function frame(now) {
+    raf = 0;
+    const cv = document.getElementById("wave");
+    if (!cv || mode === "idle") return;
+    const reduced = !!reduce?.matches;
+    if (mode === "live") {
+      smooth += (target - smooth) * (target > smooth ? 0.5 : 0.15);
+      if (!lastPush || now - lastPush > RATE * 4) lastPush = now - RATE; // first sample now; never catch up in a burst
+      while (now - lastPush >= RATE) { hist.push(Math.max(0.05, Math.min(1, smooth))); lastPush += RATE; }
+      const keep = Math.ceil((cv.clientWidth || 400) / STEP) + 3;
+      if (hist.length > keep) hist.splice(0, hist.length - keep);
+      const secs = voiceSeconds(card);
+      if (secs !== shownSecs) { shownSecs = secs; const t = document.getElementById("vtime"); if (t) t.textContent = mss(secs); }
+    }
+    const w = cv.clientWidth, h = cv.clientHeight, dpr = window.devicePixelRatio || 1;
+    const g = cv.getContext("2d");
+    if (w && h && g) {
+      const bw = Math.round(w * dpr), bh = Math.round(h * dpr);
+      if (cv.width !== bw || cv.height !== bh) { cv.width = bw; cv.height = bh; }
+      g.setTransform(dpr, 0, 0, dpr, 0, 0);
+      g.globalCompositeOperation = "source-over";
+      g.clearRect(0, 0, w, h);
+      g.fillStyle = getComputedStyle(cv).color || "#fff";
+      const bar = (x, v, alpha, dot = false) => {
+        const height = dot ? BAR : Math.max(MIN, v * h * 0.8);
+        const y = Math.round(((h - height) / 2) * dpr) / dpr;
+        g.globalAlpha = alpha;
+        g.beginPath();
+        if (g.roundRect) g.roundRect(x, y, BAR, height, Math.min(BAR / 2, height / 2)); else g.rect(x, y, BAR, height);
+        g.fill();
+      };
+      const n = Math.floor(w / STEP), x0 = (w - n * STEP + GAP) / 2;
+      if (mode === "live" && reduced) {
+        for (let i = 0; i < n; i++) bar(x0 + i * STEP, still(i, n) * 0.7, 0.25 + smooth * 0.75);
+      } else if (mode === "live") {
+        // Newest on the right; everything slides left by device pixels until the next sample lands.
+        const shift = Math.min(1, (now - lastPush) / RATE) * STEP;
+        const count = Math.ceil(w / STEP) + 1;
+        for (let i = 0; i < count; i++) {
+          const x = Math.round((w - (i + 1) * STEP - shift) * dpr) / dpr;
+          if (x + BAR < 0) break;
+          const v = hist[hist.length - 1 - i];
+          if (v === undefined) bar(x, 0, 0.2, true); else bar(x, v, 0.4 + v * 0.6);
+        }
+      } else if (reduced) {
+        for (let i = 0; i < n; i++) bar(x0 + i * STEP, still(i, n) * 0.5, 0.35);
+      } else {
+        const t = ((now - since) / 1000) * 1.8, blend = Math.min(1, (now - since) / 900);
+        for (let i = 0; i < n; i++) {
+          const pos = (i - n / 2) / (n / 2);
+          const wave = Math.sin(t * 1.5 + i * 0.15) * 0.25 + Math.sin(t * 0.8 - i * 0.1) * 0.2 + Math.cos(t * 2 + i * 0.05) * 0.15;
+          let v = (0.2 + wave) * (1 - Math.abs(pos) * 0.4);
+          if (from.length && blend < 1) v = (from[Math.floor((i / n) * from.length)] ?? 0) * (1 - blend) + v * blend;
+          v = Math.max(0.05, Math.min(1, v));
+          bar(x0 + i * STEP, v, 0.4 + v * 0.6);
+        }
+      }
+      // The edges fade out (ElevenLabs' destination-out gradient).
+      const p = Math.min(0.3, FADE / w);
+      const fade = g.createLinearGradient(0, 0, w, 0);
+      fade.addColorStop(0, "rgba(255,255,255,1)"); fade.addColorStop(p, "rgba(255,255,255,0)");
+      fade.addColorStop(1 - p, "rgba(255,255,255,0)"); fade.addColorStop(1, "rgba(255,255,255,1)");
+      g.globalAlpha = 1;
+      g.globalCompositeOperation = "destination-out";
+      g.fillStyle = fade;
+      g.fillRect(0, 0, w, h);
+      g.globalCompositeOperation = "source-over";
+    }
+    if (mode === "live" || (mode === "processing" && !reduced) || !w || !h) raf = requestAnimationFrame(frame);
+  }
+
+  return {
+    /** The keys went down: a fresh strip. */
+    start(level = 0) { mode = "live"; hist = []; from = []; target = Math.max(0, Math.min(1, level)); smooth = 0; lastPush = 0; shownSecs = -1; kick(); },
+    /** A level event from Rust, 0 to 1. */
+    level(level) { target = Math.max(0, Math.min(1, level)); if (mode === "live") kick(); },
+    /** The keys came up: the words are being written out. */
+    process() { from = hist.slice(); mode = "processing"; since = performance.now(); kick(); },
+  };
+})();
+
+/** Brenda listening: her eyes widen and swell with the voice, her glow with them (style.css `.face.listen`, `--lvl`). */
+function hearLevel(level) {
+  const lvl = Math.max(0, Math.min(1, level)).toFixed(2);
+  for (const f of el.querySelectorAll(".face.listen")) f.style.setProperty("--lvl", lvl);
+}
+
 listen("brenda://voice", ({ payload: e }) => {
   if (e.phase === "downloading" || e.phase === "ready") {
     voice = { ...voice, downloading: e.phase === "downloading", modelReady: e.phase === "ready" };
@@ -759,14 +907,22 @@ listen("brenda://voice", ({ payload: e }) => {
   if (e.phase === "listening") {
     if (card?.kind === "voice" && card.phase === "listening") {
       card.level = e.level;
-      const orb = document.getElementById("orb");
-      if (orb) orb.style.setProperty("--lvl", Math.max(0.08, e.level ?? 0).toFixed(2));
+      Wave.level(e.level ?? 0);
+      hearLevel(e.level ?? 0);
       return;
     }
     Sound.play("listen");
-    return openCard({ kind: "voice", phase: "listening", level: e.level, sticky: true });
+    openCard({ kind: "voice", phase: "listening", level: e.level, sticky: true, startedAt: Date.now() });
+    Wave.start(e.level ?? 0);
+    hearLevel(e.level ?? 0);
+    return;
   }
-  if (e.phase === "transcribing") { Sound.play("heard"); return openCard({ kind: "voice", phase: "transcribing", sticky: true }); }
+  if (e.phase === "transcribing") {
+    Sound.play("heard");
+    const startedAt = card?.kind === "voice" && card.phase === "listening" ? card.startedAt : undefined;
+    openCard({ kind: "voice", phase: "transcribing", sticky: true, startedAt, endedAt: Date.now() });
+    return Wave.process();
+  }
   if (e.phase === "heard") return ask(e.text);
   if (e.phase === "too-short") return card?.kind === "voice" ? closeCard() : undefined;
   if (e.phase === "limit") return;
@@ -902,18 +1058,44 @@ function watchAdmiration() {
 // ---- Brenda's face ----------------------------------------------------------------------------------------------
 // Her eyes follow the cursor with a lag (tanh of the distance, eased each frame, as in Coucou's engine), she blinks
 // every 2.2 to 5.4 seconds (twice in a row about one time in five), and the frame loop stops once her eyes settle.
+// While the person types to her (owner decision, 7 October 2026) she reads along instead: her eyes go to the ask box
+// and follow the caret, more keenly than they follow the pointer, until the box loses focus.
 
 const look = { x: 0, y: 0 };
 let lookFrame = null;
+let measure = null;         // a canvas context for measuring the typed words in the box's own font
+
+/** Where the caret sits in the ask box, in window coordinates. */
+function caretAt(input) {
+  const r = input.getBoundingClientRect();
+  const cs = getComputedStyle(input);
+  measure ??= document.createElement("canvas").getContext("2d");
+  const left = r.left + (parseFloat(cs.paddingLeft) || 0), right = r.right - (parseFloat(cs.paddingRight) || 0);
+  let x = left;
+  if (measure) {
+    measure.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+    x = left + measure.measureText(input.value.slice(0, input.selectionEnd ?? input.value.length)).width - input.scrollLeft;
+  }
+  return { x: Math.max(left, Math.min(right, x)), y: r.top + r.height / 2 };
+}
+function readAlong(e) {
+  if (e.target?.id !== "ask") return;
+  gaze = caretAt(e.target);
+  stepFace();
+}
+for (const type of ["focusin", "input", "keyup", "pointerup", "select"]) el.addEventListener(type, readAlong);
+el.addEventListener("focusout", (e) => { if (e.target?.id === "ask") { gaze = null; stepFace(); } });
+
 function stepFace() {
   if (lookFrame) return;
   lookFrame = requestAnimationFrame(() => {
     lookFrame = null;
     const faces = el.querySelectorAll(".face");
-    if (!faces.length || !cursor) return;
+    const at = gaze ?? cursor;
+    if (!faces.length || !at) return;
     const r = faces[0].getBoundingClientRect();
-    const tx = Math.tanh((cursor.x - (r.left + r.width / 2)) / 260);
-    const ty = Math.tanh((cursor.y - (r.top + r.height / 2)) / 200);
+    const tx = Math.tanh((at.x - (r.left + r.width / 2)) / (gaze ? 150 : 260));
+    const ty = Math.tanh((at.y - (r.top + r.height / 2)) / (gaze ? 70 : 200));
     look.x += (tx - look.x) * 0.2;
     look.y += (ty - look.y) * 0.2;
     for (const f of faces) { f.style.setProperty("--lx", look.x.toFixed(3)); f.style.setProperty("--ly", look.y.toFixed(3)); }

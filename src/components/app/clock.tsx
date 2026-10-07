@@ -47,7 +47,8 @@ const DOT = { default: "bg-subtle", warning: "bg-warning", danger: "bg-danger", 
  * screens it sits on); late and very late say so in its label, with the lateness
  * spelled out beside an amber or red dot underneath. Once in, Clock out is the red outline (the danger button) until
  * the day's end, naming the end time and that leaving early is flagged; after the end it is a plain outline. The
- * buttons live on the Clock in page and on Brenda's page (owner decision, 5 October 2026).
+ * buttons live on the Clock in page; My Day's "Your day" shows your clock as a row that opens it, and Brenda clocks
+ * you in or out when asked.
  */
 export function ClockButtons({ orgSlug, status, timerOpen, size = "lg", timing }: { orgSlug: string; status: Status; timerOpen: boolean; size?: "lg" | "md"; timing?: Timing }) {
   const router = useRouter();

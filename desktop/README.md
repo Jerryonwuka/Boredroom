@@ -57,7 +57,8 @@ which signs the app out at once. The tray menu also has **Sign out of this compu
 Off until the person turns it on (the mic button on a card, or **Turn voice on** in the tray). Then:
 
 1. Hold **Option+Space** (Alt+Space on Windows) and speak. The microphone records only while the keys are held, up to
-   30 seconds, and the notch shows "Mic on" with a pulsing orange dot.
+   30 seconds, and the notch's voice card shows Brenda listening, a pulsing orange dot with the running time, and the
+   live waveform (ElevenLabs' recording look) moving with your voice.
 2. Let go. whisper.cpp turns the audio into text on this computer (`ggml-base.en.bin`, about 148 MB, downloaded once
    from Hugging Face into the app's data folder). No audio leaves the computer.
 3. The text goes to `POST /api/orgs/:org/assistant/chat` with the last few spoken turns, so Brenda acts with the
@@ -70,9 +71,15 @@ Off until the person turns it on (the mic button on a card, or **Turn voice on**
 The bundled app asks for microphone access the first time (`Info.plist`). "Hey Brenda" (Porcupine) comes next and only
 replaces the trigger in step 1.
 
-The voice card (the round orb whose orange dot and ring swell with your voice, "Mic on" with an orange dot, your words in
-italic quotes, the shimmer while she works, a faint orange wash while the microphone is open) matches dictation and
-voice notes in the web app (`src/components/app/voice-capture.tsx`, the compact card): change one, change the other.
+The voice card (owner decision, 7 October 2026: ElevenLabs' recording look) shows Brenda's face listening (her eyes
+widen and swell with your voice, her glow with them), "Listening…", the pulsing orange dot and the running time in
+orange digits, and under them a 40px live waveform: thin white bars scrolling in from the right as loud as your voice,
+the edges fading into the island, fed by the ~70 ms level events. Once the keys come up the time stops, your words show
+in italic quotes, the title shimmers and the bars become a slow travelling wave. A faint orange wash rises from the
+bottom while the microphone is open. It matches dictation and voice notes in the web app
+(`src/components/app/voice-capture.tsx` and `src/components/ui/live-waveform.tsx`; the notch's `Wave` in `src/main.js`
+is a plain-JavaScript port of the latter, under the same MIT notice): change one, change the other. The round orb is
+kept only for the speech model's download.
 
 ## Look
 
@@ -95,12 +102,14 @@ code) are bundled in `src/fonts` (SIL Open Font License, `OFL.txt`); the notch l
   orange on dark brown for the unread count.
 - **Orange marks what is live, active or the one thing to do** (the web's accent rules, `docs/design-system.md`): the
   focus ring (2px at 50%) and the ask box's ring while it has focus, the unread count, the running timer's breathing
-  dot and its digits (on the timer card and in the compact bar), Brenda listening ("Mic on", the orb, ring and wash)
+  dot and its digits (on the timer card and in the compact bar), Brenda listening (the live dot and running time beside
+  the waveform, and the wash)
   and working, download and upload bars, teammates' running dots, the timer's estimate hairline and progress ring
   (green when done), the one orange button per card, and the underline of a hovered link. Paused stays amber and
   interrupted red: status meaning wins over orange.
 - **No gradients, glass or glow,** apart from the four the web keeps for Brenda: the orb's tool-tile fill, the waiting
-  shimmer, the listening wash, and the soft light around her face for a reminder, success, a Confirm or an error.
+  shimmer, the listening wash, and the soft light around her face for a reminder, success, a Confirm, an error or her
+  listening (the waveform's edge fade is drawn on its canvas, as ElevenLabs draws it).
 - **Type:** copy is sentence case, in Brenda's voice, with commas rather than middle dots.
 - **The island itself stays true black,** because it meets the screen's own notch, where #0F0F10 would show as a grey
   frame around the camera; its open edge is a 7.5% hairline with the web's toast shadow.
@@ -113,9 +122,12 @@ high-resolution "B." mark: the current artwork is only 58px tall, too small for 
 
 `preview.html` runs the notch in an ordinary browser with sample data
 (`?state=link|compact|briefing|timer|paused|reminder|report|lead|idle`) and can open one of Brenda's cards on top
-(`&card=listening|working|thinking|reply|confirm|offer|error|drop|voice-off`; `&confirm=already` answers the Confirm as
-already done; `&typed=…` fills the open card's ask box, to show Send turning orange). Serve this folder with any
-static server and open it; it is not part of the app.
+(`&card=listening|working|thinking|reply|confirm|offer|error|drop|voice-off|typing`; `&confirm=already` answers the
+Confirm as already done; `&typed=…` fills the open card's ask box, to show Send turning orange). `card=listening` feeds
+the waveform and her listening face a speech-like level every 70 ms, as Rust does; `card=working` listens for two
+seconds and then writes the words out, to show the bars turning into the travelling wave; `card=typing` types a question
+into the ask box letter by letter, to show her eyes reading along. Serve this folder with any static server and open
+it; it is not part of the app.
 
 ## Build installers
 
@@ -132,7 +144,10 @@ The window is a fixed, transparent 480 × 440 stage at the top centre of the scr
 (520 ms with a slight overshoot) and eases shut (340 ms). Clicks pass through the empty part of the stage: a small Rust
 thread reads the cursor about 30 times a second and only lets the window take the mouse over the island (`island.rs`),
 and the same feed moves Brenda's eyes. She blinks, breathes, and her face and the card's glow follow what is happening
-(a reminder, success, something to confirm, an error, listening, thinking). Sounds are synthesised in `src/sound.js`
+(a reminder, success, something to confirm, an error, listening, thinking). Her reactions (owner request, 7 October
+2026) match the web's: while you type in the ask box her eyes go to it and follow the caret (reading along); while you
+hold to talk her eyes widen and swell with your voice (listening); sending, she thinks; her reply pleases her (happy
+eyes and a small hop). Sounds are synthesised in `src/sound.js`
 (no audio files) and can be switched off from the tray. Keys while the notch has focus: Esc closes, Y and N answer a
 Confirm.
 

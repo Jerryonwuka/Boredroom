@@ -156,13 +156,14 @@ export function Composer({ orgSlug, conversationId, task, prefill, placeholder, 
         <div className={cn("rounded-[26px] bg-surface transition-shadow duration-150",
           // Accent rules (6 October 2026), as on Brenda's prompt pill: an orange ring while it has focus or records.
           card ? "shadow-[0_0_0_1px_var(--accent-ring),var(--elev-natural-xs)]" : "shadow-[0_0_0_1px_var(--border),var(--elev-natural-xs)] focus-within:shadow-[0_0_0_1px_var(--accent-ring),var(--elev-natural-xs)]")}>
-          {/* Recording a voice note: the notch's voice card (owner decision, 5 October 2026), its level read from the recorder's own microphone. */}
+          {/* Recording a voice note: the voice card in ElevenLabs' recording look (owner decision, 7 October 2026): the live
+              time, the waveform read from the recorder's own microphone, then Cancel and Send. The last minute is counted down. */}
           {card ? (
             <div className="p-2">
-              <VoiceCapture phase={voice.recording ? "listening" : "working"} title={voice.recording ? "Recording…" : "Sending your voice note…"} stream={voice.stream} className="rounded-[20px]"
-                hint={voice.recording ? <><span role="timer" className="tabular-nums text-accent-text">{fmt(voice.seconds)}</span> of {fmt(MAX_SECONDS)}</> : <><span className="tabular-nums">{fmt(voice.seconds)}</span> recorded</>}
+              <VoiceCapture phase={voice.recording ? "listening" : "working"} title={voice.recording ? "Recording…" : "Sending your voice note…"} stream={voice.stream} seconds={voice.seconds} className="rounded-[20px]"
+                hint={voice.recording && voice.seconds >= MAX_SECONDS - 60 ? <><span className="tabular-nums">{fmt(Math.max(0, MAX_SECONDS - voice.seconds))}</span> left: at {fmt(MAX_SECONDS)} the note sends itself.</> : undefined}
                 actions={voice.recording ? <>
-                  <Button type="button" size="md" variant="ghost" onClick={() => voice.cancel()} disabled={sendingVoice}><Trash2 aria-hidden />Cancel</Button>
+                  <IconButton variant="round" aria-label="Cancel" data-tip="Discard the voice note" onClick={() => voice.cancel()} disabled={sendingVoice}><Trash2 aria-hidden /></IconButton>
                   {/* Under a second there is nothing to send yet: it says so (aria-disabled) but keeps the focus it was given. */}
                   <Button ref={sendNote} type="button" size="md" variant="accent" onClick={() => { if (voice.seconds >= 1) void sendVoice(); }} disabled={sendingVoice} aria-disabled={voice.seconds < 1 || undefined}
                     className="aria-disabled:pointer-events-auto aria-disabled:cursor-not-allowed aria-disabled:opacity-50"><ArrowUp aria-hidden />Send</Button>

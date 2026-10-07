@@ -5,8 +5,11 @@
  * or without screen recording), press Mark done when finished. That sends the work to the person who checks it; it
  * shows as "Sent for check" and then "Completed". A finished to-do never offers Start again.
  *
- * No clock-in card and no idle clock here (owner decision, 5 October 2026): clocking in has its own page and Brenda's
- * page shows your clock. The timer card appears only while something is on the clock.
+ * No clock-in card and no idle clock here (owner decision, 5 October 2026): clocking in has its own page. The timer card
+ * appears only while something is on the clock. Under it, "Your day" (owner request, 7 October 2026: moved here from
+ * under Brenda's home panel; components/app/your-day), passed in by the page as `yourDay`: the day's figures, your
+ * clock as a row that opens the Clock in page, and what is due, overdue or waiting; team leads also get a Team tab.
+ * The open count lives in its stat card and the tabs' counts, so the list's title carries none of its own.
  *
  * v4: the timer as a stat card, the to-dos under underline tabs with counts, rows of 56px (title 14/20 semibold, meta
  * 13px secondary, a small status badge, a quiet progress arc), no lines between them. A to-do opens in a right-hand
@@ -68,6 +71,8 @@ type Props = {
   timeZone: string;
   /** The server's clock when the page was read; "overdue" is judged by it until the browser's own clock takes over. */
   serverNow: string;
+  /** "Your day" (and Team for leads), rendered by the page on the server's data; shown under the timer, above the to-dos. */
+  yourDay?: React.ReactNode;
 };
 
 // "Overdue" needs the time now. Read during render it differed between the server and the browser, so the browser's
@@ -108,7 +113,7 @@ export function MyDayBoard(props: Props) {
 
 const ORDER: Record<string, number> = { in_progress: 0, todo: 1, blocked: 2, in_review: 3, completed: 4 };
 
-function Board({ orgSlug, today, initialSession, planned, ownTodos, fromLeads, doneToday, pastTasks, assignable, membershipId, recordingMode, assistantConfigured, timeZone, serverNow }: Props) {
+function Board({ orgSlug, today, initialSession, planned, ownTodos, fromLeads, doneToday, pastTasks, assignable, membershipId, recordingMode, assistantConfigured, timeZone, serverNow, yourDay }: Props) {
   const router = useRouter();
   const capture = useCaptureContext();
   const nowMs = useNow(serverNow);
@@ -156,7 +161,6 @@ function Board({ orgSlug, today, initialSession, planned, ownTodos, fromLeads, d
   const hasList = rows.length > 0 || doneToday.length > 0;
   const chosen = shown.filter((t) => selected.has(t.id)).map((t) => t.id);
   const openRow = open ? rows.find((t) => t.id === open) ?? null : null;
-  const openCount = rows.filter((r) => r.status !== "in_review").length;
 
   function onSessionChange(s: SessionView | null) {
     setSession(s);
@@ -209,16 +213,14 @@ function Board({ orgSlug, today, initialSession, planned, ownTodos, fromLeads, d
       <div className="min-w-0 space-y-6">
         <SessionTimer orgSlug={orgSlug} initial={initialSession} tasks={startable} captureDialog={dialogEl} onSessionChange={onSessionChange}
           {...(recordingMode === "disabled" ? {} : { captureGate, recordingControls })} />
+        {yourDay}
         {recordingMode === "disabled" ? <Alert tone="info">Screen recording is switched off for this organisation. An owner can turn it on under Settings, Screen recording.</Alert> : null}
         <Presence show={!!error}><Alert tone="danger">{error}</Alert></Presence>
         <Presence show={!!notice}><Alert tone="success">{notice}</Alert></Presence>
 
         <section aria-labelledby="todo-heading">
           <SectionTitle id="todo-heading" title="Your to-dos for today" className="mb-3"
-            action={<>
-              <span className="text-meta font-normal tabular-nums text-secondary">{openCount} open, {doneToday.length} done</span>
-              <Button ref={addButton} size="icon-sm" aria-label="Add a to-do" aria-expanded={adding} aria-controls="new-todo" onClick={openAdd}><Plus aria-hidden /></Button>
-            </>} />
+            action={<Button ref={addButton} size="icon-sm" aria-label="Add a to-do" aria-expanded={adding} aria-controls="new-todo" onClick={openAdd}><Plus aria-hidden /></Button>} />
 
           {/* The new-to-do row keeps one place in the tree whether or not the list is empty, so the refresh after the
               first to-do is added never remounts it (and never drops drafts still waiting in it). */}

@@ -18,9 +18,14 @@
  * dictation failed or was cancelled, so Send can wait for it and knows not to send. Every asynchronous step is tied to
  * a session number, so a start that is overtaken (Stop, closing the panel, a second click) stops its microphone instead
  * of carrying on unseen.
+ *
+ * One microphone per dictation (7 October 2026, with the live waveform): the open microphone is handed out as `stream`
+ * and shared (`shareMicrophone`), so the voice card's waveform measures it instead of opening its own. With the
+ * browser's engine, the stream opened to ask for the microphone stays open for the waveform while the browser listens,
+ * and is the one Whisper records from if the browser's service fails mid-way; it is stopped when the dictation ends.
  */
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { diagnoseMicError } from "@/hooks/use-voice-recorder";
+import { diagnoseMicError, shareMicrophone } from "@/hooks/use-voice-recorder";
 import { prepareWhisper, toWhisperAudio, transcribe, whisperSupported } from "@/lib/whisper/client";
 import { MAX_DICTATION_SECONDS, WHISPER_SAMPLE_RATE } from "@/lib/whisper/config";
 
@@ -50,6 +55,8 @@ function rememberWhisper() {
 }
 const noSubscribe = () => () => undefined;
 const stopTracks = (s: MediaStream) => s.getTracks().forEach((t) => t.stop());
+/** Whether a stream still carries a live microphone (a stand-in without tracks does not). */
+const isLive = (s: MediaStream) => typeof s.getTracks === "function" && s.getTracks().some((t) => t.readyState === "live");
 
 type Recording = { recorder: MediaRecorder; stream: MediaStream; chunks: Blob[]; limit: ReturnType<typeof setTimeout> };
 
@@ -86,10 +93,46 @@ export function useDictation(text: string, setText: (t: string) => void) {
   const heardCount = useRef(0);
   const saidBefore = useRef(""); // this dictation's words from the browser's earlier sessions (it restarts after silence)
   const silentRestarts = useRef(0);
+  /** The browser's engine: the stream opened to ask for the microphone, kept open for the waveform while it listens. */
+  const levelStream = useRef<MediaStream | null>(null);
+  /** The microphone on show (the waveform's), with how to stop sharing it. */
+  const shown = useRef<{ stream: MediaStream; unshare: () => void } | null>(null);
+  const [micStream, setMicStream] = useState<MediaStream | null>(null);
 
   const write = (t: string) => { textNow.current = t; setText(t); };
   const chooseEngine = (e: DictationEngine) => { engineNow.current = e; setEngine(e); };
-  const idle = () => { setListening(false); setPhase("idle"); };
+  /** Shows and shares the open microphone; set before `listening`, so the voice card finds it when it appears. */
+  function showMic(s: MediaStream) {
+    if (shown.current?.stream === s) return;
+    hideMic();
+    shown.current = { stream: s, unshare: shareMicrophone(s) };
+    setMicStream(s);
+  }
+  /** Stops showing the microphone (only `s`, when given: a newer one stays). */
+  function hideMic(s?: MediaStream) {
+    const cur = shown.current;
+    if (!cur || (s && cur.stream !== s)) return;
+    shown.current = null;
+    cur.unshare();
+    if (alive.current) setMicStream(null);
+  }
+  /** The browser's engine has stopped listening: its waveform stream goes too. */
+  function releaseLevel() {
+    const s = levelStream.current;
+    if (!s) return;
+    levelStream.current = null;
+    stopTracks(s);
+    hideMic(s);
+  }
+  /** Hands the kept stream on (to Whisper, when the browser's service fails), or null when it has gone quiet. */
+  function takeLevelStream(): MediaStream | null {
+    const s = levelStream.current;
+    levelStream.current = null;
+    if (s && isLive(s)) return s;
+    if (s) { stopTracks(s); hideMic(s); }
+    return null;
+  }
+  const idle = () => { releaseLevel(); setListening(false); setPhase("idle"); };
 
   function dropRecording() {
     const m = media.current;
@@ -97,7 +140,7 @@ export function useDictation(text: string, setText: (t: string) => void) {
     if (!m) return;
     clearTimeout(m.limit);
     try { if (m.recorder.state !== "inactive") m.recorder.stop(); } catch { /* already stopped */ }
-    stopTracks(m.stream);
+    stopTracks(m.stream); // its caller stops showing it (startWhisper shows the next one; cancel hides it)
   }
 
   useEffect(() => {
@@ -111,6 +154,9 @@ export function useDictation(text: string, setText: (t: string) => void) {
       const r = rec.current; rec.current = null;
       if (r) { r.onresult = null; r.onend = null; r.onerror = null; try { r.stop(); } catch { /* not started */ } }
       dropRecording();
+      const kept = levelStream.current; levelStream.current = null;
+      if (kept) stopTracks(kept);
+      shown.current?.unshare(); shown.current = null;
       finishing.current?.cancel();
     };
   }, []);
@@ -143,6 +189,7 @@ export function useDictation(text: string, setText: (t: string) => void) {
     }, MAX_DICTATION_SECONDS * 1000);
     media.current = { recorder, stream, chunks, limit };
     chooseEngine("whisper");
+    showMic(stream);
     setListening(true); setPhase("listening"); setError(null);
     warmUp(); // the model loads while the person speaks
   }
@@ -159,6 +206,7 @@ export function useDictation(text: string, setText: (t: string) => void) {
       m.recorder.stop();
     });
     stopTracks(m.stream);
+    hideMic(m.stream);
     setListening(false); setPhase("transcribing");
     const mine = ++transcribing.current;
     const current = () => mine === transcribing.current && alive.current;
@@ -197,10 +245,13 @@ export function useDictation(text: string, setText: (t: string) => void) {
     if (!whisperSupported()) return false;
     rememberWhisper();
     const token = session.current;
-    let stream: MediaStream;
-    try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
-    catch (err) { if (handingOver.current && token === session.current) { handingOver.current = false; setError(await diagnoseMicError(err)); idle(); } return true; }
-    if (!handingOver.current || token !== session.current || !alive.current) { stopTracks(stream); return true; } // Stop was pressed meanwhile
+    // The microphone the waveform has been measuring is still open: Whisper records from it rather than asking again.
+    let stream = takeLevelStream();
+    if (!stream) {
+      try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+      catch (err) { if (handingOver.current && token === session.current) { handingOver.current = false; setError(await diagnoseMicError(err)); idle(); } return true; }
+    }
+    if (!handingOver.current || token !== session.current || !alive.current) { stopTracks(stream); hideMic(stream); return true; } // Stop was pressed meanwhile
     handingOver.current = false;
     startWhisper(stream, token);
     return true;
@@ -292,7 +343,7 @@ export function useDictation(text: string, setText: (t: string) => void) {
   /** Gives up on this dictation: a recording is discarded, a write-out abandoned (the download carries on for next time). */
   function cancel() {
     session.current++;
-    if (media.current) { dropRecording(); idle(); return; }
+    if (media.current) { const s = media.current.stream; dropRecording(); hideMic(s); idle(); return; }
     if (finishing.current) { transcribing.current++; finishing.current.cancel(); finishing.current = null; setPhase("idle"); setProgress(null); return; }
     void stop();
   }
@@ -316,13 +367,16 @@ export function useDictation(text: string, setText: (t: string) => void) {
       startWhisper(stream, token);
       return;
     }
-    stopTracks(stream);
+    // The browser listens through its own microphone; this one stays open only for the waveform.
+    releaseLevel();
+    levelStream.current = stream;
+    showMic(stream);
     chooseEngine("browser");
     base.current = textNow.current ? textNow.current.trimEnd() + " " : "";
     heardCount.current = 0; setHeardWords(0); saidBefore.current = ""; silentRestarts.current = 0;
     wantListening.current = true;
     try { startRecognition(Ctor); setListening(true); setPhase("listening"); setError(null); }
-    catch { wantListening.current = false; setError("Could not start dictation. Reload the page and try again, or type instead."); }
+    catch { wantListening.current = false; releaseLevel(); setError("Could not start dictation. Reload the page and try again, or type instead."); }
   }
 
   const englishOnly = engine === "whisper" && typeof navigator !== "undefined" && !!navigator.language && !navigator.language.toLowerCase().startsWith("en");
@@ -343,5 +397,7 @@ export function useDictation(text: string, setText: (t: string) => void) {
     progress: modelReady ? null : progress,
     /** On-device dictation only understands English; true when the browser's language is something else. */
     englishOnly,
+    /** The open microphone while listening, else null: the waveform measures it (it is also shared, see above). */
+    stream: micStream,
   };
 }

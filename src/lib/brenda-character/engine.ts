@@ -7,12 +7,22 @@
  * particle bursts) follow the MIT-licensed engine of Coucou by Louis Raillé (github.com/Louis-CFM/coucou). Coucou's
  * character, Mochi, its look, expressions as a character, sounds and artwork are not used: its asset licence reserves
  * them. Brenda's shape, palette and expression set are Boredroom's.
+ *
+ * Her reactions (owner request, 7 October 2026: "when typing, she'll look like she's looking at what you're typing;
+ * when you're sending a voice note she'll look like she's listening"): `lookAt()` gives her somewhere to look instead of
+ * the pointer (the caret in her box), followed more keenly; `readAlong()` plays the small things a reader does (a flick
+ * of the eyes as each character arrives, a nod or a blink every few words, a surprised blink at a paste); `voice`, while
+ * she listens, is the level she hears, which widens her eyes, tilts her head a little further and lifts her light (a
+ * gentle pulse when there is no level). `attention`, at the end of this file, is where the page tells every face and
+ * character of hers what is being typed to her. `settle()` takes a pose at once, for the still frames of reduced motion.
  */
 
 export type BrendaState =
   | "idle" | "listening" | "thinking" | "working" | "happy" | "alert" | "question"
   | "error" | "sleeping" | "dizzy" | "love" | "proud";
-export type BrendaEmote = "love" | "wink" | "proud" | "surprised" | "yawn" | "happy" | "annoyed" | "celebrate";
+export type BrendaEmote = "love" | "wink" | "proud" | "surprised" | "yawn" | "happy" | "pleased" | "annoyed" | "celebrate";
+/** What happened in the box she is reading: a character arrived, a few words went by, a lot arrived at once. */
+export type ReadCue = "key" | "beat" | "paste";
 type EyeShape = "pill" | "wide" | "happy" | "closed" | "flat" | "line" | "spiral" | "heart" | "star" | "wink" | "tired" | "dot";
 type RGB = [number, number, number];
 
@@ -31,7 +41,7 @@ type StateCfg = {
 
 export const STATES: Record<BrendaState, StateCfg> = {
   idle:      { eye: "pill",   glow: "#8f8cff", tint: 0,    breathes: true },
-  listening: { eye: "wide",   glow: "#ff6c02", tint: 0.18, breathes: true },
+  listening: { eye: "wide",   glow: "#ff6c02", tint: 0.18, breathes: true, tilt: 0.1 },
   thinking:  { eye: "pill",   glow: "#7c5cff", tint: 0.22, look: [0.55, -0.45] },
   working:   { eye: "pill",   glow: "#6fa8ff", tint: 0.18, scans: true },
   happy:     { eye: "happy",  glow: "#34e0a1", tint: 0.2,  breathes: true, sparkles: true },
@@ -91,8 +101,15 @@ export class BrendaEngine {
   private yaw = 0; private pitch = 0; private roll = 0; private tilt = 0;
   private sx = 1; private sy = 1; private ox = 0; private oy = 0; private open = 1;
   private eyeScale = 1; private eyeScaleTarget = 1;
-  // Where she looks (-1 to 1), set from the pointer
+  // Where she looks (-1 to 1, positive is right and down), set from the pointer
   lookX = 0; lookY = 0;
+  /** Somewhere to look instead of the pointer (the caret she reads along), in the same units; see lookAt(). */
+  private focus: { x: number; y: number } | null = null;
+  /** While she listens: how loud the voice is, 0 to 1, or null for a gentle pulse. Set by the caller each frame. */
+  voice: number | null = null;
+  /** The voice as she reacts to it: quick to rise, slow to fall. */
+  private heard = 0;
+  private beats = 0;
   private glow: RGB = hex(STATES.idle.glow);
   private glowTarget: RGB = hex(STATES.idle.glow);
   private tint = 0;
@@ -128,6 +145,8 @@ export class BrendaEngine {
       case "surprised": hold("dot", 0.9); this.eyeScale = 1.35; this.hop(); break;
       case "yawn": hold("tired", 1.4); this.tween("sy", [[1.14, 500, E.inOut], [1, 500, E.inOut]]); this.emit("z", 1); break;
       case "happy": hold("happy", 1.4); this.hop(); this.emit("spark", 5); break;
+      // A reply: smiling eyes and a small lift, quieter than happy (no hop, no sparks).
+      case "pleased": hold("happy", 1.3); this.tween("oy", [[-0.06, 160, E.out], [0, 320, E.inOut]]); break;
       case "annoyed": hold("line", 0.9); this.squash(); this.glowFlash("#a855f7"); break;
       case "celebrate": hold("happy", 1.6); this.spin(950, 1); this.emit("spark", 12); this.emit("star", 3); break;
     }
@@ -145,6 +164,49 @@ export class BrendaEngine {
   }
   shake() { this.tween("ox", [[-0.12, 50, E.out], [0.12, 80, E.inOut], [-0.09, 70, E.inOut], [0.06, 70, E.inOut], [0, 110, E.out]]); }
   spin(ms: number, turns: number) { this.roll = 0; this.tween("roll", [[Math.PI * 2 * turns, ms, E.inOut]], () => { this.roll = 0; }); }
+  /** A small reader's nod: a dip of the head and the eyes. */
+  nod() { this.tween("oy", [[0.045, 120, E.out], [0, 260, E.inOut]]); this.pitch -= 0.05; }
+
+  /**
+   * Somewhere to look instead of the pointer, in the pointer's units (-1 to 1, positive is right and down): the caret
+   * while someone types to her. She follows it more keenly than the pointer. null gives her eyes back to the pointer.
+   */
+  lookAt(x: number | null, y = 0) {
+    const c = (v: number) => Math.max(-1, Math.min(1, v));
+    this.focus = x === null ? null : { x: c(x), y: c(y) };
+  }
+
+  /**
+   * Reading along as someone types to her: a small flick of the eyes as a character arrives (`key`), a nod or a blink
+   * every few words, in turn (`beat`), and a quick surprised blink, eyes popping wide, when a lot arrives at once (`paste`).
+   */
+  readAlong(cue: ReadCue) {
+    if (cue === "key") { this.yaw += (Math.random() < 0.5 ? -1 : 1) * 0.045; this.pitch += (Math.random() - 0.5) * 0.04; }
+    else if (cue === "beat") { if (this.beats++ % 2) this.blink(); else this.nod(); }
+    else { this.eyeScale = 1.28; this.blink(); setTimeout(() => this.blink(), 240); }
+  }
+
+  /** Takes the pose her state and gaze ask for at once, with nothing in motion: the still frames of reduced motion. */
+  settle() {
+    this.tweens.clear(); this.onDone.clear(); this.particles = []; this.override = null;
+    this.open = 1; this.roll = 0; this.ox = 0; this.oy = 0; this.sx = 1; this.sy = 1; this.heard = 0;
+    [this.yaw, this.pitch] = this.aim(0);
+    this.tilt = this.cfg.tilt ?? 0;
+    this.eyeScale = this.eyeScaleTarget;
+    this.glow = this.glowTarget; this.tint = this.cfg.tint;
+  }
+
+  /** Where her eyes are headed: the caret or the pointer, unless her state has its own look. */
+  private aim(t: number): [yaw: number, pitch: number] {
+    const f = this.focus;
+    // Down on the page is a positive look; on her face, looking down is a negative pitch.
+    let ty = (f ? f.x : this.lookX) * 0.6, tp = -(f ? f.y : this.lookY) * 0.45;
+    if (this.cfg.look) { ty = ty * 0.3 + this.cfg.look[0] * 0.6; tp = tp * 0.3 + this.cfg.look[1] * 0.5; }
+    if (this.cfg.scans) { ty = Math.sin(t * 2.4) * 0.6; tp = -0.05; }
+    if (this.state === "sleeping") { ty = 0; tp = -0.12; }
+    if (this.state === "dizzy") ty = Math.sin(t * 9) * 0.25;
+    return [ty, tp];
+  }
   private glowFlash(h: string) { const back = this.glowTarget; this.glow = hex(h); this.glowTarget = hex(h); setTimeout(() => { this.glowTarget = back; }, 900); }
 
   private onDone = new Map<Prop, () => void>();
@@ -177,22 +239,25 @@ export class BrendaEngine {
       if (t >= 1) { tw.from = k[0]; tw.i++; tw.start = ms; if (tw.i >= tw.keys.length) { this.tweens.delete(p); this.onDone.get(p)?.(); this.onDone.delete(p); } }
     }
     const n = nowS(), t = n - this.t0;
-    let ty = this.lookX * 0.6, tp = this.lookY * 0.45;
-    if (this.cfg.look) { ty = ty * 0.3 + this.cfg.look[0] * 0.6; tp = tp * 0.3 + this.cfg.look[1] * 0.5; }
-    if (this.cfg.scans) { ty = Math.sin(t * 2.4) * 0.6; tp = -0.05; }
-    if (this.state === "sleeping") { ty = 0; tp = -0.12; }
-    if (this.state === "dizzy") ty = Math.sin(t * 9) * 0.25;
+    const [ty, tp] = this.aim(t);
     const k = (base: number) => 1 - Math.pow(base, dt);
-    this.yaw += (ty - this.yaw) * k(0.0025);
-    this.pitch += (tp - this.pitch) * k(0.0025);
-    if (!this.tweens.has("tilt")) this.tilt += ((this.cfg.tilt ?? 0) + (this.state === "dizzy" ? Math.sin(t * 7) * 0.12 : 0) - this.tilt) * k(0.001);
+    // Reading along, her eyes keep up with the caret: more keenly than they follow the pointer.
+    const follow = k(this.focus ? 0.0002 : 0.0025);
+    this.yaw += (ty - this.yaw) * follow;
+    this.pitch += (tp - this.pitch) * follow;
+    // Listening: the voice (a gentle pulse without a level) widens her eyes, tilts her head a little further, stretches
+    // her breath and lifts her light. Quick to rise with the voice, slower to fall back.
+    const live = this.state === "listening";
+    const lv = live ? Math.max(0, Math.min(1, this.voice ?? 0.2 + Math.sin(t * 2.4) * 0.15)) : 0;
+    this.heard += (lv - this.heard) * k(lv > this.heard ? 1e-7 : 0.02);
+    if (!this.tweens.has("tilt")) this.tilt += ((this.cfg.tilt ?? 0) + this.heard * 0.05 + (this.state === "dizzy" ? Math.sin(t * 7) * 0.12 : 0) - this.tilt) * k(0.001);
     if (!this.tweens.has("oy")) this.oy += ((this.cfg.bounces ? -Math.abs(Math.sin(t * 5.2)) * 0.07 : 0) - this.oy) * k(0.0008);
     if (!this.tweens.has("sy") && !this.tweens.has("sx")) {
       const amp = this.cfg.breathes ? 0.03 : 0;
-      this.sy += (1 + Math.sin(t * 1.8) * amp - this.sy) * k(0.001);
-      this.sx += (1 - Math.sin(t * 1.8) * amp * 0.55 - this.sx) * k(0.001);
+      this.sy += (1 + Math.sin(t * 1.8) * amp + this.heard * 0.045 - this.sy) * k(0.001);
+      this.sx += (1 - Math.sin(t * 1.8) * amp * 0.55 - this.heard * 0.02 - this.sx) * k(0.001);
     }
-    this.eyeScale += (this.eyeScaleTarget - this.eyeScale) * k(0.002);
+    this.eyeScale += (this.eyeScaleTarget + this.heard * 0.16 - this.eyeScale) * k(live ? 0.00002 : 0.002);
     this.glow = mix(this.glow, this.glowTarget, k(0.003));
     this.tint += (this.cfg.tint - this.tint) * k(0.003);
     if (n > this.nextBlink) {
@@ -218,7 +283,7 @@ export class BrendaEngine {
 
     // The mood light beneath her.
     const g = x.createRadialGradient(cx, cy + fh * 0.42, R * 0.1, cx, cy + fh * 0.42, R * 1.35);
-    g.addColorStop(0, rgba(this.glow, 0.42)); g.addColorStop(1, rgba(this.glow, 0));
+    g.addColorStop(0, rgba(this.glow, 0.42 + this.heard * 0.28)); g.addColorStop(1, rgba(this.glow, 0));
     x.fillStyle = g; x.fillRect(0, 0, W, H);
 
     x.save();
@@ -228,7 +293,7 @@ export class BrendaEngine {
 
     const face = new Path2D(); roundRect(face, -fw / 2, -fh / 2, fw, fh, fr);
     // Soft glow around the rim.
-    x.save(); x.shadowColor = rgba(this.glow, 0.55); x.shadowBlur = R * 0.35; x.fillStyle = "#fff"; x.fill(face); x.restore();
+    x.save(); x.shadowColor = rgba(this.glow, 0.55 + this.heard * 0.25); x.shadowBlur = R * (0.35 + this.heard * 0.2); x.fillStyle = "#fff"; x.fill(face); x.restore();
     // Face: warm white, a mood tint rising from the bottom, shade at the edges, a highlight up and to the right.
     const fg = x.createLinearGradient(fw * 0.4, -fh * 0.6, -fw * 0.4, fh * 0.6);
     fg.addColorStop(0, rgba(FACE_TOP)); fg.addColorStop(1, rgba(FACE_BOTTOM));
@@ -312,3 +377,48 @@ export class BrendaEngine {
     }
   }
 }
+
+// ---- What is being typed to her, page-wide ------------------------------------------------------------------------
+
+type Point = { x: number; y: number };
+type AttentionListener = (cue: ReadCue | null) => void;
+
+/** How long she keeps looking at the box after the last key, and after it loses the focus. */
+export const READ_HOLD_MS = 1500;
+export const READ_BLUR_HOLD_MS = 600;
+
+let gazeAt: Point | null = null;
+let holdTimer: ReturnType<typeof setTimeout> | null = null;
+const attentionListeners = new Set<AttentionListener>();
+const tell = (cue: ReadCue | null) => { for (const l of [...attentionListeners]) l(cue); };
+
+/**
+ * Where her attention is, for every face and character of hers on the page at once (she is one person): her box
+ * (BrendaComposer) tells it where the caret is as someone types, and they look there, more keenly than they follow the
+ * pointer, with the cue's small reaction. She keeps looking a moment after the last key (READ_HOLD_MS), then her eyes go
+ * back to the pointer. Listeners hear the cue, or null when only the caret moved or she stopped reading (`gaze` null).
+ */
+export const attention = {
+  /** The caret she is reading at, in viewport coordinates, or null when nobody is typing to her. */
+  get gaze(): Point | null { return gazeAt; },
+  /** Someone typed (or moved the caret): she looks at `at` and keeps looking for a moment after. */
+  read(at: Point, cue: ReadCue | null = null) {
+    gazeAt = at;
+    if (holdTimer) clearTimeout(holdTimer);
+    holdTimer = setTimeout(() => attention.release(), READ_HOLD_MS);
+    tell(cue);
+  },
+  /** She stops reading: now (a message sent), or after `afterMs` (the box lost the focus). */
+  release(afterMs = 0) {
+    if (holdTimer) clearTimeout(holdTimer);
+    holdTimer = null;
+    if (!gazeAt) return;
+    if (afterMs > 0) { holdTimer = setTimeout(() => attention.release(), afterMs); return; }
+    gazeAt = null;
+    tell(null);
+  },
+  subscribe(fn: AttentionListener): () => void {
+    attentionListeners.add(fn);
+    return () => { attentionListeners.delete(fn); };
+  },
+};

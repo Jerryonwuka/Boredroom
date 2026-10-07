@@ -7,8 +7,12 @@
  *
  * The open microphone is handed out as `stream`, so the voice card measures its level from it instead of opening a
  * second one. At the ten-minute limit the recording is handed to `onLimit` (the composer sends it); without one it stops.
+ *
+ * One microphone per recording (7 October 2026, with the live waveform): whatever records here (this hook and
+ * dictation, `use-dictation.ts`) also shares its open stream through `shareMicrophone`, and `useSharedMicrophone` hands
+ * it to the waveform and the level meters, so they never open a second microphone for a caller that did not pass one.
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 const TYPES = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg;codecs=opus", "audio/ogg"];
 export const MAX_SECONDS = 600;
@@ -54,6 +58,32 @@ export async function diagnoseMicError(err: unknown): Promise<string> {
   return describeMicError(err);
 }
 
+// ---- the open microphone, shared --------------------------------------------------------------------------------
+
+const openMics: MediaStream[] = [];
+const micListeners = new Set<() => void>();
+const micChanged = () => micListeners.forEach((l) => l());
+const subscribeMic = (l: () => void) => { micListeners.add(l); return () => { micListeners.delete(l); }; };
+const newestMic = () => openMics[openMics.length - 1] ?? null;
+
+/** Says a recording holds this microphone open; returns how to take it back (once it is stopped or handed on). */
+export function shareMicrophone(stream: MediaStream): () => void {
+  openMics.push(stream);
+  micChanged();
+  let shared = true;
+  return () => {
+    if (!shared) return;
+    shared = false;
+    const at = openMics.lastIndexOf(stream);
+    if (at >= 0) { openMics.splice(at, 1); micChanged(); }
+  };
+}
+
+/** The microphone a recording on this page holds open right now (the newest), or null: measure it, never stop it. */
+export function useSharedMicrophone(): MediaStream | null {
+  return useSyncExternalStore(subscribeMic, newestMic, () => null);
+}
+
 export function useVoiceRecorder({ onLimit }: { /** Called once when the recording reaches MAX_SECONDS. */ onLimit?: () => void } = {}) {
   const [recording, setRecording] = useState(false);
   const [live, setLive] = useState<MediaStream | null>(null);
@@ -67,8 +97,11 @@ export function useVoiceRecorder({ onLimit }: { /** Called once when the recordi
   const limitListener = useRef(onLimit);
   useEffect(() => { limitListener.current = onLimit; });
 
+  const unshare = useRef<(() => void) | null>(null);
+
   const release = () => {
     if (timer.current) clearInterval(timer.current); timer.current = null;
+    unshare.current?.(); unshare.current = null;
     stream.current?.getTracks().forEach((t) => t.stop()); stream.current = null;
     rec.current = null;
     setRecording(false); setLive(null);
@@ -84,6 +117,7 @@ export function useVoiceRecorder({ onLimit }: { /** Called once when the recordi
     try {
       const s = await navigator.mediaDevices.getUserMedia({ audio: true });
       stream.current = s;
+      unshare.current?.(); unshare.current = shareMicrophone(s);
       const mimeType = TYPES.find((t) => MediaRecorder.isTypeSupported(t));
       const r = new MediaRecorder(s, mimeType ? { mimeType } : undefined);
       chunks.current = [];
