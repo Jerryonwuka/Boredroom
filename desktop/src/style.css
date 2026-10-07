@@ -65,8 +65,8 @@
      inner highlights, which would draw along the top edge). */
   --elev-island: 0 0 0 .5px rgb(0 0 0 / .44), 0 2px 6px -2px rgb(0 0 0 / .13), 0 18px 40px -10px rgb(0 0 0 / .35);
   --radius-chip: 6px; --radius-btn-xs: 8px; --radius-control: 10px; --radius-card-sm: 12px;
-  /* Brenda's face, the same as `.brenda-face` on the web: white, monochrome. */
-  --face: #fff; --ink: #111;
+  /* Brenda's face, the same as `.brenda-face` on the web: a white sphere, a black visor, white eyes. */
+  --face: #fff; --ink: #fff; --visor: #0b0b0e;
   /* Each teammate's own colour, for their small face (they are told apart by it, as by an avatar). */
   --mate-0: #f472b6; --mate-1: #34d399; --mate-2: #fb923c; --mate-3: #60a5fa; --mate-4: #e879f9; --mate-5: #facc15; --mate-6: #2dd4bf; --mate-7: #a78bfa;
   --font-sans: "Inter Variable", "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -118,37 +118,42 @@ svg.ic { width: 14px; height: 14px; flex: none; }
 .row.top > .face { margin-top: 2px; }
 .grow { flex: 1; min-width: 0; }
 
-/* Brenda's face: the web's `.brenda-face` (src/app/globals.css), white and flat, the same moods and reactions. Her glow
-   follows what is happening (accent, ok, warn, bad); a running timer (blue) and thinking (violet) draw none. */
-.face { --lx: 0; --ly: 0; --glow: transparent; width: 32px; height: 24px; flex: none; border-radius: 30%; background: var(--face); display: grid; place-content: center; position: relative;
+/* Brenda's face: the web's `.brenda-face` (src/app/globals.css), the same moods and reactions. Her look (owner design,
+   7 October 2026): a white sphere, a black visor with a soft dip in its top, white pill eyes behind it; the visor and eyes
+   follow the pointer together. Her glow follows what is happening (accent, ok, warn, bad); a running timer (blue) and
+   thinking (violet) draw none. Teammates' small faces (`.mini`, below) keep their own flat shape. */
+.face { --lx: 0; --ly: 0; --glow: transparent; width: 28px; height: 28px; flex: none; border-radius: 50%; background: radial-gradient(circle at 32% 26%, #fff 0 30%, #ececf0 72%, #c9cad1 100%); display: block; position: relative;
   box-shadow: 0 0 0 1px var(--border), 0 0 12px -2px var(--glow);
   transition: transform .25s var(--spring), box-shadow .4s var(--ease); animation: face-breathe 3.6s ease-in-out infinite; }
 .face[data-tone="accent"] { --glow: var(--accent); }
 .face[data-tone="ok"] { --glow: var(--success); }
 .face[data-tone="warn"] { --glow: var(--warning); }
 .face[data-tone="bad"] { --glow: var(--danger); }
-.face .eyes { display: grid; grid-auto-flow: column; gap: 6px; transform: translate(calc(var(--lx) * 3px), calc(var(--ly) * 2.2px)); }
-.face .eyes span { width: 4px; height: 6px; border-radius: 2px; background: var(--ink); transition: transform 70ms ease, height .2s var(--ease), border-radius .2s var(--ease); }
-.face.small { width: 26px; height: 18px; }
-.face.small .eyes { gap: 4px; transform: translate(calc(var(--lx) * 2px), calc(var(--ly) * 1.5px)); }
-.face.small .eyes span { width: 3px; height: 4px; }
+.face .eyes { position: absolute; left: 10%; width: 80%; top: 16%; height: 37%; display: flex; align-items: center; justify-content: center; gap: 7px;
+  background: var(--visor); border-radius: 46% 46% 50% 50% / 46% 46% 62% 62%;
+  -webkit-mask: radial-gradient(ellipse 17% 16% at 50% 0, #0000 94%, #000); mask: radial-gradient(ellipse 17% 16% at 50% 0, #0000 94%, #000); /* the soft dip between the eyes */ transform: translate(calc(var(--lx) * 2.5px), calc(var(--ly) * 1.8px)); }
+
+.face .eyes span { width: 2.6px; height: 5px; border-radius: 2px; background: var(--ink); box-shadow: 0 0 2px rgb(255 255 255 / .6); transition: transform 70ms ease, height .2s var(--ease), border-radius .2s var(--ease); }
+.face.small { width: 22px; height: 22px; }
+.face.small .eyes { gap: 5.5px; transform: translate(calc(var(--lx) * 2px), calc(var(--ly) * 1.5px)); }
+.face.small .eyes span { width: 2px; height: 3.8px; }
 .face.blink .eyes span { transform: scaleY(.12); }
 /* Moods */
 .face.happy .eyes span { height: 3px; width: 6px; background: transparent; border: 2px solid var(--ink); border-bottom: 0; border-radius: 6px 6px 0 0; }
 .face.small.happy .eyes span { width: 4px; height: 2px; border-width: 1.5px; }
 .face.sad .eyes span { height: 2px; border-radius: 1px; }
 .face.alert { animation: hop .6s var(--spring) 1, face-breathe 3.6s ease-in-out .6s infinite; }
-.face.alert .eyes span { height: 7px; }
+.face.alert .eyes span { height: 6px; }
 /* Listening (owner decision, 7 October 2026: "when you're sending a voice note she'll do like she's listening"): her eyes
    widen and swell with the voice, and her glow with them; main.js sets --lvl (0 to 1) from the microphone level. */
 .face.listen { --lvl: 0; box-shadow: 0 0 0 1px var(--border), 0 0 calc(10px + var(--lvl) * 14px) calc(-2px + var(--lvl) * 3px) var(--glow); transition: transform .25s var(--spring), box-shadow 90ms linear; }
-.face.listen .eyes span { height: 7px; width: 5px; border-radius: 3px; scale: 1 calc(1 + var(--lvl) * .45);
+.face.listen .eyes span { height: 6px; width: 3.4px; border-radius: 2px; scale: 1 calc(1 + var(--lvl) * .45);
   transition: transform 70ms ease, scale 90ms linear, height .2s var(--ease), border-radius .2s var(--ease); }
 /* An answer pleases her: happy eyes (the mood above) and one small hop as it arrives. */
 .face.pleased { animation: hop .6s var(--spring) 1, face-breathe 3.6s ease-in-out .6s infinite; }
-.face.think .eyes { transform: translate(2.5px, -2px); }
+.face.think .eyes { transform: translate(1.5px, -1.2px); }
 .face.think .eyes span { animation: scan 1.8s ease-in-out infinite; }
-.face.gulp .eyes span { width: 5px; height: 6px; border-radius: 50%; }
+.face.gulp .eyes span { width: 4px; height: 4.5px; border-radius: 50%; }
 @keyframes face-breathe { 0%, 100% { scale: 1; } 50% { scale: 1.035; } }
 @keyframes hop { 0% { translate: 0 0; } 35% { translate: 0 -4px; } 70% { translate: 0 1px; } 100% { translate: 0 0; } }
 @keyframes scan { 0%, 100% { translate: 0 0; } 50% { translate: -2px 0; } }
@@ -353,9 +358,10 @@ kbd { display: inline-flex; align-items: center; justify-content: center; box-si
 
 /* Teammates' small faces (team leads and organisation accounts), flat in each person's colour, with a dot for their
    timer: orange running (live, accent rules), amber paused, red interrupted. The dot stays still at this size. */
-.face.mini { width: 16px; height: 12px; background: color-mix(in srgb, var(--c) 72%, var(--face)); animation: none; box-shadow: none !important; }
-.face.mini .eyes { gap: 3px; transform: translate(calc(var(--lx) * 1px), calc(var(--ly) * .8px)); }
-.face.mini .eyes span { width: 2px; height: 3px; border-radius: 1px; }
+.face.mini { width: 16px; height: 12px; border-radius: 30%; background: color-mix(in srgb, var(--c) 72%, #fff); display: grid; place-content: center; animation: none; box-shadow: none !important; }
+.face.mini .eyes { position: static; width: auto; height: auto; background: none; border-radius: 0; gap: 3px; transform: translate(calc(var(--lx) * 1px), calc(var(--ly) * .8px)); }
+.face.mini .eyes { -webkit-mask: none; mask: none; }
+.face.mini .eyes span { width: 2px; height: 3px; border-radius: 1px; background: #111; box-shadow: none; }
 .face.mini .st { position: absolute; top: -3px; right: -3px; width: 6px; height: 6px; border-radius: 50%; border: 1.5px solid var(--island); background: var(--accent); }
 .face.mini .st.paused { background: var(--warning); }
 .face.mini .st.interrupted { background: var(--danger); }
