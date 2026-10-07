@@ -728,6 +728,15 @@ html[data-brenda-chat] #workspace-sidebar, html:has([data-brenda-chat-view]) #wo
   box-shadow: inset 0 0 0 1px var(--accent), inset 0 0 32px var(--brenda-box-glow), 0 0 0 4px var(--brenda-box-glow), var(--elev-natural-xs); }
 /* Docked under her chat: solid, so the conversation never shows through (the Brenda contract). */
 .prompt-hero-sm { border-radius: 14px; background: var(--surface); }
+/* The pills along the top of her panel (owner request, 7 October 2026: "blur effect so it looks softer on the
+   gradient"): frosted glass, a see-through tint and a soft blur, so the orange glow reads through them. Part of the
+   home-panel exception; nowhere else. */
+.brenda-glass-pill { background: color-mix(in srgb, var(--background) 32%, transparent); border: 1px solid rgb(255 255 255 / 0.1);
+  backdrop-filter: blur(14px) saturate(140%); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.06);
+  transition: background-color 75ms var(--ease-out), border-color 75ms var(--ease-out); }
+.brenda-glass-pill:is(a, button):hover { background: color-mix(in srgb, var(--background) 22%, transparent); border-color: rgb(255 255 255 / 0.18); }
+:root[data-theme="light"] .brenda-glass-pill { background: rgb(255 255 255 / 0.5); border-color: rgb(0 0 0 / 0.08); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.7); }
+:root[data-theme="light"] .brenda-glass-pill:is(a, button):hover { background: rgb(255 255 255 / 0.72); border-color: rgb(0 0 0 / 0.14); }
 }
 /* Her canvas takes the keyboard (a poke). Its mask would hide a ring drawn on the canvas, and an orange ring would vanish
    into the orange orb (about 1.7:1), so the orb itself carries the ring, round, in the foreground: white on the dark

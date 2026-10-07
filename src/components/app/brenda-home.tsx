@@ -265,7 +265,8 @@ export function BrendaHome({ data }: { data: HomeData }) {
   const engine = !data.aiEnabled ? { full: "Not in your plan" } : data.assistantConfigured ? { full: "Connected to Claude", short: "Claude" } : { full: "Built-in helper" };
   const dot: StatusTone = !data.aiEnabled ? "neutral" : listening ? "live" : data.assistantConfigured ? "success" : "neutral";
   // The small pills in the panel's top row: 32px, round, hairline, the label then its icon; icon only on phones.
-  const pill = cn(buttonVariants({ variant: "secondary", size: "sm" }), "rounded-full px-3 [&_svg]:text-secondary hover:[&_svg]:text-foreground");
+  // Frosted glass over her panel's glow (owner request, 7 October 2026), not the solid outline button.
+  const pill = "brenda-glass-pill inline-flex h-8 items-center justify-center gap-1.5 whitespace-nowrap rounded-full px-3 text-meta font-medium text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ring)] [&_svg]:size-4 [&_svg]:shrink-0 [&_svg]:text-secondary hover:[&_svg]:text-foreground";
   const iconOnPhones = "max-sm:w-8 max-sm:px-0 max-sm:pointer-coarse:w-10";
 
   return (
@@ -275,7 +276,7 @@ export function BrendaHome({ data }: { data: HomeData }) {
       {/* Her panel fills the screen under the top bar (20px from it and from the bottom, as from the sides). */}
       <section aria-labelledby="home-ask" className="brenda-panel -mt-1 flex min-h-[calc(100dvh-var(--header-height)-var(--shell-banners,0px)-40px)] flex-col p-3 sm:p-4 lg:p-5">
         <div className="flex flex-wrap items-center gap-2">
-          <p className="inline-flex h-8 min-w-0 max-w-full items-center gap-2 rounded-full border border-border-input bg-background px-3 text-meta font-medium text-foreground">
+          <p className="brenda-glass-pill inline-flex h-8 min-w-0 max-w-full items-center gap-2 rounded-full px-3 text-meta font-medium text-foreground">
             <StatusDot tone={dot} size={6} />
             <span>Brenda</span>
             <span aria-hidden className="h-3.5 w-px shrink-0 bg-border-input" />
