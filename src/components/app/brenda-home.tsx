@@ -37,6 +37,10 @@
  * "More asks", the chat's header, its notes and its aria-labels use the name they chose (`useAssistant`), and her drawn
  * character and faces take their look from the same profile. The plan gate and the "Brenda settings" pill stay product
  * text.
+ *
+ * Her voice (owner decision, 7 October 2026: phase 2): the chat reads replies aloud as the person chose, with Listen on
+ * each reply (brenda-chat). Back to her home screen and New chat stop her; leaving the page does too (the chat goes
+ * away). While she speaks her drawn character and every face of hers talk (brenda-character, brenda-face).
  */
 import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
@@ -162,12 +166,13 @@ export function BrendaHome({ data }: { data: HomeData }) {
   const { name } = useAssistant().personal;
   const lead = role !== "employee";
   const [history, setHistory] = useState(data.history);
-  // Each save moves the conversation to the top of Past chats (or adds it there).
-  const chat = useBrendaChat({ orgSlug: data.orgSlug, initialText: data.ask, initial: data.chat, onSaved: (c) => setHistory((cur) => [c, ...cur.filter((x) => x.id !== c.id)]) });
-  const character = useRef<BrendaCharacterHandle>(null);
-  const box = useRef<HTMLDivElement>(null);
   const openOnList = data.aiEnabled && (data.pastChats || data.chatMissing);
   const [view, setView] = useState<"start" | "chat">(data.aiEnabled && (data.chat || openOnList) ? "chat" : "start");
+  // Each save moves the conversation to the top of Past chats (or adds it there). A reply that lands while her home
+  // screen is up (Back pressed while it was on its way) is not read aloud, as in the closed drawer (review, 7 October 2026).
+  const chat = useBrendaChat({ orgSlug: data.orgSlug, initialText: data.ask, initial: data.chat, visible: view === "chat", onSaved: (c) => setHistory((cur) => [c, ...cur.filter((x) => x.id !== c.id)]) });
+  const character = useRef<BrendaCharacterHandle>(null);
+  const box = useRef<HTMLDivElement>(null);
   // The chat may stay open with no conversation in it: opened on its past chats, after New chat, or after deleting the
   // open one. Otherwise an empty chat (a dictation still being written out before the first send) shows her home screen.
   const [blank, setBlank] = useState(openOnList);
@@ -186,6 +191,7 @@ export function BrendaHome({ data }: { data: HomeData }) {
   // Back lands the focus on the way back in: "Back to our conversation", else (the chat was empty) the Past chats
   // button, else the box. Not on the page itself.
   const back = () => {
+    chat.quiet();
     setView("start"); setBlank(false); setSheet(false);
     requestAnimationFrame(() => { const to = resumeButton.current ?? pastChatsButton.current; if (to) to.focus(); else focusBoxIn(box.current); });
   };

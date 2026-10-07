@@ -18,6 +18,9 @@
  *   the label on the left and the control on the right, as direct children of a settings card. The rows go side by side
  *   by the card's own width (the card is an `@container`, 42rem and up), not the window's: beside the sidebar and the
  *   settings menu a 960px window leaves the visor and eye cards too narrow for their words (review, 7 October 2026).
+ * - Her voice (owner decision, 7 October 2026: phase 2): the preview is her, so it talks while she speaks (the Voice
+ *   sample in Settings, or a reply read aloud); the small faces on the visor and eye cards are options, not her, and stay
+ *   still (`quiet`). `quiet` on the preview keeps someone else's assistant still (the workspace's, in Settings).
  */
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { BrendaCharacter, type BrendaCharacterHandle } from "@/components/app/brenda-character";
@@ -68,9 +71,10 @@ export function keepErrors(errors: AssistantFieldErrors, prev: AssistantProfile,
  * The live preview: the character (not interactive, idle) with the name under it and the faces at 18, 26 and 34px beside
  * it, all drawn as `profile` (an AssistantScope, so anything inside names and draws this assistant). While the name field
  * is empty it shows Brenda's name; while it holds a name that would be refused, the last name that would not (Brenda
- * until there is one), so the preview never shows a name that cannot be saved (review, 7 October 2026).
+ * until there is one), so the preview never shows a name that cannot be saved (review, 7 October 2026). `quiet`: it never
+ * talks while the person's own assistant speaks (a preview of another assistant).
  */
-export function AssistantPreview({ profile, size = 72, className }: { profile: AssistantProfile; size?: number; className?: string }) {
+export function AssistantPreview({ profile, size = 72, className, quiet = false }: { profile: AssistantProfile; size?: number; className?: string; quiet?: boolean }) {
   const character = useRef<BrendaCharacterHandle>(null);
   const typed = normaliseAssistantName(profile.name);
   const valid = typed && !assistantNameProblem(typed) ? typed : null;
@@ -91,13 +95,13 @@ export function AssistantPreview({ profile, size = 72, className }: { profile: A
     <AssistantScope profile={shown}>
       <div className={cn("flex min-w-0 items-center gap-3", className)}>
         <div className="flex min-w-0 max-w-56 flex-col items-center">
-          <BrendaCharacter ref={character} size={size} look={look} label={`${name}, preview`} state="idle" />
+          <BrendaCharacter ref={character} size={size} look={look} label={`${name}, preview`} state="idle" quiet={quiet} />
           <p className="type-dialog-title -mt-1 max-w-full truncate text-center text-foreground">{name}</p>
         </div>
         <div aria-hidden className="flex shrink-0 items-end gap-3 pb-7">
-          <BrendaFace size="sm" look={look} />
-          <BrendaFace size="md" look={look} />
-          <BrendaFace size="lg" look={look} />
+          <BrendaFace size="sm" look={look} quiet={quiet} />
+          <BrendaFace size="md" look={look} quiet={quiet} />
+          <BrendaFace size="lg" look={look} quiet={quiet} />
         </div>
       </div>
     </AssistantScope>
@@ -184,7 +188,7 @@ export function AssistantEditor({ value, onChange, idPrefix, disabled = false, e
             on ? "border-accent bg-fill-1 text-foreground" : "border-border bg-background text-secondary hover:bg-fill-0 hover:text-foreground",
             disabled ? "cursor-not-allowed opacity-50" : "cursor-pointer")}>
             <input type="radio" name={`${idPrefix}-${field}`} value={k} checked={on} disabled={disabled} onChange={() => pick(k)} className={cn(HIDDEN_RADIO, "rounded-xl")} />
-            <BrendaFace size="md" look={faceLook(k)} className="pointer-events-none" />
+            <BrendaFace size="md" look={faceLook(k)} quiet className="pointer-events-none" />
             <span className="pointer-events-none max-w-full">{labels[k].label}</span>
           </label>
         );

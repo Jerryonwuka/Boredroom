@@ -9,17 +9,23 @@
  * The workspace pages read both through `assistantProfiles(ctx)`, once per request (the shell and the page share it).
  * Services that already hold a transaction (the clock-in notice, the reports, the desktop state) use the `read…`
  * functions with their own `db`.
+ *
+ * Her voice (owner decision, 7 October 2026: phase 2): migration 0036 adds `assistant_profiles.speak`, when the person's
+ * own assistant reads replies aloud ('voice', the default: replies to what they dictated or said to her; 'always';
+ * 'never'). It travels with the profiles (`speak` beside `personal`), is saved on its own by `saveMySpeak` (Settings →
+ * Your assistant → Voice) and reaches the notch through the desktop state. Until 0036 is applied everyone reads 'voice'
+ * and a save is refused with a plain 503, never a broken transaction.
  */
 import { cache } from "react"; // React 19 exports cache in Node too (a pass-through outside a render), so the worker can import this file
 import { z } from "zod";
 import { withUser, type Db } from "@/server/db";
 import type { OrgContext } from "@/server/lib/api";
-import { forbidden } from "@/server/lib/errors";
+import { AppError, forbidden } from "@/server/lib/errors";
 import { logAction } from "@/server/services/brenda";
 import {
-  ASSISTANT_COLOURS, ASSISTANT_EYES, ASSISTANT_VISORS, DEFAULT_ASSISTANT, DEFAULT_PROFILES, EYES, PALETTE, VISORS,
-  assistantNameProblem, normaliseAssistantName, toProfile,
-  type AssistantProfile, type AssistantProfiles,
+  ASSISTANT_COLOURS, ASSISTANT_EYES, ASSISTANT_SPEAK, ASSISTANT_VISORS, DEFAULT_ASSISTANT, DEFAULT_PROFILES, EYES, PALETTE, VISORS,
+  assistantNameProblem, normaliseAssistantName, toProfile, toSpeak,
+  type AssistantProfile, type AssistantProfiles, type AssistantSpeak,
 } from "@/lib/assistant-look";
 
 /** What Settings and "Meet your assistant" send. The name is normalised first, then checked by the shared rule. */
@@ -35,6 +41,10 @@ export const assistantProfileSchema = z.object({
 export type AssistantProfileInput = z.infer<typeof assistantProfileSchema>;
 /** The most a save's body may hold: four short fields need well under 1 KB, so anything larger is refused unread (413). */
 export const ASSISTANT_BODY_MAX = 4096;
+
+/** What Settings → Your assistant → Voice sends: when the person's own assistant speaks (owner decision, 7 October 2026: her voice). */
+export const assistantSpeakSchema = z.object({ speak: z.enum(ASSISTANT_SPEAK, { error: "Pick when your assistant speaks." }) });
+export type AssistantSpeakInput = z.infer<typeof assistantSpeakSchema>;
 
 const canEdit = (ctx: Pick<OrgContext, "membership">) => ctx.membership.role === "owner" || ctx.membership.role === "hr";
 
@@ -64,6 +74,27 @@ function warnOnce() {
   console.warn("[assistant] migration 0035 (personal assistants) is not applied yet: everyone sees Brenda until pnpm db:migrate runs.");
 }
 
+// ---- Before migration 0036 -------------------------------------------------------------------------------------------
+// Her voice (owner decision, 7 October 2026: phase 2) is one more column, checked the same way: until it exists the reads
+// say 'voice' for everyone and a save is refused (503) before it touches the table.
+
+let speakReady = false;
+let speakWarned = false;
+
+/** True once migrations 0035 and 0036 are applied (assistant_profiles.speak exists). */
+export async function assistantSpeakReady(db: Db): Promise<boolean> {
+  if (speakReady) return true;
+  if (!(await assistantSchemaReady(db))) return false;
+  const r = await db.one<{ ok: boolean }>(
+    `SELECT EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid = to_regclass('public.assistant_profiles') AND attname = 'speak' AND NOT attisdropped) AS ok`);
+  speakReady = r.ok;
+  if (!speakReady && !speakWarned) {
+    speakWarned = true;
+    console.warn("[assistant] migration 0036 (her voice) is not applied yet: everyone's assistant speaks only to what they say until pnpm db:migrate runs.");
+  }
+  return speakReady;
+}
+
 const isMissingSchema = (err: unknown) => {
   const code = (err as { code?: string } | null)?.code;
   return code === "42P01" || code === "42703";
@@ -88,15 +119,17 @@ export async function readWorkspaceAssistant(db: Db, orgId: string): Promise<Ass
 }
 
 type ProfilesRow = {
-  name: string | null; colour: string | null; visor: string | null; eyes: string | null; setup_done_at: string | null;
+  name: string | null; colour: string | null; visor: string | null; eyes: string | null; setup_done_at: string | null; speak: string | null;
   assistant_name: string | null; assistant_colour: string | null; assistant_visor: string | null; assistant_eyes: string | null;
 };
 
-/** Both assistants in one statement (a distant database: every round trip shows). */
+/** Both assistants, and when the person's own speaks, in one statement (a distant database: every round trip shows). */
 export async function readAssistantProfiles(db: Db, ctx: Pick<OrgContext, "org" | "membership">): Promise<AssistantProfiles> {
   if (!(await assistantSchemaReady(db))) return { ...DEFAULT_PROFILES, setupDone: true, canEditWorkspace: canEdit(ctx) };
+  // Before 0036 the column is not there to name: the statement reads NULL instead, which toSpeak turns into 'voice'.
+  const speak = (await assistantSpeakReady(db)) ? "p.speak" : "NULL::text AS speak";
   const r = await db.one<ProfilesRow>(
-    `SELECT p.name, p.colour, p.visor, p.eyes, p.setup_done_at,
+    `SELECT p.name, p.colour, p.visor, p.eyes, p.setup_done_at, ${speak},
             b.assistant_name, b.assistant_colour, b.assistant_visor, b.assistant_eyes
      FROM (SELECT 1) one
      LEFT JOIN assistant_profiles p ON p.membership_id = $2
@@ -106,13 +139,15 @@ export async function readAssistantProfiles(db: Db, ctx: Pick<OrgContext, "org" 
     workspace: toProfile({ name: r.assistant_name, colour: r.assistant_colour, visor: r.assistant_visor, eyes: r.assistant_eyes }),
     setupDone: !!r.setup_done_at,
     canEditWorkspace: canEdit(ctx),
+    speak: toSpeak(r.speak),
   };
 }
 
 /**
  * The person's own assistant and the workspace's, for the workspace pages. React's cache dedupes it per request: the
  * shell and the page call it with the same `ctx` object (from the cached `orgContext`). Before migration 0035 everyone
- * sees Brenda, and "Meet your assistant" never shows (there is no table to save to).
+ * sees Brenda, and "Meet your assistant" never shows (there is no table to save to). Before 0036 everyone's assistant
+ * speaks only to what they say ('voice').
  */
 export const assistantProfiles = cache(async (ctx: OrgContext): Promise<AssistantProfiles> => {
   try {
@@ -120,6 +155,7 @@ export const assistantProfiles = cache(async (ctx: OrgContext): Promise<Assistan
   } catch (err) {
     if (!isMissingSchema(err)) throw err;
     schemaReady = false;
+    speakReady = false;
     warnOnce();
     return { ...DEFAULT_PROFILES, setupDone: true, canEditWorkspace: canEdit(ctx) };
   }
@@ -162,6 +198,25 @@ export async function keepBrenda(ctx: OrgContext): Promise<{ personal: Assistant
      RETURNING name, colour, visor, eyes`,
     [ctx.membership.id, ctx.org.id]));
   return { personal: toProfile(row), setupDone: true };
+}
+
+/**
+ * When the person's own assistant reads replies aloud, on the web and in the notch (owner decision, 7 October 2026: her
+ * voice). Saved on its own, at once, from Settings → Your assistant → Voice. A person with no row yet gets one with the
+ * look as it is and setup still not done, so "Meet your assistant" still shows when it should. Not logged: a personal
+ * preference.
+ */
+export async function saveMySpeak(ctx: OrgContext, input: AssistantSpeakInput): Promise<{ speak: AssistantSpeak }> {
+  notWhileImpersonated(ctx);
+  return withUser(ctx.user.profileId, async (db) => {
+    if (!(await assistantSpeakReady(db))) throw new AppError(503, "NOT_READY", "Voice settings need a database update first. Try again later.");
+    const row = await db.one<{ speak: string }>(
+      `INSERT INTO assistant_profiles(membership_id, organisation_id, speak, updated_at) VALUES ($1, $2, $3, now())
+       ON CONFLICT (membership_id) DO UPDATE SET speak = $3, updated_at = now()
+       RETURNING speak`,
+      [ctx.membership.id, ctx.org.id, input.speak]);
+    return { speak: toSpeak(row.speak) };
+  });
 }
 
 /** The workspace's own assistant (owners and HR). Only its columns change; the organisation's Brenda switches keep their values. */

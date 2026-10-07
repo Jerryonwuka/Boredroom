@@ -19,11 +19,20 @@
  * scoped one (`AssistantScope`), or `look` when given (the editor's choices): its sphere colour as `--sphere-*` custom
  * properties, its visor and eyes as `data-visor` and `data-eyes` (globals.css draws them; every mood still wins over the
  * eye style). A poke is offered under the assistant's name.
+ *
+ * Her voice (owner decision, 7 October 2026: phase 2): while she speaks a reply, every face of hers on the page talks at
+ * once (she is one person). One subscription to the page's one voice (`speech`, lib/assistant-speech/controller) marks
+ * every face with `data-talking` (an attribute React never renders, so a re-render or a mood change keeps it; a class
+ * would not survive React rewriting `className`) and sets `--talk`, the level from 0 to 1, each frame; globals.css
+ * squashes and opens her eyes with it, bobs her a little and brightens her glow in her own sphere colour. Under reduced
+ * motion `--talk` is never set and the CSS holds a still speaking pose. `quiet` (rendered as `data-quiet`) keeps a face
+ * from ever talking: the editor's option cards, the workspace assistant's faces.
  */
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import { cn } from "@/lib/utils";
 import { playSound } from "@/lib/brenda-sound";
 import { attention, type ReadCue } from "@/lib/brenda-character/engine";
+import { speech } from "@/lib/assistant-speech/controller";
 import { faceStyle, isAssistantColour, type AssistantLook } from "@/lib/assistant-look";
 import { useScopedAssistant } from "@/components/app/assistant-context";
 
@@ -96,23 +105,44 @@ function onAttention(cue: ReadCue | null) {
   if (!frame) frame = requestAnimationFrame(tick);
 }
 
+/**
+ * Her voice: a face talks while she speaks, unless it is a quiet one. Its level is cleared when it stops. It follows
+ * `talking` (the audio has started), not `speaking`, so no face squints while the browser has yet to begin.
+ */
+function voice(el: HTMLElement, speaking = speech.getSnapshot().talking) {
+  const on = speaking && !el.hasAttribute("data-quiet");
+  if (on === el.hasAttribute("data-talking")) return;
+  el.toggleAttribute("data-talking", on);
+  if (!on) el.style.removeProperty("--talk");
+}
+
 function start() {
   if (started || typeof window === "undefined") return;
   started = true;
   motion = window.matchMedia("(prefers-reduced-motion: reduce)");
   window.addEventListener("pointermove", (e) => { pointer = { x: e.clientX, y: e.clientY }; if (!frame) frame = requestAnimationFrame(tick); }, { passive: true });
   attention.subscribe(onAttention);
+  // Her voice: every face of hers talks while she speaks, with the level each frame (none under reduced motion, where
+  // the talking face is a still pose).
+  speech.subscribe(() => { const speaking = speech.getSnapshot().talking; for (const el of faces) voice(el, speaking); });
+  speech.subscribeLevel((level) => {
+    if (motion?.matches) return;
+    const v = level.toFixed(3);
+    for (const el of faces) if (el.hasAttribute("data-talking")) el.style.setProperty("--talk", v);
+  });
   const loop = () => setTimeout(() => { if (faces.size && document.visibilityState === "visible") blink(Math.random() < 0.22); loop(); }, 2200 + Math.random() * 3200);
   loop();
 }
 
 type Fx = "squash" | "dizzy" | "love" | null;
 
-export function BrendaFace({ mood = null, tone = null, size = "md", interactive = false, className, look, style }: {
+export function BrendaFace({ mood = null, tone = null, size = "md", interactive = false, className, look, style, quiet = false }: {
   mood?: BrendaMood; tone?: BrendaTone; size?: "sm" | "md" | "lg"; interactive?: boolean; className?: string;
   /** The look to draw instead of the assistant in context (the editor's options). */
   look?: AssistantLook;
   style?: CSSProperties;
+  /** Never talks, even while she speaks (the editor's option cards, the workspace assistant's faces). */
+  quiet?: boolean;
 }) {
   const scoped = useScopedAssistant();
   const { colour, visor, eyes } = look ?? scoped;
@@ -129,6 +159,8 @@ export function BrendaFace({ mood = null, tone = null, size = "md", interactive 
     if (reading) { if (motion?.matches) step(true); else if (!frame) frame = requestAnimationFrame(tick); }
     return () => { faces.delete(el); };
   }, []);
+  // Her voice: a face that appears while she speaks talks along at once; one told to keep quiet (or no longer) follows.
+  useEffect(() => { const el = ref.current; if (el) voice(el); }, [quiet]);
   useEffect(() => () => { if (fxTimer.current) clearTimeout(fxTimer.current); if (loveTimer.current) clearTimeout(loveTimer.current); }, []);
 
   const react = useCallback((name: Exclude<Fx, null>, ms: number) => {
@@ -152,7 +184,7 @@ export function BrendaFace({ mood = null, tone = null, size = "md", interactive 
   const leave = () => { if (loveTimer.current) clearTimeout(loveTimer.current); };
 
   return (
-    <span ref={ref} aria-hidden={!interactive} data-tone={tone ?? undefined} data-visor={visor} data-eyes={eyes}
+    <span ref={ref} aria-hidden={!interactive} data-tone={tone ?? undefined} data-colour={isAssistantColour(colour) ? colour : "white"} data-visor={visor} data-eyes={eyes} data-quiet={quiet || undefined}
       style={{ ...faceStyle(isAssistantColour(colour) ? colour : "white"), ...style } as CSSProperties}
       role={interactive ? "button" : undefined} tabIndex={interactive ? 0 : undefined} aria-label={interactive ? `Poke ${scoped.name}` : undefined}
       onClick={interactive ? poke : undefined} onKeyDown={interactive ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); poke(); } } : undefined}

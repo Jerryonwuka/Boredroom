@@ -65,8 +65,8 @@ Off until the person turns it on (the mic button on a card, or **Turn voice on**
    person's own permissions and logs every action. Anything that needs a yes shows **Confirm**, which calls
    `POST /api/orgs/:org/brenda/confirm`; an answer of `ALREADY_CONFIRMED` (pressed twice, or confirmed in Boredroom
    meanwhile) counts as done. Errors from Boredroom reach the page with their `code` for this.
-4. The reply is shown and spoken with the system voice (`say` on macOS, System.Speech on Windows). Pressing the
-   shortcut again cuts her off.
+4. The reply is shown and, by default, spoken with the system voice (`say` on macOS, System.Speech on Windows); see
+   "Her voice" below. Pressing the shortcut again cuts her off.
 
 The bundled app asks for microphone access the first time (`Info.plist`). "Hey Brenda" (Porcupine) comes next and only
 replaces the trigger in step 1.
@@ -80,6 +80,28 @@ bottom while the microphone is open. It matches dictation and voice notes in the
 (`src/components/app/voice-capture.tsx` and `src/components/ui/live-waveform.tsx`; the notch's `Wave` in `src/main.js`
 is a plain-JavaScript port of the latter, under the same MIT notice): change one, change the other. The round orb is
 kept only for the speech model's download.
+
+## Her voice
+
+Owner decision, 7 October 2026 (personal assistants, phase 2). She reads her replies aloud with the computer's own
+voice, never a speech service: on a Mac, the system voice (System Settings › Accessibility › Spoken Content › System
+voice; the notch has no voice picker of its own).
+
+- **When:** as the person chose in Boredroom (Settings › Your assistant › Voice), carried by the desktop state as
+  `assistant.speak`: `voice` (the default) reads the answer to something said with the talk keys, `always` every
+  answer, typed or spoken, `never` none. A **Listen** button on the reply card reads that answer on demand whatever the
+  choice, and turns to **Stop** (an orange square) while she speaks.
+- **What:** the speakable version the server sends with each answer (`spoken` from `POST /assistant/chat`: no Markdown,
+  links, ids or tokens, about three sentences); with an older server, the plain words of the reply.
+- **Her face while she talks:** on macOS `voice.rs` renders the words with `say -o` to a temporary 16-bit WAVE file,
+  measures its loudness every 30 ms, plays it with `afplay` and sends `speaking` events with that level on
+  `brenda://voice`, timed to the playback, then one `spoken` (`interrupted` when cut off); the file is deleted
+  afterwards. Her own faces talk with it (`.face.talk`): her eyes squash and open with each syllable, she bobs a little
+  and her glow brightens in her own colour. If rendering fails (and on Windows), she is spoken the plain way and the
+  page makes the syllables itself (`synthetic`). Under reduced motion she holds a still speaking pose.
+- **One voice at a time:** a new answer replaces the last. She stops on Stop, typing in the ask box, asking something
+  new, closing the card (Done, Esc), opening a link or the chat, the talk keys and signing out, and never speaks while
+  the microphone is open. The card stays open while she talks.
 
 ## Look
 
@@ -122,12 +144,15 @@ high-resolution "B." mark: the current artwork is only 58px tall, too small for 
 
 `preview.html` runs the notch in an ordinary browser with sample data
 (`?state=link|compact|briefing|timer|paused|reminder|report|lead|idle`) and can open one of Brenda's cards on top
-(`&card=listening|working|thinking|reply|confirm|offer|error|drop|voice-off|typing`; `&confirm=already` answers the
+(`&card=listening|working|thinking|reply|confirm|offer|error|drop|voice-off|typing|speaking`; `&confirm=already` answers the
 Confirm as already done; `&typed=…` fills the open card's ask box, to show Send turning orange). `card=listening` feeds
 the waveform and her listening face a speech-like level every 70 ms, as Rust does; `card=working` listens for two
 seconds and then writes the words out, to show the bars turning into the travelling wave; `card=typing` types a question
-into the ask box letter by letter, to show her eyes reading along. Serve this folder with any static server and open
-it; it is not part of the app.
+into the ask box letter by letter, to show her eyes reading along. `card=speaking` opens a reply and feeds her talking
+face a speech-like level every 30 ms for four seconds, as Rust does while she reads it aloud (`&synthetic` sends the
+fallback's start instead, and the page pulses her eyes itself); Listen and Stop work on any reply, and
+`&speak=always|never` sets when she speaks. Serve this folder with any static server and open it; it is not part of
+the app.
 
 ## Build installers
 

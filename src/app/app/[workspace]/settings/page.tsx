@@ -22,6 +22,7 @@ import { BillingCard } from "@/components/app/billing-card";
 import { PageNote, PageNotes } from "@/components/ui/page-notes";
 import { AssistantScope } from "@/components/app/assistant-context";
 import { MyAssistantSettings, WorkspaceAssistantSettings } from "@/components/app/assistant-settings";
+import { MyVoiceSettings } from "@/components/app/assistant-voice-settings";
 import { assistantProfiles } from "@/server/services/assistant-profile";
 import type { AssistantProfiles } from "@/lib/assistant-look";
 import { cn } from "@/lib/utils";
@@ -54,6 +55,9 @@ const MODE_LABEL: Record<string, string> = { disabled: "Off", optional: "On, eac
  * and team leads see one section, "Your assistant", which is where any other ?section= lands them; owners and HR see
  * every section, theirs included. The Brenda section starts with the workspace's own assistant, and its sub-nav icon is
  * drawn as that assistant (the person's own draws "Your assistant").
+ *
+ * Her voice (owner decision, 7 October 2026: phase 2): "Your assistant" also holds Voice (when the assistant reads
+ * replies aloud, saved to the account; which voice and how fast, kept in this browser).
  */
 export default async function SettingsPage({ params, searchParams }: { params: Promise<{ workspace: string }>; searchParams: Promise<{ section?: string; setup?: string; billing?: string; plan?: string }> }) {
   const { workspace } = await params;
@@ -74,8 +78,14 @@ export default async function SettingsPage({ params, searchParams }: { params: P
   let notes: ReactNode = null;
   if (section === "assistant") {
     assistants = await assistantProfiles(ctx);
-    body = <MyAssistantSettings orgSlug={ctx.org.slug} initial={assistants.personal} impersonated={!!ctx.user.impersonation} />;
-    notes = <PageNote section="Your assistant">The name and look change how your assistant appears to you and in the desktop app. What it can do for you stays the same.</PageNote>;
+    // Her voice (owner decision, 7 October 2026: phase 2): a second card under the name and look, saved as it changes.
+    body = (
+      <>
+        <MyAssistantSettings orgSlug={ctx.org.slug} initial={assistants.personal} impersonated={!!ctx.user.impersonation} />
+        <MyVoiceSettings orgSlug={ctx.org.slug} name={assistants.personal.name} speak={assistants.speak} impersonated={!!ctx.user.impersonation} />
+      </>
+    );
+    notes = <PageNote section="Your assistant">The name and look change how your assistant appears to you and in the desktop app. What it can do for you stays the same. Voices come from this computer; your choice of voice and speed is kept in this browser.</PageNote>;
   } else if (section === "general" || section === "hours" || section === "recording") {
     const [view, a] = await Promise.all([settingsView(ctx), assistantProfiles(ctx)]);
     const { policy, schedule, grants, members, teams, counts: c } = view;
@@ -234,7 +244,7 @@ export default async function SettingsPage({ params, searchParams }: { params: P
 
   return (
     <AppShell ctx={ctx} counts={counts} teams={navTeams}>
-      <PageHeader title="Settings" description={admin ? "How the workspace runs: working hours, screen recording, Brenda, the plan, your assistant and your linked computers." : "Your assistant's name and look in this workspace."} divider />
+      <PageHeader title="Settings" description={admin ? "How the workspace runs: working hours, screen recording, Brenda, the plan, your assistant and your linked computers." : "Your assistant's name, look and voice in this workspace."} divider />
       {sp.setup && admin ? <Alert tone="success" className="mb-6" title="Workspace ready">Work through the setup list to finish.</Alert> : null}
       <div className="grid gap-6 md:grid-cols-[12.5rem_minmax(0,1fr)] md:gap-10">
         {/* Sub-navigation (spec §6): 32px items, r8, fill-1 and the orange marker for the open one, fill-0 on hover; a scrolling row on a phone. */}

@@ -33,13 +33,21 @@
  * She is the person's own assistant (owner decision, 7 October 2026: personal assistants): the box's words and name, the
  * working line, the built-in helper's note and the expired Confirm use the name they chose (`useAssistant`), and a
  * conversation with no question yet is saved as "New chat", which does not go stale when the assistant is renamed.
+ *
+ * Her voice (owner decision, 7 October 2026: phase 2): she reads a reply aloud with this device's own voices
+ * (lib/assistant-speech) as the person chose (`useAssistant().speak`): "voice", the default, reads the reply to a
+ * message they dictated; "always" every reply; "never" none. Every reply has a Listen button to hear it on demand,
+ * whatever the choice (Stop while it plays). One utterance at a time on the page: she stops when you type in her box,
+ * send, start a new chat or open another, when this chat goes away or is put away (`quiet`, the drawer closing), and,
+ * through the controller, whenever a microphone opens. A reply that lands while the chat is not on screen is not read.
  */
-import { useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Check, ShieldCheck } from "lucide-react";
+import { Check, ShieldCheck, Square, Volume2 } from "lucide-react";
 // Her reply rows' buttons are plain buttons styled with buttonVariants, so they carry the animated twins themselves.
 import { AnimatedAlarmClock, AnimatedArrowUpRight, AnimatedCheck, AnimatedPlay, AnimatedPlus } from "@/components/ui/animated-icons";
 import { buttonVariants } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
 import { Alert } from "@/components/ui/states";
 import { Presence } from "@/components/ui/motion";
 import { PromptInputBox } from "@/components/ui/ai-prompt-box";
@@ -48,6 +56,9 @@ import { Markdown } from "@/components/app/docs-markdown";
 import { useAssistant } from "@/components/app/assistant-context";
 import { playSound } from "@/lib/brenda-sound";
 import { useDictation } from "@/hooks/use-dictation";
+import { useSpeech } from "@/hooks/use-assistant-speech";
+import { speech } from "@/lib/assistant-speech/controller";
+import { speakable } from "@/lib/assistant-speech/speakable";
 import { api, isApiFailure, type ApiFailure } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import { attention, READ_BLUR_HOLD_MS, type BrendaState, type ReadCue } from "@/lib/brenda-character/engine";
@@ -255,8 +266,10 @@ class ConversationSaver {
   }
 }
 
-export function useBrendaChat({ orgSlug, keysActive = true, onLeave, initialText = "", initial = null, onSaved }: {
-  orgSlug: string; /** Y/N answer a Confirm while true. */ keysActive?: boolean; /** Called before Brenda opens a page. */ onLeave?: () => void;
+export function useBrendaChat({ orgSlug, keysActive = true, visible = true, onLeave, initialText = "", initial = null, onSaved }: {
+  orgSlug: string; /** Y/N answer a Confirm while true. */ keysActive?: boolean;
+  /** Whether the chat is on screen: a reply that lands while it is not (the drawer closed meanwhile) is not read aloud. */ visible?: boolean;
+  /** Called before Brenda opens a page. */ onLeave?: () => void;
   /** Words already in the box (a link's `?ask=`); never sent on its own. */ initialText?: string;
   /** A past chat to open with (Brenda's page, `?chat=`). */ initial?: Conversation | null;
   /** After each save, with the conversation as the list shows it. */ onSaved?: (c: ConversationSummary) => void;
@@ -264,6 +277,14 @@ export function useBrendaChat({ orgSlug, keysActive = true, onLeave, initialText
   const [opened] = useState<Opened | null>(() => (initial ? { id: initial.id, messages: initial.messages.map(restore), updatedAt: initial.updatedAt } : null));
   const [messages, setMessages] = useState<BrendaMsg[]>(() => opened?.messages ?? []);
   const [text, setText] = useState(initialText);
+  // When she reads a reply aloud (owner decision, 7 October 2026: her voice): the person's choice, and whether the chat
+  // is on screen and still here, kept for the reply that arrives after an await.
+  const { speak: prefer } = useAssistant();
+  const voice = useRef({ prefer, visible, alive: true });
+  useEffect(() => { voice.current.prefer = prefer; voice.current.visible = visible; });
+  // Whether the message in the box was spoken: dictation wrote into it. Typing does not clear it (a dictated message
+  // tidied by hand is still one you talked); emptying the box, sending and moving to another chat do.
+  const voiced = useRef(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Said quietly when another window's copy of this conversation stood over a change made here (CHANGED_ELSEWHERE).
@@ -279,7 +300,9 @@ export function useBrendaChat({ orgSlug, keysActive = true, onLeave, initialText
     reactionTimer.current = setTimeout(() => setReaction(null), REACTION_MS);
   };
   useEffect(() => () => { if (reactionTimer.current) clearTimeout(reactionTimer.current); }, []);
-  const dictation = useDictation(text, setText);
+  const dictation = useDictation(text, (t) => { voiced.current = true; setText(t); });
+  /** The box's words as typing and the starters set them: an emptied box is no longer a spoken message. */
+  const setBox = (t: string) => { if (!t) voiced.current = false; setText(t); };
   const router = useRouter();
   // Set before the first await, so a double press cannot send twice while dictation is being written out.
   const sending = useRef(false);
@@ -292,6 +315,34 @@ export function useBrendaChat({ orgSlug, keysActive = true, onLeave, initialText
   const savedListener = useRef(onSaved);
   useEffect(() => { savedListener.current = onSaved; });
   const me = useId();
+  // Each reply's name for the voice (`${me}:${n}`), so its Listen button knows when it is the one being read, and
+  // putting this chat away stops only what it started (the gallery's or Settings' sample stays).
+  const ids = useRef(new WeakMap<BrendaMsg, string>());
+  const nextId = useRef(0);
+  /** The id the voice reads `m` under (given on first use). */
+  const speechId = (m: BrendaMsg) => {
+    let id = ids.current.get(m);
+    if (!id) { id = `${me}:${++nextId.current}`; ids.current.set(m, id); }
+    return id;
+  };
+  /** A reply changed in place (marked Done, or what a Confirm did added) keeps its id, so a Stop on it stays a Stop. */
+  const keepId = (from: BrendaMsg, to: BrendaMsg) => { const id = ids.current.get(from); if (id) ids.current.set(to, id); return to; };
+  /** Listen or Stop on one reply (pressed: a user gesture, which unlocks speech on iOS Safari). */
+  const listen = (m: BrendaMsg) => {
+    const id = speechId(m);
+    const now = speech.getSnapshot();
+    if (now.speaking && now.id === id) { speech.stop(); return; }
+    speech.prime();
+    speech.speak(m.content, { id });
+  };
+  /** Stops what this chat is reading aloud, and only that (the drawer, as it closes). */
+  const quiet = useCallback(() => speech.stop(`${me}:`), [me]);
+  // Leaving the page (or the chat going away) stops what it was reading; a reply still on its way is not read.
+  useEffect(() => {
+    const v = voice.current;
+    v.alive = true;
+    return () => { v.alive = false; quiet(); };
+  }, [quiet]);
   function afterSave(from: ConversationSaver, c: ConversationSummary, saved: BrendaMsg[]) {
     if (deleted.current.has(c.id)) return;
     if (from === slot.current) setConversationId(c.id);
@@ -323,6 +374,13 @@ export function useBrendaChat({ orgSlug, keysActive = true, onLeave, initialText
   async function send(content = text, fromBox = false) {
     if (pending || sending.current) return;
     sending.current = true;
+    // A new message silences her at once; and while this press is still a user gesture, speech is unlocked (iOS
+    // Safari) for the reply she may read aloud (owner decision, 7 October 2026: her voice).
+    speech.stop();
+    if (voice.current.prefer !== "never") speech.prime();
+    // Spoken: the box's words came from dictation, or it is still listening and what it hears is what is sent. A
+    // starter sent directly is not.
+    const spoken = fromBox && (voiced.current || dictation.listening || dictation.busy);
     try {
       let q = content.trim();
       if (dictation.listening || dictation.busy) {
@@ -336,11 +394,17 @@ export function useBrendaChat({ orgSlug, keysActive = true, onLeave, initialText
       const next: BrendaMsg[] = [...messages, { role: "user", content: q }];
       const mine = epoch.current;
       setMessages(next); setText(""); setPending(true); setError(null); setNotice(null);
+      voiced.current = false;
       playSound("send");
       try {
         const r = await api<ChatResult>(`/api/orgs/${orgSlug}/assistant/chat`, { method: "POST", body: { messages: next.slice(-20).map((m) => ({ role: m.role, content: m.content })) }, retries: 0 });
         if (epoch.current !== mine) { if (r.actions?.length) router.refresh(); return; }
-        setMessages((cur) => [...cur, { role: "assistant", content: r.reply, actions: r.actions, proposals: r.proposals, engine: r.engine, note: r.note }]);
+        const reply: BrendaMsg = { role: "assistant", content: r.reply, actions: r.actions, proposals: r.proposals, engine: r.engine, note: r.note };
+        setMessages((cur) => [...cur, reply]);
+        // Read aloud as the person chose: every reply, or the reply to what they said. Only her words: never a
+        // Confirm's result, an error or the built-in helper's note.
+        const { prefer: choice, visible: shown, alive } = voice.current;
+        if (alive && shown && (choice === "always" || (choice === "voice" && spoken))) speech.speak(reply.content, { id: speechId(reply) });
         const asks = r.proposals?.some((p) => p.kind === "confirm");
         playSound(asks ? "attention" : r.actions?.length ? "success" : "reply");
         // Waiting for a yes is her alert look; otherwise a reply pleases her and something done is a celebration.
@@ -357,7 +421,7 @@ export function useBrendaChat({ orgSlug, keysActive = true, onLeave, initialText
   }
 
   /** Marks a prepared action done, unless New chat replaced that conversation meanwhile. */
-  const markIn = (mine: number) => (mi: number, pi: number, done: string) => { if (epoch.current === mine) setMessages((cur) => cur.map((m, i) => (i === mi && m.proposals ? { ...m, proposals: m.proposals.map((x, j) => (j === pi ? { ...x, done } : x)) } : m))); };
+  const markIn = (mine: number) => (mi: number, pi: number, done: string) => { if (epoch.current === mine) setMessages((cur) => cur.map((m, i) => (i === mi && m.proposals ? keepId(m, { ...m, proposals: m.proposals.map((x, j) => (j === pi ? { ...x, done } : x)) }) : m))); };
   const mark = (mi: number, pi: number, done: string) => markIn(epoch.current)(mi, pi, done);
 
   async function act(mi: number, pi: number, p: Proposal) {
@@ -377,7 +441,7 @@ export function useBrendaChat({ orgSlug, keysActive = true, onLeave, initialText
         mark(mi, pi, "Done");
         playSound("success");
         react(r.actions.length ? "celebrate" : "pleased");
-        if (r.actions.length) setMessages((cur) => cur.map((m, i) => (i === mi ? { ...m, actions: [...(m.actions ?? []), ...r.actions] } : m)));
+        if (r.actions.length) setMessages((cur) => cur.map((m, i) => (i === mi ? keepId(m, { ...m, actions: [...(m.actions ?? []), ...r.actions] }) : m)));
       }
       router.refresh();
     } catch (err) {
@@ -400,6 +464,10 @@ export function useBrendaChat({ orgSlug, keysActive = true, onLeave, initialText
     loading.current += 1;
     slot.current = new ConversationSaver(orgSlug, afterSave, afterConflict, next);
     dictation.cancel();
+    // She stops reading the conversation being left, and only that: on Brenda's page the hidden drawer chat also
+    // switches (its conversation deleted from Past chats here) and must not cut off what this page is reading.
+    quiet();
+    voiced.current = false;
     setMessages(next?.messages ?? []); setText(""); setError(null); setNotice(null); setPending(false); setReaction(null);
     setConversationId(next?.id ?? null);
   }
@@ -499,7 +567,7 @@ export function useBrendaChat({ orgSlug, keysActive = true, onLeave, initialText
     return () => document.removeEventListener("keydown", onKey);
   });
 
-  return { orgSlug, messages, text, setText, pending, error, notice, dictation, send, act, decline, reset, load, remove, saveNow, conversationId, look, state, reaction, lastIndex, waitingAt };
+  return { orgSlug, messages, text, setText: setBox, pending, error, notice, dictation, send, act, decline, reset, load, remove, saveNow, conversationId, look, state, reaction, lastIndex, waitingAt, speechId, listen, quiet };
 }
 
 export type BrendaChat = ReturnType<typeof useBrendaChat>;
@@ -520,11 +588,17 @@ const btn = (variant: "primary" | "secondary" | "ghost", size: "xs" | "sm") => b
  * face a size up, more room around each message, and each new message rises in. What is already there when the chat
  * opens (or when a past chat is loaded) shows at once: nothing animates on the way into the chat (owner decision,
  * 5 October 2026).
+ *
+ * Each reply of hers has Listen at the end of its first row, when this device has a voice of its own (owner decision,
+ * 7 October 2026: her voice): a toggle whose name stays "Listen to this reply" while aria-pressed carries whether it is
+ * playing; the tooltip says what a press does, and while it plays its icon is the orange stop square (live and now, the
+ * accent rules). Not on the working line, errors or notes. Nothing is announced: a screen reader already reads the text.
  */
 export function BrendaMessages({ chat, onLeave, size = "md" }: { chat: BrendaChat; onLeave?: () => void; size?: "md" | "lg" }) {
   const router = useRouter();
   const { name } = useAssistant().personal;
   const { messages, pending, error, act, decline, look, lastIndex, waitingAt } = chat;
+  const voice = useSpeech();
   const lg = size === "lg";
   // A link in her reply to a Boredroom page opens it here, as her Open buttons do.
   const open = (href: string) => { onLeave?.(); router.push(href); };
@@ -545,7 +619,11 @@ export function BrendaMessages({ chat, onLeave, size = "md" }: { chat: BrendaCha
               <div className={cn("flex items-start", lg ? "gap-3" : "gap-2.5")}>
                 <BrendaFace size={lg ? "md" : "sm"} className={lg ? "mt-px" : "mt-0.5"} mood={mi === lastIndex ? look.mood : null} />
                 <Markdown variant="chat" source={m.content} base={`/app/${chat.orgSlug}`} onNavigate={open} className="flex-1 font-normal text-foreground" />
+                {voice.supported === true ? <ListenButton content={m.content} playing={voice.speaking && voice.id === chat.speechId(m)} small={!lg} onPress={() => chat.listen(m)} /> : null}
               </div>
+              {voice.blocked !== null && voice.blocked === chat.speechId(m) ? (
+                <p role="status" className={cn("text-xs font-normal text-subtle", indent)}>{name} couldn&apos;t speak in this browser.</p>
+              ) : null}
               {m.actions?.length ? (
                 <ul className={cn("space-y-2", indent)}>{m.actions.map((a, ai) => (
                   <li key={ai} className="flex min-h-11 items-center gap-2.5 rounded-xl border border-border py-1.5 pl-3 pr-1.5 text-sm">
@@ -595,6 +673,20 @@ export function BrendaMessages({ chat, onLeave, size = "md" }: { chat: BrendaCha
       <Presence show={!!error}><Alert tone="danger">{error}</Alert></Presence>
       <DictationNotes chat={chat} />
     </>
+  );
+}
+
+/**
+ * Listen, or Stop while this reply plays: one toggle with a constant name (BrendaMessages). Not offered on a reply with
+ * nothing to say aloud (only a table, code or links), as the notch (review, 7 October 2026).
+ */
+function ListenButton({ content, playing, small, onPress }: { content: string; playing: boolean; small: boolean; onPress: () => void }) {
+  const sayable = useMemo(() => speakable(content) !== "", [content]);
+  if (!sayable) return null;
+  return (
+    <IconButton size={small ? "xs" : "sm"} aria-label="Listen to this reply" aria-pressed={playing} data-tip={playing ? "Stop" : "Listen"} onClick={onPress} className="-mr-1 -mt-0.5">
+      {playing ? <Square className="fill-current text-accent" aria-hidden /> : <Volume2 aria-hidden />}
+    </IconButton>
   );
 }
 
@@ -654,7 +746,8 @@ const CUE_RANK: Record<ReadCue, number> = { key: 1, beat: 2, paste: 3 };
  * every three to five words a `beat` (a nod or a blink), a paste or drop of 40 characters or more (`paste`, a surprised
  * blink). Moving the caret with the keys while she reads moves her eyes too. She keeps looking a moment after the last
  * key and after the box loses the focus; a message sent (BrendaComposer) or the box going away ends it at once. Words
- * that arrive by dictation or a chip are not typing: she does not read those along.
+ * that arrive by dictation or a chip are not typing: she does not read those along. Typing also interrupts her if she
+ * is reading a reply aloud (owner decision, 7 October 2026: her voice).
  */
 export function useReadAlong() {
   const words = useRef({ count: 0, next: 3 });
@@ -678,6 +771,7 @@ export function useReadAlong() {
     onInput: (e: React.FormEvent<HTMLElement>) => {
       const field = e.target;
       if (!(field instanceof HTMLTextAreaElement)) return;
+      speech.stop(); // also reaches audio that outlived its utterance (a no-op while she is silent)
       const ev = e.nativeEvent as InputEvent;
       const type = ev.inputType ?? "";
       const added = field.value.length - (lengths.current.get(field) ?? field.value.length);

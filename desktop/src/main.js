@@ -58,6 +58,17 @@
 // label names it ("Ask Max…", "Max is on it…"); the end-of-day report's card shows the workspace's. Signed out, and where
 // the words name the product (the plan gate), she is Brenda. The last profile seen is kept per workspace on this
 // computer, so the first paint after launch already shows theirs. Teammates' small faces are unchanged.
+//
+// Her voice (owner decision, 7 October 2026: phase 2). She reads her replies aloud with the Mac's own voice when the
+// person chose so in Boredroom (`data.assistant.speak`: "voice", the default, answers aloud what was said with the talk
+// keys; "always"; "never"), saying the words the server made speakable (`spoken`: no Markdown, links, ids or tokens;
+// `plain` stays for an older server). Rust renders the reply, measures it and sends `speaking` with the real level of
+// what is playing every 30 ms, then `spoken`; meanwhile her own faces talk (`.face.talk` and `--talk` in style.css): her
+// eyes squash and open with each syllable, she bobs a little and her glow brightens in her own colour, and under reduced
+// motion she holds a still speaking pose. When Rust could only speak the plain way (`synthetic`), this page makes the
+// syllables itself. The reply card has a Listen / Stop button whatever the preference and stays open while she talks;
+// she stops when the person types to her, asks something new, closes the card or signs out (the talk keys stop her in
+// Rust, and she never speaks over an open microphone).
 
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
@@ -90,6 +101,12 @@ let wasOpen = false;
 let tucked = false, tuckTimer = null, alwaysVisible = false;
 let fx = null, fxTimer = null, loveTimer = null;   // a passing reaction on Brenda's face: squash, dizzy, love
 const pokes = [];
+// Her voice (owner decision, 7 October 2026): she is talking (Rust said `speaking`), the pulse standing in for levels
+// when Rust has none (`synthetic`), she was asked to speak and has not started yet (rendering takes a moment), and the
+// last level, put back on her faces after a render.
+let talking = false, talkSynthetic = null;
+let talkWaiting = false, talkWaitTimer = null, talkLast = 0;
+const reduceMotion = window.matchMedia ? window.matchMedia("(prefers-reduced-motion: reduce)") : null;
 const TUCK = { w: 96, h: 5 };
 const TALK_MEMORY_MS = 3 * 60_000;
 const REPLY_CLOSE_MS = 16_000;
@@ -147,11 +164,13 @@ function keepCached() {
 /**
  * Brenda's face, drawn as the person's own assistant (or `o.who`, such as the workspace's): its sphere colours, visor
  * and eyes (style.css `--sphere-*`, `data-visor`, `data-eyes`). mood: happy | alert | sad | think | listen; tone: the
- * glow (accent, ok, warn, bad; blue and violet draw none).
+ * glow (accent, ok, warn, bad; blue and violet draw none). Her own faces (`data-own`, no `o.who`) talk while she speaks
+ * (`talk`, owner decision, 7 October 2026: her voice); the workspace's assistant never does.
  */
 const face = (o = {}) => {
   const a = assistantOf(o.who ?? me());
-  return `<span class="face ${o.small ? "small" : ""} ${o.mood ?? ""}" data-sphere="${esc(a.colour)}" data-visor="${esc(a.visor)}" data-eyes="${esc(a.eyes)}" style="--sphere-hi:${esc(a.face.hi)};--sphere-mid:${esc(a.face.mid)};--sphere-edge:${esc(a.face.edge)}" ${o.tone ? `data-tone="${esc(o.tone)}"` : ""}><span class="eyes"><span></span><span></span></span>${o.dot ? `<i class="dot ${esc(o.dot)}"></i>` : ""}</span>`;
+  const own = !o.who;
+  return `<span class="face ${o.small ? "small" : ""} ${o.mood ?? ""}${own && talking ? " talk" : ""}"${own ? " data-own" : ""} data-sphere="${esc(a.colour)}" data-visor="${esc(a.visor)}" data-eyes="${esc(a.eyes)}" style="--sphere-hi:${esc(a.face.hi)};--sphere-mid:${esc(a.face.mid)};--sphere-edge:${esc(a.face.edge)}" ${o.tone ? `data-tone="${esc(o.tone)}"` : ""}><span class="eyes"><span></span><span></span></span>${o.dot ? `<i class="dot ${esc(o.dot)}"></i>` : ""}</span>`;
 };
 /** A teammate's small face, in a colour of their own (style.css `--mate-*`), with a dot when their timer is running (orange), paused (amber) or interrupted (red). */
 const MATES = 8;
@@ -183,6 +202,7 @@ const ICONS = {
   open: `<path d="M7 7h10v10"/><path d="M7 17 17 7"/>`,
   plus: `<path d="M5 12h14"/><path d="M12 5v14"/>`,
   alarm: `<circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2"/><path d="M5 3 2 6"/><path d="m22 6-3-3"/>`,
+  volume: `<path d="M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z"/><path d="M16 9a5 5 0 0 1 0 6"/><path d="M19.364 18.364a9 9 0 0 0 0-12.728"/>`,
 };
 /** An icon; its class (`ic-<name>`) picks the small move it makes when its button is hovered or focused (style.css). */
 const icon = (name) => `<svg class="ic ic-${name}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name]}</svg>`;
@@ -275,7 +295,8 @@ function scheduleClose() {
 }
 
 function openCard(c) { card = c; restartCountdown(0); render(); scheduleClose(); }
-function closeCard() { card = null; error = null; restartCountdown(0); render(); setTimeout(nextNotification, 600); }
+// Closing a card (Done, Esc, leaving it, opening a link or the chat in Boredroom) stops her (owner decision, 7 October 2026).
+function closeCard() { hush(); card = null; error = null; restartCountdown(0); render(); setTimeout(nextNotification, 600); }
 
 // Brenda opens the moment the pointer reaches her and folds away as soon as it leaves (owner decision, 5 October 2026;
 // a click in the menu bar strip does not reach her anyway). A card that is waiting on the person stays open: something
@@ -325,6 +346,7 @@ function render() {
   if (gaze && document.activeElement?.id !== "ask") gaze = null; // the box she was reading has gone
   fit();
   applyFx();
+  if (talking) talkLevel(talkLast); // the faces were drawn again: the level she is at, at once
   stepFace();
   updateTuck();
 }
@@ -438,6 +460,7 @@ el.addEventListener("click", async (e) => {
     if (act === "link-open") return invoke("open_in_browser", { path: link.verifyUrl });
     if (act === "open-href") { if (!removedPage(target.dataset.href)) await invoke("open_in_browser", { path: target.dataset.href }); return closeCard(); }
     if (act === "open-chat") return openChat();
+    if (act === "listen") return aloud() ? hush() : sayAloud(card?.spokenText);
     if (act === "offer") return takeOffer(Number(target.dataset.i));
     if (act === "voice-on") { voice = await invoke("set_voice", { enabled: true }); return openCard({ kind: "voice", phase: voice.modelReady ? "ready" : "downloading", progress: 0, sticky: !voice.modelReady }); }
     if (act === "voice-setup") return openCard({ kind: "voice", phase: voice.enabled ? (voice.modelReady ? "ready" : "downloading") : "off", progress: 0 });
@@ -493,8 +516,9 @@ async function pollLink() {
 
 async function signedOut() {
   clearInterval(pollTimer); clearInterval(presenceTimer);
-  config = await invoke("sign_out");
+  config = await invoke("sign_out"); // which also stops her; its `spoken` ends her talking face
   data = null; card = null; link = null; talk = []; chat = newChat(); cached = null;
+  talkWaiting = false; clearTimeout(talkWaitTimer);
   render();
 }
 
@@ -570,6 +594,8 @@ el.addEventListener("submit", (e) => {
 el.addEventListener("focusin", (e) => { if (e.target.id === "ask" && card) { card.sticky = true; clearTimeout(closeTimer); invoke("focus_notch").catch(() => {}); } });
 el.addEventListener("focusout", (e) => { if (e.target.id === "ask" && card && !e.target.value.trim() && !(card.proposals ?? []).some((p) => p.kind === "confirm")) { card.sticky = false; scheduleClose(); } });
 el.addEventListener("pointerdown", (e) => { if (e.target.id === "ask") invoke("focus_notch").catch(() => {}); });
+// Typing to her cuts her off (owner decision, 7 October 2026: her voice), as on the web.
+el.addEventListener("input", (e) => { if (e.target.id === "ask" && aloud()) hush(); });
 // Keys while the notch has focus: Esc folds the card away; on a Confirm, Y confirms and N declines (not while typing).
 window.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && card) { if (e.target.id === "ask") e.target.blur(); return closeCard(); }
@@ -595,6 +621,94 @@ const plain = (s) => String(s ?? "").replace(/\[([^\]]+)\]\([^)]+\)/g, "$1").rep
   .replace(/^([ \t]*\d{1,3}[.)][ \t]+)(.*)$/gm, (_, n, t) => `${n}${/[.!?:;]$/.test(t.trim()) ? t : `${t.trim()}.`}`)
   .replace(/^[ \t]*(\*\*|__)((?:(?!\1).)+)\1:?[ \t]*$/gm, "$2:")
   .replace(/[*_`#>]+/g, "").replace(/\s+\n/g, "\n").trim();
+
+// ---- her voice -----------------------------------------------------------------------------------------------------
+// Owner decision, 7 October 2026 (phase 2; the header says what she does). Rust's `speaking` and `spoken` drive `talking`;
+// `talkWaiting` covers the moment between asking Rust to speak and her first sound, so Stop shows at once. Nothing here
+// draws the card again (that would lose words typed in the ask box): `showTalking` changes her faces and the Listen
+// button where they are.
+
+/**
+ * When she reads replies aloud, as the person chose in Boredroom (the desktop state's `assistant.speak`): "voice" (the
+ * default, and what an older server means) answers aloud what was said with the talk keys, "always" every answer,
+ * "never" none. Listen on the reply card works whatever it says.
+ */
+const speakPref = () => { const s = data?.assistant?.speak; return s === "always" || s === "never" ? s : "voice"; };
+/** Whether she is speaking or about to. */
+const aloud = () => talking || talkWaiting;
+/** Whether this answer is read aloud on its own: always, or when it answers something said with the talk keys. */
+const speaksFor = (spoken) => speakPref() === "always" || (speakPref() === "voice" && !!spoken);
+
+/** Asks Rust to read `text` aloud (it renders first, so the first sound comes a moment later). */
+function sayAloud(text) {
+  if (!text) return;
+  talkWaiting = true;
+  clearTimeout(talkWaitTimer);
+  // She never started (nothing to say, or the microphone opened meanwhile): the button goes back to Listen.
+  talkWaitTimer = setTimeout(() => { talkWaiting = false; showTalking(); }, 12_000);
+  invoke("speak", { text }).catch(() => { talkWaiting = false; showTalking(); });
+  showTalking();
+}
+
+/** Stops her, and anything about to be said. Rust answers with `spoken` if she was heard. */
+function hush() {
+  clearTimeout(talkWaitTimer);
+  if (!aloud()) return;
+  talkWaiting = false;
+  invoke("stop_speaking").catch(() => {});
+  showTalking();
+}
+
+/**
+ * The reply card's Listen / Stop (owner decision, 7 October 2026: her voice), first in its actions row: the name stays,
+ * `aria-pressed` carries the state and the tooltip says what a press does. Stop's square is orange (live, accent rules).
+ * Only when the answer has something to say.
+ */
+const listenButton = () => (card?.spokenText ? `<button class="btn ghost icon" data-act="listen" aria-label="Listen to this reply" aria-pressed="${aloud()}" title="${aloud() ? "Stop" : "Listen"}">${icon(aloud() ? "stop" : "volume")}</button>` : "");
+
+/** Her faces and the Listen button as `talking` and `talkWaiting` now say, in place. */
+function showTalking() {
+  for (const f of el.querySelectorAll(".face[data-own]")) {
+    f.classList.toggle("talk", talking);
+    if (!talking) f.style.removeProperty("--talk");
+  }
+  const on = aloud();
+  for (const b of el.querySelectorAll('[data-act="listen"]')) {
+    b.setAttribute("aria-pressed", String(on));
+    b.title = on ? "Stop" : "Listen";
+    b.innerHTML = icon(on ? "stop" : "volume");
+  }
+  if (talking) talkLevel(talkLast);
+}
+
+/** Her talking faces follow `level` (0 to 1): eyes open and squash, glow brightens (style.css `.face.talk`, `--talk`). Under reduced motion they hold a still pose. */
+function talkLevel(level) {
+  talkLast = Math.max(0, Math.min(1, Number(level) || 0));
+  if (reduceMotion?.matches) return;
+  const lv = talkLast.toFixed(3);
+  for (const f of el.querySelectorAll(".face.talk")) f.style.setProperty("--talk", lv);
+}
+
+/**
+ * Syllables for when Rust has no level to send (it spoke the plain way): pulses 4 to 6 times a second, each rising in
+ * 35 ms to a peak of 0.45 to 0.85 and fading (90 ms), never below 0.08, as the web's fallback
+ * (src/lib/assistant-speech/envelope.ts).
+ */
+function startPulse() {
+  stopPulse();
+  if (reduceMotion?.matches) return;
+  const pulses = [];
+  let next = performance.now();
+  talkSynthetic = setInterval(() => {
+    const now = performance.now();
+    while (next <= now) { pulses.push({ at: next, peak: 0.45 + 0.4 * Math.random() }); next += 1000 / (4 + 2 * Math.random()); }
+    pulses.splice(0, Math.max(0, pulses.length - 4));
+    let lv = 0.08;
+    for (const p of pulses) { const dt = now - p.at; lv = Math.max(lv, dt < 35 ? (p.peak * dt) / 35 : p.peak * Math.exp(-(dt - 35) / 90)); }
+    talkLevel(lv);
+  }, 33);
+}
+function stopPulse() { clearInterval(talkSynthetic); talkSynthetic = null; }
 
 // ---- her replies, as light Markdown ------------------------------------------------------------------------------
 // Brenda writes light Markdown (copilot.ts): the answer first, lists with each item's key words in bold, bold labels over
@@ -731,9 +845,9 @@ function voiceView() {
     return `<div class="row fade top">${face(moodOf())}<div class="grow"><p class="said">“${esc(c.heard)}”</p><div class="reply">${md(c.reply)}</div></div></div>
       ${c.actions?.length ? `<ul class="list fade">${c.actions.slice(0, confirms.length ? 2 : 4).map((a) => `<li class="done"><span class="k ok">${icon("check")}</span><span class="t">${esc(a.summary)}</span></li>`).join("")}</ul>` : ""}
       ${offers.length ? `<ul class="list fade">${offers.map(({ p, i }) => `<li><span class="t">${offerLabel(p)}</span>${p.done ? `<span class="k ok end">${esc(p.done)}</span>` : `<button class="btn" data-act="offer" data-i="${i}" ${busy ? "disabled" : ""}>${icon(OFFER[p.kind].icon)}${OFFER[p.kind].label}</button>`}</li>`).join("")}</ul>` : ""}
-      ${confirms.map((p) => `<div class="confirm fade"><p class="sub">${icon("shield")}<span>${esc(p.summary)}</span></p><div class="actions"><button class="btn ghost" data-act="not-now">Not now <kbd>N</kbd></button><button class="btn primary" data-act="confirm" data-token="${esc(p.token)}" ${busy ? "disabled" : ""}>${icon("check")}Confirm <kbd>Y</kbd></button></div></div>`).join("")}
+      ${confirms.map((p, i) => `<div class="confirm fade"><p class="sub">${icon("shield")}<span>${esc(p.summary)}</span></p><div class="actions">${i === 0 ? listenButton() : ""}<button class="btn ghost" data-act="not-now">Not now <kbd>N</kbd></button><button class="btn primary" data-act="confirm" data-token="${esc(p.token)}" ${busy ? "disabled" : ""}>${icon("check")}Confirm <kbd>Y</kbd></button></div></div>`).join("")}
       ${!confirms.length ? askBox("Ask a follow-up…") : ""}
-      ${!confirms.length ? `<div class="actions">${opens.map((p) => `<button class="btn" data-act="open-href" data-href="${esc(p.href)}">${esc(p.label)}${icon("open")}</button>`).join("")}<button class="btn ghost" data-act="open-chat" title="Carry on with this chat on ${esc(`${me().name}'s`)} page in Boredroom">Open chat</button><button class="btn ghost" data-act="close">Done</button></div>` : ""}`;
+      ${!confirms.length ? `<div class="actions">${listenButton()}${opens.map((p) => `<button class="btn" data-act="open-href" data-href="${esc(p.href)}">${esc(p.label)}${icon("open")}</button>`).join("")}<button class="btn ghost" data-act="open-chat" title="Carry on with this chat on ${esc(`${me().name}'s`)} page in Boredroom">Open chat</button><button class="btn ghost" data-act="close">Done</button></div>` : ""}`;
   }
   if (c.phase === "off") {
     return `<div class="row fade">${face(moodOf())}<div class="grow"><p class="title">Talk to ${esc(me().name)}</p><p class="sub">Hold <kbd>${esc(voice.shortcut)}</kbd>, say what you need, let go. I only listen while you hold the keys, and your voice is turned into text on this computer. The first time, I download a 148 MB speech model.</p></div></div>
@@ -750,8 +864,12 @@ function voiceView() {
   return "";
 }
 
-/** The text (spoken or typed) goes to Brenda's chat with the last few turns; a spoken question gets a spoken reply. */
+/**
+ * The text (spoken or typed) goes to Brenda's chat with the last few turns. The answer is read aloud as the person chose
+ * (`speakPref`; by default a spoken question gets a spoken reply), and Listen on the card reads it on demand.
+ */
 async function ask(text, { spoken = true } = {}) {
+  hush(); // a new question cuts her off
   if (Date.now() - talkAt > TALK_MEMORY_MS) { talk = []; chat = newChat(); }
   talk.push({ role: "user", content: text });
   talkAt = Date.now();
@@ -764,10 +882,13 @@ async function ask(text, { spoken = true } = {}) {
     const msg = { role: "assistant", content: r.reply, actions: r.actions ?? [], proposals: r.proposals ?? [], engine: r.engine, note: r.note ?? null };
     talk.push(msg);
     const needsYes = msg.proposals.some((p) => p.kind === "confirm");
-    openCard({ kind: "voice", phase: "reply", heard: text, spoken, reply: r.reply, actions: r.actions, proposals: msg.proposals.map((p, at) => ({ ...p, at })), msg, sticky: needsYes, closeAfter: REPLY_CLOSE_MS });
+    // What she says: the server's speakable version (B3 in the phase 2 contract; "" when nothing in it can be said), or
+    // the plain words from an older server.
+    const spokenText = typeof r.spoken === "string" ? r.spoken.trim() : plain(r.reply);
+    openCard({ kind: "voice", phase: "reply", heard: text, spoken, spokenText, reply: r.reply, actions: r.actions, proposals: msg.proposals.map((p, at) => ({ ...p, at })), msg, sticky: needsYes, closeAfter: REPLY_CLOSE_MS });
     Sound.play(needsYes ? "attention" : r.actions?.length ? "success" : "reply");
-    if (spoken) invoke("speak", { text: plain(r.reply) });
-    else document.getElementById("ask")?.focus(); // typed: carry straight on with a follow-up
+    if (speaksFor(spoken)) sayAloud(spokenText);
+    if (!spoken) document.getElementById("ask")?.focus(); // typed: carry straight on with a follow-up
     if (r.actions?.length) refresh();
     saveChat();
   } catch (err) {
@@ -808,9 +929,13 @@ async function confirmProposal(token) {
   refresh();
   Sound.play(r.error ? "error" : "success");
   if (!card || card.msg !== msg) return render(); // the card moved on meanwhile
-  card = { ...card, proposals: (card.proposals ?? []).filter((p) => p.kind !== "confirm"), sticky: false, reply: said, actions: r.error ? [] : r.actions };
+  card = { ...card, proposals: (card.proposals ?? []).filter((p) => p.kind !== "confirm"), sticky: false, reply: said, actions: r.error ? [] : r.actions,
+    // The server's speakable words (never a URL, an id or a `say` command from a typed title); an older server's plain().
+    spokenText: typeof r.spoken === "string" ? r.spoken : plain(said) };
   render(); scheduleClose();
-  if (card.spoken) invoke("speak", { text: plain(said) });
+  // What the Confirm did is read aloud under the same rule as the answer; otherwise she stops reading the question.
+  if (speaksFor(card.spoken)) sayAloud(card.spokenText);
+  else hush();
 }
 
 /** Not now: nothing runs, and the kept conversation says it was declined. */
@@ -1088,6 +1213,35 @@ function hearLevel(level) {
 }
 
 listen("brenda://voice", ({ payload: e }) => {
+  // Her voice (owner decision, 7 October 2026): `speaking` starts her talking face (with the level of what is playing,
+  // or `synthetic` when there is none to send) and keeps the reply card open; `spoken` ends it, once per utterance, and
+  // the card may fold away again. Handled even when signed out, so a face never keeps talking.
+  if (e.phase === "speaking") {
+    if (!talking) {
+      talking = true; talkWaiting = false; clearTimeout(talkWaitTimer);
+      if (card?.kind === "voice" && card.phase === "reply") { card.sticky = true; clearTimeout(closeTimer); restartCountdown(0); }
+      showTalking();
+    }
+    if (e.synthetic) startPulse();
+    else if (!talkSynthetic) talkLevel(e.level ?? 0);
+    return;
+  }
+  // Asked but never heard (the microphone was open, nothing could be said, no sound came of the render; review,
+  // 7 October 2026): the Listen button turns back at once, not after the 12 s wait. A hold of the talk keys does the
+  // same, as it cuts off a reply still being rendered.
+  if (e.phase === "unspoken" || (e.phase === "listening" && talkWaiting && !talking)) {
+    if (!talking && talkWaiting) { talkWaiting = false; clearTimeout(talkWaitTimer); showTalking(); }
+    if (e.phase === "unspoken") return;
+  }
+  if (e.phase === "spoken") {
+    talking = false; stopPulse();
+    showTalking();
+    if (card?.kind === "voice" && card.phase === "reply") {
+      card.sticky = (card.proposals ?? []).some((p) => p.kind === "confirm") || document.activeElement?.id === "ask";
+      scheduleClose();
+    }
+    return;
+  }
   if (e.phase === "downloading" || e.phase === "ready") {
     voice = { ...voice, downloading: e.phase === "downloading", modelReady: e.phase === "ready" };
     if (card?.kind === "voice" && (card.phase === "downloading" || card.phase === "ready" || card.phase === "off")) {
@@ -1327,7 +1481,7 @@ setInterval(() => {
   const e = document.getElementById("testimate"), share = estimateShare(); if (e && share !== null) e.style.transform = `scaleX(${share.toFixed(3)})`;
 }, 1000);
 
-listen("brenda://signed-out", () => { config = { ...config, signedIn: false }; data = null; card = null; talk = []; chat = newChat(); cached = null; render(); });
+listen("brenda://signed-out", () => { config = { ...config, signedIn: false }; data = null; card = null; talk = []; chat = newChat(); cached = null; talkWaiting = false; clearTimeout(talkWaitTimer); render(); });
 
 (async () => {
   config = await invoke("get_config");

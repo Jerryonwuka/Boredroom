@@ -1,11 +1,17 @@
 /**
  * Personal assistants (owner decision, 7 October 2026: phase 1): who reads and writes the profiles (row-level security),
  * setup state, the workspace assistant (owners and HR only) and the database's own floor under the name rule.
+ *
+ * Her voice (phase 2, same day): when the person's own assistant reads replies aloud (`speak`, migration 0036) is read
+ * with the profiles, saved only by the person (never while impersonated), kept apart from the look and setup, and held
+ * to the three choices by the database too.
  */
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 import { resetTestDatabase, adminQuery, appQueryAs } from "../helpers/db";
 import { buildCompany, type CompanyFixture } from "@/server/services/fixtures";
-import { assistantProfiles, keepBrenda, readAssistantProfiles, readPersonalAssistant, readWorkspaceAssistant, saveMyAssistant, saveWorkspaceAssistant } from "@/server/services/assistant-profile";
+import { assistantProfiles, keepBrenda, readAssistantProfiles, readPersonalAssistant, readWorkspaceAssistant, saveMyAssistant, saveMySpeak, saveWorkspaceAssistant } from "@/server/services/assistant-profile";
 import { brendaTick, createReminder, setBrendaSettings } from "@/server/services/brenda";
 import { withUser, withWorker } from "@/server/db";
 import { DEFAULT_ASSISTANT } from "@/lib/assistant-look";
@@ -22,7 +28,7 @@ beforeAll(async () => {
 describe("the person's own assistant", () => {
   it("is Brenda with setup not done until they choose", async () => {
     const p = await assistantProfiles(a.employeeCtx);
-    expect(p).toEqual({ personal: DEFAULT_ASSISTANT, workspace: DEFAULT_ASSISTANT, setupDone: false, canEditWorkspace: false });
+    expect(p).toEqual({ personal: DEFAULT_ASSISTANT, workspace: DEFAULT_ASSISTANT, setupDone: false, canEditWorkspace: false, speak: "voice" });
     expect((await assistantProfiles(a.hrCtx)).canEditWorkspace).toBe(true);
     expect((await assistantProfiles(a.managerCtx)).canEditWorkspace).toBe(false);
   });
@@ -189,5 +195,98 @@ describe("what the person's assistant signs", () => {
     const notes = await adminQuery<{ recipient_membership_id: string; body: string }>("SELECT recipient_membership_id, body FROM notifications WHERE type = 'brenda.reminder' AND organisation_id = $1", [a.ownerCtx.org.id]);
     expect(notes.find((n) => n.recipient_membership_id === a.employeeCtx.membership.id)?.body).toBe("You asked Max to remind you.");
     expect(notes.find((n) => n.recipient_membership_id === a.employee2Ctx.membership.id)?.body).toBe("You asked Brenda to remind you.");
+  });
+});
+
+// Her voice (owner decision, 7 October 2026: phase 2). Runs last: it relies on the rows the tests above left (a.employee
+// chose Max; b.manager has never saved anything).
+describe("when the assistant speaks", () => {
+  const speakOf = async (membershipId: string) =>
+    (await adminQuery<{ speak: string }>("SELECT speak FROM assistant_profiles WHERE membership_id = $1", [membershipId]))[0]?.speak;
+
+  it("a saved choice is read back with the profiles, and the look and setup stay as they were", async () => {
+    expect(await saveMySpeak(a.employeeCtx, { speak: "always" })).toEqual({ speak: "always" });
+    const p = await assistantProfiles(a.employeeCtx);
+    expect(p.speak).toBe("always");
+    expect(p.personal).toEqual({ name: "Max", colour: "teal", visor: "band", eyes: "round" });
+    expect(p.setupDone).toBe(true);
+    expect((await withUser(a.employee.profileId, (db) => readAssistantProfiles(db, a.employeeCtx))).speak).toBe("always");
+    // Saving the look or keeping Brenda never touches it; a colleague's own choice is theirs.
+    await saveMyAssistant(a.employeeCtx, { name: "Max", colour: "teal", visor: "band", eyes: "round" });
+    await keepBrenda(a.employeeCtx);
+    expect(await speakOf(a.employeeCtx.membership.id)).toBe("always");
+    expect((await assistantProfiles(a.employee2Ctx)).speak).toBe("voice");
+  });
+
+  it("saving it with no profile yet creates one with Brenda's look and setup still not done", async () => {
+    expect(await adminQuery("SELECT 1 FROM assistant_profiles WHERE membership_id = $1", [b.managerCtx.membership.id])).toHaveLength(0);
+    expect(await saveMySpeak(b.managerCtx, { speak: "never" })).toEqual({ speak: "never" });
+    const row = (await adminQuery<{ name: string; colour: string; setup_done_at: string | null; speak: string }>(
+      "SELECT name, colour, setup_done_at, speak FROM assistant_profiles WHERE membership_id = $1", [b.managerCtx.membership.id]))[0];
+    expect(row).toEqual({ name: "Brenda", colour: "white", setup_done_at: null, speak: "never" });
+    // "Meet your assistant" still shows for them.
+    expect(await assistantProfiles(b.managerCtx)).toMatchObject({ personal: DEFAULT_ASSISTANT, setupDone: false, speak: "never" });
+    // Changing their mind updates the same row.
+    expect(await saveMySpeak(b.managerCtx, { speak: "voice" })).toEqual({ speak: "voice" });
+    expect(await adminQuery("SELECT 1 FROM assistant_profiles WHERE membership_id = $1", [b.managerCtx.membership.id])).toHaveLength(1);
+  });
+
+  it("nobody else changes it, whatever their role, and other workspaces do not see it", async () => {
+    for (const who of [a.employee2, a.manager, a.hr, a.owner]) {
+      const updated = await appQueryAs(who.profileId, "UPDATE assistant_profiles SET speak = 'never' WHERE membership_id = $1 RETURNING 1", [a.employeeCtx.membership.id]);
+      expect(updated, who.profileId).toHaveLength(0);
+      await expect(appQueryAs(who.profileId,
+        "INSERT INTO assistant_profiles(membership_id, organisation_id, speak) VALUES ($1, $2, 'never') ON CONFLICT (membership_id) DO UPDATE SET speak = 'never'",
+        [a.employeeCtx.membership.id, a.ownerCtx.org.id])).rejects.toThrow(/row-level security/);
+    }
+    // Colleagues may read it with the rest of the profile (0035's policies); another workspace cannot.
+    expect(await appQueryAs(a.employee2.profileId, "SELECT speak FROM assistant_profiles WHERE membership_id = $1", [a.employeeCtx.membership.id])).toEqual([{ speak: "always" }]);
+    expect(await appQueryAs(b.employee.profileId, "SELECT speak FROM assistant_profiles WHERE membership_id = $1", [a.employeeCtx.membership.id])).toHaveLength(0);
+    // The person can, as the service does.
+    expect(await appQueryAs(a.employee.profileId, "UPDATE assistant_profiles SET speak = 'always' WHERE membership_id = $1 RETURNING speak", [a.employeeCtx.membership.id])).toEqual([{ speak: "always" }]);
+    expect(await speakOf(a.employeeCtx.membership.id)).toBe("always");
+  });
+
+  // Integration review (7 October 2026): the service only ever writes the caller's own row, whoever calls it.
+  it("a colleague saving their own choice leaves the person's untouched", async () => {
+    expect(await saveMySpeak(a.managerCtx, { speak: "never" })).toEqual({ speak: "never" });
+    expect(await speakOf(a.managerCtx.membership.id)).toBe("never");
+    expect(await speakOf(a.employeeCtx.membership.id)).toBe("always");
+    expect((await assistantProfiles(a.employeeCtx)).speak).toBe("always");
+  });
+
+  it("an administrator signed in as the person cannot change it", async () => {
+    const as = { ...a.employeeCtx, user: { ...a.employeeCtx.user, impersonation: { id: "imp-2", adminEmail: "admin@boredroom.test" } } };
+    await expect(saveMySpeak(as, { speak: "never" })).rejects.toMatchObject({ status: 403 });
+    expect(await speakOf(a.employeeCtx.membership.id)).toBe("always");
+  });
+
+  it("the database refuses anything but the three choices, even from SQL", async () => {
+    for (const bad of ["loud", "Always", "", "voice "]) {
+      await expect(adminQuery("UPDATE assistant_profiles SET speak = $2 WHERE membership_id = $1", [a.employeeCtx.membership.id, bad]), JSON.stringify(bad)).rejects.toThrow(/assistant_profiles_speak_check/);
+    }
+    await expect(adminQuery("UPDATE assistant_profiles SET speak = NULL WHERE membership_id = $1", [a.employeeCtx.membership.id])).rejects.toThrow(/null value/);
+    expect(await speakOf(a.employeeCtx.membership.id)).toBe("always");
+  });
+
+  it("a bad choice or a large body is refused at the door", async () => {
+    const { parseBody } = await import("@/server/lib/api");
+    const { assistantSpeakSchema, ASSISTANT_BODY_MAX } = await import("@/server/services/assistant-profile");
+    const req = (body: string, headers: Record<string, string> = {}) => new Request("http://test/api", { method: "PUT", headers: { "content-type": "application/json", ...headers }, body });
+    await expect(parseBody(req(JSON.stringify({ speak: "loud" })), assistantSpeakSchema, { maxBytes: ASSISTANT_BODY_MAX }))
+      .rejects.toMatchObject({ status: 422, fieldErrors: { speak: ["Pick when your assistant speaks."] } });
+    const big = JSON.stringify({ speak: "always", pad: "x".repeat(ASSISTANT_BODY_MAX) });
+    await expect(parseBody(req(big, { "content-length": String(big.length) }), assistantSpeakSchema, { maxBytes: ASSISTANT_BODY_MAX })).rejects.toMatchObject({ status: 413 });
+    expect(await parseBody(req(JSON.stringify({ speak: "never" })), assistantSpeakSchema, { maxBytes: ASSISTANT_BODY_MAX })).toEqual({ speak: "never" });
+  });
+
+  it("migration 0036 runs again without error and keeps every choice", async () => {
+    const sql = readFileSync(join(process.cwd(), "db/migrations/0036_assistant_voice.sql"), "utf8");
+    await adminQuery(sql);
+    await adminQuery(sql);
+    expect(await speakOf(a.employeeCtx.membership.id)).toBe("always");
+    expect(await speakOf(b.managerCtx.membership.id)).toBe("voice");
+    // Rows that never chose read the default.
+    expect(await speakOf(a.employee2Ctx.membership.id)).toBe("voice");
   });
 });

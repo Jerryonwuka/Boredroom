@@ -11,6 +11,10 @@
  * One microphone per recording (7 October 2026, with the live waveform): whatever records here (this hook and
  * dictation, `use-dictation.ts`) also shares its open stream through `shareMicrophone`, and `useSharedMicrophone` hands
  * it to the waveform and the level meters, so they never open a second microphone for a caller that did not pass one.
+ *
+ * Her voice (owner decision, 7 October 2026: personal assistants, phase 2): she never speaks while a microphone is open,
+ * so `subscribeMicrophone` and `microphoneOpen` tell her voice (lib/assistant-speech/controller) when a recording here
+ * opens one, and it stops at once (and `askingForMicrophone` already when one is about to ask). Dictation (both engines) and voice notes all share through `shareMicrophone`.
  */
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 
@@ -84,6 +88,21 @@ export function useSharedMicrophone(): MediaStream | null {
   return useSyncExternalStore(subscribeMic, newestMic, () => null);
 }
 
+/** Calls `l` whenever a recording on this page opens or releases the microphone (her voice stops when one opens). */
+export const subscribeMicrophone = (l: () => void) => subscribeMic(l);
+/** Whether any recording on this page holds the microphone open right now. */
+export const microphoneOpen = () => openMics.length > 0;
+
+const askListeners = new Set<() => void>();
+/**
+ * Says a recording is about to ask for the microphone (Dictate or Record pressed), before the browser's permission
+ * prompt: her voice stops then, not only once the microphone opens, so she never talks over the prompt and stops even
+ * if it is refused (review, 7 October 2026: "starts dictating or recording").
+ */
+export function askingForMicrophone(): void { askListeners.forEach((l) => { try { l(); } catch { /* one listener's error never stops the rest */ } }); }
+/** Calls `l` whenever a recording on this page is about to ask for the microphone. */
+export const subscribeMicrophoneAsked = (l: () => void) => { askListeners.add(l); return () => { askListeners.delete(l); }; };
+
 export function useVoiceRecorder({ onLimit }: { /** Called once when the recording reaches MAX_SECONDS. */ onLimit?: () => void } = {}) {
   const [recording, setRecording] = useState(false);
   const [live, setLive] = useState<MediaStream | null>(null);
@@ -114,6 +133,7 @@ export function useVoiceRecorder({ onLimit }: { /** Called once when the recordi
     setError(null);
     if (!supported) { setError("This browser cannot record audio. Use Chrome, Edge, Firefox or Safari."); return false; }
     if (!window.isSecureContext) { setError(`Recording needs a secure address. Open the app at http://localhost:${window.location.port || "3000"} or an https:// address.`); return false; }
+    askingForMicrophone();
     try {
       const s = await navigator.mediaDevices.getUserMedia({ audio: true });
       stream.current = s;

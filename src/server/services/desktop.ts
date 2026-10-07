@@ -8,6 +8,10 @@
  *
  * Once linked, the app uses Boredroom's normal API with that token (Brenda's briefing, confirm and presence, the timer,
  * task progress) plus one combined read, `desktopState`, so its poll is a single request.
+ *
+ * Her voice (owner decision, 7 October 2026: personal assistants, phase 2): the state's `assistant.speak` says when the
+ * person's own assistant reads replies aloud ('voice', 'always' or 'never'), the same preference the web follows, so a
+ * change in Settings reaches the notch on its next poll.
  */
 import { z } from "zod";
 import { withSystem, withUser } from "@/server/db";
@@ -21,7 +25,7 @@ import { currentSession } from "@/server/services/sessions";
 import { myClock } from "@/server/services/attendance";
 import { teamStatus } from "@/server/services/views";
 import { readAssistantProfiles } from "@/server/services/assistant-profile";
-import { PALETTE, type AssistantEyes, type AssistantProfile, type AssistantVisor, type FaceShades } from "@/lib/assistant-look";
+import { PALETTE, type AssistantEyes, type AssistantProfile, type AssistantSpeak, type AssistantVisor, type FaceShades } from "@/lib/assistant-look";
 
 const CODE_TTL_SECONDS = 10 * 60;
 const DESKTOP_SESSION_DAYS = 90;
@@ -155,8 +159,9 @@ export async function desktopState(ctx: OrgContext) {
     workspace: { slug: ctx.org.slug, name: ctx.org.name },
     brendaEnabled: ctx.plan.features.AI_ASSISTANT === true,
     // The person's own assistant and the workspace's, resolved, with the face colours the notch draws (it cannot import
-    // lib/assistant-look) (owner decision, 7 October 2026: personal assistants).
-    assistant: { personal: forNotch(extra.assistants.personal), workspace: forNotch(extra.assistants.workspace) } satisfies { personal: DesktopAssistant; workspace: DesktopAssistant },
+    // lib/assistant-look) (owner decision, 7 October 2026: personal assistants), and when the person's own reads replies
+    // aloud (phase 2: her voice; the notch reads anything else, or its absence from an older server, as 'voice').
+    assistant: { personal: forNotch(extra.assistants.personal), workspace: forNotch(extra.assistants.workspace), speak: extra.assistants.speak } satisfies { personal: DesktopAssistant; workspace: DesktopAssistant; speak: AssistantSpeak },
     settings: extra.settings, prefs: extra.prefs,
     clock: clock ? { status: clock.status, workingDay: clock.workingDay, startAt: clock.scheduledStartAt, endAt: clock.scheduledEndAt, clockInAt: clock.record?.clock_in_at ?? null, lateSeconds: clock.record?.late_seconds ?? 0 } : null,
     timer: s ? { id: s.id, version: s.version, state: s.state, taskId: s.taskId, taskTitle: s.taskTitle, confirmedSeconds: s.confirmedSeconds, openIntervalStartedAt: s.openIntervalStartedAt, serverNow: s.serverNow, estimateMinutes: s.estimateMinutes, progress: running?.progress_percent ?? 0, taskVersion: running?.version ?? null } : null,

@@ -1,6 +1,6 @@
 <!doctype html>
 <!-- Layout preview of the notch in an ordinary browser, with sample data. Not part of the app.
-     ?state=link|compact|briefing|timer|paused|reminder|report|lead|idle picks the data; ?card=listening|working|thinking|reply|confirm|offer|error|drop|voice-off|typing
+     ?state=link|compact|briefing|timer|paused|reminder|report|lead|idle picks the data; ?card=listening|working|thinking|reply|confirm|offer|error|drop|voice-off|typing|speaking
      opens one of Brenda's cards on top of it (?confirm=already answers its Confirm as already done; ?card=listening feeds the
      waveform and her listening face a speech-like microphone level every 70 ms, as Rust does; ?card=working listens for
      two seconds, then writes the words out, to see the bars turn into the travelling wave; ?card=typing types a question
@@ -12,7 +12,14 @@
      as any colour, visor and eyes, with its name in the labels (Brenda, white, bean, pill when left out); ?ws=teal,screen,square&wsname=Atlas
      does the same for the workspace's, which the end-of-day report's card shows (?state=report). ?gallery adds a sheet
      under the island with every colour, visor and eyes at both sizes, and every mood and reaction on each visor and eyes,
-     for checking that every combination reads. -->
+     for checking that every combination reads.
+     Her voice (owner decision, 7 October 2026: phase 2): ?card=speaking opens a reply and feeds `brenda://voice` as Rust
+     does while she reads it aloud: `speaking` with a speech-like level every 30 ms for 4 seconds, then `spoken`, so her
+     faces talk and the card's Listen button turns to Stop; ?card=speaking&synthetic sends the fallback's start instead
+     (`synthetic`, no levels: the page makes the syllables). The mock `speak` and `stop_speaking` commands answer the same
+     way after a short pause for rendering, so Listen and Stop work on any reply (&synthetic applies to them too).
+     ?speak=always|never sets the person's choice (the default, voice, speaks only answers to the talk keys). ?look=… gives
+     the glow her colour. -->
 <html lang="en"><head><meta charset="utf-8"><title>Brenda notch preview</title><link rel="stylesheet" href="src/style.css">
 <style>html,body{background:#3b3b3b!important;height:100%;overflow:hidden!important} body::before{content:"";position:fixed;inset:0 0 auto;height:40px;background:rgb(0 0 0 / .28);box-shadow:inset 0 -1px 0 rgb(255 255 255 / .075)} #stage{position:relative;width:480px;height:440px;margin:0 auto;outline:1px dashed rgb(255 255 255 / .1)}</style></head>
 <body><div id="stage"><div id="island" class="island"><main id="notch" class="notch compact"></main><i id="countdown" class="countdown"></i></div></div>
@@ -40,7 +47,7 @@ const personal = assistantFrom(q.get("look"), q.get("name"));
 const workspace = assistantFrom(q.get("ws"), q.get("wsname"));
 const sample = {
   serverNow: now, me: { displayName: "Ada Employee", role: "employee", presence: "active" }, workspace: { slug: "company-a", name: "Company A" }, brendaEnabled: true,
-  settings: { autoClockIn: true, reminders: true }, prefs: { autoClockIn: true, reminders: true }, assistant: { personal, workspace },
+  settings: { autoClockIn: true, reminders: true }, prefs: { autoClockIn: true, reminders: true }, assistant: { personal, workspace, speak: q.get("speak") || "voice" },
   clock: { status: "in", workingDay: true, startAt: now, endAt: now, clockInAt: now, lateSeconds: 0 },
   timer: timed ? { id: "s1", version: 3, state: state === "paused" ? "paused" : "running", taskId: "t1", taskTitle: "KITA onboarding flow", confirmedSeconds: 2832, openIntervalStartedAt: state === "paused" ? null : now, serverNow: now, estimateMinutes: 180, progress: 60, taskVersion: 4 } : null,
   briefing: { openTasks: 5, dueToday: [{ id: "t1", title: "KITA onboarding flow", due: now }], dueTomorrow: [{ id: "t3", title: "Brand deck refresh", due: now }], overdue: [{ id: "t2", title: "Landing page copy", due: now }], waitingForYourReview: state === "lead" ? [{ id: "r1" }] : [], assignmentsNotPickedUp: state === "lead" ? [{ id: "a1" }] : [], remindersToday: [], waitingForTheirCheck: [] },
@@ -50,10 +57,11 @@ const sample = {
     : state === "report" ? [{ id: "n2", type: "brenda.daily_report", title: "Your team report for Monday 5 October is ready", body: "Ada and Ben logged 13h 20m; Ben finished the brand deck and Ada sent the onboarding flow for review.", href: "/app/company-a/docs/44444444-4444-4444-4444-444444444444", created_at: now }] : [],
 };
 const replies = {
-  confirm: { reply: "Ada will get “Review the brand deck”, due tomorrow at 15:00, once you confirm.", engine: "claude", actions: [], proposals: [{ kind: "confirm", token: "preview-token-123", summary: "Create “Review the brand deck” for Ada, due Tue 6 Oct, 15:00", tool: "create_todos" }], note: null },
-  offer: { reply: "I can add that to your list and start the timer on your highest-priority task.", engine: "builtin", actions: [], proposals: [{ kind: "todo", title: "Call Josh about the invoice", description: null, dueAt: null, assigneeMembershipId: null, assigneeName: null, estimateMinutes: null }, { kind: "start_timer", taskId: "11111111-1111-1111-1111-111111111111", taskTitle: "KITA onboarding flow" }], note: null },
+  // `spoken` is what the server makes speakable (src/lib/assistant-speech/speakable.ts): no Markdown, links or ids.
+  confirm: { reply: "Ada will get “Review the brand deck”, due tomorrow at 15:00, once you confirm.", spoken: "Ada will get “Review the brand deck”, due tomorrow at 15:00, once you confirm.", engine: "claude", actions: [], proposals: [{ kind: "confirm", token: "preview-token-123", summary: "Create “Review the brand deck” for Ada, due Tue 6 Oct, 15:00", tool: "create_todos" }], note: null },
+  offer: { reply: "I can add that to your list and start the timer on your highest-priority task.", spoken: "I can add that to your list and start the timer on your highest-priority task.", engine: "builtin", actions: [], proposals: [{ kind: "todo", title: "Call Josh about the invoice", description: null, dueAt: null, assigneeMembershipId: null, assigneeName: null, estimateMinutes: null }, { kind: "start_timer", taskId: "11111111-1111-1111-1111-111111111111", taskTitle: "KITA onboarding flow" }], note: null },
   // Her replies are light Markdown (owner request, 7 October 2026): the answer first, then lists with the key words in bold.
-  reply: { reply: "Ben is on the clock, with two more tasks due this week.\n\n**Working on now**\n- **Homepage hero illustrations**, 1h 12m so far\n\n**Due this week**\n1. **Brand deck refresh**, due Thu 8 Oct, 17:00\n2. **Landing page copy**, due Fri 9 Oct, 17:00\n\nHis team's day is in the [Workroom](/app/company-a/workroom).", engine: "claude", actions: [{ kind: "todo", summary: "Added “Send Ben the brief” to your list" }], proposals: [{ kind: "open", href: "/app/company-a/workroom", label: "Workroom" }, { kind: "open", href: "/app/company-a/reports", label: "Reports" }], note: null },
+  reply: { reply: "Ben is on the clock, with two more tasks due this week.\n\n**Working on now**\n- **Homepage hero illustrations**, 1h 12m so far\n\n**Due this week**\n1. **Brand deck refresh**, due Thu 8 Oct, 17:00\n2. **Landing page copy**, due Fri 9 Oct, 17:00\n\nHis team's day is in the [Workroom](/app/company-a/workroom).", spoken: "Ben is on the clock, with two more tasks due this week. Working on now: Homepage hero illustrations, 1h 12m so far. Due this week: Brand deck refresh, due Thu 8 Oct, 17:00. Landing page copy, due Fri 9 Oct, 17:00. His team's day is in the Workroom.", engine: "claude", actions: [{ kind: "todo", summary: "Added “Send Ben the brief” to your list" }], proposals: [{ kind: "open", href: "/app/company-a/workroom", label: "Workroom" }, { kind: "open", href: "/app/company-a/reports", label: "Reports" }], note: null },
 };
 const saved = [];
 window.__TAURI__ = {
@@ -72,6 +80,8 @@ window.__TAURI__ = {
     if (cmd === "api" && path.includes("/brenda/conversations")) { saved.push({ method: args.method, path, body: args.body }); console.log("past chat saved", args.method, path, args.body); return { id: "55555555-5555-5555-5555-555555555555", updatedAt: new Date().toISOString() }; }
     if (cmd === "api" && args.method !== "GET") { await new Promise((r) => setTimeout(r, 300)); return {}; }
     if (cmd === "upload_dropped") { await new Promise((r) => setTimeout(r, 700)); return { id: "33333333-3333-3333-3333-333333333333" }; }
+    if (cmd === "speak") { console.log("speak", args.text); speakingFeed.say(args.text); return; }
+    if (cmd === "stop_speaking") { speakingFeed.stop(); return; }
     if (cmd === "voice_status") return { enabled: true, modelReady: true, downloading: false, shortcut: "⌥ Space" };
     if (cmd === "get_config") return state === "link" ? { baseUrl: "https://boredroom.cc", signedIn: false } : { baseUrl: "https://boredroom.cc", signedIn: true, workspaceSlug: "company-a", workspaceName: "Company A", displayName: "Ada Employee" };
     if (cmd === "api") return sample;
@@ -91,6 +101,30 @@ const voiceEvent = (payload) => window.__h?.["brenda://voice"]?.({ payload });
 // A speech-like level, as Rust sends it while the keys are held: syllables, short pauses, a little room noise.
 let said = 0;
 const speech = () => { said += 0.07; const syllable = Math.max(0, Math.sin(said * 9) * Math.sin(said * 2.3 + 1)); const talking = Math.sin(said * 0.7) > -0.55 ? 1 : 0.08; return Math.min(1, 0.03 + syllable * 0.8 * talking + Math.random() * 0.06); };
+// Her voice: what Rust sends while she reads a reply aloud (see the comment at the top). The level here only looks like
+// speech (syllables in words, short gaps); the real one is measured from what `say` rendered.
+const speakingFeed = (() => {
+  let live = false, every = null, end = null, pending = null, t = 0;
+  const level = () => { t += 0.03; const syllable = Math.max(0, Math.sin(t * 31) * Math.sin(t * 5.3 + 1)); return Math.sin(t * 2.1) > -0.6 ? Math.min(1, syllable * 1.15) : 0; };
+  function stop(interrupted) {
+    clearTimeout(pending); clearInterval(every); clearTimeout(end);
+    pending = every = end = null;
+    if (live) { live = false; voiceEvent(interrupted ? { phase: "spoken", interrupted: true } : { phase: "spoken" }); }
+  }
+  function speakFor(ms, synthetic) {
+    stop(true);
+    live = true;
+    if (synthetic) voiceEvent({ phase: "speaking", synthetic: true });
+    else { voiceEvent({ phase: "speaking", level: 0 }); every = setInterval(() => voiceEvent({ phase: "speaking", level: level() }), 30); }
+    end = setTimeout(() => stop(false), ms);
+  }
+  return {
+    speakFor,
+    stop: () => stop(true),
+    /** The mock `speak`: a moment to render, then about as long as the words take to say. */
+    say(text) { stop(true); pending = setTimeout(() => speakFor(Math.min(8000, 600 + String(text ?? "").length * 55), q.has("synthetic")), 700); },
+  };
+})();
 const talkFor = (ms) => { voiceEvent({ phase: "listening", level: 0 }); const every = setInterval(() => voiceEvent({ phase: "listening", level: speech() }), 70); if (ms) setTimeout(() => { clearInterval(every); voiceEvent({ phase: "transcribing" }); }, ms); };
 setTimeout(() => {
   const c = q.get("card");
@@ -98,6 +132,7 @@ setTimeout(() => {
   if (c === "working") talkFor(2000);
   if (c === "thinking") openCard({ kind: "voice", phase: "thinking", heard: "What is Ben working on?", sticky: true });
   if (c === "reply") ask("What is Ben working on?", { spoken: false });
+  if (c === "speaking") ask("What is Ben working on?", { spoken: false }).then(() => speakingFeed.speakFor(4000, q.has("synthetic")));
   if (c === "confirm") ask("Give Ada the brand deck review for tomorrow at 3", { spoken: false });
   if (c === "offer") ask("Add calling Josh and start my top task", { spoken: false });
   if (c === "error") voiceEvent({ phase: "error", message: "The microphone is blocked. Allow it in System Settings, Privacy, Microphone." });

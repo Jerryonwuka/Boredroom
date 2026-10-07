@@ -25,7 +25,7 @@
  * and is the one Whisper records from if the browser's service fails mid-way; it is stopped when the dictation ends.
  */
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { diagnoseMicError, shareMicrophone } from "@/hooks/use-voice-recorder";
+import { askingForMicrophone, diagnoseMicError, shareMicrophone } from "@/hooks/use-voice-recorder";
 import { prepareWhisper, toWhisperAudio, transcribe, whisperSupported } from "@/lib/whisper/client";
 import { MAX_DICTATION_SECONDS, WHISPER_SAMPLE_RATE } from "@/lib/whisper/config";
 
@@ -355,6 +355,7 @@ export function useDictation(text: string, setText: (t: string) => void) {
     if (!window.isSecureContext) { setError(`Dictation needs a secure address. Open the app at http://localhost:${window.location.port || "3000"} or an https:// address (you are on ${window.location.host}).`); return; }
     starting.current = true;
     const token = ++session.current;
+    askingForMicrophone(); // her voice stops now, before the permission prompt (use-voice-recorder)
     let stream: MediaStream;
     try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
     catch (err) { starting.current = false; if (token === session.current && alive.current) setError(await diagnoseMicError(err)); return; }

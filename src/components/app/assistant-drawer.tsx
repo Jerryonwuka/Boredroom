@@ -5,8 +5,9 @@
  * her, typed or spoken. The conversation itself (`brenda-chat.tsx`) is shared with Brenda Home.
  *
  * In the style of the desktop notch (owner decision, 4 October 2026): her living face on the button and in the header
- * (poke her); her mood and a soft glow follow the conversation; the same small sounds, with a mute switch. Her faces
- * react as on her page (owner request, 7 October 2026): they read along while you type in the box (eyes on the caret),
+ * (poke her); her mood and a soft glow follow the conversation; the same small chimes, with a mute switch (chimes only:
+ * her voice has its own setting). Her faces react as on her page (owner request, 7 October 2026): they read along
+ * while you type in the box (eyes on the caret),
  * listen while you dictate (head tilted, eyes wide), think while she works and smile at her reply (brenda-chat).
  *
  * Not on Brenda's own page (owner decision, 5 October 2026): that page is the conversation with her, so the floating
@@ -26,11 +27,17 @@
  *
  * It is the person's own assistant (owner decision, 7 October 2026: personal assistants): the button, the panel's title,
  * its aria-labels and her opening words use the name they chose (`useAssistant`); her faces draw their look.
+ *
+ * Her voice (owner decision, 7 October 2026: phase 2): the chat reads replies aloud as the person chose, with Listen on
+ * each (brenda-chat). Putting the panel away stops her: however it closes (the overlay, Escape, Close, the button, a
+ * link in a reply, Past chats) and on Brenda's page, where the panel is not shown; a reply that lands while it is
+ * closed is not read. Her faces here (the button, the header, the replies) talk while she speaks, with every other face
+ * of hers on the page (brenda-face).
  */
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { MessageSquareText, Volume2, VolumeX, X } from "lucide-react";
+import { Bell, BellOff, MessageSquareText, X } from "lucide-react";
 // Past chats is a link styled as an icon button, so it carries its animated twin itself (IconButton swaps its own).
 import { AnimatedHistory } from "@/components/ui/animated-icons";
 import { IconButton, ICON_BUTTON } from "@/components/ui/icon-button";
@@ -70,8 +77,11 @@ export function AssistantDrawer({ orgSlug, isOrg, firstName, floating = false }:
   const onBrendaPage = /^\/app\/[^/]+\/home\/?$/.test(usePathname() ?? "");
   const muted = useSyncExternalStore(subscribeSounds, soundsMuted, () => false);
   // Y and N answer this panel's Confirm only while it is open and showing; on Brenda's page her own chat takes them.
-  const chat = useBrendaChat({ orgSlug, keysActive: open && !onBrendaPage, onLeave: () => setOpen(false) });
-  const { messages, pending, dictation, look } = chat;
+  const showing = open && !onBrendaPage;
+  const chat = useBrendaChat({ orgSlug, keysActive: showing, visible: showing, onLeave: () => setOpen(false) });
+  const { messages, pending, dictation, look, quiet } = chat;
+  // Every way the panel goes away (each sets `open` false) stops what this chat was reading aloud; so does her page.
+  useEffect(() => { if (!showing) quiet(); }, [showing, quiet]);
   const listRef = useRef<HTMLDivElement>(null);
   const fabRef = useRef<HTMLButtonElement>(null);
   const boxRef = useRef<HTMLDivElement>(null);
@@ -148,8 +158,10 @@ export function AssistantDrawer({ orgSlug, isOrg, firstName, floating = false }:
             <Link href={`/app/${orgSlug}/home?tab=history`} aria-label="Past chats" className={ICON_BUTTON} onClick={() => { chat.saveNow(); close(); }}>
               <AnimatedHistory aria-hidden />
             </Link>
-            <IconButton aria-label={muted ? `Turn ${name}'s sounds on` : `Turn ${name}'s sounds off`} aria-pressed={!muted} onClick={() => { setSoundsMuted(!muted); if (muted) playSound("reply"); }}>
-              {muted ? <VolumeX aria-hidden /> : <Volume2 aria-hidden />}
+            {/* Her chimes only, not her voice (Settings → Your assistant → Voice, and Listen on each reply): named and drawn
+                as chimes so it is not taken for the Listen speaker just below it (review, 7 October 2026). */}
+            <IconButton aria-label={muted ? `Turn ${name}'s chimes on` : `Turn ${name}'s chimes off`} aria-pressed={!muted} onClick={() => { setSoundsMuted(!muted); if (muted) playSound("reply"); }}>
+              {muted ? <BellOff aria-hidden /> : <Bell aria-hidden />}
             </IconButton>
             <IconButton aria-label="Close" onClick={close}><X aria-hidden /></IconButton>
           </div>

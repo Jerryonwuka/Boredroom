@@ -21,9 +21,16 @@
  * (`AssistantProvider`) or a scoped one (`AssistantScope`: a preview, the workspace's), with its colour, visor and eyes,
  * and named by it unless `label` says otherwise. `look` draws another look outright (the editor's preview). A new look
  * shows from the next frame, with no transition; under reduced motion the still frame is redrawn at once.
+ *
+ * Her voice (owner decision, 7 October 2026: phase 2): while she speaks a reply, she talks. Her drawing loop reads the
+ * page's one voice (`speech`, lib/assistant-speech/controller) each frame and gives the engine its level, so every
+ * character of hers on the page talks at once, on top of whatever state she is in. Under reduced motion she takes the
+ * still speaking pose when she starts and drops it when she stops; nothing pulses. `quiet` keeps a character from ever
+ * talking (a preview of someone else's assistant).
  */
 import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import { attention, BrendaEngine, type BrendaEmote, type BrendaState } from "@/lib/brenda-character/engine";
+import { speech } from "@/lib/assistant-speech/controller";
 import { sameLook, type AssistantLook } from "@/lib/assistant-look";
 import { useScopedAssistant } from "@/components/app/assistant-context";
 import { playSound } from "@/lib/brenda-sound";
@@ -46,7 +53,9 @@ export const BrendaCharacter = forwardRef<BrendaCharacterHandle, {
   level?: () => number;
   /** The look to draw instead of the assistant in context (the editor's live preview). */
   look?: AssistantLook;
-}>(function BrendaCharacter({ state = "idle", size = 120, interactive = false, className, label, stream = null, level, look }, ref) {
+  /** Never talks, even while she speaks (a preview of someone else's assistant). */
+  quiet?: boolean;
+}>(function BrendaCharacter({ state = "idle", size = 120, interactive = false, className, label, stream = null, level, look, quiet = false }, ref) {
   const scoped = useScopedAssistant();
   const { colour, visor, eyes } = look ?? scoped;
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -65,6 +74,9 @@ export const BrendaCharacter = forwardRef<BrendaCharacterHandle, {
   /** The look she is created with (kept current for the drawing set-up below, which does not re-run for it). */
   const lookRef = useRef<AssistantLook>({ colour, visor, eyes });
   useEffect(() => { lookRef.current = { colour, visor, eyes }; });
+  /** Whether she keeps quiet while speaking, read in the drawing loop; `hush` re-takes the still pose under reduced motion. */
+  const quietRef = useRef(quiet);
+  const hush = useRef<() => void>(() => {});
 
   useImperativeHandle(ref, () => ({ emote: (e) => engine.current?.emote(e), lookAt: (x, y) => place.current(x, y) }), []);
 
@@ -83,6 +95,8 @@ export const BrendaCharacter = forwardRef<BrendaCharacterHandle, {
     const loop = (t: number) => {
       const dt = Math.min(0.05, (t - last) / 1000); last = t;
       e.voice = levelRef.current?.() ?? hear.current?.() ?? null;
+      // Her voice: every character of hers reads the page's one voice, so they all talk at once.
+      e.talk = quietRef.current || !speech.getSnapshot().talking ? null : speech.level();
       e.update(dt); draw();
       frame = visible && document.visibilityState === "visible" ? requestAnimationFrame(loop) : 0;
     };
@@ -114,6 +128,18 @@ export const BrendaCharacter = forwardRef<BrendaCharacterHandle, {
       if (gaze && cue) e.readAlong(cue);
       start();
     });
+    // Her voice under reduced motion: the still speaking pose from when she starts until she stops (the loop, which
+    // reads the level each frame, does not run).
+    let talkingStill = false;
+    const voiceStill = (redraw = true) => {
+      const on = speech.getSnapshot().talking && !quietRef.current;
+      if (on === talkingStill) return;
+      talkingStill = on; e.talk = on ? 0.5 : null;
+      if (redraw) settle();
+    };
+    const offSpeech = reduced ? speech.subscribe(() => voiceStill()) : () => {};
+    if (reduced) voiceStill(false);
+    hush.current = reduced ? () => voiceStill() : () => {};
     const io = new IntersectionObserver(([entry]) => { visible = entry.isIntersecting; if (visible) start(); });
     io.observe(el);
     const onVis = () => { if (document.visibilityState === "visible") start(); };
@@ -122,13 +148,15 @@ export const BrendaCharacter = forwardRef<BrendaCharacterHandle, {
     still.current = reduced ? settle : null;
     if (reduced) settle(); else start();
     return () => {
-      cancelAnimationFrame(frame); frame = 0; io.disconnect(); offAttention();
+      cancelAnimationFrame(frame); frame = 0; io.disconnect(); offAttention(); offSpeech();
       document.removeEventListener("visibilitychange", onVis); window.removeEventListener("pointermove", onMove);
-      still.current = null; place.current = () => {};
+      still.current = null; place.current = () => {}; hush.current = () => {};
     };
   }, [size]);
 
   useEffect(() => { engine.current?.setState(state); still.current?.(); }, [state]);
+  // A character told to keep quiet (or no longer) while she speaks: the loop reads it next frame; a still one redraws.
+  useEffect(() => { quietRef.current = quiet; hush.current(); }, [quiet]);
   // A new look (the editor's preview, a saved profile): drawn from the next frame, or at once when she is still.
   useEffect(() => {
     const e = engine.current, next: AssistantLook = { colour, visor, eyes };

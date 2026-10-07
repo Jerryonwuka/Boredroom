@@ -11,6 +11,10 @@
  * 2026). The footer: "Reset to Brenda" puts Brenda's name and look in the draft (saved only with Save), Save sends it and is
  * off while the draft is what is saved. After a save the page refreshes, so the shell (the sidebar's name and glyph, the
  * faces, the drawer) shows the new assistant at once.
+ *
+ * Her voice (owner decision, 7 October 2026: phase 2): "Your assistant" is followed by its Voice card
+ * (assistant-voice-settings, rendered by the Settings page). The workspace assistant's preview is `quiet`: it is not the
+ * person's own, so it never talks while theirs speaks.
  */
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
@@ -23,10 +27,11 @@ import { DEFAULT_ASSISTANT, assistantNameProblem, type AssistantProfile } from "
 
 const OFFLINE = "Could not save. Check your connection and try again.";
 
-function AssistantForm({ initial, idPrefix, url, read, canEdit, readOnly }: {
+function AssistantForm({ initial, idPrefix, url, read, canEdit, readOnly, quiet = false }: {
   initial: AssistantProfile; idPrefix: string; url: string;
   /** The saved profile out of the PUT's answer. */ read: (r: unknown) => AssistantProfile;
   canEdit: boolean; readOnly?: string;
+  /** The preview never talks: it is not the person's own assistant. */ quiet?: boolean;
 }) {
   const router = useRouter();
   const [draft, setDraft] = useState(initial);
@@ -72,7 +77,7 @@ function AssistantForm({ initial, idPrefix, url, read, canEdit, readOnly }: {
 
   return (
     <form className={cn(SETTINGS_GROUP, "@container")} noValidate onSubmit={(e) => void save(e)}>
-      <div className="px-5 py-4"><AssistantPreview profile={draft} size={72} /></div>
+      <div className="px-5 py-4"><AssistantPreview profile={draft} size={72} quiet={quiet} /></div>
       <AssistantEditor layout="rows" value={draft} onChange={change} idPrefix={idPrefix} disabled={!canEdit || pending} error={errors} />
       {failure ? <div ref={alertRef} className="scroll-mb-24"><SettingsAlert>{failure}</SettingsAlert></div> : null}
       <SettingsFooter status={status ?? undefined} busy={pending ? "Saving…" : undefined}>
@@ -106,7 +111,7 @@ export function WorkspaceAssistantSettings({ orgSlug, initial, canEdit }: { orgS
   return (
     <SettingsSection id="workspace-assistant" title="Workspace assistant" description="Signs what the workspace sends on its own, such as the end-of-day team report.">
       <AssistantForm initial={initial} idPrefix="ws" url={`/api/orgs/${orgSlug}/brenda/workspace-assistant`} read={readWorkspace} canEdit={canEdit}
-        readOnly="Only the organisation owner or HR can change the workspace assistant." />
+        readOnly="Only the organisation owner or HR can change the workspace assistant." quiet />
     </SettingsSection>
   );
 }

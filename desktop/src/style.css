@@ -6,7 +6,8 @@
    ghost. Orange follows the web's accent rules (owner decision, 6 October 2026; docs/design-system.md, "Accent rules"):
    it marks what is live, active, chosen or the one thing to do, never decoration, and status meaning wins over it.
    - Live and now: a running timer's dot (it breathes) and digits, the open microphone (the live dot and the recording
-     time beside the waveform, and the wash), voice getting ready (the orb's dot), a teammate's running timer.
+     time beside the waveform, and the wash), voice getting ready (the orb's dot), a teammate's running timer, and the
+     Stop square on a reply while she reads it aloud.
    - The one standout action per card is an orange pill with near-black text (`.btn.accent`): Send once there are words,
      Start on the briefing, Resume on a paused timer, Link to Boredroom / Open Boredroom, Turn on voice. Every other
      primary stays white, and while the ask box holds words Send is the only orange button (the other one turns white).
@@ -17,7 +18,9 @@
    fill, the shimmer on waiting text, the orange wash while the microphone is open, and the soft light around her face
    (and the waveform's edge fade, drawn on its canvas, as ElevenLabs draws it).
    The window is a fixed transparent stage. The island inside it changes shape, with motion values after Coucou by
-   Louis Raillé (MIT); its shape, motion and timings are unchanged. */
+   Louis Raillé (MIT); its shape, motion and timings are unchanged.
+   Her voice (owner decision, 7 October 2026: phase 2): her faces talk while she reads a reply aloud (`.face.talk`, the
+   web's `.brenda-face[data-talking]`), and the reply card's Listen / Stop is a round ghost icon button. */
 
 /* Inter and Geist Mono, from @fontsource-variable (SIL Open Font License, fonts/OFL.txt). Nothing loads remotely. */
 @font-face { font-family: "Inter Variable"; font-style: normal; font-display: swap; font-weight: 100 900; src: url(fonts/inter-latin-ext-wght-normal.woff2) format("woff2");
@@ -167,6 +170,14 @@ svg.ic { width: 14px; height: 14px; flex: none; }
 .face.listen { --lvl: 0; box-shadow: 0 0 0 1px var(--border), 0 0 calc(10px + var(--lvl) * 14px) calc(-2px + var(--lvl) * 3px) var(--glow); transition: transform .25s var(--spring), box-shadow 90ms linear; }
 .face.listen .eyes span { height: 6px; width: 3.4px; border-radius: 2px; scale: 1 calc(1 + var(--lvl) * .45);
   transition: transform 70ms ease, scale 90ms linear, height .2s var(--ease), border-radius .2s var(--ease); }
+/* Talking (owner decision, 7 October 2026: her voice): as the web's `.brenda-face[data-talking]`. main.js sets `talk` on her
+   own faces while she speaks and --talk (0 to 1) from the real level of what `say` rendered (or a pulse). She has no
+   mouth, so her eyes squash between syllables and open on each one, she bobs a little, and her glow brightens in her own
+   sphere colour. Listening never coincides with it: she never speaks while the microphone is open. */
+.face.talk { --talk: 0; translate: 0 calc(var(--talk) * -1.2px);
+  box-shadow: 0 0 0 1px var(--border), 0 0 calc(8px + var(--talk) * 12px) calc(-2px + var(--talk) * 3px) color-mix(in srgb, var(--sphere-mid, #ececf0) calc(40% + var(--talk) * 60%), transparent);
+  transition: transform .25s var(--spring), translate 60ms linear, box-shadow 60ms linear; }
+.face.talk .eyes span { scale: calc(1.04 - var(--talk) * .05) calc(.72 + var(--talk) * .45); transition: transform 70ms ease, scale 60ms linear, height .2s var(--ease), border-radius .2s var(--ease); }
 /* An answer pleases her: happy eyes (the mood above) and one small hop as it arrives. */
 .face.pleased { animation: hop .6s var(--spring) 1, face-breathe 3.6s ease-in-out .6s infinite; }
 .face.think .eyes { transform: translate(1.5px, -1.2px); }
@@ -240,9 +251,12 @@ svg.ic { width: 14px; height: 14px; flex: none; }
 .btn .ic { width: 14px; height: 14px; }
 /* A key hint inside a button takes the button's own colour. */
 .btn kbd { height: 18px; min-width: 18px; margin-right: -4px; padding: 0 4px; background: color-mix(in srgb, currentColor 12%, transparent); color: inherit; opacity: .8; }
-/* The talk button while voice is off: a round 28px ghost icon button on the left of the actions. */
+/* The talk button while voice is off, and Listen on a reply: a round 28px ghost icon button on the left of the actions. */
 .btn.icon { width: 28px; padding: 0; margin-right: auto; }
 .btn.icon .ic { width: 16px; height: 16px; }
+/* Listen's Stop square is orange while she speaks (live and now, accent rules), as on the web's chat (owner decision,
+   7 October 2026: her voice). */
+.btn[data-act="listen"] .ic-stop { color: var(--accent); }
 /* A link: its underline turns orange on hover, as links in running text do on the web (`.link-inline`). */
 .link { all: unset; color: var(--secondary); font-size: 13px; line-height: 20px; font-weight: 500; cursor: pointer; text-decoration: underline; text-decoration-color: var(--border-input-hover); text-underline-offset: 3px; transition: color var(--fast) var(--ease), text-decoration-color var(--fast) var(--ease); }
 .link:hover { color: var(--foreground); text-decoration-color: var(--accent); }
@@ -433,6 +447,8 @@ kbd { display: inline-flex; align-items: center; justify-content: center; box-si
 :is(.btn, .link):is(:hover, :focus-visible) > .ic-send { animation-name: ic-fly-up; }
 :is(.btn, .link):is(:hover, :focus-visible) > .ic-open { animation-name: ic-fly-out; }
 :is(.btn, .link):is(:hover, :focus-visible) > .ic-play { animation-name: ic-nudge; }
+/* Listen (her voice, 7 October 2026) nudges forward like Play, the sound going out. */
+:is(.btn, .link):is(:hover, :focus-visible) > .ic-volume { animation-name: ic-nudge; }
 :is(.btn, .link):is(:hover, :focus-visible) > .ic-pause { animation-name: ic-bars; }
 :is(.btn, .link):is(:hover, :focus-visible) > .ic-stop { animation-name: ic-press; }
 :is(.btn, .link):is(:hover, :focus-visible) > .ic-plus { animation-name: ic-turn; }
@@ -444,11 +460,15 @@ kbd { display: inline-flex; align-items: center; justify-content: center; box-si
 .btn:disabled > .ic, .btn:disabled > .ic path { animation: none; }
 
 /* Reduced motion: nothing animates or slides. The waveform's bars stand still and only their strength follows the voice
-   (main.js), as on the web; listening, her eyes keep their size and only her glow follows it; the waiting text is plain. */
+   (main.js), as on the web; listening, her eyes keep their size and only her glow follows it; talking, she holds a still
+   speaking pose (eyes a little wider, a steady soft glow in her colour) and main.js sends no level; the waiting text is
+   plain. */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
   .shimmer { -webkit-text-fill-color: currentColor; }
   .face.listen .eyes span { scale: none; }
+  .face.talk { translate: none; box-shadow: 0 0 0 1px var(--border), 0 0 12px -1px color-mix(in srgb, var(--sphere-mid, #ececf0) 70%, transparent); }
+  .face.talk .eyes span { scale: 1.04 1.1; }
   .btn .ic-check path { stroke-dasharray: none; }
   .orb.think i { opacity: .8; }
 }

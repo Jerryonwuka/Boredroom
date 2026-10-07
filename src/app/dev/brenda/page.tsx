@@ -12,6 +12,11 @@
  * Personal looks (owner decision, 7 October 2026: personal assistants): every colour, visor and eyes a person can choose
  * for their assistant, as faces at each size and as the glyph, side by side in dark and light, with every mood; and one
  * live character with pickers (also drawn in her home's orb, where only Brenda's white takes the orb's light).
+ *
+ * Her voice (owner decision, 7 October 2026: phase 2): "Her voice" makes her talk, to check her talking face in dark,
+ * light and reduced motion. "Talk for 3 seconds" rehearses silently (the controller's syllable generator, so it works
+ * in a browser with no voices); "Say a sentence" speaks with this device's own voice. Every face and character on the
+ * page talks at once, as on any page: she is one person.
  */
 import { useEffect, useRef, useState } from "react";
 import { notFound } from "next/navigation";
@@ -20,6 +25,8 @@ import { BrendaFace, type BrendaMood, type BrendaTone } from "@/components/app/b
 import { BrendaGlyph } from "@/components/app/brenda-glyph";
 import { useReadAlong } from "@/components/app/brenda-chat";
 import { AssistantScope } from "@/components/app/assistant-context";
+import { useSpeech } from "@/hooks/use-assistant-speech";
+import { speech } from "@/lib/assistant-speech/controller";
 import { attention, STATES, type BrendaEmote, type BrendaState } from "@/lib/brenda-character/engine";
 import {
   ASSISTANT_COLOURS, ASSISTANT_EYES, ASSISTANT_VISORS, DEFAULT_ASSISTANT_NAME, DEFAULT_LOOK, EYES, PALETTE, VISORS,
@@ -37,7 +44,7 @@ const SENTENCE = "Move my three o'clock with Josh to tomorrow morning and let hi
 const PARAGRAPH = "Notes from Monday: the launch moves to the 14th, Ada owns the checklist, David reviews the copy by Friday, and everyone clocks in before the stand-up.";
 
 /** A made-up voice for the listening demo: syllables about four a second inside words, with pauses between them. */
-const speech = () => {
+const madeUpVoice = () => {
   const t = performance.now() / 1000;
   const syllables = Math.abs(Math.sin(t * Math.PI * 4.2));
   const words = Math.max(0, Math.sin(t * Math.PI * 0.9) + 0.35);
@@ -77,6 +84,7 @@ export default function BrendaGallery() {
         </div>
       </section>
       <Reactions mono={mono} />
+      <Voice />
       <PersonalLooks />
       <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
         {(Object.keys(STATES) as BrendaState[]).map((s) => (
@@ -154,7 +162,7 @@ function Reactions({ mono }: { mono: (s: BrendaState) => string | false }) {
       </div>
       <div className="card-section grid items-center gap-8 md:grid-cols-[auto_minmax(0,1fr)]">
         <div className="flex flex-col items-center gap-4">
-          <BrendaCharacter ref={character} state={state} size={120} interactive level={speech} className={cn(mono(state))} />
+          <BrendaCharacter ref={character} state={state} size={120} interactive level={madeUpVoice} className={cn(mono(state))} />
           <div className="flex items-end gap-3">
             <BrendaFace size="sm" mood={mood} tone={tone} /><BrendaFace size="md" mood={mood} tone={tone} /><BrendaFace size="lg" mood={mood} tone={tone} />
           </div>
@@ -180,6 +188,43 @@ function Reactions({ mono }: { mono: (s: BrendaState) => string | false }) {
               : demo === "thinking" ? "Thinking while she works on it."
               : demo === "pleased" ? "Pleased by her reply."
               : "Typing: her eyes go to the caret and follow it, a flick as each character arrives, a nod or a blink every few words; a moment after you stop, back to the pointer."}
+          </p>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/** What "Say a sentence" says. */
+const SENTENCE_SAID = "Hi, I'm Brenda. You have 3 tasks due today.";
+
+/**
+ * Her voice: her character and the three faces, made to talk. Rehearsing needs no voice at all; speaking needs one of
+ * this device's own (the line under the buttons says whether there is one, and how many).
+ */
+function Voice() {
+  const voice = useSpeech();
+  const talking = voice.speaking && voice.id === "gallery";
+  useEffect(() => () => speech.stop("gallery"), []);
+  return (
+    <section aria-labelledby="voice-title" className="space-y-3.5">
+      <div>
+        <h2 id="voice-title" className="type-section-title">Her voice</h2>
+        <p className="mt-1 text-sm font-normal text-secondary">While she speaks, every face of hers on the page talks: her eyes squash and open with each syllable, she bobs a little and her glow brightens in her own colour. With reduced motion it is a still speaking pose.</p>
+      </div>
+      <div className="card-section grid items-center gap-8 md:grid-cols-[auto_minmax(0,1fr)]">
+        <div className="flex flex-col items-center gap-4">
+          <BrendaCharacter state="idle" size={120} interactive />
+          <div className="flex items-end gap-3"><BrendaFace size="sm" /><BrendaFace size="md" /><BrendaFace size="lg" /></div>
+        </div>
+        <div className="min-w-0 space-y-4">
+          <div role="group" aria-label="Her voice" className="flex flex-wrap gap-2">
+            <Button size="sm" variant="secondary" onClick={() => speech.rehearse(3000, "gallery")}>Talk for 3 seconds</Button>
+            {voice.supported ? <Button size="sm" variant="secondary" onClick={() => { speech.prime(); speech.speak(SENTENCE_SAID, { id: "gallery", raw: true }); }}>Say a sentence</Button> : null}
+            {talking ? <Button size="sm" variant="ghost" onClick={() => speech.stop()}>Stop</Button> : null}
+          </div>
+          <p className="text-meta font-normal text-secondary">
+            Supported: <span className="font-medium text-foreground">{voice.supported === null ? "checking" : voice.supported ? "yes" : "no"}</span>, local voices: <span className="font-medium tabular-nums text-foreground">{voice.voices.length}</span>{talking ? ", talking now" : ""}.
           </p>
         </div>
       </div>

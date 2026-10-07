@@ -8,6 +8,8 @@
  * Anything inside `[data-no-tip]` (a face with its own hover card) is left alone. `data-tip-side="right"` puts the
  * label beside the control instead of under it (the collapsed sidebar's dock).
  * v4: the one tooltip system in the app; the toast surface, r8, px8 py4, 12/16 medium (globals.css `.tip`).
+ * A label that changes while it shows (a Listen button pressed from the keyboard becomes Stop, or turns back when the
+ * reply ends) is read again at once, not only on the next hover or focus (review, 7 October 2026).
  */
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
@@ -42,7 +44,18 @@ export function TooltipLayer() {
     let warmUntil = 0;
     let current: HTMLElement | null = null;
     const clear = () => { if (timer) window.clearTimeout(timer); timer = null; if (stay) window.clearTimeout(stay); stay = null; };
-    const hide = () => { clear(); if (current) warmUntil = Date.now() + WARM_WINDOW; current = null; setTip(null); };
+    // The control's own label changing under a showing tooltip: the new words, or none if it no longer has a tooltip.
+    const watch = new MutationObserver(() => {
+      if (!current) return;
+      const found = labelFor(current);
+      if (!found || found.el !== current) { hide(); return; }
+      setTip((t) => (t && t.text !== found.text ? { ...t, text: found.text } : t));
+    });
+    const follow = (el: HTMLElement | null) => {
+      watch.disconnect();
+      if (el) watch.observe(el, { attributes: true, attributeFilter: ["data-tip", "aria-label", "aria-expanded", "disabled"] });
+    };
+    const hide = () => { clear(); if (current) warmUntil = Date.now() + WARM_WINDOW; current = null; follow(null); setTip(null); };
     const place = (el: HTMLElement, text: string) => {
       const r = el.getBoundingClientRect();
       if (r.width === 0 && r.height === 0) return;
@@ -57,7 +70,7 @@ export function TooltipLayer() {
       if (found.el === current) return;
       // Focus from a click must not bring the label back after the press hid it; only keyboard focus shows it.
       if (e.type === "focusin" && !found.el.matches(":focus-visible")) return;
-      clear(); current = found.el;
+      clear(); current = found.el; follow(current);
       const now = Date.now();
       if (now < warmUntil || e.type === "focusin") place(found.el, found.text);
       else timer = window.setTimeout(() => place(found.el, found.text), OPEN_DELAY);
@@ -75,6 +88,7 @@ export function TooltipLayer() {
     window.addEventListener("resize", hide);
     return () => {
       clear();
+      watch.disconnect();
       document.removeEventListener("mouseover", open);
       document.removeEventListener("focusin", open);
       document.removeEventListener("mouseout", leave);

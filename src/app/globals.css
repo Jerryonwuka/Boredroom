@@ -653,6 +653,20 @@ html[data-brenda-chat] #workspace-sidebar, html:has([data-brenda-chat-view]) #wo
 .brenda-face.dizzy .eyes > span { width: 5px; height: 5px; border-radius: 50%; background: transparent; box-shadow: none; border: 1.5px solid #fff; border-right-color: transparent; animation: brenda-spin 550ms linear infinite; }
 .brenda-face.love { --glow: var(--accent); }
 .brenda-face.love .eyes > span { width: 7px; height: 7px; box-shadow: none; border-radius: 0; background: var(--accent); clip-path: path("M3.5 6.5 L0.8 3.7 A1.7 1.7 0 0 1 3.5 1.4 A1.7 1.7 0 0 1 6.2 3.7 Z"); animation: brenda-thump 700ms ease-in-out infinite; }
+/* Talking (owner decision, 7 October 2026: her voice): she has no mouth, so her eyes squash and open with each syllable,
+   she bobs a little and her glow brightens with the level, in her own sphere colour. brenda-face.tsx sets data-talking on
+   every face of hers while she speaks and --talk (0 to 1) each frame; under reduced motion it is a still pose. After her
+   moods and reactions on purpose, so talking wins over a nod or a startle; expressions that animate `scale` (love's
+   thump) still win, as animations do. Listening never coincides with it: she never speaks while the microphone is open. */
+.brenda-face[data-talking] { --talk: 0; --talk-glow: var(--sphere-mid, #ececf0); translate: 0 calc(var(--talk) * -1.2px);
+  box-shadow: 0 0 0 1px var(--border-input), var(--elev-natural-xs), 0 0 calc(8px + var(--talk) * 12px) calc(-2px + var(--talk) * 3px) color-mix(in srgb, var(--talk-glow) calc(40% + var(--talk) * 60%), transparent);
+  transition: transform 250ms var(--ease-out), rotate 250ms var(--ease-out), translate 60ms linear, box-shadow 60ms linear; }
+.brenda-face[data-talking] .eyes > span { scale: calc(1.04 - var(--talk) * .05) calc(.72 + var(--talk) * .45);
+  transition: transform 70ms ease, height 200ms var(--ease-out), scale 60ms linear; }
+/* On the light canvas a pale sphere colour's glow vanishes into the white (review, 7 October 2026): the glow takes the
+   sphere's darker edge there, and white and grey, whose edges are still pale, a share of the ink as well. */
+[data-theme="light"] .brenda-face[data-talking] { --talk-glow: var(--sphere-edge, #c9cad1); }
+[data-theme="light"] .brenda-face[data-talking]:is([data-colour="white"], [data-colour="grey"]) { --talk-glow: color-mix(in srgb, var(--sphere-edge, #c9cad1) 55%, var(--foreground)); }
 @keyframes brenda-breathe { 0%, 100% { scale: 1; } 50% { scale: 1.035; } }
 @keyframes brenda-hop { 0% { translate: 0 0; } 35% { translate: 0 -4px; } 70% { translate: 0 1px; } 100% { translate: 0 0; } }
 @keyframes brenda-scan { 0%, 100% { translate: 0 0; } 50% { translate: -2px 0; } }
@@ -674,6 +688,9 @@ html[data-brenda-chat] #workspace-sidebar, html:has([data-brenda-chat-view]) #wo
 .brenda-wash[data-tone="violet"] { --brenda-glow: transparent; }
 @media (prefers-reduced-motion: reduce) {
   .brenda-face, .brenda-face *, .brenda-shimmer { animation: none !important; transition: none !important; }
+  /* Talking, still: eyes a little wider and a steady soft glow in her colour while she speaks (her voice, 7 October 2026). */
+  .brenda-face[data-talking] { translate: none; box-shadow: 0 0 0 1px var(--border-input), var(--elev-natural-xs), 0 0 12px -1px color-mix(in srgb, var(--talk-glow) 70%, transparent); }
+  .brenda-face[data-talking] .eyes > span { scale: 1.04 1.1; }
   .brenda-shimmer { -webkit-text-fill-color: currentColor; }
   .rec-dot, .presence-live { animation: none; }
 }

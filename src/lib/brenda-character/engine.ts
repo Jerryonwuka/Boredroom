@@ -24,6 +24,13 @@
  * eyes' style, all from lib/assistant-look. Brenda's look (white, the bean visor, pill eyes) is the default and draws
  * exactly as before. The visor stays near-black and the eyes white whatever the colour; her mood light, rim light and
  * eye tint stay the colour of her mood, and every expression is drawn the same for every eye style.
+ *
+ * Her voice (owner decision, 7 October 2026: phase 2): she speaks her replies, and she has no mouth, so `talk` (the
+ * speech level, 0 to 1, fed each frame by the caller like `voice`; null when she is not speaking) plays a talking
+ * overlay on top of whatever mood she is in, never changing `state`: her eyes squash between syllables and open on each
+ * one (every eye shape, blinks included), a small bob and sway, and her glow brightens with the level and turns towards
+ * her own sphere colour (her mood's colour returns as she stops). Starting and stopping ease over about 150 ms. Under
+ * reduced motion `settle()` makes it a still pose: eyes a little wider, a steady soft glow in her colour.
  */
 import {
   DEFAULT_LOOK, isAssistantColour, isAssistantEyes, isAssistantVisor, PALETTE, VISOR_INK,
@@ -117,6 +124,10 @@ const EYE_STYLES: Record<AssistantEyes, [w: number, h: number, r: number | null]
   square: [0.2, 0.2, 0.05],
 };
 const SPARK = ["#ff6c02", "#ff3d81", "#7c5cff", "#ffc857"];
+/** Talking (her voice, 7 October 2026): how long she takes to start and stop, and her eyes in the still pose of reduced
+ *  motion (a little wider, as the small faces' `scale: 1.04 1.1`). */
+const TALK_EASE_S = 0.15;
+const TALK_STILL: [sx: number, sy: number] = [1.04, 1.1];
 
 type Ease = (t: number) => number;
 const E = {
@@ -178,6 +189,17 @@ export class BrendaEngine {
   voice: number | null = null;
   /** The voice as she reacts to it: quick to rise, slow to fall. */
   private heard = 0;
+  /** While she speaks: the speech level, 0 to 1, or null when she is not speaking. */
+  talk: number | null = null;
+  /** The speech level as she shows it: quick to rise, slower to fall. */
+  private said = 0;
+  /** How far into talking she is, 0 to 1, eased in and out (`talkRamp` is its linear clock). */
+  private talking = 0;
+  private talkRamp = 0;
+  /** Reduced motion: talking is a still pose (set by `settle()`, cleared by the next `update()`). */
+  private talkStill = false;
+  /** Her own colour, which her glow turns towards while she talks (the sphere's shade, from her look). */
+  private ownGlow: RGB = hex(PALETTE[DEFAULT_LOOK.colour].sphere.shade);
   private beats = 0;
   private glow: RGB = hex(STATES.idle.glow);
   private glowTarget: RGB = hex(STATES.idle.glow);
@@ -203,6 +225,7 @@ export class BrendaEngine {
       eyes: isAssistantEyes(look.eyes) ? look.eyes : DEFAULT_LOOK.eyes,
     };
     this.shades = PALETTE[colour].sphere;
+    this.ownGlow = hex(this.shades.shade);
   }
   get look(): AssistantLook { return { ...this.drawn }; }
 
@@ -279,6 +302,10 @@ export class BrendaEngine {
     this.tilt = this.cfg.tilt ?? 0;
     this.eyeScale = this.eyeScaleTarget;
     this.glow = this.glowTarget; this.tint = this.cfg.tint;
+    // Her voice: talking is a still pose here (no bob, no sway, no pulse): eyes a little wider and a steady soft glow
+    // in her own colour while she speaks; nothing at all when she does not.
+    const speaking = this.talk !== null;
+    this.said = speaking ? 0.5 : 0; this.talkRamp = speaking ? 1 : 0; this.talking = this.talkRamp; this.talkStill = speaking;
   }
 
   /** Where her eyes are headed: the caret or the pointer, unless her state has its own look. */
@@ -335,8 +362,17 @@ export class BrendaEngine {
     const live = this.state === "listening";
     const lv = live ? Math.max(0, Math.min(1, this.voice ?? 0.2 + Math.sin(t * 2.4) * 0.15)) : 0;
     this.heard += (lv - this.heard) * k(lv > this.heard ? 1e-7 : 0.02);
-    if (!this.tweens.has("tilt")) this.tilt += ((this.cfg.tilt ?? 0) + this.heard * 0.05 + (this.state === "dizzy" ? Math.sin(t * 7) * 0.12 : 0) - this.tilt) * k(0.001);
-    if (!this.tweens.has("oy")) this.oy += ((this.cfg.bounces ? -Math.abs(Math.sin(t * 5.2)) * 0.07 : 0) - this.oy) * k(0.0008);
+    // Talking (her voice, phase 2), on top of any state: she eases into it and out of it over ~150 ms, and shows the
+    // level quick to rise, slower to fall. It adds a small bob with the level and a gentle sway of the head.
+    const sl = this.talk === null ? 0 : Math.max(0, Math.min(1, this.talk));
+    const step = dt / TALK_EASE_S;
+    this.talkRamp += Math.max(-step, Math.min(step, (this.talk === null ? 0 : 1) - this.talkRamp));
+    this.talking = E.inOut(this.talkRamp);
+    this.said += (sl - this.said) * k(sl > this.said ? 1e-6 : 0.001);
+    this.talkStill = false;
+    const talks = this.talking > 0.01 ? this.talking : 0;
+    if (!this.tweens.has("tilt")) this.tilt += ((this.cfg.tilt ?? 0) + this.heard * 0.05 + (this.state === "dizzy" ? Math.sin(t * 7) * 0.12 : 0) + Math.sin(t * 2.6) * 0.025 * talks - this.tilt) * k(0.001);
+    if (!this.tweens.has("oy")) this.oy += ((this.cfg.bounces ? -Math.abs(Math.sin(t * 5.2)) * 0.07 : 0) - this.said * 0.05 * talks - this.oy) * k(0.0008);
     if (!this.tweens.has("sy") && !this.tweens.has("sx")) {
       const amp = this.cfg.breathes ? 0.03 : 0;
       this.sy += (1 + Math.sin(t * 1.8) * amp + this.heard * 0.045 - this.sy) * k(0.001);
@@ -365,10 +401,14 @@ export class BrendaEngine {
     const R = Math.min(W, H) * 0.34;   // the sphere's radius: room around her for the glow, hops and particles
     const cx = W / 2 + this.ox * R, cy = H / 2 + this.oy * R + R * 0.04;
     const eyeInk = mix([1, 1, 1], this.glow, Math.min(1, this.tint * 1.6));
+    // While she talks her glow brightens with the level and turns towards her own colour (her eyes keep her mood's tint).
+    const talks = this.talking > 0.01 ? this.talking : 0;
+    const halo = talks ? mix(this.glow, this.ownGlow, 0.6 * talks) : this.glow;
+    const lift = this.said * 0.3 * talks;
 
     // The mood light beneath her.
     const g = x.createRadialGradient(cx, cy + R * 0.2, R * 0.6, cx, cy + R * 0.2, R * 1.3);
-    g.addColorStop(0, rgba(this.glow, 0.42 + this.heard * 0.28)); g.addColorStop(1, rgba(this.glow, 0));
+    g.addColorStop(0, rgba(halo, Math.min(1, 0.42 + this.heard * 0.28 + lift))); g.addColorStop(1, rgba(halo, 0));
     x.fillStyle = g; x.fillRect(0, 0, W, H);
 
     x.save();
@@ -380,7 +420,7 @@ export class BrendaEngine {
     // a chosen colour's own stops otherwise).
     const sh = this.shades;
     const body = new Path2D(); body.arc(0, 0, R, 0, Math.PI * 2);
-    x.save(); x.shadowColor = rgba(this.glow, 0.5 + this.heard * 0.25); x.shadowBlur = R * (0.3 + this.heard * 0.2); x.fillStyle = sh.light; x.fill(body); x.restore();
+    x.save(); x.shadowColor = rgba(halo, Math.min(1, 0.5 + this.heard * 0.25 + lift)); x.shadowBlur = R * (0.3 + this.heard * 0.2); x.fillStyle = sh.light; x.fill(body); x.restore();
     const bg = x.createRadialGradient(-R * 0.34, -R * 0.42, 0, -R * 0.1, -R * 0.12, R * 1.18);
     bg.addColorStop(0, sh.light); bg.addColorStop(0.5, sh.mid); bg.addColorStop(0.85, sh.shade); bg.addColorStop(1, sh.rim);
     x.fillStyle = bg; x.fill(body);
@@ -423,9 +463,14 @@ export class BrendaEngine {
       x.fillStyle = rgba(eyeInk); x.strokeStyle = rgba(eyeInk);
       x.shadowColor = rgba(eyeInk, 0.85); x.shadowBlur = R * 0.08;
       const px = Math.sin(this.yaw) * R * 0.07, py = -Math.sin(this.pitch) * R * 0.05;
+      // Talking: she has no mouth, so her eyes stand in for one, squashed to about 0.72 between syllables and opening
+      // to about 1.17 on a peak (whatever their shape; a blink still closes them). Still and a little wider under
+      // reduced motion.
+      const [esx, esy] = this.talkStill ? TALK_STILL : [1 + (0.04 - this.said * 0.05) * talks, 1 + (this.said * 0.45 - 0.28) * talks];
       for (const sd of [-1, 1]) {
         x.save();
         x.translate(sd * R * EYE_SPREAD + px, R * EYE_Y + py);
+        if (talks) x.scale(esx, esy);
         this.eye(x, shape, R * EYE_W * this.eyeScale, R * EYE_H * this.eyeScale, sd, rgba(eyeInk));
         x.restore();
       }

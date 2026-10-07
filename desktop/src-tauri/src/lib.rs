@@ -7,6 +7,9 @@
 //!
 //! The computer is only ever acted on by opening a Boredroom link in the browser. No files, keyboard or screen access.
 //! The microphone is used only while the person holds the talk shortcut, and only once they turn voice on (`voice.rs`).
+//!
+//! Her voice (owner decision, 7 October 2026: phase 2): `voice.rs` speaks her replies with a moving face; signing out,
+//! from the page or the tray, and quitting cut her off.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -200,6 +203,7 @@ fn set_base_url(app: AppHandle, state: State<AppState>, url: String) -> PublicCo
 
 #[tauri::command]
 fn sign_out(app: AppHandle, state: State<AppState>) -> PublicConfig {
+    voice::stop_speaking(&app);
     let mut c = state.config.lock().unwrap();
     c.token = None;
     c.workspace_slug = None;
@@ -403,6 +407,7 @@ pub fn run() {
                         let _ = app.emit("brenda://always-visible", c.always_visible);
                     }
                     "signout" => {
+                        voice::stop_speaking(app);
                         let state = app.state::<AppState>();
                         let mut c = state.config.lock().unwrap();
                         c.token = None;
@@ -412,7 +417,10 @@ pub fn run() {
                         save_config(app, &c);
                         let _ = app.emit("brenda://signed-out", ());
                     }
-                    "quit" => app.exit(0),
+                    "quit" => {
+                        voice::stop_speaking(app); // `afplay` and `say` would otherwise finish the sentence on their own
+                        app.exit(0)
+                    }
                     _ => {}
                 })
                 .build(app)?;
@@ -424,6 +432,13 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![get_config, voice_status, set_voice, speak, stop_speaking, set_base_url, sign_out, api, link_start, link_poll, open_in_browser, focus_notch, island::set_island_rect, island::menu_bar_height, island::debug_log, files::upload_dropped])
-        .run(tauri::generate_context!())
-        .expect("error while running Brenda");
+        .build(tauri::generate_context!())
+        .expect("error while running Brenda")
+        .run(|app, event| {
+            // However the app ends (Cmd+Q, logging out, the tray's Quit), her voice ends with it: a spawned `afplay` or
+            // `say` is not killed with its parent and would finish the reply on its own (review, 7 October 2026).
+            if let tauri::RunEvent::Exit = event {
+                voice::stop_speaking(app);
+            }
+        });
 }

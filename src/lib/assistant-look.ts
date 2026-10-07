@@ -8,6 +8,11 @@
  *
  * Every combination stays readable: the visor is always near-black and the eyes always white, and every sphere colour is
  * light enough for the visor to stand out (at least 7:1 at the sphere's middle tone; tests/unit/assistant-look.test.ts).
+ *
+ * Her voice (owner decision, 7 October 2026: phase 2): when the person's own assistant reads replies aloud, on the web
+ * and in the notch alike ("When I talk to her", the default; "Always"; "Never"). It is the person's preference, so it
+ * sits beside `personal` in `AssistantProfiles`, not in a profile (the workspace assistant has none). Which voice and
+ * how fast are kept on each device (lib/assistant-speech/prefs), never here.
  */
 
 export const ASSISTANT_COLOURS = ["white", "grey", "yellow", "orange", "coral", "pink", "purple", "blue", "teal", "green"] as const;
@@ -19,8 +24,11 @@ export type AssistantEyes = (typeof ASSISTANT_EYES)[number];
 
 export type AssistantLook = { colour: AssistantColour; visor: AssistantVisor; eyes: AssistantEyes };
 export type AssistantProfile = AssistantLook & { name: string };
-/** What the workspace pages know: the person's own assistant, the workspace's, and whether "Meet your assistant" is done. */
-export type AssistantProfiles = { personal: AssistantProfile; workspace: AssistantProfile; setupDone: boolean; canEditWorkspace: boolean };
+/**
+ * What the workspace pages know: the person's own assistant, the workspace's, whether "Meet your assistant" is done, and
+ * when the person's own assistant speaks (phase 2).
+ */
+export type AssistantProfiles = { personal: AssistantProfile; workspace: AssistantProfile; setupDone: boolean; canEditWorkspace: boolean; speak: AssistantSpeak };
 
 /** The drawn sphere's four stops (lib/brenda-character/engine), from the lit upper left to the rim. */
 export type SphereShades = { light: string; mid: string; shade: string; rim: string };
@@ -53,10 +61,24 @@ export const EYES: Record<AssistantEyes, { label: string }> = {
   square: { label: "Square eyes" },  // squares with softened corners
 };
 
+// ---- When she speaks (owner decision, 7 October 2026: her voice, phase 2) ------------------------------------------
+// 'voice': she reads the reply to a message the person dictated on the web or spoke in the notch (the default: talk to
+// her and she talks back); 'always': every reply; 'never': only when they press Listen on a reply. Declared before the
+// defaults below, which read DEFAULT_SPEAK as the module loads.
+
+export const ASSISTANT_SPEAK = ["voice", "always", "never"] as const;
+export type AssistantSpeak = (typeof ASSISTANT_SPEAK)[number];
+export const DEFAULT_SPEAK: AssistantSpeak = "voice";
+export const isAssistantSpeak = (v: unknown): v is AssistantSpeak => (ASSISTANT_SPEAK as readonly unknown[]).includes(v);
+/** A stored value (or nothing, before migration 0036) as a preference: anything unknown is the default. */
+export const toSpeak = (v: unknown): AssistantSpeak => (isAssistantSpeak(v) ? v : DEFAULT_SPEAK);
+
+// ---- The defaults --------------------------------------------------------------------------------------------------
+
 export const DEFAULT_ASSISTANT_NAME = "Brenda";
 export const DEFAULT_LOOK: AssistantLook = { colour: "white", visor: "bean", eyes: "pill" };
 export const DEFAULT_ASSISTANT: AssistantProfile = { name: DEFAULT_ASSISTANT_NAME, ...DEFAULT_LOOK };
-export const DEFAULT_PROFILES: AssistantProfiles = { personal: DEFAULT_ASSISTANT, workspace: DEFAULT_ASSISTANT, setupDone: true, canEditWorkspace: false };
+export const DEFAULT_PROFILES: AssistantProfiles = { personal: DEFAULT_ASSISTANT, workspace: DEFAULT_ASSISTANT, setupDone: true, canEditWorkspace: false, speak: DEFAULT_SPEAK };
 
 // ---- The name ------------------------------------------------------------------------------------------------------
 // It is shown everywhere the assistant appears and goes into the assistant's instructions (as quoted data, copilot.ts),
