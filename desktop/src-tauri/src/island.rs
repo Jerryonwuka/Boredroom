@@ -43,19 +43,24 @@ struct Cursor {
 }
 
 /// On a Mac an ordinary always-on-top window still sits under the menu bar, which left a gap between the top of the
-/// screen and Brenda. Like Coucou's panel, the window goes just above the menu bar's level (main menu + 3), on every
-/// Space and over full-screen apps, so the island can start at the very top edge.
+/// screen and Brenda. The window goes above the menu bar, on every Space and over full-screen apps, so the island can
+/// start at the very top edge. Coucou's "main menu + 3" (27) is no longer enough: on macOS 26 each app draws its menu
+/// titles ("Window", "Help"…) in its own window at the screen-saver level (1000), and they showed through the open card
+/// (owner report, 7 October 2026). One above that keeps the island on top of them; it stays click-through outside the
+/// island, so nothing under it is blocked.
+#[cfg(target_os = "macos")]
+const ISLAND_LEVEL: isize = 1000 + 1; // the screen-saver level, where macOS 26 draws each app's menu titles, plus one
+
 #[cfg(target_os = "macos")]
 fn above_menu_bar(window: &WebviewWindow) {
     use objc2::{msg_send, runtime::AnyObject};
-    const MAIN_MENU_LEVEL: isize = 24;
     // canJoinAllSpaces (1) | stationary (16) | ignoresCycle (64) | fullScreenAuxiliary (256)
     const BEHAVIOUR: usize = 1 | 16 | 64 | 256;
     if let Ok(ns) = window.ns_window() {
         let ns = ns as *mut AnyObject;
         if !ns.is_null() {
             unsafe {
-                let _: () = msg_send![&*ns, setLevel: MAIN_MENU_LEVEL + 3];
+                let _: () = msg_send![&*ns, setLevel: ISLAND_LEVEL];
                 let _: () = msg_send![&*ns, setCollectionBehavior: BEHAVIOUR];
                 keep_frames_where_put(ns);
             }
@@ -99,6 +104,28 @@ unsafe fn keep_frames_where_put(ns: *mut objc2::runtime::AnyObject) {
     let imp: Imp = std::mem::transmute(unconstrained as unsafe extern "C-unwind" fn(*mut AnyObject, Sel, CGRect, *mut AnyObject) -> CGRect);
     let types = c"{CGRect={CGPoint=dd}{CGSize=dd}}@:{CGRect={CGPoint=dd}{CGSize=dd}}@";
     objc2::ffi::class_replaceMethod(cls, objc2::sel!(constrainFrameRect:toScreen:), imp, types.as_ptr());
+}
+
+/// Puts the island back above the menu bar if something lowered it. The window framework re-applies its own
+/// "always on top" level (a plain floating level, under the menu bar) when the window is shown or refocused, which
+/// silently undid the level set at start; the poll below checks about once a second, on the main thread.
+#[cfg(target_os = "macos")]
+fn keep_above_menu_bar(window: &WebviewWindow) {
+    use objc2::{msg_send, runtime::AnyObject};
+    let w = window.clone();
+    let _ = window.run_on_main_thread(move || {
+        if let Ok(ns) = w.ns_window() {
+            let ns = ns as *mut AnyObject;
+            if !ns.is_null() {
+                unsafe {
+                    let level: isize = msg_send![&*ns, level];
+                    if level != ISLAND_LEVEL {
+                        let _: () = msg_send![&*ns, setLevel: ISLAND_LEVEL];
+                    }
+                }
+            }
+        }
+    });
 }
 
 /// Moves the window's top-left corner to (x, top) in logical screen coordinates, measured from the top of the main screen.
@@ -187,10 +214,16 @@ pub fn start(app: &AppHandle, window: WebviewWindow) {
     let app = app.clone();
     std::thread::spawn(move || {
         let mut last = (f64::MIN, f64::MIN);
+        let mut ticks: u32 = 0;
         loop {
             std::thread::sleep(TICK);
             if !window.is_visible().unwrap_or(false) {
                 continue;
+            }
+            ticks = ticks.wrapping_add(1);
+            #[cfg(target_os = "macos")]
+            if ticks % 30 == 0 {
+                keep_above_menu_bar(&window);
             }
             let (Some((cx, cy)), Ok(origin), Ok(scale)) = (cursor_logical(&app), window.outer_position(), window.scale_factor()) else { continue };
             let x = cx - origin.x as f64 / scale;
