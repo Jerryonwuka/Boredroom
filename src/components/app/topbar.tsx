@@ -14,6 +14,9 @@
  * Its icons are animated (owner request, 7 October 2026; components/ui/animated-icons): the bell rings, the gear turns,
  * the sun lights its rays and so on while their button or menu item is hovered or focused from the keyboard; never on a
  * loop, still under reduced motion.
+ *
+ * The account menu links to the person's own assistant in Settings, "Your assistant", with its glyph (owner decision,
+ * 7 October 2026: personal assistants; Settings opens for everyone for that section).
  */
 import { useState } from "react";
 import Link from "next/link";
@@ -30,6 +33,7 @@ import { EmptyState } from "@/components/ui/states";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { PresenceDot } from "@/components/ui/presence";
 import { Breadcrumb, type CrumbPage } from "@/components/app/breadcrumb";
+import { BrendaGlyph } from "@/components/app/brenda-glyph";
 import { SidebarToggle } from "@/components/app/sidebar";
 import { SEARCH_DIALOG_ID, SearchTrigger, WorkspaceSearch } from "@/components/app/workspace-search";
 import { PRESENCE, PRESENCES, type Presence } from "@/lib/presence";
@@ -167,6 +171,7 @@ function Account({ orgSlug, user, roleLabel }: { orgSlug: string; user: TopBarUs
           <PresencePicker value={presence} className="border-0 pt-1" />
           <div role="separator" className="menu-separator" />
           <Link href={`/app/${orgSlug}/profile`} onClick={close} className="menu-item"><AnimatedUser aria-hidden />Your profile</Link>
+          <Link href={`/app/${orgSlug}/settings?section=assistant`} onClick={close} className="menu-item"><BrendaGlyph aria-hidden />Your assistant</Link>
           <Link href="/app?switch=1" onClick={close} className="menu-item"><AnimatedBuilding2 aria-hidden />Switch workspace</Link>
           {user.isAdmin ? <Link href="/admin" onClick={close} className="menu-item"><AnimatedShieldCheck aria-hidden />Control Center</Link> : null}
           <div role="separator" className="menu-separator" />

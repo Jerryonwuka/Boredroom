@@ -32,6 +32,11 @@
  * Her icons are animated (owner request, 7 October 2026; components/ui/animated-icons): the quick asks, the action
  * cards, the top pills, "More asks" and its menu, the tool tiles and the chat header's buttons play their icon while
  * hovered or focused from the keyboard, never on a loop and not under reduced motion.
+ *
+ * Named after the person's own assistant (owner decision, 7 October 2026: personal assistants): the status pill, the box,
+ * "More asks", the chat's header, its notes and its aria-labels use the name they chose (`useAssistant`), and her drawn
+ * character and faces take their look from the same profile. The plan gate and the "Brenda settings" pill stay product
+ * text.
  */
 import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
@@ -51,6 +56,7 @@ import { BrendaCharacter, type BrendaCharacterHandle } from "@/components/app/br
 import { BrendaFace } from "@/components/app/brenda-face";
 import { BrendaComposer, BrendaMessages, DictationNotes, useBrendaChat, type BrendaChat } from "@/components/app/brenda-chat";
 import { BrendaHistory } from "@/components/app/brenda-history";
+import { useAssistant } from "@/components/app/assistant-context";
 import { isApiFailure } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import type { Conversation, ConversationSummary } from "@/server/services/brenda-history";
@@ -153,6 +159,7 @@ function focusBoxIn(el: HTMLElement | null) {
 
 export function BrendaHome({ data }: { data: HomeData }) {
   const { role } = data;
+  const { name } = useAssistant().personal;
   const lead = role !== "employee";
   const [history, setHistory] = useState(data.history);
   // Each save moves the conversation to the top of Past chats (or adds it there).
@@ -278,7 +285,7 @@ export function BrendaHome({ data }: { data: HomeData }) {
         <div className="flex flex-wrap items-center gap-2">
           <p className="brenda-glass-pill inline-flex h-8 min-w-0 max-w-full items-center gap-2 rounded-full px-3 text-meta font-medium text-foreground">
             <StatusDot tone={dot} size={6} />
-            <span>Brenda</span>
+            <span className="min-w-0 truncate">{name}</span>
             <span aria-hidden className="h-3.5 w-px shrink-0 bg-border-input" />
             <span className="min-w-0 truncate font-normal text-secondary">
               {engine.short ? <><span className="sm:hidden">{engine.short}</span><span className="max-sm:hidden">{engine.full}</span></> : engine.full}
@@ -307,7 +314,7 @@ export function BrendaHome({ data }: { data: HomeData }) {
         <div className="flex flex-1 flex-col items-center justify-center px-1 pb-8 pt-10 text-center">
           <div className="brenda-orb" data-live={listening || undefined}>
             {/* While you dictate she listens to the dictation's own microphone (its level widens her eyes and lifts her light). */}
-            <BrendaCharacter ref={character} state={chat.state} size={72} interactive label="Brenda" stream={chat.dictation.stream} className={cn(!listening && "grayscale")} />
+            <BrendaCharacter ref={character} state={chat.state} size={72} interactive stream={chat.dictation.stream} className={cn(!listening && "grayscale")} />
           </div>
           <p className="mt-6 text-sm font-medium text-secondary">{data.greeting}, {data.firstName}. It&apos;s {data.dateLabel}.</p>
           <h1 id="home-ask" className="type-headline mt-1 sm:text-[32px] sm:leading-10">What do you want to do today?</h1>
@@ -325,7 +332,7 @@ export function BrendaHome({ data }: { data: HomeData }) {
                 ))}
               </div>
               <div ref={box}>
-                <BrendaComposer chat={chat} onSend={sendFromStart} leading={more} variant="hero" placeholder="Ask Brenda anything…" />
+                <BrendaComposer chat={chat} onSend={sendFromStart} leading={more} variant="hero" placeholder={`Ask ${name} anything…`} />
               </div>
               <DictationNotes chat={chat} className="[&>*:not(:empty)]:mt-2" />
               <ul aria-label="Start with" className="mt-3 grid gap-3 @xl:grid-cols-3">
@@ -376,9 +383,10 @@ function ActionCard({ card, onPick }: { card: Card; onPick: () => void }) {
 
 /** "More asks" on the left of her box's bottom row: a menu of more things to ask. Choosing one puts its sentence in the box. */
 function MoreMenu({ role, onPick }: { role: HomeData["role"]; onPick: (prompt: string) => void }) {
+  const { name } = useAssistant().personal;
   return (
-    <Menu label="Ask Brenda to" trigger={<PromptTextAction><AnimatedPlus aria-hidden />More asks</PromptTextAction>}>
-      <MenuLabel>Ask Brenda to…</MenuLabel>
+    <Menu label={`Ask ${name} to`} trigger={<PromptTextAction><AnimatedPlus aria-hidden />More asks</PromptTextAction>}>
+      <MenuLabel>Ask {name} to…</MenuLabel>
       {moreAsks(role).map((a) => <MenuItem key={a.label} icon={<a.icon aria-hidden />} onSelect={() => onPick(a.prompt)}>{a.label}</MenuItem>)}
     </Menu>
   );
@@ -399,6 +407,7 @@ function ChatView({ data, chat, box, onBack, onNewChat, history, sheet, onSheet,
   onBack: () => void; onNewChat: () => void; history: React.ReactNode; sheet: boolean; onSheet: (open: boolean) => void;
   more: React.ReactNode; onAsk: (prompt: string) => void;
 }) {
+  const { name } = useAssistant().personal;
   const scroller = useRef<HTMLDivElement>(null);
   const sheetButton = useRef<HTMLButtonElement>(null);
   const panel = useRef<HTMLElement>(null);
@@ -477,10 +486,10 @@ function ChatView({ data, chat, box, onBack, onNewChat, history, sheet, onSheet,
   return (
     <div data-brenda-chat-view className="flex h-[calc(100dvh-var(--shell-banners,0px))] min-h-0 flex-col bg-background">
       <header className="flex h-[50px] shrink-0 items-center gap-2 border-b border-border px-3">
-        <IconButton aria-label="Back to Brenda's home" data-tip="Back" onClick={onBack}><AnimatedArrowLeft aria-hidden /></IconButton>
+        <IconButton aria-label={`Back to ${name}'s home`} data-tip="Back" onClick={onBack}><AnimatedArrowLeft aria-hidden /></IconButton>
         <BrendaFace size="md" mood={chat.look.mood} interactive className="ml-1" />
         <div className="ml-1 min-w-0 flex-1">
-          <h1 className="font-sans text-sm font-semibold tracking-normal text-foreground">Brenda</h1>
+          <h1 className="truncate font-sans text-sm font-semibold tracking-normal text-foreground">{name}</h1>
           <p role="status" className="flex items-center gap-1.5 truncate text-xs font-normal text-secondary">
             <StatusDot tone={dot} size={6} />{status}
           </p>
@@ -501,7 +510,7 @@ function ChatView({ data, chat, box, onBack, onNewChat, history, sheet, onSheet,
           {history}
         </aside>
 
-        <section aria-label="Conversation with Brenda" className="flex min-w-0 flex-1 flex-col">
+        <section aria-label={`Conversation with ${name}`} className="flex min-w-0 flex-1 flex-col">
           <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
             <div className={cn("mx-auto flex min-h-full w-full max-w-3xl flex-col px-5 py-8", !empty && "space-y-6")} aria-live="polite">
               {empty ? <EmptyChat chat={chat} firstName={data.firstName} asks={ASKS[data.role === "employee" ? "worker" : "lead"]} onAsk={onAsk} /> : <BrendaMessages chat={chat} size="lg" />}
@@ -510,8 +519,8 @@ function ChatView({ data, chat, box, onBack, onNewChat, history, sheet, onSheet,
           {/* Docked on a solid strip of the canvas with a hairline above: the conversation scrolls above it and never shows through. */}
           <div className="shrink-0 border-t border-border bg-background px-5 pb-4 pt-3 md:pb-5">
             <div ref={box} className="mx-auto max-w-3xl">
-              <BrendaComposer chat={chat} leading={more} variant="hero" size="sm" placeholder={empty ? `What do you need, ${data.firstName}?` : `Reply to Brenda, ${data.firstName}…`} />
-              <p className="mt-2 text-center text-xs font-normal text-subtle">Brenda asks before anything that lands on someone else.</p>
+              <BrendaComposer chat={chat} leading={more} variant="hero" size="sm" placeholder={empty ? `What do you need, ${data.firstName}?` : `Reply to ${name}, ${data.firstName}…`} />
+              <p className="mt-2 text-center text-xs font-normal text-subtle">{name} asks before anything that lands on someone else.</p>
             </div>
           </div>
         </section>
@@ -522,12 +531,13 @@ function ChatView({ data, chat, box, onBack, onNewChat, history, sheet, onSheet,
 
 /** A new chat, before the first message: her face, the question, and her asks as tool tiles, which fill the box. */
 function EmptyChat({ chat, firstName, asks, onAsk }: { chat: BrendaChat; firstName: string; asks: Ask[]; onAsk: (prompt: string) => void }) {
+  const { name } = useAssistant().personal;
   return (
     <div className="my-auto flex flex-col items-center py-10 text-center">
       <BrendaFace size="lg" mood={chat.look.mood} />
       <h2 className="type-headline mt-5">What do you need, {firstName}?</h2>
       <p className="mt-1 max-w-md text-sm font-normal text-secondary">Ask me something new, or carry on with one of your past chats.</p>
-      <ToolTileRow label="Ask Brenda" className="mt-10">
+      <ToolTileRow label={`Ask ${name}`} className="mt-10">
         {asks.map((a) => <ToolTile key={a.label} icon={<a.icon aria-hidden />} label={a.label} onClick={() => onAsk(a.prompt)} />)}
       </ToolTileRow>
       {/* Before the first message there is no thread to carry dictation's notice or error (a blocked microphone). */}

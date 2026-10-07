@@ -29,6 +29,10 @@
  * paragraph; list it"): she writes light Markdown (the answer first, lists with the key words in bold, bold labels over
  * grouped lists), drawn by the Docs renderer in its chat variant (components/app/docs-markdown.tsx: React elements,
  * never an HTML string), whose links to Boredroom pages open in the app. Your own messages stay plain text.
+ *
+ * She is the person's own assistant (owner decision, 7 October 2026: personal assistants): the box's words and name, the
+ * working line, the built-in helper's note and the expired Confirm use the name they chose (`useAssistant`), and a
+ * conversation with no question yet is saved as "New chat", which does not go stale when the assistant is renamed.
  */
 import { useEffect, useId, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -41,6 +45,7 @@ import { Presence } from "@/components/ui/motion";
 import { PromptInputBox } from "@/components/ui/ai-prompt-box";
 import { BrendaFace, type BrendaMood, type BrendaTone } from "@/components/app/brenda-face";
 import { Markdown } from "@/components/app/docs-markdown";
+import { useAssistant } from "@/components/app/assistant-context";
 import { playSound } from "@/lib/brenda-sound";
 import { useDictation } from "@/hooks/use-dictation";
 import { api, isApiFailure, type ApiFailure } from "@/lib/api-client";
@@ -127,7 +132,7 @@ export function rebase(ours: BrendaMsg[], base: BrendaMsg[], theirs: BrendaMsg[]
 /** The first thing the person asked, on one line: the conversation's name in Past chats. */
 function titleOf(messages: BrendaMsg[]) {
   const first = messages.find((m) => m.role === "user" && m.content.trim())?.content.replace(/\s+/g, " ").trim();
-  return first ? clip(first, KEEP.title) : "Chat with Brenda";
+  return first ? clip(first, KEEP.title) : "New chat";
 }
 
 /** The conversation as it is saved: the newest messages, each within the length kept, and no Confirm tokens. */
@@ -518,6 +523,7 @@ const btn = (variant: "primary" | "secondary" | "ghost", size: "xs" | "sm") => b
  */
 export function BrendaMessages({ chat, onLeave, size = "md" }: { chat: BrendaChat; onLeave?: () => void; size?: "md" | "lg" }) {
   const router = useRouter();
+  const { name } = useAssistant().personal;
   const { messages, pending, error, act, decline, look, lastIndex, waitingAt } = chat;
   const lg = size === "lg";
   // A link in her reply to a Boredroom page opens it here, as her Open buttons do.
@@ -556,7 +562,7 @@ export function BrendaMessages({ chat, onLeave, size = "md" }: { chat: BrendaCha
                     <li key={pi} className="rounded-xl border border-border-input p-3 text-sm">
                       <p className="flex items-start gap-2.5 font-medium text-foreground"><ShieldCheck className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden /><span className="min-w-0">{p.summary}</span></p>
                       <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
-                        {p.done ? <span className="text-xs font-medium text-secondary">{p.done}</span> : !p.token ? <span className="text-xs font-normal text-subtle">Expired. Ask Brenda again.</span> : <>
+                        {p.done ? <span className="text-xs font-medium text-secondary">{p.done}</span> : !p.token ? <span className="text-xs font-normal text-subtle">Expired. Ask {name} again.</span> : <>
                           <button type="button" className={btn("ghost", "sm")} aria-keyshortcuts={keys ? "N" : undefined} onClick={() => decline(mi, pi)}>Not now{keys ? <KeyHint>N</KeyHint> : null}</button>
                           <button type="button" className={btn("primary", "sm")} aria-keyshortcuts={keys ? "Y" : undefined} onClick={() => void act(mi, pi, p)}><AnimatedCheck aria-hidden />Confirm{keys ? <KeyHint>Y</KeyHint> : null}</button>
                         </>}
@@ -576,14 +582,14 @@ export function BrendaMessages({ chat, onLeave, size = "md" }: { chat: BrendaCha
                   );
                 })}</ul>
               ) : null}
-              {m.engine === "builtin" || m.note ? <p className={cn("text-xs font-normal text-subtle", indent)}>{m.note ?? "Brenda's built-in helper: the AI is not connected yet, so she suggests instead of acting."}</p> : null}
+              {m.engine === "builtin" || m.note ? <p className={cn("text-xs font-normal text-subtle", indent)}>{m.note ?? `${name}'s built-in helper: the AI is not connected yet, so it suggests instead of acting.`}</p> : null}
             </div>
           )}
         </div>
       ))}
       {pending ? (
         <div role="status" className={cn("flex items-center", lg ? "gap-3" : "gap-2.5", type)}>
-          <BrendaFace size={lg ? "md" : "sm"} mood="think" /><span className="brenda-shimmer font-normal">Brenda is on it…</span>
+          <BrendaFace size={lg ? "md" : "sm"} mood="think" /><span className="brenda-shimmer font-normal">{name} is on it…</span>
         </div>
       ) : null}
       <Presence show={!!error}><Alert tone="danger">{error}</Alert></Presence>
@@ -704,11 +710,12 @@ export function useReadAlong() {
  * the full chat first). `leading` takes the pill's round "+" on the left (the hero box's "More asks" on its bottom
  * row); `trailing` small things before the microphone.
  */
-export function BrendaComposer({ chat, placeholder = "Tell Brenda what you need…", className, onSend, label, leading, trailing, variant, size }: {
+export function BrendaComposer({ chat, placeholder, className, onSend, label, leading, trailing, variant, size }: {
   chat: BrendaChat; placeholder?: string; className?: string; onSend?: (message: string) => void; /** The box's accessible name. */ label?: string;
   leading?: React.ReactNode; trailing?: React.ReactNode; variant?: "pill" | "hero"; size?: "md" | "sm";
 }) {
   const { text, setText, send, pending, dictation } = chat;
+  const { name } = useAssistant().personal;
   // She reads along as you type here; once it is sent she stops reading and gets to work.
   const readAlong = useReadAlong();
   const submit = (m: string) => { attention.release(); if (onSend) onSend(m); else void send(m, true); };
@@ -724,7 +731,7 @@ export function BrendaComposer({ chat, placeholder = "Tell Brenda what you need�
   return (
     // No box of its own (`contents`): it only hears the typing in the box.
     <div className="contents" {...readAlong}>
-      <PromptInputBox value={text} onValueChange={setText} onSend={submit} isLoading={pending} placeholder={placeholder} className={className} label={label}
+      <PromptInputBox value={text} onValueChange={setText} onSend={submit} isLoading={pending} placeholder={placeholder ?? `Tell ${name} what you need…`} className={className} label={label ?? `Message ${name}`}
         recording={dictation.listening} transcribing={dictation.busy} onToggleRecording={() => void dictation.toggle()} recordingSupported={dictation.supported !== false}
         recordingPlaceholder={dictation.engine === "whisper" ? "Listening… your words appear when you stop" : undefined}
         recordingHint={hint} recordingHeard={dictation.heard || null} onCancelRecording={() => dictation.cancel()} leading={leading} trailing={trailing} variant={variant} size={size} />

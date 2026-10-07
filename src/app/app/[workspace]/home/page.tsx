@@ -1,13 +1,28 @@
+import type { Metadata } from "next";
 import { workspacePage } from "@/server/lib/workspace-page";
+import { orgContext } from "@/server/lib/api";
 import { AppShell } from "@/components/app/shell";
 import { BrendaHome, type HomeData } from "@/components/app/brenda-home";
 import { assistantConfigured } from "@/server/services/assistant";
 import { getConversation, listConversations } from "@/server/services/brenda-history";
+import { assistantProfiles } from "@/server/services/assistant-profile";
 import { localParts, todayLocal } from "@/server/lib/time";
 import { formatLongDate } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
-export const metadata = { title: "Brenda" };
+
+/**
+ * The tab carries the person's own assistant's name (owner decision, 7 October 2026: personal assistants). orgContext and
+ * assistantProfiles are cached per request, so the shell's read is the same one.
+ */
+export async function generateMetadata({ params }: { params: Promise<{ workspace: string }> }): Promise<Metadata> {
+  const { workspace } = await params;
+  try {
+    return { title: (await assistantProfiles(await orgContext(workspace))).personal.name };
+  } catch {
+    return { title: "Brenda" }; // signed out or not a member: the page itself redirects or shows the workspace's not-found
+  }
+}
 
 type Search = { ask?: string | string[]; tab?: string | string[]; chat?: string | string[] };
 

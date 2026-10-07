@@ -18,16 +18,21 @@ import { getAdmin } from "@/server/admin/auth";
 import { launchSettings } from "@/server/admin/settings";
 import { MotionRoot, PageRise } from "@/components/ui/motion";
 import { PageNotes } from "@/components/ui/page-notes";
+import { AssistantProvider } from "@/components/app/assistant-context";
+import { AssistantSetup } from "@/components/app/assistant-setup";
+import { assistantProfiles } from "@/server/services/assistant-profile";
+import { DEFAULT_ASSISTANT_NAME } from "@/lib/assistant-look";
 
 export const ROLE_LABEL: Record<string, string> = { owner: "Organisation owner", hr: "HR administrator", manager: "Team lead", employee: "Staff" };
 
-export function navItems(ctx: OrgContext, counts: NavCounts, teams: { id: string; name: string; is_manager: boolean }[] = []): NavItem[] {
+export function navItems(ctx: OrgContext, counts: NavCounts, teams: { id: string; name: string; is_manager: boolean }[] = [], assistantName = DEFAULT_ASSISTANT_NAME): NavItem[] {
   const base = `/app/${ctx.org.slug}`;
   const role = ctx.membership.role;
-  // Brenda's page first for everyone, named after her and marked with her face; the URL stays /home (owner decision,
-  // 5 October 2026). Reports and Policy are gone for every role: Brenda sends supervisors the end-of-day report, and
-  // working hours and recording rules live in Settings.
-  const items: NavItem[] = [{ href: `${base}/home`, label: "Brenda", icon: "brenda", group: "Overview" }];
+  // Brenda's page first for everyone, marked with her face; the URL stays /home (owner decision, 5 October 2026). It is
+  // named after the person's assistant (owner decision, 7 October 2026: personal assistants), and the glyph draws that
+  // assistant's visor from context. Reports and Policy are gone for every role: Brenda sends supervisors the end-of-day
+  // report, and working hours and recording rules live in Settings.
+  const items: NavItem[] = [{ href: `${base}/home`, label: assistantName, icon: "brenda", group: "Overview" }];
   if (role === "owner" || role === "hr") {
     // Organisation account: supervision and management only.
     items.push({ href: `${base}/dashboard`, label: "Dashboard", icon: "dashboard", group: "Overview" });
@@ -123,8 +128,10 @@ function liftPageNotes(node: ReactNode, notes: ReactElement[]): ReactNode {
  */
 export async function AppShell({ ctx, counts, teams = [], children, bleed = false }: { ctx: OrgContext; counts: NavCounts; teams?: { id: string; name: string; is_manager: boolean }[]; children: React.ReactNode; bleed?: boolean }) {
   const isOrg = ctx.membership.role === "owner" || ctx.membership.role === "hr";
-  // The workspace menu lists the person's workspaces; if that list cannot be read, it shows this one alone.
-  const [launch, admin, mine] = await Promise.all([launchSettings(), getAdmin(), listMyWorkspaces(ctx.user.profileId).catch(() => [])]);
+  // The workspace menu lists the person's workspaces; if that list cannot be read, it shows this one alone. The person's
+  // own assistant and the workspace's are read alongside (owner decision, 7 October 2026: personal assistants), cached
+  // per request so the page reads the same ones.
+  const [launch, admin, mine, assistants] = await Promise.all([launchSettings(), getAdmin(), listMyWorkspaces(ctx.user.profileId).catch(() => []), assistantProfiles(ctx)]);
   // Maintenance: administrators pass; everyone else sees the notice (unless app access was left on).
   if (launch.mode === "maintenance" && !launch.app_access && !admin) {
     return (
@@ -137,19 +144,26 @@ export async function AppShell({ ctx, counts, teams = [], children, bleed = fals
     );
   }
   const base = `/app/${ctx.org.slug}`;
-  const items = navItems(ctx, counts, teams);
+  const items = navItems(ctx, counts, teams, assistants.personal.name);
+  // Settings opens for everyone, with "Your assistant" (owner decision, 7 October 2026: personal assistants).
   const pages = [
     ...items.map((i) => ({ label: i.label, href: i.href, group: i.group })),
     { label: "Notifications", href: `${base}/notifications`, group: "Account" },
     { label: "Your profile", href: `${base}/profile`, group: "Account" },
-    ...(isOrg ? [{ label: "Settings", href: `${base}/settings`, group: "Organisation" }] : []),
+    { label: "Your assistant", href: `${base}/settings?section=assistant`, group: "Account" },
+    ...(isOrg ? [{ label: "Settings", href: `${base}/settings`, group: "Organisation" }] : [{ label: "Settings", href: `${base}/settings`, group: "Account" }]),
   ];
   const brenda = ctx.plan.features.AI_ASSISTANT === true;
+  // "Meet your assistant" the first time a person enters the workspace, on every plan (she is there as the built-in helper
+  // where the plan has no AI assistant, owner decision 7 October 2026), while nobody is impersonating them (an
+  // administrator must not choose for them).
+  const showSetup = !assistants.setupDone && !ctx.user.impersonation;
   const workspaces = mine.map((w) => ({ slug: w.slug, name: w.name }));
   const notice = isOrg ? planNotice(ctx.plan, ctx.org.slug) : null;
   const nav = { items, orgSlug: ctx.org.slug, orgName: ctx.org.name, workspaces, isOrg, notice };
   return (
     <MotionRoot>
+    <AssistantProvider value={assistants}>
     <ShellBanners>
       {ctx.user.impersonation ? <ImpersonationBanner name={ctx.user.displayName} adminEmail={ctx.user.impersonation.adminEmail} /> : null}
       {isOrg ? <BillingBanner orgSlug={ctx.org.slug} plan={ctx.plan} /> : null}
@@ -166,10 +180,12 @@ export async function AppShell({ ctx, counts, teams = [], children, bleed = fals
           : <PageColumn>{children}</PageColumn>}
         {ctx.plan.features.AI_ASSISTANT ? <AssistantDrawer orgSlug={ctx.org.slug} isOrg={isOrg} firstName={ctx.user.displayName.split(" ")[0]} floating /> : null}
         {ctx.plan.features.AI_ASSISTANT && !isOrg ? <BrendaPresence orgSlug={ctx.org.slug} /> : null}
+        {showSetup ? <AssistantSetup orgSlug={ctx.org.slug} orgName={ctx.org.name} /> : null}
         <RealtimeRefresher orgSlug={ctx.org.slug} />
         <Suspense fallback={null}><MessageToasts orgSlug={ctx.org.slug} /></Suspense>
       </div>
     </div>
+    </AssistantProvider>
     </MotionRoot>
   );
 }

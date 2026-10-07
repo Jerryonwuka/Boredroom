@@ -9,7 +9,8 @@
  * projects and teams (from two letters, after a short pause). ↑ ↓ move through the results while the field keeps
  * focus (a combobox with aria-activedescendant), Enter opens one, Escape or a click outside closes and hands focus
  * back to the button that opened it. ⌘K (Ctrl+K elsewhere) opens it from anywhere. When nothing matches and Brenda is
- * on, the last row hands the question to her.
+ * on, the last row hands the question to her, under the name the person gave their own assistant (owner decision,
+ * 7 October 2026: personal assistants; `useAssistant`).
  *
  * Controlled: the top bar owns `open`, so its phone search icon and the wide button open the same palette.
  *
@@ -24,6 +25,7 @@ import { useRouter } from "next/navigation";
 import { Search } from "lucide-react";
 import { AnimatedFolderKanban, AnimatedLayoutGrid, AnimatedListChecks, AnimatedSearch, AnimatedUser, AnimatedUsers } from "@/components/ui/animated-icons";
 import { BrendaGlyph } from "@/components/app/brenda-glyph";
+import { useAssistant } from "@/components/app/assistant-context";
 import { Kbd } from "@/components/ui/badge";
 import { api } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
@@ -32,7 +34,8 @@ import type { SearchHit, SearchResult } from "@/server/services/search";
 type Kind = SearchHit["kind"] | "page" | "brenda";
 type Hit = { kind: Kind; id: string; title: string; hint: string | null; href: string };
 const ICON: Record<Kind, React.ComponentType<{ className?: string; "aria-hidden"?: boolean }>> = { page: AnimatedLayoutGrid, task: AnimatedListChecks, person: AnimatedUser, project: AnimatedFolderKanban, team: AnimatedUsers, brenda: BrendaGlyph };
-const GROUP: Record<Kind, string> = { page: "Pages", task: "Tasks", person: "People", project: "Projects", team: "Teams", brenda: "Brenda" };
+// The "brenda" group is headed by the person's own assistant's name (WorkspaceSearch).
+const GROUP: Record<Exclude<Kind, "brenda">, string> = { page: "Pages", task: "Tasks", person: "People", project: "Projects", team: "Teams" };
 const FIELD_NAME = "Search pages, tasks, people, projects and teams";
 export const SEARCH_DIALOG_ID = "workspace-search";
 
@@ -61,6 +64,7 @@ export function WorkspaceSearch({ orgSlug, pages, brenda = false, open, onOpenCh
   /** Brenda is on for this workspace: a search that finds nothing offers to hand the question to her. */ brenda?: boolean;
   open: boolean; onOpenChange: (open: boolean) => void;
 }) {
+  const { name } = useAssistant().personal;
   const [q, setQ] = useState("");
   const [active, setActive] = useState(0);
   // Results are kept with the term they answer, so stale answers never show and nothing is reset in an effect.
@@ -109,7 +113,7 @@ export function WorkspaceSearch({ orgSlug, pages, brenda = false, open, onOpenCh
   const found: Hit[] = [...pageHits, ...remoteHits];
   const nothing = !busy && term.length >= 2 && found.length === 0;
   const hits: Hit[] = nothing && brenda
-    ? [{ kind: "brenda", id: "ask", title: `Ask Brenda to find “${term}”`, hint: null, href: `/app/${orgSlug}/home?ask=${encodeURIComponent(`Find “${term}” in this workspace and tell me where it is.`)}` }]
+    ? [{ kind: "brenda", id: "ask", title: `Ask ${name} to find “${term}”`, hint: null, href: `/app/${orgSlug}/home?ask=${encodeURIComponent(`Find “${term}” in this workspace and tell me where it is.`)}` }]
     : found;
   const at = Math.min(active, hits.length - 1);
   const optionId = (i: number) => `${listId}-o${i}`;
@@ -161,7 +165,7 @@ export function WorkspaceSearch({ orgSlug, pages, brenda = false, open, onOpenCh
             <div role="listbox" id={listId} aria-label="Results">
               {groups.map((g) => (
                 <div key={`${g.kind}-${g.items[0].index}`} role="group" aria-labelledby={`${listId}-g${g.items[0].index}`}>
-                  <div id={`${listId}-g${g.items[0].index}`} className="menu-label">{GROUP[g.kind]}</div>
+                  <div id={`${listId}-g${g.items[0].index}`} className="menu-label">{g.kind === "brenda" ? name : GROUP[g.kind]}</div>
                   {g.items.map(({ hit, index }) => {
                     const Icon = ICON[hit.kind];
                     return (

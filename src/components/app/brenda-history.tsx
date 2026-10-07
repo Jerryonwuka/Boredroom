@@ -12,6 +12,8 @@
  * secondary grey, the time 12/16 subtle. The open row is fill-1 with the 2px orange marker on its left edge (accent
  * rules, 6 October 2026: the chosen sub-nav item), a hovered one fill-0; Delete (a 28px ghost icon
  * button) shows on the open row, under the pointer and on focus, and always on touch screens.
+ *
+ * The empty list names the person's own assistant (owner decision, 7 October 2026: personal assistants).
  */
 import { useId, useRef, useState, useSyncExternalStore } from "react";
 import { Lock, MessagesSquare, Search, Trash2, X } from "lucide-react";
@@ -22,6 +24,7 @@ import { CountPill } from "@/components/ui/badge";
 import { Alert, EmptyState } from "@/components/ui/states";
 import { Presence } from "@/components/ui/motion";
 import { cn, relativeTime } from "@/lib/utils";
+import { useAssistant } from "@/components/app/assistant-context";
 import type { ConversationSummary } from "@/server/services/brenda-history";
 
 // The clock for "last active", to the minute. The server's minute is used while the page hydrates, so both render the
@@ -59,6 +62,7 @@ export function BrendaHistory({ conversations, now, currentId, opening, error, o
   className?: string;
 }) {
   const clock = useMinuteClock(now);
+  const { name } = useAssistant().personal;
   const box = useRef<HTMLDivElement>(null);
   const uid = useId();
   const [query, setQuery] = useState("");
@@ -129,7 +133,7 @@ export function BrendaHistory({ conversations, now, currentId, opening, error, o
           <p role="status" className="px-2 py-6 text-center text-sm font-normal text-secondary">No chats match &ldquo;{query.trim()}&rdquo;.</p>
         ) : (
           <EmptyState compact icon={MessagesSquare} title="No past chats yet"
-            description="Every conversation with Brenda is kept here, only for you, so you can carry on where you left off."
+            description={`Every conversation with ${name} is kept here, only for you, so you can carry on where you left off.`}
             action={<button type="button" data-chat-start onClick={onStart} className={buttonVariants({ variant: "secondary", size: "sm" })}>Start a chat</button>} />
         )}
       </div>

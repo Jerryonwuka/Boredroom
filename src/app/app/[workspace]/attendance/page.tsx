@@ -11,6 +11,7 @@ import { DataTable } from "@/components/ui/table";
 import { EmptyState, PermissionDenied } from "@/components/ui/states";
 import { buttonVariants } from "@/components/ui/button";
 import { attendanceBoard, attendanceMonth, type ClockStatus } from "@/server/services/attendance";
+import { assistantProfiles } from "@/server/services/assistant-profile";
 import { uuid } from "@/server/lib/api";
 import { formatDuration, formatLongDate, cn } from "@/lib/utils";
 import { DatePicker } from "@/components/ui/date-picker";
@@ -128,7 +129,8 @@ export default async function AttendancePage({ params, searchParams }: { params:
   }
 
   // ---- Day view ----------------------------------------------------------
-  const b = await attendanceBoard(ctx, { date: sp.date, teamId });
+  // The hand-off below names the person's own assistant (owner decision, 7 October 2026: personal assistants).
+  const [b, { personal }] = await Promise.all([attendanceBoard(ctx, { date: sp.date, teamId }), assistantProfiles(ctx)]);
   const tab: Tab = (["in", "not_in", "out", "all"] as const).includes(sp.tab as Tab) ? (sp.tab as Tab) : "in";
   const q = (patch: Record<string, string | undefined>) => { const p = new URLSearchParams(); const merged = { tab, date: b.date === b.today ? undefined : b.date, team: teamId ?? undefined, ...patch }; for (const [k, v] of Object.entries(merged)) if (v) p.set(k, v); const s = p.toString(); return `${base}/attendance${s ? `?${s}` : ""}`; };
   const shown = b.people.filter((p) => tab === "all" || p.status === tab);
@@ -143,7 +145,7 @@ export default async function AttendancePage({ params, searchParams }: { params:
     <AppShell ctx={ctx} counts={counts} teams={teams}>
       <PageHeader title="Attendance"
         description={`${isToday ? "Today, " : ""}${formatLongDate(b.date)}.${b.workingDay ? "" : " This is not a scheduled working day."}`}
-        actions={askBrenda && tab === "not_in" && isToday && shown.length ? <Link href={askBrenda} className={buttonVariants({ variant: "secondary", size: "sm" })}><BrendaGlyph aria-hidden />Ask Brenda to check in with them</Link> : undefined}
+        actions={askBrenda && tab === "not_in" && isToday && shown.length ? <Link href={askBrenda} className={buttonVariants({ variant: "secondary", size: "sm" })}><BrendaGlyph aria-hidden />Ask {personal.name} to check in with them</Link> : undefined}
         tabsLabel="Attendance status" tabValue={tab}
         tabs={[
           { value: "in", label: "Clocked in", count: b.counts.in, href: q({ tab: "in" }) },

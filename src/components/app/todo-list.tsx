@@ -18,6 +18,9 @@
  * (its "Working now" badge and its arc), the timer (dot, digits, progress), the tabs' underline, and in a to-do's sheet
  * its Start, the standout action. Every other arc on the list is quiet (`tone="neutral"`); an overdue date is a small red
  * dot beside the word, never red text.
+ *
+ * Dictated to-dos are drafted by the person's own assistant, and the list names it as they named it (owner decision,
+ * 7 October 2026: personal assistants; `useAssistant`).
  */
 import { useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
@@ -32,6 +35,7 @@ import { SessionTimer, type CurrentSessionPayload, type StartableTask } from "@/
 import { CaptureProvider, useCaptureGate, useCaptureContext, useCaptureSupported } from "@/components/app/capture";
 import { VoiceCapture } from "@/components/app/voice-capture";
 import { BrendaGlyph } from "@/components/app/brenda-glyph";
+import { useAssistant } from "@/components/app/assistant-context";
 import { ProgressSlider } from "@/components/app/progress-slider";
 import { DetailList, DetailRow } from "@/components/app/detail-list";
 import { DueDate, OverdueDot } from "@/components/app/due";
@@ -161,6 +165,7 @@ export function TodosBoard(props: Props) {
 
 function Board({ orgSlug, today, initialSession, planned, ownTodos, fromLeads, doneToday, pastTasks, assignable, membershipId, recordingMode, assistantConfigured, timeZone, serverNow }: Props) {
   const router = useRouter();
+  const { name } = useAssistant().personal;
   const nowMs = useNow(serverNow);
   const captureSupported = useCaptureSupported();
   const listed = useMemo(() => todoRows<Row>(planned, fromLeads, ownTodos), [planned, fromLeads, ownTodos]);
@@ -270,7 +275,7 @@ function Board({ orgSlug, today, initialSession, planned, ownTodos, fromLeads, d
           {newRow ? <div className={hasList ? "mt-3" : undefined}>{newRow}</div> : null}
           {!hasList ? (newRow ? null : (
             <EmptyState icon={ListTodo} title="Nothing on your list yet"
-              description="Write down what you are doing today, or say it and Brenda writes it down, then press Start when you begin."
+              description={`Write down what you are doing today, or say it and ${name} writes it down, then press Start when you begin.`}
               action={<Button size="sm" variant="accent" onClick={openAdd}><Plus aria-hidden />Add your first to-do</Button>} />
           )) : (
             <ul className={cn("space-y-0.5", newRow ? "mt-1" : "mt-3")} aria-label="To-dos">
@@ -506,6 +511,7 @@ type Draft = ProposedTodo & { keep: boolean };
 function NewTodoRow({ orgSlug, assignable, aiConnected, timeZone, nudge, onAdded, onClose }: { orgSlug: string; assignable: Person[]; aiConnected: boolean; timeZone: string; nudge: number; onAdded: (message: string | null) => void;
   /** `refocus`: closed from inside the row (Escape, Cancel), so the focus goes back to "+"; not when the focus left it. */
   onClose: (refocus?: boolean) => void }) {
+  const { name } = useAssistant().personal;
   const inputRef = useRef<HTMLInputElement>(null);
   const addAllRef = useRef<HTMLButtonElement>(null);
   const errorId = useId();
@@ -576,14 +582,14 @@ function NewTodoRow({ orgSlug, assignable, aiConnected, timeZone, nudge, onAdded
       if (token !== run.current) return;
       if (!r.items.length) {
         setStep("type");
-        setError("Brenda found no to-dos in that. Say one task per sentence, like “Send the Acme invoice by Friday.” Your words are in the box to edit and add as they are.");
+        setError(`${name} found no to-dos in that. Say one task per sentence, like “Send the Acme invoice by Friday.” Your words are in the box to edit and add as they are.`);
         refocus();
         return;
       }
       setPlan(r);
       setDrafts(r.items.map((it) => ({ ...it, keep: true })));
       setStep("review");
-      setAnnounce(`Brenda drafted ${r.items.length} to-do${r.items.length === 1 ? "" : "s"}. Untick or edit them, then add.`);
+      setAnnounce(`${name} drafted ${r.items.length} to-do${r.items.length === 1 ? "" : "s"}. Untick or edit them, then add.`);
     } catch (err) {
       if (token !== run.current) return;
       setStep("type");
@@ -651,7 +657,7 @@ function NewTodoRow({ orgSlug, assignable, aiConnected, timeZone, nudge, onAdded
       <p role="status" className="sr-only">{announce}</p>
       {voice ? (
         <VoiceCapture compact phase={voice}
-          title={step === "planning" ? "Brenda is writing your to-dos…" : undefined}
+          title={step === "planning" ? `${name} is writing your to-dos…` : undefined}
           heard={step === "planning" ? title : dictation.heard || null}
           hint={voice === "listening" ? listeningHint : step === "planning" ? "You check them before anything is added." : pct !== null ? `Getting dictation ready… ${pct}%` : undefined}
           onStop={voice === "listening" ? () => void stopVoice() : undefined} onCancel={cancelVoice} />
@@ -661,7 +667,7 @@ function NewTodoRow({ orgSlug, assignable, aiConnected, timeZone, nudge, onAdded
             <BrendaGlyph className="mt-0.5 size-4 shrink-0 text-foreground" aria-hidden />
             <span>{plan.reply ?? `Here ${drafts.length === 1 ? "is the to-do" : `are the ${drafts.length} to-dos`} I heard. Untick any you don't want, or edit them, then add.`}</span>
           </p>
-          <ul className="space-y-0.5" aria-label="Brenda's drafts">
+          <ul className="space-y-0.5" aria-label={`${name}'s drafts`}>
             {drafts.map((d, i) => {
               const meta = [d.dueAt ? `due ${formatDateTime(d.dueAt, timeZone)}` : null, d.estimateMinutes ? `about ${formatDuration(d.estimateMinutes * 60)}` : null].filter(Boolean).join(", ");
               return (
@@ -680,7 +686,7 @@ function NewTodoRow({ orgSlug, assignable, aiConnected, timeZone, nudge, onAdded
               );
             })}
           </ul>
-          {plan.engine === "builtin" && (plan.note || !aiConnected) ? <p className="text-meta font-normal text-secondary">{plan.note ?? "Brenda's AI is not connected yet, so a simple built-in reader drafted these. An owner connects it under Settings."}</p> : null}
+          {plan.engine === "builtin" && (plan.note || !aiConnected) ? <p className="text-meta font-normal text-secondary">{plan.note ?? `${name}'s AI is not connected yet, so a simple built-in reader drafted these. An owner connects it under Settings.`}</p> : null}
           <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
             <Button size="sm" variant="secondary" onClick={cancelVoice}>Cancel</Button>
             <Button ref={addAllRef} size="sm" disabled={pending || !kept.length} loading={pending} onClick={() => void addAll()}>{pending ? "Adding…" : kept.length ? `Add ${kept.length} to-do${kept.length === 1 ? "" : "s"}` : "Nothing ticked"}</Button>
@@ -696,7 +702,7 @@ function NewTodoRow({ orgSlug, assignable, aiConnected, timeZone, nudge, onAdded
           {/* Free to shrink and wrap on its own line: with "For" beside the buttons it is wider than a phone's row. */}
           <span className="ml-auto flex max-w-full flex-wrap items-center justify-end gap-1.5">
             {assignable.length ? <Select aria-label="For" fieldSize="sm" className="w-40" value={assignee} onChange={(e) => setAssignee(e.target.value)}><ForOptions people={assignable} /></Select> : null}
-            {dictation.supported ? <IconButton variant="round" aria-label="Dictate" data-tip="Dictate, and Brenda writes your to-dos" onClick={() => void startVoice()}><Mic aria-hidden /></IconButton> : null}
+            {dictation.supported ? <IconButton variant="round" aria-label="Dictate" data-tip={`Dictate, and ${name} writes your to-dos`} onClick={() => void startVoice()}><Mic aria-hidden /></IconButton> : null}
             <Button size="sm" variant="ghost" onClick={() => onClose(true)}>Cancel</Button>
             <Button type="submit" size="sm" disabled={pending || !title.trim()}>{pending ? "Adding…" : person ? "Hand out" : "Add"}</Button>
           </span>

@@ -16,9 +16,16 @@
  *
  * One drawing loop, stopped while she is off screen or the tab is hidden. With reduced motion she is drawn still: each
  * state, and reading (her eyes on the box, held while the person types), is a still pose with nothing moving into it.
+ *
+ * Personal assistants (owner decision, 7 October 2026): she is drawn as the assistant in context, the person's own
+ * (`AssistantProvider`) or a scoped one (`AssistantScope`: a preview, the workspace's), with its colour, visor and eyes,
+ * and named by it unless `label` says otherwise. `look` draws another look outright (the editor's preview). A new look
+ * shows from the next frame, with no transition; under reduced motion the still frame is redrawn at once.
  */
 import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import { attention, BrendaEngine, type BrendaEmote, type BrendaState } from "@/lib/brenda-character/engine";
+import { sameLook, type AssistantLook } from "@/lib/assistant-look";
+import { useScopedAssistant } from "@/components/app/assistant-context";
 import { playSound } from "@/lib/brenda-sound";
 import { cn } from "@/lib/utils";
 
@@ -37,7 +44,11 @@ export const BrendaCharacter = forwardRef<BrendaCharacterHandle, {
   stream?: MediaStream | null;
   /** Or how loud the voice is now, 0 to 1, read each frame while she listens. */
   level?: () => number;
-}>(function BrendaCharacter({ state = "idle", size = 120, interactive = false, className, label = "Brenda", stream = null, level }, ref) {
+  /** The look to draw instead of the assistant in context (the editor's live preview). */
+  look?: AssistantLook;
+}>(function BrendaCharacter({ state = "idle", size = 120, interactive = false, className, label, stream = null, level, look }, ref) {
+  const scoped = useScopedAssistant();
+  const { colour, visor, eyes } = look ?? scoped;
   const canvas = useRef<HTMLCanvasElement>(null);
   const engine = useRef<BrendaEngine | null>(null);
   const pokes = useRef<number[]>([]);
@@ -51,12 +62,15 @@ export const BrendaCharacter = forwardRef<BrendaCharacterHandle, {
   const levelRef = useRef(level);
   const hear = useRef<(() => number) | null>(null);
   useEffect(() => { levelRef.current = level; });
+  /** The look she is created with (kept current for the drawing set-up below, which does not re-run for it). */
+  const lookRef = useRef<AssistantLook>({ colour, visor, eyes });
+  useEffect(() => { lookRef.current = { colour, visor, eyes }; });
 
   useImperativeHandle(ref, () => ({ emote: (e) => engine.current?.emote(e), lookAt: (x, y) => place.current(x, y) }), []);
 
   useEffect(() => {
     const el = canvas.current; if (!el) return;
-    const e = (engine.current ??= new BrendaEngine());
+    const e = (engine.current ??= new BrendaEngine(lookRef.current));
     const ctx = el.getContext("2d"); if (!ctx) return;
     const reduced = window.matchMedia(REDUCE).matches;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -115,6 +129,12 @@ export const BrendaCharacter = forwardRef<BrendaCharacterHandle, {
   }, [size]);
 
   useEffect(() => { engine.current?.setState(state); still.current?.(); }, [state]);
+  // A new look (the editor's preview, a saved profile): drawn from the next frame, or at once when she is still.
+  useEffect(() => {
+    const e = engine.current, next: AssistantLook = { colour, visor, eyes };
+    if (!e || sameLook(e.look, next)) return;
+    e.setLook(next); still.current?.();
+  }, [colour, visor, eyes]);
   useEffect(() => () => { if (loveTimer.current) clearTimeout(loveTimer.current); }, []);
 
   // While she listens to a microphone: an analyser on it, read in her drawing loop (none under reduced motion, where
@@ -168,7 +188,7 @@ export const BrendaCharacter = forwardRef<BrendaCharacterHandle, {
   const leave = () => { if (loveTimer.current) clearTimeout(loveTimer.current); };
 
   return (
-    <canvas ref={canvas} role="img" aria-label={label}
+    <canvas ref={canvas} role="img" aria-label={label ?? scoped.name} data-sphere={colour}
       style={{ width: size * 1.5, height: size * 1.25 }}
       tabIndex={interactive ? 0 : undefined}
       onClick={interactive ? poke : undefined}

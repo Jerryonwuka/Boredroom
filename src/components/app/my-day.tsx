@@ -11,6 +11,8 @@
  * (`useWorkClock`), so a to-do started on To-dos shows here, and Pause, Switch task and Stop work from either.
  *
  * No clock-in card and no idle clock here (owner decision, 5 October 2026): clocking in has its own page.
+ *
+ * "How it works" names the person's own assistant (owner decision, 7 October 2026: personal assistants; `useAssistant`).
  */
 import { useMemo } from "react";
 import Link from "next/link";
@@ -18,6 +20,7 @@ import { CaptureProvider, useCaptureSupported } from "@/components/app/capture";
 import { startableTasks, todoRows, useWorkClock } from "@/components/app/todo-list";
 import type { CurrentSessionPayload } from "@/components/app/session-timer";
 import { Card, CardHeader } from "@/components/ui/card";
+import { useAssistant } from "@/components/app/assistant-context";
 import type { TaskRow } from "@/server/services/views";
 
 type Props = {
@@ -41,6 +44,7 @@ export function MyDayBoard(props: Props) {
 
 function Board({ orgSlug, initialSession, planned, ownTodos, fromLeads, recordingMode, lead, yourDay }: Props) {
   const captureSupported = useCaptureSupported();
+  const { name } = useAssistant().personal;
   const startable = useMemo(() => startableTasks(todoRows(planned, fromLeads, ownTodos)), [planned, fromLeads, ownTodos]);
   const clock = useWorkClock({ orgSlug, initialSession, tasks: startable, recordingMode });
   const canRecord = recordingMode !== "disabled" && captureSupported === true;
@@ -57,7 +61,7 @@ function Board({ orgSlug, initialSession, planned, ownTodos, fromLeads, recordin
         <Card>
           <CardHeader as="h2" size="sm" title={<span id="how-heading">How it works</span>} className="mb-3" />
           <ol className="list-decimal space-y-2 pl-4 text-sm font-normal text-secondary marker:text-subtle">
-            <li>On <Link href={todos} className="link-inline">To-dos</Link>, press <strong className="font-medium text-foreground">+</strong> and write your to-dos for today, or dictate them and Brenda writes them down. Your team lead may add some too.</li>
+            <li>On <Link href={todos} className="link-inline">To-dos</Link>, press <strong className="font-medium text-foreground">+</strong> and write your to-dos for today, or dictate them and {name} writes them down. Your team lead may add some too.</li>
             <li>Press <strong className="font-medium text-foreground">Start</strong> on the one you are working on{canRecord ? ", with or without screen recording" : ""}. Its timer shows here and on To-dos while it runs.</li>
             <li>Press <strong className="font-medium text-foreground">Mark done</strong> when you finish. It goes to your lead for a quick check, then shows as Completed.</li>
             {lead ? <li>As a team lead, use “For” on a new to-do to hand it to someone on your team, or to anyone else in the organisation, or say who it is for when you dictate.</li> : null}

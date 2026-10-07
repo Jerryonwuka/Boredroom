@@ -119,10 +119,14 @@ export function stripTokens(messages: ParsedMessage[]): StoredMessage[] {
   } : m));
 }
 
-/** The first thing the person asked, on one line; what the list calls the conversation when the chat names none. */
+/**
+ * The first thing the person asked, on one line; what the list calls the conversation when the chat names none. With
+ * nothing asked yet it is a "New chat", not "Chat with Brenda": a stored title must not go stale when the person renames
+ * their assistant (owner decision, 7 October 2026: personal assistants).
+ */
 export function conversationTitle(messages: { role: string; content: string }[]) {
   const first = messages.find((m) => m.role === "user" && m.content.trim())?.content.replace(/\s+/g, " ").trim() ?? "";
-  if (!first) return "Chat with Brenda";
+  if (!first) return "New chat";
   return first.length > CONVERSATION_LIMITS.title ? `${first.slice(0, CONVERSATION_LIMITS.title - 1).trimEnd()}…` : first;
 }
 

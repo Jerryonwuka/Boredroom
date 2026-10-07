@@ -19,6 +19,7 @@ import { SectionTitle } from "@/components/ui/card";
 import { api, isApiFailure } from "@/lib/api-client";
 import { dateOnly } from "@/lib/format";
 import { TimePicker } from "@/components/ui/time-picker";
+import { useAssistant } from "@/components/app/assistant-context";
 import { cn } from "@/lib/utils";
 
 const OFFLINE = "Cannot reach the server. Check your connection and try again; nothing was changed.";
@@ -52,7 +53,12 @@ export function SettingsGroup({ children, className, ...rest }: React.HTMLAttrib
  * for a value shown as text rather than a 36px control. `stacked` puts the control under the label at every width (a
  * long text box).
  */
-export function SettingsRow({ label, hint, htmlFor, labelId, error, children, className, align = "field", stacked = false }: { label: ReactNode; hint?: ReactNode; htmlFor?: string; labelId?: string; error?: string | string[]; children?: ReactNode; className?: string; align?: "field" | "text"; stacked?: boolean }) {
+export function SettingsRow({ label, hint, htmlFor, labelId, error, children, className, align = "field", stacked = false, sideBySideAt = "viewport" }: {
+  label: ReactNode; hint?: ReactNode; htmlFor?: string; labelId?: string; error?: string | string[]; children?: ReactNode; className?: string; align?: "field" | "text"; stacked?: boolean;
+  /** When the label moves beside the control: at md of the window (the default), or once the card itself is 2xl (42rem)
+   *  wide, for a card in an `@container` whose controls need the room (the assistant editor's cards; review, 7 October 2026). */
+  sideBySideAt?: "viewport" | "container";
+}) {
   const msg = Array.isArray(error) ? error[0] : error;
   const key = htmlFor ?? labelId;
   const hintId = key ? `${key}-hint` : undefined;
@@ -63,8 +69,8 @@ export function SettingsRow({ label, hint, htmlFor, labelId, error, children, cl
     : children;
   const text = align === "text";
   return (
-    <div className={cn("grid gap-x-8 gap-y-2 px-5 py-4", !stacked && "md:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] md:items-start", className)}>
-      <div className={cn("min-w-0", !stacked && !text && "md:pt-2")}>
+    <div className={cn("grid gap-x-8 gap-y-2 px-5 py-4", !stacked && (sideBySideAt === "container" ? "@2xl:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] @2xl:items-start" : "md:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] md:items-start"), className)}>
+      <div className={cn("min-w-0", !stacked && !text && (sideBySideAt === "container" ? "@2xl:pt-2" : "md:pt-2"))}>
         {htmlFor ? <label id={labelId} htmlFor={htmlFor} className="block text-sm font-medium text-foreground">{label}</label> : <p id={labelId} className="text-sm font-medium text-foreground">{label}</p>}
         {hint ? <p id={hintId} className="mt-0.5 text-meta font-normal text-secondary">{hint}</p> : null}
       </div>
@@ -123,12 +129,14 @@ const ZONES = ["Africa/Lagos", "Africa/Nairobi", "Africa/Johannesburg", "Africa/
 
 export function OrgSettingsForm({ orgSlug, name, timezone }: { orgSlug: string; name: string; timezone: string }) {
   const { pending, error, ok, fieldErrors, submit } = useForm();
+  // The daily report goes out signed by the workspace's own assistant (owner decision, 7 October 2026: personal assistants).
+  const { workspace } = useAssistant();
   const zones = ZONES.includes(timezone) ? ZONES : [timezone, ...ZONES];
   return (
     <form className={SETTINGS_GROUP} onSubmit={(e) => { e.preventDefault(); const f = new FormData(e.currentTarget); submit(() => api(`/api/orgs/${orgSlug}/settings/organisation`, { method: "PATCH", body: { name: f.get("name"), timezone: f.get("timezone") } }), "Organisation saved."); }}>
       {error ? <SettingsAlert>{error}</SettingsAlert> : null}
       <SettingsRow label="Name" hint="How the organisation appears to everyone in it, and on invitations." htmlFor="o-name" error={fieldErrors.name}><Input id="o-name" name="name" defaultValue={name} required maxLength={160} autoComplete="organization" /></SettingsRow>
-      <SettingsRow label="Time zone" hint="From today on. Timesheets, attendance and Brenda's daily report count days in this zone." htmlFor="o-tz" error={fieldErrors.timezone}><Select id="o-tz" name="timezone" defaultValue={timezone}>{zones.map((z) => <option key={z} value={z}>{z}</option>)}</Select></SettingsRow>
+      <SettingsRow label="Time zone" hint={`From today on. Timesheets, attendance and ${workspace.name}'s daily report count days in this zone.`} htmlFor="o-tz" error={fieldErrors.timezone}><Select id="o-tz" name="timezone" defaultValue={timezone}>{zones.map((z) => <option key={z} value={z}>{z}</option>)}</Select></SettingsRow>
       <SettingsFooter status={ok}><Button type="submit" size="md" loading={pending}>{pending ? "Saving…" : "Save organisation"}</Button></SettingsFooter>
     </form>
   );

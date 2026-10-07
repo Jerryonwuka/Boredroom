@@ -4,6 +4,7 @@ import { FEATURE_LABELS } from "@/lib/plans";
 import { buttonVariants } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ToolSquare } from "@/components/ui/tool-tile";
+import { AssistantName } from "@/components/app/assistant-context";
 
 /** "Screen recording" reads as "screen recording" mid-sentence; "AI assistant" and "API access" keep their capitals. */
 const midSentence = (s: string) => (/^[A-Z][a-z]/.test(s) ? s[0].toLowerCase() + s.slice(1) : s);
@@ -14,6 +15,7 @@ const midSentence = (s: string) => (/^[A-Z][a-z]/.test(s) ? s[0].toLowerCase() +
  * hidden or deleted; it waits behind the plan.
  * v4: an empty state, centred, with no card: a lock in the tool square, a neutral badge naming the plan that has it,
  * the page title (display 24/30), one line of why, and the upgrade in the accent (the screen's one orange action).
+ * "Back to" names the person's own assistant (owner decision, 7 October 2026: personal assistants).
  */
 export function UpgradeGate({ feature, orgSlug, planName, upgradeTo, isOwner, lapsed }: { feature: string; orgSlug: string; planName: string | null; upgradeTo: string | null; isOwner: boolean; lapsed?: boolean }) {
   const what = FEATURE_LABELS[feature] ?? feature.replace(/_/g, " ").toLowerCase();
@@ -26,7 +28,7 @@ export function UpgradeGate({ feature, orgSlug, planName, upgradeTo, isOwner, la
       <p className="mt-2 text-balance text-sm font-normal text-secondary">{lapsed ? "The paid plan has ended, so this module is paused. Everything it recorded is kept and comes back the moment the plan renews." : upgradeTo ? `Move this workspace to ${upgradeTo} and ${midSentence(what)} switches on at once, with nothing to set up.` : "Ask the platform team about a plan that includes it."}</p>
       <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
         {isOwner ? <Link href={`/app/${orgSlug}/settings?section=billing&billing=1#billing`} className={buttonVariants({ variant: "accent" })}>{lapsed ? "Renew the plan" : upgradeTo ? `See ${upgradeTo}` : "See plans"}</Link> : null}
-        <Link href={`/app/${orgSlug}/home`} className={buttonVariants({ variant: "secondary" })}>Back to Brenda</Link>
+        <Link href={`/app/${orgSlug}/home`} className={buttonVariants({ variant: "secondary" })}>Back to <AssistantName /></Link>
       </div>
       {isOwner ? null : <p className="mt-4 text-meta font-normal text-secondary">Ask the organisation owner to change the plan.</p>}
     </div>

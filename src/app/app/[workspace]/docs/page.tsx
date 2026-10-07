@@ -2,6 +2,7 @@ import { workspacePage } from "@/server/lib/workspace-page";
 import { AppShell } from "@/components/app/shell";
 import { DocsHeader, DocsLibrary, NewDocButton } from "@/components/app/docs-library";
 import { listDocs } from "@/server/services/docs";
+import { assistantProfiles } from "@/server/services/assistant-profile";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Docs" };
@@ -21,12 +22,13 @@ export default async function DocsPage({ params, searchParams }: { params: Promi
   const { ctx, counts, teams } = await workspacePage(workspace, `/app/${workspace}/docs`);
   const q = one(sp.q).trim().slice(0, 200);
   const folder = one(sp.folder).replace(/\s+/g, " ").trim().slice(0, 80) || null;
-  const data = await listDocs(ctx, { q: q || undefined, folder: folder ?? undefined });
+  // The header names the person's own assistant (owner decision, 7 October 2026: personal assistants).
+  const [data, { personal }] = await Promise.all([listDocs(ctx, { q: q || undefined, folder: folder ?? undefined }), assistantProfiles(ctx)]);
   return (
     <AppShell ctx={ctx} counts={counts} teams={teams}>
       {/* The header is on screen from the first paint, whatever the library below shows (see DocsHeader). */}
       <DocsHeader title="Docs"
-        description="Notes, handbooks and documents your team writes, or that Brenda writes for you."
+        description={`Notes, handbooks and documents your team writes, or that ${personal.name} writes for you.`}
         actions={<NewDocButton orgSlug={ctx.org.slug} folder={folder} />} />
       <DocsLibrary orgSlug={ctx.org.slug} docs={data.docs} folders={data.folders} q={q} folder={folder} now={serverNow()} viewerMembershipId={ctx.membership.id} />
     </AppShell>

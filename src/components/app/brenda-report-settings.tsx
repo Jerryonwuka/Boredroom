@@ -19,6 +19,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { TimePicker } from "@/components/ui/time-picker";
 import { BrendaGlyph } from "@/components/app/brenda-glyph";
+import { useAssistant } from "@/components/app/assistant-context";
 import { SettingsSection, SettingsGroup, SettingsRow, SettingsFooter, SettingsAlert } from "@/components/app/settings-forms";
 import { api, isApiFailure } from "@/lib/api-client";
 
@@ -32,6 +33,9 @@ const pick = (r: DailyReportSettings): DailyReportSettings => ({ dailyReportEnab
 
 export function BrendaReportSettings({ orgSlug, initial, timezone, canEdit = true, inPlan = true }: { orgSlug: string; initial: DailyReportSettings; timezone: string; canEdit?: boolean; inPlan?: boolean }) {
   const router = useRouter();
+  // The report goes out signed by the workspace's own assistant; "Send me today's report now" keeps the glyph of the
+  // person's own, who is the one asking (owner decision, 7 October 2026: personal assistants).
+  const { workspace } = useAssistant();
   const [s, setS] = useState(() => pick(initial));
   const [save, setSave] = useState<{ state: "idle" | "saving" | "saved" | "error"; message?: string }>({ state: "idle" });
   const [send, setSend] = useState<{ pending: boolean; result: SendResult | null; error: string | null }>({ pending: false, result: null, error: null });
@@ -86,7 +90,7 @@ export function BrendaReportSettings({ orgSlug, initial, timezone, canEdit = tru
   const r = send.result;
   return (
     <SettingsSection id="daily-report" title="Daily team report"
-      description="At the end of each working day Brenda sends every team lead what their team did, saved privately in their Docs under Daily reports."
+      description={`At the end of each working day ${workspace.name} sends every team lead what their team did, saved privately in their Docs under Daily reports.`}
       action={<Badge tone={!inPlan || off ? "neutral" : "success"} dot>{!inPlan ? "Not in your plan" : off ? "Off" : <>On, at <span className="tabular-nums">{s.dailyReportTime}</span></>}</Badge>}>
       <SettingsGroup>
         {!inPlan ? <SettingsAlert tone="info">Brenda is not on this workspace&apos;s plan, so no reports go out. Plans with Brenda are under <Link href="?section=billing#billing" className="font-medium text-foreground underline underline-offset-2">Plan and billing</Link>.</SettingsAlert> : null}

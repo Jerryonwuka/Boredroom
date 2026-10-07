@@ -10,6 +10,8 @@
  * Accent rules (owner decision, 6 October 2026): "New document" is the screen's one orange button; the chosen folder
  * has the 2px orange marker. The empty library offers Brenda and writing one yourself as two outline buttons, so the
  * page never shows two primaries (polish, 6 October 2026).
+ *
+ * The empty states name the person's own assistant (owner decision, 7 October 2026: personal assistants; `useAssistant`).
  */
 import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
@@ -23,6 +25,7 @@ import { EmptyState } from "@/components/ui/states";
 import { ToolSquare } from "@/components/ui/tool-tile";
 import { BrendaFace } from "@/components/app/brenda-face";
 import { BrendaGlyph } from "@/components/app/brenda-glyph";
+import { useAssistant } from "@/components/app/assistant-context";
 import { api, isApiFailure } from "@/lib/api-client";
 import { cn, relativeTime } from "@/lib/utils";
 import type { DocSummary } from "@/server/services/docs";
@@ -81,6 +84,7 @@ export function DocsLibrary({ orgSlug, docs, folders, q, folder, now, viewerMemb
   now: number; viewerMembershipId: string;
 }) {
   const router = useRouter();
+  const { name } = useAssistant().personal;
   const base = `/app/${orgSlug}`;
   const [query, setQuery] = useState(q);
   const [pending, startTransition] = useTransition();
@@ -130,10 +134,10 @@ export function DocsLibrary({ orgSlug, docs, folders, q, folder, now, viewerMemb
       <section aria-labelledby="docs-empty-heading" className="card-section flex flex-col items-center px-6 py-14 text-center">
         <BrendaFace size="lg" mood="happy" />
         <h2 id="docs-empty-heading" className="type-section-title mt-6">Nothing written yet</h2>
-        <p className="mt-1 max-w-md text-balance text-sm font-normal text-secondary">Start a document yourself, or let Brenda draft it. She writes handbooks, checklists and meeting notes, and files them here for you.</p>
+        <p className="mt-1 max-w-md text-balance text-sm font-normal text-secondary">Start a document yourself, or let {name} draft it: handbooks, checklists and meeting notes, filed here for you.</p>
         <div className="mt-6 flex flex-wrap items-start justify-center gap-2">
           <Link href={`${base}/home?ask=${encodeURIComponent("Write our onboarding checklist for new starters and save it in Docs.")}`} className={buttonVariants({ variant: "secondary", size: "sm" })}>
-            <BrendaGlyph aria-hidden />Ask Brenda to write your onboarding checklist
+            <BrendaGlyph aria-hidden />Ask {name} to write your onboarding checklist
           </Link>
           <NewDocButton orgSlug={orgSlug} variant="outline" label="Write one yourself" />
         </div>
@@ -167,7 +171,7 @@ export function DocsLibrary({ orgSlug, docs, folders, q, folder, now, viewerMemb
         <div className={cn("transition-opacity duration-150", pending && "opacity-60")}>
           {docs.length === 0 ? (
             q ? (
-              <EmptyState icon={Search} title={`Nothing matches “${q}”`} description={folder ? `Nothing in ${folder} uses those words. Try other words, or search every folder.` : "Try other words, or ask Brenda: she can find and summarise any document you can see."}
+              <EmptyState icon={Search} title={`Nothing matches “${q}”`} description={folder ? `Nothing in ${folder} uses those words. Try other words, or search every folder.` : `Try other words, or ask ${name}, who can find and summarise any document you can see.`}
                 action={<Link href={folder ? hrefFor({ folder: null }) : hrefFor({ q: "" })} onClick={() => { if (!folder) setQuery(""); }} className={buttonVariants({ variant: "secondary", size: "sm" })}>{folder ? "Search every folder" : "Clear search"}</Link>} />
             ) : (
               <EmptyState icon={Folder} title={`${folder} is empty`} description="Documents filed in this folder appear here. Set a document's folder in its editor."

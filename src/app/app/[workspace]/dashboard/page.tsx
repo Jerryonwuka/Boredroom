@@ -26,6 +26,7 @@ import { YourDaySection } from "@/components/app/your-day";
 import { orgDashboard } from "@/server/services/views";
 import { attendanceBoard, attendanceMonth } from "@/server/services/attendance";
 import { briefing } from "@/server/services/brenda";
+import { assistantProfiles } from "@/server/services/assistant-profile";
 import { uuid } from "@/server/lib/api";
 import { formatDuration, formatDateTime, relativeTime, formatLongDate, cn } from "@/lib/utils";
 
@@ -62,10 +63,12 @@ export default async function DashboardPage({ params, searchParams }: { params: 
   const tab: Tab = (TABS as readonly string[]).includes(sp.tab ?? "") ? (sp.tab as Tab) : "overview";
   // A team id from the address bar is checked before it reaches a uuid column: a mistyped link shows everyone.
   const teamId = sp.team && uuid.safeParse(sp.team).success ? sp.team : null;
-  const [d, att, m, brief] = await Promise.all([
+  const [d, att, m, brief, { personal }] = await Promise.all([
     orgDashboard(ctx), attendanceBoard(ctx),
     tab === "overview" ? attendanceMonth(ctx, { month: sp.month, teamId }) : Promise.resolve(null),
     tab === "overview" ? briefing(ctx) : Promise.resolve(null),
+    // The hand-off to Brenda names the person's own assistant (owner decision, 7 October 2026: personal assistants).
+    assistantProfiles(ctx),
   ]);
   const base = `/app/${ctx.org.slug}`;
   const tz = ctx.org.timezone;
@@ -137,7 +140,7 @@ export default async function DashboardPage({ params, searchParams }: { params: 
                 )}
               </section>
               <section aria-labelledby="recently-completed" className="min-w-0">
-                <SectionTitle id="recently-completed" title="Recently completed" action={askBrenda ? <Link href={askBrenda} className={buttonVariants({ variant: "ghost", size: "sm" })}><BrendaGlyph aria-hidden />Ask Brenda for a summary</Link> : undefined} />
+                <SectionTitle id="recently-completed" title="Recently completed" action={askBrenda ? <Link href={askBrenda} className={buttonVariants({ variant: "ghost", size: "sm" })}><BrendaGlyph aria-hidden />Ask {personal.name} for a summary</Link> : undefined} />
                 {d.recentDone.length === 0 ? <EmptyState compact icon3d="card-check" title="Nothing approved yet" description="Finished work shows here once its check is done." /> : (
                   <ul className="-mx-2">
                     {/* ListRow's layout by hand: the title is the task's peek button, and its sheet cannot sit inside a <p>. */}

@@ -5,7 +5,7 @@ import { workspacePage } from "@/server/lib/workspace-page";
 import { AppShell } from "@/components/app/shell";
 import { PageHeader } from "@/components/ui/card";
 import { buttonVariants } from "@/components/ui/button";
-import { PermissionDenied, Alert } from "@/components/ui/states";
+import { Alert } from "@/components/ui/states";
 import { Badge } from "@/components/ui/badge";
 import { ProgressBar } from "@/components/ui/progress-arc";
 import { settingsView } from "@/server/services/views";
@@ -20,17 +20,22 @@ import { LinkedComputers } from "@/components/app/desktop-link";
 import { orgBilling } from "@/server/admin/billing";
 import { BillingCard } from "@/components/app/billing-card";
 import { PageNote, PageNotes } from "@/components/ui/page-notes";
+import { AssistantScope } from "@/components/app/assistant-context";
+import { MyAssistantSettings, WorkspaceAssistantSettings } from "@/components/app/assistant-settings";
+import { assistantProfiles } from "@/server/services/assistant-profile";
+import type { AssistantProfiles } from "@/lib/assistant-look";
 import { cn } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Settings" };
 
-type SectionKey = "general" | "hours" | "recording" | "brenda" | "billing" | "desktop";
+type SectionKey = "general" | "hours" | "recording" | "brenda" | "assistant" | "billing" | "desktop";
 const SECTIONS: { key: SectionKey; label: string; icon: ReactNode }[] = [
   { key: "general", label: "General", icon: <SlidersHorizontal aria-hidden /> },
   { key: "hours", label: "Working hours", icon: <Clock aria-hidden /> },
   { key: "recording", label: "Recording", icon: <ScreenShare aria-hidden /> },
   { key: "brenda", label: "Brenda", icon: <BrendaGlyph aria-hidden /> },
+  { key: "assistant", label: "Your assistant", icon: <BrendaGlyph aria-hidden /> },
   { key: "billing", label: "Billing", icon: <CreditCard aria-hidden /> },
   { key: "desktop", label: "Desktop", icon: <Laptop aria-hidden /> },
 ];
@@ -38,28 +43,43 @@ const MODE_LABEL: Record<string, string> = { disabled: "Off", optional: "On, eac
 
 /**
  * Settings, v4 (owner brief, 6 October 2026): the page header, then a left sub-navigation of sections (General,
- * Working hours, Recording, Brenda, Billing, Desktop; a scrolling row of the same items on a phone) beside the
- * chosen section. Each section is a set of cards of form rows: the label and a hint on the left, the control on the
- * right. The section is in the address (?section=), so links land on it: the billing banner, the Paystack callback
- * and the pricing page (?billing= or ?plan=) open Billing. Owners and HR only; only owners change recording rules,
- * grants and the AI key. Every change is audited. That, and each section's explanations (time zone, consent, what is
- * logged, what is sent to Anthropic), are page notes at the bottom (owner request, 7 October 2026).
+ * Working hours, Recording, Brenda, Your assistant, Billing, Desktop; a scrolling row of the same items on a phone)
+ * beside the chosen section. Each section is a set of cards of form rows: the label and a hint on the left, the control
+ * on the right. The section is in the address (?section=), so links land on it: the billing banner, the Paystack
+ * callback and the pricing page (?billing= or ?plan=) open Billing. Only owners change recording rules, grants and the
+ * AI key. Every change is audited. That, and each section's explanations (time zone, consent, what is logged, what is
+ * sent to Anthropic), are page notes at the bottom (owner request, 7 October 2026).
+ *
+ * Settings opens for everyone (owner decision, 7 October 2026: everyone customises their assistant in Settings). Staff
+ * and team leads see one section, "Your assistant", which is where any other ?section= lands them; owners and HR see
+ * every section, theirs included. The Brenda section starts with the workspace's own assistant, and its sub-nav icon is
+ * drawn as that assistant (the person's own draws "Your assistant").
  */
 export default async function SettingsPage({ params, searchParams }: { params: Promise<{ workspace: string }>; searchParams: Promise<{ section?: string; setup?: string; billing?: string; plan?: string }> }) {
   const { workspace } = await params;
   const sp = await searchParams;
   const { ctx, counts, teams: navTeams } = await workspacePage(workspace, `/app/${workspace}/settings`);
-  if (!["owner", "hr"].includes(ctx.membership.role)) return <AppShell ctx={ctx} counts={counts} teams={navTeams}><PageHeader title="Settings" divider /><PermissionDenied description="Settings are for the organisation account (owners and HR). Your own picture, name and status are under Your profile." /></AppShell>;
   const isOwner = ctx.membership.role === "owner";
+  const admin = isOwner || ctx.membership.role === "hr";
+  const sections = admin ? SECTIONS : SECTIONS.filter((s) => s.key === "assistant");
+  const home: SectionKey = admin ? "general" : "assistant";
   const base = `/app/${ctx.org.slug}`;
-  const section: SectionKey = SECTIONS.some((s) => s.key === sp.section) ? (sp.section as SectionKey) : sp.billing || sp.plan ? "billing" : "general";
-  const href = (k: SectionKey) => (k === "general" ? `${base}/settings` : `${base}/settings?section=${k}`);
+  const section: SectionKey = sections.some((s) => s.key === sp.section) ? (sp.section as SectionKey) : admin && (sp.billing || sp.plan) ? "billing" : home;
+  const href = (k: SectionKey) => (k === home ? `${base}/settings` : `${base}/settings?section=${k}`);
+  // The assistants are read with each section's own data, in parallel; the shell's read is the same cached one.
+  let assistants: AssistantProfiles;
 
   let body: ReactNode = null;
   // The open section's explanatory notes, shown at the bottom of the page after "Every change is audited."
   let notes: ReactNode = null;
-  if (section === "general" || section === "hours" || section === "recording") {
-    const { policy, schedule, grants, members, teams, counts: c } = await settingsView(ctx);
+  if (section === "assistant") {
+    assistants = await assistantProfiles(ctx);
+    body = <MyAssistantSettings orgSlug={ctx.org.slug} initial={assistants.personal} impersonated={!!ctx.user.impersonation} />;
+    notes = <PageNote section="Your assistant">The name and look change how your assistant appears to you and in the desktop app. What it can do for you stays the same.</PageNote>;
+  } else if (section === "general" || section === "hours" || section === "recording") {
+    const [view, a] = await Promise.all([settingsView(ctx), assistantProfiles(ctx)]);
+    const { policy, schedule, grants, members, teams, counts: c } = view;
+    assistants = a;
     if (section === "general") {
       const checklist = [
         { label: "Workspace created", done: true },
@@ -71,6 +91,7 @@ export default async function SettingsPage({ params, searchParams }: { params: P
       ];
       const done = checklist.filter((i) => i.done).length;
       // Brenda can make teams and send invitations, so the two slowest setup steps are the one place here to hand her work.
+      // The button names the person's own assistant (owner decision, 7 October 2026: personal assistants).
       const brendaCanHelp = ctx.plan.features.AI_ASSISTANT && (c.teams === 0 || c.members <= 1);
       const types = (policy?.attachment_mime_types ?? []).map((m) => m.split("/")[1]).join(", ");
       body = (
@@ -97,7 +118,7 @@ export default async function SettingsPage({ params, searchParams }: { params: P
               </ul>
               {brendaCanHelp ? (
                 <SettingsFooter>
-                  <Link href={`${base}/home?ask=${encodeURIComponent("Help me finish setting up this workspace: create our teams with their team leads, and invite the people who work here.")}`} className={buttonVariants({ variant: "secondary", size: "sm" })}><BrendaGlyph aria-hidden />Ask Brenda to set up teams and invitations</Link>
+                  <Link href={`${base}/home?ask=${encodeURIComponent("Help me finish setting up this workspace: create our teams with their team leads, and invite the people who work here.")}`} className={buttonVariants({ variant: "secondary", size: "sm" })}><BrendaGlyph aria-hidden />Ask {assistants.personal.name} to set up teams and invitations</Link>
                 </SettingsFooter>
               ) : null}
             </SettingsGroup>
@@ -154,9 +175,12 @@ export default async function SettingsPage({ params, searchParams }: { params: P
       );
     }
   } else if (section === "brenda") {
-    const [ai, brenda] = await Promise.all([assistantStatus(ctx), brendaOverview(ctx)]);
+    const [ai, brenda, a] = await Promise.all([assistantStatus(ctx), brendaOverview(ctx), assistantProfiles(ctx)]);
+    assistants = a;
     body = (
       <>
+        {/* The workspace's own assistant comes first: it signs the daily report set further down. */}
+        <WorkspaceAssistantSettings orgSlug={ctx.org.slug} initial={a.workspace} canEdit={a.canEditWorkspace} />
         <SettingsSection id="brenda" title="Brenda" description="Brenda is the AI teammate in every workspace page. Every action is logged below."
           action={<Badge tone={ai.source === "none" ? "warning" : "success"} dot>{ai.source === "none" ? "AI not connected" : "On Claude"}</Badge>}>
           <div className="card-panel"><BrendaOrgSettings orgSlug={ctx.org.slug} initial={brenda} canEdit /></div>
@@ -170,6 +194,7 @@ export default async function SettingsPage({ params, searchParams }: { params: P
     );
     notes = (
       <>
+        <PageNote section="Workspace assistant">Each person still has their own assistant; this one only signs what the workspace sends by itself.</PageNote>
         <PageNote section="Brenda">She reads what each person is allowed to see, does their own work for them, and asks before anything that lands on someone else.</PageNote>
         {isOwner ? (
           <>
@@ -180,7 +205,8 @@ export default async function SettingsPage({ params, searchParams }: { params: P
       </>
     );
   } else if (section === "billing") {
-    const billing = await orgBilling(ctx);
+    const [billing, a] = await Promise.all([orgBilling(ctx), assistantProfiles(ctx)]);
+    assistants = a;
     body = (
       <SettingsSection id="billing" title="Plan and billing" description="What the organisation is on, and the other plans.">
         <BillingCard preselect={sp.plan} orgSlug={ctx.org.slug} data={billing} notice={sp.billing} />
@@ -188,7 +214,8 @@ export default async function SettingsPage({ params, searchParams }: { params: P
     );
     notes = <PageNote section="Plans">Paid plans are billed through Paystack.</PageNote>;
   } else {
-    const devices = await listDevices(ctx.user);
+    const [devices, a] = await Promise.all([listDevices(ctx.user), assistantProfiles(ctx)]);
+    assistants = a;
     body = (
       <SettingsSection id="desktop" title="Brenda desktop" description="Brenda on your computer acts as you, with your permissions, in the workspace you approve it for.">
         <SettingsGroup>
@@ -207,19 +234,19 @@ export default async function SettingsPage({ params, searchParams }: { params: P
 
   return (
     <AppShell ctx={ctx} counts={counts} teams={navTeams}>
-      <PageHeader title="Settings" description="How the workspace runs: working hours, screen recording, Brenda, the plan and your linked computers." divider />
-      {sp.setup ? <Alert tone="success" className="mb-6" title="Workspace ready">Work through the setup list to finish.</Alert> : null}
+      <PageHeader title="Settings" description={admin ? "How the workspace runs: working hours, screen recording, Brenda, the plan, your assistant and your linked computers." : "Your assistant's name and look in this workspace."} divider />
+      {sp.setup && admin ? <Alert tone="success" className="mb-6" title="Workspace ready">Work through the setup list to finish.</Alert> : null}
       <div className="grid gap-6 md:grid-cols-[12.5rem_minmax(0,1fr)] md:gap-10">
         {/* Sub-navigation (spec §6): 32px items, r8, fill-1 and the orange marker for the open one, fill-0 on hover; a scrolling row on a phone. */}
         <nav aria-label="Settings sections" className="-mx-1 min-w-0 md:sticky md:top-[calc(var(--header-height)+1.5rem)] md:mx-0 md:self-start">
           <ul className="flex gap-1 overflow-x-auto px-1 pb-1 [scrollbar-width:none] md:flex-col md:overflow-visible md:px-0 md:pb-0 [&::-webkit-scrollbar]:hidden">
-            {SECTIONS.map((s) => {
+            {sections.map((s) => {
               const active = s.key === section;
               return (
                 <li key={s.key} className="shrink-0">
                   <Link href={href(s.key)} aria-current={active ? "page" : undefined}
                     className={cn("flex h-8 items-center gap-2 whitespace-nowrap rounded-lg px-2 text-sm font-medium transition-colors duration-75 pointer-coarse:h-10 [&_svg]:size-4 [&_svg]:shrink-0", active ? "selected-marker bg-fill-1 text-foreground [&_svg]:text-foreground" : "text-secondary hover:bg-fill-0 hover:text-foreground [&_svg]:text-secondary")}>
-                    {s.icon}{s.label}
+                    {s.key === "brenda" ? <AssistantScope profile={assistants.workspace}>{s.icon}</AssistantScope> : s.icon}{s.label}
                   </Link>
                 </li>
               );
@@ -229,7 +256,8 @@ export default async function SettingsPage({ params, searchParams }: { params: P
         <div className="min-w-0 max-w-[56rem] space-y-10">{body}</div>
       </div>
       <PageNotes>
-        <PageNote>Every change is audited.</PageNote>
+        {/* A person's own assistant is theirs and not logged (a name and a look); everything else here is. */}
+        {section === "assistant" ? null : <PageNote>Every change is audited.</PageNote>}
         {notes}
       </PageNotes>
     </AppShell>

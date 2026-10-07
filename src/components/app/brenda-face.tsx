@@ -14,11 +14,18 @@
  *
  * She is the one exception to "no control animates on its own" (docs/design-system.md). Reduced motion stills her:
  * reading is a still pose (eyes on the box from when the typing starts until it stops), listening a still tilt.
+ *
+ * Personal assistants (owner decision, 7 October 2026): the face is the assistant in context, the person's own or a
+ * scoped one (`AssistantScope`), or `look` when given (the editor's choices): its sphere colour as `--sphere-*` custom
+ * properties, its visor and eyes as `data-visor` and `data-eyes` (globals.css draws them; every mood still wins over the
+ * eye style). A poke is offered under the assistant's name.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import { cn } from "@/lib/utils";
 import { playSound } from "@/lib/brenda-sound";
 import { attention, type ReadCue } from "@/lib/brenda-character/engine";
+import { faceStyle, isAssistantColour, type AssistantLook } from "@/lib/assistant-look";
+import { useScopedAssistant } from "@/components/app/assistant-context";
 
 export type BrendaMood = "happy" | "alert" | "sad" | "think" | "listen" | null;
 export type BrendaTone = "accent" | "ok" | "warn" | "bad" | "blue" | "violet" | null;
@@ -101,7 +108,14 @@ function start() {
 
 type Fx = "squash" | "dizzy" | "love" | null;
 
-export function BrendaFace({ mood = null, tone = null, size = "md", interactive = false, className }: { mood?: BrendaMood; tone?: BrendaTone; size?: "sm" | "md" | "lg"; interactive?: boolean; className?: string }) {
+export function BrendaFace({ mood = null, tone = null, size = "md", interactive = false, className, look, style }: {
+  mood?: BrendaMood; tone?: BrendaTone; size?: "sm" | "md" | "lg"; interactive?: boolean; className?: string;
+  /** The look to draw instead of the assistant in context (the editor's options). */
+  look?: AssistantLook;
+  style?: CSSProperties;
+}) {
+  const scoped = useScopedAssistant();
+  const { colour, visor, eyes } = look ?? scoped;
   const ref = useRef<HTMLSpanElement | null>(null);
   const [fx, setFx] = useState<Fx>(null);
   const fxTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -138,8 +152,9 @@ export function BrendaFace({ mood = null, tone = null, size = "md", interactive 
   const leave = () => { if (loveTimer.current) clearTimeout(loveTimer.current); };
 
   return (
-    <span ref={ref} aria-hidden={!interactive} data-tone={tone ?? undefined}
-      role={interactive ? "button" : undefined} tabIndex={interactive ? 0 : undefined} aria-label={interactive ? "Poke Brenda" : undefined}
+    <span ref={ref} aria-hidden={!interactive} data-tone={tone ?? undefined} data-visor={visor} data-eyes={eyes}
+      style={{ ...faceStyle(isAssistantColour(colour) ? colour : "white"), ...style } as CSSProperties}
+      role={interactive ? "button" : undefined} tabIndex={interactive ? 0 : undefined} aria-label={interactive ? `Poke ${scoped.name}` : undefined}
       onClick={interactive ? poke : undefined} onKeyDown={interactive ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); poke(); } } : undefined}
       onPointerMove={interactive ? admire : undefined} onPointerLeave={interactive ? leave : undefined}
       className={cn("brenda-face", `brenda-face-${size}`, mood, fx, interactive && "cursor-pointer", className)}>

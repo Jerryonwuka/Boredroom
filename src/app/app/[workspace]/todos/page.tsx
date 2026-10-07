@@ -9,6 +9,7 @@ import { TodosBoard } from "@/components/app/todo-list";
 import { formatLongDate } from "@/lib/utils";
 import { assignableMembers } from "@/server/services/tasks";
 import { assistantConfigured } from "@/server/services/assistant";
+import { assistantProfiles } from "@/server/services/assistant-profile";
 import { PageNote, PageNotes } from "@/components/ui/page-notes";
 
 export const dynamic = "force-dynamic";
@@ -31,17 +32,19 @@ export default async function TodosPage({ params }: { params: Promise<{ workspac
   const { ctx, counts, teams } = await workspacePage(workspace, `/app/${workspace}/todos`);
   const role = ctx.membership.role;
   if (role === "owner" || role === "hr") redirect(`/app/${ctx.org.slug}/tasks`);
-  const [data, session, assignable, aiConnected, timings] = await Promise.all([
+  const [data, session, assignable, aiConnected, timings, { personal }] = await Promise.all([
     myDay(ctx),
     currentSession(ctx),
     assignableMembers(ctx),
     assistantConfigured(ctx.org.id),
     withUser(ctx.user.profileId, (db) => db.maybeOne<{ recording_mode: string }>(`SELECT recording_mode FROM policies WHERE id = $1`, [ctx.org.current_policy_id])),
+    // The header names the person's own assistant (owner decision, 7 October 2026: personal assistants).
+    assistantProfiles(ctx),
   ]);
   return (
     <AppShell ctx={ctx} counts={counts} teams={teams}>
       <PageHeader title="To-dos"
-        description={`${formatLongDate(data.today)}. Write down what you are doing today, or say it and Brenda writes it down, then press Start when you begin.`} />
+        description={`${formatLongDate(data.today)}. Write down what you are doing today, or say it and ${personal.name} writes it down, then press Start when you begin.`} />
       <TodosBoard
         orgSlug={ctx.org.slug}
         today={data.today}

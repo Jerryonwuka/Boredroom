@@ -28,6 +28,8 @@ import { brendaSettings, logAction, type BrendaSettings } from "@/server/service
 import { resolveAssistant } from "@/server/services/assistant";
 import { DOC_BODY_MAX } from "@/server/services/docs";
 import { workSummary, type PersonWork, type WorkSummary } from "@/server/services/work-summary";
+import { readPersonalAssistant, readWorkspaceAssistant } from "@/server/services/assistant-profile";
+import { DEFAULT_ASSISTANT_NAME, type AssistantProfile } from "@/lib/assistant-look";
 
 export const REPORT_FOLDER = "Daily reports";
 
@@ -208,12 +210,17 @@ async function assistantHeadline(ctx: OrgContext, s: WorkSummary, people: Person
   }
 }
 
-/** The document: Brenda's line, the headline, a section per person, then what needs attention. */
-export function reportMarkdown(ctx: OrgContext, r: DailyReport, opts: { writtenAt: Date; endOfDay: boolean; reportTime: string }): string {
+/**
+ * The document: the author's line, the headline, a section per person, then what needs attention. The author is the
+ * assistant who wrote it (owner decision, 7 October 2026: personal assistants): the workspace's own assistant for the
+ * end-of-day report, the asker's own for a report they asked for; Brenda when nobody says.
+ */
+export function reportMarkdown(ctx: OrgContext, r: DailyReport, opts: { writtenAt: Date; endOfDay: boolean; reportTime: string; author?: string }): string {
   const tz = ctx.org.timezone;
+  const author = opts.author ?? DEFAULT_ASSISTANT_NAME;
   const by = opts.endOfDay
-    ? `_Brenda wrote this end-of-day report for you at ${hhmm(opts.writtenAt, tz)} on ${dayLabel(r.localDate)}, from what was recorded in Boredroom. Only you can read it._`
-    : `_Brenda wrote this for you at ${hhmm(opts.writtenAt, tz)} on ${dayLabel(r.localDate)}, when you asked, from what was recorded in Boredroom so far. The end-of-day report at ${opts.reportTime} brings it up to date. Only you can read it._`;
+    ? `_${author} wrote this end-of-day report for you at ${hhmm(opts.writtenAt, tz)} on ${dayLabel(r.localDate)}, from what was recorded in Boredroom. Only you can read it._`
+    : `_${author} wrote this for you at ${hhmm(opts.writtenAt, tz)} on ${dayLabel(r.localDate)}, when you asked, from what was recorded in Boredroom so far. The end-of-day report at ${opts.reportTime} brings it up to date. Only you can read it._`;
   const lines = [by, "", `**${md(r.headline)}**`, ""];
   const quiet: string[] = [];
   for (const p of r.people) {
@@ -243,7 +250,7 @@ export function reportMarkdown(ctx: OrgContext, r: DailyReport, opts: { writtenA
 export type Saved = { docId: string; title: string; headline: string; href: string; people: number };
 type Outcome = { status: "sent" | "saved" | "existing" | "already_sent"; saved?: Saved } | { status: "nothing" };
 
-/** The headline back out of a saved report (the bold line under Brenda's), for a report that is not rebuilt. */
+/** The headline back out of a saved report (the bold line under the author's), for a report that is not rebuilt. */
 const headlineOf = (body: string) => /^\*\*(.+)\*\*$/m.exec(body)?.[1]?.replace(/\\(.)/g, "$1") ?? "";
 
 /**
@@ -251,7 +258,7 @@ const headlineOf = (body: string) => /^\*\*(.+)\*\*$/m.exec(body)?.[1]?.replace(
  * notification. Otherwise the person asked: today's sent report is returned as it is, or the report so far is
  * written (or refreshed, if they have not edited it since) and lands only on them.
  */
-async function deliver(ctx: OrgContext, mode: "end_of_day" | "asked", opts: { useAssistant?: boolean; reportTime: string }): Promise<Outcome> {
+async function deliver(ctx: OrgContext, mode: "end_of_day" | "asked", opts: { useAssistant?: boolean; reportTime: string; author: string }): Promise<Outcome> {
   const today = todayLocal(ctx.org.timezone);
   const href = (id: string) => `/app/${ctx.org.slug}/docs/${id}`;
   type Row = { id: string; doc_id: string | null; sent_at: string | null; title: string | null; body: string | null; readable: boolean };
@@ -265,7 +272,7 @@ async function deliver(ctx: OrgContext, mode: "end_of_day" | "asked", opts: { us
   const report = await buildDailyReport(ctx, { useAssistant: opts.useAssistant });
   if (report.empty) return { status: "nothing" };
   // Asked for after the end-of-day report went out (and was archived since): it is written as the day's report, not "so far".
-  const body = reportMarkdown(ctx, report, { writtenAt: new Date(), endOfDay: mode === "end_of_day" || !!before?.sent_at, reportTime: opts.reportTime });
+  const body = reportMarkdown(ctx, report, { writtenAt: new Date(), endOfDay: mode === "end_of_day" || !!before?.sent_at, reportTime: opts.reportTime, author: opts.author });
 
   return withUser(ctx.user.profileId, async (db) => {
     // The day's row, created if need be and locked: two runs for the same person and day take turns here, and the
@@ -303,8 +310,9 @@ export type TeamReportNow =
 export async function teamReportNow(ctx: OrgContext, opts: { useAssistant?: boolean } = {}): Promise<TeamReportNow> {
   const refusal = await refusalFor(ctx);
   if (refusal) return { status: "refused", message: refusal };
-  const settings = await withUser(ctx.user.profileId, (db) => brendaSettings(db, ctx.org.id));
-  const r = await deliver(ctx, "asked", { useAssistant: opts.useAssistant, reportTime: settings.dailyReportTime });
+  // A report the person asked for is signed by their own assistant (owner decision, 7 October 2026: personal assistants).
+  const { settings, personal } = await withUser(ctx.user.profileId, async (db) => ({ settings: await brendaSettings(db, ctx.org.id), personal: await readPersonalAssistant(db, ctx.membership.id) }));
+  const r = await deliver(ctx, "asked", { useAssistant: opts.useAssistant, reportTime: settings.dailyReportTime, author: personal.name });
   if (r.status === "nothing" || !("saved" in r) || !r.saved) return { status: "nothing", message: "Nothing has happened on your teams today yet and nothing needs you (no confirmed time, nothing finished or sent for review, nothing overdue or blocked, no late or missing clock-ins), so there is no report to write." };
   return { status: r.status === "existing" ? "existing" : "saved", endOfDay: r.status === "existing", ...r.saved };
 }
@@ -341,7 +349,7 @@ export type JobResult = { status: "sent" | "already_sent" | "nothing" | "off" | 
  * not undo the report (the notification and the document are there).
  */
 export async function runDailyReportJob(p: { organisationId: string; membershipId: string; localDate: string }, opts: { useAssistant?: boolean } = {}): Promise<JobResult> {
-  type Pre = { skip: "off" | "stale" | "plan" | "not_a_recipient" } | { who: { ctx: OrgContext; email: string | null }; settings: BrendaSettings };
+  type Pre = { skip: "off" | "stale" | "plan" | "not_a_recipient" } | { who: { ctx: OrgContext; email: string | null }; settings: BrendaSettings; workspace: AssistantProfile };
   const pre = await withWorker(async (db): Promise<Pre> => {
     const who = await recipientContext(db, p.organisationId, p.membershipId);
     if (!who || who.ctx.org.status !== "active") return { skip: "not_a_recipient" };
@@ -351,11 +359,13 @@ export async function runDailyReportJob(p: { organisationId: string; membershipI
     if (!who.ctx.plan.features.AI_ASSISTANT) return { skip: "plan" };
     const recipients = await reportRecipients(db, p.organisationId, settings.dailyReportOrgWide);
     if (!recipients.some((x) => x.id === p.membershipId)) return { skip: "not_a_recipient" };
-    return { who, settings };
+    // The end-of-day report goes out on its own, so the workspace's own assistant signs it (owner decision, 7 October
+    // 2026: personal assistants).
+    return { who, settings, workspace: await readWorkspaceAssistant(db, p.organisationId) };
   });
   if ("skip" in pre) return { status: pre.skip };
   const { ctx, email } = pre.who;
-  const r = await deliver(ctx, "end_of_day", { useAssistant: opts.useAssistant, reportTime: pre.settings.dailyReportTime });
+  const r = await deliver(ctx, "end_of_day", { useAssistant: opts.useAssistant, reportTime: pre.settings.dailyReportTime, author: pre.workspace.name });
   if (r.status !== "sent" || !("saved" in r) || !r.saved) return { status: r.status === "nothing" ? "nothing" : "already_sent" };
   let emailed = false;
   if (email && !mailConfigProblem()) {
@@ -366,7 +376,7 @@ export async function runDailyReportJob(p: { organisationId: string; membershipI
         ...renderEmail({
           preheader: r.saved.headline,
           title: r.saved.title,
-          intro: [r.saved.headline, "Brenda saved the full report, person by person, in your Docs. Only you can read it."],
+          intro: [r.saved.headline, `${pre.workspace.name} saved the full report, person by person, in your Docs. Only you can read it.`],
           cta: { label: "Open the report", url },
           reason: `You received this because you ${ctx.membership.role === "manager" ? "lead a team" : "supervise the organisation"} at ${ctx.org.name}. The owner or HR can change the time or switch the report off in Settings.`,
         }),

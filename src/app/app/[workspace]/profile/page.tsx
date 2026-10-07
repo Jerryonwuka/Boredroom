@@ -13,6 +13,8 @@ import { cn, formatDateTime, formatLongDate } from "@/lib/utils";
 import { brendaOverview } from "@/server/services/brenda";
 import { BrendaMyPrefs } from "@/components/app/brenda";
 import { BrendaFace } from "@/components/app/brenda-face";
+import { assistantProfiles } from "@/server/services/assistant-profile";
+import { EYES, PALETTE, VISORS } from "@/lib/assistant-look";
 import type { OrgContext } from "@/server/lib/api";
 import { WorkStatus } from "./work-status";
 
@@ -24,11 +26,15 @@ export const metadata = { title: "Your profile" };
  * of form rows: Profile (picture, name, title, status), Work status, Brenda (what she may do for you), Account,
  * Your workspaces, and Recording and privacy: what the workspace records about them, so the monitoring notice can be
  * read at any time without starting a recording, now that there is no Policy page.
+ *
+ * The Brenda section is the person's own assistant (owner decision, 7 October 2026: personal assistants): titled with the
+ * name they chose, drawn in their look, with a row that opens Settings, "Your assistant", to change the name and look.
  */
 export default async function ProfilePage({ params }: { params: Promise<{ workspace: string }> }) {
   const { workspace } = await params;
   const { ctx, counts, teams } = await workspacePage(workspace, `/app/${workspace}/profile`);
-  const [me, brenda, privacy] = await Promise.all([myProfile(ctx.user), brendaOverview(ctx), policyView(ctx)]);
+  const [me, brenda, privacy, { personal }] = await Promise.all([myProfile(ctx.user), brendaOverview(ctx), policyView(ctx), assistantProfiles(ctx)]);
+  const lookWords = [PALETTE[personal.colour].label, VISORS[personal.visor].label, EYES[personal.eyes].label].map((w) => w.toLowerCase()).join(", ");
   return (
     <AppShell ctx={ctx} counts={counts} teams={teams}>
       <PageHeader title="Your profile" description="How you appear to the people you work with. Your picture, name and status show beside your name across the workspace." divider />
@@ -46,7 +52,13 @@ export default async function ProfilePage({ params }: { params: Promise<{ worksp
         </SettingsSection>
 
         {ctx.plan.features.AI_ASSISTANT ? (
-          <SettingsSection id="brenda" title={<span className="inline-flex items-center gap-2.5"><BrendaFace size="sm" />Brenda</span>} description="What Brenda may do for you, and what she did.">
+          <SettingsSection id="brenda" title={<span className="inline-flex min-w-0 items-center gap-2.5"><BrendaFace size="sm" /><span className="min-w-0 truncate">{personal.name}</span></span>}
+            description={`What ${personal.name} may do for you, and what ${personal.name} did.`}>
+            <SettingsGroup className="mb-4">
+              <SettingsRow label="Name and look" hint={`${personal.name}: ${lookWords}.`} align="text">
+                <Link href={`/app/${ctx.org.slug}/settings?section=assistant`} className={buttonVariants({ variant: "secondary", size: "sm" })}>Change<span className="sr-only"> your assistant&apos;s name and look</span></Link>
+              </SettingsRow>
+            </SettingsGroup>
             <div className="card-panel">
               <BrendaMyPrefs orgSlug={ctx.org.slug} initial={{ ...brenda, actions: brenda.actions.filter((a) => a.display_name === ctx.user.displayName) }} worker={ctx.membership.role === "employee" || ctx.membership.role === "manager"} />
             </div>

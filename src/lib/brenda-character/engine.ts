@@ -18,7 +18,17 @@
  * she listens, is the level she hears, which widens her eyes, tilts her head a little further and lifts her light (a
  * gentle pulse when there is no level). `attention`, at the end of this file, is where the page tells every face and
  * character of hers what is being typed to her. `settle()` takes a pose at once, for the still frames of reduced motion.
+ *
+ * Personal assistants (owner decision, 7 October 2026): each person draws their own assistant, so the engine takes a
+ * look (`new BrendaEngine(look)`, `setLook()`): the sphere's colour from the curated palette, the visor's shape and the
+ * eyes' style, all from lib/assistant-look. Brenda's look (white, the bean visor, pill eyes) is the default and draws
+ * exactly as before. The visor stays near-black and the eyes white whatever the colour; her mood light, rim light and
+ * eye tint stay the colour of her mood, and every expression is drawn the same for every eye style.
  */
+import {
+  DEFAULT_LOOK, isAssistantColour, isAssistantEyes, isAssistantVisor, PALETTE, VISOR_INK,
+  type AssistantEyes, type AssistantLook, type AssistantVisor, type SphereShades,
+} from "@/lib/assistant-look";
 
 export type BrendaState =
   | "idle" | "listening" | "thinking" | "working" | "happy" | "alert" | "question"
@@ -58,18 +68,14 @@ export const STATES: Record<BrendaState, StateCfg> = {
 };
 
 // Her look (owner design, 7 October 2026): a glossy white sphere with a black bean-shaped visor, two white pill eyes
-// glowing behind the glass. Proportions are fractions of the sphere's radius, measured from the owner's artwork.
-const VISOR_INK = "#0b0b0e";
+// glowing behind the glass. Proportions are fractions of the sphere's radius, measured from the owner's artwork. The
+// sphere's colours come from the palette (lib/assistant-look); white's stops are the ones she was drawn with.
 const VISOR_W = 0.8, VISOR_TOP = -0.42, VISOR_DIP = -0.28, VISOR_BOTTOM = 0.44;
 const VISOR_REACH = 0.62, VISOR_PITCH = Math.asin(0.19 / VISOR_REACH);   // the visor's centre sits 0.19 R above the middle
 const EYE_W = 0.15, EYE_H = 0.31, EYE_SPREAD = 0.42, EYE_Y = -0.04;
-const BODY_LIGHT: RGB = [1, 1, 1];
-const BODY_MID: RGB = [0.965, 0.965, 0.973];
-const BODY_SHADE: RGB = [0.87, 0.875, 0.895];
-const BODY_RIM: RGB = [0.72, 0.725, 0.76];
 
-/** The visor, centred on the origin: rounded lobes over each eye, a soft dip between them, a broad curve beneath. */
-function visorPath(R: number): Path2D {
+/** The bean visor, centred on the origin: rounded lobes over each eye, a soft dip between them, a broad curve beneath. */
+function beanPath(R: number): Path2D {
   const a = VISOR_W * R, t = VISOR_TOP * R, d = VISOR_DIP * R, b = VISOR_BOTTOM * R, m = -0.02 * R;
   const v = new Path2D();
   v.moveTo(-a, m);
@@ -82,6 +88,34 @@ function visorPath(R: number): Path2D {
   v.closePath();
   return v;
 }
+
+/**
+ * The other visors (personal assistants, 7 October 2026), centred on the same origin and placed the same way, so they
+ * turn and foreshorten as hers does and every eye style fits inside each: the band, a wide slim capsule across the face;
+ * the screen, a rounded rectangle, taller and narrower. Fractions of R: half-width, top, bottom, corner radius.
+ */
+const VISOR_BOXES: Record<Exclude<AssistantVisor, "bean">, [w: number, top: number, bottom: number, r: number]> = {
+  band: [0.86, -0.3, 0.3, 0.3],
+  screen: [0.66, -0.44, 0.4, 0.24],
+};
+function visorPath(kind: AssistantVisor, R: number): Path2D {
+  if (kind === "bean") return beanPath(R);
+  const [w, t, b, r] = VISOR_BOXES[kind];
+  const v = new Path2D();
+  arcRect(v, -w * R, t * R, w * 2 * R, (b - t) * R, r * R);
+  return v;
+}
+
+/**
+ * The eye styles' neutral shapes (personal assistants, 7 October 2026), as fractions of R: width, height and corner
+ * radius (null: fully rounded). Only her resting eyes (and her wide ones, scaled up) take the style; every expression
+ * is drawn the same for every style.
+ */
+const EYE_STYLES: Record<AssistantEyes, [w: number, h: number, r: number | null]> = {
+  pill: [EYE_W, EYE_H, null],
+  round: [0.22, 0.22, null],
+  square: [0.2, 0.2, 0.05],
+};
 const SPARK = ["#ff6c02", "#ff3d81", "#7c5cff", "#ffc857"];
 
 type Ease = (t: number) => number;
@@ -107,6 +141,14 @@ function roundRect(p: CanvasRenderingContext2D | Path2D, x: number, y: number, w
   p.lineTo(x + r, y + h); p.quadraticCurveTo(x, y + h, x, y + h - r);
   p.lineTo(x, y + r); p.quadraticCurveTo(x, y, x + r, y); p.closePath();
 }
+/** A rectangle with true circular corners (the visors and the round and square eyes). */
+function arcRect(p: CanvasRenderingContext2D | Path2D, x: number, y: number, w: number, h: number, r: number) {
+  r = Math.max(0, Math.min(r, w / 2, h / 2));
+  p.moveTo(x + r, y);
+  p.arcTo(x + w, y, x + w, y + h, r); p.arcTo(x + w, y + h, x, y + h, r);
+  p.arcTo(x, y + h, x, y, r); p.arcTo(x, y, x + w, y, r);
+  p.closePath();
+}
 function heart(x: CanvasRenderingContext2D, s: number) {
   x.beginPath(); x.moveTo(0, s * 0.35);
   x.bezierCurveTo(-s * 0.9, -s * 0.2, -s * 0.45, -s * 0.85, 0, -s * 0.35);
@@ -121,6 +163,9 @@ function star(x: CanvasRenderingContext2D, ro: number, ri: number) {
 export class BrendaEngine {
   state: BrendaState = "idle";
   private cfg: StateCfg = STATES.idle;
+  /** Who she is drawn as: the sphere's colour, the visor and the eyes (personal assistants, 7 October 2026). */
+  private drawn: AssistantLook = DEFAULT_LOOK;
+  private shades: SphereShades = PALETTE[DEFAULT_LOOK.colour].sphere;
   // Pose
   private yaw = 0; private pitch = 0; private roll = 0; private tilt = 0;
   private sx = 1; private sy = 1; private ox = 0; private oy = 0; private open = 1;
@@ -144,6 +189,22 @@ export class BrendaEngine {
   private particles: Particle[] = [];
   private tweens = new Map<Prop, { keys: Key[]; i: number; from: number; start: number }>();
   private t0 = nowS();
+
+  constructor(look: AssistantLook = DEFAULT_LOOK) {
+    this.setLook(look);
+  }
+
+  /** The look she is drawn with, from the next frame on (no transition). Anything unknown falls back to Brenda's. */
+  setLook(look: AssistantLook) {
+    const colour = isAssistantColour(look.colour) ? look.colour : DEFAULT_LOOK.colour;
+    this.drawn = {
+      colour,
+      visor: isAssistantVisor(look.visor) ? look.visor : DEFAULT_LOOK.visor,
+      eyes: isAssistantEyes(look.eyes) ? look.eyes : DEFAULT_LOOK.eyes,
+    };
+    this.shades = PALETTE[colour].sphere;
+  }
+  get look(): AssistantLook { return { ...this.drawn }; }
 
   setState(next: BrendaState) {
     if (next === this.state) return;
@@ -315,11 +376,13 @@ export class BrendaEngine {
     x.rotate(this.tilt);
     x.scale(this.sx, this.sy);
 
-    // The sphere: glossy white, lit from the upper left, shading to a cool grey at the lower right rim.
+    // The sphere: glossy, lit from the upper left, shading towards the lower right rim (white to a cool grey for Brenda;
+    // a chosen colour's own stops otherwise).
+    const sh = this.shades;
     const body = new Path2D(); body.arc(0, 0, R, 0, Math.PI * 2);
-    x.save(); x.shadowColor = rgba(this.glow, 0.5 + this.heard * 0.25); x.shadowBlur = R * (0.3 + this.heard * 0.2); x.fillStyle = "#fff"; x.fill(body); x.restore();
+    x.save(); x.shadowColor = rgba(this.glow, 0.5 + this.heard * 0.25); x.shadowBlur = R * (0.3 + this.heard * 0.2); x.fillStyle = sh.light; x.fill(body); x.restore();
     const bg = x.createRadialGradient(-R * 0.34, -R * 0.42, 0, -R * 0.1, -R * 0.12, R * 1.18);
-    bg.addColorStop(0, rgba(BODY_LIGHT)); bg.addColorStop(0.5, rgba(BODY_MID)); bg.addColorStop(0.85, rgba(BODY_SHADE)); bg.addColorStop(1, rgba(BODY_RIM));
+    bg.addColorStop(0, sh.light); bg.addColorStop(0.5, sh.mid); bg.addColorStop(0.85, sh.shade); bg.addColorStop(1, sh.rim);
     x.fillStyle = bg; x.fill(body);
     // Her mood as a rim light along the bottom of the sphere.
     if (this.tint > 0.01) {
@@ -342,7 +405,7 @@ export class BrendaEngine {
       x.save(); x.clip(body);
       x.translate(Math.sin(this.yaw) * cp * R * VISOR_REACH, -Math.sin(p) * R * VISOR_REACH);
       x.scale(Math.max(0.2, cy0), Math.max(0.2, cp / Math.cos(VISOR_PITCH)));
-      const visor = visorPath(R);
+      const visor = visorPath(this.drawn.visor, R);
       // The lip where the visor sits into the shell, then the black glass.
       x.save(); x.shadowColor = "rgba(30,32,44,0.45)"; x.shadowBlur = R * 0.06; x.shadowOffsetY = R * 0.015; x.fillStyle = VISOR_INK; x.fill(visor); x.restore();
       const vg = x.createRadialGradient(0, R * 0.05, R * 0.1, 0, 0, R * 0.85);
@@ -378,7 +441,15 @@ export class BrendaEngine {
     const t = nowS();
     switch (shape) {
       case "wide": return this.eye(x, "pill", w * 1.14, h * 1.12, sd, ink);
-      case "pill": { const hh = Math.max(h * this.open, w * 0.28); x.beginPath(); roundRect(x, -w / 2, -hh / 2, w, hh, Math.min(w / 2, hh / 2)); x.fill(); return; }
+      case "pill": {
+        // Her resting eyes in the chosen style, scaled as hers are (wide, listening, surprised); a blink squashes them.
+        const style = this.drawn.eyes;
+        if (style === "pill") { const hh = Math.max(h * this.open, w * 0.28); x.beginPath(); roundRect(x, -w / 2, -hh / 2, w, hh, Math.min(w / 2, hh / 2)); x.fill(); return; }
+        const [sw, shh, sr] = EYE_STYLES[style];
+        const ew = (w * sw) / EYE_W, eh = (h * shh) / EYE_H;
+        const hh = Math.max(eh * this.open, ew * 0.28);
+        x.beginPath(); arcRect(x, -ew / 2, -hh / 2, ew, hh, sr === null ? Math.min(ew, hh) / 2 : (ew * sr) / sw); x.fill(); return;
+      }
       case "dot": x.beginPath(); x.arc(0, 0, w * 0.6, 0, Math.PI * 2); x.fill(); return;
       case "line": x.rotate(-sd * 0.25); x.beginPath(); roundRect(x, -w * 0.9, -w * 0.25, w * 1.8, w * 0.5, w * 0.25); x.fill(); return;
       case "flat": x.beginPath(); roundRect(x, -w * 0.9, -w * 0.25, w * 1.8, w * 0.5, w * 0.25); x.fill(); return;

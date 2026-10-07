@@ -23,6 +23,9 @@
  *
  * The starter prompts fill the box, like the asks on Brenda's page (polish, 6 October 2026): the words can be edited
  * and nothing is sent until the person presses Send.
+ *
+ * It is the person's own assistant (owner decision, 7 October 2026: personal assistants): the button, the panel's title,
+ * its aria-labels and her opening words use the name they chose (`useAssistant`); her faces draw their look.
  */
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
@@ -33,6 +36,7 @@ import { AnimatedHistory } from "@/components/ui/animated-icons";
 import { IconButton, ICON_BUTTON } from "@/components/ui/icon-button";
 import { BrendaFace } from "@/components/app/brenda-face";
 import { BrendaComposer, BrendaMessages, STARTERS, useBrendaChat } from "@/components/app/brenda-chat";
+import { useAssistant } from "@/components/app/assistant-context";
 import { playSound, soundsMuted, setSoundsMuted, subscribeSounds } from "@/lib/brenda-sound";
 import { cn } from "@/lib/utils";
 
@@ -62,6 +66,7 @@ function useFloatingPosition() {
 
 export function AssistantDrawer({ orgSlug, isOrg, firstName, floating = false }: { orgSlug: string; isOrg: boolean; firstName: string; floating?: boolean }) {
   const [open, setOpen] = useState(false);
+  const { name } = useAssistant().personal;
   const onBrendaPage = /^\/app\/[^/]+\/home\/?$/.test(usePathname() ?? "");
   const muted = useSyncExternalStore(subscribeSounds, soundsMuted, () => false);
   // Y and N answer this panel's Confirm only while it is open and showing; on Brenda's page her own chat takes them.
@@ -115,7 +120,7 @@ export function AssistantDrawer({ orgSlug, isOrg, firstName, floating = false }:
   return (
     <>
       {floating ? (
-        <button ref={fabRef} type="button" aria-label="Brenda" aria-expanded={open} aria-controls="assistant-drawer" data-tip="Brenda. Drag to move her"
+        <button ref={fabRef} type="button" aria-label={name} aria-expanded={open} aria-controls="assistant-drawer" data-tip={`${name}. Drag to move`}
           onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={() => { drag.current = null; }}
           onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpen((v) => !v); } }}
           style={pos ? { left: pos.x, top: pos.y, right: "auto", bottom: "auto" } : undefined}
@@ -123,11 +128,11 @@ export function AssistantDrawer({ orgSlug, isOrg, firstName, floating = false }:
           <BrendaFace size="md" mood={look.mood} tone={look.tone} className="pointer-events-none" />
         </button>
       ) : (
-        <IconButton aria-label="Brenda" aria-expanded={open} aria-controls="assistant-drawer" onClick={() => setOpen((v) => !v)}>
+        <IconButton aria-label={name} aria-expanded={open} aria-controls="assistant-drawer" onClick={() => setOpen((v) => !v)}>
           <BrendaFace size="sm" mood={look.mood} tone={look.tone} />
         </IconButton>
       )}
-      {open ? <button type="button" aria-label="Close Brenda" tabIndex={-1} className="fixed inset-0 z-[var(--z-overlay)] bg-overlay" onClick={close} /> : null}
+      {open ? <button type="button" aria-label={`Close ${name}`} tabIndex={-1} className="fixed inset-0 z-[var(--z-overlay)] bg-overlay" onClick={close} /> : null}
       {/* Closed, it only slides off screen: `inert` keeps its controls out of the Tab order and away from screen readers. */}
       <aside id="assistant-drawer" role="dialog" aria-labelledby="assistant-drawer-title" aria-describedby="assistant-drawer-question" aria-hidden={!open} inert={!open} data-refresh-safe
         className={cn("fixed inset-y-0 right-0 z-[var(--z-dialog)] flex w-[min(100vw,var(--sheet-width))] flex-col border-l border-border bg-background shadow-sheet transition-[translate,visibility] duration-[var(--duration-sheet)] ease-[var(--ease-out)]",
@@ -135,7 +140,7 @@ export function AssistantDrawer({ orgSlug, isOrg, firstName, floating = false }:
         <header className="flex shrink-0 items-start gap-3 border-b border-border py-5 pl-6 pr-4">
           <BrendaFace size="lg" mood={look.mood} tone={look.tone} interactive className="mt-0.5" />
           <div className="min-w-0 flex-1">
-            <h2 id="assistant-drawer-title" className="type-dialog-title">Brenda</h2>
+            <h2 id="assistant-drawer-title" className="type-dialog-title truncate">{name}</h2>
             <p id="assistant-drawer-question" className="truncate text-sm font-medium text-secondary">What do you need, {firstName}?</p>
           </div>
           <div className="flex shrink-0 items-center gap-1">
@@ -143,7 +148,7 @@ export function AssistantDrawer({ orgSlug, isOrg, firstName, floating = false }:
             <Link href={`/app/${orgSlug}/home?tab=history`} aria-label="Past chats" className={ICON_BUTTON} onClick={() => { chat.saveNow(); close(); }}>
               <AnimatedHistory aria-hidden />
             </Link>
-            <IconButton aria-label={muted ? "Turn Brenda's sounds on" : "Turn Brenda's sounds off"} aria-pressed={!muted} onClick={() => { setSoundsMuted(!muted); if (muted) playSound("reply"); }}>
+            <IconButton aria-label={muted ? `Turn ${name}'s sounds on` : `Turn ${name}'s sounds off`} aria-pressed={!muted} onClick={() => { setSoundsMuted(!muted); if (muted) playSound("reply"); }}>
               {muted ? <VolumeX aria-hidden /> : <Volume2 aria-hidden />}
             </IconButton>
             <IconButton aria-label="Close" onClick={close}><X aria-hidden /></IconButton>
@@ -156,7 +161,7 @@ export function AssistantDrawer({ orgSlug, isOrg, firstName, floating = false }:
               {/* What she does, as a list, not a sentence strung with commas (owner request, 7 October 2026: "if you're
                   listing things, it should not be in a paragraph"); the list is drawn like the ones in her replies. */}
               <div className="text-sm font-normal text-secondary">
-                <p>I&apos;m Brenda. Tell me what you need done and I&apos;ll take care of it:</p>
+                <p>I&apos;m {name}. Tell me what you need done and I&apos;ll take care of it:</p>
                 <ul className="my-2 list-disc pl-[1.25em] marker:text-secondary [&>li+li]:mt-[0.35em]">
                   {CAN_DO[isOrg ? "org" : "worker"].map((t) => <li key={t}>{t}</li>)}
                 </ul>

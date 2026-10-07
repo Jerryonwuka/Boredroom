@@ -65,7 +65,8 @@
      inner highlights, which would draw along the top edge). */
   --elev-island: 0 0 0 .5px rgb(0 0 0 / .44), 0 2px 6px -2px rgb(0 0 0 / .13), 0 18px 40px -10px rgb(0 0 0 / .35);
   --radius-chip: 6px; --radius-btn-xs: 8px; --radius-control: 10px; --radius-card-sm: 12px;
-  /* Brenda's face, the same as `.brenda-face` on the web: a white sphere, a black visor, white eyes. */
+  /* Brenda's face, the same as `.brenda-face` on the web: a white sphere, a black visor, white eyes. A person's own
+     assistant takes another sphere colour (`--sphere-*` on each face, below); the visor and eyes stay these on every one. */
   --face: #fff; --ink: #fff; --visor: #0b0b0e;
   /* Each teammate's own colour, for their small face (they are told apart by it, as by an avatar). */
   --mate-0: #f472b6; --mate-1: #34d399; --mate-2: #fb923c; --mate-3: #60a5fa; --mate-4: #e879f9; --mate-5: #facc15; --mate-6: #2dd4bf; --mate-7: #a78bfa;
@@ -121,8 +122,13 @@ svg.ic { width: 14px; height: 14px; flex: none; }
 /* Brenda's face: the web's `.brenda-face` (src/app/globals.css), the same moods and reactions. Her look (owner design,
    7 October 2026): a white sphere, a black visor with a soft dip in its top, white pill eyes behind it; the visor and eyes
    follow the pointer together. Her glow follows what is happening (accent, ok, warn, bad); a running timer (blue) and
-   thinking (violet) draw none. Teammates' small faces (`.mini`, below) keep their own flat shape. */
-.face { --lx: 0; --ly: 0; --glow: transparent; width: 28px; height: 28px; flex: none; border-radius: 50%; background: radial-gradient(circle at 32% 26%, #fff 0 30%, #ececf0 72%, #c9cad1 100%); display: block; position: relative;
+   thinking (violet) draw none. Teammates' small faces (`.mini`, below) keep their own flat shape.
+   Personal assistants (owner decision, 7 October 2026: phase 1): the face is the person's own assistant. main.js writes
+   its sphere's three stops (`--sphere-hi`, `--sphere-mid`, `--sphere-edge`, from the desktop state) and `data-visor` /
+   `data-eyes`, as on the web's `.brenda-face`; without them she is Brenda, white with the bean visor and pill eyes. The
+   visor stays near-black and the eyes white on every colour, and the ring stays for every colour. */
+.face { --lx: 0; --ly: 0; --glow: transparent; width: 28px; height: 28px; flex: none; border-radius: 50%; display: block; position: relative;
+  background: radial-gradient(circle at 32% 26%, var(--sphere-hi, #fff) 0 30%, var(--sphere-mid, #ececf0) 72%, var(--sphere-edge, #c9cad1) 100%);
   box-shadow: 0 0 0 1px var(--border), 0 0 12px -2px var(--glow);
   transition: transform .25s var(--spring), box-shadow .4s var(--ease); animation: face-breathe 3.6s ease-in-out infinite; }
 .face[data-tone="accent"] { --glow: var(--accent); }
@@ -137,6 +143,18 @@ svg.ic { width: 14px; height: 14px; flex: none; }
 .face.small { width: 22px; height: 22px; }
 .face.small .eyes { gap: 5.5px; transform: translate(calc(var(--lx) * 2px), calc(var(--ly) * 1.5px)); }
 .face.small .eyes span { width: 2px; height: 3.8px; }
+/* The visors and eye styles a person can choose (owner decision, 7 October 2026: personal assistants), the web's sizes
+   (docs/design-system.md, "Personal assistants"). Bean and pill (or no attribute) are the rules above. They sit here,
+   before the moods and reactions, and no stronger than them (`:where`), so every expression still wins on every eye
+   style. Teammates' `.mini` faces carry no attributes and are left alone. The eyes sit behind the visor's glass: the
+   bean's mask keeps them inside it, and the band and screen clip them to their own shape, so a tall expression (listening,
+   alert) never shows white past the visor's edge on the slim band. */
+.face[data-visor="band"]:where(:not(.mini)) .eyes { left: 8%; width: 84%; top: 25%; height: 25%; border-radius: 999px; -webkit-mask: none; mask: none; overflow: hidden; }
+.face[data-visor="screen"]:where(:not(.mini)) .eyes { left: 18%; width: 64%; top: 13%; height: 40%; border-radius: 30% / 34%; -webkit-mask: none; mask: none; overflow: hidden; }
+.face[data-eyes="round"]:where(:not(.mini)) .eyes span { width: 4px; height: 4px; border-radius: 50%; }
+.face[data-eyes="square"]:where(:not(.mini)) .eyes span { width: 3.8px; height: 3.8px; border-radius: 1px; }
+.face.small:where([data-eyes="round"]) .eyes span { width: 3px; height: 3px; }
+.face.small:where([data-eyes="square"]) .eyes span { width: 3px; height: 3px; border-radius: .8px; }
 .face.blink .eyes span { transform: scaleY(.12); }
 /* Moods */
 .face.happy .eyes span { height: 3px; width: 6px; background: transparent; border: 2px solid var(--ink); border-bottom: 0; border-radius: 6px 6px 0 0; }

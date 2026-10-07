@@ -407,7 +407,7 @@ function DocWriter({ orgSlug, orgName, doc, folders, teams, viewerMembershipId, 
         <div className="flex items-center gap-1">
           <SaveStatus status={status} blankTitle={blankTitle} onRetry={() => void save()} />
           <ConfirmButton variant="ghost" size="sm" title="Archive this document?" confirmLabel="Archive document" onConfirm={archive}
-            description="It leaves Docs for everyone it is shared with, and Brenda stops using it. Your other documents are not affected.">
+            description="It leaves Docs for everyone it is shared with, and their assistants stop using it. Your other documents are not affected.">
             <Archive aria-hidden />Archive
           </ConfirmButton>
         </div>
@@ -420,8 +420,10 @@ function DocWriter({ orgSlug, orgName, doc, folders, teams, viewerMembershipId, 
         onConfirm={() => { archived.current = true; router.push(`${base}/docs`); }} />
 
       {status === "conflict" ? (
+        // Name-neutral (owner decision, 7 October 2026: personal assistants): the newer version may come from anyone's
+        // assistant, or from the workspace's (the daily report), not only from the reader's own.
         <Alert tone="warning" title="This document changed somewhere else" className="mt-4">
-          <p>Someone, or Brenda, saved a newer version while you were writing, so your latest changes here are not saved yet. Take their version to carry on from it, or keep yours and save it over theirs.</p>
+          <p>Someone, or an assistant, saved a newer version while you were writing, so your latest changes here are not saved yet. Take their version to carry on from it, or keep yours and save it over theirs.</p>
           <div className="mt-3 flex flex-wrap gap-2">
             <Button size="sm" variant="secondary" disabled={resolving} onClick={() => void resolve("theirs")}>Load their version</Button>
             <Button size="sm" variant="ghost" disabled={resolving} onClick={() => void resolve("mine")}>Keep mine</Button>

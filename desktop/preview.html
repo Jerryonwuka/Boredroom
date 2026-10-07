@@ -7,7 +7,12 @@
      into the ask box letter by letter, to see her eyes read along). ?typed=some words types into the open card's ask box,
      to see Send turn orange and the card's other orange button (Start, Resume) go white. ?card=reply shows a reply drawn from her
      light Markdown (a lead sentence, bold labels, a bulleted and a numbered list, a link); hovering a button plays its icon's move. The backdrop is a flat grey desktop with a menu bar strip, so
-     the black island reads as it does on screen. -->
+     the black island reads as it does on screen.
+     Personal assistants (owner decision, 7 October 2026): ?look=orange,band,round&name=Max draws the person's own assistant
+     as any colour, visor and eyes, with its name in the labels (Brenda, white, bean, pill when left out); ?ws=teal,screen,square&wsname=Atlas
+     does the same for the workspace's, which the end-of-day report's card shows (?state=report). ?gallery adds a sheet
+     under the island with every colour, visor and eyes at both sizes, and every mood and reaction on each visor and eyes,
+     for checking that every combination reads. -->
 <html lang="en"><head><meta charset="utf-8"><title>Brenda notch preview</title><link rel="stylesheet" href="src/style.css">
 <style>html,body{background:#3b3b3b!important;height:100%;overflow:hidden!important} body::before{content:"";position:fixed;inset:0 0 auto;height:40px;background:rgb(0 0 0 / .28);box-shadow:inset 0 -1px 0 rgb(255 255 255 / .075)} #stage{position:relative;width:480px;height:440px;margin:0 auto;outline:1px dashed rgb(255 255 255 / .1)}</style></head>
 <body><div id="stage"><div id="island" class="island"><main id="notch" class="notch compact"></main><i id="countdown" class="countdown"></i></div></div>
@@ -16,15 +21,32 @@ const q = new URLSearchParams(location.search);
 const state = q.get("state") || "briefing";
 const now = new Date().toISOString();
 const timed = ["timer", "paused", "compact", "lead"].includes(state);
+// The person's assistant and the workspace's, as the desktop state carries them: resolved, with the face colours from
+// src/lib/assistant-look.ts (PALETTE[colour].face), which the notch cannot import.
+const FACES = {
+  white: { hi: "#ffffff", mid: "#ececf0", edge: "#c9cad1" }, grey: { hi: "#f2f2f4", mid: "#b9bac2", edge: "#8a8b95" },
+  yellow: { hi: "#fff4c2", mid: "#ffd54a", edge: "#d0a015" }, orange: { hi: "#ffdcbd", mid: "#ff9447", edge: "#d0661c" },
+  coral: { hi: "#ffddd6", mid: "#ff8676", edge: "#cf5242" }, pink: { hi: "#ffdcec", mid: "#ff8cc0", edge: "#cf528b" },
+  purple: { hi: "#e9dfff", mid: "#a88cff", edge: "#7559d6" }, blue: { hi: "#dbe8ff", mid: "#74a3ff", edge: "#416fd4" },
+  teal: { hi: "#d1f5f0", mid: "#4ccfc3", edge: "#1f948a" }, green: { hi: "#d5f5e0", mid: "#62d48f", edge: "#2a9960" },
+};
+const LOOK_VISORS = ["bean", "band", "screen"], LOOK_EYES = ["pill", "round", "square"];
+const assistantFrom = (look, name) => {
+  const [c, v, e] = String(look ?? "").toLowerCase().split(",").map((x) => x.trim());
+  const colour = FACES[c] ? c : "white";
+  return { name: name?.trim() || "Brenda", colour, visor: LOOK_VISORS.includes(v) ? v : "bean", eyes: LOOK_EYES.includes(e) ? e : "pill", face: FACES[colour] };
+};
+const personal = assistantFrom(q.get("look"), q.get("name"));
+const workspace = assistantFrom(q.get("ws"), q.get("wsname"));
 const sample = {
   serverNow: now, me: { displayName: "Ada Employee", role: "employee", presence: "active" }, workspace: { slug: "company-a", name: "Company A" }, brendaEnabled: true,
-  settings: { autoClockIn: true, reminders: true }, prefs: { autoClockIn: true, reminders: true },
+  settings: { autoClockIn: true, reminders: true }, prefs: { autoClockIn: true, reminders: true }, assistant: { personal, workspace },
   clock: { status: "in", workingDay: true, startAt: now, endAt: now, clockInAt: now, lateSeconds: 0 },
   timer: timed ? { id: "s1", version: 3, state: state === "paused" ? "paused" : "running", taskId: "t1", taskTitle: "KITA onboarding flow", confirmedSeconds: 2832, openIntervalStartedAt: state === "paused" ? null : now, serverNow: now, estimateMinutes: 180, progress: 60, taskVersion: 4 } : null,
   briefing: { openTasks: 5, dueToday: [{ id: "t1", title: "KITA onboarding flow", due: now }], dueTomorrow: [{ id: "t3", title: "Brand deck refresh", due: now }], overdue: [{ id: "t2", title: "Landing page copy", due: now }], waitingForYourReview: state === "lead" ? [{ id: "r1" }] : [], assignmentsNotPickedUp: state === "lead" ? [{ id: "a1" }] : [], remindersToday: [], waitingForTheirCheck: [] },
   myTasks: [{ id: "11111111-1111-1111-1111-111111111111", title: "KITA onboarding flow", due: now }, { id: "22222222-2222-2222-2222-222222222222", title: "Landing page copy", due: null }],
   team: state === "lead" || state === "idle" ? [{ id: "m1", name: "Ada Employee", state: "running", task: "Homepage hero illustrations" }, { id: "m2", name: "Ben Employee", state: "paused", task: "Brand deck refresh" }, { id: "m3", name: "Chidi Okafor", state: null, task: null }] : [],
-  notifications: state === "reminder" ? [{ id: "n1", type: "brenda.reminder", title: "Reminder: Call Josh", body: "You asked Brenda to remind you.", href: null, created_at: now }]
+  notifications: state === "reminder" ? [{ id: "n1", type: "brenda.reminder", title: "Reminder: Call Josh", body: `You asked ${personal.name} to remind you.`, href: null, created_at: now }]
     : state === "report" ? [{ id: "n2", type: "brenda.daily_report", title: "Your team report for Monday 5 October is ready", body: "Ada and Ben logged 13h 20m; Ben finished the brand deck and Ada sent the onboarding flow for review.", href: "/app/company-a/docs/44444444-4444-4444-4444-444444444444", created_at: now }] : [],
 };
 const replies = {
@@ -44,7 +66,7 @@ window.__TAURI__ = {
     }
     if (cmd === "api" && path.endsWith("/brenda/confirm")) {
       await new Promise((r) => setTimeout(r, 500));
-      if (q.get("confirm") === "already") throw { status: 409, code: "ALREADY_CONFIRMED", message: "That was already done. Ask Brenda again if you need it once more." };
+      if (q.get("confirm") === "already") throw { status: 409, code: "ALREADY_CONFIRMED", message: "That was already done. Ask again if you need it once more." };
       return { actions: [{ kind: "todo", summary: "Created “Review the brand deck” for Ada" }], error: null };
     }
     if (cmd === "api" && path.includes("/brenda/conversations")) { saved.push({ method: args.method, path, body: args.body }); console.log("past chat saved", args.method, path, args.body); return { id: "55555555-5555-5555-5555-555555555555", updatedAt: new Date().toISOString() }; }
@@ -91,6 +113,23 @@ if (q.get("card") === "typing") setTimeout(() => {
   let i = 0;
   const next = setInterval(() => { a.value = words.slice(0, ++i); a.dispatchEvent(new Event("input", { bubbles: true })); if (i >= words.length) clearInterval(next); }, 140);
 }, 1200);
+// ?gallery: every look and every mood, drawn with the notch's own face() under the island (preview only); ?gallery=3
+// draws it three times as large, to look closely at the small faces.
+if (q.has("gallery")) {
+  const moods = ["", "blink", "happy", "happy pleased", "sad", "alert", "listen", "think", "gulp", "squash", "dizzy", "love"];
+  const looks = LOOK_VISORS.flatMap((visor) => LOOK_EYES.map((eyes) => ({ visor, eyes })));
+  const pair = (o) => `<span style="display:flex;gap:6px;align-items:center">${face(o)}${face({ ...o, small: true })}</span>`;
+  const grid = (n) => `display:grid;grid-template-columns:96px repeat(${n},64px);gap:12px 8px;align-items:center;justify-items:start`;
+  const sheet = document.createElement("section");
+  sheet.style.cssText = `position:fixed;inset:440px 0 0;overflow:auto;padding:16px 20px 40px;background:#000;display:grid;gap:24px;align-content:start;zoom:${Math.max(1, Math.min(6, Number(q.get("gallery")) || 1))}`;
+  sheet.innerHTML = `<p class="title">Every colour, visor and eyes (28px and small 22px)</p>
+    <div style="${grid(looks.length)}"><span></span>${looks.map((l) => `<span class="note">${l.visor}, ${l.eyes}</span>`).join("")}
+    ${Object.keys(FACES).map((c) => `<span class="sub">${c}</span>${looks.map((l) => pair({ who: { ...l, colour: c, name: c, face: FACES[c] } })).join("")}`).join("")}</div>
+    <p class="title">Every mood and reaction on each visor and eyes (orange; the same rules on every colour)</p>
+    <div style="${grid(moods.length)}"><span></span>${moods.map((m) => `<span class="note">${m || "neutral"}</span>`).join("")}
+    ${looks.map((l) => `<span class="sub">${l.visor}, ${l.eyes}</span>${moods.map((m) => pair({ mood: m, who: { ...l, colour: "orange", name: "Max", face: FACES.orange } })).join("")}`).join("")}</div>`;
+  document.body.append(sheet);
+}
 // ?typed=: words in the ask box of whatever card is open (the timer card opens first for ?state=timer|paused).
 if (q.get("typed")) setTimeout(() => {
   if (["timer", "paused"].includes(state) && card?.kind !== "home") openCard({ kind: "home" });

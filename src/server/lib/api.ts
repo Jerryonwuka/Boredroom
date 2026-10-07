@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z, type ZodType } from "zod";
 import { randomUUID } from "node:crypto";
-import { AppError, invalid, unauthenticated, forbidden, notFound } from "@/server/lib/errors";
+import { AppError, invalid, unauthenticated, forbidden, notFound, tooLarge } from "@/server/lib/errors";
 import { getCurrentUser, type CurrentUser } from "@/server/auth";
 import { cache } from "react";
 import { withSystem, type Db } from "@/server/db";
@@ -70,11 +70,36 @@ export function route<P = Record<string, string>>(fn: Handler<P>) {
   };
 }
 
-export async function parseBody<T>(req: Request, schema: ZodType<T>): Promise<T> {
+/**
+ * The body as text, refused (413) once it passes `maxBytes`: by its declared length before anything is read, else while
+ * it streams in, so a small form's endpoint never buffers a large body (review, 7 October 2026: the assistant routes).
+ */
+async function readCapped(req: Request, maxBytes: number): Promise<string> {
+  if (Number(req.headers.get("content-length") ?? 0) > maxBytes) throw tooLarge();
+  if (!req.body) return "";
+  const reader = req.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > maxBytes) { await reader.cancel().catch(() => undefined); throw tooLarge(); }
+    chunks.push(value);
+  }
+  const all = new Uint8Array(size);
+  let at = 0;
+  for (const c of chunks) { all.set(c, at); at += c.byteLength; }
+  return new TextDecoder().decode(all);
+}
+
+/** Reads and checks a JSON (or form) body. `maxBytes` caps a JSON body for endpoints that only ever take a few short fields. */
+export async function parseBody<T>(req: Request, schema: ZodType<T>, opts: { maxBytes?: number } = {}): Promise<T> {
   let raw: unknown = {};
   const ct = req.headers.get("content-type") ?? "";
   if (ct.includes("application/json")) {
-    try { raw = await req.json(); } catch { throw invalid("Body must be valid JSON."); }
+    const text = opts.maxBytes ? await readCapped(req, opts.maxBytes) : null;
+    try { raw = text === null ? await req.json() : JSON.parse(text); } catch { throw invalid("Body must be valid JSON."); }
   } else if (ct.includes("form")) {
     raw = Object.fromEntries((await req.formData()).entries());
   }

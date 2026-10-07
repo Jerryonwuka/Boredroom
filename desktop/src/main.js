@@ -50,6 +50,14 @@
 // escapes every piece of text it is given and writes only its own few tags); the spoken version stays plain (`plain`).
 // The icons on buttons play a small move once on hover and keyboard focus (style.css, "Icons that move"), as the web's
 // animated icons do; never a loop, and nothing under reduced motion.
+//
+// Personal assistants (owner decision, 7 October 2026: phase 1). Each person has their own assistant in each workspace,
+// with a name, a sphere colour, a visor and eyes (Brenda as she is unless they choose otherwise); the workspace has one of
+// its own that signs what it sends by itself. The desktop state carries both, resolved, with the face colours to draw
+// (`assistant`; this page cannot import src/lib/assistant-look). Every face here is the person's own assistant and every
+// label names it ("Ask Max…", "Max is on it…"); the end-of-day report's card shows the workspace's. Signed out, and where
+// the words name the product (the plan gate), she is Brenda. The last profile seen is kept per workspace on this
+// computer, so the first paint after launch already shows theirs. Teammates' small faces are unchanged.
 
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
@@ -89,8 +97,62 @@ const REPLY_CLOSE_MS = 16_000;
 // ---- helpers -------------------------------------------------------------------------------------------------
 
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-/** Brenda's face. mood: happy | alert | sad | think | listen; tone: the glow (accent, ok, warn, bad; blue and violet draw none). */
-const face = (o = {}) => `<span class="face ${o.small ? "small" : ""} ${o.mood ?? ""}" ${o.tone ? `data-tone="${esc(o.tone)}"` : ""}><span class="eyes"><span></span><span></span></span>${o.dot ? `<i class="dot ${esc(o.dot)}"></i>` : ""}</span>`;
+
+// The person's assistant (owner decision, 7 October 2026: personal assistants). The desktop state's `assistant` is
+// { personal, workspace }, each { name, colour, visor, eyes, face: { hi, mid, edge } } (src/server/services/desktop.ts).
+// Nothing from it is drawn unchecked: the visor and eyes must be one of their three shapes, the face colours #rrggbb (else
+// Brenda's three), and the name goes into the page only through esc() or as an attribute set by the DOM.
+const BRENDA = { name: "Brenda", colour: "white", visor: "bean", eyes: "pill", face: { hi: "#ffffff", mid: "#ececf0", edge: "#c9cad1" } };
+const VISORS = ["bean", "band", "screen"];
+const EYES = ["pill", "round", "square"];
+const HEX = /^#[0-9a-f]{6}$/i;
+const NAME_MAX = 24;        // the server's rule (src/lib/assistant-look.ts); a longer one is cut, never trusted
+let cached = null;          // the person's assistant as last seen in this workspace on this computer (localStorage)
+
+/** A profile as the notch may draw it: anything missing or unexpected is Brenda's. */
+function assistantOf(p) {
+  if (!p || typeof p !== "object") return BRENDA;
+  const name = typeof p.name === "string" ? [...p.name.replace(/\s+/g, " ").trim()].slice(0, NAME_MAX).join("").trim() : "";
+  const f = p.face && typeof p.face === "object" ? p.face : {};
+  const shades = [f.hi, f.mid, f.edge].every((v) => typeof v === "string" && HEX.test(v));
+  return {
+    name: name || BRENDA.name,
+    colour: typeof p.colour === "string" && /^[a-z]{1,16}$/.test(p.colour) ? p.colour : BRENDA.colour,
+    visor: VISORS.includes(p.visor) ? p.visor : BRENDA.visor,
+    eyes: EYES.includes(p.eyes) ? p.eyes : BRENDA.eyes,
+    face: shades ? { hi: f.hi, mid: f.mid, edge: f.edge } : BRENDA.face,
+  };
+}
+/** The person's own assistant in this workspace (Brenda while signed out). */
+const me = () => (config?.signedIn ? assistantOf(data?.assistant?.personal ?? cached) : BRENDA);
+/** The workspace's own assistant, which signs the end-of-day team report. */
+const ws = () => (config?.signedIn ? assistantOf(data?.assistant?.workspace) : BRENDA);
+const cacheKey = () => `brenda-assistant:${config?.workspaceSlug ?? ""}`;
+/** The first paint after launch draws the assistant last seen in this workspace, before the first poll answers. */
+function loadCached() {
+  cached = null;
+  if (!config?.signedIn || !config.workspaceSlug) return;
+  try { const raw = localStorage.getItem(cacheKey()); if (raw) cached = assistantOf(JSON.parse(raw)); } catch { /* storage blocked or unreadable */ }
+}
+/** Each poll keeps the person's assistant for next time (written only when it changed). */
+function keepCached() {
+  const p = data?.assistant?.personal;
+  if (!p || !config?.signedIn || !config.workspaceSlug) return;
+  const next = assistantOf(p), json = JSON.stringify(next);
+  if (cached && JSON.stringify(cached) === json) return;
+  cached = next;
+  try { localStorage.setItem(cacheKey(), json); } catch { /* storage blocked */ }
+}
+
+/**
+ * Brenda's face, drawn as the person's own assistant (or `o.who`, such as the workspace's): its sphere colours, visor
+ * and eyes (style.css `--sphere-*`, `data-visor`, `data-eyes`). mood: happy | alert | sad | think | listen; tone: the
+ * glow (accent, ok, warn, bad; blue and violet draw none).
+ */
+const face = (o = {}) => {
+  const a = assistantOf(o.who ?? me());
+  return `<span class="face ${o.small ? "small" : ""} ${o.mood ?? ""}" data-sphere="${esc(a.colour)}" data-visor="${esc(a.visor)}" data-eyes="${esc(a.eyes)}" style="--sphere-hi:${esc(a.face.hi)};--sphere-mid:${esc(a.face.mid)};--sphere-edge:${esc(a.face.edge)}" ${o.tone ? `data-tone="${esc(o.tone)}"` : ""}><span class="eyes"><span></span><span></span></span>${o.dot ? `<i class="dot ${esc(o.dot)}"></i>` : ""}</span>`;
+};
 /** A teammate's small face, in a colour of their own (style.css `--mate-*`), with a dot when their timer is running (orange), paused (amber) or interrupted (red). */
 const MATES = 8;
 const hue = (id) => `var(--mate-${[...String(id)].reduce((a, c) => a + c.charCodeAt(0), 0) % MATES})`;
@@ -253,6 +315,7 @@ function render() {
   if (!config?.signedIn) el.innerHTML = linkView();
   else if (!card) el.innerHTML = compactView();
   else el.innerHTML = `${cardView()}${error ? `<p class="err">${esc(error)}</p>` : ""}`;
+  el.setAttribute("aria-label", me().name); // the notch is named after the person's assistant (Brenda while signed out)
   const m = moodOf();
   island.dataset.tone = m.tone ?? "";
   if (key !== viewKey) {
@@ -283,7 +346,7 @@ function compactView() {
   else if (b && (b.overdue.length || b.dueToday.length)) text = [b.dueToday.length ? `${b.dueToday.length} due today` : "", b.overdue.length ? `${b.overdue.length} overdue` : ""].filter(Boolean).join(", ");
   else if (data?.clock?.status === "not_in" && data.clock.workingDay) text = "Not clocked in yet";
   const working = (data?.team ?? []).filter((p) => p.state === "running" || p.state === "paused").slice(0, 3);
-  return `<div class="row" data-act="home" aria-label="Open Brenda">${face({ small: true, ...moodOf(), dot })}<span class="tiny grow">${text}</span>${working.length ? `<span class="minis">${working.map(mini).join("")}</span>` : ""}${unread ? `<span class="count">${unread}</span>` : ""}</div>`;
+  return `<div class="row" data-act="home" aria-label="Open ${esc(me().name)}">${face({ small: true, ...moodOf(), dot })}<span class="tiny grow">${text}</span>${working.length ? `<span class="minis">${working.map(mini).join("")}</span>` : ""}${unread ? `<span class="count">${unread}</span>` : ""}</div>`;
 }
 
 function linkView() {
@@ -310,7 +373,10 @@ function cardView() {
     // Badges as on the web: neutral on fill-1, green for clocked in, amber for a review, and the orange "New" badge only
     // for a task that has just arrived.
     const pill = n.type === "brenda.reminder" ? `<span class="pill">Reminder</span>` : n.type === "brenda.clock_in" ? `<span class="pill ok"><span class="d"></span>In</span>` : n.type === "brenda.daily_report" ? `<span class="pill">Daily report</span>` : n.type === "task.assigned" ? `<span class="pill acc">New task</span>` : n.type.startsWith("review") ? `<span class="pill warn">Review</span>` : "";
-    return `<div class="row fade">${face(moodOf())}<div class="grow"><p class="title">${esc(n.title)}</p>${n.body ? `<p class="sub">${esc(n.body)}</p>` : `<p class="sub">${esc(when(n.created_at))}</p>`}</div>${pill}</div>
+    // The end-of-day report is sent by the workspace, so its card shows the workspace's assistant (owner decision,
+    // 7 October 2026: personal assistants); everything else comes from the person's own.
+    const from = n.type === "brenda.daily_report" ? ws() : me();
+    return `<div class="row fade">${face({ ...moodOf(), who: from })}<div class="grow"><p class="title">${esc(n.title)}</p>${n.body ? `<p class="sub">${esc(n.body)}</p>` : `<p class="sub">${esc(when(n.created_at))}</p>`}</div>${pill}</div>
       <div class="actions">${n.href && !removedPage(n.href) ? `<button class="btn" data-act="open-href" data-href="${esc(n.href)}">Open${icon("open")}</button>` : ""}<button class="btn primary" data-act="read" data-id="${esc(n.id)}">${n.type === "brenda.reminder" ? "Done" : "OK"}</button></div>`;
   }
   if (card.kind === "briefing" && b) {
@@ -428,7 +494,7 @@ async function pollLink() {
 async function signedOut() {
   clearInterval(pollTimer); clearInterval(presenceTimer);
   config = await invoke("sign_out");
-  data = null; card = null; link = null; talk = []; chat = newChat();
+  data = null; card = null; link = null; talk = []; chat = newChat(); cached = null;
   render();
 }
 
@@ -438,6 +504,7 @@ async function refresh() {
   try {
     data = await call("GET", org("/brenda/desktop"));
     offsetMs = Date.parse(data.serverNow) - Date.now();
+    keepCached();
     if (!card) render();
   } catch (err) {
     if (err?.status && err.status !== 401 && !card) openCard({ kind: "error", message: err.message });
@@ -470,6 +537,7 @@ async function presence() {
 }
 
 async function start() {
+  loadCached();
   render();
   await refresh();
   if (!data) return;
@@ -485,9 +553,10 @@ async function start() {
 const mic = icon("mic");
 
 /** Typing to Brenda: the same chat as talking, without the spoken reply. The send button lights up orange once there are words. */
-function askBox(placeholder = "Ask Brenda…") {
+function askBox(placeholder) {
   if (data && !data.brendaEnabled) return "";
-  return `<form class="ask fade" data-ask><input class="field" id="ask" name="q" maxlength="4000" placeholder="${esc(placeholder)}" autocomplete="off" spellcheck="true" aria-label="Message Brenda"><button class="btn accent icon-send" aria-label="Send" title="Send">${icon("send")}</button></form>`;
+  const name = me().name;
+  return `<form class="ask fade" data-ask><input class="field" id="ask" name="q" maxlength="4000" placeholder="${esc(placeholder ?? `Ask ${name}…`)}" autocomplete="off" spellcheck="true" aria-label="${esc(`Message ${name}`)}"><button class="btn accent icon-send" aria-label="Send" title="Send">${icon("send")}</button></form>`;
 }
 
 el.addEventListener("submit", (e) => {
@@ -512,8 +581,9 @@ window.addEventListener("keydown", (e) => {
 });
 
 function talkButton() {
-  if (voice.enabled && voice.modelReady) return `<span class="hint" title="Hold to talk to Brenda">${mic}<kbd>${esc(voice.shortcut)}</kbd></span>`;
-  return `<button class="btn ghost icon" data-act="voice-setup" title="Talk to Brenda" aria-label="Talk to Brenda">${mic}</button>`;
+  const name = esc(me().name);
+  if (voice.enabled && voice.modelReady) return `<span class="hint" title="Hold to talk to ${name}">${mic}<kbd>${esc(voice.shortcut)}</kbd></span>`;
+  return `<button class="btn ghost icon" data-act="voice-setup" title="Talk to ${name}" aria-label="Talk to ${name}">${mic}</button>`;
 }
 
 /**
@@ -648,7 +718,7 @@ function voiceView() {
     // She thinks; what is happening first (shimmering), then the words heard, in italic quotes. While the words are
     // written out the waveform carries on as a slow travelling wave and the time stays where it stopped.
     const words = c.phase === "transcribing";
-    return `<div class="row fade">${face(moodOf())}<div class="grow"><p class="title shimmer">${words ? "Getting your words…" : "Brenda is on it…"}</p>${c.heard ? `<p class="said">“${esc(c.heard)}”</p>` : ""}</div>${words && c.startedAt ? `<span class="mic"><span class="clock">${mss(voiceSeconds(c))}</span></span>` : ""}</div>
+    return `<div class="row fade">${face(moodOf())}<div class="grow"><p class="title shimmer">${words ? "Getting your words…" : `${esc(me().name)} is on it…`}</p>${c.heard ? `<p class="said">“${esc(c.heard)}”</p>` : ""}</div>${words && c.startedAt ? `<span class="mic"><span class="clock">${mss(voiceSeconds(c))}</span></span>` : ""}</div>
       ${words ? `<div class="wave fade" aria-hidden="true"><canvas id="wave"></canvas></div>` : ""}`;
   }
   if (c.phase === "reply") {
@@ -663,10 +733,10 @@ function voiceView() {
       ${offers.length ? `<ul class="list fade">${offers.map(({ p, i }) => `<li><span class="t">${offerLabel(p)}</span>${p.done ? `<span class="k ok end">${esc(p.done)}</span>` : `<button class="btn" data-act="offer" data-i="${i}" ${busy ? "disabled" : ""}>${icon(OFFER[p.kind].icon)}${OFFER[p.kind].label}</button>`}</li>`).join("")}</ul>` : ""}
       ${confirms.map((p) => `<div class="confirm fade"><p class="sub">${icon("shield")}<span>${esc(p.summary)}</span></p><div class="actions"><button class="btn ghost" data-act="not-now">Not now <kbd>N</kbd></button><button class="btn primary" data-act="confirm" data-token="${esc(p.token)}" ${busy ? "disabled" : ""}>${icon("check")}Confirm <kbd>Y</kbd></button></div></div>`).join("")}
       ${!confirms.length ? askBox("Ask a follow-up…") : ""}
-      ${!confirms.length ? `<div class="actions">${opens.map((p) => `<button class="btn" data-act="open-href" data-href="${esc(p.href)}">${esc(p.label)}${icon("open")}</button>`).join("")}<button class="btn ghost" data-act="open-chat" title="Carry on with this chat on Brenda's page in Boredroom">Open chat</button><button class="btn ghost" data-act="close">Done</button></div>` : ""}`;
+      ${!confirms.length ? `<div class="actions">${opens.map((p) => `<button class="btn" data-act="open-href" data-href="${esc(p.href)}">${esc(p.label)}${icon("open")}</button>`).join("")}<button class="btn ghost" data-act="open-chat" title="Carry on with this chat on ${esc(`${me().name}'s`)} page in Boredroom">Open chat</button><button class="btn ghost" data-act="close">Done</button></div>` : ""}`;
   }
   if (c.phase === "off") {
-    return `<div class="row fade">${face(moodOf())}<div class="grow"><p class="title">Talk to Brenda</p><p class="sub">Hold <kbd>${esc(voice.shortcut)}</kbd>, say what you need, let go. I only listen while you hold the keys, and your voice is turned into text on this computer. The first time, I download a 148 MB speech model.</p></div></div>
+    return `<div class="row fade">${face(moodOf())}<div class="grow"><p class="title">Talk to ${esc(me().name)}</p><p class="sub">Hold <kbd>${esc(voice.shortcut)}</kbd>, say what you need, let go. I only listen while you hold the keys, and your voice is turned into text on this computer. The first time, I download a 148 MB speech model.</p></div></div>
       <div class="actions"><button class="btn ghost" data-act="close">Not now</button><button class="btn primary accent" data-act="voice-on">Turn on voice</button></div>`;
   }
   if (c.phase === "downloading") {
@@ -702,7 +772,7 @@ async function ask(text, { spoken = true } = {}) {
     saveChat();
   } catch (err) {
     talk.pop();
-    openCard({ kind: "voice", phase: "error", title: "Brenda couldn't answer", message: err?.message ?? "Can't reach Boredroom.", closeAfter: REPLY_CLOSE_MS });
+    openCard({ kind: "voice", phase: "error", title: `${me().name} couldn't answer`, message: err?.message ?? "Can't reach Boredroom.", closeAfter: REPLY_CLOSE_MS });
     Sound.play("error");
   }
 }
@@ -840,7 +910,9 @@ function saveChat(c = chat, messages = talk) {
         }
         if (!saved) {
           const first = kept.find((m) => m.role === "user" && m.content.trim())?.content.replace(/\s+/g, " ").trim();
-          saved = await call("POST", org("/brenda/conversations"), { title: first ? clip(first, KEEP.title) : "Chat with Brenda", messages: kept });
+          // Untitled, it is a "New chat", not "Chat with Brenda": a stored title must not go stale when the person renames
+          // their assistant (owner decision, 7 October 2026: personal assistants; the web uses the same words).
+          saved = await call("POST", org("/brenda/conversations"), { title: first ? clip(first, KEEP.title) : "New chat", messages: kept });
         }
         c.id = saved?.id ?? c.id;
         c.updatedAt = saved?.updatedAt ?? null;
@@ -1255,7 +1327,7 @@ setInterval(() => {
   const e = document.getElementById("testimate"), share = estimateShare(); if (e && share !== null) e.style.transform = `scaleX(${share.toFixed(3)})`;
 }, 1000);
 
-listen("brenda://signed-out", () => { config = { ...config, signedIn: false }; data = null; card = null; talk = []; chat = newChat(); render(); });
+listen("brenda://signed-out", () => { config = { ...config, signedIn: false }; data = null; card = null; talk = []; chat = newChat(); cached = null; render(); });
 
 (async () => {
   config = await invoke("get_config");

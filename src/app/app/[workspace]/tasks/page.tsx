@@ -8,6 +8,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { FilterSelect } from "@/components/ui/filter-control";
 import { NewAssignedTask, TaskTable } from "@/components/app/tasks-page";
 import { tasksView, listProjects, type TaskListFilter } from "@/server/services/views";
+import { assistantProfiles } from "@/server/services/assistant-profile";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Tasks" };
@@ -16,14 +17,15 @@ export const metadata = { title: "Tasks" };
  * Tasks: staff see everything assigned to them; team leads create, assign and follow their teams' tasks; organisation
  * accounts see all. The list (owner decision, 26 September 2026) shows face, task, person, date, status and one action;
  * everything else lives in the sheet a task opens. v4: the page header with underline tabs (counts as tiny pills), a
- * toolbar row (search, the Person filter), then the table.
+ * toolbar row (search, the Person filter), then the table. The hand-off to Brenda names the person's own assistant
+ * (owner decision, 7 October 2026: personal assistants).
  */
 export default async function TasksPage({ params, searchParams }: { params: Promise<{ workspace: string }>; searchParams: Promise<{ status?: string; who?: string }> }) {
   const { workspace } = await params;
   const sp = await searchParams;
   const { ctx, counts, teams } = await workspacePage(workspace, `/app/${workspace}/tasks`);
   const status = (["all", "assigned", "open", "check", "done"].includes(sp.status ?? "") ? sp.status : "all") as NonNullable<TaskListFilter["status"]>;
-  const [data, projects] = await Promise.all([tasksView(ctx, { status, who: sp.who ?? null }), listProjects(ctx)]);
+  const [data, projects, { personal }] = await Promise.all([tasksView(ctx, { status, who: sp.who ?? null }), listProjects(ctx), assistantProfiles(ctx)]);
   const base = `/app/${ctx.org.slug}`;
   const mine = data.scope === "mine";
   const lead = data.scope === "lead";
@@ -60,11 +62,11 @@ export default async function TasksPage({ params, searchParams }: { params: Prom
           {personFilter ? <div className="mb-4 flex flex-wrap items-center gap-2">{personFilter}</div> : null}
           <EmptyState icon3d="card-check" title={empty}
             description={mine ? "When your team lead assigns you something it appears here and on To-dos. You can add your own to-dos there too."
-              : status === "all" || status === "assigned" ? "Press New task to create one and hand it to someone, or tell Brenda what needs doing and she drafts the tasks for you to confirm."
+              : status === "all" || status === "assigned" ? `Press New task to create one and hand it to someone, or tell ${personal.name} what needs doing and ${personal.name} drafts the tasks for you to confirm.`
               : "Nothing in this list right now. The other tabs hold the rest."}
             action={mine ? <Link href={`${base}/todos`} className={buttonVariants({ variant: "secondary", size: "sm" })}>Open your to-dos</Link>
               // The one hand-off to Brenda on this page: she creates and assigns tasks (create_todos), each waiting for a yes.
-              : status === "all" || status === "assigned" ? <Link href={`${base}/home?ask=${encodeURIComponent(lead ? "Help me plan this week's tasks for my team and assign them." : "Help me plan this week's tasks and assign them to the right people.")}`} className={buttonVariants({ variant: "secondary", size: "sm" })}><BrendaGlyph aria-hidden />Ask Brenda to plan tasks</Link>
+              : status === "all" || status === "assigned" ? <Link href={`${base}/home?ask=${encodeURIComponent(lead ? "Help me plan this week's tasks for my team and assign them." : "Help me plan this week's tasks and assign them to the right people.")}`} className={buttonVariants({ variant: "secondary", size: "sm" })}><BrendaGlyph aria-hidden />Ask {personal.name} to plan tasks</Link>
               : <Link href={href("all")} className={buttonVariants({ variant: "secondary", size: "sm" })}>Show all tasks</Link>} />
         </>
       ) : (

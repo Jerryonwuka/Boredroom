@@ -10,13 +10,18 @@
  * v4 (6 October 2026): the toast is the v4 toast surface (components/ui/toast.tsx) signed with her face; the action
  * logs are calm rows separated by space, never lines, with a 24px status disc; their labels are 14/20 medium in the
  * secondary grey, not tracked capitals.
+ *
+ * Personal assistants (owner decision, 7 October 2026): the toast, the person's switches and their action log name the
+ * person's own assistant (`useAssistant`); the organisation's card in Settings is about the product and keeps "Brenda".
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Check, X, ShieldCheck, AlarmClock } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { BrendaFace } from "@/components/app/brenda-face";
+import { useAssistant } from "@/components/app/assistant-context";
+import { lookOf } from "@/lib/assistant-look";
 import { Badge } from "@/components/ui/badge";
 import { Alert } from "@/components/ui/states";
 import { api, isApiFailure } from "@/lib/api-client";
@@ -27,6 +32,10 @@ const DAY_KEY = (orgSlug: string) => `brenda-presence:${orgSlug}:${new Date().to
 /** Reports the first interaction of the day once per browser per workspace. Nothing happens if Brenda may not clock in. */
 export function BrendaPresence({ orgSlug }: { orgSlug: string }) {
   const router = useRouter();
+  // The toast is drawn by the toaster, away from this component: it takes the name and look as they are when it is made.
+  const personal = useAssistant().personal;
+  const assistant = useRef(personal);
+  useEffect(() => { assistant.current = personal; });
   useEffect(() => {
     let done = false;
     try { if (localStorage.getItem(DAY_KEY(orgSlug))) return; } catch { /* storage blocked: try anyway */ }
@@ -37,14 +46,15 @@ export function BrendaPresence({ orgSlug }: { orgSlug: string }) {
       try {
         const r = await api<{ clockedIn: boolean; at?: string; late?: boolean }>(`/api/orgs/${orgSlug}/brenda/presence`, { method: "POST", retries: 0 });
         if (!r.clockedIn) return;
+        const who = assistant.current;
         // The v4 toast (ToastCard's surface and type), signed with her face where ToastCard has its status dot: Brenda
         // never shows a generic AI icon (owner decision, 5 October 2026).
         toast.custom(() => (
           <div role="status" className="toast-surface flex w-[340px] max-w-[calc(100vw-2rem)] items-start gap-3 px-4 py-3">
-            <BrendaFace size="sm" mood="happy" className="mt-0.5" />
+            <BrendaFace size="sm" mood="happy" look={lookOf(who)} className="mt-0.5" />
             <div className="min-w-0 flex-1">
               <p className="text-sm font-medium text-foreground">Looks like you&apos;ve started work. I&apos;ve clocked you in.</p>
-              <p className="mt-0.5 text-sm font-normal text-[var(--toast-description)]">Brenda{r.late ? ", recorded as late" : ""}. You can switch this off on your profile.</p>
+              <p className="mt-0.5 text-sm font-normal text-[var(--toast-description)]">{who.name}{r.late ? ", recorded as late" : ""}. You can switch this off on your profile.</p>
             </div>
           </div>
         ), { duration: 7000 });
@@ -62,8 +72,9 @@ export function BrendaPresence({ orgSlug }: { orgSlug: string }) {
 type Action = { id: string; tool: string; summary: string; outcome: string; source: string; created_at: string; display_name: string };
 type Overview = { settings: { autoClockIn: boolean; reminders: boolean }; prefs: { autoClockIn: boolean; reminders: boolean }; actions: Action[] };
 
-function ActionLog({ actions, showWho }: { actions: Action[]; showWho: boolean }) {
-  if (!actions.length) return <p className="py-2 text-sm font-normal text-secondary">Nothing yet. Every action Brenda takes is listed here.</p>;
+/** `name`: who the log is about, the person's own assistant on their profile, "Brenda" (the product) in Settings. */
+function ActionLog({ actions, showWho, name }: { actions: Action[]; showWho: boolean; name: string }) {
+  if (!actions.length) return <p className="py-2 text-sm font-normal text-secondary">Nothing yet. Every action {name} takes is listed here.</p>;
   return (
     <ul className="space-y-1">
       {actions.map((a) => (
@@ -104,7 +115,7 @@ export function BrendaOrgSettings({ orgSlug, initial, canEdit }: { orgSlug: stri
       </div>
       <div>
         <h3 className="mb-1 text-sm font-medium text-secondary">What Brenda did</h3>
-        <ActionLog actions={initial.actions} showWho />
+        <ActionLog actions={initial.actions} showWho name="Brenda" />
       </div>
     </div>
   );
@@ -113,6 +124,7 @@ export function BrendaOrgSettings({ orgSlug, initial, canEdit }: { orgSlug: stri
 /** Profile card: the person's own switches and their own action log. */
 export function BrendaMyPrefs({ orgSlug, initial, worker }: { orgSlug: string; initial: Overview; worker: boolean }) {
   const router = useRouter();
+  const { name } = useAssistant().personal;
   const [p, setP] = useState(initial.prefs);
   const [error, setError] = useState<string | null>(null);
   const save = async (patch: Partial<typeof p>) => {
@@ -124,12 +136,12 @@ export function BrendaMyPrefs({ orgSlug, initial, worker }: { orgSlug: string; i
     <div className="space-y-3">
       {error ? <Alert tone="danger">{error}</Alert> : null}
       <div>
-        {worker ? <Switch checked={p.autoClockIn} disabled={!initial.settings.autoClockIn} onChange={(e) => void save({ autoClockIn: e.target.checked })} hint={initial.settings.autoClockIn ? "Brenda clocks you in when you start work on a working day." : "Your organisation has not switched automatic clock-in on."}>Let Brenda clock me in</Switch> : null}
-        <Switch checked={p.reminders} disabled={!initial.settings.reminders} onChange={(e) => void save({ reminders: e.target.checked })} hint={initial.settings.reminders ? "Daily nudges about deadlines, reviews and follow-ups." : "Your organisation has switched Brenda's daily reminders off."}>Daily reminders from Brenda</Switch>
+        {worker ? <Switch checked={p.autoClockIn} disabled={!initial.settings.autoClockIn} onChange={(e) => void save({ autoClockIn: e.target.checked })} hint={initial.settings.autoClockIn ? `${name} clocks you in when you start work on a working day.` : "Your organisation has not switched automatic clock-in on."}>Let {name} clock me in</Switch> : null}
+        <Switch checked={p.reminders} disabled={!initial.settings.reminders} onChange={(e) => void save({ reminders: e.target.checked })} hint={initial.settings.reminders ? "Daily nudges about deadlines, reviews and follow-ups." : `Your organisation has switched ${name}'s daily reminders off.`}>Daily reminders from {name}</Switch>
       </div>
       <div>
-        <h3 className="mb-1 text-sm font-medium text-secondary">What Brenda did for you</h3>
-        <ActionLog actions={initial.actions.slice(0, 10)} showWho={false} />
+        <h3 className="mb-1 text-sm font-medium text-secondary">What {name} did for you</h3>
+        <ActionLog actions={initial.actions.slice(0, 10)} showWho={false} name={name} />
       </div>
     </div>
   );

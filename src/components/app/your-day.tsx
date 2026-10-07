@@ -13,7 +13,8 @@
  * works".
  *
  * On My Day (owner request: say nothing twice): the running timer is My Day's own timer card just above, so "Now" keeps
- * only your clock; and the page speaks in its own voice, so Brenda is named rather than saying "me".
+ * only your clock; and the page speaks in its own voice, so Brenda is named rather than saying "me": by the name the
+ * person gave their own assistant (owner decision, 7 October 2026: personal assistants; `useAssistant`).
  */
 import { useId, useState } from "react";
 import Link from "next/link";
@@ -29,6 +30,7 @@ import { EmptyState } from "@/components/ui/states";
 import { StatusDot } from "@/components/ui/status-dot";
 import { ToolSquare } from "@/components/ui/tool-tile";
 import { BrendaGlyph } from "@/components/app/brenda-glyph";
+import { useAssistant } from "@/components/app/assistant-context";
 import { cn, formatDuration } from "@/lib/utils";
 import type { briefing } from "@/server/services/brenda";
 
@@ -102,6 +104,7 @@ const SHOW = 4;
 
 /** Your day: the figures, then where you are now (your clock) and what is waiting on you. */
 export function YourDay({ orgSlug, role, brief, timeZone }: DayProps) {
+  const { name } = useAssistant().personal;
   const base = `/app/${orgSlug}`;
   const worker = role === "employee" || role === "manager";
   const c = brief.clock;
@@ -179,7 +182,7 @@ export function YourDay({ orgSlug, role, brief, timeZone }: DayProps) {
         {lists}
       </div>
       {/* Staff and leads always have their clock under Now, and their to-dos on To-dos; the organisation has neither. */}
-      {!lists.length && !worker ? <EmptyState compact icon={BrendaGlyph} title="All clear" description="Nothing is waiting on you right now. Ask Brenda for anything you need." /> : null}
+      {!lists.length && !worker ? <EmptyState compact icon={BrendaGlyph} title="All clear" description={`Nothing is waiting on you right now. Ask ${name} for anything you need.`} /> : null}
     </div>
   );
 }

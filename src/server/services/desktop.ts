@@ -20,6 +20,8 @@ import { briefing, brendaPrefs, brendaSettings } from "@/server/services/brenda"
 import { currentSession } from "@/server/services/sessions";
 import { myClock } from "@/server/services/attendance";
 import { teamStatus } from "@/server/services/views";
+import { readAssistantProfiles } from "@/server/services/assistant-profile";
+import { PALETTE, type AssistantEyes, type AssistantProfile, type AssistantVisor, type FaceShades } from "@/lib/assistant-look";
 
 const CODE_TTL_SECONDS = 10 * 60;
 const DESKTOP_SESSION_DAYS = 90;
@@ -116,8 +118,16 @@ export async function revokeDevice(user: CurrentUser, sessionId: string) {
 }
 
 /**
+ * An assistant as the notch draws it: the profile plus its face colours, resolved here because the notch cannot import
+ * lib/assistant-look (owner decision, 7 October 2026: personal assistants).
+ */
+export type DesktopAssistant = { name: string; colour: string; visor: AssistantVisor; eyes: AssistantEyes; face: FaceShades };
+const forNotch = (p: AssistantProfile): DesktopAssistant => ({ name: p.name, colour: p.colour, visor: p.visor, eyes: p.eyes, face: PALETTE[p.colour].face });
+
+/**
  * Everything the notch shows, in one read: the briefing, the timer, the clock, unread notifications (Brenda's
- * reminders and nudges, assignments, confirmations), and what the person allows. Polled every 20 seconds.
+ * reminders and nudges, assignments, confirmations), what the person allows, and their own assistant and the
+ * workspace's. Polled every 20 seconds.
  */
 export async function desktopState(ctx: OrgContext) {
   const worker = ctx.membership.role === "employee" || ctx.membership.role === "manager";
@@ -134,6 +144,7 @@ export async function desktopState(ctx: OrgContext) {
         `SELECT id, type, title, body, href, created_at FROM notifications WHERE recipient_membership_id = $1 AND read_at IS NULL ORDER BY created_at DESC LIMIT 10`, [ctx.membership.id]),
       progress: await db.query<{ id: string; title: string; due_at: string | null; progress_percent: number; version: number }>(
         `SELECT id, title, due_at, progress_percent::int AS progress_percent, version FROM tasks WHERE assignee_membership_id = $1 AND status IN ('todo','in_progress','blocked') AND archived_at IS NULL ORDER BY due_at NULLS LAST, created_at DESC`, [ctx.membership.id]),
+      assistants: await readAssistantProfiles(db, ctx),
     })),
   ]);
   const s = session?.session ?? null;
@@ -143,6 +154,9 @@ export async function desktopState(ctx: OrgContext) {
     me: { displayName: ctx.user.displayName, role: ctx.membership.role, presence: ctx.user.presence ?? "active" },
     workspace: { slug: ctx.org.slug, name: ctx.org.name },
     brendaEnabled: ctx.plan.features.AI_ASSISTANT === true,
+    // The person's own assistant and the workspace's, resolved, with the face colours the notch draws (it cannot import
+    // lib/assistant-look) (owner decision, 7 October 2026: personal assistants).
+    assistant: { personal: forNotch(extra.assistants.personal), workspace: forNotch(extra.assistants.workspace) } satisfies { personal: DesktopAssistant; workspace: DesktopAssistant },
     settings: extra.settings, prefs: extra.prefs,
     clock: clock ? { status: clock.status, workingDay: clock.workingDay, startAt: clock.scheduledStartAt, endAt: clock.scheduledEndAt, clockInAt: clock.record?.clock_in_at ?? null, lateSeconds: clock.record?.late_seconds ?? 0 } : null,
     timer: s ? { id: s.id, version: s.version, state: s.state, taskId: s.taskId, taskTitle: s.taskTitle, confirmedSeconds: s.confirmedSeconds, openIntervalStartedAt: s.openIntervalStartedAt, serverNow: s.serverNow, estimateMinutes: s.estimateMinutes, progress: running?.progress_percent ?? 0, taskVersion: running?.version ?? null } : null,

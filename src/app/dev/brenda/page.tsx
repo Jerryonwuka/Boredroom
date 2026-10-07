@@ -8,15 +8,26 @@
  * types (the box below is a real one, wired as her box is, so typing in it works too), a paste, listening to a voice (a
  * made-up, speech-like level), thinking then pleased by a reply, celebrating something done, sad at an error and alert
  * while a Confirm waits. Every face and character on the page reads along at once: she is one person.
+ *
+ * Personal looks (owner decision, 7 October 2026: personal assistants): every colour, visor and eyes a person can choose
+ * for their assistant, as faces at each size and as the glyph, side by side in dark and light, with every mood; and one
+ * live character with pickers (also drawn in her home's orb, where only Brenda's white takes the orb's light).
  */
 import { useEffect, useRef, useState } from "react";
 import { notFound } from "next/navigation";
 import { BrendaCharacter, type BrendaCharacterHandle } from "@/components/app/brenda-character";
 import { BrendaFace, type BrendaMood, type BrendaTone } from "@/components/app/brenda-face";
+import { BrendaGlyph } from "@/components/app/brenda-glyph";
 import { useReadAlong } from "@/components/app/brenda-chat";
+import { AssistantScope } from "@/components/app/assistant-context";
 import { attention, STATES, type BrendaEmote, type BrendaState } from "@/lib/brenda-character/engine";
+import {
+  ASSISTANT_COLOURS, ASSISTANT_EYES, ASSISTANT_VISORS, DEFAULT_ASSISTANT_NAME, DEFAULT_LOOK, EYES, PALETTE, VISORS,
+  type AssistantColour, type AssistantEyes, type AssistantLook, type AssistantVisor,
+} from "@/lib/assistant-look";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/input";
+import { Select, Textarea } from "@/components/ui/input";
+import { Segmented } from "@/components/ui/segmented";
 import { cn } from "@/lib/utils";
 
 const EMOTES: BrendaEmote[] = ["love", "wink", "proud", "surprised", "yawn", "happy", "pleased", "annoyed", "celebrate"];
@@ -66,6 +77,7 @@ export default function BrendaGallery() {
         </div>
       </section>
       <Reactions mono={mono} />
+      <PersonalLooks />
       <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
         {(Object.keys(STATES) as BrendaState[]).map((s) => (
           <div key={s} className="card-stat flex flex-col items-center gap-1"><BrendaCharacter state={s} size={84} className={cn(mono(s))} /><p className="text-sm font-medium text-secondary">{s}</p></div>
@@ -172,5 +184,147 @@ function Reactions({ mono }: { mono: (s: BrendaState) => string | false }) {
         </div>
       </div>
     </section>
+  );
+}
+
+type FaceSize = "sm" | "md" | "lg";
+const SIZES: FaceSize[] = ["sm", "md", "lg"];
+const SIZE_LABEL: Record<FaceSize | "all", string> = { sm: "Small", md: "Medium", lg: "Large", all: "All three" };
+const MOOD_LABEL = (m: BrendaMood) => (m ? m[0].toUpperCase() + m.slice(1) : "Resting");
+const short = (label: string) => label.split(" ")[0];
+
+/**
+ * Personal looks: one live character with pickers, then every combination in both themes. The size and mood pickers
+ * apply to the faces in the table, so each mood can be checked on each eye style and visor.
+ */
+function PersonalLooks() {
+  const [look, setLook] = useState<AssistantLook>(DEFAULT_LOOK);
+  const [state, setState] = useState<BrendaState>("idle");
+  const [mood, setMood] = useState<BrendaMood>(null);
+  const [size, setSize] = useState<FaceSize | "all">("md");
+  const [px, setPx] = useState(120);
+  const choose = (next: Partial<AssistantLook>) => setLook((l) => ({ ...l, ...next }));
+  const profile = { name: DEFAULT_ASSISTANT_NAME, ...look };
+
+  return (
+    <section aria-labelledby="looks-title" className="space-y-3.5">
+      <div>
+        <h2 id="looks-title" className="type-section-title">Personal looks</h2>
+        <p className="mt-1 text-sm font-normal text-secondary">Each person can choose their assistant&apos;s colour, visor and eyes. The visor stays black and the eyes white on every colour.</p>
+      </div>
+      <div className="card-section grid items-center gap-8 md:grid-cols-[auto_minmax(0,1fr)]">
+        <div className="flex flex-col items-center gap-4">
+          <BrendaCharacter state={state} size={px} interactive look={look} />
+          <div className="flex items-end gap-3">{SIZES.map((z) => <BrendaFace key={z} size={z} mood={mood} look={look} />)}</div>
+          <AssistantScope profile={profile}>
+            <span data-icon-trigger className="flex items-center gap-3 text-secondary"><BrendaGlyph size={18} aria-hidden /><BrendaGlyph size={24} aria-hidden /></span>
+          </AssistantScope>
+          {/* Her home's orb (the home-panel exception, shown here only to check it): white blends into the orb's light,
+              a chosen colour shows as chosen. */}
+          <div className="brenda-orb" data-live={state === "listening" || undefined}>
+            <BrendaCharacter state={state} size={72} look={look} label="In her home's orb" className={cn(state !== "listening" && "grayscale")} />
+          </div>
+        </div>
+        <div className="min-w-0 space-y-4">
+          <Picker label="Colour">
+            <Segmented name="look-colour" aria-label="Colour" value={look.colour} onChange={(v) => choose({ colour: v as AssistantColour })}
+              options={ASSISTANT_COLOURS.map((c) => ({ value: c, label: <><span aria-hidden className="size-3 shrink-0 rounded-full border border-border-input" style={{ background: PALETTE[c].face.mid }} />{PALETTE[c].label}</> }))} />
+          </Picker>
+          <Picker label="Visor">
+            <Segmented name="look-visor" aria-label="Visor" value={look.visor} onChange={(v) => choose({ visor: v as AssistantVisor })}
+              options={ASSISTANT_VISORS.map((v) => ({ value: v, label: VISORS[v].label }))} />
+          </Picker>
+          <Picker label="Eyes">
+            <Segmented name="look-eyes" aria-label="Eyes" value={look.eyes} onChange={(v) => choose({ eyes: v as AssistantEyes })}
+              options={ASSISTANT_EYES.map((e) => ({ value: e, label: EYES[e].label }))} />
+          </Picker>
+          <div className="flex flex-wrap gap-4">
+            <label className="space-y-1.5">
+              <span className="block text-sm font-medium text-foreground">State</span>
+              <Select value={state} onChange={(e) => setState(e.target.value as BrendaState)} className="w-44">
+                {(Object.keys(STATES) as BrendaState[]).map((k) => <option key={k} value={k}>{k}</option>)}
+              </Select>
+            </label>
+            <Picker label="Size">
+              <Segmented name="look-px" aria-label="Size" value={String(px)} onChange={(v) => setPx(Number(v))}
+                options={[{ value: "64", label: "64, the dialog" }, { value: "72", label: "72, Settings and her home" }, { value: "120", label: "120" }]} />
+            </Picker>
+            <Button size="md" variant="ghost" className="self-end" onClick={() => setLook(DEFAULT_LOOK)}>Back to Brenda</Button>
+          </div>
+        </div>
+      </div>
+      <div className="flex flex-wrap items-end gap-6">
+        <Picker label="Face size">
+          <Segmented name="looks-size" aria-label="Face size" value={size} onChange={(v) => setSize(v as FaceSize | "all")}
+            options={(["sm", "md", "lg", "all"] as const).map((z) => ({ value: z, label: SIZE_LABEL[z] }))} />
+        </Picker>
+        <Picker label="Mood">
+          <Segmented name="looks-mood" aria-label="Mood" value={mood ?? "none"} onChange={(v) => setMood(v === "none" ? null : (v as BrendaMood))}
+            options={MOODS.map((m) => ({ value: m ?? "none", label: MOOD_LABEL(m) }))} />
+        </Picker>
+      </div>
+      <div className="grid gap-3 2xl:grid-cols-2">
+        {(["dark", "light"] as const).map((theme) => (
+          <div key={theme} data-theme={theme} className="min-w-0 rounded-2xl border border-border bg-background p-5 text-foreground">
+            <p className="mb-3 text-sm font-medium text-secondary">{theme === "dark" ? "Dark" : "Light"}</p>
+            <LookTable size={size} mood={mood} theme={theme} />
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function Picker({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-1.5">
+      <p aria-hidden className="text-sm font-medium text-foreground">{label}</p>
+      {children}
+    </div>
+  );
+}
+
+/** Every colour (rows) by every visor and eyes (columns), as faces, then the glyph for each visor and eyes. */
+function LookTable({ size, mood, theme }: { size: FaceSize | "all"; mood: BrendaMood; theme: "dark" | "light" }) {
+  const sizes = size === "all" ? SIZES : [size];
+  const combos = ASSISTANT_VISORS.flatMap((visor) => ASSISTANT_EYES.map((eyes) => ({ visor, eyes })));
+  return (
+    <div className="overflow-x-auto">
+      <table className="border-collapse">
+        <caption className="sr-only">Every colour, visor and eyes, {theme} theme</caption>
+        <thead>
+          <tr>
+            <td />
+            {ASSISTANT_VISORS.map((v) => <th key={v} scope="colgroup" colSpan={ASSISTANT_EYES.length} className="px-1 pb-1 text-center text-meta font-medium text-secondary">{VISORS[v].label}</th>)}
+          </tr>
+          <tr>
+            <td />
+            {combos.map(({ visor, eyes }) => <th key={visor + eyes} scope="col" className="px-1 pb-2 text-center text-meta font-normal text-subtle">{short(EYES[eyes].label)}</th>)}
+          </tr>
+        </thead>
+        <tbody>
+          {ASSISTANT_COLOURS.map((colour) => (
+            <tr key={colour}>
+              <th scope="row" className="whitespace-nowrap pr-3 text-left text-sm font-medium text-secondary">{PALETTE[colour].label}</th>
+              {combos.map(({ visor, eyes }) => (
+                <td key={visor + eyes} className="px-1.5 py-1.5 text-center">
+                  <span className="inline-flex items-end gap-1">{sizes.map((z) => <BrendaFace key={z} size={z} mood={mood} look={{ colour, visor, eyes }} />)}</span>
+                </td>
+              ))}
+            </tr>
+          ))}
+          <tr>
+            <th scope="row" className="whitespace-nowrap pr-3 pt-2 text-left text-sm font-medium text-secondary">Glyph</th>
+            {combos.map(({ visor, eyes }) => (
+              <td key={visor + eyes} className="px-1.5 pt-2 text-center">
+                <AssistantScope profile={{ name: DEFAULT_ASSISTANT_NAME, colour: "white", visor, eyes }}>
+                  <span data-icon-trigger className="inline-flex text-secondary"><BrendaGlyph size={18} aria-hidden /></span>
+                </AssistantScope>
+              </td>
+            ))}
+          </tr>
+        </tbody>
+      </table>
+    </div>
   );
 }

@@ -20,6 +20,7 @@ import { currentSession } from "@/server/services/sessions";
 import { reviewQueue } from "@/server/services/views";
 import { invalid, notFound, forbidden } from "@/server/lib/errors";
 import { localDate, weekdayOf } from "@/server/lib/time";
+import { assistantSchemaReady, readPersonalAssistant } from "@/server/services/assistant-profile";
 
 // ---- What is allowed --------------------------------------------------------------------------------
 
@@ -227,8 +228,10 @@ export async function autoClockIn(ctx: OrgContext): Promise<{ clockedIn: boolean
   if (r.already) return { clockedIn: false, reason: "already" };
   const late = r.record.late_seconds > 0;
   await withUser(ctx.user.profileId, async (db) => {
+    // Announced by the person's own assistant, by the name they gave it (owner decision, 7 October 2026: personal assistants).
+    const { name } = await readPersonalAssistant(db, ctx.membership.id);
     await logAction(db, ctx, { tool: "auto_clock_in", summary: `Clocked you in automatically${late ? ", late" : ""}`, outcome: "done", source: "automatic", detail: { at: r.record.clock_in_at, lateSeconds: r.record.late_seconds } });
-    await notify(db, { organisationId: ctx.org.id, recipientMembershipId: ctx.membership.id, type: "brenda.clock_in", title: "Brenda clocked you in", body: "Looks like you've started work. You can switch automatic clock-in off on your profile.", href: `/app/${ctx.org.slug}/clock`, dedupKey: `brenda.clock_in:${ctx.membership.id}:${c.today}` });
+    await notify(db, { organisationId: ctx.org.id, recipientMembershipId: ctx.membership.id, type: "brenda.clock_in", title: `${name} clocked you in`, body: "Looks like you've started work. You can switch automatic clock-in off on your profile.", href: `/app/${ctx.org.slug}/clock`, dedupKey: `brenda.clock_in:${ctx.membership.id}:${c.today}` });
   });
   return { clockedIn: true, at: r.record.clock_in_at, late };
 }
@@ -243,12 +246,18 @@ export async function autoClockIn(ctx: OrgContext): Promise<{ clockedIn: boolean
 export async function brendaTick(now = new Date()) {
   return withWorker(async (db) => {
     let sent = 0;
+    // Reminders and nudges name the person's own assistant (owner decision, 7 October 2026: personal assistants); before
+    // migration 0035 there is no table to join, and everyone's is Brenda.
+    const named = await assistantSchemaReady(db);
+    const assistantJoin = (membership: string) => named ? `LEFT JOIN assistant_profiles ap ON ap.membership_id = ${membership}` : "";
+    const assistantName = named ? "COALESCE(ap.name, 'Brenda')" : "'Brenda'::text";
     // Personal reminders.
-    const due = await db.query<{ id: string; organisation_id: string; membership_id: string; body: string; task_id: string | null; slug: string }>(
-      `SELECT r.id, r.organisation_id, r.membership_id, r.body, r.task_id, o.slug FROM brenda_reminders r JOIN organisations o ON o.id = r.organisation_id
+    const due = await db.query<{ id: string; organisation_id: string; membership_id: string; body: string; task_id: string | null; slug: string; assistant_name: string }>(
+      `SELECT r.id, r.organisation_id, r.membership_id, r.body, r.task_id, o.slug, ${assistantName} AS assistant_name FROM brenda_reminders r JOIN organisations o ON o.id = r.organisation_id
+       ${assistantJoin("r.membership_id")}
        WHERE r.sent_at IS NULL AND r.cancelled_at IS NULL AND r.remind_at <= $1 ORDER BY r.remind_at LIMIT 200`, [now.toISOString()]);
     for (const r of due) {
-      await notify(db, { organisationId: r.organisation_id, recipientMembershipId: r.membership_id, type: "brenda.reminder", title: `Reminder: ${r.body}`, body: "You asked Brenda to remind you.", resourceType: r.task_id ? "task" : undefined, resourceId: r.task_id ?? undefined, href: r.task_id ? `/app/${r.slug}/tasks/${r.task_id}` : `/app/${r.slug}/notifications`, dedupKey: `brenda.reminder:${r.id}` });
+      await notify(db, { organisationId: r.organisation_id, recipientMembershipId: r.membership_id, type: "brenda.reminder", title: `Reminder: ${r.body}`, body: `You asked ${r.assistant_name} to remind you.`, resourceType: r.task_id ? "task" : undefined, resourceId: r.task_id ?? undefined, href: r.task_id ? `/app/${r.slug}/tasks/${r.task_id}` : `/app/${r.slug}/notifications`, dedupKey: `brenda.reminder:${r.id}` });
       await db.query(`UPDATE brenda_reminders SET sent_at = now() WHERE id = $1`, [r.id]);
       sent++;
     }
@@ -268,8 +277,9 @@ export async function brendaTick(now = new Date()) {
       const minutesIn = localNow[0] * 60 + localNow[1] - (h * 60 + m);
       if (minutesIn < 60) continue; // an hour into the day, so people have settled in first
       const href = (p: string) => `/app/${org.slug}${p}`;
-      const people = await db.query<{ id: string; role: string }>(
-        `SELECT m.id, m.role FROM memberships m LEFT JOIN brenda_member_prefs p ON p.membership_id = m.id WHERE m.organisation_id = $1 AND m.status = 'active' AND COALESCE(p.reminders, true)`, [org.id]);
+      const people = await db.query<{ id: string; role: string; assistant_name: string }>(
+        `SELECT m.id, m.role, ${assistantName} AS assistant_name FROM memberships m LEFT JOIN brenda_member_prefs p ON p.membership_id = m.id ${assistantJoin("m.id")}
+         WHERE m.organisation_id = $1 AND m.status = 'active' AND COALESCE(p.reminders, true)`, [org.id]);
       for (const person of people) {
         const key = (k: string) => `brenda.${k}:${person.id}:${today}`;
         // Due tomorrow.
@@ -302,7 +312,7 @@ export async function brendaTick(now = new Date()) {
                AND EXISTS (SELECT 1 FROM attendance_days a WHERE a.membership_id = $1 AND a.local_date = $2::date AND a.clock_out_at IS NULL AND a.clock_in_at < now() - interval '30 minutes')
                AND NOT EXISTS (SELECT 1 FROM work_sessions s WHERE s.membership_id = $1 AND s.state IN ('running','paused','interrupted'))
              ORDER BY t.updated_at DESC LIMIT 1`, [person.id, today]);
-          if (started) { await notify(db, { organisationId: org.id, recipientMembershipId: person.id, type: "brenda.nudge", title: `You started “${started.title}” but its timer isn't running`, body: "Start it from your to-dos, or ask Brenda to start it.", href: href("/todos"), dedupKey: key("no_timer") }); sent++; }
+          if (started) { await notify(db, { organisationId: org.id, recipientMembershipId: person.id, type: "brenda.nudge", title: `You started “${started.title}” but its timer isn't running`, body: `Start it from your to-dos, or ask ${person.assistant_name} to start it.`, href: href("/todos"), dedupKey: key("no_timer") }); sent++; }
         }
       }
     }

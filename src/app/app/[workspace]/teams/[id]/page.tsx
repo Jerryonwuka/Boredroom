@@ -17,6 +17,7 @@ import { NewTaskForm } from "@/components/app/project-forms";
 import { TeamMemberActions } from "@/components/app/team-forms";
 import { RecordingsTable } from "@/components/app/recordings-table";
 import { listRecordings, recordingCountsByTask } from "@/server/services/recording";
+import { assistantProfiles } from "@/server/services/assistant-profile";
 import { Person } from "@/components/ui/person";
 import { BrendaGlyph } from "@/components/app/brenda-glyph";
 import { PageNote, PageNotes } from "@/components/ui/page-notes";
@@ -56,7 +57,8 @@ export default async function TeamBoardPage({ params, searchParams }: { params: 
   if (!data) notFound();
   const { team, members, tasks, isLead, projects, others } = data;
   const tab: Tab = sp.tab === "members" || sp.tab === "recordings" ? sp.tab : "tasks";
-  const [recordings, recordingCounts] = await Promise.all([listRecordings(ctx, { teamId: team.id, limit: 8 }), recordingCountsByTask(ctx, tasks.map((t) => t.id))]);
+  // The hand-off to Brenda names the person's own assistant (owner decision, 7 October 2026: personal assistants).
+  const [recordings, recordingCounts, { personal }] = await Promise.all([listRecordings(ctx, { teamId: team.id, limit: 8 }), recordingCountsByTask(ctx, tasks.map((t) => t.id)), assistantProfiles(ctx)]);
   const base = `/app/${ctx.org.slug}`;
   const here = `${base}/teams/${team.id}`;
   const isOrgAdmin = ["owner", "hr"].includes(ctx.membership.role);
@@ -78,9 +80,9 @@ export default async function TeamBoardPage({ params, searchParams }: { params: 
         <section aria-label="Tasks">
           {tasks.length === 0 ? (
             <EmptyState icon={ListTodo} title="No tasks for this team yet"
-              description={isLead ? "Press New task to create one and assign it to someone on the team, or tell Brenda what needs doing and she drafts the tasks for you to confirm." : "Your team lead has not assigned tasks yet."}
+              description={isLead ? `Press New task to create one and assign it to someone on the team, or tell ${personal.name} what needs doing and ${personal.name} drafts the tasks for you to confirm.` : "Your team lead has not assigned tasks yet."}
               // The one hand-off to Brenda on this page: she creates and assigns tasks (create_todos), each waiting for a yes.
-              action={isLead && members.length ? <Link href={`${base}/home?ask=${encodeURIComponent(`Help me plan this week's tasks for the ${team.name} team and assign them.`)}`} className={buttonVariants({ variant: "secondary", size: "sm" })}><BrendaGlyph aria-hidden />Ask Brenda to plan tasks</Link> : undefined} />
+              action={isLead && members.length ? <Link href={`${base}/home?ask=${encodeURIComponent(`Help me plan this week's tasks for the ${team.name} team and assign them.`)}`} className={buttonVariants({ variant: "secondary", size: "sm" })}><BrendaGlyph aria-hidden />Ask {personal.name} to plan tasks</Link> : undefined} />
           ) : <TaskBoard orgSlug={ctx.org.slug} viewer={viewer} tasks={boardTasks} showProject recordings={recordingCounts} label={`${team.name} tasks, by status`} />}
         </section>
       ) : null}
