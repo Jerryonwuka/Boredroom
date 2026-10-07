@@ -8,7 +8,8 @@
  */
 import { createContext, useContext, useState, type ReactNode } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
-import { ChevronLeft, ChevronRight, Download, Plus, Upload } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus, Upload } from "lucide-react";
+import { AnimatedDownload } from "@/components/ui/animated-icons";
 import { Toaster } from "sonner";
 import { Button, buttonVariants, type ButtonProps } from "@/components/ui/button";
 import { EditButton } from "@/components/ui/edit-button";
@@ -182,7 +183,7 @@ export function Pager({ page, pageSize, total }: { page: number; pageSize: numbe
 
 /** A small outline link that downloads a CSV. */
 export function CsvLink({ href, children = "Export CSV" }: { href: string; children?: ReactNode }) {
-  return <a href={href} className={buttonVariants({ variant: "secondary", size: "sm" })}><Download aria-hidden />{children}</a>;
+  return <a href={href} className={buttonVariants({ variant: "secondary", size: "sm" })}><AnimatedDownload aria-hidden />{children}</a>;
 }
 
 /**

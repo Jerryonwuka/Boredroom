@@ -14,6 +14,7 @@ import {
   SquareCheckBig, Trash2, TriangleAlert, Users,
 } from "lucide-react";
 import { BrendaGlyph } from "@/components/app/brenda-glyph";
+import { ANIMATED_ICONS } from "@/components/ui/animated-icons";
 import { VoiceCapture } from "@/components/app/voice-capture";
 import { LiveWaveform } from "@/components/ui/live-waveform";
 import { Logo } from "@/components/logo";
@@ -53,7 +54,7 @@ import { SampleAppFrame } from "./app-frame";
 type Theme = "dark" | "light";
 
 const SECTIONS = [
-  ["foundations", "Foundations"], ["accents", "Accents"], ["type", "Type"], ["buttons", "Buttons"], ["inputs", "Inputs"], ["selection", "Selection"],
+  ["foundations", "Foundations"], ["accents", "Accents"], ["type", "Type"], ["icons", "Animated icons"], ["buttons", "Buttons"], ["inputs", "Inputs"], ["selection", "Selection"],
   ["tabs", "Tabs"], ["badges", "Badges"], ["cards", "Cards"], ["stats", "Stat cards"], ["analytics", "Analytics"],
   ["filters", "Filters"], ["tiles", "Tool tiles"], ["lists", "Lists"], ["tables", "Tables"], ["feedback", "Feedback"],
   ["overlays", "Overlays"], ["pickers", "Pickers"], ["prompt", "Prompt"], ["charts", "Charts"], ["frame", "App frame"],
@@ -901,6 +902,65 @@ function Charts() {
   );
 }
 
+// ---- Animated icons -------------------------------------------------------------------------------------------------
+
+/** A sample nav: choosing an item makes it the current page, so its icon plays its arrival once (Brenda's squints). */
+const ARRIVAL = [
+  { key: "brenda", label: "Brenda", icon: BrendaGlyph },
+  ...["LayoutDashboard", "CalendarDays", "ListTodo", "MessageSquare"].map((n) => {
+    const i = ANIMATED_ICONS.find((a) => a.name === n)!;
+    return { key: n, label: n === "LayoutDashboard" ? "Dashboard" : n === "CalendarDays" ? "My Day" : n === "ListTodo" ? "To-do" : "Messages", icon: i.twin };
+  }),
+];
+
+function AnimatedIcons() {
+  const [current, setCurrent] = React.useState("brenda");
+  return (
+    <Section id="icons" title="Animated icons" description="lucide-animated's motion on lucide's own drawings (components/ui/animated-icons, MIT notice in its LICENSE). An icon plays while its control is hovered or focused from the keyboard, once when its nav item becomes the current page, never on a loop, and not at all under reduced motion. Same size, stroke and colour as before. Hover or Tab through the tiles; “ours” marks the few lucide-animated has no twin for.">
+      <Both>
+        {(t) => (
+          <div className="space-y-6">
+            <ul className="grid grid-cols-2 gap-1 sm:grid-cols-3 lg:grid-cols-4" aria-label={`Animated icons (${t})`}>
+              <li><button type="button" className="flex h-10 w-full min-w-0 items-center gap-2.5 rounded-lg px-2 text-left text-sm font-medium text-secondary transition-colors duration-75 hover:bg-fill-1 hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ring)] [&>svg]:size-[18px] [&>svg]:shrink-0">
+                <BrendaGlyph aria-hidden /><span className="min-w-0 flex-1 truncate">BrendaGlyph</span><span className="text-xs text-subtle">ours</span>
+              </button></li>
+              {ANIMATED_ICONS.map(({ name, twin: Icon, own }) => (
+                <li key={name}><button type="button" className="flex h-10 w-full min-w-0 items-center gap-2.5 rounded-lg px-2 text-left text-sm font-medium text-secondary transition-colors duration-75 hover:bg-fill-1 hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ring)] [&>svg]:size-[18px] [&>svg]:shrink-0">
+                  <Icon aria-hidden /><span className="min-w-0 flex-1 truncate">{name}</span>{own ? <span className="text-xs text-subtle">ours</span> : null}
+                </button></li>
+              ))}
+            </ul>
+            <div className="grid gap-6 md:grid-cols-2">
+              <div>
+                <Cap className="mb-2">Arrival: choose an item; it becomes the current page and its icon plays once (orange, as the active nav icon is). Brenda squints happily.</Cap>
+                <nav aria-label={`Sample nav (${t})`} className="w-56 space-y-1 rounded-xl bg-sidebar p-2">
+                  {ARRIVAL.map(({ key, label, icon: Icon }) => (
+                    <a key={key} href="#icons" aria-current={current === key ? "page" : undefined} onClick={(e) => { e.preventDefault(); setCurrent(key); }}
+                      className={cn("flex h-8 items-center gap-2 rounded-lg px-2 text-sm font-medium transition-colors duration-75 [&>svg]:size-[18px]", current === key ? "bg-fill-1 text-foreground [&>svg]:text-accent" : "text-secondary hover:bg-fill-1 hover:text-foreground")}>
+                      <Icon aria-hidden />{label}
+                    </a>
+                  ))}
+                </nav>
+              </div>
+              <div className="space-y-3">
+                <Cap>Primitives swap a lucide icon for its twin by themselves: Button, IconButton, MenuItem, Tabs, ToolTile, QuickLink, SubNavItem, StatCard, EmptyState (hover the empty state), the prompt box&apos;s actions.</Cap>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button size="sm" variant="secondary"><Plus aria-hidden />New task</Button>
+                  <Button size="sm" variant="ghost"><Copy aria-hidden />Copy link</Button>
+                  <IconButton aria-label="Notifications"><Bell aria-hidden /></IconButton>
+                  <IconButton aria-label="Settings"><Settings aria-hidden /></IconButton>
+                  <IconButton aria-label="Search"><Search aria-hidden /></IconButton>
+                </div>
+                <EmptyState compact title="No to-dos yet" description="Hover here: the tray dips." className="rounded-xl border border-dashed border-border-input" />
+              </div>
+            </div>
+          </div>
+        )}
+      </Both>
+    </Section>
+  );
+}
+
 // ---- Page -------------------------------------------------------------------------------------------------------------
 
 export function DesignGallery() {
@@ -923,6 +983,7 @@ export function DesignGallery() {
         <Foundations />
         <Accents />
         <TypeScale />
+        <AnimatedIcons />
         <Buttons />
         <Inputs />
         <Selection />

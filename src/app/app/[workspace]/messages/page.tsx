@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { Hash, Building2, ArrowLeft, Archive, BellOff, MessagesSquare, MessageSquare, SquareCheckBig } from "lucide-react";
+import { Hash, Building2, ArrowLeft, BellOff, MessagesSquare, MessageSquare, SquareCheckBig } from "lucide-react";
+import { AnimatedArchive } from "@/components/ui/animated-icons";
 import { workspacePage } from "@/server/lib/workspace-page";
 import { AppShell, ROLE_LABEL } from "@/components/app/shell";
 import { Badge, CountPill, TASK_STATUS_TONE, taskStatusLabel } from "@/components/ui/badge";
@@ -138,7 +139,7 @@ export default async function MessagesPage({ params, searchParams }: { params: P
               <div className="mt-5">
                 {/* Keeps the open thread open while the archived list is shown or hidden. */}
                 <Link href={`${base}/messages?${selected ? `c=${selected.conversation.id}&` : ""}archived=${showArchived ? "0" : "1"}`} aria-expanded={showArchived} className={`${buttonVariants({ variant: "ghost", size: "xs" })} ml-1`}>
-                  <Archive aria-hidden />{showArchived ? "Hide archived" : <>Archived <CountPill count={archived.length} /></>}
+                  <AnimatedArchive aria-hidden />{showArchived ? "Hide archived" : <>Archived <CountPill count={archived.length} /></>}
                 </Link>
                 {showArchived ? <ul className="mt-1 space-y-0.5">{archived.map((c) => <Item key={c.id} c={c} />)}</ul> : null}
               </div>

@@ -1,6 +1,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
+import { withAnimatedIcons } from "@/components/ui/animated-icons";
 
 /**
  * Tool tiles and quick links, v4 (spec §6 Home, §7 "List tile").
@@ -20,19 +21,22 @@ import { cn } from "@/lib/utils";
  * `.tool-tile-grid` has the widths). Keep labels short (up to about 13 characters, 110px).
  *
  * `QuickLink`: the list tile: h56 p16 r12 outline, a 24px icon in the secondary grey, a 14/20 medium label.
+ *
+ * Icons: a lucide icon in a square, a tile or a quick link that has an animated twin is swapped for it
+ * (components/ui/animated-icons), so it plays while its tile, row or link is hovered or focused from the keyboard.
  */
 export function ToolSquare({ children, size = 40, tone = "neutral", className }: { children: React.ReactNode; size?: number; tone?: "neutral" | "accent"; className?: string }) {
   if (tone === "accent") {
     return (
       <span aria-hidden className={cn("relative grid shrink-0 place-items-center rounded-xl bg-accent-tint text-accent-text shadow-[0_0_0_1px_var(--border)] [&_svg]:size-5", className)} style={{ width: size, height: size }}>
-        {children}
+        {withAnimatedIcons(children)}
       </span>
     );
   }
   return (
     <span aria-hidden className={cn("relative grid shrink-0 place-items-center rounded-xl bg-background text-grey-600 shadow-[0_0_0_1px_var(--border),var(--elev-natural-xs)] [&_svg]:size-5", className)}
       style={{ width: size, height: size, backgroundImage: "linear-gradient(to bottom, var(--fill-1), var(--fill-150))" }}>
-      {children}
+      {withAnimatedIcons(children)}
     </span>
   );
 }
@@ -74,6 +78,6 @@ export function ToolTileRow({ children, className, label }: { children: React.Re
 
 export function QuickLink({ icon, label, href, onClick, className, trailing }: { icon?: React.ReactNode; label: React.ReactNode; href?: string; onClick?: () => void; className?: string; trailing?: React.ReactNode }) {
   const cls = cn("flex h-14 min-w-0 items-center gap-2 rounded-xl border border-border-input bg-background p-4 text-sm font-medium text-foreground transition-colors duration-75 hover:border-border-input-hover hover:bg-[color-mix(in_srgb,var(--foreground)_2.4%,var(--background))] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ring)] [&>svg:first-child]:-ml-[3px] [&>svg:first-child]:mr-0.5 [&>svg:first-child]:size-6 [&>svg:first-child]:shrink-0 [&>svg:first-child]:text-secondary", className);
-  const body = (<>{icon}<span className="min-w-0 flex-1 truncate text-left">{label}</span>{trailing}</>);
+  const body = (<>{withAnimatedIcons(icon)}<span className="min-w-0 flex-1 truncate text-left">{label}</span>{trailing}</>);
   return href ? <Link href={href} className={cls}>{body}</Link> : <button type="button" onClick={onClick} className={cls}>{body}</button>;
 }

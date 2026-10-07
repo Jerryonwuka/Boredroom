@@ -50,7 +50,7 @@ export async function reportRecipients(db: Db, orgId: string, orgWide: boolean):
 async function refusalFor(ctx: OrgContext): Promise<string | null> {
   const role = ctx.membership.role;
   if (role === "owner" || role === "hr") return null;
-  if (role === "employee") return "The team report is for team leads, the owner and HR. Ask me what you got done today instead, or look at My Day.";
+  if (role === "employee") return "The team report is for team leads, the owner and HR. Ask me what you got done today instead, or look at your To-dos.";
   const leads = await withUser(ctx.user.profileId, (db) => db.maybeOne(
     `SELECT 1 FROM team_members tm JOIN teams t ON t.id = tm.team_id WHERE tm.membership_id = $1 AND tm.is_manager AND t.archived_at IS NULL LIMIT 1`, [ctx.membership.id]));
   return leads ? null : "You do not lead a team yet, so there is no team report to write. The owner or HR can make you the lead of a team on the People page.";

@@ -3,6 +3,7 @@ import { cn } from "@/lib/utils";
 import { EmptyState } from "@/components/ui/states";
 import { CountPill } from "@/components/ui/badge";
 import type { Icon3DName } from "@/components/ui/icon";
+import { withAnimatedIcons } from "@/components/ui/animated-icons";
 
 /**
  * Lists, v4 (spec §7 Lists): rows are separated by spacing, never lines.
@@ -11,11 +12,13 @@ import type { Icon3DName } from "@/components/ui/icon";
  * (truncates), a subtitle 13/19.5 regular in the secondary grey, an optional meta line (13px, secondary; put a
  * CountPill in it), and a trailing slot (a value, a Badge, a ghost "…" IconButton). As a link (`href`) or a button
  * (`onClick`) the whole row takes a fill-1 plate on hover. `active` (the selected row: the open item, the current page)
- * keeps the fill-1 plate and adds the 2px orange marker on its left edge (accent rules, 6 October 2026).
+ * keeps the fill-1 plate and adds the 2px orange marker on its left edge (accent rules, 6 October 2026). A lucide icon
+ * given as `trailing` (the usual ChevronRight) plays its animated twin while the row is hovered or focused.
  *
  * `SubNavItem`: a sub-navigation item (settings sections, doc folders, past chats): 32px, px8, r8, a 16px icon, the
  * label, an optional count; hover fill-0; the chosen one (`active`) fill-1, the foreground and the orange marker. The
  * look is the `.subnav-item` class (globals.css), so a hand-built item can use it with aria-current or data-selected.
+ * Its lucide `icon` plays its animated twin on hover, keyboard focus and once when it becomes the current page.
  *
  * `RowList` / `Row`: the denser v3 list (40px rows, 14px title, 13px meta), kept with the same props, now without lines.
  */
@@ -28,7 +31,7 @@ export function ListRow({ leading, title, subtitle, meta, trailing, href, onClic
         {subtitle ? <p className="truncate text-meta font-normal text-secondary">{subtitle}</p> : null}
         {meta ? <div className="mt-0.5 flex min-w-0 items-center gap-1.5 truncate text-meta font-normal text-secondary">{meta}</div> : null}
       </div>
-      {trailing ? <div className="flex shrink-0 items-center gap-2 text-sm tabular-nums text-secondary">{trailing}</div> : null}
+      {trailing ? <div className="flex shrink-0 items-center gap-2 text-sm tabular-nums text-secondary">{withAnimatedIcons(trailing)}</div> : null}
     </>
   );
   const cls = cn("flex min-h-16 w-full items-center gap-3 rounded-xl px-2 py-3 text-left", (href || onClick) && "transition-colors duration-75 hover:bg-fill-1 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--ring)]", active && "selected-marker bg-fill-1", className);
@@ -44,7 +47,7 @@ export function SubNavItem({ children, icon, href, onClick, active = false, coun
 }) {
   const body = (
     <>
-      {icon}
+      {withAnimatedIcons(icon)}
       <span className="min-w-0 flex-1 truncate">{children}</span>
       {count ? <CountPill count={count} tone={attention ? "attention" : "neutral"} /> : null}
       {trailing}

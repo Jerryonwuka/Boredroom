@@ -9,7 +9,8 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { AnimatePresence, motion } from "motion/react";
-import { MessageSquare, CalendarClock } from "lucide-react";
+import { CalendarClock } from "lucide-react";
+import { AnimatedMessageSquare } from "@/components/ui/animated-icons";
 import { Avatar } from "@/components/ui/avatar";
 import { PRESENCE, type Presence } from "@/lib/presence";
 import { api } from "@/lib/api-client";
@@ -82,7 +83,7 @@ export function Person({ orgSlug, membershipId, name, profileId, avatarKey, pres
                   {card.email ? <><dt className="text-subtle">Email</dt><dd className="min-w-0 truncate text-secondary">{card.email}</dd></> : null}
                 </dl>
                 <div className="-mx-1 mt-3 flex flex-wrap items-center gap-1 border-t border-border pt-3">
-                  <Link href={`/app/${orgSlug}/messages?to=${card.membership_id}`} className={buttonVariants({ variant: "ghost", size: "xs" })}><MessageSquare aria-hidden />Message</Link>
+                  <Link href={`/app/${orgSlug}/messages?to=${card.membership_id}`} className={buttonVariants({ variant: "ghost", size: "xs" })}><AnimatedMessageSquare aria-hidden />Message</Link>
                   <Link href={`/app/${orgSlug}/workroom/${card.membership_id}`} className={buttonVariants({ variant: "ghost", size: "xs" })}><CalendarClock aria-hidden />Their day</Link>
                 </div>
               </>

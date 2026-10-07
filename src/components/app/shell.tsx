@@ -52,6 +52,8 @@ export function navItems(ctx: OrgContext, counts: NavCounts, teams: { id: string
     items.push({ href: `${base}/workroom`, label: "Workroom", icon: "team", group: "Team" });
     items.push({ href: `${base}/attendance`, label: "Attendance", icon: "attendance", group: "Team" });
     items.push({ href: `${base}/reviews`, label: "Reviews", icon: "reviews", badge: counts.attention || undefined, group: "Team" });
+    // The to-do list has its own page (owner request, 7 October 2026), first in Work.
+    items.push({ href: `${base}/todos`, label: "To-dos", icon: "todos", group: "Work" });
     items.push({ href: `${base}/tasks`, label: "Tasks", icon: "tasks", group: "Work" });
     items.push({ href: `${base}/messages`, label: "Messages", icon: "messages", badge: counts.messages || undefined, group: "Work" });
     items.push({ href: `${base}/docs`, label: "Docs", icon: "docs", group: "Work" });
@@ -63,6 +65,7 @@ export function navItems(ctx: OrgContext, counts: NavCounts, teams: { id: string
   // Staff: the smallest possible menu.
   items.push({ href: `${base}/my-day`, label: "My Day", icon: "myday", group: "Overview" });
   items.push({ href: `${base}/clock`, label: "Clock in", icon: "clock", group: "Overview" });
+  items.push({ href: `${base}/todos`, label: "To-dos", icon: "todos", group: "Work" });
   items.push({ href: `${base}/tasks`, label: "Tasks", icon: "tasks", group: "Work" });
   items.push({ href: `${base}/messages`, label: "Messages", icon: "messages", badge: counts.messages || undefined, group: "Work" });
   items.push({ href: `${base}/docs`, label: "Docs", icon: "docs", group: "Work" });

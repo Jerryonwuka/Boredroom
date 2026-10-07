@@ -2,6 +2,7 @@ import * as React from "react";
 import { cva, type VariantProps } from "class-variance-authority";
 import { Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { withAnimatedIcons } from "@/components/ui/animated-icons";
 
 /**
  * Buttons, v4 (measured from the ElevenLabs app, 6 October 2026). Inter 14/20 medium, colours change in 75ms, the
@@ -22,6 +23,10 @@ import { cn } from "@/lib/utils";
  * Sizes: xs 28 (px8 r8 13px), sm 32 (px10 r10 13px), md 36 (px12 r10), lg 40 (px16 r12), tile 56 (p16 r12, a 24px
  * icon then the label, left aligned). Icon-only: icon-xs 28, icon-sm 32 (r10), icon 40 (r12), icon-round 36 (round,
  * the prompt's actions). Small sizes grow to 40px on touch screens. `loading` shows a spinner and disables the button.
+ *
+ * A lucide icon among `Button`'s children that has an animated twin is swapped for it (components/ui/animated-icons):
+ * it plays while the button is hovered or focused from the keyboard. `buttonVariants` on a link leaves its icons alone;
+ * use the twin there (`AnimatedPlus`).
  */
 const buttonVariants = cva(
   "inline-flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap font-medium transition-[background-color,border-color,color,opacity] duration-75 ease-out select-none disabled:pointer-events-none aria-disabled:pointer-events-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ring)] [&_svg]:shrink-0",
@@ -63,7 +68,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(function 
   return (
     <button ref={ref} type={type} disabled={disabled || loading} aria-busy={loading || undefined} className={cn(buttonVariants({ variant, size }), className)} {...props}>
       {loading ? <Loader2 className="animate-spin" aria-hidden /> : null}
-      {children}
+      {withAnimatedIcons(children)}
     </button>
   );
 });

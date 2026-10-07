@@ -12,11 +12,13 @@
  * attention pill), the bell's unread dot, the active tab's underline, and the analytics card (the chosen metric's line
  * and its orange highlight series). The page's standout action would be a sixth: here "New task" stays the white
  * primary. The sidebar's trial card (accent tint) shows only while a trial runs, so it is left out of this sample.
+ * Nav icons are the animated twins where they exist (components/ui/animated-icons): hover one.
  */
 import * as React from "react";
-import { Bell, CalendarClock, ChevronRight, Clock, Ellipsis, FileText, Folder, Hourglass, ListTodo, MessageSquare, PanelLeft, Plus, Search, SquareCheckBig, Timer, TriangleAlert, Users } from "lucide-react";
+import { Bell, CalendarClock, ChevronRight, Ellipsis, Folder, Hourglass, MessageSquare, PanelLeft, Plus, Search, SquareCheckBig, TriangleAlert } from "lucide-react";
 import { LogoArt } from "@/components/logo";
 import { BrendaGlyph } from "@/components/app/brenda-glyph";
+import { AnimatedClock, AnimatedFileText, AnimatedListTodo, AnimatedMessageSquare, AnimatedTimer, AnimatedUsers } from "@/components/ui/animated-icons";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge, CountPill, Kbd } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -33,16 +35,16 @@ import { cn } from "@/lib/utils";
 
 const NAV = [
   { label: "Brenda", icon: BrendaGlyph, active: false },
-  { label: "My Day", icon: ListTodo, active: false },
-  { label: "Clock in", icon: Clock, active: false },
+  { label: "My Day", icon: AnimatedListTodo, active: false },
+  { label: "Clock in", icon: AnimatedClock, active: false },
   { label: "Dashboard", icon: Folder, active: true },
   { label: "Tasks", icon: SquareCheckBig, active: false },
-  { label: "Messages", icon: MessageSquare, active: false, count: 3 },
-  { label: "People", icon: Users, active: false },
+  { label: "Messages", icon: AnimatedMessageSquare, active: false, count: 3 },
+  { label: "People", icon: AnimatedUsers, active: false },
   { label: "Attendance", icon: CalendarClock, active: false },
-  { label: "Timesheets", icon: Timer, active: false },
+  { label: "Timesheets", icon: AnimatedTimer, active: false },
 ];
-const PINNED = [{ label: "Website relaunch", icon: FileText }, { label: "Q4 hiring", icon: FileText }];
+const PINNED = [{ label: "Website relaunch", icon: AnimatedFileText }, { label: "Q4 hiring", icon: AnimatedFileText }];
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const PEOPLE = [

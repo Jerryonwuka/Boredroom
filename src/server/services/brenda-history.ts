@@ -135,8 +135,36 @@ const isUuid = (v: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-
 type Row = { id: string; title: string; preview: string | null; message_count: number; created_at: Date | string; updated_at: Date | string };
 const SUMMARY = `id, title, preview, message_count, created_at, updated_at`;
 const iso = (v: Date | string) => (v instanceof Date ? v.toISOString() : new Date(v).toISOString());
+
+/**
+ * The last message as one plain line for the list. Brenda's replies are light Markdown (owner request, 7 October 2026:
+ * lists, not paragraphs), so the marks go: bold and italic, list markers, headings, code ticks, links (their words
+ * stay). A label alone on its line ("**Overdue**") gets a colon; list items are joined with semicolons and the last
+ * one ends with a full stop: "2 overdue: Landing page copy, due 17:00; Homepage design, due Fri." Escaped marks
+ * (`\*`) come out as the character itself.
+ */
+export function plainPreview(text: string): string {
+  const ESC = "\u0000";
+  const escaped: string[] = [];
+  const lines = text.replace(/\\([\\`*_[\]~|#+\-.!()])/g, (_, c: string) => { escaped.push(c); return `${ESC}${escaped.length - 1}${ESC}`; })
+    .split("\n").map((raw) => {
+      let line = raw.trim();
+      const item = /^([-*+]|\d{1,3}[.)])\s+/.test(line);
+      line = line.replace(/^#{1,6}\s+/, "").replace(/^([-*+]|\d{1,3}[.)])\s+/, "");
+      const label = !item && /^(\*\*|__)[^*_]+(\*\*|__):?$/.test(line);
+      line = line.replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/\*\*|__|~~|`/g, "").replace(/(^|[^\w])[*_](?=\S)|(?<=\S)[*_](?=[^\w]|$)/g, "$1").trim();
+      return { line: label && !line.endsWith(":") ? `${line}:` : line, item };
+    }).filter((l) => l.line);
+  const out = lines.map((l, i) => {
+    if (/[.!?:;,…]$/.test(l.line)) return l.line;
+    if (l.item) return `${l.line}${lines[i + 1]?.item ? ";" : "."}`;
+    return i < lines.length - 1 ? `${l.line}.` : l.line;
+  }).join(" ");
+  return out.replace(new RegExp(`${ESC}(\\d+)${ESC}`, "g"), (_, n: string) => escaped[Number(n)] ?? "").replace(/\s+/g, " ").trim();
+}
+
 const summary = (r: Row): ConversationSummary => ({
-  id: r.id, title: r.title, preview: (r.preview ?? "").replace(/\s+/g, " ").trim(), messageCount: r.message_count, createdAt: iso(r.created_at), updatedAt: iso(r.updated_at),
+  id: r.id, title: r.title, preview: plainPreview(r.preview ?? ""), messageCount: r.message_count, createdAt: iso(r.created_at), updatedAt: iso(r.updated_at),
 });
 
 /** The person's conversations in this organisation, the most recently active first. */

@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { ClipboardCheck, Hourglass, LogIn, SquareCheckBig, Timer, CircleCheck } from "lucide-react";
+import { Hourglass, LogIn, SquareCheckBig, Timer, CircleCheck } from "lucide-react";
+import { AnimatedClipboardCheck } from "@/components/ui/animated-icons";
 import { workspacePage } from "@/server/lib/workspace-page";
 import { AppShell } from "@/components/app/shell";
 import { TaskPeekLink } from "@/components/app/tasks-page";
@@ -85,7 +86,7 @@ export default async function DashboardPage({ params, searchParams }: { params: 
       <PageHeader title="Dashboard" description={<>{ctx.org.name}, {formatLongDate(d.today)}. From clocks, timers and tasks; nothing here is a productivity score.</>}
         meta={<LiveSync at={fmtTime(d.serverNow, tz)} note="updates as people clock in, start and finish" />}
         actions={<>
-          <Link href={`${base}/reviews`} className={buttonVariants({ variant: "secondary", size: "sm" })}><ClipboardCheck aria-hidden />Review queue{counts.attention ? <CountPill count={counts.attention} tone="attention" /> : null}</Link>
+          <Link href={`${base}/reviews`} className={buttonVariants({ variant: "secondary", size: "sm" })}><AnimatedClipboardCheck aria-hidden />Review queue{counts.attention ? <CountPill count={counts.attention} tone="attention" /> : null}</Link>
           <Link href={`${base}/people`} className={buttonVariants({ size: "sm" })}>Add people</Link>
         </>}
         tabsLabel="Dashboard sections" tabValue={tab}

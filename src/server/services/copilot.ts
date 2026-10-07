@@ -34,7 +34,7 @@ import { teamReportNow } from "@/server/services/daily-report";
 import { signPayload, verifyPayload, sha256 } from "@/server/lib/crypto";
 import { conflict, forbidden, invalid } from "@/server/lib/errors";
 import { isPresence } from "@/lib/presence";
-import { todayLocal, localParts, offsetAt } from "@/server/lib/time";
+import { todayLocal, localParts, offsetAt, localDate } from "@/server/lib/time";
 
 export const chatSchema = z.object({
   messages: z.array(z.object({ role: z.enum(["user", "assistant"]), content: z.string().trim().min(1).max(4000) })).min(1).max(30),
@@ -64,7 +64,9 @@ const WORKERS: Role[] = ["manager", "employee"];
 /** Every page, what it is for and who has it. The model uses this to point people to the right place. */
 const PAGES: Page[] = [
   { label: "Dashboard", path: "/dashboard", what: "the organisation right now: attendance, who is working, delivery", roles: ORG },
-  { label: "My Day", path: "/my-day", what: "your to-dos for today and the timer", roles: WORKERS },
+  { label: "My Day", path: "/my-day", what: "your day at a glance and the running timer", roles: WORKERS },
+  // The to-do list has its own page (owner request, 7 October 2026: "create a new separate tab/page for To-do").
+  { label: "To-dos", path: "/todos", what: "your to-do list for today: add, dictate, start, mark done", roles: WORKERS },
   { label: "Clock in", path: "/clock", what: "clock in before work and out after; your attendance history", roles: WORKERS },
   { label: "Attendance", path: "/attendance", what: "who has clocked in today, who is late, the month view", roles: LEADS },
   { label: "Workroom", path: "/workroom", what: "who is working now, on what, for how long", roles: LEADS },
@@ -155,7 +157,7 @@ const TOOLS = [
   { name: "create_team", description: "Create a team (organisation accounts only).", input_schema: obj({ name: str("Team name") }, ["name"]) },
   { name: "invite_person", description: "Invite someone by email; they get an invitation email (organisation accounts only; waits for confirmation). role: employee (staff) or manager (team lead); team by exact name, optional.", input_schema: obj({ email: str("Email address"), role: { type: "string", enum: ["employee", "manager", "hr"] }, team: str("Exact team name, or omit") }, ["email", "role"]) },
   { name: "set_status", description: "Set the person's own work status.", input_schema: obj({ presence: { type: "string", enum: ["active", "away", "busy", "offline"] } }, ["presence"]) },
-  { name: "plan_day", description: "Set the order of the person's My Day list for today: their own open task ids, first to last (tasks left out drop off today's plan but stay assigned). Staff and team leads only.", input_schema: obj({ taskIds: { type: "array", items: { type: "string" }, description: "Task ids in the order to work on them" } }, ["taskIds"]) },
+  { name: "plan_day", description: "Set the order of the person's to-do list for today (the To-dos page): their own open task ids, first to last (tasks left out drop off today's plan but stay assigned). Staff and team leads only.", input_schema: obj({ taskIds: { type: "array", items: { type: "string" }, description: "Task ids in the order to work on them" } }, ["taskIds"]) },
   // Documents
   { name: "list_docs", description: "Documents the person can read (their own, their team's and the organisation's, such as a handbook, SOPs or meeting notes), newest first, or the best matches for q. Returns ids, titles, folders, who can read each and a short excerpt; read_doc gives the text.", input_schema: obj({ q: str("Words to search titles and text for, or omit to list"), folder: str("A folder name to narrow to, or omit") }) },
   { name: "read_doc", description: "One document's text (markdown) by id from list_docs.", input_schema: obj({ docId: str("Document id") }, ["docId"]) },
@@ -406,7 +408,7 @@ async function runTool(t: ToolCtx, name: string, input: Record<string, unknown>)
       const order = ids.filter((id) => titles.has(id));
       if (!order.length) return { error: "None of those are the person's open tasks." };
       await setDailyPlan(ctx, { localDate: todayLocal(ctx.org.timezone), taskIds: order });
-      const r = done("plan", `Arranged today: ${order.map((id, i) => `${i + 1}. ${titles.get(id)}`).join("; ")}`.slice(0, 480), `${base}/my-day`);
+      const r = done("plan", `Arranged today: ${order.map((id, i) => `${i + 1}. ${titles.get(id)}`).join("; ")}`.slice(0, 480), `${base}/todos`);
       return { ...r, skipped: ids.length - order.length || undefined };
     }
     case "list_docs": {
@@ -569,16 +571,29 @@ async function chatWithClaude(ctx: OrgContext, conn: AssistantConnection, messag
     "You act as the person, with their permissions: what they cannot do, you cannot do, and the tool will say so; pass that on plainly and say who can. Never claim something happened unless the tool returned done.",
     "Always answer the question itself from the tools (who, what, how many, or that there is nothing). When a page helps, also call open_page; its link appears below your reply.",
     "Resolve relative times and dates against the current time given below (\"in two hours\", \"at 3\", \"tomorrow morning\") and give ISO 8601 datetimes with the offset given below; 17:00 local when only a day is given; never ask the person what time it is. Dictated messages contain filler and mistakes: read through them.",
-    "Arranging the day ('arrange my day', 'plan my tasks', 'what order should I do things in'): call get_my_day, and get_briefing for anything overdue or waiting on them. Plan the tasks they hold that are todo or in_progress (a blocked task cannot be worked on and one in review is waiting for someone else: mention them, do not plan them). Order them: overdue and the earliest deadline first, then priority (urgent, high, normal, low), then the shortest estimate. Fit them one after another into the rest of today's working hours (from now, or from workStarts if the day has not begun, until workEnds), allowing the estimate less the time already tracked, or 60 minutes for a task with no estimate. For each task that fits, call update_task with due set to its planned finish time today and priority high when it is overdue or due today (leave urgent as it is); their own tasks change at once. Never move a deadline later: a task that is overdue or due before its planned finish keeps its due date (it simply goes first). Then save the order with plan_day. Tasks that do not fit stay as they are; say which. If today is not a working day (workingDay false) or the working hours are over, say so and ask before planning anything. Reply with the plan as a short numbered list, one line per task with its time. Organisation accounts hold no tasks: offer work_summary or the team's status instead.",
-    "Writing ('write', 'draft', 'take notes', 'make an SOP', 'put together a report'): write it properly, as markdown, in plain British English: a clear title, short sections with headings, lists where they help, complete enough to use as it is, never placeholder text. Save it with create_doc: private unless they ask to share it; a folder that fits (Meeting notes, SOPs, Reports, Policies). Then say in one sentence where it is saved and who can read it, and call open_page with its path (/docs/<id>). If create_doc returns needsConfirmation, the draft is already saved privately and is shared with everyone only when they press Confirm; say so. To change a document, find it with list_docs, read it with read_doc, then call update_doc (append adds to the end; body rewrites it). Documents are markdown; your replies are not.",
+    "Arranging the day ('arrange my day', 'plan my tasks', 'what order should I do things in'): call get_my_day, and get_briefing for anything overdue or waiting on them. Plan the tasks they hold that are todo or in_progress (a blocked task cannot be worked on and one in review is waiting for someone else: mention them, do not plan them). Order them: overdue and the earliest deadline first, then priority (urgent, high, normal, low), then the shortest estimate. Fit them one after another into the rest of today's working hours (from now, or from workStarts if the day has not begun, until workEnds), allowing the estimate less the time already tracked, or 60 minutes for a task with no estimate. For each task that fits, call update_task with due set to its planned finish time today and priority high when it is overdue or due today (leave urgent as it is); their own tasks change at once. Never move a deadline later: a task that is overdue or due before its planned finish keeps its due date (it simply goes first). Then save the order with plan_day. Tasks that do not fit stay as they are; say which. If today is not a working day (workingDay false) or the working hours are over, say so and ask before planning anything. Reply with the plan as a numbered list in working order, one line per task: its title in bold, then its time (\"1. **Landing page copy**, 09:30 to 11:00\"); the tasks that did not fit, and the blocked or in-review ones, follow as a bulleted list under a bold label. Organisation accounts hold no tasks: offer work_summary or the team's status instead.",
+    "Writing ('write', 'draft', 'take notes', 'make an SOP', 'put together a report'): write it properly, as markdown, in plain British English: a clear title, short sections with headings, lists where they help, complete enough to use as it is, never placeholder text. Save it with create_doc: private unless they ask to share it; a folder that fits (Meeting notes, SOPs, Reports, Policies). Then say in one sentence where it is saved and who can read it, and call open_page with its path (/docs/<id>). If create_doc returns needsConfirmation, the draft is already saved privately and is shared with everyone only when they press Confirm; say so. To change a document, find it with list_docs, read it with read_doc, then call update_doc (append adds to the end; body rewrites it). Documents are full markdown (headings, tables, everything); your replies use only the light formatting in the last rule.",
     "Questions about how this organisation works (working hours, lateness, monitoring and screen recording, leave, pay, conduct, the handbook): call get_policy, and search the organisation's documents with list_docs and read_doc the one that answers it. Answer only from what they say, and name the document you used. If the answer is not there, say plainly that it is not written down in Boredroom and suggest who to ask (whoToAsk from get_policy). Never invent a policy, a number, an entitlement or a date. Questions that are not about this organisation (how to write a good update, what a term means, how to approach a task) you answer from your own knowledge.",
     "Team leads and organisation accounts asking what the team got done, who is behind, or for a weekly summary: call work_summary (week runs from Monday to today; use last_week on a Monday morning) and report the facts per person: hours tracked, what was completed and sent for review, what is overdue or blocked. 'Behind' means overdue or blocked work, not fewer hours. Mention lateness only when asked about attendance. Offer to save a summary worth keeping as a document.",
     "Today's team report ('send me today's report', 'the daily report', 'how did my team do today'): call team_report. It saves the report privately to their Docs; reply with its headline, say it is in their Docs under Daily reports, and call open_page with its path. If it returns nothing, say there is nothing to report yet. You also send this report to team leads, the owner and HR at the end of every working day, at the time set in Settings. Staff do not write or submit a daily report: if one asks how to, say there is none to write, their to-dos and timer are the record, and offer what they got done today (work_summary).",
-    "Do not narrate your steps (no \"let me check\"); call the tools you need, then write one reply. Answer in one to four short sentences of plain English. No headings, no bullet lists, no markdown; the one exception is a plan or a summary, which may be a short numbered list (1. 2. 3.), one line per item. Nothing here is a productivity score, and you never rank or judge people.",
+    "Do not narrate your steps (no \"let me check\"); call the tools you need, then write one reply. Nothing here is a productivity score, and you never rank or judge people.",
+    // How replies look (owner request, 7 October 2026: "if you're listing things, it should not be in a paragraph; list
+    // it so it's easier to understand what they're reading"). The chat and the notch render this light Markdown.
+    [
+      "How your replies look: easy to scan, in plain British English, light Markdown only.",
+      "- Lead with the answer in one short sentence (\"You have 5 overdue tasks.\", \"Done: your reminder is set for 15:00.\").",
+      "- Anything with two or more items is a list, never a sentence that strings them together with commas or semicolons. Bullets (\"- \") by default; numbers (\"1. \") for steps, plans and orderings of tasks.",
+      "- Each item starts with its key words in bold (a task title, a person's name, a number, a page), then a short detail: \"- **Landing page copy**, due Friday 17:00\", \"- **Ada Employee**, on the clock since 09:02\". One line per item.",
+      "- A summary groups its lists under short bold labels, each alone on its line straight above its list: **Done**, **In progress**, **Needs attention** (or **Overdue**, **Due today**, **Waiting for your review**). Leave out a group that would be empty.",
+      "- Paragraphs are short, one idea each, with a blank line between paragraphs, labels and lists. A plain answer with nothing to list is one to three short sentences and no list.",
+      "- No tables unless the person asks for one. No headings (#): a bold label is the largest heading. No emoji. Use bold only for those key words and labels.",
+      "- Link to a Boredroom page as a Markdown link with its full path (the workspace's paths are given below), e.g. [Tasks](/app/<workspace>/tasks), only when it helps; open_page still offers the button.",
+    ].join("\n"),
   ].join("\n");
   const situation = [
     `You are working for ${ctx.user.displayName}, a ${roleLabel[role]} at ${ctx.org.name}. It is now ${weekday} ${today}, ${clockNow} in the ${ctx.org.timezone} timezone (UTC${offset}).`,
     `Pages in this workspace for this person (paths are relative to the workspace): ${pagesFor(role).map((p) => `${p.label} (${p.path}): ${p.what}`).join("; ")}.`,
+    `The workspace's paths sit under ${base}: a link in a reply uses the full path, such as [Tasks](${base}/tasks) or [the document](${base}/docs/<id>); open_page takes the relative path.`,
     role === "owner" || role === "hr" ? "Organisation accounts do not clock in, have no to-dos and no timers, and do not give reviews; they supervise, assign, message, create teams and invite people." : role === "manager" ? `The person is a team lead and may add to-dos for these team members: ${team.map((p) => p.display_name).join(", ") || "nobody yet"}; they may also assign existing tasks to them.` : "The person is staff: every to-do is their own; they cannot see other people's activity or assign work.",
   ].join("\n");
   const system = [
@@ -659,6 +674,12 @@ export async function confirmAction(ctx: OrgContext, token: string): Promise<{ a
 const STOP = new Set(["where", "what", "when", "which", "there", "here", "does", "this", "that", "with", "from", "have", "your", "mine", "find", "show", "open", "page", "want", "need", "about", "into", "some", "them", "they", "will", "would", "could", "should", "please", "change", "make", "know"]);
 const ACTION = /\b(need to|have to|should|must|remind me|todo|to do|finish|send|write|fix|prepare|call|review|update|design|build|ask|tell)\b/i;
 
+/** Text from the workspace (a task title, a name) inside a Markdown reply: its marks are shown as typed, never applied. */
+const mdText = (s: string) => s.replace(/\s+/g, " ").trim().replace(/[\\`*_[\]~|]/g, "\\$&");
+/** A Markdown list of at most `max` lines (bulleted, or numbered), then how many more there are. */
+const listOf = (lines: string[], max = 5, numbered = false) => `${lines.slice(0, max).map((l, i) => `${numbered ? `${i + 1}.` : "-"} ${l}`).join("\n")}${lines.length > max ? `\n\nAnd ${lines.length - max} more.` : ""}`;
+const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+
 async function chatBuiltin(ctx: OrgContext, messages: { role: "user" | "assistant"; content: string }[]): Promise<ChatResult> {
   const last = messages[messages.length - 1]?.content ?? "";
   const role = ctx.membership.role;
@@ -666,6 +687,15 @@ async function chatBuiltin(ctx: OrgContext, messages: { role: "user" | "assistan
   const lc = last.toLowerCase();
   const pages = pagesFor(role);
   const out = (reply: string, proposals: Proposal[]): ChatResult => ({ reply, engine: "builtin", actions: [], proposals, note: null });
+  // Replies are as easy to scan as hers with Claude (owner request, 7 October 2026): the answer first in one sentence,
+  // then anything with two or more items as a list, each starting with its key words in bold, under bold labels.
+  const tz = ctx.org.timezone;
+  const today = todayLocal(tz);
+  const time = (iso: string) => new Date(iso).toLocaleTimeString("en-GB", { timeZone: tz, hour: "2-digit", minute: "2-digit" });
+  const day = (iso: string) => new Date(iso).toLocaleString("en-GB", { timeZone: tz, weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  /** When something is due, the way a person says it: "due 17:00" today, "due Fri 9 Oct, 17:00", "was due …" when past. */
+  const due = (iso: string | null) => !iso ? null : new Date(iso) < new Date() ? `was due ${localDate(iso, tz) === today ? time(iso) : day(iso)}` : `due ${localDate(iso, tz) === today ? time(iso) : day(iso)}`;
+  const item = (title: string, ...detail: (string | null | false | undefined)[]) => { const d = detail.filter(Boolean).join(", "); return `**${mdText(title)}**${d ? `, ${d}` : ""}`; };
 
   if (WORKERS.includes(role) && /\bclock\b/.test(lc) && /\b(in|out)\b/.test(lc)) {
     const isOut = /\bout\b/.test(lc);
@@ -674,15 +704,20 @@ async function chatBuiltin(ctx: OrgContext, messages: { role: "user" | "assistan
 
   if (/\b(waiting|what should i|brief|attention|due today|overdue)\b/.test(lc)) {
     const b = await briefing(ctx);
-    const parts = [
-      b.dueToday.length ? `${b.dueToday.length} task${b.dueToday.length === 1 ? "" : "s"} due today` : null,
-      b.overdue.length ? `${b.overdue.length} overdue` : null,
-      b.waitingForYourReview.length ? `${b.waitingForYourReview.length} waiting for your review` : null,
-      b.assignmentsNotPickedUp.length ? `${b.assignmentsNotPickedUp.length} assignment${b.assignmentsNotPickedUp.length === 1 ? "" : "s"} nobody has picked up` : null,
-      b.remindersToday.length ? `${b.remindersToday.length} reminder${b.remindersToday.length === 1 ? "" : "s"} today` : null,
-    ].filter(Boolean);
+    // Most pressing first; each group under its own label with its count, each item with its date or who it is from.
+    const groups = [
+      { one: `You have ${plural(b.overdue.length, "overdue task")}.`, label: `${b.overdue.length} overdue`, lines: b.overdue.map((t) => item(t.title, due(t.due))) },
+      { one: `You have ${plural(b.dueToday.length, "task")} due today.`, label: `${b.dueToday.length} due today`, lines: b.dueToday.map((t) => item(t.title, due(t.due))) },
+      { one: `${plural(b.waitingForYourReview.length, "task is", "tasks are")} waiting for your review.`, label: `${b.waitingForYourReview.length} waiting for your review`, lines: b.waitingForYourReview.map((t) => item(t.title, t.from ? `from ${mdText(t.from)}` : null)) },
+      { one: `${plural(b.assignmentsNotPickedUp.length, "assignment")} ${b.assignmentsNotPickedUp.length === 1 ? "has" : "have"} not been picked up.`, label: `${b.assignmentsNotPickedUp.length} nobody has picked up`, lines: b.assignmentsNotPickedUp.map((t) => item(t.title, t.assignee ? `for ${mdText(t.assignee)}` : null, due(t.due))) },
+      { one: `You have ${plural(b.remindersToday.length, "reminder")} coming up.`, label: `${plural(b.remindersToday.length, "reminder")} coming up`, lines: b.remindersToday.map((r) => item(r.body, `at ${localDate(r.at, tz) === today ? time(r.at) : day(r.at)}`)) },
+    ].filter((g) => g.lines.length);
     const first = b.overdue[0] ?? b.dueToday[0] ?? null;
-    return out(parts.length ? `You have ${parts.join(", ")}.${first ? ` Start with “${first.title}”.` : ""}` : "Nothing is waiting on you right now.", [
+    const total = groups.reduce((n, g) => n + g.lines.length, 0);
+    const reply = !groups.length ? "Nothing is waiting on you right now."
+      : groups.length === 1 ? `${groups[0].one}\n\n${listOf(groups[0].lines)}`
+      : [`You have ${total} things waiting on you.`, ...groups.map((g) => `**${g.label}**\n${listOf(g.lines)}`)].join("\n\n");
+    return out(`${reply}${first ? `\n\nStart with **${mdText(first.title)}**.` : ""}`, [
       ...(first && WORKERS.includes(role) && !b.timer ? [{ kind: "start_timer" as const, taskId: first.id, taskTitle: first.title }] : []),
       ...(b.waitingForYourReview.length ? [{ kind: "open" as const, href: `${base}/reviews`, label: "Reviews" }] : []),
       { kind: "open", href: `${base}/tasks`, label: "Tasks" },
@@ -695,27 +730,42 @@ async function chatBuiltin(ctx: OrgContext, messages: { role: "user" | "assistan
 
   if (ACTION.test(last) && WORKERS.includes(role) && !/\b(where|how|what|who|which)\b/i.test(last.slice(0, 12))) {
     const people = role === "manager" ? await assignableMembers(ctx) : [];
-    const items = planBuiltin(last, { people, today: todayLocal(ctx.org.timezone), timezone: ctx.org.timezone });
+    const items = planBuiltin(last, { people, today, timezone: tz });
     const proposals: Proposal[] = items.map((it) => ({ kind: "todo", title: it.title, description: it.description, dueAt: it.dueAt, assigneeMembershipId: it.assigneeMembershipId, assigneeName: it.assigneeName, estimateMinutes: it.estimateMinutes }));
-    if (proposals.length) return out(`I read ${proposals.length} to-do${proposals.length === 1 ? "" : "s"} in that. Check the titles and add the ones you want. (Connect Claude under Settings, AI assistant, and the assistant will add them itself.)`, proposals);
+    // The to-dos themselves are the rows under the reply, each with its Add button: the words do not list them again.
+    if (proposals.length) return out(`I read ${plural(proposals.length, "to-do")} in that. Check the titles below and add the ones you want.\n\nConnect Claude under Settings, AI assistant, and I'll add them myself.`, proposals);
   }
 
   if (/\b(who|team|working|clocked|attendance|late)\b/.test(lc) && role !== "employee") {
     const a = await attendanceBoard(ctx);
-    const inNow = a.people.filter((p) => p.clock_in_at && !p.clock_out_at).map((p) => p.display_name);
-    return out(`${a.counts.in + a.counts.out} clocked in today${a.counts.late ? `, ${a.counts.late} late` : ""}, ${a.counts.not_in} not yet. ${inNow.length ? `In right now: ${inNow.slice(0, 8).join(", ")}${inNow.length > 8 ? " and more" : ""}.` : ""}`.trim(), [{ kind: "open", href: `${base}/attendance`, label: "Attendance" }, { kind: "open", href: `${base}/workroom`, label: "Workroom" }]);
+    const inNow = a.people.filter((p) => p.clock_in_at && !p.clock_out_at);
+    const lead = `${plural(a.counts.in + a.counts.out, "person", "people")} clocked in today${a.counts.late ? `, ${a.counts.late} of them late` : ""}; ${a.counts.not_in} not yet.`;
+    const lateBy = (s: number | null) => (s && s >= 60 ? `${Math.round(s / 60)} min late` : null);
+    const reply = inNow.length ? `${lead}\n\n**In right now**\n${listOf(inNow.map((p) => item(p.display_name, `in since ${time(p.clock_in_at!)}`, lateBy(p.late_seconds))), 8)}` : `${lead}\n\nNobody is clocked in right now.`;
+    return out(reply, [{ kind: "open", href: `${base}/attendance`, label: "Attendance" }, { kind: "open", href: `${base}/workroom`, label: "Workroom" }]);
   }
 
   if (WORKERS.includes(role) && /\b(my day|today|to-?dos?|tasks?|plan)\b/.test(lc)) {
     const d = await myDay(ctx);
     const open = [...d.planned, ...d.ownTodos, ...d.fromLeads];
-    return out(open.length ? `You have ${open.length} open to-do${open.length === 1 ? "" : "s"} today${d.overdue.length ? `, ${d.overdue.length} overdue` : ""}. First up: ${open.slice(0, 3).map((x) => x.title).join("; ")}.` : "Nothing is on your list yet. Tell me what you are working on and I will draft the to-dos.", [...open.slice(0, 1).map((x) => ({ kind: "start_timer" as const, taskId: x.id, taskTitle: x.title })), { kind: "open", href: `${base}/my-day`, label: "My Day" }]);
+    const reply = open.length
+      ? `You have ${plural(open.length, "open to-do")} today${d.overdue.length ? `, ${d.overdue.length} of them overdue` : ""}.\n\n**First up**\n${listOf(open.map((x) => item(x.title, due(x.due_at), x.status === "in_progress" && "in progress", x.status === "blocked" && "blocked")), 5, true)}`
+      : "Nothing is on your list yet. Tell me what you are working on and I will draft the to-dos.";
+    return out(reply, [...open.slice(0, 1).map((x) => ({ kind: "start_timer" as const, taskId: x.id, taskTitle: x.title })), { kind: "open", href: `${base}/todos`, label: "To-dos" }]);
   }
 
-  if (matched.length) return out(matched.map((p) => `${p.label} is for ${p.what}.`).join(" "), matched.map((p) => ({ kind: "open", href: `${base}${p.path}`, label: p.label })));
+  if (matched.length) {
+    const reply = matched.length === 1 ? `**${matched[0].label}** is for ${matched[0].what}.` : `These pages fit:\n\n${listOf(matched.map((p) => item(p.label, `for ${p.what}`)))}`;
+    return out(reply, matched.map((p) => ({ kind: "open", href: `${base}${p.path}`, label: p.label })));
+  }
 
+  // What matched is the rows under the reply, each with its Open button.
   const r = await searchWorkspace(ctx, last.slice(0, 120));
-  if (r.hits.length) return out(`I found ${r.hits.length} thing${r.hits.length === 1 ? "" : "s"} matching that.`, r.hits.slice(0, 5).map((h) => ({ kind: "open", href: h.href, label: `${h.title}${h.hint ? ` (${h.hint})` : ""}` })));
+  if (r.hits.length) return out(`I found ${plural(r.hits.length, "thing")} matching that.`, r.hits.slice(0, 5).map((h) => ({ kind: "open", href: h.href, label: `${h.title}${h.hint ? ` (${h.hint})` : ""}` })));
 
-  return out(`I can point you to a page, tell you ${role === "employee" ? "what is on your day" : "who is working or clocked in"}, or turn a note into to-dos. The AI is not connected yet, so I only offer; connect Claude under Settings, AI assistant, and the assistant will do the work itself: to-dos, assignments, messages, clocking, invitations.`, pages.slice(0, 4).map((p) => ({ kind: "open", href: `${base}${p.path}`, label: p.label })));
+  return out([
+    "The AI is not connected yet, so I offer instead of acting. I can:",
+    listOf(["**Point you to a page**, like the ones below", role === "employee" ? "**Tell you what is on your day**" : "**Tell you who is working** or clocked in", "**Turn a note into to-dos** you add with one press"]),
+    "Connect Claude under Settings, AI assistant, and I'll do the work myself instead of offering it.",
+  ].join("\n\n"), pages.slice(0, 4).map((p) => ({ kind: "open", href: `${base}${p.path}`, label: p.label })));
 }

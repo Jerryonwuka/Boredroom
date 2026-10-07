@@ -10,11 +10,17 @@
  * the work-status picker's chosen status keeps its own status colour (status meaning wins over accent).
  *
  * `data-app-topbar` is the hook Brenda's chat uses to hide the bar while it is open (globals.css).
+ *
+ * Its icons are animated (owner request, 7 October 2026; components/ui/animated-icons): the bell rings, the gear turns,
+ * the sun lights its rays and so on while their button or menu item is hovered or focused from the keyboard; never on a
+ * loop, still under reduced motion.
  */
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Bell, Building2, ClipboardCheck, LogOut, Search, Settings, ShieldCheck, User, UsersRound } from "lucide-react";
+import {
+  AnimatedBell, AnimatedBuilding2, AnimatedClipboardCheck, AnimatedLogOut, AnimatedSearch, AnimatedSettings, AnimatedShieldCheck, AnimatedUser, AnimatedUsersRound,
+} from "@/components/ui/animated-icons";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -81,7 +87,7 @@ function Notifications({ orgSlug, unread, recent }: { orgSlug: string; unread: n
     <Popover align="end" label="Notifications" width="min(360px, calc(100vw - 16px))" className="p-1"
       trigger={
         <IconButton aria-label={unread ? `Notifications, ${unread} unread` : "Notifications"}>
-          <Bell aria-hidden />
+          <AnimatedBell aria-hidden />
           {unread ? <span aria-hidden className="absolute right-[7px] top-[7px] size-2 rounded-full bg-accent ring-2 ring-background" /> : null}
         </IconButton>
       }>
@@ -92,7 +98,7 @@ function Notifications({ orgSlug, unread, recent }: { orgSlug: string; unread: n
             <span className="text-xs text-subtle">{unread ? `${unread} unread` : "All read"}</span>
           </div>
           {recent.length === 0 ? (
-            <EmptyState compact icon={Bell} title="Nothing yet" description="Assignments, review requests and decisions land here as they happen." />
+            <EmptyState compact icon={AnimatedBell} title="Nothing yet" description="Assignments, review requests and decisions land here as they happen." />
           ) : (
             <ul className="scroll-thin max-h-[min(22rem,60dvh)] overflow-y-auto">
               {recent.map((n) => (
@@ -122,12 +128,12 @@ function Notifications({ orgSlug, unread, recent }: { orgSlug: string; unread: n
 function SettingsMenu({ orgSlug, attention }: { orgSlug: string; attention: number }) {
   const base = `/app/${orgSlug}`;
   return (
-    <Menu align="end" label="Settings" trigger={<IconButton aria-label="Settings"><Settings aria-hidden /></IconButton>}>
+    <Menu align="end" label="Settings" trigger={<IconButton aria-label="Settings"><AnimatedSettings aria-hidden /></IconButton>}>
       {/* No policy page any more (owner decision, 5 October 2026): working hours and recording rules are in Settings. */}
-      <MenuItem href={`${base}/settings`} icon={<Settings aria-hidden />}>Organisation settings</MenuItem>
-      <MenuItem href={`${base}/people`} icon={<UsersRound aria-hidden />}>People and teams</MenuItem>
-      <MenuItem href={`${base}/reviews`} icon={<ClipboardCheck aria-hidden />} kbd={attention ? (attention > 99 ? "99+" : attention) : undefined}>Review queue</MenuItem>
-      <MenuItem href={`${base}/audit`} icon={<ShieldCheck aria-hidden />}>Audit log</MenuItem>
+      <MenuItem href={`${base}/settings`} icon={<AnimatedSettings aria-hidden />}>Organisation settings</MenuItem>
+      <MenuItem href={`${base}/people`} icon={<AnimatedUsersRound aria-hidden />}>People and teams</MenuItem>
+      <MenuItem href={`${base}/reviews`} icon={<AnimatedClipboardCheck aria-hidden />} kbd={attention ? (attention > 99 ? "99+" : attention) : undefined}>Review queue</MenuItem>
+      <MenuItem href={`${base}/audit`} icon={<AnimatedShieldCheck aria-hidden />}>Audit log</MenuItem>
     </Menu>
   );
 }
@@ -160,13 +166,13 @@ function Account({ orgSlug, user, roleLabel }: { orgSlug: string; user: TopBarUs
           <div role="separator" className="menu-separator" />
           <PresencePicker value={presence} className="border-0 pt-1" />
           <div role="separator" className="menu-separator" />
-          <Link href={`/app/${orgSlug}/profile`} onClick={close} className="menu-item"><User aria-hidden />Your profile</Link>
-          <Link href="/app?switch=1" onClick={close} className="menu-item"><Building2 aria-hidden />Switch workspace</Link>
-          {user.isAdmin ? <Link href="/admin" onClick={close} className="menu-item"><ShieldCheck aria-hidden />Control Center</Link> : null}
+          <Link href={`/app/${orgSlug}/profile`} onClick={close} className="menu-item"><AnimatedUser aria-hidden />Your profile</Link>
+          <Link href="/app?switch=1" onClick={close} className="menu-item"><AnimatedBuilding2 aria-hidden />Switch workspace</Link>
+          {user.isAdmin ? <Link href="/admin" onClick={close} className="menu-item"><AnimatedShieldCheck aria-hidden />Control Center</Link> : null}
           <div role="separator" className="menu-separator" />
           <button type="button" disabled={signOut === "pending"} className="menu-item disabled:opacity-60"
             onClick={async () => { setSignOut("pending"); try { await api("/api/auth/logout", { method: "POST", retries: 0 }); router.push("/login"); router.refresh(); } catch { setSignOut("failed"); } }}>
-            <LogOut aria-hidden />{signOut === "pending" ? "Signing out…" : "Sign out"}
+            <AnimatedLogOut aria-hidden />{signOut === "pending" ? "Signing out…" : "Sign out"}
           </button>
           {signOut === "failed" ? <p role="alert" className="px-2 pb-1.5 pt-1 text-xs text-danger">Could not sign out. Check your connection and try again.</p> : null}
         </>
@@ -197,7 +203,7 @@ export function TopBar({ orgSlug, orgName, user, roleLabel, isOrg, unread, atten
         <SearchTrigger onOpen={() => setSearchOpen(true)} />
       </div>
       <div className="flex items-center justify-end gap-1">
-        <IconButton aria-label="Search" aria-haspopup="dialog" aria-controls={SEARCH_DIALOG_ID} className="lg:hidden" onClick={() => setSearchOpen(true)}><Search aria-hidden /></IconButton>
+        <IconButton aria-label="Search" aria-haspopup="dialog" aria-controls={SEARCH_DIALOG_ID} className="lg:hidden" onClick={() => setSearchOpen(true)}><AnimatedSearch aria-hidden /></IconButton>
         {/* On phones the theme switch lives in the menu, so the bar fits a 375px screen. */}
         <ThemeToggle className="hidden sm:inline-flex" />
         <Notifications orgSlug={orgSlug} unread={unread} recent={recent} />

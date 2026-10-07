@@ -5,8 +5,8 @@
  * applies it before first paint, so there is no flash. Dark is the default until a person chooses otherwise.
  */
 import { useSyncExternalStore } from "react";
-import { Moon, Sun } from "lucide-react";
 import { IconButton } from "@/components/ui/icon-button";
+import { AnimatedMoon, AnimatedSun } from "@/components/ui/animated-icons";
 
 export type Theme = "light" | "dark";
 export const THEME_KEY = "boredroom-theme";
@@ -36,7 +36,7 @@ export function ThemeToggle({ className }: { className?: string }) {
   const next: Theme = theme === "dark" ? "light" : "dark";
   return (
     <IconButton className={className} aria-label={next === "light" ? "Switch to light mode" : "Switch to dark mode"} title={next === "light" ? "Light mode" : "Dark mode"} onClick={() => applyTheme(next)}>
-      {theme === "dark" ? <Sun aria-hidden /> : <Moon aria-hidden />}
+      {theme === "dark" ? <AnimatedSun aria-hidden /> : <AnimatedMoon aria-hidden />}
     </IconButton>
   );
 }

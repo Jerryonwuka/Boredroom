@@ -15,11 +15,19 @@
  * here hangs off that attribute in CSS, so the server's HTML is already right and nothing jumps or hides on load.
  *
  * Below md the sidebar is hidden and `MobileNav` (the top bar's menu button) opens the same list in a sheet from the left.
+ *
+ * Every nav icon is animated (owner request, 7 October 2026; components/ui/animated-icons): it plays while its item is
+ * hovered or focused from the keyboard, once when its item becomes the current page (Brenda's face squints happily),
+ * never on a loop, and not at all under reduced motion. The current page's icon is still the orange one.
  */
 import { useEffect, useRef, useState, useSyncExternalStore, type ComponentType } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Activity, AlarmClock, Bell, CalendarDays, ChevronsUpDown, ClipboardCheck, ClipboardList, FileText, FolderKanban, History, Kanban, LayoutDashboard, ListChecks, MessageSquare, PanelLeft, Plus, Settings, ShieldCheck, UsersRound, Video, X } from "lucide-react";
+import {
+  AnimatedActivity, AnimatedAlarmClock, AnimatedBell, AnimatedCalendarDays, AnimatedChevronsUpDown, AnimatedClipboardCheck, AnimatedClipboardList,
+  AnimatedFileText, AnimatedFolderKanban, AnimatedHistory, AnimatedKanban, AnimatedLayoutDashboard, AnimatedListChecks, AnimatedListTodo,
+  AnimatedMessageSquare, AnimatedPanelLeft, AnimatedPlus, AnimatedSettings, AnimatedShieldCheck, AnimatedUsersRound, AnimatedVideo, AnimatedX,
+} from "@/components/ui/animated-icons";
 import { cn } from "@/lib/utils";
 import { Avatar } from "@/components/ui/avatar";
 import { CountPill } from "@/components/ui/badge";
@@ -33,10 +41,15 @@ export type NavItem = { href: string; label: string; icon: keyof typeof ICONS; b
 export type Workspace = { slug: string; name: string };
 /** A short word from the workspace in the sidebar's tinted card (a trial running out, say). */
 export type SidebarNotice = { title: string; body: string; href: string; cta: string };
-/** Any line icon that takes a class and can hide from screen readers: lucide's, and Brenda's own glyph. */
+/** Any line icon that takes a class and can hide from screen readers: the animated twins of lucide's, and Brenda's own glyph. */
 type NavIcon = ComponentType<{ className?: string; "aria-hidden"?: boolean }>;
 // Brenda's page carries her face, never a generic AI icon (owner decision, 5 October 2026). Reports and Policy are gone.
-const ICONS = { brenda: BrendaGlyph, dashboard: LayoutDashboard, board: Kanban, myday: CalendarDays, projects: FolderKanban, team: Activity, reviews: ClipboardCheck, timesheets: History, people: UsersRound, settings: Settings, audit: ShieldCheck, notifications: Bell, recordings: Video, messages: MessageSquare, tasks: ListChecks, clock: AlarmClock, attendance: ClipboardList, docs: FileText } satisfies Record<string, NavIcon>;
+const ICONS = {
+  brenda: BrendaGlyph, dashboard: AnimatedLayoutDashboard, board: AnimatedKanban, myday: AnimatedCalendarDays, projects: AnimatedFolderKanban, team: AnimatedActivity,
+  reviews: AnimatedClipboardCheck, timesheets: AnimatedHistory, people: AnimatedUsersRound, settings: AnimatedSettings, audit: AnimatedShieldCheck,
+  notifications: AnimatedBell, recordings: AnimatedVideo, messages: AnimatedMessageSquare, tasks: AnimatedListChecks, clock: AnimatedAlarmClock,
+  attendance: AnimatedClipboardList, docs: AnimatedFileText, todos: AnimatedListTodo,
+} satisfies Record<string, NavIcon>;
 
 export const SIDEBAR_KEY = "boredroom-sidebar";
 
@@ -63,7 +76,7 @@ export function SidebarToggle({ className }: { className?: string }) {
   const collapsed = useSidebarCollapsed();
   return (
     <IconButton className={className} aria-controls="workspace-sidebar" aria-label={collapsed ? "Expand the sidebar" : "Collapse the sidebar"} onClick={() => setSidebarCollapsed(!collapsed)}>
-      <PanelLeft aria-hidden />
+      <AnimatedPanelLeft aria-hidden />
     </IconButton>
   );
 }
@@ -141,7 +154,7 @@ function WorkspaceSwitcher({ orgSlug, orgName, workspaces, isOrg, variant }: { o
           className={cn("flex h-8 w-full min-w-0 items-center gap-2 rounded-lg px-2 text-sm font-medium text-foreground transition-colors duration-75 hover:bg-fill-1 aria-expanded:bg-fill-1", rail ? "in-data-[sidebar=collapsed]:w-8 in-data-[sidebar=collapsed]:px-1.5" : "pointer-coarse:h-10")}>
           <Avatar profileId={`workspace-${orgSlug}`} name={orgName} size={20} />
           <span className={cn("min-w-0 flex-1 truncate text-left", rail && "in-data-[sidebar=collapsed]:sr-only")}>{orgName}<span className="sr-only">, switch workspace</span></span>
-          <ChevronsUpDown className={cn("size-3.5 shrink-0 text-secondary", rail && "in-data-[sidebar=collapsed]:hidden")} aria-hidden />
+          <AnimatedChevronsUpDown className={cn("size-3.5 shrink-0 text-secondary", rail && "in-data-[sidebar=collapsed]:hidden")} aria-hidden />
         </button>
       }>
       <MenuLabel>Workspaces</MenuLabel>
@@ -149,8 +162,8 @@ function WorkspaceSwitcher({ orgSlug, orgName, workspaces, isOrg, variant }: { o
         <MenuItem key={w.slug} href={`/app/${w.slug}`} checked={w.slug === orgSlug} icon={<Avatar profileId={`workspace-${w.slug}`} name={w.name} size={20} />}>{w.name}</MenuItem>
       ))}
       <MenuSeparator />
-      <MenuItem href="/app?switch=1" icon={<Plus aria-hidden />}>Join or create a workspace</MenuItem>
-      {isOrg ? <MenuItem href={`/app/${orgSlug}/settings`} icon={<Settings aria-hidden />}>Workspace settings</MenuItem> : null}
+      <MenuItem href="/app?switch=1" icon={<AnimatedPlus aria-hidden />}>Join or create a workspace</MenuItem>
+      {isOrg ? <MenuItem href={`/app/${orgSlug}/settings`} icon={<AnimatedSettings aria-hidden />}>Workspace settings</MenuItem> : null}
     </Menu>
     </div>
   );
@@ -212,7 +225,7 @@ export function MobileNav({ items, orgSlug, orgName, workspaces = [], isOrg = fa
   return (
     <>
       <IconButton className={className} aria-label="Open the menu" aria-haspopup="dialog" aria-controls="mobile-nav" onClick={() => setOpen(true)}>
-        <PanelLeft aria-hidden />
+        <AnimatedPanelLeft aria-hidden />
       </IconButton>
       <dialog ref={ref} id="mobile-nav" aria-label="Menu"
         onCancel={(e) => { e.preventDefault(); setOpen(false); }}
@@ -224,7 +237,7 @@ export function MobileNav({ items, orgSlug, orgName, workspaces = [], isOrg = fa
           <>
             <div className="flex h-[50px] shrink-0 items-center justify-between pl-[18px] pr-3">
               <Logo href={`/app/${orgSlug}`} height={16} />
-              <IconButton aria-label="Close the menu" onClick={() => setOpen(false)}><X aria-hidden /></IconButton>
+              <IconButton aria-label="Close the menu" onClick={() => setOpen(false)}><AnimatedX aria-hidden /></IconButton>
             </div>
             <div className="scroll-thin min-h-0 flex-1 overflow-y-auto px-3 pb-3 pt-1">
               <WorkspaceNav items={items} variant="sheet" />

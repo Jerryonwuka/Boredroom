@@ -5,6 +5,7 @@ import { usePathname, useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { SlidingMarker } from "@/components/ui/motion";
 import { CountPill } from "@/components/ui/badge";
+import { withAnimatedIcons } from "@/components/ui/animated-icons";
 
 export type Tab = { label: string; href?: string; value?: string; count?: number; /** The count asks for action (unread, waiting): an orange pill. */ attention?: boolean; icon?: React.ReactNode };
 
@@ -17,7 +18,7 @@ export type Tab = { label: string; href?: string; value?: string; count?: number
  *   a vertical sub-nav (SubNavItem) carries the orange marker instead.
  * Link tabs (`href`) for pages that switch by URL; value tabs (`value`) switch `?{param}=` or call `onChange` for local
  * state. Counts sit in a CountPill (orange with `attention: true`). Arrow keys move between tabs; Home and End jump to
- * the ends.
+ * the ends. A tab's lucide `icon` plays its animated twin on hover and keyboard focus (components/ui/animated-icons).
  */
 export function Tabs({ tabs, value, onChange, param = "tab", className, label = "Sections", variant = "underline", bordered = true }: { tabs: Tab[]; value?: string; onChange?: (v: string) => void; param?: string; className?: string; label?: string; variant?: "underline" | "pills"; bordered?: boolean }) {
   const pathname = usePathname();
@@ -52,7 +53,7 @@ export function Tabs({ tabs, value, onChange, param = "tab", className, label = 
         const inner = (
           <>
             {active && !underline ? <SlidingMarker layoutId={marker} className="absolute inset-0 rounded-lg bg-fill-1" /> : null}
-            {t.icon ? <span className="relative inline-flex [&_svg]:size-4">{t.icon}</span> : null}
+            {t.icon ? <span className="relative inline-flex [&_svg]:size-4">{withAnimatedIcons(t.icon)}</span> : null}
             <span className="relative">{t.label}</span>
             {t.count ? <CountPill count={t.count} tone={t.attention ? "attention" : "neutral"} className="relative" /> : null}
             {active && underline ? <SlidingMarker layoutId={marker} className="absolute inset-x-0 bottom-0 h-[1.5px] rounded-full bg-accent" /> : null}

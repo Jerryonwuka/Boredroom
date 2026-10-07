@@ -6,8 +6,9 @@ test.describe.configure({ mode: "serial" });
 test("A24: employee plans, starts, pauses, stops and submits; manager reviews; CSV exported", async ({ page, browser }) => {
   // Ada: keyboard-reachable core flow.
   await signIn(page, "ada@company-a.test");
-  await page.goto("/app/company-a/my-day");
-  await expect(page.getByRole("heading", { name: /Welcome, Ada/ })).toBeVisible();
+  // The to-do list has its own page, To-dos (owner request, 7 October 2026).
+  await page.goto("/app/company-a/todos");
+  await expect(page.getByRole("heading", { name: "To-dos", exact: true })).toBeVisible();
   // Start the homepage task. It is due in three days, so it waits on the Upcoming tab; a to-do opens in a sheet, whose
   // Start begins the timer without recording ("Start and record" is the separate button beside it).
   await page.getByRole("tab", { name: /Upcoming/ }).click();
@@ -22,6 +23,10 @@ test("A24: employee plans, starts, pauses, stops and submits; manager reviews; C
   await expect(page.getByLabel(/Elapsed/)).not.toHaveText("00:00:00", { timeout: 15000 });
   // Reload preserves the same session (A07).
   await page.reload();
+  await expect(onTheClock).toBeVisible();
+  // My Day carries the same timer card; the rest of the clock is driven from there.
+  await page.goto("/app/company-a/my-day");
+  await expect(page.getByRole("heading", { name: /Welcome, Ada/ })).toBeVisible();
   await expect(onTheClock).toBeVisible();
   // Pause / resume via keyboard focus + Enter.
   await page.getByRole("button", { name: "Pause" }).focus();
@@ -231,7 +236,7 @@ test("Tasks: David creates a task from the Tasks page and assigns it to Ada; Ada
   if (await dialog.isVisible().catch(() => false)) await dialog.getByRole("button", { name: /Stop/ }).click();
 });
 
-test("Dictation: Ada says her to-dos into My Day's new row, the words survive the browser ending a session, and Brenda drafts them", async ({ page }) => {
+test("Dictation: Ada says her to-dos into the new row on To-dos, the words survive the browser ending a session, and Brenda drafts them", async ({ page }) => {
   // Headless Chromium has no speech service, so a small fake stands in for window.SpeechRecognition.
   await page.addInitScript(() => {
     class FakeRecognition {
@@ -256,7 +261,7 @@ test("Dictation: Ada says her to-dos into My Day's new row, the words survive th
   });
   await page.context().clearCookies();
   await signIn(page, "ada@company-a.test");
-  await page.goto("/app/company-a/my-day");
+  await page.goto("/app/company-a/todos");
   // "+" opens a new row in the list (owner decision, 5 October 2026); Dictate shows the voice card.
   await page.getByRole("button", { name: "Add a to-do" }).first().click();
   await page.getByRole("button", { name: "Dictate" }).click();

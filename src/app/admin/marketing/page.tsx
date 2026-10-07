@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { ChevronRight, Contact, Mail, Megaphone, Send } from "lucide-react";
+import { Contact, Mail, Megaphone, Send } from "lucide-react";
+import { AnimatedChevronRight } from "@/components/ui/animated-icons";
 import { requireAdmin } from "@/server/admin/auth";
 import { marketingMetrics, listCampaigns, brevoConfigured } from "@/server/admin/marketing";
 import { PageHeader, Card, CardHeader } from "@/components/ui/card";
@@ -47,7 +48,7 @@ export default async function MarketingPage() {
         {sections.map(([href, t, d]) => <GridCell key={href} href={href} title={t}>{d}</GridCell>)}
       </HairlineGrid>
       <Card>
-        <CardHeader title="Recent campaigns" action={<Link href="/admin/marketing/campaigns" className={cn(buttonVariants({ variant: "ghost", size: "xs" }), "-mr-2")}>All<ChevronRight aria-hidden /></Link>} />
+        <CardHeader title="Recent campaigns" action={<Link href="/admin/marketing/campaigns" className={cn(buttonVariants({ variant: "ghost", size: "xs" }), "-mr-2")}>All<AnimatedChevronRight aria-hidden /></Link>} />
         {campaigns.length === 0 ? <p className="text-sm font-normal text-secondary">No campaigns yet.</p> : (
           <DataTable caption="Recent campaigns">
             <thead><tr><th>Campaign</th><th>Status</th><th>Sent</th><th>Created</th></tr></thead>

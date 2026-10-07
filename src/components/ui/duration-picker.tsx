@@ -8,7 +8,7 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "motion/react";
-import { Hourglass } from "lucide-react";
+import { AnimatedHourglass } from "@/components/ui/animated-icons";
 import { cn } from "@/lib/utils";
 import { liftToTopLayer, popoverHost } from "@/components/ui/top-layer";
 
@@ -62,7 +62,7 @@ export function DurationPicker({ name, id, value, defaultValue, onChange, requir
       {/* A button cannot carry aria-invalid: the error shows as data-invalid (a red hairline) and is read out through aria-describedby. */}
       <button ref={trigger} type="button" id={id} disabled={disabled} aria-label={ariaLabel} data-invalid={ariaInvalid || undefined} aria-describedby={ariaDescribedBy} aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? popId : undefined} onClick={() => { if (disabled) return; setHost(popoverHost(trigger.current)); setOpen((o) => !o); }} className={cn("field flex items-center justify-between gap-2 text-left", size === "sm" && "field-sm", size === "xs" && "field-xs w-auto", !text && "text-subtle", className)}>
         <span className="truncate tabular-nums">{text || placeholder}</span>
-        <Hourglass className="size-4 shrink-0 text-subtle" aria-hidden />
+        <AnimatedHourglass className="size-4 shrink-0 text-subtle" aria-hidden />
       </button>
       {name ? <input type="text" name={name} value={current ?? ""} required={required} readOnly tabIndex={-1} aria-hidden className="pointer-events-none absolute inset-0 -z-10 h-full w-full opacity-0" /> : null}
       {typeof document !== "undefined" ? createPortal(<AnimatePresence>

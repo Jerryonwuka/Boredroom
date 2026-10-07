@@ -15,10 +15,14 @@
  *
  * Accent rules (6 October 2026): the button's keyboard focus ring is orange; in the palette the magnifier turns orange
  * while the field has focus, and the highlighted result (the one Enter opens) carries the 2px orange marker.
+ *
+ * Icons are animated (owner request, 7 October 2026; components/ui/animated-icons): the button's magnifier plays on
+ * hover and keyboard focus; a result's icon plays when it becomes the highlighted one (by arrow keys or the pointer).
  */
 import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
-import { FolderKanban, LayoutGrid, ListChecks, Search, User, Users } from "lucide-react";
+import { Search } from "lucide-react";
+import { AnimatedFolderKanban, AnimatedLayoutGrid, AnimatedListChecks, AnimatedSearch, AnimatedUser, AnimatedUsers } from "@/components/ui/animated-icons";
 import { BrendaGlyph } from "@/components/app/brenda-glyph";
 import { Kbd } from "@/components/ui/badge";
 import { api } from "@/lib/api-client";
@@ -27,7 +31,7 @@ import type { SearchHit, SearchResult } from "@/server/services/search";
 
 type Kind = SearchHit["kind"] | "page" | "brenda";
 type Hit = { kind: Kind; id: string; title: string; hint: string | null; href: string };
-const ICON: Record<Kind, React.ComponentType<{ className?: string; "aria-hidden"?: boolean }>> = { page: LayoutGrid, task: ListChecks, person: User, project: FolderKanban, team: Users, brenda: BrendaGlyph };
+const ICON: Record<Kind, React.ComponentType<{ className?: string; "aria-hidden"?: boolean }>> = { page: AnimatedLayoutGrid, task: AnimatedListChecks, person: AnimatedUser, project: AnimatedFolderKanban, team: AnimatedUsers, brenda: BrendaGlyph };
 const GROUP: Record<Kind, string> = { page: "Pages", task: "Tasks", person: "People", project: "Projects", team: "Teams", brenda: "Brenda" };
 const FIELD_NAME = "Search pages, tasks, people, projects and teams";
 export const SEARCH_DIALOG_ID = "workspace-search";
@@ -45,7 +49,7 @@ export function SearchTrigger({ onOpen, className }: { onOpen: () => void; class
   return (
     <button type="button" onClick={onOpen} aria-haspopup="dialog" aria-controls={SEARCH_DIALOG_ID} aria-keyshortcuts={mod === "⌘" ? "Meta+K" : "Control+K"}
       className={cn("flex h-8 w-[230px] items-center gap-2 rounded-xl border border-border-input bg-background pl-3 pr-1.5 text-meta font-normal text-secondary transition-colors duration-75 hover:border-border-input-hover hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ring)]", className)}>
-      <Search className="size-4 shrink-0" aria-hidden />
+      <AnimatedSearch className="size-4 shrink-0" aria-hidden />
       <span className="min-w-0 flex-1 truncate text-left">Search everything…</span>
       <span className="flex shrink-0 gap-1" aria-hidden><Kbd>{mod}</Kbd><Kbd>K</Kbd></span>
     </button>

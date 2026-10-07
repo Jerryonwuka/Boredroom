@@ -28,13 +28,18 @@
  * Past chats are private to the person (server/services/brenda-history.ts). The address follows what is on screen
  * (`?chat=` for a saved conversation, `?tab=history` for the chat opened on its past chats), so a reload or a link
  * comes back to the same place.
+ *
+ * Her icons are animated (owner request, 7 October 2026; components/ui/animated-icons): the quick asks, the action
+ * cards, the top pills, "More asks" and its menu, the tool tiles and the chat header's buttons play their icon while
+ * hovered or focused from the keyboard, never on a loop and not under reduced motion.
  */
 import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import {
-  AlarmClock, ArrowLeft, CalendarCheck, CircleAlert, ClipboardCheck, Clock, FileText, History, ListOrdered, ListPlus,
-  MessageSquareReply, MessagesSquare, Play, Plus, Send, Settings, Timer, UserPlus, Users,
-} from "lucide-react";
+  AnimatedAlarmClock, AnimatedArrowLeft, AnimatedCalendarCheck, AnimatedCircleAlert, AnimatedClipboardCheck, AnimatedClock, AnimatedFileText,
+  AnimatedHistory, AnimatedListOrdered, AnimatedListPlus, AnimatedMessageSquareReply, AnimatedMessagesSquare, AnimatedPlay, AnimatedPlus, AnimatedSend,
+  AnimatedSettings, AnimatedTimer, AnimatedUserPlus, AnimatedUsers,
+} from "@/components/ui/animated-icons";
 import { buttonVariants } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import { PromptTextAction } from "@/components/ui/ai-prompt-box";
@@ -74,32 +79,32 @@ type Ask = { icon: React.ComponentType<{ "aria-hidden"?: boolean }>; label: stri
 /** Her asks in a new chat, as tool tiles: short labels (they sit under a 40px square, 81px wide); the words they put in the box. */
 const ASKS: Record<"worker" | "lead", Ask[]> = {
   worker: [
-    { icon: ListOrdered, label: "Plan my day", prompt: "Arrange my tasks for today in the order I should do them, and tell me why." },
-    { icon: CalendarCheck, label: "Due today", prompt: "What's waiting for me today?" },
-    { icon: MessageSquareReply, label: "Follow up", prompt: "Look at my overdue tasks and help me follow up on each one." },
-    { icon: FileText, label: "Write a doc", prompt: "Help me write a document about " },
-    { icon: AlarmClock, label: "Remind me", prompt: "Remind me in an hour to check my messages." },
+    { icon: AnimatedListOrdered, label: "Plan my day", prompt: "Arrange my tasks for today in the order I should do them, and tell me why." },
+    { icon: AnimatedCalendarCheck, label: "Due today", prompt: "What's waiting for me today?" },
+    { icon: AnimatedMessageSquareReply, label: "Follow up", prompt: "Look at my overdue tasks and help me follow up on each one." },
+    { icon: AnimatedFileText, label: "Write a doc", prompt: "Help me write a document about " },
+    { icon: AnimatedAlarmClock, label: "Remind me", prompt: "Remind me in an hour to check my messages." },
   ],
   lead: [
-    { icon: Users, label: "Who's working", prompt: "Who is working right now, and on what?" },
-    { icon: ClipboardCheck, label: "Week summary", prompt: "Summarise what the team got done this week." },
-    { icon: MessageSquareReply, label: "Chase work", prompt: "Which assignments has nobody picked up? Help me follow up." },
-    { icon: FileText, label: "Write a doc", prompt: "Help me write a document about " },
-    { icon: CircleAlert, label: "Who's late", prompt: "Who is late or hasn't clocked in today?" },
+    { icon: AnimatedUsers, label: "Who's working", prompt: "Who is working right now, and on what?" },
+    { icon: AnimatedClipboardCheck, label: "Week summary", prompt: "Summarise what the team got done this week." },
+    { icon: AnimatedMessageSquareReply, label: "Chase work", prompt: "Which assignments has nobody picked up? Help me follow up." },
+    { icon: AnimatedFileText, label: "Write a doc", prompt: "Help me write a document about " },
+    { icon: AnimatedCircleAlert, label: "Who's late", prompt: "Who is late or hasn't clocked in today?" },
   ],
 };
 
 /** Her quick asks on her home screen: chips above the box (the label, then a small icon). Each fills the box, never sends. */
 const QUICK: Record<"worker" | "lead", Ask[]> = {
   worker: [
-    { icon: CalendarCheck, label: "What's due today?", prompt: "What's waiting for me today?" },
-    { icon: AlarmClock, label: "Set a reminder", prompt: "Remind me to " },
-    { icon: Timer, label: "Start a timer", prompt: "Start the timer on " },
+    { icon: AnimatedCalendarCheck, label: "What's due today?", prompt: "What's waiting for me today?" },
+    { icon: AnimatedAlarmClock, label: "Set a reminder", prompt: "Remind me to " },
+    { icon: AnimatedTimer, label: "Start a timer", prompt: "Start the timer on " },
   ],
   lead: [
-    { icon: Users, label: "Who's working?", prompt: "Who is working right now, and on what?" },
-    { icon: CircleAlert, label: "Who's late?", prompt: "Who is late or hasn't clocked in today?" },
-    { icon: UserPlus, label: "Assign a task", prompt: "Assign a task to " },
+    { icon: AnimatedUsers, label: "Who's working?", prompt: "Who is working right now, and on what?" },
+    { icon: AnimatedCircleAlert, label: "Who's late?", prompt: "Who is late or hasn't clocked in today?" },
+    { icon: AnimatedUserPlus, label: "Assign a task", prompt: "Assign a task to " },
   ],
 };
 
@@ -108,14 +113,14 @@ type Card = Ask & { description: string; action: string };
 /** The three action cards under her box: a title, one line on what she does, and the small pill's word. They fill the box too. */
 const CARDS: Record<"worker" | "lead", Card[]> = {
   worker: [
-    { icon: ListOrdered, label: "Plan my day", description: "Today's tasks in the order to do them.", action: "Plan it", prompt: "Arrange my tasks for today in the order I should do them, and tell me why." },
-    { icon: FileText, label: "Write a doc", description: "A brief, notes or a how-to, drafted with you.", action: "Draft it", prompt: "Help me write a document about " },
-    { icon: MessageSquareReply, label: "Follow up on overdue work", description: "Chase what's late, one task at a time.", action: "Follow up", prompt: "Look at my overdue tasks and help me follow up on each one." },
+    { icon: AnimatedListOrdered, label: "Plan my day", description: "Today's tasks in the order to do them.", action: "Plan it", prompt: "Arrange my tasks for today in the order I should do them, and tell me why." },
+    { icon: AnimatedFileText, label: "Write a doc", description: "A brief, notes or a how-to, drafted with you.", action: "Draft it", prompt: "Help me write a document about " },
+    { icon: AnimatedMessageSquareReply, label: "Follow up on overdue work", description: "Chase what's late, one task at a time.", action: "Follow up", prompt: "Look at my overdue tasks and help me follow up on each one." },
   ],
   lead: [
-    { icon: ClipboardCheck, label: "Week summary", description: "What the team got done this week.", action: "Summarise", prompt: "Summarise what the team got done this week." },
-    { icon: MessageSquareReply, label: "Chase work", description: "Assignments nobody has picked up yet.", action: "Chase it", prompt: "Which assignments has nobody picked up? Help me follow up." },
-    { icon: FileText, label: "Write a doc", description: "A brief, a policy or notes, drafted with you.", action: "Draft it", prompt: "Help me write a document about " },
+    { icon: AnimatedClipboardCheck, label: "Week summary", description: "What the team got done this week.", action: "Summarise", prompt: "Summarise what the team got done this week." },
+    { icon: AnimatedMessageSquareReply, label: "Chase work", description: "Assignments nobody has picked up yet.", action: "Chase it", prompt: "Which assignments has nobody picked up? Help me follow up." },
+    { icon: AnimatedFileText, label: "Write a doc", description: "A brief, a policy or notes, drafted with you.", action: "Draft it", prompt: "Help me write a document about " },
   ],
 };
 
@@ -123,12 +128,12 @@ const CARDS: Record<"worker" | "lead", Card[]> = {
 function moreAsks(role: HomeData["role"]): Ask[] {
   const worker = role === "employee" || role === "manager";
   return [
-    ...(role !== "employee" ? [{ icon: UserPlus, label: "Assign a task", prompt: "Assign a task to " }] : []),
-    { icon: ListPlus, label: "Add to my to-dos", prompt: "Add to my to-dos: " },
-    ...(worker ? [{ icon: Clock, label: "Clock me in", prompt: "Clock me in." }, { icon: Play, label: "Start my timer", prompt: "Start the timer on " }] : []),
-    { icon: AlarmClock, label: "Set a reminder", prompt: "Remind me to " },
-    { icon: Send, label: "Send a message", prompt: "Send a message to " },
-    { icon: FileText, label: "Write a document", prompt: "Help me write a document about " },
+    ...(role !== "employee" ? [{ icon: AnimatedUserPlus, label: "Assign a task", prompt: "Assign a task to " }] : []),
+    { icon: AnimatedListPlus, label: "Add to my to-dos", prompt: "Add to my to-dos: " },
+    ...(worker ? [{ icon: AnimatedClock, label: "Clock me in", prompt: "Clock me in." }, { icon: AnimatedPlay, label: "Start my timer", prompt: "Start the timer on " }] : []),
+    { icon: AnimatedAlarmClock, label: "Set a reminder", prompt: "Remind me to " },
+    { icon: AnimatedSend, label: "Send a message", prompt: "Send a message to " },
+    { icon: AnimatedFileText, label: "Write a document", prompt: "Help me write a document about " },
   ];
 }
 
@@ -281,18 +286,18 @@ export function BrendaHome({ data }: { data: HomeData }) {
           <div className="ml-auto flex items-center gap-1.5">
             {data.aiEnabled && hasConversation ? (
               <button ref={resumeButton} type="button" onClick={() => setView("chat")} className={cn(pill, "max-sm:px-2.5")}>
-                <span className="max-sm:sr-only">Back to our conversation</span><CountPill count={chat.messages.length} /><MessagesSquare aria-hidden />
+                <span className="max-sm:sr-only">Back to our conversation</span><CountPill count={chat.messages.length} /><AnimatedMessagesSquare aria-hidden />
               </button>
             ) : null}
             {/* Past chats live beside the chat, not in a tab of their own (owner decision, 5 October 2026): this opens them there. */}
             {data.aiEnabled ? (
               <button ref={pastChatsButton} type="button" onClick={showPastChats} className={cn(pill, iconOnPhones)}>
-                <span className="max-sm:sr-only">Past chats</span>{history.length ? <CountPill count={history.length} className="max-sm:hidden" /> : null}<History aria-hidden />
+                <span className="max-sm:sr-only">Past chats</span>{history.length ? <CountPill count={history.length} className="max-sm:hidden" /> : null}<AnimatedHistory aria-hidden />
               </button>
             ) : null}
             {isOrg ? (
               <Link href={`${base}/settings?section=brenda`} className={cn(pill, iconOnPhones)}>
-                <span className="max-sm:sr-only">Brenda settings</span><Settings aria-hidden />
+                <span className="max-sm:sr-only">Brenda settings</span><AnimatedSettings aria-hidden />
               </Link>
             ) : null}
           </div>
@@ -371,7 +376,7 @@ function ActionCard({ card, onPick }: { card: Card; onPick: () => void }) {
 /** "More asks" on the left of her box's bottom row: a menu of more things to ask. Choosing one puts its sentence in the box. */
 function MoreMenu({ role, onPick }: { role: HomeData["role"]; onPick: (prompt: string) => void }) {
   return (
-    <Menu label="Ask Brenda to" trigger={<PromptTextAction><Plus aria-hidden />More asks</PromptTextAction>}>
+    <Menu label="Ask Brenda to" trigger={<PromptTextAction><AnimatedPlus aria-hidden />More asks</PromptTextAction>}>
       <MenuLabel>Ask Brenda to…</MenuLabel>
       {moreAsks(role).map((a) => <MenuItem key={a.label} icon={<a.icon aria-hidden />} onSelect={() => onPick(a.prompt)}>{a.label}</MenuItem>)}
     </Menu>
@@ -471,7 +476,7 @@ function ChatView({ data, chat, box, onBack, onNewChat, history, sheet, onSheet,
   return (
     <div data-brenda-chat-view className="flex h-[calc(100dvh-var(--shell-banners,0px))] min-h-0 flex-col bg-background">
       <header className="flex h-[50px] shrink-0 items-center gap-2 border-b border-border px-3">
-        <IconButton aria-label="Back to Brenda's home" data-tip="Back" onClick={onBack}><ArrowLeft aria-hidden /></IconButton>
+        <IconButton aria-label="Back to Brenda's home" data-tip="Back" onClick={onBack}><AnimatedArrowLeft aria-hidden /></IconButton>
         <BrendaFace size="md" mood={chat.look.mood} interactive className="ml-1" />
         <div className="ml-1 min-w-0 flex-1">
           <h1 className="font-sans text-sm font-semibold tracking-normal text-foreground">Brenda</h1>
@@ -480,9 +485,9 @@ function ChatView({ data, chat, box, onBack, onNewChat, history, sheet, onSheet,
           </p>
         </div>
         <IconButton ref={sheetButton} className="lg:hidden" aria-label="Past chats" aria-expanded={sheet} aria-controls="brenda-past-chats" onClick={() => (sheet ? onSheet(false) : openSheet())}>
-          <History aria-hidden />
+          <AnimatedHistory aria-hidden />
         </IconButton>
-        <button type="button" onClick={onNewChat} className={buttonVariants({ variant: "secondary", size: "sm" })}><Plus aria-hidden />New chat</button>
+        <button type="button" onClick={onNewChat} className={buttonVariants({ variant: "secondary", size: "sm" })}><AnimatedPlus aria-hidden />New chat</button>
       </header>
 
       <div className="relative flex min-h-0 flex-1">

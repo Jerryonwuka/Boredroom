@@ -160,7 +160,7 @@ export default async function TaskPage({ params, searchParams }: { params: Promi
 
           <section aria-labelledby="sessions-heading">
             <SectionTitle id="sessions-heading" title="Work sessions" />
-            {sessions.length === 0 ? <p className="rounded-2xl border border-border px-5 py-8 text-center text-sm font-normal text-secondary">{isAssignee && !isOrgAccount && !task.archived_at && ["todo", "in_progress", "blocked"].includes(task.status) ? <>No work sessions yet. Start this task from <Link href={`${base}/my-day`} className="link-inline">My Day</Link> and the clock runs on it.</> : "No work sessions yet."}</p> : (
+            {sessions.length === 0 ? <p className="rounded-2xl border border-border px-5 py-8 text-center text-sm font-normal text-secondary">{isAssignee && !isOrgAccount && !task.archived_at && ["todo", "in_progress", "blocked"].includes(task.status) ? <>No work sessions yet. Start this task from your <Link href={`${base}/todos`} className="link-inline">To-dos</Link> and the clock runs on it.</> : "No work sessions yet."}</p> : (
               <DataTable caption="Sessions on this task">
                 <thead><tr><th>Started</th><th>Ended</th><th>State</th><th className="text-right">Confirmed</th><th className="text-right">Uncertain</th><th>Outcome</th></tr></thead>
                 <tbody>{sessions.map((s) => (

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Hourglass, MessageSquare, SquareCheckBig, Timer, Video } from "lucide-react";
+import { Hourglass, SquareCheckBig, Timer, Video } from "lucide-react";
+import { AnimatedMessageSquare } from "@/components/ui/animated-icons";
 import { workspacePage } from "@/server/lib/workspace-page";
 import { AppShell } from "@/components/app/shell";
 import { TaskPeekLink } from "@/components/app/tasks-page";
@@ -64,7 +65,7 @@ export default async function WorkroomPersonPage({ params, searchParams }: { par
         meta={<>{person.employee_code}, {person.role === "manager" ? "team lead" : "staff"}, {person.teams.join(", ") || "no team"}{person.last_activity_at ? `, last active ${relativeTime(person.last_activity_at, now)}` : ""}</>}
         actions={<>
           <Link href={`${base}/timesheets?member=${member}`} className={buttonVariants({ size: "sm", variant: "secondary" })}>Timesheet</Link>
-          <Link href={`${base}/messages?to=${member}`} className={buttonVariants({ size: "sm" })}><MessageSquare aria-hidden />Message {first}</Link>
+          <Link href={`${base}/messages?to=${member}`} className={buttonVariants({ size: "sm" })}><AnimatedMessageSquare aria-hidden />Message {first}</Link>
         </>}
         tabsLabel={`${first}'s day`} tabValue={tab}
         tabs={[

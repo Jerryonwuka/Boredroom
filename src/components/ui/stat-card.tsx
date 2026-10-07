@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { cn } from "@/lib/utils";
+import { withAnimatedIcons } from "@/components/ui/animated-icons";
 
 export type StatRow = { label: string; value: React.ReactNode; share?: React.ReactNode; tone?: "success" | "warning" | "danger" | "info" | "accent" | "neutral" };
 const DOT: Record<NonNullable<StatRow["tone"]>, string> = { success: "bg-success", warning: "bg-warning", danger: "bg-danger", info: "bg-info", accent: "bg-accent", neutral: "bg-subtle" };
@@ -15,7 +16,7 @@ export function StatCard({ label, value, verdict, tone = "default", rows = [], h
   rows?: StatRow[]; href?: string; className?: string; icon?: React.ReactNode; action?: React.ReactNode; hint?: React.ReactNode; actions?: React.ReactNode;
 }) {
   const figure = value ?? verdict;
-  const side = action ?? (icon ? <span className="grid size-10 shrink-0 place-items-center rounded-xl border border-border-input text-secondary [&_svg]:size-[18px]" aria-hidden>{icon}</span> : null);
+  const side = action ?? (icon ? <span className="grid size-10 shrink-0 place-items-center rounded-xl border border-border-input text-secondary [&_svg]:size-[18px]" aria-hidden>{withAnimatedIcons(icon)}</span> : null);
   const body = (
     <>
       <div className="flex items-start justify-between gap-3">

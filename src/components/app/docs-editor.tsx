@@ -11,7 +11,8 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Archive, ArrowLeft, Check, CircleAlert, Eye, Folder, Globe, LoaderCircle, Lock, Pencil, Pin, Users } from "lucide-react";
+import { Archive, Check, CircleAlert, Eye, Folder, Globe, LoaderCircle, Lock, Pencil, Pin, Users } from "lucide-react";
+import { AnimatedArrowLeft } from "@/components/ui/animated-icons";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { InputAdorned, Select } from "@/components/ui/input";
 import { Segmented } from "@/components/ui/segmented";
@@ -89,7 +90,7 @@ export function DocsEditor(props: DocsEditorProps) {
 function BackToDocs({ base, onClick }: { base: string; onClick?: React.MouseEventHandler<HTMLAnchorElement> }) {
   return (
     <Link href={`${base}/docs`} onClick={onClick} className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "-ml-2.5")}>
-      <ArrowLeft aria-hidden />Docs
+      <AnimatedArrowLeft aria-hidden />Docs
     </Link>
   );
 }

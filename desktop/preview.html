@@ -5,7 +5,8 @@
      waveform and her listening face a speech-like microphone level every 70 ms, as Rust does; ?card=working listens for
      two seconds, then writes the words out, to see the bars turn into the travelling wave; ?card=typing types a question
      into the ask box letter by letter, to see her eyes read along). ?typed=some words types into the open card's ask box,
-     to see Send turn orange and the card's other orange button (Start, Resume) go white. The backdrop is a flat grey desktop with a menu bar strip, so
+     to see Send turn orange and the card's other orange button (Start, Resume) go white. ?card=reply shows a reply drawn from her
+     light Markdown (a lead sentence, bold labels, a bulleted and a numbered list, a link); hovering a button plays its icon's move. The backdrop is a flat grey desktop with a menu bar strip, so
      the black island reads as it does on screen. -->
 <html lang="en"><head><meta charset="utf-8"><title>Brenda notch preview</title><link rel="stylesheet" href="src/style.css">
 <style>html,body{background:#3b3b3b!important;height:100%;overflow:hidden!important} body::before{content:"";position:fixed;inset:0 0 auto;height:40px;background:rgb(0 0 0 / .28);box-shadow:inset 0 -1px 0 rgb(255 255 255 / .075)} #stage{position:relative;width:480px;height:440px;margin:0 auto;outline:1px dashed rgb(255 255 255 / .1)}</style></head>
@@ -29,7 +30,8 @@ const sample = {
 const replies = {
   confirm: { reply: "Ada will get “Review the brand deck”, due tomorrow at 15:00, once you confirm.", engine: "claude", actions: [], proposals: [{ kind: "confirm", token: "preview-token-123", summary: "Create “Review the brand deck” for Ada, due Tue 6 Oct, 15:00", tool: "create_todos" }], note: null },
   offer: { reply: "I can add that to your list and start the timer on your highest-priority task.", engine: "builtin", actions: [], proposals: [{ kind: "todo", title: "Call Josh about the invoice", description: null, dueAt: null, assigneeMembershipId: null, assigneeName: null, estimateMinutes: null }, { kind: "start_timer", taskId: "11111111-1111-1111-1111-111111111111", taskTitle: "KITA onboarding flow" }], note: null },
-  reply: { reply: "Ben is on “Homepage hero illustrations” with the timer running for 1h 12m, and has 2 more open tasks due this week.", engine: "claude", actions: [{ kind: "todo", summary: "Added “Send Ben the brief” to your list" }], proposals: [{ kind: "open", href: "/app/company-a/workroom", label: "Workroom" }, { kind: "open", href: "/app/company-a/reports", label: "Reports" }], note: null },
+  // Her replies are light Markdown (owner request, 7 October 2026): the answer first, then lists with the key words in bold.
+  reply: { reply: "Ben is on the clock, with two more tasks due this week.\n\n**Working on now**\n- **Homepage hero illustrations**, 1h 12m so far\n\n**Due this week**\n1. **Brand deck refresh**, due Thu 8 Oct, 17:00\n2. **Landing page copy**, due Fri 9 Oct, 17:00\n\nHis team's day is in the [Workroom](/app/company-a/workroom).", engine: "claude", actions: [{ kind: "todo", summary: "Added “Send Ben the brief” to your list" }], proposals: [{ kind: "open", href: "/app/company-a/workroom", label: "Workroom" }, { kind: "open", href: "/app/company-a/reports", label: "Reports" }], note: null },
 };
 const saved = [];
 window.__TAURI__ = {

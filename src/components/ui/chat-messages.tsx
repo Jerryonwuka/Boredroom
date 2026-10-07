@@ -8,7 +8,7 @@
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { AnimatePresence, animate, motion, useReducedMotion } from "motion/react";
-import { Send, RotateCcw } from "lucide-react";
+import { AnimatedRotateCcw, AnimatedSend } from "@/components/ui/animated-icons";
 import { BrendaFace } from "@/components/app/brenda-face";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -135,7 +135,7 @@ export function ChatMessages({ messages = DEFAULT_MESSAGES, autoPlay = true, aut
           <BrendaFace size="sm" />
           <div><h3 className="text-sm font-medium">Brenda</h3><p className="text-xs font-medium text-secondary">Your AI teammate</p></div>
         </div>
-        {showReplay ? <button type="button" onClick={replay} aria-label="Replay conversation" className={buttonVariants({ variant: "secondary", size: "xs" })}><RotateCcw aria-hidden />Replay</button> : null}
+        {showReplay ? <button type="button" onClick={replay} aria-label="Replay conversation" className={buttonVariants({ variant: "secondary", size: "xs" })}><AnimatedRotateCcw aria-hidden />Replay</button> : null}
       </div>
       <div ref={scrollRef} role="log" aria-label="Chat messages" aria-live="polite" className="flex-1 overflow-y-auto p-4">
         {chatMessages.slice(0, visibleCount).map((m) => (
@@ -147,7 +147,7 @@ export function ChatMessages({ messages = DEFAULT_MESSAGES, autoPlay = true, aut
         <div className="flex items-center gap-2 rounded-[26px] bg-surface py-1.5 pl-4 pr-1.5 shadow-[0_0_0_1px_var(--border)] focus-within:shadow-[0_0_0_1px_var(--border-input-hover)]">
           <input type="text" value={inputValue} onChange={(e) => setInputValue(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }} disabled={!interactive}
             placeholder={interactive ? "Ask Brenda…" : "Demo, press Replay to watch again"} aria-label={interactive ? "Type your message" : "Chat input (demo)"} className="flex-1 bg-transparent text-sm font-normal text-foreground outline-none placeholder:text-subtle disabled:cursor-not-allowed" />
-          <button type="button" onClick={handleSend} disabled={!interactive || !inputValue.trim()} aria-label="Send message" className={cn("grid size-9 place-items-center rounded-full transition-colors duration-75", interactive && inputValue.trim() ? "bg-primary text-primary-fg hover:bg-primary-hover" : "bg-fill-150 text-subtle")}><Send className="size-4" aria-hidden /></button>
+          <button type="button" onClick={handleSend} disabled={!interactive || !inputValue.trim()} aria-label="Send message" className={cn("grid size-9 place-items-center rounded-full transition-colors duration-75", interactive && inputValue.trim() ? "bg-primary text-primary-fg hover:bg-primary-hover" : "bg-fill-150 text-subtle")}><AnimatedSend className="size-4" aria-hidden /></button>
         </div>
       </div>
     </div>

@@ -14,7 +14,8 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Play, Plus, X, ArrowLeftRight, MessageSquareText, Trash2, UserRoundCheck, ArrowUpRight, Search, Video } from "lucide-react";
+import { Play, Plus, X, ArrowLeftRight, MessageSquareText, Trash2, UserRoundCheck, Search, Video } from "lucide-react";
+import { AnimatedArrowUpRight } from "@/components/ui/animated-icons";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { IconButton, ICON_BUTTON } from "@/components/ui/icon-button";
 import { Input, InputAdorned, Select, Textarea, Field } from "@/components/ui/input";
@@ -307,7 +308,7 @@ export function TaskSheet({ orgSlug, row, viewer, mine = false, running = false,
   const footer = (
     <>
       <Link href={`/app/${orgSlug}/tasks/${t.id}`} className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "mr-auto h-auto min-h-8 whitespace-normal py-1.5 text-left")}>
-        Open the full task{detail ? ` (${detail.submissions} revision${detail.submissions === 1 ? "" : "s"}, ${detail.sessions} session${detail.sessions === 1 ? "" : "s"})` : ""}<ArrowUpRight aria-hidden />
+        Open the full task{detail ? ` (${detail.submissions} revision${detail.submissions === 1 ? "" : "s"}, ${detail.sessions} session${detail.sessions === 1 ? "" : "s"})` : ""}<AnimatedArrowUpRight aria-hidden />
       </Link>
       {detail?.canManage && status !== "in_progress" ? <IconButton aria-label="Delete task" className="hover:text-danger" onClick={() => setConfirm("delete")}><Trash2 aria-hidden /></IconButton> : null}
       {!mine && !isMe && t.assignee_membership_id && status !== "completed" ? <Link href={`/app/${orgSlug}/messages?to=${t.assignee_membership_id}&task=${t.id}`} className={buttonVariants({ variant: "secondary", size: "sm" })}><MessageSquareText aria-hidden />Ask for an update</Link> : null}

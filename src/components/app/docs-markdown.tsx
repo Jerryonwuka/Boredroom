@@ -12,6 +12,13 @@ import { cn } from "@/lib/utils";
  * checklist items (nested by indentation), block quotes, horizontal rules, simple tables and links (bare addresses
  * too). Nesting is capped so a hostile document cannot exhaust the stack, and every scan is bounded so a long one
  * cannot stall the page.
+ *
+ * `variant="chat"` is the same renderer, compact, for Brenda's replies (owner request, 7 October 2026: "if you're
+ * listing things, it should not be in a paragraph; list it"): the chat's own type size (it inherits 14/20 or 16/24),
+ * short paragraph gaps with line breaks kept, lists with a hanging indent, items 4 to 6px apart and their markers in the
+ * secondary grey, a paragraph that is only a bold label sitting close to the list under it, headings shown as bold
+ * labels, and links as `.link-inline`. Paths inside Boredroom open in the app (`onNavigate`); a path without the
+ * workspace (`/tasks`) is read as one inside it (`base`).
  */
 
 type Align = "left" | "center" | "right" | null;
@@ -26,6 +33,10 @@ type Block =
   | { type: "table"; align: Align[]; head: string[]; rows: string[][] };
 
 const MAX_BLOCK_DEPTH = 6;
+
+/** How a body is drawn: a document (Docs), or a reply in Brenda's chat (compact, links open in the app). */
+type Opts = { chat: boolean; base?: string; onNavigate?: (href: string) => void };
+const DOC: Opts = { chat: false };
 const MAX_INLINE_DEPTH = 8;
 
 const FENCE = /^ {0,3}(`{3,}|~{3,})[ \t]*([\w+#.-]*)[ \t]*$/;
@@ -222,12 +233,26 @@ const BARE_URL = /https?:\/\/[^\s<>"]*[^\s<>".,:;'!?)\]]/y;
 
 const linkCls = "font-medium text-foreground underline decoration-border-input-hover decoration-1 underline-offset-4 transition-colors duration-75 hover:decoration-foreground";
 
-function renderLink(label: React.ReactNode, href: string, key: string) {
+/** In the chat, a path without the workspace ("/tasks") is one inside it ("/app/<slug>/tasks"). */
+function inWorkspace(path: string, base: string | undefined) {
+  if (!base || !path.startsWith("/") || path === base || path.startsWith(`${base}/`) || path.startsWith(`${base}?`) || /^\/(?:app|api)(?:[/?#]|$)/.test(path)) return path;
+  return `${base}${path}`;
+}
+
+function renderLink(label: React.ReactNode, href: string, key: string, o: Opts) {
   const safe = safeHref(href);
   if (!safe) return <React.Fragment key={key}>{label}</React.Fragment>;
-  return safe.external
-    ? <a key={key} href={safe.href} target="_blank" rel="noopener noreferrer" className={linkCls}>{label}</a>
-    : <a key={key} href={safe.href} className={linkCls}>{label}</a>;
+  const cls = o.chat ? "link-inline" : linkCls;
+  if (safe.external) return <a key={key} href={safe.href} target="_blank" rel="noopener noreferrer" className={cls}>{label}</a>;
+  const to = inWorkspace(safe.href, o.chat ? o.base : undefined);
+  const go = o.onNavigate && to.startsWith("/") ? o.onNavigate : null;
+  // A plain click opens the page in the app; a modified click (new tab, new window) is left to the browser.
+  const onClick = go ? (e: React.MouseEvent<HTMLAnchorElement>) => {
+    if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    e.preventDefault();
+    go(to);
+  } : undefined;
+  return <a key={key} href={to} className={cls} onClick={onClick}>{label}</a>;
 }
 
 /**
@@ -236,7 +261,7 @@ function renderLink(label: React.ReactNode, href: string, key: string) {
  * Inside a link's label (`inLink`) nothing becomes a second link: a link inside a link is invalid HTML, and the browser
  * would split it, so the server-rendered page would no longer match the one React builds.
  */
-function inline(text: string, depth = 0, prefix = "i", inLink = false): React.ReactNode[] {
+function inline(text: string, depth = 0, prefix = "i", inLink = false, o: Opts = DOC): React.ReactNode[] {
   if (depth > MAX_INLINE_DEPTH) return [text];
   const out: React.ReactNode[] = [];
   let buf = "";
@@ -256,7 +281,8 @@ function inline(text: string, depth = 0, prefix = "i", inLink = false): React.Re
       const run = delim.length === 1 && (after === delim || before === delim);
       const intraword = delim[0] === "_" && /[\p{L}\p{N}]/u.test(after);
       if (j > from && before !== undefined && !/\s/.test(before) && before !== "\\" && !run && !intraword) return j;
-      j += delim.length;
+      // An escaped mark ("\*") is text: the real closer may start on the very next character ("\***").
+      j += before === "\\" ? 1 : delim.length;
     }
     noCloser.set(delim, from);
     return -1;
@@ -311,7 +337,7 @@ function inline(text: string, depth = 0, prefix = "i", inLink = false): React.Re
           const href = inside.split(/\s+/)[0]?.replace(/^<|>$/g, "") ?? "";
           const label = text.slice(i + 1, close);
           flush();
-          out.push(renderLink(label ? inline(label, depth + 1, key(), true) : href, href, key()));
+          out.push(renderLink(label ? inline(label, depth + 1, key(), true, o) : href, href, key(), o));
           i = end + 1;
           continue;
         }
@@ -323,7 +349,7 @@ function inline(text: string, depth = 0, prefix = "i", inLink = false): React.Re
 
     if (c === "<" && !inLink && (text.startsWith("http", i + 1) || text.startsWith("mailto:", i + 1))) {
       const auto = /^<((?:https?:\/\/|mailto:)[^\s<>]{1,2000})>/.exec(text.slice(i, i + 2010));
-      if (auto) { flush(); out.push(renderLink(auto[1], auto[1], key())); i += auto[0].length; continue; }
+      if (auto) { flush(); out.push(renderLink(auto[1], auto[1], key(), o)); i += auto[0].length; continue; }
       buf += c;
       i++;
       continue;
@@ -332,7 +358,7 @@ function inline(text: string, depth = 0, prefix = "i", inLink = false): React.Re
     if (c === "h" && !inLink && (i === 0 || /[\s(]/.test(text[i - 1]))) {
       BARE_URL.lastIndex = i;
       const m = BARE_URL.exec(text);
-      if (m && m[0].length <= 2048) { flush(); out.push(renderLink(m[0], m[0], key())); i += m[0].length; continue; }
+      if (m && m[0].length <= 2048) { flush(); out.push(renderLink(m[0], m[0], key(), o)); i += m[0].length; continue; }
     }
 
     if (c === "*" || c === "_" || c === "~") {
@@ -344,7 +370,7 @@ function inline(text: string, depth = 0, prefix = "i", inLink = false): React.Re
       const opens = next !== undefined && !/\s/.test(next) && !(c === "_" && prev !== undefined && /[\p{L}\p{N}]/u.test(prev));
       const close = opens ? findClose(delim, i + delim.length) : -1;
       if (close !== -1) {
-        const inner = inline(text.slice(i + delim.length, close), depth + 1, key(), inLink);
+        const inner = inline(text.slice(i + delim.length, close), depth + 1, key(), inLink, o);
         flush();
         if (c === "~") out.push(<del key={key()} className="text-secondary">{inner}</del>);
         else if (double) out.push(<strong key={key()} className="font-semibold text-foreground">{inner}</strong>);
@@ -374,30 +400,39 @@ const HEADING_CLS: Record<number, string> = {
   6: "mt-5 mb-2 text-meta font-semibold text-secondary",
 };
 
-function renderBlocks(blocks: Block[], depth: number, prefix: string): React.ReactNode[] {
+/** A paragraph that is only a bold label ("**Done**", "**Needs attention**:"), which heads the list under it. */
+const LABEL = /^(\*\*|__)(?:(?!\1)[^\n])+\1:?$/;
+/** In the chat, a label sits 12px below what comes before it and 4px above its list. */
+const CHAT_LABEL = "mt-3 mb-1 font-semibold text-foreground [&+ol]:mt-1 [&+ul]:mt-1";
+
+function renderBlocks(blocks: Block[], depth: number, prefix: string, o: Opts = DOC): React.ReactNode[] {
+  const chat = o.chat;
   return blocks.map((b, idx) => {
     const k = `${prefix}-${idx}`;
     switch (b.type) {
       case "heading": {
+        // A reply has no headings bigger than a bold label.
+        if (chat) return <p key={k} className={CHAT_LABEL}>{inline(b.text, 0, k, false, o)}</p>;
         // The document's title is the page's h1, so a "#" heading inside it is an h2, and so on down.
         const Tag = `h${Math.min(b.level + 1, 6)}` as "h2" | "h3" | "h4" | "h5" | "h6";
         return <Tag key={k} className={HEADING_CLS[b.level]}>{inline(b.text, 0, k)}</Tag>;
       }
       case "paragraph":
+        if (chat) return <p key={k} className={LABEL.test(b.text.trim()) ? CHAT_LABEL : "my-2 whitespace-pre-line"}>{inline(b.text, 0, k, false, o)}</p>;
         return <p key={k} className="my-3 text-base font-normal leading-7 text-foreground">{inline(b.text, 0, k)}</p>;
       case "code":
         return (
-          <div key={k} className="my-4 overflow-hidden rounded-xl border border-border bg-fill-0">
+          <div key={k} className={cn("overflow-hidden rounded-xl border border-border bg-fill-0", chat ? "my-2" : "my-4")}>
             {b.lang ? <p className="border-b border-border px-4 py-1.5 font-mono text-xs text-secondary">{b.lang}</p> : null}
             <pre className="type-code overflow-x-auto p-4 text-foreground"><code>{b.text}</code></pre>
           </div>
         );
       case "hr":
-        return <hr key={k} className="my-8 h-px border-0 bg-border" />;
+        return <hr key={k} className={cn("h-px border-0 bg-border", chat ? "my-3" : "my-8")} />;
       case "quote":
         return (
-          <blockquote key={k} className="my-4 border-l-2 border-border-input-hover pl-4 text-secondary">
-            {depth >= MAX_BLOCK_DEPTH ? <p className="my-2">{b.lines.join(" ")}</p> : renderBlocks(parseBlocks(b.lines), depth + 1, k)}
+          <blockquote key={k} className={cn("border-l-2 border-border-input-hover text-secondary", chat ? "my-2 pl-3" : "my-4 pl-4")}>
+            {depth >= MAX_BLOCK_DEPTH ? <p className="my-2">{b.lines.join(" ")}</p> : renderBlocks(parseBlocks(b.lines), depth + 1, k, o)}
           </blockquote>
         );
       case "list": {
@@ -406,8 +441,8 @@ function renderBlocks(blocks: Block[], depth: number, prefix: string): React.Rea
           // One line of text: rendered inline, so a tight list stays tight. Anything more is parsed as blocks.
           const simple = it.lines.length === 1;
           const content = simple || depth >= MAX_BLOCK_DEPTH
-            ? inline(it.lines.join("\n"), 0, ik)
-            : renderBlocks(parseBlocks(it.lines), depth + 1, ik);
+            ? inline(it.lines.join("\n"), 0, ik, false, o)
+            : renderBlocks(parseBlocks(it.lines), depth + 1, ik, o);
           if (it.task !== null) {
             return (
               <li key={ik} className="flex list-none items-start gap-2.5 [&>div>p]:my-0">
@@ -419,10 +454,13 @@ function renderBlocks(blocks: Block[], depth: number, prefix: string): React.Rea
               </li>
             );
           }
-          return <li key={ik} className="pl-1 [&>p]:my-1">{content}</li>;
+          return <li key={ik} className={chat ? "pl-0.5 [&>ol]:my-1 [&>p]:my-0.5 [&>ul]:my-1" : "pl-1 [&>p]:my-1"}>{content}</li>;
         });
         const allTasks = b.items.every((it) => it.task !== null);
-        const cls = cn("my-3 space-y-1.5 text-base font-normal leading-7 text-foreground marker:text-subtle", allTasks ? "pl-0" : "pl-6", b.ordered ? "list-decimal" : "list-disc");
+        // The chat's lists: its own type size, the markers hanging in the secondary grey, items about 5px apart.
+        const cls = chat
+          ? cn("my-2 marker:text-secondary marker:tabular-nums [&>li+li]:mt-[0.35em]", allTasks ? "pl-0" : b.ordered ? "pl-[1.6em]" : "pl-[1.25em]", b.ordered ? "list-decimal" : "list-disc")
+          : cn("my-3 space-y-1.5 text-base font-normal leading-7 text-foreground marker:text-subtle", allTasks ? "pl-0" : "pl-6", b.ordered ? "list-decimal" : "list-disc");
         return b.ordered
           ? <ol key={k} start={b.start !== 1 ? b.start : undefined} className={cls}>{items}</ol>
           : <ul key={k} className={cls}>{items}</ul>;
@@ -430,10 +468,10 @@ function renderBlocks(blocks: Block[], depth: number, prefix: string): React.Rea
       case "table": {
         const align = (j: number) => (b.align[j] === "center" ? "text-center" : b.align[j] === "right" ? "text-right" : "text-left");
         return (
-          <div key={k} className="my-4 overflow-x-auto">
+          <div key={k} className={cn("overflow-x-auto", chat ? "my-2" : "my-4")}>
             <table className="w-full border-collapse text-sm">
-              <thead><tr>{b.head.map((h, j) => <th key={j} scope="col" className={cn("h-9 border-b border-border px-3 font-medium text-secondary first:pl-0", align(j))}>{inline(h, 0, `${k}-h${j}`)}</th>)}</tr></thead>
-              <tbody>{b.rows.map((r, ri) => <tr key={ri}>{b.head.map((_, j) => <td key={j} className={cn("px-3 py-2.5 align-top font-normal text-foreground first:pl-0", align(j))}>{inline(r[j] ?? "", 0, `${k}-${ri}-${j}`)}</td>)}</tr>)}</tbody>
+              <thead><tr>{b.head.map((h, j) => <th key={j} scope="col" className={cn("h-9 border-b border-border px-3 font-medium text-secondary first:pl-0", align(j))}>{inline(h, 0, `${k}-h${j}`, false, o)}</th>)}</tr></thead>
+              <tbody>{b.rows.map((r, ri) => <tr key={ri}>{b.head.map((_, j) => <td key={j} className={cn("px-3 py-2.5 align-top font-normal text-foreground first:pl-0", align(j))}>{inline(r[j] ?? "", 0, `${k}-${ri}-${j}`, false, o)}</td>)}</tr>)}</tbody>
             </table>
           </div>
         );
@@ -442,8 +480,15 @@ function renderBlocks(blocks: Block[], depth: number, prefix: string): React.Rea
   });
 }
 
-/** Renders a document body. `source` is untrusted: whatever it holds is shown as text, never run. */
-export function Markdown({ source, className }: { source: string; className?: string }) {
+/**
+ * Renders a document body, or with `variant="chat"` one of Brenda's replies. `source` is untrusted: whatever it holds is
+ * shown as text, never run. In the chat, `onNavigate` opens a Boredroom path in the app (a plain click; new-tab clicks
+ * stay the browser's) and `base` (the workspace, "/app/<slug>") completes a path written without it.
+ */
+export function Markdown({ source, className, variant = "doc", base, onNavigate }: {
+  source: string; className?: string; variant?: "doc" | "chat"; base?: string; onNavigate?: (href: string) => void;
+}) {
   const blocks = parseBlocks(source.replace(/\r\n?/g, "\n").split("\n"));
-  return <div className={cn("min-w-0 break-words [&>*:first-child]:mt-0 [&>*:last-child]:mb-0", className)}>{renderBlocks(blocks, 0, "b")}</div>;
+  const o: Opts = variant === "chat" ? { chat: true, base, onNavigate } : DOC;
+  return <div className={cn("min-w-0 break-words [&>*:first-child]:mt-0 [&>*:last-child]:mb-0", className)}>{renderBlocks(blocks, 0, "b", o)}</div>;
 }

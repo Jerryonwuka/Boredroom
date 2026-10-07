@@ -302,7 +302,7 @@ export async function brendaTick(now = new Date()) {
                AND EXISTS (SELECT 1 FROM attendance_days a WHERE a.membership_id = $1 AND a.local_date = $2::date AND a.clock_out_at IS NULL AND a.clock_in_at < now() - interval '30 minutes')
                AND NOT EXISTS (SELECT 1 FROM work_sessions s WHERE s.membership_id = $1 AND s.state IN ('running','paused','interrupted'))
              ORDER BY t.updated_at DESC LIMIT 1`, [person.id, today]);
-          if (started) { await notify(db, { organisationId: org.id, recipientMembershipId: person.id, type: "brenda.nudge", title: `You started “${started.title}” but its timer isn't running`, body: "Start it from My Day, or ask Brenda to start it.", href: href("/my-day"), dedupKey: key("no_timer") }); sent++; }
+          if (started) { await notify(db, { organisationId: org.id, recipientMembershipId: person.id, type: "brenda.nudge", title: `You started “${started.title}” but its timer isn't running`, body: "Start it from your to-dos, or ask Brenda to start it.", href: href("/todos"), dedupKey: key("no_timer") }); sent++; }
         }
       }
     }

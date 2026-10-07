@@ -10,12 +10,15 @@
  * top layer so a sheet or a scroll box never clips them. They close on Escape (focus returns to the trigger), on a
  * click outside and, for menus, after an item is chosen.
  * Menu keyboard: the first item takes focus on open; ↑ ↓ move, Home/End jump, Tab closes.
+ * A menu item's lucide `icon` plays its animated twin while the item is hovered or has keyboard focus
+ * (components/ui/animated-icons).
  */
 import * as React from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { liftToTopLayer, popoverHost } from "@/components/ui/top-layer";
+import { withAnimatedIcons } from "@/components/ui/animated-icons";
 
 type Align = "start" | "end" | "center";
 type TriggerProps = React.HTMLAttributes<HTMLElement> & { "aria-expanded"?: boolean; "aria-haspopup"?: React.AriaAttributes["aria-haspopup"]; "aria-controls"?: string };
@@ -181,7 +184,7 @@ export function MenuItem({ children, onSelect, href, icon, kbd, tone, disabled =
   const role = checked === undefined ? "menuitem" : "menuitemcheckbox";
   const body = (
     <>
-      {icon}
+      {withAnimatedIcons(icon)}
       <span className="min-w-0 flex-1 truncate">{children}</span>
       {checked ? <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden className="!size-4 !text-accent"><path d="M20 6 9 17l-5-5" /></svg> : null}
       {kbd ? <span className="kbd ml-auto">{kbd}</span> : null}

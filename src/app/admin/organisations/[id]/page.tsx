@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ChevronRight, Clock, HardDrive, ShieldCheck, Timer, UsersRound } from "lucide-react";
+import { Clock, HardDrive, ShieldCheck, Timer, UsersRound } from "lucide-react";
+import { AnimatedChevronRight } from "@/components/ui/animated-icons";
 import { requireAdmin, can } from "@/server/admin/auth";
 import { organisationDetail } from "@/server/admin/organisations";
 import { AppError } from "@/server/lib/errors";
@@ -86,7 +87,7 @@ export default async function OrganisationPage({ params, searchParams }: { param
           </div>
           <div className="grid content-start gap-3">
             <Card>
-              <CardHeader title="Teams" size="sm" className="mb-3" action={<Link href={`${base}?tab=teams`} className={cn(buttonVariants({ variant: "ghost", size: "xs" }), "-mr-2")}>All<ChevronRight aria-hidden /></Link>} />
+              <CardHeader title="Teams" size="sm" className="mb-3" action={<Link href={`${base}?tab=teams`} className={cn(buttonVariants({ variant: "ghost", size: "xs" }), "-mr-2")}>All<AnimatedChevronRight aria-hidden /></Link>} />
               {d.teams.filter((x) => !x.archived_at).length === 0 ? <p className="text-sm font-normal text-secondary">No teams yet.</p> : (
                 <ul className="grid gap-2.5">{d.teams.filter((x) => !x.archived_at).map((x) => (
                   <li key={x.id} className="min-w-0"><p className="truncate text-sm font-medium text-foreground">{x.name}</p><p className={subCls}>{x.members} people{x.leads.length ? `, lead ${x.leads.join(", ")}` : ", no lead"}</p></li>
@@ -94,7 +95,7 @@ export default async function OrganisationPage({ params, searchParams }: { param
               )}
             </Card>
             <Card>
-              <CardHeader title="Recent admin actions" size="sm" className="mb-3" action={<Link href={`${base}?tab=audit`} className={cn(buttonVariants({ variant: "ghost", size: "xs" }), "-mr-2")}>All<ChevronRight aria-hidden /></Link>} />
+              <CardHeader title="Recent admin actions" size="sm" className="mb-3" action={<Link href={`${base}?tab=audit`} className={cn(buttonVariants({ variant: "ghost", size: "xs" }), "-mr-2")}>All<AnimatedChevronRight aria-hidden /></Link>} />
               {d.audit.length === 0 ? <EmptyState compact icon={ShieldCheck} title="Nothing here yet" /> : auditList(d.audit.slice(0, 6))}
             </Card>
           </div>
@@ -176,7 +177,7 @@ export default async function OrganisationPage({ params, searchParams }: { param
             </div>
           </Card>
           <Card>
-            <CardHeader title="Payments" action={<Link href={`/admin/billing/payments?org=${id}`} className={cn(buttonVariants({ variant: "ghost", size: "xs" }), "-mr-2")}>All<ChevronRight aria-hidden /></Link>} />
+            <CardHeader title="Payments" action={<Link href={`/admin/billing/payments?org=${id}`} className={cn(buttonVariants({ variant: "ghost", size: "xs" }), "-mr-2")}>All<AnimatedChevronRight aria-hidden /></Link>} />
             {d.payments.length === 0 ? <p className="text-sm font-normal text-secondary">No payments yet.</p> : (
               <DataTable caption="Payments">
                 <thead><tr><th>Reference</th><th>Plan</th><th>Amount</th><th>Status</th><th>Date</th></tr></thead>

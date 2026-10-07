@@ -95,7 +95,7 @@ export default async function WorkroomPage({ params, searchParams }: { params: P
       {shown.length === 0 ? (
         rows.length === 0
           ? <EmptyState icon3d="person-laptop" title="Nobody to show" description={isOrg ? "The Workroom shows staff and team leads. Invite people, then they appear here as soon as they start work." : "Team leads see the people on their teams. Ask your organisation owner to add people to your team."} action={isOrg ? <Link href={`${base}/people`} className={buttonVariants({ size: "sm", variant: "secondary" })}>Invite people</Link> : undefined} />
-          : <EmptyState icon3d="person-laptop" title={tab === "now" ? "Nobody is working right now" : "Nobody has started work yet today"} description="People appear here as soon as they press Start on a to-do in My Day." action={<Link href={href("all")} className={buttonVariants({ size: "sm", variant: "secondary" })}>Show everyone</Link>} />
+          : <EmptyState icon3d="person-laptop" title={tab === "now" ? "Nobody is working right now" : "Nobody has started work yet today"} description="People appear here as soon as they press Start on one of their to-dos or tasks." action={<Link href={href("all")} className={buttonVariants({ size: "sm", variant: "secondary" })}>Show everyone</Link>} />
       ) : (
         <ul className="-mx-2" aria-label="People">
           {shown.map((r) => {

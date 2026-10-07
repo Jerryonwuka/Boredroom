@@ -2,7 +2,7 @@
 
 Prerequisites: `pnpm db:setup`, `pnpm dev`, `pnpm worker` running. Password for every account: `correct-horse-battery`. Mail lands in `/dev/mail`.
 
-1. **Staff plans and works** — sign in as `ada@company-a.test`. On My Day, type a to-do in the box and press Enter; it lands in "Your to-dos", planned for today. Tasks from David are under "From your team lead". Press Start on Homepage design. Reload the page: the same session and elapsed time come back from the server (A07).
+1. **Staff plans and works** — sign in as `ada@company-a.test`. Open To-dos (in the sidebar, under Work), press + beside "Your to-dos for today", type a to-do and press Enter; it lands on the To do tab, planned for today. Tasks from David say "From David Manager" under their titles; Homepage design, due in three days, waits on the Upcoming tab. Open it and press Start; the timer shows at the top of To-dos and of My Day. Reload the page: the same session and elapsed time come back from the server (A07).
 2. **Pause / resume** — Pause, wait, Resume. Time only accrues while running (A06).
 3. **Switch** — Switch task → Client kickoff meeting. The previous session closes and the new one opens in one transaction.
 4. **Stop with a note** — Stop → note "Agreed scope" → Continue later.

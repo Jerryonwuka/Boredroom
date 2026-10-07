@@ -10,7 +10,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowUpRight } from "lucide-react";
+import { AnimatedArrowUpRight } from "@/components/ui/animated-icons";
 import { Button, buttonVariants, type ButtonProps } from "@/components/ui/button";
 import { Badge, TASK_STATUS_TONE, label, taskStatusLabel } from "@/components/ui/badge";
 import { Person } from "@/components/ui/person";
@@ -70,7 +70,7 @@ function SubmissionSheet({ orgSlug, submissionId, taskId, title, timezone, onClo
   const taskHref = s ? `/app/${orgSlug}/tasks/${s.task_id}` : taskId ? `/app/${orgSlug}/tasks/${taskId}` : null;
   return (
     <Sheet open onClose={onClose} size="lg" title={s?.title ?? title} description={s ? `${s.project_name}, revision ${s.revision}` : "Submission"}
-      footer={taskHref ? <Link href={taskHref} className={buttonVariants({ variant: "ghost", size: "sm" })}>Open the full task<ArrowUpRight aria-hidden /></Link> : undefined}>
+      footer={taskHref ? <Link href={taskHref} className={buttonVariants({ variant: "ghost", size: "sm" })}>Open the full task<AnimatedArrowUpRight aria-hidden /></Link> : undefined}>
       {!d ? (failed
         ? <p role="alert" className="text-sm font-normal text-danger">Could not load the submission. Open the full task instead.</p>
         : <div role="status" aria-label="Loading the submission" className="grid gap-3"><Skeleton className="h-8 w-56" /><Skeleton className="h-3.5 w-11/12" /><Skeleton className="h-3.5 w-3/4" /><Skeleton className="h-3.5 w-2/3" /></div>) : (

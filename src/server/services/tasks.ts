@@ -64,7 +64,7 @@ export async function createTask(ctx: OrgContext, input: z.infer<typeof createTa
     if (project.status !== "active") throw conflict("PROJECT_ARCHIVED", "Tasks cannot be created in an archived project.");
     if (project.requires_due_date && !input.dueAt) throw invalid("This project requires a due date.", { dueAt: ["Required by project policy."] });
     if (project.requires_estimate && !input.estimateMinutes) throw invalid("This project requires an effort estimate.", { estimateMinutes: ["Required by project policy."] });
-    if (!(await canManageAssignee(db, ctx, assignee, input.projectId))) throw forbidden("You cannot assign tasks to that person in this project. Hand-outs from My Day or the Tasks page work for anyone in the organisation.");
+    if (!(await canManageAssignee(db, ctx, assignee, input.projectId))) throw forbidden("You cannot assign tasks to that person in this project. Hand-outs from To-dos or the Tasks page work for anyone in the organisation.");
     const assigneeRow = await db.maybeOne<{ role: string }>(`SELECT role FROM memberships WHERE id = $1 AND organisation_id = $2 AND status = 'active'`, [assignee, ctx.org.id]);
     if (!assigneeRow) throw invalid("Assignee is not an active member.", { assigneeMembershipId: ["Not an active member."] });
     // Organisation accounts may keep a task for themselves (owner decision, 25 September 2026) or hand one to anyone.
@@ -217,7 +217,7 @@ export async function addComment(ctx: OrgContext, taskId: string, body: string) 
 
 export const planSchema = z.object({ localDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), taskIds: z.array(z.string().uuid()).max(50) });
 
-/** Replaces the employee's own My Day order for a date. Order is employee-specific. */
+/** Replaces the employee's own to-do order (the To-dos page) for a date. Order is employee-specific. */
 export async function setDailyPlan(ctx: OrgContext, input: z.infer<typeof planSchema>) {
   return withUser(ctx.user.profileId, async (db) => {
     await db.query(`DELETE FROM daily_plan_items WHERE membership_id = $1 AND local_date = $2`, [ctx.membership.id, input.localDate]);
@@ -412,9 +412,9 @@ export async function checkerFor(db: Db, ctx: OrgContext, t: { reviewer_membersh
 }
 
 /**
- * "Done" from My Day (owner decision, round 4): finished work goes to the person who checks it (the task's reviewer,
- * else the team lead) and shows as "Sent for check" until they approve; then it is Completed. Only when nobody can
- * check it (a member with no lead and no organisation account) is the task completed on the spot.
+ * "Done" from To-dos, the Tasks page or Brenda (owner decision, round 4): finished work goes to the person who checks
+ * it (the task's reviewer, else the team lead) and shows as "Sent for check" until they approve; then it is Completed.
+ * Only when nobody can check it (a member with no lead and no organisation account) is the task completed on the spot.
  */
 export async function completeTask(ctx: OrgContext, taskId: string, input: z.infer<typeof completeSchema>, requestId?: string): Promise<{ id: string; version: number; completed: boolean }> {
   const decision = await withUser(ctx.user.profileId, async (db) => {
@@ -428,7 +428,7 @@ export async function completeTask(ctx: OrgContext, taskId: string, input: z.inf
   });
   if (decision.kind === "completed") return decision.result;
   const { submitTask } = await import("@/server/services/evidence");
-  await submitTask(ctx, taskId, { note: input.note || "Marked done from My Day", links: [], fileIds: [] }, requestId);
+  await submitTask(ctx, taskId, { note: input.note || "Marked done", links: [], fileIds: [] }, requestId);
   return { id: taskId, version: decision.version + 1, completed: false };
 }
 

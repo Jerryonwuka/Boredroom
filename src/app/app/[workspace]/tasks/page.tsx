@@ -59,10 +59,10 @@ export default async function TasksPage({ params, searchParams }: { params: Prom
         <>
           {personFilter ? <div className="mb-4 flex flex-wrap items-center gap-2">{personFilter}</div> : null}
           <EmptyState icon3d="card-check" title={empty}
-            description={mine ? "When your team lead assigns you something it appears here, and on My Day. You can also add your own to-dos on My Day."
+            description={mine ? "When your team lead assigns you something it appears here and on To-dos. You can add your own to-dos there too."
               : status === "all" || status === "assigned" ? "Press New task to create one and hand it to someone, or tell Brenda what needs doing and she drafts the tasks for you to confirm."
               : "Nothing in this list right now. The other tabs hold the rest."}
-            action={mine ? <Link href={`${base}/my-day`} className={buttonVariants({ variant: "secondary", size: "sm" })}>Open My Day</Link>
+            action={mine ? <Link href={`${base}/todos`} className={buttonVariants({ variant: "secondary", size: "sm" })}>Open your to-dos</Link>
               // The one hand-off to Brenda on this page: she creates and assigns tasks (create_todos), each waiting for a yes.
               : status === "all" || status === "assigned" ? <Link href={`${base}/home?ask=${encodeURIComponent(lead ? "Help me plan this week's tasks for my team and assign them." : "Help me plan this week's tasks and assign them to the right people.")}`} className={buttonVariants({ variant: "secondary", size: "sm" })}><BrendaGlyph aria-hidden />Ask Brenda to plan tasks</Link>
               : <Link href={href("all")} className={buttonVariants({ variant: "secondary", size: "sm" })}>Show all tasks</Link>} />

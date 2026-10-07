@@ -43,6 +43,13 @@
 // orange live dot, and Brenda listens: her eyes widen and swell with the voice, her glow with them. While the person
 // types in the ask box her eyes read along, following the caret; once it is sent she thinks; a reply pleases her. The
 // island's shape, hover-open, click-through and every action are as they were.
+//
+// Replies easy to scan and icons that move (owner requests, 7 October 2026: "if you're listing things, it should not be in
+// a paragraph; list it", and "I want our icons to be animated icons"). Her replies arrive as light Markdown and are drawn
+// here as on the web: paragraphs, bulleted and numbered lists, bold, and links to Boredroom pages (`md` below, which
+// escapes every piece of text it is given and writes only its own few tags); the spoken version stays plain (`plain`).
+// The icons on buttons play a small move once on hover and keyboard focus (style.css, "Icons that move"), as the web's
+// animated icons do; never a loop, and nothing under reduced motion.
 
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
@@ -109,13 +116,14 @@ const ICONS = {
   pause: `<rect x="14" y="4" width="4" height="16" rx="1"/><rect x="6" y="4" width="4" height="16" rx="1"/>`,
   play: `<polygon points="6 3 20 12 6 21 6 3"/>`,
   stop: `<rect x="4" y="4" width="16" height="16" rx="2" fill="currentColor"/>`,
-  check: `<path d="M20 6 9 17l-5-5"/>`,
+  check: `<path d="M20 6 9 17l-5-5" pathLength="1"/>`,
   shield: `<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/>`,
   open: `<path d="M7 7h10v10"/><path d="M7 17 17 7"/>`,
   plus: `<path d="M5 12h14"/><path d="M12 5v14"/>`,
   alarm: `<circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2"/><path d="M5 3 2 6"/><path d="m22 6-3-3"/>`,
 };
-const icon = (name) => `<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name]}</svg>`;
+/** An icon; its class (`ic-<name>`) picks the small move it makes when its button is hovered or focused (style.css). */
+const icon = (name) => `<svg class="ic ic-${name}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name]}</svg>`;
 // The Reports and Policy pages are gone (owner decision, 5 October 2026): an older notification or answer that still
 // points at one gets no Open button.
 const removedPage = (href) => /^(?:https?:\/\/[^/]+)?\/app\/[^/?#]+\/(?:reports|policy)(?:[/?#]|$)/.test(String(href ?? ""));
@@ -508,8 +516,121 @@ function talkButton() {
   return `<button class="btn ghost icon" data-act="voice-setup" title="Talk to Brenda" aria-label="Talk to Brenda">${mic}</button>`;
 }
 
-/** What Brenda said, readable aloud: no markdown marks, links as their words. */
-const plain = (s) => String(s ?? "").replace(/\[([^\]]+)\]\([^)]+\)/g, "$1").replace(/[*_`#>]+/g, "").replace(/\s+\n/g, "\n").trim();
+/**
+ * What Brenda said, readable aloud: no markdown marks, links as their words, list markers dropped (a numbered item
+ * keeps its number) and each list line ending as a sentence, so the voice pauses between items.
+ */
+const plain = (s) => String(s ?? "").replace(/\[([^\]]+)\]\([^)]+\)/g, "$1").replace(/\\([\\`*_{}[\]()#+\-.!|~>])/g, "$1")
+  .replace(/^[ \t]*[-*+•][ \t]+(.*)$/gm, (_, t) => (/[.!?:;]$/.test(t.trim()) ? t : `${t.trim()}.`))
+  .replace(/^([ \t]*\d{1,3}[.)][ \t]+)(.*)$/gm, (_, n, t) => `${n}${/[.!?:;]$/.test(t.trim()) ? t : `${t.trim()}.`}`)
+  .replace(/^[ \t]*(\*\*|__)((?:(?!\1).)+)\1:?[ \t]*$/gm, "$2:")
+  .replace(/[*_`#>]+/g, "").replace(/\s+\n/g, "\n").trim();
+
+// ---- her replies, as light Markdown ------------------------------------------------------------------------------
+// Brenda writes light Markdown (copilot.ts): the answer first, lists with each item's key words in bold, bold labels over
+// grouped lists, links to Boredroom pages. `md` draws it as the web's chat does (docs-markdown.tsx, variant "chat"):
+// paragraphs (a single line break kept), bulleted and numbered lists, bold, italic, inline code and links. It is safe by
+// construction: every piece of her text goes through `esc` before it is placed, and the only markup is the handful of
+// tags written here. A link becomes a link button only for a path inside Boredroom (a path without the workspace is
+// read as one inside it, as on the web) that is not a removed page; anything else shows its words only.
+
+const MD_ESCAPABLE = "\\`*_{}[]()#+-.!|~>";
+/** A Boredroom path the notch may open, or null. */
+function mdHref(raw) {
+  const url = String(raw ?? "").trim().replace(/^<|>$/g, "");
+  if (!/^\/(?![/\\])[^\s\\]{0,2000}$/.test(url)) return null;
+  const slug = config?.workspaceSlug ? `/app/${config.workspaceSlug}` : "";
+  const path = !slug || url === slug || url.startsWith(`${slug}/`) || url.startsWith(`${slug}?`) || /^\/(?:app|api)(?:[/?#]|$)/.test(url) ? url : `${slug}${url}`;
+  return removedPage(path) ? null : path;
+}
+/** One line of her text as escaped HTML: bold, italic, inline code and links; everything else is text. */
+function mdInline(text, depth = 0, inLink = false) {
+  const s = String(text ?? "");
+  if (depth > 4) return esc(s);
+  let out = "", buf = "", i = 0;
+  const flush = () => { out += esc(buf); buf = ""; };
+  // Where a mark was last found to have no closer: later openers of it are text without searching again.
+  const none = {};
+  while (i < s.length) {
+    const c = s[i];
+    if (c === "\\" && MD_ESCAPABLE.includes(s[i + 1] ?? "")) { buf += s[i + 1]; i += 2; continue; }
+    if (c === "`") {
+      const close = s.indexOf("`", i + 1);
+      if (close > i + 1) { flush(); out += `<code>${esc(s.slice(i + 1, close))}</code>`; i = close + 1; continue; }
+    }
+    if (c === "[" && !inLink) {
+      const m = /^\[([^\]\n]{1,300})\]\(([^)\s]{1,2000})(?:\s+"[^"]*")?\)/.exec(s.slice(i, i + 2400));
+      if (m) {
+        flush();
+        const href = mdHref(m[2]);
+        const label = mdInline(m[1], depth + 1, true);
+        out += href ? `<button type="button" class="link" data-act="open-href" data-href="${esc(href)}">${label}</button>` : label;
+        i += m[0].length; continue;
+      }
+    }
+    if (c === "*" || c === "_") {
+      const d = s[i + 1] === c ? c + c : c;
+      const next = s[i + d.length];
+      // Opens before a non-space; "_" inside a word (snake_case) is text.
+      if (next && !/\s/.test(next) && !(c === "_" && /[\p{L}\p{N}]/u.test(s[i - 1] ?? "")) && !(none[d] <= i)) {
+        let close = s.indexOf(d, i + d.length);
+        // Not after a space, not an escaped mark ("\*" is text), and a single mark is not half of a double one.
+        while (close !== -1 && (/\s/.test(s[close - 1]) || s[close - 1] === "\\" || (d.length === 1 && s[close + 1] === c))) close = s.indexOf(d, close + 1);
+        if (close === -1) none[d] = i;
+        if (close > i + d.length) {
+          flush();
+          const inner = mdInline(s.slice(i + d.length, close), depth + 1, inLink);
+          out += d.length === 2 ? `<strong>${inner}</strong>` : `<em>${inner}</em>`;
+          i = close + d.length; continue;
+        }
+      }
+      buf += d; i += d.length; continue;
+    }
+    buf += c; i++;
+  }
+  flush();
+  return out;
+}
+/** Her reply as escaped HTML blocks: paragraphs, labels (a paragraph that is only bold), bulleted and numbered lists. */
+function md(text) {
+  const lines = String(text ?? "").replace(/\r\n?/g, "\n").split("\n").slice(0, 400);
+  const out = [];
+  let para = [], list = null, gap = false;
+  const endPara = () => {
+    if (!para.length) return;
+    const label = para.length === 1 && /^(\*\*|__)(?:(?!\1).)+\1:?$/.test(para[0]);
+    out.push(`<p${label ? ' class="label"' : ""}>${para.map((l) => mdInline(l)).join("<br>")}</p>`);
+    para = [];
+  };
+  const endList = () => {
+    if (!list) return;
+    const start = list.tag === "ol" && list.start !== 1 ? ` start="${list.start}"` : "";
+    out.push(`<${list.tag}${start}>${list.items.map((it) => `<li>${it.map((l) => mdInline(l)).join("<br>")}</li>`).join("")}</${list.tag}>`);
+    list = null;
+  };
+  for (const raw of lines) {
+    const line = raw.replace(/\t/g, "    ");
+    if (!line.trim()) { endPara(); gap = true; continue; }
+    const wasGap = gap; gap = false;
+    if (/^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$/.test(line)) { endPara(); endList(); continue; } // a rule: a break only
+    const item = /^ {0,12}([-*+•]|\d{1,3}[.)])[ \t]+(.+)$/.exec(line);
+    if (item) {
+      const tag = /\d/.test(item[1]) ? "ol" : "ul";
+      endPara();
+      if (!list || list.tag !== tag) { endList(); list = { tag, start: tag === "ol" ? Math.max(1, parseInt(item[1], 10)) : 1, items: [] }; }
+      list.items.push([item[2].trim()]);
+      continue;
+    }
+    // A line under an item, before any blank line, carries the item on.
+    if (list && !wasGap) { list.items[list.items.length - 1].push(line.trim()); continue; }
+    endList();
+    const heading = /^ {0,3}#{1,6}[ \t]+(.*?)[ \t#]*$/.exec(line);
+    if (heading) { endPara(); out.push(`<p class="label">${mdInline(heading[1])}</p>`); continue; } // no headings, only labels
+    para.push(line.trim().replace(/^>[ ]?/, ""));
+  }
+  endPara(); endList();
+  return out.join("");
+}
 
 /** The voice card's time, m:ss: running while listening, stopped once the keys come up. */
 const mss = (s) => `${Math.floor(s / 60)}:${pad(s % 60)}`;
@@ -537,7 +658,7 @@ function voiceView() {
     // What the built-in helper offers as one press (a to-do, clocking in or out, a timer), as on the web; not while
     // something waits for a yes, so the card keeps its height.
     const offers = confirms.length ? [] : proposals.map((p, i) => ({ p, i })).filter(({ p }) => OFFER[p.kind]).slice(0, 3);
-    return `<div class="row fade top">${face(moodOf())}<div class="grow"><p class="said">“${esc(c.heard)}”</p><p class="reply">${esc(plain(c.reply))}</p></div></div>
+    return `<div class="row fade top">${face(moodOf())}<div class="grow"><p class="said">“${esc(c.heard)}”</p><div class="reply">${md(c.reply)}</div></div></div>
       ${c.actions?.length ? `<ul class="list fade">${c.actions.slice(0, confirms.length ? 2 : 4).map((a) => `<li class="done"><span class="k ok">${icon("check")}</span><span class="t">${esc(a.summary)}</span></li>`).join("")}</ul>` : ""}
       ${offers.length ? `<ul class="list fade">${offers.map(({ p, i }) => `<li><span class="t">${offerLabel(p)}</span>${p.done ? `<span class="k ok end">${esc(p.done)}</span>` : `<button class="btn" data-act="offer" data-i="${i}" ${busy ? "disabled" : ""}>${icon(OFFER[p.kind].icon)}${OFFER[p.kind].label}</button>`}</li>`).join("")}</ul>` : ""}
       ${confirms.map((p) => `<div class="confirm fade"><p class="sub">${icon("shield")}<span>${esc(p.summary)}</span></p><div class="actions"><button class="btn ghost" data-act="not-now">Not now <kbd>N</kbd></button><button class="btn primary" data-act="confirm" data-token="${esc(p.token)}" ${busy ? "disabled" : ""}>${icon("check")}Confirm <kbd>Y</kbd></button></div></div>`).join("")}

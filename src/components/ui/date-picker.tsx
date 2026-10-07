@@ -12,7 +12,8 @@
  */
 import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { CalendarDays, ChevronLeft, ChevronRight, Clock3, X } from "lucide-react";
+import { Clock3 } from "lucide-react";
+import { AnimatedCalendarDays, AnimatedChevronLeft, AnimatedChevronRight, AnimatedX } from "@/components/ui/animated-icons";
 import { cn } from "@/lib/utils";
 import { liftToTopLayer } from "@/components/ui/top-layer";
 import { TimePicker } from "@/components/ui/time-picker";
@@ -151,8 +152,8 @@ export function DatePicker({ name, id, mode = "date", value, defaultValue, onCha
       <button ref={trigger} type="button" id={id} disabled={disabled} aria-label={ariaLabel} data-invalid={ariaInvalid || undefined} aria-describedby={ariaDescribedBy} aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? popId : undefined} onClick={show} className={field}>
         <span className="truncate tabular-nums">{text || placeholder || (mode === "month" ? "Pick a month" : mode === "datetime" ? "Pick a date and time" : "Pick a date")}</span>
         <span className="flex shrink-0 items-center gap-1 text-subtle">
-          {text && !required ? <span role="button" tabIndex={-1} aria-label="Clear" onClick={(e) => { e.stopPropagation(); commit(""); }} className="grid size-5 place-items-center rounded-md hover:bg-fill-1 hover:text-foreground"><X className="size-3" aria-hidden /></span> : null}
-          {mode === "datetime" ? <Clock3 className="size-4" aria-hidden /> : <CalendarDays className="size-4" aria-hidden />}
+          {text && !required ? <span role="button" tabIndex={-1} aria-label="Clear" onClick={(e) => { e.stopPropagation(); commit(""); }} className="grid size-5 place-items-center rounded-md hover:bg-fill-1 hover:text-foreground"><AnimatedX className="size-3" aria-hidden /></span> : null}
+          {mode === "datetime" ? <Clock3 className="size-4" aria-hidden /> : <AnimatedCalendarDays className="size-4" aria-hidden />}
         </span>
       </button>
       {name ? <input type="text" name={name} value={current} required={required} readOnly tabIndex={-1} aria-hidden className="pointer-events-none absolute inset-0 -z-10 h-full w-full opacity-0" /> : null}
@@ -162,9 +163,9 @@ export function DatePicker({ name, id, mode = "date", value, defaultValue, onCha
             style={{ position: "fixed", top: pos.up ? undefined : pos.top, bottom: pos.up ? window.innerHeight - pos.top : undefined, left: pos.left, zIndex: "var(--z-toast)" as unknown as number }}
             className="top-pop popover-surface w-72 p-3 text-foreground">
             <div className="mb-2 flex items-center justify-between">
-              <button type="button" aria-label={`Previous ${heading.unit}`} onClick={heading.prev} className={navBtn}><ChevronLeft className="size-4" aria-hidden /></button>
+              <button type="button" aria-label={`Previous ${heading.unit}`} onClick={heading.prev} className={navBtn}><AnimatedChevronLeft className="size-4" aria-hidden /></button>
               {heading.up ? <button type="button" onClick={heading.up} title={heading.hint} className="rounded-lg px-2.5 py-1 text-sm font-semibold transition-colors duration-75 hover:bg-fill-1">{heading.text}</button> : <span className="px-3 py-1 text-sm font-semibold">{heading.text}</span>}
-              <button type="button" aria-label={`Next ${heading.unit}`} onClick={heading.next} className={navBtn}><ChevronRight className="size-4" aria-hidden /></button>
+              <button type="button" aria-label={`Next ${heading.unit}`} onClick={heading.next} className={navBtn}><AnimatedChevronRight className="size-4" aria-hidden /></button>
             </div>
 
             {level === "years" ? (

@@ -18,6 +18,7 @@
 import { useId, useState } from "react";
 import Link from "next/link";
 import { AlarmClock, CalendarCheck, ChevronRight, CircleAlert, ClipboardCheck, Clock, Users } from "lucide-react";
+import { AnimatedChevronRight } from "@/components/ui/animated-icons";
 import { buttonVariants } from "@/components/ui/button";
 import { ListRow } from "@/components/ui/rows";
 import { Tabs } from "@/components/ui/tabs";
@@ -92,7 +93,7 @@ function DayList({ title, count, children, more }: { title: string; count?: numb
     <section aria-label={title} className="min-w-0">
       <h3 className="mb-1 flex items-center gap-2 px-2 text-sm font-medium tracking-normal text-secondary">{title}{count ? <CountPill count={count} /> : null}</h3>
       <ul>{children}</ul>
-      {more && more.count > 0 ? <Link href={more.href} className={`${buttonVariants({ variant: "ghost", size: "xs" })} ml-1 mt-1`}>{plural(more.count, "more task")}<ChevronRight aria-hidden /></Link> : null}
+      {more && more.count > 0 ? <Link href={more.href} className={`${buttonVariants({ variant: "ghost", size: "xs" })} ml-1 mt-1`}>{plural(more.count, "more task")}<AnimatedChevronRight aria-hidden /></Link> : null}
     </section>
   );
 }
@@ -118,9 +119,12 @@ export function YourDay({ orgSlug, role, brief, timeZone }: DayProps) {
       { label: "Not picked up", value: brief.assignmentsNotPickedUp.length },
     ];
   const clockTitle = !c ? "Your clock" : !c.workingDay ? "Not a working day" : c.status === "in" ? "Clocked in" : c.status === "out" ? "Clocked out for today" : "Not clocked in yet";
+  // What is due or overdue for staff and team leads is their own work, on their to-do list (owner request, 7 October
+  // 2026: the list has its own page); the organisation account has none and keeps the Tasks page.
+  const mineHref = worker ? `${base}/todos` : `${base}/tasks`;
   const lists = [
     brief.dueToday.length ? (
-      <DayList key="due" title="Due today" count={brief.dueToday.length} more={{ href: `${base}/tasks`, count: brief.dueToday.length - SHOW }}>
+      <DayList key="due" title="Due today" count={brief.dueToday.length} more={{ href: mineHref, count: brief.dueToday.length - SHOW }}>
         {brief.dueToday.slice(0, SHOW).map((x) => (
           <ListRow key={x.id} href={`${base}/tasks/${x.id}`} leading={<ToolSquare><CalendarCheck aria-hidden /></ToolSquare>} title={x.title}
             subtitle={<>{x.due ? <>Due at <time suppressHydrationWarning dateTime={x.due}>{timeOf(x.due, timeZone)}</time></> : "Due today"}{x.progress ? `, ${x.progress}% done` : ""}</>} />
@@ -128,7 +132,7 @@ export function YourDay({ orgSlug, role, brief, timeZone }: DayProps) {
       </DayList>
     ) : null,
     brief.overdue.length ? (
-      <DayList key="overdue" title="Overdue" count={brief.overdue.length} more={{ href: `${base}/tasks`, count: brief.overdue.length - SHOW }}>
+      <DayList key="overdue" title="Overdue" count={brief.overdue.length} more={{ href: mineHref, count: brief.overdue.length - SHOW }}>
         {brief.overdue.slice(0, SHOW).map((x) => (
           <ListRow key={x.id} href={`${base}/tasks/${x.id}`} leading={<ToolSquare><CircleAlert aria-hidden /></ToolSquare>} title={x.title}
             subtitle={x.due ? <>Was due <time suppressHydrationWarning dateTime={x.due}>{dayOf(x.due, timeZone)}</time></> : "Overdue"} trailing={<Badge tone="danger" dot>Overdue</Badge>} />
@@ -174,7 +178,7 @@ export function YourDay({ orgSlug, role, brief, timeZone }: DayProps) {
         ) : null}
         {lists}
       </div>
-      {/* Staff and leads have their to-do list right below, which says when it is empty; the organisation has none. */}
+      {/* Staff and leads always have their clock under Now, and their to-dos on To-dos; the organisation has neither. */}
       {!lists.length && !worker ? <EmptyState compact icon={BrendaGlyph} title="All clear" description="Nothing is waiting on you right now. Ask Brenda for anything you need." /> : null}
     </div>
   );
@@ -200,7 +204,7 @@ export function YourTeam({ orgSlug, working }: TeamDay & { orgSlug: string }) {
       <section aria-label="Working now" className="min-w-0">
         <div className="mb-1 flex items-center justify-between gap-3 px-2">
           <h3 className="flex items-center gap-2 text-sm font-medium tracking-normal text-secondary">Working now<CountPill count={people.length} /></h3>
-          <Link href={`${base}/workroom`} className={buttonVariants({ variant: "ghost", size: "xs" })}>Open the workroom<ChevronRight aria-hidden /></Link>
+          <Link href={`${base}/workroom`} className={buttonVariants({ variant: "ghost", size: "xs" })}>Open the workroom<AnimatedChevronRight aria-hidden /></Link>
         </div>
         {people.length ? (
           <ul className="grid gap-x-8 @3xl:grid-cols-2">

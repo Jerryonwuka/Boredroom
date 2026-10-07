@@ -312,9 +312,25 @@ kbd { display: inline-flex; align-items: center; justify-content: center; box-si
 .orb.think i { background: var(--accent); animation: breathe 1.1s var(--ease) infinite alternate; }
 @keyframes breathe { from { transform: scale(.6); opacity: .45; } to { transform: scale(1); opacity: .9; } }
 .said { font-size: 13px; line-height: 19.5px; font-weight: 400; font-style: italic; color: var(--secondary); }
-.reply { margin-top: 4px; font-size: 14px; line-height: 20px; font-weight: 400; color: var(--foreground); white-space: pre-line; max-height: 140px; overflow: auto; -webkit-user-select: text; user-select: text; }
+/* Her reply, easy to scan (owner request, 7 October 2026), drawn from her light Markdown by main.js (`md`) as the web's
+   chat draws it: short paragraphs 8px apart, lists with a hanging indent, items 4px apart and their markers in the
+   secondary grey, the key words in semibold, a bold label 12px below what came before and 4px above its list, links as
+   the notch's `.link` in the text colour (an orange underline on hover). A long one scrolls inside its own box. */
+.reply { margin-top: 4px; font-size: 14px; line-height: 20px; font-weight: 400; color: var(--foreground); max-height: 172px; overflow: auto; overflow-wrap: anywhere; -webkit-user-select: text; user-select: text; }
 .reply::-webkit-scrollbar { width: 6px; }
 .reply::-webkit-scrollbar-thumb { background: var(--border-input-hover); border-radius: 3px; }
+.reply > * + * { margin-top: 8px; }
+.reply > * + .label { margin-top: 12px; }
+.reply > .label + ul, .reply > .label + ol { margin-top: 4px; }
+.reply ul, .reply ol { margin: 0; padding-left: 18px; }
+.reply ol { padding-left: 22px; }
+.reply li { padding-left: 2px; }
+.reply li + li { margin-top: 4px; }
+.reply li::marker { color: var(--secondary); font-variant-numeric: tabular-nums; }
+.reply strong, .reply .label { font-weight: 600; color: var(--foreground); }
+.reply em { font-style: italic; }
+.reply code { font-family: var(--font-mono); font-size: 12.5px; padding: 1px 4px; border-radius: var(--radius-chip); background: var(--fill-1); }
+.reply .link { color: var(--foreground); font-size: inherit; line-height: inherit; font-weight: 500; }
 /* Something Brenda prepared that needs a yes: the web's warning Alert (a 6% amber wash, a 25% amber hairline, a shield). */
 .confirm { display: grid; gap: 12px; padding: 12px 14px; border-radius: var(--radius-card-sm); border: 1px solid color-mix(in srgb, var(--warning) 25%, transparent); background: color-mix(in srgb, var(--warning) 6%, transparent); }
 .confirm .sub { display: flex; gap: 10px; align-items: flex-start; font-size: 14px; line-height: 20px; color: var(--foreground); }
@@ -375,11 +391,40 @@ kbd { display: inline-flex; align-items: center; justify-content: center; box-si
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes thump { 0%, 100% { scale: 1; } 50% { scale: 1.25; } }
 
+/* Icons that move (owner request, 7 October 2026: "I want our icons to be animated icons"), as the web's animated icons
+   do: hovering or focusing a button plays its icon's small move once, about 0.4 s, eased out, no bounce and never a loop.
+   Send and Open fly out along their arrow and come back in, Play nudges forward, Pause draws its bars in, Stop gives a
+   small press, Confirm's check draws itself, Add turns a quarter, the alarm clock rings, the microphone tips as if
+   spoken into. Under reduced motion none of them plays (the rule below). */
+@keyframes ic-fly-up { 0% { translate: 0 0; opacity: 1; } 45% { translate: 0 -5px; opacity: 0; } 46% { translate: 0 5px; opacity: 0; } 100% { translate: 0 0; opacity: 1; } }
+@keyframes ic-fly-out { 0% { translate: 0 0; opacity: 1; } 45% { translate: 4px -4px; opacity: 0; } 46% { translate: -4px 4px; opacity: 0; } 100% { translate: 0 0; opacity: 1; } }
+@keyframes ic-nudge { 0%, 100% { translate: 0 0; } 45% { translate: 2px 0; } }
+@keyframes ic-bars { 0% { scale: 1 1; } 40% { scale: 1 .6; } 100% { scale: 1 1; } }
+@keyframes ic-press { 0%, 100% { scale: 1; } 40% { scale: .78; } }
+@keyframes ic-draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+@keyframes ic-turn { from { rotate: 0deg; } to { rotate: 90deg; } }
+@keyframes ic-ring { 0%, 100% { rotate: 0deg; } 15% { rotate: -14deg; } 35% { rotate: 12deg; } 55% { rotate: -8deg; } 75% { rotate: 4deg; } }
+@keyframes ic-tip { 0%, 100% { rotate: 0deg; } 35% { rotate: -12deg; } 70% { rotate: 6deg; } }
+:is(.btn, .link):is(:hover, :focus-visible) > .ic { animation-duration: .42s; animation-timing-function: var(--ease); animation-iteration-count: 1; }
+:is(.btn, .link):is(:hover, :focus-visible) > .ic-send { animation-name: ic-fly-up; }
+:is(.btn, .link):is(:hover, :focus-visible) > .ic-open { animation-name: ic-fly-out; }
+:is(.btn, .link):is(:hover, :focus-visible) > .ic-play { animation-name: ic-nudge; }
+:is(.btn, .link):is(:hover, :focus-visible) > .ic-pause { animation-name: ic-bars; }
+:is(.btn, .link):is(:hover, :focus-visible) > .ic-stop { animation-name: ic-press; }
+:is(.btn, .link):is(:hover, :focus-visible) > .ic-plus { animation-name: ic-turn; }
+:is(.btn, .link):is(:hover, :focus-visible) > .ic-alarm { animation-name: ic-ring; transform-origin: 50% 55%; }
+:is(.btn, .link):is(:hover, :focus-visible) > .ic-mic { animation-name: ic-tip; transform-origin: 50% 90%; }
+/* The check draws itself: its one path is drawn from nothing to whole (pathLength="1" in main.js). */
+:is(.btn, .link):is(:hover, :focus-visible) > .ic-check path { stroke-dasharray: 1; animation: ic-draw .42s var(--ease) 1 both; }
+/* A disabled or busy button's icon stays still. */
+.btn:disabled > .ic, .btn:disabled > .ic path { animation: none; }
+
 /* Reduced motion: nothing animates or slides. The waveform's bars stand still and only their strength follows the voice
    (main.js), as on the web; listening, her eyes keep their size and only her glow follows it; the waiting text is plain. */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
   .shimmer { -webkit-text-fill-color: currentColor; }
   .face.listen .eyes span { scale: none; }
+  .btn .ic-check path { stroke-dasharray: none; }
   .orb.think i { opacity: .8; }
 }

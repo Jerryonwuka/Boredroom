@@ -1,6 +1,7 @@
 import { cn } from "@/lib/utils";
 import { CircleAlert, CircleCheck, Info, Inbox, Lock, TriangleAlert, WifiOff } from "lucide-react";
 import { LINE_ICON, type Icon3DName } from "@/components/ui/icon";
+import { withAnimatedIcons } from "@/components/ui/animated-icons";
 
 type IconComponent = React.ComponentType<{ className?: string; strokeWidth?: number; "aria-hidden"?: boolean }>;
 
@@ -18,13 +19,15 @@ const SQUARE = {
  * secondary grey (max 448px, balanced), and one optional next action (an outline button). No card of its own. `icon3d`
  * names a v3 icon and draws its line equivalent; `icon` takes any line icon (BrendaGlyph for Brenda). `compact` for
  * inside a card or a list. `tone`: `accent` (default), `neutral` (a locked or quiet state), `warning`, `danger` (errors).
+ * The icon is its animated twin where it has one (components/ui/animated-icons): it plays while the pointer is over
+ * the empty state or the keyboard is on its action, never by itself.
  */
 export function EmptyState({ title, description, action, icon, icon3d, className, compact = false, tone = "accent" }: { title: string; description?: React.ReactNode; action?: React.ReactNode; icon?: IconComponent; icon3d?: Icon3DName; className?: string; compact?: boolean; tone?: keyof typeof SQUARE }) {
   const Icon: IconComponent = icon ?? (icon3d ? LINE_ICON[icon3d] : Inbox);
   return (
-    <div className={cn("flex flex-col items-center justify-center text-center", compact ? "px-4 py-6" : "px-6 py-12", className)}>
+    <div data-icon-trigger className={cn("flex flex-col items-center justify-center text-center", compact ? "px-4 py-6" : "px-6 py-12", className)}>
       <span aria-hidden className={cn("grid shrink-0 place-items-center shadow-[0_0_0_1px_var(--border)]", SQUARE[tone], compact ? "mb-2.5 size-9 rounded-[10px] [&_svg]:size-[18px]" : "mb-4 size-12 rounded-xl [&_svg]:size-6")}>
-        <Icon strokeWidth={1.75} aria-hidden />
+        {withAnimatedIcons(<Icon strokeWidth={1.75} aria-hidden />)}
       </span>
       <p className="text-sm font-medium text-foreground">{title}</p>
       {description ? <p className="mt-1 max-w-md text-balance text-sm font-normal text-secondary">{description}</p> : null}

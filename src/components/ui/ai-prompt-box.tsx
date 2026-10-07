@@ -18,6 +18,10 @@
  * from the dictation's own microphone, which it shares), and Cancel; the microphone button is the Stop. The page-wide
  * tooltip layer labels the microphone and Send from their accessible names.
  *
+ * Icons (owner request, 7 October 2026): the microphone and Send's arrow are animated twins (components/ui/animated-icons)
+ * that play while their button is hovered or focused from the keyboard; a lucide icon given to `PromptAction` or
+ * `PromptTextAction` ("More asks"' plus) is swapped for its twin. The stop square stays still.
+ *
  * `variant="hero"` is Brenda's home box (owner decision, 7 October 2026: her home "just like" the reference AI chat
  * home, in our orange): r16, a 1px orange-tinted hairline with a faint orange glow inside it, translucent over her home
  * panel's glow (globals.css `.prompt-hero`); her glyph in orange at the top left, then the text with room for two or
@@ -26,7 +30,8 @@
  * actions, and solid (`--surface`) so the conversation never shows through. Same props, dictation and voice card.
  */
 import * as React from "react";
-import { ArrowUp, Mic, Square } from "lucide-react";
+import { Square } from "lucide-react";
+import { AnimatedArrowUp, AnimatedMic, withAnimatedIcons } from "@/components/ui/animated-icons";
 import { BrendaGlyph } from "@/components/app/brenda-glyph";
 import { VoiceCapture } from "@/components/app/voice-capture";
 import { buttonVariants } from "@/components/ui/button";
@@ -68,13 +73,13 @@ export function PromptInputActions({ children, className, ...props }: React.HTML
 }
 
 /** A round 36px ghost action for the pill (the "+", a mode button). Needs an aria-label. */
-export const PromptAction = React.forwardRef<HTMLButtonElement, React.ButtonHTMLAttributes<HTMLButtonElement> & { "aria-label": string }>(function PromptAction({ className, type = "button", ...props }, ref) {
-  return <button ref={ref} type={type} className={cn("grid size-9 shrink-0 place-items-center rounded-full text-secondary transition-colors duration-75 hover:bg-fill-1 hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ring)] disabled:pointer-events-none disabled:opacity-50 [&_svg]:size-[18px]", className)} {...props} />;
+export const PromptAction = React.forwardRef<HTMLButtonElement, React.ButtonHTMLAttributes<HTMLButtonElement> & { "aria-label": string }>(function PromptAction({ className, type = "button", children, ...props }, ref) {
+  return <button ref={ref} type={type} className={cn("grid size-9 shrink-0 place-items-center rounded-full text-secondary transition-colors duration-75 hover:bg-fill-1 hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ring)] disabled:pointer-events-none disabled:opacity-50 [&_svg]:size-[18px]", className)} {...props}>{withAnimatedIcons(children)}</button>;
 });
 
 /** A ghost text action with its icon for the hero box's bottom row ("More asks"): 32px, 13px medium, secondary grey. */
-export const PromptTextAction = React.forwardRef<HTMLButtonElement, React.ButtonHTMLAttributes<HTMLButtonElement>>(function PromptTextAction({ className, type = "button", ...props }, ref) {
-  return <button ref={ref} type={type} className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "rounded-lg px-2", className)} {...props} />;
+export const PromptTextAction = React.forwardRef<HTMLButtonElement, React.ButtonHTMLAttributes<HTMLButtonElement>>(function PromptTextAction({ className, type = "button", children, ...props }, ref) {
+  return <button ref={ref} type={type} className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "rounded-lg px-2", className)} {...props}>{withAnimatedIcons(children)}</button>;
 });
 
 // ---- The box ------------------------------------------------------------------
@@ -152,12 +157,12 @@ export const PromptInputBox = React.forwardRef<HTMLDivElement, PromptInputBoxPro
                 {mic ? (
                   <button type="button" onClick={onToggleRecording} disabled={transcribing} aria-pressed={recording} aria-label={recording ? "Stop dictating" : "Dictate"}
                     className={cn(round, "disabled:cursor-not-allowed disabled:opacity-50", recording ? "bg-fill-150 text-accent" : "bg-fill-1 text-secondary hover:bg-fill-150 hover:text-foreground")}>
-                    {recording ? <Square className="!size-3.5 fill-current" aria-hidden /> : <Mic aria-hidden />}
+                    {recording ? <Square className="!size-3.5 fill-current" aria-hidden /> : <AnimatedMic aria-hidden />}
                   </button>
                 ) : null}
                 <button type="button" onClick={submit} disabled={isLoading || !hasContent} aria-label="Send" data-tip={recording ? "Stop dictating and send" : undefined}
                   className={cn(round, "disabled:cursor-not-allowed", hasContent && !isLoading ? "bg-accent text-accent-fg hover:bg-accent-hover" : "bg-fill-150 text-subtle")}>
-                  {isLoading ? <Square className="!size-3 animate-pulse fill-current" aria-hidden /> : <ArrowUp strokeWidth={2.25} aria-hidden />}
+                  {isLoading ? <Square className="!size-3 animate-pulse fill-current" aria-hidden /> : <AnimatedArrowUp strokeWidth={2.25} aria-hidden />}
                 </button>
               </div>
             </div>
@@ -180,14 +185,14 @@ export const PromptInputBox = React.forwardRef<HTMLDivElement, PromptInputBoxPro
               <button type="button" onClick={onToggleRecording} disabled={transcribing} aria-pressed={recording} aria-label={recording ? "Stop dictating" : "Dictate"}
                 className={cn("grid size-9 place-items-center rounded-full transition-colors duration-75 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ring)] disabled:cursor-not-allowed disabled:opacity-50",
                   recording ? "bg-fill-1 text-accent hover:bg-fill-150" : "text-secondary hover:bg-fill-1 hover:text-foreground")}>
-                {recording ? <Square className="size-3.5 fill-current" aria-hidden /> : <Mic className="size-[18px]" aria-hidden />}
+                {recording ? <Square className="size-3.5 fill-current" aria-hidden /> : <AnimatedMic className="size-[18px]" aria-hidden />}
               </button>
             ) : null}
             {/* The tooltip layer reads the accessible name; `data-tip` says more while dictating, where Send also stops the microphone. */}
             <button type="button" onClick={submit} disabled={isLoading || !hasContent} aria-label="Send" data-tip={recording ? "Stop dictating and send" : undefined}
               className={cn("grid size-9 place-items-center rounded-full transition-colors duration-75 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ring)] disabled:cursor-not-allowed",
                 hasContent && !isLoading ? "bg-accent text-accent-fg hover:bg-accent-hover" : "bg-fill-150 text-subtle")}>
-              {isLoading ? <Square className="size-3 animate-pulse fill-current" aria-hidden /> : <ArrowUp className="size-[18px]" strokeWidth={2.25} aria-hidden />}
+              {isLoading ? <Square className="size-3 animate-pulse fill-current" aria-hidden /> : <AnimatedArrowUp className="size-[18px]" strokeWidth={2.25} aria-hidden />}
             </button>
           </PromptInputActions>
         </div>

@@ -27,7 +27,9 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { History, MessageSquareText, Volume2, VolumeX, X } from "lucide-react";
+import { MessageSquareText, Volume2, VolumeX, X } from "lucide-react";
+// Past chats is a link styled as an icon button, so it carries its animated twin itself (IconButton swaps its own).
+import { AnimatedHistory } from "@/components/ui/animated-icons";
 import { IconButton, ICON_BUTTON } from "@/components/ui/icon-button";
 import { BrendaFace } from "@/components/app/brenda-face";
 import { BrendaComposer, BrendaMessages, STARTERS, useBrendaChat } from "@/components/app/brenda-chat";
@@ -42,6 +44,12 @@ const subscribePos = (cb: () => void) => { window.addEventListener(POS_EVENT, cb
 const readPos = () => { try { return localStorage.getItem(POS_KEY); } catch { return null; } };
 const writePos = (x: number, y: number) => { try { localStorage.setItem(POS_KEY, `${Math.round(x)},${Math.round(y)}`); } catch { /* private mode */ } window.dispatchEvent(new Event(POS_EVENT)); };
 const clamp = (x: number, y: number) => ({ x: Math.min(Math.max(8, x), window.innerWidth - FAB - 8), y: Math.min(Math.max(8, y), window.innerHeight - FAB - 8) });
+
+/** What she can do, in her opening words before the first message. */
+const CAN_DO: Record<"org" | "worker", string[]> = {
+  org: ["See what is waiting", "Assign work", "Follow up on tasks nobody picked up", "Message people", "Set reminders"],
+  worker: ["See what is waiting", "Start and stop your timer", "Clock in", "Update your tasks", "Set reminders"],
+};
 
 /** The saved position, kept inside the viewport, or null for the default corner. */
 function useFloatingPosition() {
@@ -133,7 +141,7 @@ export function AssistantDrawer({ orgSlug, isOrg, firstName, floating = false }:
           <div className="flex shrink-0 items-center gap-1">
             {/* Saves what is waiting first, so the list it opens already has this conversation. */}
             <Link href={`/app/${orgSlug}/home?tab=history`} aria-label="Past chats" className={ICON_BUTTON} onClick={() => { chat.saveNow(); close(); }}>
-              <History aria-hidden />
+              <AnimatedHistory aria-hidden />
             </Link>
             <IconButton aria-label={muted ? "Turn Brenda's sounds on" : "Turn Brenda's sounds off"} aria-pressed={!muted} onClick={() => { setSoundsMuted(!muted); if (muted) playSound("reply"); }}>
               {muted ? <VolumeX aria-hidden /> : <Volume2 aria-hidden />}
@@ -145,7 +153,15 @@ export function AssistantDrawer({ orgSlug, isOrg, firstName, floating = false }:
         <div ref={listRef} className="scroll-thin min-h-0 flex-1 space-y-5 overflow-y-auto px-6 py-5">
           {messages.length === 0 ? (
             <div className="space-y-4">
-              <p className="text-sm font-normal text-secondary">I&apos;m Brenda. Tell me what you need done and I&apos;ll take care of it: {isOrg ? "see what is waiting, assign work, follow up on tasks nobody picked up, message people, set reminders" : "see what is waiting, start and stop your timer, clock in, update your tasks, set reminders"}. I act as you, with your permissions, and I ask before anything that lands on someone else.</p>
+              {/* What she does, as a list, not a sentence strung with commas (owner request, 7 October 2026: "if you're
+                  listing things, it should not be in a paragraph"); the list is drawn like the ones in her replies. */}
+              <div className="text-sm font-normal text-secondary">
+                <p>I&apos;m Brenda. Tell me what you need done and I&apos;ll take care of it:</p>
+                <ul className="my-2 list-disc pl-[1.25em] marker:text-secondary [&>li+li]:mt-[0.35em]">
+                  {CAN_DO[isOrg ? "org" : "worker"].map((t) => <li key={t}>{t}</li>)}
+                </ul>
+                <p>I act as you, with your permissions, and I ask before anything that lands on someone else.</p>
+              </div>
               {/* Chips (spec §7): h40 r12 px12 outline, 14/20 medium. */}
               <ul className="space-y-2">{starters.map((s) => (
                 <li key={s}>

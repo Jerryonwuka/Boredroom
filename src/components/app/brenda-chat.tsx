@@ -24,15 +24,23 @@
  * v4 look (6 October 2026, docs/design-system.md): your messages are fill-1 bubbles (r16); her replies are plain text
  * beside her face, with no bubble; what she did and what she prepared are outline rows (r12, a 10% hairline), and the
  * one white primary button is Confirm. The box is the home prompt pill; on Brenda's page, her hero box (7 October 2026).
+ *
+ * Her replies are easy to scan (owner request, 7 October 2026: "if you're listing things, it should not be in a
+ * paragraph; list it"): she writes light Markdown (the answer first, lists with the key words in bold, bold labels over
+ * grouped lists), drawn by the Docs renderer in its chat variant (components/app/docs-markdown.tsx: React elements,
+ * never an HTML string), whose links to Boredroom pages open in the app. Your own messages stay plain text.
  */
 import { useEffect, useId, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlarmClock, ArrowUpRight, Check, Play, Plus, ShieldCheck } from "lucide-react";
+import { Check, ShieldCheck } from "lucide-react";
+// Her reply rows' buttons are plain buttons styled with buttonVariants, so they carry the animated twins themselves.
+import { AnimatedAlarmClock, AnimatedArrowUpRight, AnimatedCheck, AnimatedPlay, AnimatedPlus } from "@/components/ui/animated-icons";
 import { buttonVariants } from "@/components/ui/button";
 import { Alert } from "@/components/ui/states";
 import { Presence } from "@/components/ui/motion";
 import { PromptInputBox } from "@/components/ui/ai-prompt-box";
 import { BrendaFace, type BrendaMood, type BrendaTone } from "@/components/app/brenda-face";
+import { Markdown } from "@/components/app/docs-markdown";
 import { playSound } from "@/lib/brenda-sound";
 import { useDictation } from "@/hooks/use-dictation";
 import { api, isApiFailure, type ApiFailure } from "@/lib/api-client";
@@ -486,7 +494,7 @@ export function useBrendaChat({ orgSlug, keysActive = true, onLeave, initialText
     return () => document.removeEventListener("keydown", onKey);
   });
 
-  return { messages, text, setText, pending, error, notice, dictation, send, act, decline, reset, load, remove, saveNow, conversationId, look, state, reaction, lastIndex, waitingAt };
+  return { orgSlug, messages, text, setText, pending, error, notice, dictation, send, act, decline, reset, load, remove, saveNow, conversationId, look, state, reaction, lastIndex, waitingAt };
 }
 
 export type BrendaChat = ReturnType<typeof useBrendaChat>;
@@ -512,6 +520,8 @@ export function BrendaMessages({ chat, onLeave, size = "md" }: { chat: BrendaCha
   const router = useRouter();
   const { messages, pending, error, act, decline, look, lastIndex, waitingAt } = chat;
   const lg = size === "lg";
+  // A link in her reply to a Boredroom page opens it here, as her Open buttons do.
+  const open = (href: string) => { onLeave?.(); router.push(href); };
   const type = lg ? "text-base" : "text-sm";
   // Rows under her reply line up with its text, past her face.
   const indent = lg ? "pl-[42px]" : "pl-[30px]";
@@ -528,14 +538,14 @@ export function BrendaMessages({ chat, onLeave, size = "md" }: { chat: BrendaCha
             <div className={cn("min-w-0 flex-1 space-y-3", type)}>
               <div className={cn("flex items-start", lg ? "gap-3" : "gap-2.5")}>
                 <BrendaFace size={lg ? "md" : "sm"} className={lg ? "mt-px" : "mt-0.5"} mood={mi === lastIndex ? look.mood : null} />
-                <p className="min-w-0 whitespace-pre-wrap break-words font-normal text-foreground">{m.content}</p>
+                <Markdown variant="chat" source={m.content} base={`/app/${chat.orgSlug}`} onNavigate={open} className="flex-1 font-normal text-foreground" />
               </div>
               {m.actions?.length ? (
                 <ul className={cn("space-y-2", indent)}>{m.actions.map((a, ai) => (
                   <li key={ai} className="flex min-h-11 items-center gap-2.5 rounded-xl border border-border py-1.5 pl-3 pr-1.5 text-sm">
                     <Check className="size-4 shrink-0 text-success" aria-hidden />
                     <span className="min-w-0 flex-1 truncate font-normal text-foreground">{a.summary}</span>
-                    {a.href ? <button type="button" className={btn("ghost", "xs")} onClick={() => { onLeave?.(); router.push(a.href!); }}>Open<ArrowUpRight aria-hidden /></button> : null}
+                    {a.href ? <button type="button" className={btn("ghost", "xs")} onClick={() => { onLeave?.(); router.push(a.href!); }}>Open<AnimatedArrowUpRight aria-hidden /></button> : null}
                   </li>
                 ))}</ul>
               ) : null}
@@ -548,7 +558,7 @@ export function BrendaMessages({ chat, onLeave, size = "md" }: { chat: BrendaCha
                       <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
                         {p.done ? <span className="text-xs font-medium text-secondary">{p.done}</span> : !p.token ? <span className="text-xs font-normal text-subtle">Expired. Ask Brenda again.</span> : <>
                           <button type="button" className={btn("ghost", "sm")} aria-keyshortcuts={keys ? "N" : undefined} onClick={() => decline(mi, pi)}>Not now{keys ? <KeyHint>N</KeyHint> : null}</button>
-                          <button type="button" className={btn("primary", "sm")} aria-keyshortcuts={keys ? "Y" : undefined} onClick={() => void act(mi, pi, p)}><Check aria-hidden />Confirm{keys ? <KeyHint>Y</KeyHint> : null}</button>
+                          <button type="button" className={btn("primary", "sm")} aria-keyshortcuts={keys ? "Y" : undefined} onClick={() => void act(mi, pi, p)}><AnimatedCheck aria-hidden />Confirm{keys ? <KeyHint>Y</KeyHint> : null}</button>
                         </>}
                       </div>
                     </li>
@@ -559,7 +569,7 @@ export function BrendaMessages({ chat, onLeave, size = "md" }: { chat: BrendaCha
                       </span>
                       {p.done ? <span className="inline-flex shrink-0 items-center gap-1 pr-1.5 text-xs font-medium text-success"><Check className="size-3.5" aria-hidden />{p.done}</span> : (
                         <button type="button" className={btn(p.kind === "open" ? "ghost" : "secondary", "sm")} onClick={() => void act(mi, pi, p)}>
-                          {p.kind === "todo" ? <><Plus aria-hidden />Add</> : p.kind === "start_timer" ? <><Play aria-hidden />Start</> : p.kind === "open" ? <>Open<ArrowUpRight aria-hidden /></> : <><AlarmClock aria-hidden />{p.kind === "clock_in" ? "Clock in" : "Clock out"}</>}
+                          {p.kind === "todo" ? <><AnimatedPlus aria-hidden />Add</> : p.kind === "start_timer" ? <><AnimatedPlay aria-hidden />Start</> : p.kind === "open" ? <>Open<AnimatedArrowUpRight aria-hidden /></> : <><AnimatedAlarmClock aria-hidden />{p.kind === "clock_in" ? "Clock in" : "Clock out"}</>}
                         </button>
                       )}
                     </li>

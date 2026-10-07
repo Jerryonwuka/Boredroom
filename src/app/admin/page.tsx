@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Building2, ChevronRight, UsersRound, Wallet } from "lucide-react";
+import { AnimatedChevronRight } from "@/components/ui/animated-icons";
 import { requireAdmin } from "@/server/admin/auth";
 import { dashboardMetrics, activityByDay } from "@/server/admin/ops";
 import { paymentMetrics } from "@/server/admin/billing";
@@ -55,7 +56,7 @@ export default async function AdminDashboard() {
     { label: "Activated", value: mk.activated },
     { label: "Paid", value: mk.paid },
   ];
-  const more = (href: string, label: string) => <Link href={href} className={cn(buttonVariants({ variant: "ghost", size: "xs" }), "-mr-2")}>{label}<ChevronRight aria-hidden /></Link>;
+  const more = (href: string, label: string) => <Link href={href} className={cn(buttonVariants({ variant: "ghost", size: "xs" }), "-mr-2")}>{label}<AnimatedChevronRight aria-hidden /></Link>;
 
   return (
     <>
