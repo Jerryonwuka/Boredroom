@@ -691,7 +691,7 @@ function Feedback() {
 
 function PageNotesDemo() {
   return (
-    <Section id="notes" title="Page notes" description={<>Explanations a screen does not need in order to be used (what a status means, how a figure is worked out, the time zone, &ldquo;Nothing here is a productivity score&rdquo;) go in PageNotes, the page&rsquo;s last child inside AppShell: 12/16 in the subtle grey, at most 72ch a line, under a hairline. The shell pushes it to the bottom of the screen on a short page, after the content on a long one. Labels, page descriptions, empty states, errors, warnings and form hints stay where they are.</>}>
+    <Section id="notes" title="Page notes" description={<>Explanations a screen does not need in order to be used (what a status means, how a figure is worked out, the time zone, &ldquo;Only you can see these&rdquo;) go in PageNotes, the page&rsquo;s last child inside AppShell: 12/16 in the subtle grey, at most 72ch a line, under a hairline. The shell pushes it to the bottom of the screen on a short page, after the content on a long one. Labels, page descriptions, empty states, errors, warnings and form hints stay where they are.</>}>
       <Both>
         {() => (
           <div className="grid gap-4 sm:grid-cols-2">
@@ -707,7 +707,6 @@ function PageNotesDemo() {
                 <PageNotes>
                   <PageNote>Status comes from timers only: Active means a running timer with a live connection, Paused means paused or no heartbeat for <span className="tabular-nums">90</span>s.</PageNote>
                   <PageNote section="Time today">Counted from the first Start, in the organisation&rsquo;s time zone.</PageNote>
-                  <PageNote>Nothing here is a productivity score.</PageNote>
                 </PageNotes>
               </div>
             </div>

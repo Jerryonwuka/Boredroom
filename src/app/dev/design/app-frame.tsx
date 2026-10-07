@@ -173,7 +173,7 @@ export function SampleAppFrame() {
             </div>
             <PageNotes>
               <PageNote>Hours count clock-in to clock-out, in the organisation&rsquo;s time zone.</PageNote>
-              <PageNote>Nothing here is a productivity score: every figure comes from clocks, timers and tasks.</PageNote>
+              <PageNote>Figures come from clocks, timers and tasks.</PageNote>
             </PageNotes>
           </main>
         </div>

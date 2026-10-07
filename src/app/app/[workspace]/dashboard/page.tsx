@@ -44,8 +44,7 @@ const shiftMonth = (m: string, by: number) => { const [y, mo] = m.split("-").map
  * The organisation dashboard (owners and HR), v4 analytics language: the page title with underline tabs, four stat
  * cards for right now, the analytics card (a metric strip over a monochrome chart of the month, today in orange) with
  * its Month and Team filters, then who is working and what was finished. The other tabs hold the full tables.
- * Nothing here is a productivity score: every figure comes from clocks, timers and tasks. The page notes at the bottom
- * say so, and that the page follows people as they clock in, start and finish (owner request, 7 October 2026).
+ * Every figure comes from clocks, timers and tasks; a page note at the bottom says so (owner request, 7 October 2026).
  *
  * Accent rules (6 October 2026): the "Live" line, the tabs' and the metric strip's underline, today's bar, the review
  * queue's waiting count, and a still orange dot for each person working. With that many, the lists stay quiet: the
@@ -223,8 +222,7 @@ export default async function DashboardPage({ params, searchParams }: { params: 
       ) : null}
 
       <PageNotes>
-        <PageNote>Figures come from clocks, timers and tasks. Nothing here is a productivity score.</PageNote>
-        <PageNote>This page updates as people clock in, start and finish.</PageNote>
+        <PageNote>Figures come from clocks, timers and tasks.</PageNote>
       </PageNotes>
     </AppShell>
   );

@@ -36,8 +36,7 @@ type Tab = (typeof TABS)[number];
  * filter, four stat cards, then one 64px row per person: their face, what they are on, an orange dot while they work
  * (still: the "Live" line under the title is the one that breathes, so a full room stays calm), and the session clock
  * on the right in the foreground. A recording in progress is an orange badge. A row opens that person's whole day.
- * What the statuses mean, "Nothing here is a productivity score" and how the page updates are page notes at the bottom
- * (owner request, 7 October 2026).
+ * What the statuses mean is a page note at the bottom (owner request, 7 October 2026).
  */
 export default async function WorkroomPage({ params, searchParams }: { params: Promise<{ workspace: string }>; searchParams: Promise<{ team?: string; show?: string; tab?: string }> }) {
   const { workspace } = await params;
@@ -127,8 +126,6 @@ export default async function WorkroomPage({ params, searchParams }: { params: P
 
       <PageNotes>
         <PageNote>Status comes from timers only: Active means a running timer with a live connection, Paused means paused, interrupted or no heartbeat for <span className="tabular-nums">{data.staleAfterSeconds}</span>s, Off the clock means they worked today but nothing is running.</PageNote>
-        <PageNote>Nothing here is a productivity score.</PageNote>
-        <PageNote>This page updates as people start and stop.</PageNote>
       </PageNotes>
     </AppShell>
   );

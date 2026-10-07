@@ -51,9 +51,7 @@ export function LiveBadge({ label = "Recording" }: { label?: string }) {
 }
 
 /**
- * The line under a live page's title: an orange breathing dot and "Live", and when it last synced. What the page
- * follows ("This page updates as people start and stop") is a page note at the bottom (owner request, 7 October 2026:
- * `PageNotes`), not part of this line.
+ * The line under a live page's title: an orange breathing dot and "Live", and when it last synced.
  */
 export function LiveSync({ at }: { at: string }) {
   return (
