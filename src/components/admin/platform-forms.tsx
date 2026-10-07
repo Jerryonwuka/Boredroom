@@ -217,7 +217,8 @@ export function PaystackSettingsForm({ status }: { status: PaystackStatus }) {
             </li>
           ))}
         </ul>
-        <p className="text-meta font-normal text-secondary">Paystack dashboard, Settings, API Keys and Webhooks: add the webhook URL for both test and live. Events handled: charge.success, charge.failed, invoice.payment_failed, subscription.create, subscription.disable, subscription.not_renew, refund.processed. Every delivery is checked against the stored secrets and stored once.</p>
+        {/* The events handled and how deliveries are checked are a page note on Settings, Paystack. */}
+        <p className="text-meta font-normal text-secondary">Paystack dashboard, Settings, API Keys and Webhooks: add the webhook URL for both test and live.</p>
       </section>
     </div>
   );

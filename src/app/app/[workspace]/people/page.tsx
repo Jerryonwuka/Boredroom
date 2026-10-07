@@ -11,6 +11,7 @@ import { formatDateTime } from "@/lib/utils";
 import { InviteForm, MemberRow, NewTeamForm, InvitationRow, JoinCodePanel } from "@/components/app/people-forms";
 import { buttonVariants } from "@/components/ui/button";
 import { ICON_BUTTON } from "@/components/ui/icon-button";
+import { PageNote, PageNotes } from "@/components/ui/page-notes";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "People and teams" };
@@ -26,6 +27,8 @@ const ROLE = { owner: "Organisation owner", hr: "HR administrator", manager: "Te
 /**
  * People and teams, v4: the title with underline tabs (Teams, People, Invitations) and the tab's one action on the
  * right, the screen's orange standout (accent rules, 6 October 2026: "Add people"); calm tables underneath. The People tab opens with the join code in a section card.
+ * What team leads do, what the Recording rules column means and how joining works are the tab's page notes at the
+ * bottom (owner request, 7 October 2026).
  */
 export default async function PeoplePage({ params, searchParams }: { params: Promise<{ workspace: string }>; searchParams: Promise<{ tab?: string }> }) {
   const { workspace } = await params;
@@ -63,7 +66,6 @@ export default async function PeoplePage({ params, searchParams }: { params: Pro
               ))}</tbody>
             </DataTable>
           )}
-          <p className="mt-6 max-w-3xl text-meta font-normal text-secondary">Open a team to add people, choose its lead and see its tasks. Team leads create and assign their team&apos;s tasks and check finished work; each team gets its own project automatically.</p>
         </section>
       ) : null}
 
@@ -81,7 +83,6 @@ export default async function PeoplePage({ params, searchParams }: { params: Pro
                 <MemberRow key={m.id} orgSlug={ctx.org.slug} member={m} teams={teams} isOwner={isOwner} self={m.id === ctx.membership.id} />
               ))}</tbody>
             </DataTable>
-            <p className="mt-6 max-w-3xl text-meta font-normal text-secondary">Team leads create and assign their team&apos;s tasks and check its work. Recording rules shows whether each person has agreed to the current rules (asked the first time they record). Open a team to see a person&apos;s records.</p>
           </section>
         </div>
       ) : null}
@@ -100,6 +101,15 @@ export default async function PeoplePage({ params, searchParams }: { params: Pro
           )}
         </section>
       ) : null}
+
+      <PageNotes>
+        {tab === "teams" ? <PageNote>Open a team to add people, choose its lead and see its tasks.</PageNote> : null}
+        {tab === "teams" ? <PageNote>Team leads create and assign their team&apos;s tasks and check finished work; each team gets its own project automatically.</PageNote> : null}
+        {tab === "people" && joinCode.join_code ? <PageNote section="Join code">Share the code in your team chat or send the link. Anyone who joins is listed under Everyone and can be offboarded at any time.</PageNote> : null}
+        {tab === "people" ? <PageNote>Team leads create and assign their team&apos;s tasks and check its work.</PageNote> : null}
+        {tab === "people" ? <PageNote>Recording rules shows whether each person has agreed to the current rules; they are asked the first time they record.</PageNote> : null}
+        {tab === "people" ? <PageNote>Open a team to see a person&apos;s records.</PageNote> : null}
+      </PageNotes>
     </AppShell>
   );
 }

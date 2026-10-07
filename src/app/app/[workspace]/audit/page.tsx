@@ -13,6 +13,7 @@ import { auditView } from "@/server/services/views";
 import { localMidnight, addDays, todayLocal } from "@/server/lib/time";
 import { formatDateTime } from "@/lib/utils";
 import { DatePicker } from "@/components/ui/date-picker";
+import { PageNote, PageNotes } from "@/components/ui/page-notes";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Audit" };
@@ -23,7 +24,8 @@ const isDay = (s: string | undefined): s is string => !!s && /^\d{4}-\d{2}-\d{2}
 
 /**
  * The audit log, v4: the filter bar (Action starts with, From, To; the days apply at once, the action on Enter or
- * Search) and a calm table, newest first. Entries cannot be edited or deleted from the application.
+ * Search) and a calm table, newest first. Entries cannot be edited or deleted from the application. What the caller
+ * can see and that entries cannot be changed are page notes at the bottom (owner request, 7 October 2026).
  */
 export default async function AuditPage({ params, searchParams }: { params: Promise<{ workspace: string }>; searchParams: Promise<{ action?: string; from?: string; to?: string }> }) {
   const { workspace } = await params;
@@ -43,7 +45,7 @@ export default async function AuditPage({ params, searchParams }: { params: Prom
   const today = todayLocal(tz);
   return (
     <AppShell ctx={ctx} counts={counts} teams={teams}>
-      <PageHeader title="Audit log" divider description={`Who did what, and when. You can see ${scope}. Entries cannot be edited or deleted from the application.`} />
+      <PageHeader title="Audit log" divider description="Who did what, and when." />
       <form className="mb-6" action={`${base}/audit`}>
         <FilterBar>
           <FilterControl label="Action" htmlFor="au-action">
@@ -77,6 +79,11 @@ export default async function AuditPage({ params, searchParams }: { params: Prom
           {rows.length >= LIMIT ? <p className="mt-4 text-meta font-normal text-secondary">Showing the latest <span className="tabular-nums">{LIMIT}</span> events. Narrow the dates or the action to see older ones.</p> : null}
         </>
       )}
+
+      <PageNotes>
+        <PageNote>You can see {scope}.</PageNote>
+        <PageNote>Entries cannot be edited or deleted from the application.</PageNote>
+      </PageNotes>
     </AppShell>
   );
 }

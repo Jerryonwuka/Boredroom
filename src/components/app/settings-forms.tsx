@@ -288,11 +288,9 @@ export function AssistantConnectionForm({ orgSlug, status }: { orgSlug: string; 
     <div className={SETTINGS_GROUP}>
       {error ? <SettingsAlert>{error}</SettingsAlert> : null}
       {ok && reply ? <SettingsAlert tone="success">Claude says: “{reply}”</SettingsAlert> : null}
-      <SettingsRow label="Connection" hint="The key is tested with one request, then stored encrypted and never shown again." align="text">
+      {/* How the key is kept, what each request sends and who pays for it are page notes on Settings, Brenda. */}
+      <SettingsRow label="Connection" align="text">
         <span className="flex flex-wrap items-center gap-2"><Badge tone={status.source === "none" ? "warning" : "success"} dot>{status.source === "none" ? "Not connected" : "Connected"}</Badge><span className="text-secondary">{state}</span></span>
-      </SettingsRow>
-      <SettingsRow label="What is sent" hint="Each request Brenda makes to Anthropic is billed to this key." align="text">
-        <span className="text-secondary">The request and what she needed to read for it, and only what the person asking is allowed to see.</span>
       </SettingsRow>
       {open ? (
         <form className="divide-y divide-border" onSubmit={(e) => { e.preventDefault(); const f = new FormData(e.currentTarget); const form = e.currentTarget; setReply(null); submit(async () => { const r = await api<{ model: string; reply: string }>(`/api/orgs/${orgSlug}/settings/assistant`, { method: "POST", body: { apiKey: f.get("apiKey"), model: f.get("model") || undefined } }); setReply(r.reply); form.reset(); setOpen(false); return r; }, "Connected. Brenda now runs on Claude."); }}>

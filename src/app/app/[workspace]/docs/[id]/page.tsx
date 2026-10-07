@@ -10,6 +10,7 @@ import { PageHeader } from "@/components/ui/card";
 import { buttonVariants } from "@/components/ui/button";
 import { DocsEditor } from "@/components/app/docs-editor";
 import { getDoc, listDocs } from "@/server/services/docs";
+import { PageNote, PageNotes } from "@/components/ui/page-notes";
 
 export const dynamic = "force-dynamic";
 
@@ -63,6 +64,12 @@ export default async function DocPage({ params, searchParams }: { params: Promis
     <AppShell ctx={ctx} counts={counts} teams={teams}>
       <DocsEditor key={doc.id} orgSlug={ctx.org.slug} orgName={ctx.org.name} doc={doc} folders={folders} teams={shareTeams}
         viewerMembershipId={ctx.membership.id} isNew={sp.new === "1"} now={serverNow()} />
+      {/* Page notes (owner request, 7 October 2026): explanations at the bottom of the screen, small and grey. Readers
+          (the reading view) are told who can change the document. Centred on the document's 880px column, so the
+          hairline and the note line up with the text above instead of sitting apart at the page's left edge. */}
+      <PageNotes className="mx-auto max-w-[880px]">
+        {!doc.canEdit ? <PageNote>You can read this document. Only its author, the organisation owner and HR can change it.</PageNote> : null}
+      </PageNotes>
     </AppShell>
   );
 }

@@ -14,6 +14,7 @@ import { api, isApiFailure } from "@/lib/api-client";
 import type { TimesheetEntry } from "@/server/services/reports";
 import { DatePicker } from "@/components/ui/date-picker";
 import { successToast } from "@/components/ui/toast";
+import { PageNote, PageNotes } from "@/components/ui/page-notes";
 
 /** "yyyy-mm-ddThh:mm" read as a wall-clock time in the organisation's zone, to an ISO instant (DST-safe, as localMidnight). */
 function zonedIso(local: string, timeZone: string): string {
@@ -58,7 +59,8 @@ export function MemberDatePicker({ orgSlug, members, membershipId, date, prev, n
 /**
  * A correction: replace recorded intervals with proposed ones, on one of the person's own tasks. The button opens a
  * side sheet with the form (v4: forms live in sheets); a green-dot toast confirms it was sent. What was typed into the
- * intervals survives closing the sheet by mistake, and a click outside never closes it.
+ * intervals survives closing the sheet by mistake, and a click outside never closes it. Its fine print sits under the
+ * form as notes (owner request, 7 October 2026: such notes go small and grey at the bottom).
  */
 export function AdjustmentForm({ orgSlug, localDate, dateLabel, entries, tasks, timeZone }: { orgSlug: string; localDate: string; dateLabel: string; entries: TimesheetEntry[]; tasks: { id: string; title: string }[]; timeZone: string }) {
   const router = useRouter();
@@ -100,7 +102,7 @@ export function AdjustmentForm({ orgSlug, localDate, dateLabel, entries, tasks, 
     <>
       <Button size="sm" variant="secondary" aria-haspopup="dialog" onClick={() => { setError(null); setOpen(true); }}>Request a time correction</Button>
       <Sheet open={open} onClose={close} dismissible={false} title={`Time correction for ${dateLabel}`}
-        description="Tick the intervals to replace, if any, then propose the right times. The originals stay in the ledger, marked as replaced."
+        description="Tick the intervals to replace, if any, then propose the right times."
         footer={<><Button variant="secondary" disabled={pending} onClick={close}>Cancel</Button><Button type="submit" form={formId} loading={pending} disabled={!options.length}>{pending ? "Sending…" : "Request correction"}</Button></>}>
         <form id={formId} className="grid gap-5" onSubmit={send}>
           {error ? <Alert tone="danger">{error}</Alert> : null}
@@ -138,12 +140,18 @@ export function AdjustmentForm({ orgSlug, localDate, dateLabel, entries, tasks, 
           <Field label="Reason" htmlFor={`${formId}-reason`} error={fieldErrors.reason}><Textarea id={`${formId}-reason`} name="reason" required maxLength={2000} placeholder="Forgot to start the timer after lunch" /></Field>
           <Field label="Evidence" htmlFor={`${formId}-evidence`} hint="Optional" description="Such as a calendar entry or a commit." error={fieldErrors.evidenceNote}><Input id={`${formId}-evidence`} name="evidenceNote" maxLength={2000} /></Field>
         </form>
+        <PageNotes>
+          <PageNote>The originals stay in the ledger, marked as replaced.</PageNote>
+        </PageNotes>
       </Sheet>
     </>
   );
 }
 
-/** CSV of confirmed time. Fetched rather than navigated to, so a refusal shows here instead of as a raw error page. */
+/**
+ * CSV of confirmed time. Fetched rather than navigated to, so a refusal shows here instead of as a raw error page. When
+ * time counts and that the file is safe to open are notes at the bottom of the sheet (owner request, 7 October 2026).
+ */
 export function ExportForm({ orgSlug, members, today, canExport = true, upgradeTo }: { orgSlug: string; members: { id: string; display_name: string }[]; today: string; canExport?: boolean; upgradeTo?: string | null }) {
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(false);
@@ -154,9 +162,13 @@ export function ExportForm({ orgSlug, members, today, canExport = true, upgradeT
     <>
       <Button size="sm" variant="secondary" onClick={() => setOpen(true)} aria-haspopup="dialog"><Download aria-hidden />Export CSV</Button>
       <Sheet open={open} onClose={close} size="sm" title="Export CSV"
-        description="Confirmed time per person, day and task, the same totals as Timesheets. A correction counts once it is approved; a running timer once it stops."
+        description="Confirmed time per person, day and task, the same totals as Timesheets."
         footer={<><Button variant="secondary" disabled={pending} onClick={close}>Cancel</Button><Button type="submit" form={formId} loading={pending}>{pending ? "Preparing…" : "Download CSV"}</Button></>}>
         <ExportFields formId={formId} orgSlug={orgSlug} members={members} today={today} setPending={setPending} onDone={() => setOpen(false)} />
+        <PageNotes>
+          <PageNote>A correction counts once it is approved; a running timer once it stops.</PageNote>
+          <PageNote>Text in the file is safe to open in a spreadsheet.</PageNote>
+        </PageNotes>
       </Sheet>
     </>
   );
@@ -197,7 +209,6 @@ function ExportFields({ formId, orgSlug, members, today, setPending, onDone }: {
       <Field label="From" htmlFor="x-from" error={fieldErrors.from}><DatePicker id="x-from" value={from} onChange={setFrom} max={today} required /></Field>
       <Field label="To" htmlFor="x-to" error={fieldErrors.to}><DatePicker id="x-to" value={to} onChange={setTo} max={today} required /></Field>
       <Field label="Person" htmlFor="x-member"><Select id="x-member" name="membershipId" defaultValue=""><option value="">Everyone you can see</option>{members.map((m) => <option key={m.id} value={m.id}>{m.display_name}</option>)}</Select></Field>
-      <p className="text-meta font-normal text-secondary">Text in the file is safe to open in a spreadsheet.</p>
     </form>
   );
 }

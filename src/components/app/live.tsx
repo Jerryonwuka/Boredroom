@@ -50,12 +50,16 @@ export function LiveBadge({ label = "Recording" }: { label?: string }) {
   return <Badge tone="accent"><StatusDot tone="live" size={6} />{label}</Badge>;
 }
 
-/** The line under a live page's title: an orange breathing dot and "Live", what it follows, and when it last synced. */
-export function LiveSync({ at, note = "updates as people start and stop" }: { at: string; note?: string }) {
+/**
+ * The line under a live page's title: an orange breathing dot and "Live", and when it last synced. What the page
+ * follows ("This page updates as people start and stop") is a page note at the bottom (owner request, 7 October 2026:
+ * `PageNotes`), not part of this line.
+ */
+export function LiveSync({ at }: { at: string }) {
   return (
     <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
       <LiveIndicator />
-      <span>{note.charAt(0).toUpperCase() + note.slice(1)}. Last sync <span className="tabular-nums">{at}</span></span>
+      <span>Last sync <span className="tabular-nums">{at}</span></span>
     </span>
   );
 }

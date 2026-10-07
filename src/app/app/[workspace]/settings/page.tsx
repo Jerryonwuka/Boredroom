@@ -19,6 +19,7 @@ import { BrendaReportSettings } from "@/components/app/brenda-report-settings";
 import { LinkedComputers } from "@/components/app/desktop-link";
 import { orgBilling } from "@/server/admin/billing";
 import { BillingCard } from "@/components/app/billing-card";
+import { PageNote, PageNotes } from "@/components/ui/page-notes";
 import { cn } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -41,7 +42,8 @@ const MODE_LABEL: Record<string, string> = { disabled: "Off", optional: "On, eac
  * chosen section. Each section is a set of cards of form rows: the label and a hint on the left, the control on the
  * right. The section is in the address (?section=), so links land on it: the billing banner, the Paystack callback
  * and the pricing page (?billing= or ?plan=) open Billing. Owners and HR only; only owners change recording rules,
- * grants and the AI key. Every change is audited.
+ * grants and the AI key. Every change is audited. That, and each section's explanations (time zone, consent, what is
+ * logged, what is sent to Anthropic), are page notes at the bottom (owner request, 7 October 2026).
  */
 export default async function SettingsPage({ params, searchParams }: { params: Promise<{ workspace: string }>; searchParams: Promise<{ section?: string; setup?: string; billing?: string; plan?: string }> }) {
   const { workspace } = await params;
@@ -54,6 +56,8 @@ export default async function SettingsPage({ params, searchParams }: { params: P
   const href = (k: SectionKey) => (k === "general" ? `${base}/settings` : `${base}/settings?section=${k}`);
 
   let body: ReactNode = null;
+  // The open section's explanatory notes, shown at the bottom of the page after "Every change is audited."
+  let notes: ReactNode = null;
   if (section === "general" || section === "hours" || section === "recording") {
     const { policy, schedule, grants, members, teams, counts: c } = await settingsView(ctx);
     if (section === "general") {
@@ -102,22 +106,23 @@ export default async function SettingsPage({ params, searchParams }: { params: P
             <SettingsGroup>
               <SettingsRow label="Allowed files" align="text">{types || "None"}</SettingsRow>
               <SettingsRow label="Size limit" align="text"><span className="tabular-nums">{Math.round((policy?.attachment_max_bytes ?? 0) / 1048576)} MB</span> each</SettingsRow>
-              <SettingsRow label="Storage" align="text"><span className="text-secondary">Private storage. Downloads use links that last 60 seconds.</span></SettingsRow>
             </SettingsGroup>
           </SettingsSection>
         </>
       );
+      notes = <PageNote section="Attachments">Files are kept in private storage. Downloads use links that last 60 seconds.</PageNote>;
     } else if (section === "hours") {
       body = (
-        <SettingsSection id="hours" title="Working hours and clocking" description={`Everyone clocks in and out against these times, in the organisation's time zone (${ctx.org.timezone}).`}>
+        <SettingsSection id="hours" title="Working hours and clocking" description="Everyone clocks in and out against these times.">
           <ScheduleForm orgSlug={ctx.org.slug} schedule={schedule} />
         </SettingsSection>
       );
+      notes = <PageNote section="Working hours and clocking">Times are in the organisation&apos;s time zone ({ctx.org.timezone}).</PageNote>;
     } else {
       const recording = policy?.recording_mode ?? "disabled";
       body = (
         <>
-          <SettingsSection id="recording" title="Screen recording" description="When on, staff and team leads see Record screen in their timer. Nothing records until they press it, and the first time they do, they read the notice and agree to it before anything is captured."
+          <SettingsSection id="recording" title="Screen recording" description="When on, staff and team leads see Record screen in their timer."
             action={<Badge tone={recording === "disabled" ? "neutral" : "success"} dot>{MODE_LABEL[recording] ?? "On"}</Badge>}>
             <SettingsGroup>
               <SettingsRow label="Recording" hint="Switching publishes a new notice version, which each person agrees to once, the next time they record.">
@@ -125,7 +130,7 @@ export default async function SettingsPage({ params, searchParams }: { params: P
               </SettingsRow>
             </SettingsGroup>
           </SettingsSection>
-          <SettingsSection id="notice" title="Recording rules and notice" description="Publishing creates a new version. Nobody signs it in advance: each person agrees to it once, at the moment they start a recorded session."
+          <SettingsSection id="notice" title="Recording rules and notice" description="Publishing creates a new version."
             action={policy ? <Badge>Version <span className="tabular-nums">{policy.version}</span></Badge> : null}>
             <div className="grid gap-3">
               {isOwner ? <PolicyForm orgSlug={ctx.org.slug} policy={policy} /> : <Alert tone="info">Only owners can publish policy versions.</Alert>}
@@ -135,9 +140,16 @@ export default async function SettingsPage({ params, searchParams }: { params: P
               </SettingsGroup>
             </div>
           </SettingsSection>
-          <SettingsSection id="grants" title="Recording access" description="Supervisors (the owner, HR and a person's team lead) can watch their people's recordings. Grants extend playback to anyone else; every grant and every play is logged.">
+          <SettingsSection id="grants" title="Recording access" description="Supervisors (the owner, HR and a person's team lead) can watch their people's recordings. Grants extend playback to anyone else.">
             <GrantsPanel orgSlug={ctx.org.slug} grants={grants} members={members} teams={teams} isOwner={isOwner} />
           </SettingsSection>
+        </>
+      );
+      notes = (
+        <>
+          <PageNote section="Screen recording">Nothing records until a person presses Record screen, and the first time they do, they read the notice and agree to it before anything is captured.</PageNote>
+          <PageNote section="Recording rules and notice">Nobody signs the notice in advance; each person agrees to it once, at the moment they start a recorded session.</PageNote>
+          <PageNote section="Recording access">Every grant and every play is logged.</PageNote>
         </>
       );
     }
@@ -145,7 +157,7 @@ export default async function SettingsPage({ params, searchParams }: { params: P
     const [ai, brenda] = await Promise.all([assistantStatus(ctx), brendaOverview(ctx)]);
     body = (
       <>
-        <SettingsSection id="brenda" title="Brenda" description="Brenda is the AI teammate in every workspace page. She reads what each person is allowed to see, does their own work for them, and asks before anything that lands on someone else. Every action is logged below."
+        <SettingsSection id="brenda" title="Brenda" description="Brenda is the AI teammate in every workspace page. Every action is logged below."
           action={<Badge tone={ai.source === "none" ? "warning" : "success"} dot>{ai.source === "none" ? "AI not connected" : "On Claude"}</Badge>}>
           <div className="card-panel"><BrendaOrgSettings orgSlug={ctx.org.slug} initial={brenda} canEdit /></div>
         </SettingsSection>
@@ -156,6 +168,17 @@ export default async function SettingsPage({ params, searchParams }: { params: P
         </SettingsSection>
       </>
     );
+    notes = (
+      <>
+        <PageNote section="Brenda">She reads what each person is allowed to see, does their own work for them, and asks before anything that lands on someone else.</PageNote>
+        {isOwner ? (
+          <>
+            <PageNote section="AI connection">The key is tested with one request, then stored encrypted and never shown again.</PageNote>
+            <PageNote section="AI connection">Each request Brenda makes to Anthropic is billed to the key. What is sent: the request and what she needed to read for it, and only what the person asking is allowed to see.</PageNote>
+          </>
+        ) : null}
+      </>
+    );
   } else if (section === "billing") {
     const billing = await orgBilling(ctx);
     body = (
@@ -163,10 +186,11 @@ export default async function SettingsPage({ params, searchParams }: { params: P
         <BillingCard preselect={sp.plan} orgSlug={ctx.org.slug} data={billing} notice={sp.billing} />
       </SettingsSection>
     );
+    notes = <PageNote section="Plans">Paid plans are billed through Paystack.</PageNote>;
   } else {
     const devices = await listDevices(ctx.user);
     body = (
-      <SettingsSection id="desktop" title="Brenda desktop" description="Brenda on your computer acts as you, with your permissions, in the workspace you approve it for. Each person links their own computers; these are yours.">
+      <SettingsSection id="desktop" title="Brenda desktop" description="Brenda on your computer acts as you, with your permissions, in the workspace you approve it for.">
         <SettingsGroup>
           <SettingsRow label="Link a computer" hint="Open Brenda desktop and press Sign in. It shows a code and opens a page in your browser to approve it." align="text">
             <Link href="/desktop/link" className={buttonVariants({ variant: "secondary", size: "sm" })}>Enter a code</Link>
@@ -178,11 +202,12 @@ export default async function SettingsPage({ params, searchParams }: { params: P
         </SettingsGroup>
       </SettingsSection>
     );
+    notes = <PageNote section="Brenda desktop">Each person links their own computers; the ones listed here are yours.</PageNote>;
   }
 
   return (
     <AppShell ctx={ctx} counts={counts} teams={navTeams}>
-      <PageHeader title="Settings" description="How the workspace runs: working hours, screen recording, Brenda, the plan and your linked computers. Every change is audited." divider />
+      <PageHeader title="Settings" description="How the workspace runs: working hours, screen recording, Brenda, the plan and your linked computers." divider />
       {sp.setup ? <Alert tone="success" className="mb-6" title="Workspace ready">Work through the setup list to finish.</Alert> : null}
       <div className="grid gap-6 md:grid-cols-[12.5rem_minmax(0,1fr)] md:gap-10">
         {/* Sub-navigation (spec §6): 32px items, r8, fill-1 and the orange marker for the open one, fill-0 on hover; a scrolling row on a phone. */}
@@ -203,6 +228,10 @@ export default async function SettingsPage({ params, searchParams }: { params: P
         </nav>
         <div className="min-w-0 max-w-[56rem] space-y-10">{body}</div>
       </div>
+      <PageNotes>
+        <PageNote>Every change is audited.</PageNote>
+        {notes}
+      </PageNotes>
     </AppShell>
   );
 }

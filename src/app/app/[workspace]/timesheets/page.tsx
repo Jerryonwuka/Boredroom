@@ -14,6 +14,7 @@ import { AppError } from "@/server/lib/errors";
 import { todayLocal, addDays } from "@/server/lib/time";
 import { cn, formatDuration, formatLongDate } from "@/lib/utils";
 import { AdjustmentForm, ExportForm, MemberDatePicker } from "@/components/app/timesheet-forms";
+import { PageNote, PageNotes } from "@/components/ui/page-notes";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Timesheets" };
@@ -52,6 +53,7 @@ function fortnightBars(seconds: number[]) {
  * the last 14 days as bars (the chosen day in orange), then the day's intervals as a calm table with the totals by task,
  * and the recent days (the chosen one with the orange marker) and corrections beside them. There is no daily report to submit here (owner decision,
  * 6 October 2026): the time counts as it is confirmed, and Brenda's end-of-day report tells team leads what their teams did.
+ * How days are cut and when a correction counts are page notes at the bottom (owner request, 7 October 2026).
  */
 export default async function TimesheetsPage({ params, searchParams }: { params: Promise<{ workspace: string }>; searchParams: Promise<{ member?: string; date?: string }> }) {
   const { workspace } = await params;
@@ -88,7 +90,7 @@ export default async function TimesheetsPage({ params, searchParams }: { params:
   return (
     <AppShell ctx={ctx} counts={counts} teams={teams}>
       <PageHeader title={isEmployee ? "My timesheet" : "Timesheets"} divider
-        description={<>{own ? "Your" : `${memberName}'s`} confirmed time for {date === today ? `today, ${formatLongDate(date)}` : formatLongDate(date)}, split at local midnight. A correction changes it once a team lead approves it.</>}
+        description={<>{own ? "Your" : `${memberName}'s`} confirmed time for {date === today ? `today, ${formatLongDate(date)}` : formatLongDate(date)}.</>}
         actions={canExport || (own && day) ? <>
           {canExport ? <ExportForm canExport={ctx.plan.features.EXPORT_REPORTS} upgradeTo={ctx.plan.upgradeTo} orgSlug={ctx.org.slug} members={members} today={today} /> : null}
           {own && day ? <AdjustmentForm orgSlug={ctx.org.slug} localDate={date} dateLabel={dayLabel} entries={entries} tasks={ownTasks} timeZone={tz} /> : null}
@@ -200,6 +202,13 @@ export default async function TimesheetsPage({ params, searchParams }: { params:
           </div>
         </>
       )}
+
+      {day ? (
+        <PageNotes>
+          <PageNote>Confirmed time is split into days at local midnight.</PageNote>
+          <PageNote>A correction changes the confirmed time once a team lead approves it.</PageNote>
+        </PageNotes>
+      ) : null}
     </AppShell>
   );
 }

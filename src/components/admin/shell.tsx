@@ -59,6 +59,12 @@ const MODE = { waitlist: { tone: "warning", label: "Waitlist" }, live: { tone: "
  * administrator may see (a 56px rail when collapsed, a sheet from the left below md), the 50px top bar (the canvas at
  * 90% with an 8px blur and a hairline: the sidebar toggle and breadcrumb | the centred search | the launch state, the
  * theme and the account), and the page at full width with 20px sides and 24px under the bar. Toasts float bottom left.
+ *
+ * Page notes (owner request, 7 October 2026): pages arrive here through the layout, so their `<PageNotes>` cannot be
+ * lifted out as the workspace shell does. Instead the main column fills the screen under the bar, and a page whose
+ * own top level ends in `<PageNotes>` (its content in one wrapper, then the notes, in a fragment) turns the page
+ * wrapper into a column, where the notes' `margin-top: auto` puts them at the bottom of a short page and after the
+ * content on a long one. Pages without notes stay a plain block, exactly as before.
  */
 export function AdminShell({ admin, launch, children }: { admin: Admin; launch: LaunchSettings; children: React.ReactNode }) {
   const groups: AdminNavGroup[] = NAV.map((g) => ({ title: g.title, items: g.items.filter((i) => admin.permissions.has(i.permission)).map(({ label, href, icon }) => ({ label, href, icon })) })).filter((g) => g.items.length);
@@ -92,7 +98,9 @@ export function AdminShell({ admin, launch, children }: { admin: Admin; launch: 
               <AdminAccount profileId={admin.user.profileId} name={admin.user.displayName} email={admin.user.email} avatarKey={admin.user.avatarKey} role={ROLE_LABEL[admin.role]} />
             </div>
           </header>
-          <main id="main" className="w-full min-w-0 flex-1 px-5 pb-16 pt-6"><PageRise>{children}</PageRise></main>
+          <main id="main" className="flex w-full min-w-0 flex-1 flex-col px-5 pb-16 pt-6">
+            <PageRise className="min-w-0 flex-1 has-[>[data-page-notes]]:flex has-[>[data-page-notes]]:flex-col">{children}</PageRise>
+          </main>
         </div>
       </div>
       <AdminToaster />

@@ -15,6 +15,7 @@ import { uuid } from "@/server/lib/api";
 import { formatDuration, formatLongDate, cn } from "@/lib/utils";
 import { DatePicker } from "@/components/ui/date-picker";
 import { Person } from "@/components/ui/person";
+import { PageNote, PageNotes } from "@/components/ui/page-notes";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Attendance" };
@@ -32,7 +33,9 @@ type Tab = "in" | "not_in" | "out" | "all";
  * Attendance, v4: who has clocked in, who has not, who has left, on any day, or a whole month as a grid. The filter
  * bar holds View (Day or Month), the day or month, and Team; each applies itself. Day view: four stat cards and a calm
  * table under the status tabs. Month view: the totals and one narrow cell per day, today's column in orange (accent
- * rules, 6 October 2026: the current day in a calendar). Green, amber and the ring keep their status meaning.
+ * rules, 6 October 2026: the current day in a calendar). Green, amber and the ring keep their status meaning. The
+ * schedule, its time zone and how the month's figures are counted are page notes at the bottom (owner request,
+ * 7 October 2026); the colour key stays under the grid, which it labels.
  */
 export default async function AttendancePage({ params, searchParams }: { params: Promise<{ workspace: string }>; searchParams: Promise<{ tab?: string; date?: string; team?: string; view?: string; month?: string }> }) {
   const { workspace } = await params;
@@ -56,7 +59,7 @@ export default async function AttendancePage({ params, searchParams }: { params:
     return (
       <AppShell ctx={ctx} counts={counts} teams={teams}>
         <PageHeader title="Attendance" divider
-          description={`${monthLabel(m.month)}. A cell per day for everyone you supervise: green is on time, amber is late, a ring is a working day with no clock-in. Work starts at ${hhmm(m.schedule.start_local)}.`} />
+          description={`${monthLabel(m.month)}, a cell per day for everyone you supervise.`} />
 
         <form action={`${base}/attendance`} className="mb-6">
           <FilterBar>
@@ -114,7 +117,12 @@ export default async function AttendancePage({ params, searchParams }: { params:
           <li className="flex items-center gap-2"><span className="size-2.5 rounded-full border border-border-input-hover" aria-hidden />No clock-in</li>
           <li className="flex items-center gap-2"><span className="size-2.5 rounded-full bg-fill-150" aria-hidden />Not a working day</li>
         </ul>
-        <p className="mt-3 max-w-3xl text-meta font-normal text-secondary">Hours count clock-in to clock-out; days without a clock-out add nothing. Missed days stop at yesterday and skip days before someone joined.</p>
+
+        <PageNotes>
+          <PageNote>Work starts at <span className="tabular-nums">{hhmm(m.schedule.start_local)}</span>: green is on time, amber is late, and a ring is a working day with no clock-in.</PageNote>
+          <PageNote>Hours count clock-in to clock-out; days without a clock-out add nothing.</PageNote>
+          <PageNote>Missed days stop at yesterday and skip days before someone joined.</PageNote>
+        </PageNotes>
       </AppShell>
     );
   }
@@ -134,7 +142,7 @@ export default async function AttendancePage({ params, searchParams }: { params:
   return (
     <AppShell ctx={ctx} counts={counts} teams={teams}>
       <PageHeader title="Attendance"
-        description={`${isToday ? "Today, " : ""}${formatLongDate(b.date)}. Work starts at ${hhmm(b.schedule.start_local)} and ends at ${hhmm(b.schedule.end_local)} ${zone}${b.schedule.clock_grace_minutes ? `, with ${b.schedule.clock_grace_minutes} minutes' grace` : ""}; anyone clocking in after that is flagged late.${b.workingDay ? "" : " This is not a scheduled working day."}`}
+        description={`${isToday ? "Today, " : ""}${formatLongDate(b.date)}.${b.workingDay ? "" : " This is not a scheduled working day."}`}
         actions={askBrenda && tab === "not_in" && isToday && shown.length ? <Link href={askBrenda} className={buttonVariants({ variant: "secondary", size: "sm" })}><BrendaGlyph aria-hidden />Ask Brenda to check in with them</Link> : undefined}
         tabsLabel="Attendance status" tabValue={tab}
         tabs={[
@@ -180,6 +188,10 @@ export default async function AttendancePage({ params, searchParams }: { params:
           ))}</tbody>
         </DataTable>
       )}
+
+      <PageNotes>
+        <PageNote>Work starts at <span className="tabular-nums">{hhmm(b.schedule.start_local)}</span> and ends at <span className="tabular-nums">{hhmm(b.schedule.end_local)}</span> {zone}{b.schedule.clock_grace_minutes ? `, with ${b.schedule.clock_grace_minutes} minutes' grace` : ""}; anyone clocking in after that is flagged late.</PageNote>
+      </PageNotes>
     </AppShell>
   );
 }

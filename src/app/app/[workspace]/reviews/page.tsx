@@ -16,6 +16,7 @@ import { SubmissionButton, DecisionSheetButton } from "@/components/app/review-s
 import { TaskPeekLink } from "@/components/app/tasks-page";
 import { DueDate } from "@/components/app/due";
 import { taskViewer } from "@/server/lib/task-viewer";
+import { PageNote, PageNotes } from "@/components/ui/page-notes";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Reviews" };
@@ -64,7 +65,7 @@ export default async function ReviewsPage({ params, searchParams }: { params: Pr
   return (
     <AppShell ctx={ctx} counts={counts} teams={teams}>
       <PageHeader title="Reviews"
-        description={decides ? "Submitted work, time corrections, capture exceptions and privacy incidents waiting for a decision. You never see your own submissions here." : "Everything waiting for a decision across the organisation. Team leads give the decisions; you can see where each one stands."}
+        description={decides ? "Submitted work, time corrections, capture exceptions and privacy incidents waiting for a decision." : "Everything waiting for a decision across the organisation."}
         tabs={clear ? undefined : tabs} tabValue={tab} tabParam="tab" tabsLabel="Review queue" divider={clear} />
       {clear ? (
         <EmptyState icon={ShieldCheck} title="Queue is clear"
@@ -208,10 +209,14 @@ export default async function ReviewsPage({ params, searchParams }: { params: Pr
               )}
             </section>
           ) : null}
-
-          {!decides && total > 0 ? <p className="text-meta font-normal text-secondary">Team leads give the decisions; open one to see where it stands.</p> : null}
         </div>
       )}
+
+      {/* Page notes (owner request, 7 October 2026): explanations at the bottom of the screen, small and grey. */}
+      <PageNotes>
+        {decides ? <PageNote>You never see your own submissions here.</PageNote> : null}
+        {!decides && !clear ? <PageNote>Team leads give the decisions{total > 0 ? "; open one to see where it stands" : ""}.</PageNote> : null}
+      </PageNotes>
     </AppShell>
   );
 }

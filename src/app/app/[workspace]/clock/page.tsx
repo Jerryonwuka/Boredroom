@@ -10,6 +10,7 @@ import { DataTable } from "@/components/ui/table";
 import { MetricStrip } from "@/components/ui/analytics-card";
 import { FilterBar, FilterControl } from "@/components/ui/filter-control";
 import { ClockButtons } from "@/components/app/clock";
+import { PageNote, PageNotes } from "@/components/ui/page-notes";
 import { myClock } from "@/server/services/attendance";
 import { formatDuration, formatLongDate, formatDateTime, cn } from "@/lib/utils";
 import { DatePicker } from "@/components/ui/date-picker";
@@ -28,8 +29,9 @@ type Event = { at: number; time: string; label: string; detail?: React.ReactNode
 /**
  * Your clock, v4: one focused card with where you stand today, the clock button (Clock in is the screen's one orange
  * button, accent rules 6 October 2026) and today's
- * timeline (work starts, you clocked in, now, you clocked out, work ends); the rules beside it; then the month's
- * history as a metric strip and a calm table. While you are clocked in the time so far and "Now" on the timeline are
+ * timeline (work starts, you clocked in, now, you clocked out, work ends); then the month's history as a metric strip
+ * and a calm table. How it is judged (on time, late, leaving early) and the time zone are page notes at the bottom
+ * (owner request, 7 October 2026), no longer a card beside the clock. While you are clocked in the time so far and "Now" on the timeline are
  * orange (live). The organisation account supervises and does not clock in: its view of the clock is Attendance.
  */
 export default async function ClockPage({ params, searchParams }: { params: Promise<{ workspace: string }>; searchParams: Promise<{ month?: string }> }) {
@@ -69,53 +71,41 @@ export default async function ClockPage({ params, searchParams }: { params: Prom
         description={<>Work starts at <span className="tabular-nums">{hhmm(c.schedule.start_local)}</span> and ends at <span className="tabular-nums">{hhmm(c.schedule.end_local)}</span> {zone}{c.schedule.clock_grace_minutes ? `, with ${c.schedule.clock_grace_minutes} minutes' grace` : ""}. Clock in on or before the start to be on time; clock out when you are done for the day.</>}
         actions={supervisor ? <Link href={`/app/${ctx.org.slug}/attendance`} className={buttonVariants({ variant: "secondary", size: "sm" })}>Who has clocked in</Link> : undefined} />
 
-      <div className="@container mb-12">
-        <div className="grid gap-3 @3xl:grid-cols-[minmax(0,1fr)_20rem]">
-          <Card className={cn("p-6", c.status === "in" && "border-border-input-hover")}>
-            <p className="type-caption">{c.workingDay ? `Today, ${formatLongDate(c.today)}` : `${formatLongDate(c.today)}, not a scheduled working day`}</p>
-            <div className="mt-2 flex flex-wrap items-start justify-between gap-x-8 gap-y-5">
-              <div className="min-w-0">
-                {c.status === "not_in" ? <><p className="font-display text-3xl font-normal">Not clocked in</p><p className="mt-1 text-sm font-normal text-secondary">{lateNow ? <>The day started at <span className="tabular-nums">{hhmm(c.schedule.start_local)}</span>. Clocking in now counts as late.</> : <>Clock in by <span className="tabular-nums">{hhmm(c.schedule.start_local)}</span> to be on time.</>}</p></> : null}
-                {c.status === "in" && r ? <><p className="font-display text-3xl font-normal">Clocked in <span className="tabular-nums">{timeOf(r.clock_in_at, tz)}</span></p><p className="mt-2 flex flex-wrap items-center gap-2 text-sm font-normal text-secondary">{lateBadge}<span><span className="tabular-nums text-accent-text">{formatDuration(onTheClock)}</span> on the clock so far</span></p></> : null}
-                {c.status === "out" && r ? <><p className="font-display text-3xl font-normal"><span className="tabular-nums">{timeOf(r.clock_in_at, tz)}</span> to <span className="tabular-nums">{timeOf(r.clock_out_at!, tz)}</span></p><p className="mt-2 flex flex-wrap items-center gap-2 text-sm font-normal text-secondary">{lateBadge}{(r.left_early_seconds ?? 0) > 0 ? <Badge tone="info">Left {formatDuration(r.left_early_seconds!)} early</Badge> : null}<span><span className="tabular-nums text-foreground">{formatDuration(onTheClock)}</span> on the clock</span></p></> : null}
-              </div>
-              <ClockButtons orgSlug={ctx.org.slug} status={c.status} timerOpen={c.timerOpen} timing={{ startAt: c.scheduledStartAt, endAt: c.scheduledEndAt, graceMinutes: c.schedule.clock_grace_minutes, timeZone: tz }} />
+      <div className="mb-12">
+        <Card className={cn("p-6", c.status === "in" && "border-border-input-hover")}>
+          <p className="type-caption">{c.workingDay ? `Today, ${formatLongDate(c.today)}` : `${formatLongDate(c.today)}, not a scheduled working day`}</p>
+          <div className="mt-2 flex flex-wrap items-start justify-between gap-x-8 gap-y-5">
+            <div className="min-w-0">
+              {c.status === "not_in" ? <><p className="font-display text-3xl font-normal">Not clocked in</p><p className="mt-1 text-sm font-normal text-secondary">{lateNow ? <>The day started at <span className="tabular-nums">{hhmm(c.schedule.start_local)}</span>. Clocking in now counts as late.</> : <>Clock in by <span className="tabular-nums">{hhmm(c.schedule.start_local)}</span> to be on time.</>}</p></> : null}
+              {c.status === "in" && r ? <><p className="font-display text-3xl font-normal">Clocked in <span className="tabular-nums">{timeOf(r.clock_in_at, tz)}</span></p><p className="mt-2 flex flex-wrap items-center gap-2 text-sm font-normal text-secondary">{lateBadge}<span><span className="tabular-nums text-accent-text">{formatDuration(onTheClock)}</span> on the clock so far</span></p></> : null}
+              {c.status === "out" && r ? <><p className="font-display text-3xl font-normal"><span className="tabular-nums">{timeOf(r.clock_in_at, tz)}</span> to <span className="tabular-nums">{timeOf(r.clock_out_at!, tz)}</span></p><p className="mt-2 flex flex-wrap items-center gap-2 text-sm font-normal text-secondary">{lateBadge}{(r.left_early_seconds ?? 0) > 0 ? <Badge tone="info">Left {formatDuration(r.left_early_seconds!)} early</Badge> : null}<span><span className="tabular-nums text-foreground">{formatDuration(onTheClock)}</span> on the clock</span></p></> : null}
             </div>
-            {c.timerOpen && c.status === "in" ? <p className="mt-4 text-meta font-normal text-secondary">A task timer is running; stop it on <Link href={`/app/${ctx.org.slug}/my-day`} className="link-inline">My Day</Link> before clocking out.</p> : null}
+            <ClockButtons orgSlug={ctx.org.slug} status={c.status} timerOpen={c.timerOpen} timing={{ startAt: c.scheduledStartAt, endAt: c.scheduledEndAt, graceMinutes: c.schedule.clock_grace_minutes, timeZone: tz }} />
+          </div>
+          {c.timerOpen && c.status === "in" ? <p className="mt-4 text-meta font-normal text-secondary">A task timer is running; stop it on <Link href={`/app/${ctx.org.slug}/my-day`} className="link-inline">My Day</Link> before clocking out.</p> : null}
 
-            <div className="mt-6 border-t border-border pt-5">
-              <h2 className="mb-3 text-sm font-semibold text-foreground">Today</h2>
-              <ol className="relative" aria-label="Today's timeline">
-                {events.map((e, i) => (
-                  <li key={`${e.kind}-${e.label}`} className="relative flex gap-3 pb-4 last:pb-0">
-                    <span className="w-12 shrink-0 pt-px text-right text-meta font-normal tabular-nums text-secondary">{e.time}</span>
-                    <span className="relative flex w-3 shrink-0 justify-center" aria-hidden>
-                      {i < events.length - 1 ? <span className="absolute top-[14px] -bottom-4 w-px bg-border" /> : null}
-                      <span className={cn("relative mt-[6px] size-2.5 rounded-full",
-                        e.kind === "plan" && "border border-border-input-hover bg-background",
-                        (e.kind === "in" || e.kind === "out") && "bg-foreground",
-                        e.kind === "now" && "bg-accent shadow-[0_0_0_3px_color-mix(in_srgb,var(--accent)_20%,transparent)]")} />
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <p className={cn("text-sm font-medium", e.kind === "plan" ? "text-secondary" : "text-foreground")}>{e.label}</p>
-                      {e.detail ? <div className="mt-1 flex flex-wrap items-center gap-2 text-meta font-normal text-secondary">{e.detail}</div> : null}
-                    </div>
-                  </li>
-                ))}
-              </ol>
-            </div>
-          </Card>
-
-          <Card className="self-start">
-            <h2 className="text-sm font-semibold text-foreground">How it is judged</h2>
-            <dl className="mt-3 space-y-3 text-sm">
-              <div><dt className="font-medium text-foreground">On time</dt><dd className="font-normal text-secondary">Clocked in at or before <span className="tabular-nums">{hhmm(c.schedule.start_local)}</span>{c.schedule.clock_grace_minutes ? ` (plus ${c.schedule.clock_grace_minutes} minutes' grace)` : ""}.</dd></div>
-              <div><dt className="font-medium text-foreground">Late</dt><dd className="font-normal text-secondary">Clocked in after that; the record shows by how much.</dd></div>
-              <div><dt className="font-medium text-foreground">Clock out</dt><dd className="font-normal text-secondary">When you leave. Leaving before <span className="tabular-nums">{hhmm(c.schedule.end_local)}</span> is noted, not penalised.</dd></div>
-              <div><dt className="font-medium text-foreground">Time zone</dt><dd className="font-normal text-secondary">The organisation&apos;s ({zone}); the schedule in force when you clock in is what counts.</dd></div>
-            </dl>
-          </Card>
-        </div>
+          <div className="mt-6 border-t border-border pt-5">
+            <h2 className="mb-3 text-sm font-semibold text-foreground">Today</h2>
+            <ol className="relative" aria-label="Today's timeline">
+              {events.map((e, i) => (
+                <li key={`${e.kind}-${e.label}`} className="relative flex gap-3 pb-4 last:pb-0">
+                  <span className="w-12 shrink-0 pt-px text-right text-meta font-normal tabular-nums text-secondary">{e.time}</span>
+                  <span className="relative flex w-3 shrink-0 justify-center" aria-hidden>
+                    {i < events.length - 1 ? <span className="absolute top-[14px] -bottom-4 w-px bg-border" /> : null}
+                    <span className={cn("relative mt-[6px] size-2.5 rounded-full",
+                      e.kind === "plan" && "border border-border-input-hover bg-background",
+                      (e.kind === "in" || e.kind === "out") && "bg-foreground",
+                      e.kind === "now" && "bg-accent shadow-[0_0_0_3px_color-mix(in_srgb,var(--accent)_20%,transparent)]")} />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className={cn("text-sm font-medium", e.kind === "plan" ? "text-secondary" : "text-foreground")}>{e.label}</p>
+                    {e.detail ? <div className="mt-1 flex flex-wrap items-center gap-2 text-meta font-normal text-secondary">{e.detail}</div> : null}
+                  </div>
+                </li>
+              ))}
+            </ol>
+          </div>
+        </Card>
       </div>
 
       <section aria-labelledby="clock-history">
@@ -152,8 +142,13 @@ export default async function ClockPage({ params, searchParams }: { params: Prom
             ))}</tbody>
           </DataTable>
         )}
-        <p className="mt-4 text-xs font-medium text-subtle">It is <span className="tabular-nums">{formatDateTime(c.serverNow, tz)}</span> in {zone}.</p>
       </section>
+
+      <PageNotes>
+        <PageNote>On time means clocking in at or before <span className="tabular-nums">{hhmm(c.schedule.start_local)}</span>{c.schedule.clock_grace_minutes ? ` (plus ${c.schedule.clock_grace_minutes} minutes' grace)` : ""}. Late means after that; the record shows by how much.</PageNote>
+        <PageNote>Clock out when you leave. Leaving before <span className="tabular-nums">{hhmm(c.schedule.end_local)}</span> is noted, not penalised.</PageNote>
+        <PageNote>Times are in the organisation&apos;s time zone ({zone}), where it is now <span className="tabular-nums">{formatDateTime(c.serverNow, tz)}</span>. The schedule in force when you clock in is what counts.</PageNote>
+      </PageNotes>
     </AppShell>
   );
 }

@@ -127,7 +127,7 @@ function DocReader({ orgSlug, doc, viewerMembershipId, now }: DocsEditorProps) {
       <BackToDocs base={base} />
       <h1 className="type-headline mt-4 break-words">{doc.title}</h1>
       <div className="mt-3"><Byline full doc={doc} mine={doc.createdBy.membershipId === viewerMembershipId} updatedAt={updatedAt} now={now} /></div>
-      <p className="mt-2 text-meta font-normal text-secondary">You can read this document. Only its author, the organisation owner and HR can change it.</p>
+      {/* Who can change it is a page note at the bottom (docs/[id]/page.tsx). */}
       <div className="mt-6 rounded-2xl border border-border px-6 py-6 md:px-10 md:py-9">
         {doc.body.trim() ? <Markdown source={doc.body} /> : <p className="text-sm font-normal text-secondary">Nothing written here yet.</p>}
       </div>

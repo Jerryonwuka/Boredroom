@@ -15,6 +15,7 @@ import { BarChart } from "@/components/ui/charts";
 import { Badge, CountPill, SESSION_STATE_TONE, label } from "@/components/ui/badge";
 import { DataTable } from "@/components/ui/table";
 import { ListRow } from "@/components/ui/rows";
+import { PageNote, PageNotes } from "@/components/ui/page-notes";
 import { ToolSquare } from "@/components/ui/tool-tile";
 import { PermissionDenied, EmptyState } from "@/components/ui/states";
 import { buttonVariants } from "@/components/ui/button";
@@ -43,7 +44,8 @@ const shiftMonth = (m: string, by: number) => { const [y, mo] = m.split("-").map
  * The organisation dashboard (owners and HR), v4 analytics language: the page title with underline tabs, four stat
  * cards for right now, the analytics card (a metric strip over a monochrome chart of the month, today in orange) with
  * its Month and Team filters, then who is working and what was finished. The other tabs hold the full tables.
- * Nothing here is a productivity score: every figure comes from clocks, timers and tasks.
+ * Nothing here is a productivity score: every figure comes from clocks, timers and tasks. The page notes at the bottom
+ * say so, and that the page follows people as they clock in, start and finish (owner request, 7 October 2026).
  *
  * Accent rules (6 October 2026): the "Live" line, the tabs' and the metric strip's underline, today's bar, the review
  * queue's waiting count, and a still orange dot for each person working. With that many, the lists stay quiet: the
@@ -83,8 +85,8 @@ export default async function DashboardPage({ params, searchParams }: { params: 
 
   return (
     <AppShell ctx={ctx} counts={counts} teams={teams}>
-      <PageHeader title="Dashboard" description={<>{ctx.org.name}, {formatLongDate(d.today)}. From clocks, timers and tasks; nothing here is a productivity score.</>}
-        meta={<LiveSync at={fmtTime(d.serverNow, tz)} note="updates as people clock in, start and finish" />}
+      <PageHeader title="Dashboard" description={<>{ctx.org.name}, {formatLongDate(d.today)}.</>}
+        meta={<LiveSync at={fmtTime(d.serverNow, tz)} />}
         actions={<>
           <Link href={`${base}/reviews`} className={buttonVariants({ variant: "secondary", size: "sm" })}><AnimatedClipboardCheck aria-hidden />Review queue{counts.attention ? <CountPill count={counts.attention} tone="attention" /> : null}</Link>
           <Link href={`${base}/people`} className={buttonVariants({ size: "sm" })}>Add people</Link>
@@ -219,6 +221,11 @@ export default async function DashboardPage({ params, searchParams }: { params: 
           </>
         )
       ) : null}
+
+      <PageNotes>
+        <PageNote>Figures come from clocks, timers and tasks. Nothing here is a productivity score.</PageNote>
+        <PageNote>This page updates as people clock in, start and finish.</PageNote>
+      </PageNotes>
     </AppShell>
   );
 }

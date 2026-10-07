@@ -14,6 +14,7 @@ import { withUser } from "@/server/db";
 import { uuid } from "@/server/lib/api";
 import { myTeams } from "@/server/services/views";
 import { formatDuration } from "@/lib/utils";
+import { PageNote, PageNotes } from "@/components/ui/page-notes";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Recordings" };
@@ -27,7 +28,8 @@ const idOrNull = (s: string | undefined) => (s && uuid.safeParse(s).success ? s 
 /**
  * Every screen recording the caller may watch, v4: the whole organisation for owners and HR, their teams for leads.
  * The filter bar (Team, Person; each applies itself), four stat cards over what is listed, then a calm table whose
- * Watch opens the player in a side sheet.
+ * Watch opens the player in a side sheet. What recordings are, how long they are kept and what flagging does are page
+ * notes at the bottom (owner request, 7 October 2026).
  */
 export default async function RecordingsPage({ params, searchParams }: { params: Promise<{ workspace: string }>; searchParams: Promise<{ team?: string; member?: string }> }) {
   const { workspace } = await params;
@@ -87,7 +89,11 @@ export default async function RecordingsPage({ params, searchParams }: { params:
         <RecordingsTable orgSlug={ctx.org.slug} rows={rows} timeZone={ctx.org.timezone} />
       )}
       {rows.length >= LIMIT ? <p className="mt-4 text-meta font-normal text-secondary">Showing the latest <span className="tabular-nums">{LIMIT}</span> recordings. Choose a team or a person to see older ones.</p> : null}
-      <p className="mt-6 max-w-3xl text-meta font-normal text-secondary">Recordings are video only, started by the person, and kept for the retention period in the monitoring notice. Footage a person flags as sensitive is locked until a privacy administrator reviews it.</p>
+
+      <PageNotes>
+        <PageNote>Recordings are video only, started by the person, and kept for the retention period in the monitoring notice.</PageNote>
+        <PageNote>Footage a person flags as sensitive is locked until a privacy administrator reviews it.</PageNote>
+      </PageNotes>
     </AppShell>
   );
 }

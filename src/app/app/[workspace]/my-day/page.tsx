@@ -10,6 +10,7 @@ import { briefing } from "@/server/services/brenda";
 import { withUser } from "@/server/db";
 import { MyDayBoard } from "@/components/app/my-day";
 import { YourDaySection } from "@/components/app/your-day";
+import { PageNote, PageNotes } from "@/components/ui/page-notes";
 import { formatDuration, formatLongDate } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -61,6 +62,11 @@ export default async function MyDayPage({ params }: { params: Promise<{ workspac
         lead={lead}
         yourDay={<YourDaySection className="pb-4" orgSlug={ctx.org.slug} role={role} brief={brief} timeZone={ctx.org.timezone} team={yourTeam} />}
       />
+      {/* Page notes (owner request, 7 October 2026): explanations at the bottom of the screen, small and grey. No daily
+          report any more (owner decision, 6 October 2026); said once, since people were used to one. */}
+      <PageNotes>
+        <PageNote>There is no daily report to write: your to-dos and timer are the record your team lead sees.</PageNote>
+      </PageNotes>
     </AppShell>
   );
 }

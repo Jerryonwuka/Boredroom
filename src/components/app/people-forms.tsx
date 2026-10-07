@@ -13,6 +13,7 @@ import { Checkbox, Switch } from "@/components/ui/switch";
 import { Sheet } from "@/components/ui/sheet";
 import { Menu, MenuItem, MenuSeparator } from "@/components/ui/menu";
 import { successToast } from "@/components/ui/toast";
+import { PageNote, PageNotes } from "@/components/ui/page-notes";
 import { SITE_ORIGIN } from "@/lib/site";
 import { cn } from "@/lib/utils";
 import { api, isApiFailure } from "@/lib/api-client";
@@ -112,7 +113,8 @@ export function MemberRow({ orgSlug, member, teams, isOwner, self }: { orgSlug: 
 
 /**
  * A person's teams in a side sheet (owner decision, 26 September 2026: the list stays one line per person): the teams
- * they are in, each with Make team lead or Make member and Remove, and a form to add them to another.
+ * they are in, each with Make team lead or Make member and Remove, and a form to add them to another. What a team lead
+ * does is a note at the bottom of the sheet (owner request, 7 October 2026).
  */
 function TeamSheet({ open, orgSlug, member, teams, onClose }: { open: boolean; orgSlug: string; member: { id: string; display_name: string; teams: { id: string; name: string; is_manager: boolean }[] }; teams: Team[]; onClose: () => void }) {
   const { pending, error, submit } = useForm();
@@ -120,7 +122,7 @@ function TeamSheet({ open, orgSlug, member, teams, onClose }: { open: boolean; o
   const available = teams.filter((t) => !member.teams.some((m) => m.id === t.id));
   const call = (teamId: string, body: Record<string, unknown>) => submit(() => api(`/api/orgs/${orgSlug}/teams/${teamId}/members`, { method: "POST", body: { membershipId: member.id, ...body } }));
   return (
-    <Sheet open={open} onClose={onClose} title={`Teams for ${member.display_name}`} description="A team lead creates and assigns that team's tasks and checks its work."
+    <Sheet open={open} onClose={onClose} title={`Teams for ${member.display_name}`}
       footer={<Button variant="secondary" onClick={onClose}>Done</Button>}>
       <div className="grid gap-8">
         {error ? <Alert tone="danger">{error}</Alert> : null}
@@ -149,6 +151,9 @@ function TeamSheet({ open, orgSlug, member, teams, onClose }: { open: boolean; o
           </form>
         ) : null}
       </div>
+      <PageNotes>
+        <PageNote>A team lead creates and assigns that team&apos;s tasks and checks its work.</PageNote>
+      </PageNotes>
     </Sheet>
   );
 }
@@ -195,7 +200,10 @@ export function NewTeamForm({ orgSlug, variant = "accent" }: { orgSlug: string; 
 
 type JoinCode = { join_code: string | null; join_code_enabled: boolean; join_code_role: string; join_code_team_id: string | null; join_code_rotated_at: string | null };
 
-/** The organisation account's join code, the only way staff can create accounts, in a v4 section card. */
+/**
+ * The organisation account's join code, the only way staff can create accounts, in a v4 section card. How to share it
+ * and that joiners can be offboarded is a page note on the People page (owner request, 7 October 2026).
+ */
 export function JoinCodePanel({ orgSlug, joinCode, teams }: { orgSlug: string; joinCode: JoinCode; teams: Team[] }) {
   const appOrigin = SITE_ORIGIN;
   const { pending, error, submit } = useForm();
@@ -234,7 +242,6 @@ export function JoinCodePanel({ orgSlug, joinCode, teams }: { orgSlug: string; j
               <Field label="People who join become" htmlFor="jc-role"><Select id="jc-role" value={joinCode.join_code_role} disabled={pending} onChange={(e) => patch({ role: e.target.value })}><option value="employee">Staff</option><option value="manager">Team lead</option></Select></Field>
               <Field label="And are placed in" htmlFor="jc-team"><Select id="jc-team" value={joinCode.join_code_team_id ?? ""} disabled={pending} onChange={(e) => patch({ teamId: e.target.value || null })}><option value="">No team yet (assign later)</option>{teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</Select></Field>
             </div>
-            <p className="text-meta font-normal text-secondary">Share the code in your team chat or send the link. Anyone who joins is listed below and can be offboarded at any time.</p>
           </div>
         </div>
       )}

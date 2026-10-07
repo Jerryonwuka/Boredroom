@@ -9,7 +9,7 @@ import { RealtimeRefresher } from "@/components/app/realtime";
 import { MessageToasts } from "@/components/app/message-toasts";
 import { AssistantDrawer } from "@/components/app/assistant-drawer";
 import { BrendaPresence } from "@/components/app/brenda";
-import { Suspense } from "react";
+import { cloneElement, Fragment, isValidElement, Suspense, type ReactElement, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { ImpersonationBanner, ShellBanners } from "@/components/app/impersonation-banner";
 import { BillingBanner, ShellStrip } from "@/components/app/billing-banner";
@@ -17,6 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { getAdmin } from "@/server/admin/auth";
 import { launchSettings } from "@/server/admin/settings";
 import { MotionRoot, PageRise } from "@/components/ui/motion";
+import { PageNotes } from "@/components/ui/page-notes";
 
 export const ROLE_LABEL: Record<string, string> = { owner: "Organisation owner", hr: "HR administrator", manager: "Team lead", employee: "Staff" };
 
@@ -86,9 +87,35 @@ function planNotice(plan: Entitlements, orgSlug: string): SidebarNotice | null {
 }
 
 /**
+ * Takes the page's `<PageNotes>` out of its content (a direct child of AppShell, or inside a fragment there) into
+ * `notes`, leaving null in its place so the rest of the content keeps its positions. Unchanged content is returned as
+ * it came. Anything deeper (a wrapper element, a client component) is left where it is.
+ */
+function liftPageNotes(node: ReactNode, notes: ReactElement[]): ReactNode {
+  if (Array.isArray(node)) {
+    const before = notes.length;
+    const next = node.map((n: ReactNode) => liftPageNotes(n, notes));
+    return notes.length === before ? node : next;
+  }
+  if (!isValidElement(node)) return node;
+  if (node.type === PageNotes) { notes.push(node); return null; }
+  if (node.type === Fragment) {
+    const before = notes.length;
+    const inner = liftPageNotes((node.props as { children?: ReactNode }).children, notes);
+    return notes.length === before ? node : cloneElement(node as ReactElement<{ children?: ReactNode }>, { children: inner });
+  }
+  return node;
+}
+
+/**
  * The app frame, v4 (spec §6, owner decision 6 October 2026): the 256px sidebar on the left (a 56px rail when
  * collapsed, a sheet from the left below md), the 50px top bar over the page, and the page itself at full width with
  * 20px sides and 24px under the bar. Strips above it all (impersonation, billing, maintenance) stay pinned at the top.
+ *
+ * The page's main column is at least the screen's height under the top bar and lays out as a column: the page's content,
+ * then its `<PageNotes>` (owner request, 7 October 2026), lifted out of the content and pushed to the bottom of the
+ * screen by `margin-top: auto` on a short page, after the content on a long one. The content itself stays a plain
+ * block (one flex item), so its margins and centred columns behave as before and pages without notes look as before.
  *
  * `bleed` pages (Messages) take the whole area under the top bar with no padding and do not scroll the page: the
  * screen's height less any strip above the shell (--shell-banners), as Brenda's chat does. Brenda's chat itself hides
@@ -136,7 +163,7 @@ export async function AppShell({ ctx, counts, teams = [], children, bleed = fals
           menu={<MobileNav {...nav} className="md:hidden" />} />
         {bleed
           ? <main id="main" className="flex min-h-0 flex-1 flex-col md:h-[calc(100dvh-var(--header-height)-var(--shell-banners,0px))]">{children}</main>
-          : <main id="main" className="w-full min-w-0 flex-1 px-5 pb-16 pt-6"><PageRise>{children}</PageRise></main>}
+          : <PageColumn>{children}</PageColumn>}
         {ctx.plan.features.AI_ASSISTANT ? <AssistantDrawer orgSlug={ctx.org.slug} isOrg={isOrg} firstName={ctx.user.displayName.split(" ")[0]} floating /> : null}
         {ctx.plan.features.AI_ASSISTANT && !isOrg ? <BrendaPresence orgSlug={ctx.org.slug} /> : null}
         <RealtimeRefresher orgSlug={ctx.org.slug} />
@@ -144,5 +171,22 @@ export async function AppShell({ ctx, counts, teams = [], children, bleed = fals
       </div>
     </div>
     </MotionRoot>
+  );
+}
+
+/**
+ * The page's main column: the content, then the page's notes at the bottom of the screen (see AppShell). Below lg the
+ * notes keep 32px more clear under them (96px in all) so Brenda's floating button (bottom-right, 80px tall with its
+ * offset) never covers the end of their last line once the page is scrolled to the bottom; from lg up the notes'
+ * 72ch measure stays left of it.
+ */
+function PageColumn({ children }: { children: ReactNode }) {
+  const notes: ReactElement<{ className?: string }>[] = [];
+  const content = liftPageNotes(children, notes);
+  return (
+    <main id="main" className="flex w-full min-w-0 flex-1 flex-col px-5 pb-16 pt-6">
+      <PageRise>{content}</PageRise>
+      {notes.map((n, i) => cloneElement(n, { key: `page-notes-${i}`, className: cn(n.props.className, "max-lg:pb-8") }))}
+    </main>
   );
 }

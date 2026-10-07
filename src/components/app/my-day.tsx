@@ -62,8 +62,7 @@ function Board({ orgSlug, initialSession, planned, ownTodos, fromLeads, recordin
             <li>Press <strong className="font-medium text-foreground">Mark done</strong> when you finish. It goes to your lead for a quick check, then shows as Completed.</li>
             {lead ? <li>As a team lead, use “For” on a new to-do to hand it to someone on your team, or to anyone else in the organisation, or say who it is for when you dictate.</li> : null}
           </ol>
-          {/* No daily report to write any more (owner decision, 6 October 2026); say so, since people were used to one. */}
-          <p className="mt-4 text-meta font-normal text-secondary">There is no daily report to write: your to-dos and timer are the record your team lead sees.</p>
+          {/* "There is no daily report to write" is one of the page's notes at the bottom (my-day/page.tsx). */}
         </Card>
       </aside>
     </div>

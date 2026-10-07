@@ -81,7 +81,8 @@ export function BillingCard({ orgSlug, data, notice, preselect }: { orgSlug: str
 
       {/* The plans. */}
       <div>
-        <SectionTitle as="h3" title="Plans" description="Paid plans are billed through Paystack."
+        {/* "Paid plans are billed through Paystack" is a page note on Settings, Billing. */}
+        <SectionTitle as="h3" title="Plans"
           action={<Segmented name="billing-interval" aria-label="Billing interval" value={cycle} onChange={(v) => setCycle(v as "monthly" | "annual")} options={[{ value: "monthly", label: "Monthly" }, { value: "annual", label: "Annual" }]} />} />
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{data.plans.map((p) => {
           const price = priceOf(p);

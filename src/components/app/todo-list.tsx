@@ -465,10 +465,12 @@ function PastTasks({ orgSlug, items, timeZone, onCleared }: { orgSlug: string; i
           </span>
         </li>
       ))}</ul>
-      <div className="mt-2 flex flex-wrap items-center justify-between gap-2 px-1">
-        <p className="text-meta font-normal text-secondary">Clearing only tidies your list. Records, reports and your team lead&apos;s views keep everything.</p>
-        {items.length > 5 ? <Button size="xs" variant="ghost" onClick={() => setAll((v) => !v)}>{all ? "Show fewer" : `View all ${items.length}`}</Button> : null}
-      </div>
+      {/* "Clearing only tidies your list" is a page note at the bottom (todos/page.tsx); Clear's confirm says it too. */}
+      {items.length > 5 ? (
+        <div className="mt-2 flex justify-end px-1">
+          <Button size="xs" variant="ghost" onClick={() => setAll((v) => !v)}>{all ? "Show fewer" : `View all ${items.length}`}</Button>
+        </div>
+      ) : null}
     </details>
     <ConfirmDialog open={confirm} onClose={() => setConfirm(false)} title="Clear your past tasks?" description="They leave this list. Records, reports and your team lead's views keep everything." confirmLabel="Clear"
         onConfirm={async () => { setPending(true); setError(null); try { const r = await api<{ cleared: number }>(`/api/orgs/${orgSlug}/todos/clear`, { method: "POST", body: {} }); onCleared(r.cleared); } catch (err) { setError(isApiFailure(err) ? err.error.message : "Nothing was cleared: cannot reach the server. Check your connection and try again."); } finally { setPending(false); } }} />

@@ -2,7 +2,8 @@
 
 /**
  * A list of screen recordings, v4: a calm table with tiny status badges and tabular figures; Watch opens the player in
- * a wide side sheet. Playback links are short-lived and every play is logged.
+ * a wide side sheet. Playback links are short-lived and every play is logged; the player says so in notes under the
+ * video (owner request, 7 October 2026: such notes go small and grey at the bottom).
  */
 import { useState } from "react";
 import Link from "next/link";
@@ -12,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Alert } from "@/components/ui/states";
 import { DataTable } from "@/components/ui/table";
 import { Sheet } from "@/components/ui/sheet";
+import { PageNote, PageNotes } from "@/components/ui/page-notes";
 import { api, isApiFailure } from "@/lib/api-client";
 import { formatDateTime, formatDuration } from "@/lib/utils";
 import type { RecordingListRow } from "@/server/services/recording";
@@ -52,12 +54,18 @@ export function RecordingsTable({ orgSlug, rows, timeZone, showPerson = true, sh
         ))}</tbody>
       </DataTable>
       <Sheet open={!!playing} onClose={() => setPlaying(null)} size="lg" title={playing?.title ?? "Recording"} closeLabel="Close player"
-        description={<>{playing?.when ? <>{playing.when}. </> : null}The link works for 60 seconds. Every play is written to the access log.</>}>
+        description={playing?.when || undefined}>
         {playing ? (
-          <div className="space-y-3">
-            {videoError ? <Alert tone="danger">{videoError}</Alert> : null}
-            <video key={playing.id} controls autoPlay src={playing.url} className="max-h-[70dvh] w-full rounded-xl border border-border bg-black" onError={() => setVideoError("This browser could not play the video. Try another browser, or press Watch again for a fresh link.")} />
-          </div>
+          <>
+            <div className="space-y-3">
+              {videoError ? <Alert tone="danger">{videoError}</Alert> : null}
+              <video key={playing.id} controls autoPlay src={playing.url} className="max-h-[70dvh] w-full rounded-xl border border-border bg-black" onError={() => setVideoError("This browser could not play the video. Try another browser, or press Watch again for a fresh link.")} />
+            </div>
+            <PageNotes>
+              <PageNote>The link works for 60 seconds.</PageNote>
+              <PageNote>Every play is written to the access log.</PageNote>
+            </PageNotes>
+          </>
         ) : null}
       </Sheet>
     </div>

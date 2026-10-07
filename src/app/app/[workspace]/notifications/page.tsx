@@ -8,6 +8,7 @@ import { EmptyState } from "@/components/ui/states";
 import { buttonVariants } from "@/components/ui/button";
 import { label } from "@/components/ui/badge";
 import { BrendaGlyph } from "@/components/app/brenda-glyph";
+import { PageNote, PageNotes } from "@/components/ui/page-notes";
 import { notificationsView } from "@/server/services/views";
 import { formatDateTime, cn } from "@/lib/utils";
 import { MarkRead, MarkAllRead } from "./mark-read";
@@ -61,7 +62,8 @@ const EMPTY: Record<Filter, { title: string; description: string }> = {
  * not lines. Each row: an orange unread dot, a 32px line-icon square, the title (foreground while unread, secondary
  * once read), the body, the kind, and the time on the right with "Mark read". The whole row opens its link.
  * Calm by design (accent rules, 6 October 2026): orange is only the small dot on an unread row and the Unread count;
- * read rows carry none, and no text is ever orange.
+ * read rows carry none, and no text is ever orange. Email delivery and the 100-item limit are page notes at the bottom
+ * (owner request, 7 October 2026).
  */
 export default async function NotificationsPage({ params, searchParams }: { params: Promise<{ workspace: string }>; searchParams: Promise<{ show?: string }> }) {
   const { workspace } = await params;
@@ -85,7 +87,7 @@ export default async function NotificationsPage({ params, searchParams }: { para
 
   return (
     <AppShell ctx={ctx} counts={counts} teams={teams}>
-      <PageHeader title="Notifications" description="Assignments, review requests, decisions, blockers and reminders. Email delivery is optional and off in the pilot."
+      <PageHeader title="Notifications" description="Assignments, review requests, decisions, blockers and reminders."
         actions={unreadItems.length ? <MarkAllRead orgSlug={ctx.org.slug} ids={unreadItems.map((n) => n.id)} /> : undefined}
         tabsLabel="Show" tabValue={show} tabParam="show"
         tabs={FILTERS.map((f) => ({ label: f.label, value: f.value, href: f.value === "all" ? `${base}/notifications` : `${base}/notifications?show=${f.value}`, count: f.value === "unread" ? unreadItems.length : undefined, attention: f.value === "unread" }))} />
@@ -123,9 +125,12 @@ export default async function NotificationsPage({ params, searchParams }: { para
               </ul>
             </section>
           ))}
-          {items.length >= 100 ? <p className="px-2 text-xs font-medium text-subtle">Showing the latest 100.</p> : null}
         </div>
       )}
+      <PageNotes>
+        {items.length >= 100 ? <PageNote>Showing the latest 100.</PageNote> : null}
+        <PageNote>Email delivery is optional and off in the pilot.</PageNote>
+      </PageNotes>
     </AppShell>
   );
 }

@@ -109,7 +109,7 @@ export function CampaignForm({ campaign, templates, segments }: { campaign?: Cam
  * Preview, test send, schedule or send now, cancel. The send asks for confirmation and shows the audience size first.
  * "Send now" (or "Schedule") is the campaign page's one standout action: the orange button (accent rules).
  */
-export function CampaignControls({ campaign, audienceSize, unsubscribed, canSend }: { campaign: CampaignRow; audienceSize: number; unsubscribed: number; canSend: boolean }) {
+export function CampaignControls({ campaign, audienceSize, canSend }: { campaign: CampaignRow; audienceSize: number; canSend: boolean }) {
   const [html, setHtml] = useState<string | null>(null);
   const [previewing, setPreviewing] = useState(false);
   const [test, setTest] = useState("");
@@ -133,9 +133,9 @@ export function CampaignControls({ campaign, audienceSize, unsubscribed, canSend
       {msg ? <Alert tone={msg.tone}>{msg.text}</Alert> : null}
       {draft && canSend ? (
         <div className="flex flex-wrap items-end justify-between gap-4 rounded-xl bg-fill-0 p-4">
+          {/* How the count is worked out (unsubscribed left out, invalid addresses skipped) is a page note on the campaign page. */}
           <div className="min-w-0 max-w-md">
             <p className="text-sm font-medium text-foreground"><span className="tabular-nums">{audienceSize.toLocaleString()}</span> recipient{audienceSize === 1 ? "" : "s"}</p>
-            <p className="mt-0.5 text-meta font-normal text-secondary"><span className="tabular-nums">{unsubscribed.toLocaleString()}</span> unsubscribed contacts are left out automatically; invalid addresses are skipped at send time.</p>
           </div>
           <div className="flex flex-wrap items-end gap-2">
             <Labelled label="Schedule" hint="optional"><DatePicker mode="datetime" value={when} onChange={(v) => setWhen(v)} size="sm" aria-label="Schedule" /></Labelled>
@@ -176,7 +176,8 @@ export function ContactImportForm() {
   );
 }
 
-export function ComposeForm({ templates }: { templates: TemplateRow[] }) {
+/** Write one email. What a composed email looks like and how many templates exist are page notes on Communications. */
+export function ComposeForm() {
   return (
     <JsonForm path="/api/admin/compose" transform={(d) => ({ to: String(d.to ?? "") || undefined, organisationId: String(d.organisationId ?? "") || undefined, templateId: String(d.templateId ?? "") || null, subject: String(d.subject), title: String(d.title ?? "") || undefined, body: String(d.body), ctaLabel: String(d.ctaLabel ?? "") || null, ctaUrl: String(d.ctaUrl ?? "") || null })} submitLabel="Send" successMessage="Sent.">
       <div className="grid gap-3 sm:grid-cols-2">
@@ -189,7 +190,6 @@ export function ComposeForm({ templates }: { templates: TemplateRow[] }) {
         <Labelled label="Button link"><input name="ctaUrl" className={inputCls} /></Labelled>
         <input type="hidden" name="templateId" value="" />
       </div>
-      <p className="text-meta font-normal text-secondary"><span className="tabular-nums">{templates.length}</span> templates exist for campaigns and automations; a composed email uses the design-system layout with what you write here.</p>
     </JsonForm>
   );
 }

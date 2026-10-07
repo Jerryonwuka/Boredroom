@@ -79,7 +79,9 @@ function Frame({ kind, open, onClose, title, description, children, footer, clas
             <h2 id={titleId} className="type-dialog-title">{title}</h2>
             {description ? <p id={descId} className="mt-1 text-sm font-medium text-secondary">{description}</p> : null}
           </div>
-          <div className={cn("min-h-0 px-6", kind === "side-sheet" ? "flex-1 overflow-y-auto pb-6" : "pb-6", footer && "pb-2")}>{children}</div>
+          {/* A side sheet whose body ends in `<PageNotes>` lays out as a column, so the notes sit at the bottom of the
+              sheet, just above its footer, as on a page (owner request, 7 October 2026). Other bodies stay plain blocks. */}
+          <div className={cn("min-h-0 px-6", kind === "side-sheet" ? "flex-1 overflow-y-auto pb-6 has-[>[data-page-notes]]:flex has-[>[data-page-notes]]:flex-col" : "pb-6", footer && "pb-2")}>{children}</div>
           {footer ? <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 px-6 pb-6 pt-4">{footer}</div> : null}
           {/* Last in the DOM, so opening focuses the first field rather than Close; drawn top right. */}
           <IconButton data-dialog-close aria-label={closeLabel} onClick={onClose} className="absolute right-4 top-5"><X aria-hidden /></IconButton>

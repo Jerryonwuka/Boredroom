@@ -9,6 +9,7 @@ import { TodosBoard } from "@/components/app/todo-list";
 import { formatLongDate } from "@/lib/utils";
 import { assignableMembers } from "@/server/services/tasks";
 import { assistantConfigured } from "@/server/services/assistant";
+import { PageNote, PageNotes } from "@/components/ui/page-notes";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "To-dos" };
@@ -57,6 +58,11 @@ export default async function TodosPage({ params }: { params: Promise<{ workspac
         timeZone={ctx.org.timezone}
         serverNow={serverNow()}
       />
+      {/* Page notes (owner request, 7 October 2026): explanations at the bottom of the screen, small and grey. Past
+          tasks' note shows while there are past tasks (the list refreshes after Clear). */}
+      <PageNotes>
+        {data.pastTasks.length ? <PageNote section="Past tasks">Clearing only tidies your list. Records, reports and your team lead&apos;s views keep everything.</PageNote> : null}
+      </PageNotes>
     </AppShell>
   );
 }

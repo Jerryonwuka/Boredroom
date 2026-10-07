@@ -16,7 +16,8 @@ const sourceLabel = (s: string) => s.charAt(0).toUpperCase() + s.slice(1).replac
 
 /**
  * The recordings of one work session, inside the task's session list. Times read in the organisation's zone when the
- * page passes `timeZone`; without it the expiry is a date in UTC, the same on the server and in the browser.
+ * page passes `timeZone`; without it the expiry is a date in UTC, the same on the server and in the browser. That the
+ * playback link is short-lived and every play is logged is a page note on the task page (owner request, 7 October 2026).
  */
 export function SessionRecordings({ orgSlug, recordings, own, timeZone }: { orgSlug: string; recordings: Rec[]; own: boolean; timeZone?: string }) {
   const router = useRouter();
@@ -60,7 +61,6 @@ export function SessionRecordings({ orgSlug, recordings, own, timeZone }: { orgS
       ))}
       {playing ? (
         <div className="mt-2" role="region" aria-label="Recording player">
-          <p className="mb-1.5 text-secondary">The link works for 60 seconds. Every play is written to the access log.</p>
           <video key={playing.id} controls autoPlay src={playing.url} className="max-h-80 w-full rounded-xl border border-border bg-black" onError={() => setError("This browser could not play the video. Try another browser, or press Watch again for a fresh link.")} />
           <Button size="xs" variant="ghost" className="mt-1.5" onClick={() => setPlaying(null)}>Close player</Button>
         </div>

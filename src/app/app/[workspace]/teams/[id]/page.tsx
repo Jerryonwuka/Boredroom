@@ -19,6 +19,7 @@ import { RecordingsTable } from "@/components/app/recordings-table";
 import { listRecordings, recordingCountsByTask } from "@/server/services/recording";
 import { Person } from "@/components/ui/person";
 import { BrendaGlyph } from "@/components/app/brenda-glyph";
+import { PageNote, PageNotes } from "@/components/ui/page-notes";
 import { cn } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -81,7 +82,6 @@ export default async function TeamBoardPage({ params, searchParams }: { params: 
               // The one hand-off to Brenda on this page: she creates and assigns tasks (create_todos), each waiting for a yes.
               action={isLead && members.length ? <Link href={`${base}/home?ask=${encodeURIComponent(`Help me plan this week's tasks for the ${team.name} team and assign them.`)}`} className={buttonVariants({ variant: "secondary", size: "sm" })}><BrendaGlyph aria-hidden />Ask Brenda to plan tasks</Link> : undefined} />
           ) : <TaskBoard orgSlug={ctx.org.slug} viewer={viewer} tasks={boardTasks} showProject recordings={recordingCounts} label={`${team.name} tasks, by status`} />}
-          {isLead && team.project_name ? <p className="mt-4 text-meta font-normal text-secondary">New tasks go into the team&apos;s working project (&ldquo;{team.project_name}&rdquo;). Tasks in other projects still appear here when assigned to a team member.</p> : null}
         </section>
       ) : null}
 
@@ -122,6 +122,11 @@ export default async function TeamBoardPage({ params, searchParams }: { params: 
           )}
         </section>
       ) : null}
+
+      {/* Page notes (owner request, 7 October 2026): explanations at the bottom of the screen, small and grey. */}
+      <PageNotes>
+        {tab === "tasks" && isLead && team.project_name ? <PageNote>New tasks go into the team&apos;s working project (&ldquo;{team.project_name}&rdquo;). Tasks in other projects still appear here when assigned to a team member.</PageNote> : null}
+      </PageNotes>
     </AppShell>
   );
 }

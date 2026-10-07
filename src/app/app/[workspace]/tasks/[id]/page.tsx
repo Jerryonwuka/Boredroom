@@ -20,6 +20,7 @@ import { SessionRecordings } from "@/components/app/recording-panel";
 import { DetailList, DetailRow } from "@/components/app/detail-list";
 import { DueDate } from "@/components/app/due";
 import { ProgressBar } from "@/components/ui/progress-arc";
+import { PageNote, PageNotes } from "@/components/ui/page-notes";
 
 export const dynamic = "force-dynamic";
 
@@ -71,6 +72,8 @@ export default async function TaskPage({ params, searchParams }: { params: Promi
   const estimate = task.estimate_minutes ? task.estimate_minutes * 60 : 0;
   const share = estimate ? Math.min(1, task.tracked_seconds / estimate) : 0;
   const overdue = !!task.due_at && new Date(task.due_at) < new Date() && task.status !== "completed";
+  // A recording the viewer can press Watch on (SessionRecordings shows Watch for these only).
+  const watchable = Object.values(recordingsBySession).some((rs) => rs.some((r) => r.upload_state === "ready" && !r.restricted_at));
   return (
     <AppShell ctx={ctx} counts={counts} teams={teams}>
       {/* "Back" goes to wherever the task was opened from (BackLink follows history); with no history, to Tasks. */}
@@ -178,6 +181,11 @@ export default async function TaskPage({ params, searchParams }: { params: Promi
           </section>
         </div>
       </div>
+
+      {/* Page notes (owner request, 7 October 2026): explanations at the bottom of the screen, small and grey. */}
+      <PageNotes>
+        {watchable ? <PageNote section="Recordings">The link works for 60 seconds. Every play is written to the access log.</PageNote> : null}
+      </PageNotes>
     </AppShell>
   );
 }

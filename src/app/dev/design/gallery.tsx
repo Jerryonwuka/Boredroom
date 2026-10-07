@@ -34,6 +34,7 @@ import { IconButton } from "@/components/ui/icon-button";
 import { Field, Input, InputAdorned, Select, Textarea } from "@/components/ui/input";
 import { Menu, MenuItem, MenuLabel, MenuSeparator, Popover } from "@/components/ui/menu";
 import { ProgressArc, ProgressBar } from "@/components/ui/progress-arc";
+import { PageNote, PageNotes } from "@/components/ui/page-notes";
 import { ListRow, Row, RowList, SubNavItem } from "@/components/ui/rows";
 import { Segmented } from "@/components/ui/segmented";
 import { Slider } from "@/components/ui/slider";
@@ -57,7 +58,7 @@ const SECTIONS = [
   ["foundations", "Foundations"], ["accents", "Accents"], ["type", "Type"], ["icons", "Animated icons"], ["buttons", "Buttons"], ["inputs", "Inputs"], ["selection", "Selection"],
   ["tabs", "Tabs"], ["badges", "Badges"], ["cards", "Cards"], ["stats", "Stat cards"], ["analytics", "Analytics"],
   ["filters", "Filters"], ["tiles", "Tool tiles"], ["lists", "Lists"], ["tables", "Tables"], ["feedback", "Feedback"],
-  ["overlays", "Overlays"], ["pickers", "Pickers"], ["prompt", "Prompt"], ["charts", "Charts"], ["frame", "App frame"],
+  ["notes", "Page notes"], ["overlays", "Overlays"], ["pickers", "Pickers"], ["prompt", "Prompt"], ["charts", "Charts"], ["frame", "App frame"],
 ] as const;
 
 function ThemePanel({ theme, children, className }: { theme: Theme; children: React.ReactNode; className?: string }) {
@@ -688,6 +689,46 @@ function Feedback() {
   );
 }
 
+function PageNotesDemo() {
+  return (
+    <Section id="notes" title="Page notes" description={<>Explanations a screen does not need in order to be used (what a status means, how a figure is worked out, the time zone, &ldquo;Nothing here is a productivity score&rdquo;) go in PageNotes, the page&rsquo;s last child inside AppShell: 12/16 in the subtle grey, at most 72ch a line, under a hairline. The shell pushes it to the bottom of the screen on a short page, after the content on a long one. Labels, page descriptions, empty states, errors, warnings and form hints stay where they are.</>}>
+      <Both>
+        {() => (
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Cap>A short page: the notes sit at the bottom</Cap>
+              <div className="flex min-h-80 flex-col rounded-xl border border-border px-5 pb-5 pt-4">
+                <div>
+                  <p className="type-section-title mb-1">Workroom</p>
+                  <p className="text-sm font-normal text-secondary">Everyone who has started work today.</p>
+                  <ListRow className="mt-3" leading={<Avatar profileId="demo-ada" name="Ada Lovelace" size={40} />} title="Ada Lovelace" subtitle="Landing page copy"
+                    meta={<><StatusDot tone="live" pulse={false} className="ml-1" />Active since 09:12</>} />
+                </div>
+                <PageNotes>
+                  <PageNote>Status comes from timers only: Active means a running timer with a live connection, Paused means paused or no heartbeat for <span className="tabular-nums">90</span>s.</PageNote>
+                  <PageNote section="Time today">Counted from the first Start, in the organisation&rsquo;s time zone.</PageNote>
+                  <PageNote>Nothing here is a productivity score.</PageNote>
+                </PageNotes>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Cap>A long page: the notes follow the content</Cap>
+              <div className="flex max-h-80 flex-col overflow-y-auto rounded-xl border border-border px-5 pb-5 pt-4" role="region" tabIndex={0} aria-label="A long page, scrolls">
+                <div className="space-y-2">
+                  {Array.from({ length: 8 }, (_, i) => <Skeleton key={i} className="h-12 w-full rounded-xl" />)}
+                </div>
+                <PageNotes>
+                  <PageNote>Hours count clock-in to clock-out; days without a clock-out add nothing.</PageNote>
+                </PageNotes>
+              </div>
+            </div>
+          </div>
+        )}
+      </Both>
+    </Section>
+  );
+}
+
 function Overlays() {
   const [sheet, setSheet] = React.useState(false);
   const [dialog, setDialog] = React.useState(false);
@@ -997,6 +1038,7 @@ export function DesignGallery() {
         <Lists />
         <Tables />
         <Feedback />
+        <PageNotesDemo />
         <Overlays />
         <Pickers />
         <Prompt />
