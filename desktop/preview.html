@@ -26,7 +26,12 @@
      one, ?state=batch a group's answers, ?state=waiting the day card with a waiting ask and its Reply button. &card=dictate
      holds the talk keys for two seconds on the open ask and writes the words heard into its note; &reply=closed answers the
      reply with the server's 409 (closed meanwhile), &reply=error with a 503; &old drops `followUps`, as an older server
-     does, so the plain notification cards show. -->
+     does, so the plain notification cards show.
+     Asking your assistant in Messages (owner decision, 8 October 2026: phase 5): ?state=mention is Ben's card when Olu
+     mentions him in #design (his own Brenda's face, the message in a quoted bubble); the others are Olu's, whose
+     assistant is Max (unless ?look=/?name= say otherwise): ?state=mention-reply (Max replied in #design),
+     ?state=mention-confirm (something waits for her Confirm in the conversation), ?state=mention-private (an answer only
+     she can see; &note shows the "couldn't answer" note instead). OK marks it read; Open logs the conversation's link. -->
 <html lang="en"><head><meta charset="utf-8"><title>Brenda notch preview</title><link rel="stylesheet" href="src/style.css">
 <style>html,body{background:#3b3b3b!important;height:100%;overflow:hidden!important} body::before{content:"";position:fixed;inset:0 0 auto;height:40px;background:rgb(0 0 0 / .28);box-shadow:inset 0 -1px 0 rgb(255 255 255 / .075)} #stage{position:relative;width:480px;height:440px;margin:0 auto;outline:1px dashed rgb(255 255 255 / .1)}</style></head>
 <body><div id="stage"><div id="island" class="island"><main id="notch" class="notch compact"></main><i id="countdown" class="countdown"></i></div></div>
@@ -50,7 +55,9 @@ const assistantFrom = (look, name) => {
   const colour = FACES[c] ? c : "white";
   return { name: name?.trim() || "Brenda", colour, visor: LOOK_VISORS.includes(v) ? v : "bean", eyes: LOOK_EYES.includes(e) ? e : "pill", face: FACES[colour] };
 };
-const personal = assistantFrom(q.get("look"), q.get("name"));
+// The mention states that are Olu's (phase 5) draw her assistant, Max, unless the address names another look.
+const olus = ["mention-reply", "mention-confirm", "mention-private"].includes(state);
+const personal = assistantFrom(q.get("look") ?? (olus ? "orange,band,round" : null), q.get("name") ?? (olus ? "Max" : null));
 const workspace = assistantFrom(q.get("ws"), q.get("wsname"));
 // Follow-ups (phase 4): Olu's assistant Max asks about Ben's "Landing page"; Ben's Brenda answers Ada's follow-up.
 const max = assistantFrom("orange,band,round", "Max"), brenda = assistantFrom("white", "Brenda");
@@ -69,10 +76,22 @@ const answers = {
   "no-reply": { id: ANSWER, title: "No reply from Ben about “Landing page”", status: "expired", subject: { name: "Ben Okafor", assistant: brenda }, answeredAt: now, href: `/app/company-a/home/follow-ups/${ANSWER}`,
     answer: "No reply from Ben by 19:41. “Landing page” is in progress, 60% done, due Fri 9 Oct 17:00. Nothing has been recorded on it by Ben lately." },
 };
+// Mentions in Messages (phase 5): the notifications as the server words them (titles, bodies and links in the contract).
+const DESIGN = "c4444444-4444-4444-8444-444444444444", TAGGING = "e5555555-5555-4555-8555-555555555555";
+const thread = `/app/company-a/messages?c=${DESIGN}#m-${TAGGING}`;
+const mentions = {
+  mention: { id: "n6", type: "message.mention", resource_id: DESIGN, title: "Olu Adeyemi mentioned you in #design", body: "@Ben Okafor can you send the hero images before 3? The client wants to see the landing page today.", href: thread, created_at: now },
+  "mention-reply": { id: "n5", type: "brenda.mention_reply", resource_id: DESIGN, title: "Max replied in #design", body: "“Landing page” is in progress, 60% done, due Fri 9 Oct 17:00.\n- Copy is done\n- Ben is waiting on the hero images\nBen's last update was a comment on Wed 7 Oct 16:02.", href: thread, created_at: now },
+  "mention-confirm": { id: "n4", type: "brenda.mention_confirm", resource_id: DESIGN, title: "Max needs you to confirm in #design", body: "Remind you Thu 8 Oct, 15:00: Call Ben about the hero images", href: thread, created_at: now },
+  "mention-private": q.has("note")
+    ? { id: "n3", type: "brenda.mention_private", resource_id: DESIGN, title: "Max couldn't answer in #design", body: "Assistants can't reply in this conversation. Ask Max in your own chat instead.", href: thread, created_at: now }
+    : { id: "n3", type: "brenda.mention_private", resource_id: DESIGN, title: "Max answered you in #design", body: "Only visible to you. Ben clocked in at 09:12 and has 3h 10m on “Landing page” today.\n- Chidi is on leave\n- Everyone else in Design is in", href: thread, created_at: now },
+};
 const fuState = q.has("old") ? undefined : { ready: true, waiting: asks[state] ? [asks[state]] : state === "waiting" ? [asks.ask] : [], answered: answers[state] ? [answers[state]] : [] };
 const fuNotes = asks[state] ? [{ id: "n9", type: "brenda.followup_ask", resource_id: ASK, title: asks[state].title, body: asks[state].asker ? `Reply in a tap or say not now. If you don't reply by 19:41, Max gets what your work shows.` : "Reply before 16:55. Your reply goes in the report your team lead, the owner and HR receive.", href: `/app/company-a/home/follow-ups/about-you?f=${ASK}`, created_at: now }]
   : answers[state] ? [{ id: "n8", type: "brenda.followup_answer", resource_id: ANSWER, title: answers[state].title, body: answers[state].answer, href: answers[state].href, created_at: now }]
-  : state === "batch" ? [{ id: "n7", type: "brenda.followup_batch", resource_id: BATCH, title: "Updates from Design are in", body: "6 people: 4 answered from their work, 1 replied, 1 didn't reply in time.", href: `/app/company-a/home/follow-ups?batch=${BATCH}`, created_at: now }] : [];
+  : state === "batch" ? [{ id: "n7", type: "brenda.followup_batch", resource_id: BATCH, title: "Updates from Design are in", body: "6 people: 4 answered from their work, 1 replied, 1 didn't reply in time.", href: `/app/company-a/home/follow-ups?batch=${BATCH}`, created_at: now }]
+  : mentions[state] ? [mentions[state]] : [];
 const sample = {
   serverNow: now, me: { displayName: "Ada Employee", role: "employee", presence: "active" }, workspace: { slug: "company-a", name: "Company A" }, brendaEnabled: true,
   settings: { autoClockIn: true, reminders: true }, prefs: { autoClockIn: true, reminders: true }, assistant: { personal, workspace, speak: q.get("speak") || "voice" },
@@ -131,7 +150,7 @@ window.__TAURI__ = {
 };
 try { if (!q.has("keep")) localStorage.clear(); } catch {}
 // The follow-up states open their card first, not the morning briefing (?state=waiting shows the briefing).
-try { if (asks[state] || answers[state] || state === "batch") localStorage.setItem(`brenda-briefing:company-a:${new Date().toDateString()}`, "1"); } catch {}
+try { if (asks[state] || answers[state] || state === "batch" || mentions[state]) localStorage.setItem(`brenda-briefing:company-a:${new Date().toDateString()}`, "1"); } catch {}
 </script>
 <script src="src/sound.js"></script>
 <script src="src/main.js"></script>

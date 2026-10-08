@@ -6,6 +6,11 @@
  * message, on a conversation in the list and on the open conversation, and the details sheet for screens too narrow
  * for the details pane. Menus are the v4 Menu (popover surface, keyboard paths built in); forms open in right-side
  * sheets, short questions in centred dialogs; anything that fails after a menu has closed says so in a toast.
+ *
+ * @mentions (owner decision, 8 October 2026: personal assistants, phase 5): the composer offers "@" suggestions (the
+ * person's own assistant first, then the conversation's people; components/app/mention-autocomplete) and sends the
+ * picked mentions as tokens beside the text; a message's menu offers "Withdraw reply" on an assistant's reply to the
+ * person who asked and to whoever runs the conversation (components/app/mention-thread draws the rest in the thread).
  */
 import { createContext, useContext, useEffect, useId, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
@@ -26,6 +31,9 @@ import { notify } from "@/components/ui/toast";
 import { api, isApiFailure } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import { Avatar } from "@/components/ui/avatar";
+import { useAssistant } from "@/components/app/assistant-context";
+import { MentionListbox, useMentionAutocomplete, type ComposerMentions, type MentionPerson } from "@/components/app/mention-autocomplete";
+import { MENTION_WORDS } from "@/lib/mentions";
 import type { Presence as PresenceStatus } from "@/lib/presence";
 
 type TaskRef = { id: string; title: string } | null;
@@ -61,6 +69,17 @@ const noSubscribe = () => () => {};
 const inBrowser = () => true;
 const onServer = () => false;
 
+/** The composer's box, for a part of the thread that hands the focus back to it (a private answer dismissed). */
+export const COMPOSER_BOX = "data-composer-box";
+/** Puts the focus back in the composer's box, when there is one on the page. */
+export function focusComposer() {
+  document.querySelector<HTMLTextAreaElement>(`textarea[${COMPOSER_BOX}]`)?.focus();
+}
+
+/** No people and no mentions: the composer as it was before migration 0041 (contract A.2). */
+const NO_PEOPLE: MentionPerson[] = [];
+const NO_MENTIONS: ComposerMentions = { ready: false, assistantAllowed: false };
+
 /** The small remove button on the composer's reply and task strips. */
 const STRIP_X = "grid size-7 shrink-0 place-items-center rounded-lg text-secondary transition-colors duration-75 hover:bg-fill-1 hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ring)] pointer-coarse:size-10";
 
@@ -69,10 +88,17 @@ const STRIP_X = "grid size-7 shrink-0 place-items-center rounded-lg text-seconda
  * show through it), 16/24 text, a round ghost microphone and the round white Send. Enter sends, Shift+Enter starts a
  * new line. State lives here, so the live refresh that brings in new messages never touches what is being typed (the
  * form is marked data-refresh-safe). While a voice note records, the voice card takes the text's place inside the pill.
+ *
+ * "@" (owner decision, 8 October 2026: personal assistants, phase 5): `people` are the conversation's people without
+ * the person, `mentions` whether 0041 is in and whether their own assistant may reply here. Typing "@" opens the
+ * suggestions above the pill; on send the picked (or typed in full) mentions go with the text as tokens, which the
+ * server checks. While the person's own assistant is tagged, the line under the pill says that it replies for
+ * everyone to see. Before 0041 (`ready` false) the composer is exactly as it was.
  */
-export function Composer({ orgSlug, conversationId, task, prefill, placeholder, canVoice = true }: { canVoice?: boolean; orgSlug: string; conversationId: string; task: TaskRef; prefill?: string; placeholder: string }) {
+export function Composer({ orgSlug, conversationId, task, prefill, placeholder, canVoice = true, people = NO_PEOPLE, mentions = NO_MENTIONS }: { canVoice?: boolean; orgSlug: string; conversationId: string; task: TaskRef; prefill?: string; placeholder: string; people?: MentionPerson[]; mentions?: ComposerMentions }) {
   const router = useRouter();
   const [body, setBody] = useState(prefill ?? "");
+  const { personal } = useAssistant();
   const [attached, setAttached] = useState<TaskRef>(task);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -118,13 +144,16 @@ export function Composer({ orgSlug, conversationId, task, prefill, placeholder, 
     finally { voiceSending.current = false; setSendingVoice(false); }
   };
   const grow = (el: HTMLTextAreaElement) => { el.style.height = "auto"; el.style.height = `${Math.min(el.scrollHeight, 200)}px`; };
+  const ac = useMentionAutocomplete({ enabled: mentions.ready && !card, value: body, setValue: setBody, boxRef: ref, people, assistant: personal, assistantAllowed: mentions.assistantAllowed, onInserted: grow });
   const send = async () => {
     const text = body.trim();
     if (!text || pending) return;
     setPending(true); setError(null);
+    // The mentions go beside the text as tokens (only once 0041 is in; none at all before, as it always was).
+    const tokens = ac.tokens(text);
     try {
-      await api(`/api/orgs/${orgSlug}/messages`, { method: "POST", body: { conversationId, body: text, taskId: attached?.id ?? null, replyToId: reply?.id ?? null } });
-      setBody(""); setAttached(null); setReply(null);
+      await api(`/api/orgs/${orgSlug}/messages`, { method: "POST", body: { conversationId, body: text, taskId: attached?.id ?? null, replyToId: reply?.id ?? null, ...(tokens.length ? { mentions: tokens } : {}) } });
+      setBody(""); setAttached(null); setReply(null); ac.reset();
       if (ref.current) { ref.current.style.height = "auto"; ref.current.focus(); }
       if (attached) router.replace(`/app/${orgSlug}/messages?c=${conversationId}`);
       router.refresh();
@@ -153,39 +182,46 @@ export function Composer({ orgSlug, conversationId, task, prefill, placeholder, 
           </div>
         </Presence>
         <Presence show={!!shownError}><p id={errId} role="alert" className="mb-2 pl-1 text-meta font-medium text-danger">{shownError}</p></Presence>
-        <div className={cn("rounded-[26px] bg-surface transition-shadow duration-150",
-          // Accent rules (6 October 2026), as on Brenda's prompt pill: an orange ring while it has focus or records.
-          card ? "shadow-[0_0_0_1px_var(--accent-ring),var(--elev-natural-xs)]" : "shadow-[0_0_0_1px_var(--border),var(--elev-natural-xs)] focus-within:shadow-[0_0_0_1px_var(--accent-ring),var(--elev-natural-xs)]")}>
-          {/* Recording a voice note: the voice card in ElevenLabs' recording look (owner decision, 7 October 2026): the live
-              time, the waveform read from the recorder's own microphone, then Cancel and Send. The last minute is counted down. */}
-          {card ? (
-            <div className="p-2">
-              <VoiceCapture phase={voice.recording ? "listening" : "working"} title={voice.recording ? "Recording…" : "Sending your voice note…"} stream={voice.stream} seconds={voice.seconds} className="rounded-[20px]"
-                hint={voice.recording && voice.seconds >= MAX_SECONDS - 60 ? <><span className="tabular-nums">{fmt(Math.max(0, MAX_SECONDS - voice.seconds))}</span> left: at {fmt(MAX_SECONDS)} the note sends itself.</> : undefined}
-                actions={voice.recording ? <>
-                  <IconButton variant="round" aria-label="Cancel" data-tip="Discard the voice note" onClick={() => voice.cancel()} disabled={sendingVoice}><Trash2 aria-hidden /></IconButton>
-                  {/* Under a second there is nothing to send yet: it says so (aria-disabled) but keeps the focus it was given. */}
-                  <Button ref={sendNote} type="button" size="md" variant="accent" onClick={() => { if (voice.seconds >= 1) void sendVoice(); }} disabled={sendingVoice} aria-disabled={voice.seconds < 1 || undefined}
-                    className="aria-disabled:pointer-events-auto aria-disabled:cursor-not-allowed aria-disabled:opacity-50"><ArrowUp aria-hidden />Send</Button>
-                </> : null} />
-            </div>
-          ) : (
-            <div className="flex items-end gap-1 p-2">
-              {/* Read-only, not disabled, while sending: a disabled box drops the focus, and Enter should leave you ready to type the next line. */}
-              <textarea ref={ref} value={body} rows={1} placeholder={placeholder} aria-label="Message" aria-describedby={shownError ? errId : undefined} readOnly={pending} aria-busy={pending}
-                className="prompt-scroll block max-h-[200px] min-h-9 flex-1 resize-none self-center bg-transparent py-1.5 pl-3 text-base font-normal text-foreground outline-none placeholder:text-subtle read-only:text-secondary"
-                onChange={(e) => { setBody(e.target.value); grow(e.target); }}
-                onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); void send(); } }} />
-              {canRecord && !body.trim() ? <PromptAction aria-label="Record a voice note" disabled={pending} onClick={() => void voice.start()}><Mic aria-hidden /></PromptAction> : null}
-              <button type="submit" aria-label={pending ? "Sending" : "Send"} disabled={!ready}
-                className={cn("grid size-9 shrink-0 place-items-center rounded-full transition-colors duration-75 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ring)] disabled:cursor-not-allowed",
-                  ready ? "bg-accent text-accent-fg hover:bg-accent-hover" : "bg-fill-150 text-subtle")}>
-                {pending ? <Loader2 className="size-4 animate-spin" aria-hidden /> : <ArrowUp className="size-[18px]" strokeWidth={2.25} aria-hidden />}
-              </button>
-            </div>
-          )}
+        {/* The "@" suggestions open above the pill (phase 5). */}
+        <div className="relative">
+          <MentionListbox ac={ac} />
+          <div className={cn("rounded-[26px] bg-surface transition-shadow duration-150",
+            // Accent rules (6 October 2026), as on Brenda's prompt pill: an orange ring while it has focus or records.
+            card ? "shadow-[0_0_0_1px_var(--accent-ring),var(--elev-natural-xs)]" : "shadow-[0_0_0_1px_var(--border),var(--elev-natural-xs)] focus-within:shadow-[0_0_0_1px_var(--accent-ring),var(--elev-natural-xs)]")}>
+            {/* Recording a voice note: the voice card in ElevenLabs' recording look (owner decision, 7 October 2026): the live
+                time, the waveform read from the recorder's own microphone, then Cancel and Send. The last minute is counted down. */}
+            {card ? (
+              <div className="p-2">
+                <VoiceCapture phase={voice.recording ? "listening" : "working"} title={voice.recording ? "Recording…" : "Sending your voice note…"} stream={voice.stream} seconds={voice.seconds} className="rounded-[20px]"
+                  hint={voice.recording && voice.seconds >= MAX_SECONDS - 60 ? <><span className="tabular-nums">{fmt(Math.max(0, MAX_SECONDS - voice.seconds))}</span> left: at {fmt(MAX_SECONDS)} the note sends itself.</> : undefined}
+                  actions={voice.recording ? <>
+                    <IconButton variant="round" aria-label="Cancel" data-tip="Discard the voice note" onClick={() => voice.cancel()} disabled={sendingVoice}><Trash2 aria-hidden /></IconButton>
+                    {/* Under a second there is nothing to send yet: it says so (aria-disabled) but keeps the focus it was given. */}
+                    <Button ref={sendNote} type="button" size="md" variant="accent" onClick={() => { if (voice.seconds >= 1) void sendVoice(); }} disabled={sendingVoice} aria-disabled={voice.seconds < 1 || undefined}
+                      className="aria-disabled:pointer-events-auto aria-disabled:cursor-not-allowed aria-disabled:opacity-50"><ArrowUp aria-hidden />Send</Button>
+                  </> : null} />
+              </div>
+            ) : (
+              <div className="flex items-end gap-1 p-2">
+                {/* Read-only, not disabled, while sending: a disabled box drops the focus, and Enter should leave you ready to type the next line. */}
+                <textarea ref={ref} value={body} rows={1} placeholder={placeholder} aria-label="Message" aria-describedby={shownError ? errId : undefined} readOnly={pending} aria-busy={pending}
+                  data-composer-box="" {...ac.boxProps}
+                  className="prompt-scroll block max-h-[200px] min-h-9 flex-1 resize-none self-center bg-transparent py-1.5 pl-3 text-base font-normal text-foreground outline-none placeholder:text-subtle read-only:text-secondary"
+                  onChange={(e) => { setBody(e.target.value); grow(e.target); ac.track(e.target); }}
+                  onKeyDown={(e) => { if (ac.onKeyDown(e)) return; if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); void send(); } }} />
+                {canRecord && !body.trim() ? <PromptAction aria-label="Record a voice note" disabled={pending} onClick={() => void voice.start()}><Mic aria-hidden /></PromptAction> : null}
+                <button type="submit" aria-label={pending ? "Sending" : "Send"} disabled={!ready}
+                  className={cn("grid size-9 shrink-0 place-items-center rounded-full transition-colors duration-75 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ring)] disabled:cursor-not-allowed",
+                    ready ? "bg-accent text-accent-fg hover:bg-accent-hover" : "bg-fill-150 text-subtle")}>
+                  {pending ? <Loader2 className="size-4 animate-spin" aria-hidden /> : <ArrowUp className="size-[18px]" strokeWidth={2.25} aria-hidden />}
+                </button>
+              </div>
+            )}
+          </div>
         </div>
-        <p className="mt-2 px-3 text-xs font-medium text-subtle">{voice.recording ? "Speak, then press Send. Up to ten minutes." : pending || sendingVoice ? "Sending…" : `Enter sends, Shift+Enter starts a new line.${canRecord ? " The microphone records a voice note." : ""}`}</p>
+        <p className="mt-2 px-3 text-xs font-medium text-subtle">{voice.recording ? "Speak, then press Send. Up to ten minutes." : pending || sendingVoice ? "Sending…"
+          : ac.assistantTagged ? MENTION_WORDS.composerHint(personal.name)
+            : `Enter sends, Shift+Enter starts a new line.${canRecord ? " The microphone records a voice note." : ""}`}</p>
       </div>
     </form>
   );
@@ -299,15 +335,18 @@ function TextDialog({ open, onClose, title, description, label, initial = "", su
  * The reply arrow and the "…" beside a bubble: 28px ghost buttons (40px on touch). `canReport` is false for your own
  * assistant's own message, which is neither yours to edit nor someone else's to report (personal assistants, phase 3,
  * owner decision, 8 October 2026); `senderName` is then the assistant's name, so a reply says "Replying to Max".
+ * `withdrawReply` is set on an assistant's reply to an @mention for the person who asked and for whoever runs the
+ * conversation (personal assistants, phase 5, owner decision, 8 October 2026): "Withdraw reply" removes it for everyone
+ * through the mention's own route, since only Boredroom's worker may change an assistant's message.
  */
-export function MessageMenu({ orgSlug, id, mine, body, isVoice, senderName, canReply = true, canReport = !mine }: { orgSlug: string; id: string; mine: boolean; body: string; isVoice: boolean; senderName: string; canReply?: boolean; canReport?: boolean }) {
+export function MessageMenu({ orgSlug, id, mine, body, isVoice, senderName, canReply = true, canReport = !mine, withdrawReply = null }: { orgSlug: string; id: string; mine: boolean; body: string; isVoice: boolean; senderName: string; canReply?: boolean; canReport?: boolean; withdrawReply?: { mentionId: string; assistantName: string } | null }) {
   const router = useRouter();
   const { setReply } = useReply();
-  const [sheet, setSheet] = useState<"edit" | "report" | "withdraw" | null>(null);
+  const [sheet, setSheet] = useState<"edit" | "report" | "withdraw" | "withdrawReply" | null>(null);
   // Dialogs mount the first time they are asked for and stay (closed) after, so closing hands the focus back to "…";
   // each opening is keyed, so it starts from the message as it is now.
-  const [opened, setOpened] = useState<{ edit: number; report: number; withdraw: number }>({ edit: 0, report: 0, withdraw: 0 });
-  const open = (s: "edit" | "report" | "withdraw") => { setOpened((o) => ({ ...o, [s]: o[s] + 1 })); setSheet(s); };
+  const [opened, setOpened] = useState<{ edit: number; report: number; withdraw: number; withdrawReply: number }>({ edit: 0, report: 0, withdraw: 0, withdrawReply: 0 });
+  const open = (s: "edit" | "report" | "withdraw" | "withdrawReply") => { setOpened((o) => ({ ...o, [s]: o[s] + 1 })); setSheet(s); };
   // The menu closes on the press, so the confirmation is a short toast rather than a changed label nobody sees.
   const copy = async () => {
     try { await navigator.clipboard.writeText(body); notice("Text copied.", 1600); }
@@ -323,9 +362,11 @@ export function MessageMenu({ orgSlug, id, mine, body, isVoice, senderName, canR
         {mine && !isVoice ? <MenuItem icon={<Pencil aria-hidden />} onSelect={() => open("edit")}>Edit</MenuItem> : null}
         {!mine && canReport ? <MenuItem icon={<Flag aria-hidden />} onSelect={() => open("report")}>Report</MenuItem> : null}
         {mine ? <><MenuSeparator /><MenuItem tone="danger" icon={<Trash2 aria-hidden />} onSelect={() => open("withdraw")}>Withdraw</MenuItem></> : null}
+        {!mine && withdrawReply ? <><MenuSeparator /><MenuItem tone="danger" icon={<Trash2 aria-hidden />} onSelect={() => open("withdrawReply")}>{MENTION_WORDS.withdraw}</MenuItem></> : null}
       </Menu>
       {opened.edit ? <TextDialog key={`edit-${opened.edit}`} open={sheet === "edit"} onClose={() => setSheet(null)} title="Edit message" label="Message" initial={body} submitLabel="Save" pendingLabel="Saving…" onSubmit={async (text) => { await api(`/api/orgs/${orgSlug}/messages/${id}`, { method: "PATCH", body: { body: text }, retries: 0 }); router.refresh(); }} /> : null}
       {opened.report ? <TextDialog key={`report-${opened.report}`} open={sheet === "report"} onClose={() => setSheet(null)} title="Report this message" description="The organisation owner and HR are told, with your reason. The sender is not." label="What is wrong with it" submitLabel="Send report" pendingLabel="Sending report…" danger onSubmit={async (text) => { await api(`/api/orgs/${orgSlug}/messages/${id}/report`, { method: "POST", body: { reason: text }, retries: 0 }); notice("Report sent. The owner and HR have been told.", 4000); }} /> : null}
+      {opened.withdrawReply && withdrawReply ? <ConfirmDialog open={sheet === "withdrawReply"} onClose={() => setSheet(null)} title={MENTION_WORDS.withdrawTitle(withdrawReply.assistantName)} description={MENTION_WORDS.withdrawDescription} confirmLabel={MENTION_WORDS.withdraw} pendingLabel="Withdrawing…" onConfirm={async () => { try { await api(`/api/orgs/${orgSlug}/mentions/${withdrawReply.mentionId}/withdraw`, { method: "POST", retries: 0 }); router.refresh(); } catch (err) { failed("The reply was not withdrawn.", err); } }} /> : null}
       {opened.withdraw ? <ConfirmDialog open={sheet === "withdraw"} onClose={() => setSheet(null)} title="Withdraw this message?" description="It is removed for everyone in the conversation. The line stays so the thread keeps its shape." confirmLabel="Withdraw" pendingLabel="Withdrawing…" onConfirm={async () => { try { await api(`/api/orgs/${orgSlug}/messages/${id}`, { method: "DELETE", retries: 0 }); router.refresh(); } catch (err) { failed("The message was not withdrawn.", err); } }} /> : null}
     </div>
   );

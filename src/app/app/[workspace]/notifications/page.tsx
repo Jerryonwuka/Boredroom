@@ -26,12 +26,19 @@ export const metadata = { title: "Notifications" };
  * reply about their own work (`brenda.followup_ask`, even when the workspace's assistant is collecting for the report:
  * their own assistant asks them), and the answers to what they asked (`brenda.followup_answer` for one person,
  * `brenda.followup_batch` for a group).
+ *
+ * @mentions in Messages (owner decision, 8 October 2026: personal assistants, phase 5): someone mentioning the person in
+ * a conversation they read is a Mention (`message.mention`, in Messages, even when they muted it). When the person tags
+ * their own assistant in a conversation, it tells them how that went, in its own name: it replied there for everyone
+ * (`brenda.mention_reply`), it needs them to confirm something only they see (`brenda.mention_confirm`, "Waiting for
+ * you"), or it answered only them or couldn't answer (`brenda.mention_private`). Opening the conversation marks them read.
  */
 function kindsFor(personal: string, workspace: string): Record<string, string> {
   return {
-    "message.direct": "Direct message", "brenda.nudge": `From ${personal}`, "brenda.reminder": `Reminder from ${personal}`, "brenda.clock_in": `From ${personal}`,
+    "message.direct": "Direct message", "message.mention": "Mention", "brenda.nudge": `From ${personal}`, "brenda.reminder": `Reminder from ${personal}`, "brenda.clock_in": `From ${personal}`,
     "brenda.daily_report": `Daily report from ${workspace}`, "brenda.followup_ask": `Follow-up from ${personal}`, "brenda.followup_answer": "Follow-up answer",
-    "brenda.followup_batch": "Follow-up answers", "capture.exception": "Recording problem", "adjustment.requested": "Time correction requested",
+    "brenda.followup_batch": "Follow-up answers", "brenda.mention_reply": `Reply from ${personal}`, "brenda.mention_confirm": "Waiting for you",
+    "brenda.mention_private": `From ${personal}`, "capture.exception": "Recording problem", "adjustment.requested": "Time correction requested",
   };
 }
 
@@ -49,10 +56,12 @@ const group = (type: string): Filter | null => (/^(task|review|adjustment)\./.te
 
 type Icon = ComponentType<{ className?: string; "aria-hidden"?: boolean }>;
 /** A line icon per kind, in the 32px square at the head of each row. A `brenda.*` glyph draws the person's own assistant,
- * except the daily report's, which the page scopes to the workspace's. */
+ * except the daily report's, which the page scopes to the workspace's (so the assistant's news about a mention it handled
+ * carries its face). Someone mentioning the person (`message.mention`) draws an "@" instead of the message bubble. */
 function iconOf(type: string): Icon {
   if (type.startsWith("brenda.")) return BrendaGlyph as Icon;
   if (type === "message.reported") return CircleAlert;
+  if (type.includes("mention")) return AtSign;
   if (type.startsWith("message.")) return MessageSquare;
   if (type.startsWith("task.") || type.startsWith("review.")) return SquareCheckBig;
   if (type.startsWith("adjustment.")) return CalendarClock;
@@ -60,7 +69,6 @@ function iconOf(type: string): Icon {
   if (type.startsWith("capture.")) return Video;
   if (type.startsWith("policy.")) return ShieldCheck;
   if (type.startsWith("incident.")) return CircleAlert;
-  if (type.includes("mention")) return AtSign;
   if (type.includes("doc")) return FileText;
   return Bell;
 }
@@ -70,7 +78,7 @@ function emptyFor(personal: string): Record<Filter, { title: string; description
     all: { title: "No notifications yet", description: "Assignments, review requests and decisions land here as they happen." },
     unread: { title: "You are all caught up", description: "Nothing unread. New notifications show here first." },
     tasks: { title: "No task notifications", description: "Assignments, comments, blockers and review requests on your tasks show here." },
-    messages: { title: "No message notifications", description: "Direct messages sent while you were away show here." },
+    messages: { title: "No message notifications", description: "Direct messages and mentions show here." },
     brenda: { title: `Nothing from ${personal} yet`, description: "Reminders, nudges, follow-ups and daily reports show here." },
   };
 }

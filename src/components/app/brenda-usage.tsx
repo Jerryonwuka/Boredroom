@@ -2,9 +2,9 @@
  * Settings → Brenda → "Usage this month" (owner decision, 8 October 2026: personal assistants, phase 3): what the
  * workspace asked of Claude since the 1st, for owners and HR. Four stat cards (requests, tokens in, tokens out, read from
  * the cache), the month by purpose, the five people with the most requests and the daily limit. Requests are chat turns,
- * to-do planner calls, team reports asked for and follow-up asks between assistants (phase 4: one ask, one request,
- * whether it covers one person or 25), each counted once whatever the number of model calls; tokens come from the API's
- * own usage block. No prices
+ * to-do planner calls, team reports asked for, follow-up asks between assistants (phase 4: one ask, one request,
+ * whether it covers one person or 25) and assistants tagged in Messages (phase 5: one mention, one request), each
+ * counted once whatever the number of model calls; tokens come from the API's own usage block. No prices
  * anywhere (owner decision): the key's bill is between the owner and Anthropic.
  *
  * Server-safe (no hooks): the Settings page renders it with `usageSummary(ctx)`. Before migration 0037 the ledger does
@@ -17,9 +17,11 @@ import { SettingsGroup, SettingsSection } from "@/components/app/settings-forms"
 import { formatLongDate } from "@/lib/utils";
 import type { UsagePurpose, UsageSummary } from "@/server/services/ai-usage";
 
-// "followup": follow-ups between assistants (owner decision, 8 October 2026: personal assistants, phase 4).
+// "followup": follow-ups between assistants (owner decision, 8 October 2026: personal assistants, phase 4); "mention":
+// assistants tagged in a conversation (owner decision, 8 October 2026: personal assistants, phase 5).
 const PURPOSE_LABEL: Record<UsagePurpose, string> = {
   chat: "Chat", plan: "To-do planner", report: "Team reports", summary: "Summaries", test: "Connection tests", other: "Other", followup: "Follow-ups",
+  mention: "Mentions in Messages",
 };
 
 const exact = new Intl.NumberFormat("en-GB");

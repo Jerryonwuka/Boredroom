@@ -68,6 +68,27 @@ const followUpProcess: Handler = async (payload) => {
   await processFollowUpIds(ids, { useModel: false });
 };
 
+// ---- @mentions in Messages (owner decision, 8 October 2026: personal assistants, phase 5) -------------------------------
+// The fast path answers a mention in the web process right after the send (Next's after()); the worker owns what must
+// happen even when nobody is looking: Confirms past their time, and mentions left pending or half-run (a restart, a model
+// that did not answer). Unlike the follow-ups' jobs the worker may call the model here, bounded: one mention per job, at
+// most 4 model steps. Each returns at once before migration 0041.
+
+/** Expired Confirms settled, then each stuck mention handed to its own mention.process job (at most 5 a run). */
+const mentionSweep: Handler = async () => {
+  const { sweepMentions } = await import("../src/server/services/mention-processor");
+  const r = await sweepMentions({ limit: 5 });
+  if (r.settled || r.queued) console.log(`[worker] mentions: ${r.settled} Confirm(s) expired, ${r.queued} queued again`);
+};
+
+/** One mention taken as far as it goes now; the next one waiting in the same conversation gets its own job. */
+const mentionProcess: Handler = async (payload) => {
+  const id = String(payload.id ?? "");
+  if (!UUID.test(id)) return;
+  const { processMentionJob } = await import("../src/server/services/mention-processor");
+  await processMentionJob(id);
+};
+
 const retentionDelete: Handler = async (payload) => {
   const { deleteRecording } = await import("../src/server/services/recording");
   await deleteRecording(payload.recordingId as string, (payload.reason as "retention" | "incident" | "offboarding") ?? "retention");
@@ -101,6 +122,8 @@ export const handlers: Record<string, Handler> = {
   "followup.sweep": followUpSweep,
   "followup.collect": followUpCollect,
   "followup.process": followUpProcess,
+  "mention.sweep": mentionSweep,
+  "mention.process": mentionProcess,
   "recording.retention_delete": retentionDelete,
   "recording.assemble": assembleRecording,
   "deliverable.scan": scanDeliverable,

@@ -15,15 +15,22 @@
  *
  * The message text returned here is other people's words. The copilot hands it to the model as quoted data
  * (copilot-excerpt), never as instructions.
+ *
+ * @mentions (owner decision, 8 October 2026: personal assistants, phase 5): `readMentionThread` is the window a person's
+ * assistant reads when they tag it in a conversation (the newest 40 messages and about 8,000 characters up to the
+ * tagging message, plus the message it replies to, and who reads the conversation), read as the tagger like every read
+ * here, and not logged: the reply in the thread, or the private answer, is the record.
  */
 import { z } from "zod";
 import { withUser, type Db } from "@/server/db";
 import type { OrgContext } from "@/server/lib/api";
 import { invalid } from "@/server/lib/errors";
 import { retryWithout0037, schema0037Ready } from "@/server/lib/schema-0037";
+import { retryWithout0041, schema0041Ready } from "@/server/lib/schema-0041";
 import { logAction } from "@/server/services/brenda";
 import { inbox, type AuthorKind, type ConversationKind, type ConversationSummary } from "@/server/services/messaging";
 import { matchPerson } from "@/server/services/assistant";
+import { MENTION_LIMITS } from "@/lib/mentions";
 
 export const CATCH_UP_LIMITS = {
   messages: 200, chars: 12_000, bodyChars: 2_000, contextWhenNothingNew: 10,
@@ -331,6 +338,114 @@ export async function readConversation(ctx: OrgContext, input: z.input<typeof re
     }
     return { conversation: conv, mode: q.mode, unreadBefore: conv.unread, messages, omittedOlder: Math.max(0, omittedOlder), nothingNew, window: { from: nothingNew ? null : from, to } };
   }));
+}
+
+// ---- The thread an assistant reads for a mention (owner decision, 8 October 2026: personal assistants, phase 5) --------
+
+export type MentionThread = ConversationRead & {
+  /** The tagging message (also the last of `messages`). */
+  tagging: CatchUpMessage;
+  /** The message it replies to (also in `messages`; the first one when older than the window). */
+  replyTo: CatchUpMessage | null;
+  /** The task attached to the tagging message, when the tagger can see it. */
+  task: { id: string; title: string } | null;
+  /** Current readers, the tagger first, at most 50. */
+  people: { membershipId: string; name: string }[];
+  peopleCount: number;
+};
+
+const MENTION_PEOPLE_MAX = 50;
+
+/**
+ * The window the assistant reads for a mention, as the tagger (row-level security): the newest `messages` (40) up to
+ * and including the tagging message, withdrawn ones left out, at most `chars` (8,000) of message text, newest kept but
+ * the tagging message always kept, plus the message it replies to. Logs nothing (the reply itself is the record). Null
+ * when the tagger can no longer read the conversation or the tagging message is gone, and before migration 0041.
+ */
+export async function readMentionThread(ctx: OrgContext, input: { conversationId: string; messageId: string; messages?: number; chars?: number }): Promise<MentionThread | null> {
+  if (!UUID.test(input.conversationId) || !UUID.test(input.messageId)) return null;
+  const maxMessages = clampInt(input.messages, 1, CATCH_UP_LIMITS.messages, MENTION_LIMITS.threadMessages);
+  const maxChars = clampInt(input.chars, 200, CATCH_UP_LIMITS.chars, MENTION_LIMITS.threadChars);
+  const found = await resolveConversation(ctx, input.conversationId);
+  const me = ctx.membership.id;
+  return retryWithout0041(() => retryWithout0037(() => withUser(ctx.user.profileId, async (db): Promise<MentionThread | null> => {
+    if (!(await schema0041Ready(db))) return null;
+    const conv = found && !("ambiguous" in found) ? found : await conversationOutsideInbox(db, ctx, input.conversationId);
+    if (!conv) return null;
+    const ready = await schema0037Ready(db);
+    const tag = await db.maybeOne<MessageSqlRow>(
+      `SELECT ${messageColumns(ready)}, m.reply_to_id FROM messages m ${messageJoins(ready)} WHERE m.id = $1 AND m.conversation_id = $2 AND m.deleted_at IS NULL`,
+      [input.messageId, conv.id]);
+    if (!tag) return null;
+    // The newest messages with a plain LIMIT (the joins run for those only), and the count of older ones on its own,
+    // without joins, only when the window is full (review, 8 October 2026: a window count read and joined the whole history).
+    const limit = Math.max(0, maxMessages - 1);
+    const rows = await db.query<MessageSqlRow>(
+      `SELECT ${messageColumns(ready)} FROM messages m ${messageJoins(ready)}
+       WHERE m.conversation_id = $1 AND m.deleted_at IS NULL AND m.id <> $2 AND m.created_at <= (SELECT created_at FROM messages WHERE id = $2)
+       ORDER BY m.created_at DESC, m.id DESC LIMIT $3`,
+      [conv.id, tag.id, limit]);
+    const before = rows.length < limit ? rows.length : (await db.one<{ n: number }>(
+      `SELECT count(*)::int AS n FROM messages m
+       WHERE m.conversation_id = $1 AND m.deleted_at IS NULL AND m.id <> $2 AND m.created_at <= (SELECT created_at FROM messages WHERE id = $2)`,
+      [conv.id, tag.id])).n;
+    // Newest first: the tagging message always, then while the running total of message text stays within the cap.
+    const tagging = toMessage(tag, me);
+    const kept: CatchUpMessage[] = [tagging];
+    let chars = tagging.body.length;
+    for (const r of rows) {
+      const m = toMessage(r, me);
+      if (chars + m.body.length > maxChars) break;
+      chars += m.body.length;
+      kept.push(m);
+    }
+    let omittedOlder = Math.max(0, before - (kept.length - 1));
+    kept.reverse();
+    // The message it replies to, when it is still there: kept in place, or first when older than the window.
+    const replyId = (tag as MessageSqlRow & { reply_to_id: string | null }).reply_to_id;
+    let replyTo: CatchUpMessage | null = replyId ? kept.find((m) => m.id === replyId) ?? null : null;
+    if (replyId && !replyTo) {
+      const r = await db.maybeOne<MessageSqlRow>(
+        `SELECT ${messageColumns(ready)} FROM messages m ${messageJoins(ready)} WHERE m.id = $1 AND m.conversation_id = $2 AND m.deleted_at IS NULL`, [replyId, conv.id]);
+      if (r) {
+        replyTo = toMessage(r, me);
+        kept.unshift(replyTo);
+        omittedOlder = Math.max(0, omittedOlder - 1);
+      }
+    }
+    const readers = await db.query<{ membership_id: string; name: string; total: number }>(
+      `SELECT r.membership_id, COALESCE(p.display_name, 'Someone') AS name, count(*) OVER ()::int AS total
+       FROM app_conversation_readers($1) r JOIN memberships m ON m.id = r.membership_id LEFT JOIN profiles p ON p.id = m.user_id
+       ORDER BY (r.membership_id = $2) DESC, p.display_name, r.membership_id LIMIT ${MENTION_PEOPLE_MAX}`, [conv.id, me]);
+    return {
+      conversation: conv, mode: "last", unreadBefore: conv.unread, messages: kept, omittedOlder, nothingNew: false,
+      window: { from: kept[0]?.at ?? null, to: tagging.at },
+      tagging, replyTo, task: tagging.task,
+      people: readers.map((r) => ({ membershipId: r.membership_id, name: r.name })),
+      peopleCount: readers[0]?.total ?? 0,
+    };
+  })));
+}
+
+/**
+ * A conversation the person reads that their inbox leaves out (a direct thread they hid, a team channel of an archived
+ * team), named as the inbox would. Null when they cannot read it.
+ */
+async function conversationOutsideInbox(db: Db, ctx: OrgContext, id: string): Promise<CatchUpConversation | null> {
+  const r = await db.maybeOne<{ id: string; kind: ConversationKind; title: string | null; archived_at: string | null; last_message_at: string | null }>(
+    `SELECT c.id, c.kind, c.archived_at, c.last_message_at,
+            CASE c.kind WHEN 'team' THEN t.name WHEN 'channel' THEN c.title WHEN 'direct' THEN (
+              SELECT op.display_name FROM conversation_participants ocp JOIN memberships om ON om.id = ocp.membership_id JOIN profiles op ON op.id = om.user_id
+              WHERE ocp.conversation_id = c.id AND ocp.membership_id <> $3 LIMIT 1) END AS title
+     FROM conversations c LEFT JOIN teams t ON t.id = c.team_id WHERE c.id = $1 AND c.organisation_id = $2`, [id, ctx.org.id, ctx.membership.id]);
+  if (!r) return null;
+  const kind = KIND[r.kind];
+  const title = (r.title ?? "").trim();
+  return {
+    id: r.id, kind, name: kind === "everyone" ? "Everyone" : kind === "direct" ? title || "Someone" : `#${title}`,
+    unread: 0, markedUnread: false, muted: false, archived: !!r.archived_at, lastMessageAt: r.last_message_at, lastReadAt: null,
+    href: `/app/${ctx.org.slug}/messages?c=${r.id}`,
+  };
 }
 
 // ---- Searching -------------------------------------------------------------------------------------------------------

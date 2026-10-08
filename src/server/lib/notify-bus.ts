@@ -17,10 +17,24 @@ function bus(): Bus {
   return globalThis.__boredroomNotifyBus;
 }
 
+/**
+ * LISTEN needs a session of its own, which a transaction-mode pooler does not keep: Neon's "-pooler" host takes the
+ * LISTEN and never delivers a NOTIFY (review, 8 October 2026: live updates got no events at all). The listener goes to
+ * DATABASE_LISTEN_URL when set, else to the same database's direct host (the host without "-pooler").
+ */
 function connectionString() {
-  const url = process.env.NODE_ENV === "test" ? process.env.TEST_DATABASE_URL : process.env.DATABASE_URL;
+  const url = process.env.NODE_ENV === "test" ? process.env.TEST_DATABASE_URL : (process.env.DATABASE_LISTEN_URL || process.env.DATABASE_URL);
   if (!url) throw new Error("DATABASE_URL is not configured");
-  return url;
+  return unpooled(url);
+}
+
+export function unpooled(url: string): string {
+  try {
+    const u = new URL(url);
+    if (!/-pooler\./i.test(u.hostname)) return url;
+    u.hostname = u.hostname.replace(/-pooler\./i, ".");
+    return u.toString();
+  } catch { return url; }
 }
 
 async function getClient(): Promise<Client> {

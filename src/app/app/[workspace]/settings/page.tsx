@@ -31,6 +31,8 @@ import { usageSummary } from "@/server/services/ai-usage";
 import { FollowUpPreferenceSettings } from "@/components/app/follow-up-settings";
 import { FollowUpCollectionSettings } from "@/components/app/follow-up-collection-settings";
 import { followUpPreference, followUpSettings } from "@/server/services/follow-ups";
+import { MentionSettings } from "@/components/app/mention-settings";
+import { mentionSettings } from "@/server/services/mentions";
 import { withUser } from "@/server/db";
 import type { AssistantProfiles } from "@/lib/assistant-look";
 import { cn } from "@/lib/utils";
@@ -78,6 +80,12 @@ const MODE_LABEL: Record<string, string> = { disabled: "Off", optional: "On, eac
  * "Updates before the report" after the daily report, for owners and HR: the workspace's own assistant collects an
  * update from everyone's assistant for the end-of-day report. Both read their own columns with a readiness check
  * (migration 0039) and show disabled under an info alert until it is applied.
+ *
+ * Personal assistants, phase 5 (owner decision, 8 October 2026: @mentions in Messages): the Brenda section gains
+ * "Messages" after "Updates before the report", for owners and HR: "Let people ask their assistant in Messages" (on by
+ * default), whether "@Max …" in a conversation makes the person's own assistant reply there. It reads its own column with
+ * a readiness check (migration 0041) and shows disabled under an info alert until it is applied. The notes say that
+ * replies show who asked and, for owners under AI connection, that the conversation's recent messages go to Anthropic.
  */
 export default async function SettingsPage({ params, searchParams }: { params: Promise<{ workspace: string }>; searchParams: Promise<{ section?: string; setup?: string; billing?: string; plan?: string }> }) {
   const { workspace } = await params;
@@ -219,8 +227,8 @@ export default async function SettingsPage({ params, searchParams }: { params: P
       );
     }
   } else if (section === "brenda") {
-    const [ai, brenda, a, usage, collection] = await Promise.all([assistantStatus(ctx), brendaOverview(ctx), assistantProfiles(ctx), usageSummary(ctx),
-      withUser(ctx.user.profileId, (db) => followUpSettings(db, ctx.org.id))]);
+    const [ai, brenda, a, usage, collection, mentions] = await Promise.all([assistantStatus(ctx), brendaOverview(ctx), assistantProfiles(ctx), usageSummary(ctx),
+      withUser(ctx.user.profileId, (db) => followUpSettings(db, ctx.org.id)), withUser(ctx.user.profileId, (db) => mentionSettings(db, ctx.org.id))]);
     assistants = a;
     body = (
       <>
@@ -235,6 +243,8 @@ export default async function SettingsPage({ params, searchParams }: { params: P
         {/* Updates for that report from everyone's assistant (owner decision, 8 October 2026: personal assistants, phase 4). */}
         <FollowUpCollectionSettings orgSlug={ctx.org.slug} initial={collection} reportEnabled={brenda.settings.dailyReportEnabled} reportTime={brenda.settings.dailyReportTime}
           inPlan={ctx.plan.features.AI_ASSISTANT === true} canEdit={admin} />
+        {/* Asking your own assistant in a conversation (owner decision, 8 October 2026: personal assistants, phase 5). */}
+        <MentionSettings orgSlug={ctx.org.slug} initial={mentions} canEdit={admin} />
         {/* This month's requests and tokens (owner decision, 8 October 2026: personal assistants, phase 3). */}
         <BrendaUsageCard usage={usage} />
         <SettingsSection id="ai" title="AI connection" description="Brenda runs on Claude. Connect an Anthropic API key so she can act; without one a simple built-in helper answers and only suggests, and says so.">
@@ -248,12 +258,14 @@ export default async function SettingsPage({ params, searchParams }: { params: P
         <PageNote section="Brenda">She reads what each person is allowed to see, does their own work for them, and asks before anything that lands on someone else.</PageNote>
         <PageNote section="Updates before the report">Updates are collected on working days, from what each person&apos;s work already shows. People who chose &ldquo;Always ask me first&rdquo; for their own assistant are asked once, even when asking is off here.</PageNote>
         <PageNote section="Updates before the report">Owners and HR see in Audit that updates were collected. A person sees under Asked about you exactly what their assistant shared.</PageNote>
+        <PageNote section="Messages">Replies show who asked. Anything only the person asking can see stays private to them.</PageNote>
         <PageNote section="Usage this month">Usage counts requests from this month only and resets on the 1st.</PageNote>
         {isOwner ? (
           <>
             <PageNote section="AI connection">The key is tested with one request, then stored encrypted and never shown again.</PageNote>
             <PageNote section="AI connection">Each request Brenda makes to Anthropic is billed to the key. What is sent: the request and what she needed to read for it, and only what the person asking is allowed to see.</PageNote>
             <PageNote section="AI connection">When someone asks to catch up on messages, the messages read for them are sent to Anthropic too, only from conversations they are in.</PageNote>
+            <PageNote section="AI connection">When someone tags their assistant in Messages, the conversation&apos;s recent messages are sent to Anthropic too.</PageNote>
           </>
         ) : null}
       </>

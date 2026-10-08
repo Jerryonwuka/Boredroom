@@ -11,19 +11,33 @@
  * the workspace reads). An assistant's own message is never "yours": it shows on the left and cannot be edited or
  * withdrawn. Unread counts, the badge and toasts still count by sender (review, 8 October 2026: decision 7). Until 0037
  * is applied every message reads as the person's (server/lib/schema-0037).
+ *
+ * @mentions (owner decision, 8 October 2026: personal assistants, phase 5; migration 0041): the composer sends tokens
+ * beside the body ("@Max" for the sender's own assistant, "@Ben Okafor" for a person who reads the conversation); the
+ * send checks each against the body and the conversation, stores the valid ones (message_mentions), notifies each person
+ * mentioned (even in a conversation they muted) and queues one assistant mention (assistant_mentions) that the
+ * processor answers right after the response. Nothing ever re-parses names later; edits never add, notify or trigger
+ * anything; an assistant's own messages never carry mentions. A thread carries each message's mentions for the
+ * highlight, the assistant mentions in view (the private part for the tagger only) and the conversation's switches.
+ * Until 0041 is applied mentions are ignored (server/lib/schema-0041).
  */
 import { z } from "zod";
-import { withUser, type Db } from "@/server/db";
+import { withUser, withWorker, type Db } from "@/server/db";
 import type { OrgContext } from "@/server/lib/api";
 import { invalid, notFound, conflict, forbidden } from "@/server/lib/errors";
 import { notify } from "@/server/services/common";
 import { storage, tenantKey } from "@/server/lib/storage";
 import { retryWithout0037, schema0037Ready } from "@/server/lib/schema-0037";
+import { forget0041, isMissingSchema, retryWithout0041, schema0041Ready } from "@/server/lib/schema-0041";
 import { readPersonalAssistant } from "@/server/services/assistant-profile";
+import { assistantRepliesIn, kickMentions, threadMentions, validateMentions } from "@/server/services/mentions";
 import { toProfile, type AssistantProfile } from "@/lib/assistant-look";
+import { clip } from "@/lib/follow-ups";
+import { MENTION_LIMITS, type AssistantRepliesState, type MentionRef, type MentionView } from "@/lib/mentions";
 import type { Presence } from "@/lib/presence";
 
-export type Participant = { membership_id: string; display_name: string; role: string; profile_id: string; avatar_key: string | null; presence: Presence };
+/** `active`: still a member of the workspace (people who left stay in a named channel's or direct thread's list). */
+export type Participant = { membership_id: string; display_name: string; role: string; profile_id: string; avatar_key: string | null; presence: Presence; active: boolean };
 
 export type ConversationKind = "direct" | "team" | "organisation" | "channel";
 
@@ -56,11 +70,22 @@ export type MessageRow = {
   assistant: AssistantProfile | null;
   reply_author_kind: AuthorKind | null;
   reply_assistant_name: string | null;
+  /** The mentions stored when it was sent (migration 0041), for the highlight; [] before it. */
+  mentions: MentionRef[];
+  /** An assistant's public reply to a mention, not yet withdrawn: its mention, and whether the caller may withdraw it. */
+  mention_reply: { mentionId: string; canWithdraw: boolean } | null;
 };
 export type Thread = {
   conversation: ConversationSummary & { people: Participant[] };
   messages: MessageRow[];
+  /** Every assistant mention whose tagging message is shown (migration 0041); the private part is the tagger's only. */
+  mentions: MentionView[];
+  /** "Assistants can reply here" and the workspace's switch, as the composer and the details pane need them. */
+  assistantReplies: AssistantRepliesState;
 };
+
+/** The switches before migration 0041: nothing to show, nothing to change. */
+const NO_REPLIES: AssistantRepliesState = { ready: false, workspaceOn: true, here: true, canChange: false };
 
 /**
  * The number on the Messages badge, as one SQL expression over `org` and `me` placeholders: every unread message in a
@@ -191,18 +216,42 @@ const authorJoins = (ready: boolean) => ready
 const withAssistant = <R extends { assistant: unknown }>(r: R): R & { assistant: AssistantProfile | null } =>
   ({ ...r, assistant: r.assistant ? toProfile(r.assistant as Record<string, unknown>) : null });
 
-/** One conversation with its last 200 messages. Opening it marks everything up to now as read. */
+/**
+ * The columns a thread's message `m` gains with migration 0041, for a statement whose `$2` is the caller's membership:
+ * its stored mentions (none once it is withdrawn: who it named goes with its words; integration review, 8 October 2026),
+ * and for an assistant's public reply not yet withdrawn, its mention and whether the caller may withdraw it (the tagger,
+ * or someone who runs the conversation).
+ */
+const mentionColumns = (ready: boolean) => ready
+  ? `CASE WHEN m.deleted_at IS NULL THEN COALESCE((SELECT json_agg(json_build_object('kind', mm.kind, 'membershipId', mm.membership_id, 'label', mm.label) ORDER BY mm.created_at, mm.label)
+               FROM message_mentions mm WHERE mm.message_id = m.id), '[]'::json) ELSE '[]'::json END AS mentions,
+     CASE WHEN am.id IS NOT NULL AND m.author_kind = 'assistant' AND am.status = 'answered' AND m.deleted_at IS NULL
+          THEN json_build_object('mentionId', am.id, 'canWithdraw', (am.tagger_membership_id = $2 OR app_can_manage_conversation(m.conversation_id))) END AS mention_reply`
+  : `'[]'::json AS mentions, NULL::json AS mention_reply`;
+const mentionJoins = (ready: boolean) => (ready ? "LEFT JOIN assistant_mentions am ON am.reply_message_id = m.id" : "");
+
+/** The notifications opening a conversation reads: someone mentioned you here, and your assistant's answers here. */
+const MENTION_NOTIFICATION_TYPES = ["message.mention", "brenda.mention_reply", "brenda.mention_confirm", "brenda.mention_private"];
+
+/**
+ * One conversation with its last 200 messages. Opening it marks everything up to now as read, and (migration 0041) the
+ * caller's notifications about mentions in it. Assistant mentions that look stuck (at most three) are restarted after
+ * the page's transaction, as follow-ups settle on a read (phase 4).
+ */
 export async function thread(ctx: OrgContext, conversationId: string): Promise<Thread | null> {
-  return retryWithout0037(() => withUser(ctx.user.profileId, async (db) => {
+  let kick: string[] = [];
+  const out = await retryWithout0041(() => retryWithout0037(() => withUser(ctx.user.profileId, async (db): Promise<Thread | null> => {
+    kick = [];
     const ready = await schema0037Ready(db);
+    const ready41 = ready && (await schema0041Ready(db));
     const conv = await db.maybeOne<ConversationSummary>(`${summarySql(ready)} AND c.id = $3`, [ctx.org.id, ctx.membership.id, conversationId]);
     if (!conv) return null;
     const people = await db.query<Participant>(
       conv.kind === "direct" || conv.kind === "channel"
-        ? `SELECT m.id AS membership_id, p.display_name, m.role, p.id AS profile_id, p.avatar_key, p.presence FROM conversation_participants cp JOIN memberships m ON m.id = cp.membership_id JOIN profiles p ON p.id = m.user_id WHERE cp.conversation_id = $1 ORDER BY p.display_name`
+        ? `SELECT m.id AS membership_id, p.display_name, m.role, p.id AS profile_id, p.avatar_key, p.presence, (m.status = 'active') AS active FROM conversation_participants cp JOIN memberships m ON m.id = cp.membership_id JOIN profiles p ON p.id = m.user_id WHERE cp.conversation_id = $1 ORDER BY p.display_name`
         : conv.kind === "team"
-          ? `SELECT m.id AS membership_id, p.display_name, m.role, p.id AS profile_id, p.avatar_key, p.presence FROM team_members tm JOIN memberships m ON m.id = tm.membership_id AND m.status = 'active' JOIN profiles p ON p.id = m.user_id WHERE tm.team_id = (SELECT team_id FROM conversations WHERE id = $1) ORDER BY p.display_name`
-          : `SELECT m.id AS membership_id, p.display_name, m.role, p.id AS profile_id, p.avatar_key, p.presence FROM memberships m JOIN profiles p ON p.id = m.user_id WHERE m.organisation_id = (SELECT organisation_id FROM conversations WHERE id = $1) AND m.status = 'active' ORDER BY p.display_name`,
+          ? `SELECT m.id AS membership_id, p.display_name, m.role, p.id AS profile_id, p.avatar_key, p.presence, (m.status = 'active') AS active FROM team_members tm JOIN memberships m ON m.id = tm.membership_id AND m.status = 'active' JOIN profiles p ON p.id = m.user_id WHERE tm.team_id = (SELECT team_id FROM conversations WHERE id = $1) ORDER BY p.display_name`
+          : `SELECT m.id AS membership_id, p.display_name, m.role, p.id AS profile_id, p.avatar_key, p.presence, (m.status = 'active') AS active FROM memberships m JOIN profiles p ON p.id = m.user_id WHERE m.organisation_id = (SELECT organisation_id FROM conversations WHERE id = $1) AND m.status = 'active' ORDER BY p.display_name`,
       [conversationId]);
     const rows = await db.query<MessageRow>(
       `SELECT * FROM (
@@ -210,7 +259,8 @@ export async function thread(ctx: OrgContext, conversationId: string): Promise<T
                 m.task_id, t.title AS task_title, t.status AS task_status,
                 m.voice_key, m.voice_mime, m.voice_seconds,
                 m.reply_to_id, CASE WHEN rm.id IS NULL THEN NULL WHEN rm.deleted_at IS NOT NULL THEN '' ELSE rm.body END AS reply_body, rp.display_name AS reply_sender_name,
-                ${authorColumns(ready)}
+                ${authorColumns(ready)},
+                ${mentionColumns(ready41)}
          FROM messages m
          JOIN memberships sm ON sm.id = m.sender_membership_id
          JOIN profiles p ON p.id = sm.user_id
@@ -219,24 +269,49 @@ export async function thread(ctx: OrgContext, conversationId: string): Promise<T
          LEFT JOIN memberships rsm ON rsm.id = rm.sender_membership_id
          LEFT JOIN profiles rp ON rp.id = rsm.user_id
          ${authorJoins(ready)}
+         ${mentionJoins(ready41)}
          WHERE m.conversation_id = $1
          ORDER BY m.created_at DESC LIMIT 200) x ORDER BY created_at`, [conversationId, ctx.membership.id]);
-    const messages = rows.map(withAssistant);
+    const messages = rows.map((r) => ({ ...withAssistant(r), mentions: Array.isArray(r.mentions) ? r.mentions : [], mention_reply: r.mention_reply ?? null }));
     // Opening the thread reads it up to now and clears a "mark as unread".
     await db.query(
       `INSERT INTO conversation_reads(conversation_id, organisation_id, membership_id, last_read_at) VALUES ($1, $2, $3, now())
        ON CONFLICT (conversation_id, membership_id) DO UPDATE SET last_read_at = now(), marked_unread = false`, [conversationId, ctx.org.id, ctx.membership.id]);
-    return { conversation: { ...conv, unread: 0, marked_unread: false, people }, messages };
-  }));
+    let mentions: MentionView[] = [];
+    let assistantReplies = NO_REPLIES;
+    if (ready41) {
+      const found = await threadMentions(db, ctx, conversationId, messages.filter((m) => m.author_kind === "person").map((m) => m.id));
+      mentions = found.mentions;
+      kick = found.kick;
+      assistantReplies = await assistantRepliesIn(db, conversationId);
+      await db.query(
+        `UPDATE notifications SET read_at = now()
+         WHERE recipient_membership_id = $1 AND read_at IS NULL AND type = ANY($3::text[]) AND resource_type = 'conversation' AND resource_id = $2`,
+        [ctx.membership.id, conversationId, MENTION_NOTIFICATION_TYPES]);
+    }
+    return { conversation: { ...conv, unread: 0, marked_unread: false, people }, messages, mentions, assistantReplies };
+  })));
+  if (kick.length) await kickMentions(kick.slice(0, MENTION_LIMITS.kickPerPage));
+  return out;
 }
+
+/** One @mention the composer sends beside the body (owner decision, 8 October 2026: personal assistants, phase 5). */
+export const mentionTokenSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("assistant"), label: z.string().trim().min(2).max(40) }),
+  z.object({ kind: z.literal("person"), membershipId: z.uuid(), label: z.string().trim().min(2).max(121) }),
+]);
 
 export const sendSchema = z.object({
   conversationId: z.uuid(),
   body: z.string().trim().min(1, "Write a message first.").max(4000, "Keep a message under 4000 characters."),
   taskId: z.uuid().nullable().optional(),
   replyToId: z.uuid().nullable().optional(),
+  mentions: z.array(mentionTokenSchema).max(MENTION_LIMITS.tokensPerMessage).optional(),
 });
 export type SendInput = z.infer<typeof sendSchema>;
+
+/** Where a mention happened, in the words of the person mentioned: "#Design", "Everyone", or "your chat". */
+const mentionWhere = (kind: ConversationKind, name: string | null) => (kind === "direct" ? "your chat" : kind === "organisation" ? "Everyone" : `#${name ?? ""}`);
 
 /**
  * Posts a message. In a direct thread the other person gets an in-app notification unless they muted the thread; channels
@@ -244,9 +319,17 @@ export type SendInput = z.infer<typeof sendSchema>;
  * Confirm (her send_message tool, owner decision, 8 October 2026: personal assistants, phase 3): the row is
  * 'via_assistant' and a direct thread's notification says so ("… via Max"). Before migration 0037 it is the person's,
  * as it was. `sendSchema` never carries it, so the Messages composer cannot ask for it.
+ *
+ * Mentions (owner decision, 8 October 2026: personal assistants, phase 5; migration 0041), only on the person's own
+ * text message (never `via: "assistant"`): invalid tokens are dropped silently, so a race with someone leaving never
+ * loses the message. Each person mentioned who reads the conversation is notified ('message.mention', even when they
+ * muted it; in a direct thread only when the usual direct notification was not sent because they muted it). A valid
+ * assistant token queues one 'pending' row; the switches and limits are checked when it is claimed, so the person always
+ * gets a private explanation. After the commit the processor starts (`startMention: false` in tests). Before 0041 the
+ * mentions are ignored and `mentionId` is null.
  */
-export async function sendMessage(ctx: OrgContext, input: SendInput, opts: { via?: "assistant" } = {}): Promise<{ id: string; createdAt: string; authorKind: AuthorKind }> {
-  return retryWithout0037(() => withUser(ctx.user.profileId, async (db) => {
+export async function sendMessage(ctx: OrgContext, input: SendInput, opts: { via?: "assistant"; startMention?: boolean } = {}): Promise<{ id: string; createdAt: string; authorKind: AuthorKind; mentionId: string | null; mentioned: string[] }> {
+  const sent = await retryWithout0041(() => retryWithout0037(() => withUser(ctx.user.profileId, async (db) => {
     const conv = await db.maybeOne<{ id: string; kind: ConversationKind; archived_at: string | null }>(`SELECT id, kind, archived_at FROM conversations WHERE id = $1 AND organisation_id = $2`, [input.conversationId, ctx.org.id]);
     if (!conv) throw notFound("That conversation does not exist or you are not part of it.");
     if (conv.archived_at) throw conflict("CONVERSATION_ARCHIVED", "This channel is archived. Restore it to write here again.");
@@ -274,6 +357,7 @@ export async function sendMessage(ctx: OrgContext, input: SendInput, opts: { via
     await db.query(
       `INSERT INTO conversation_reads(conversation_id, organisation_id, membership_id, last_read_at) VALUES ($1, $2, $3, now())
        ON CONFLICT (conversation_id, membership_id) DO UPDATE SET last_read_at = now(), marked_unread = false`, [conv.id, ctx.org.id, ctx.membership.id]);
+    const directNotified = new Set<string>();
     if (conv.kind === "direct") {
       const others = await db.query<{ membership_id: string }>(`SELECT membership_id FROM conversation_participants WHERE conversation_id = $1 AND membership_id <> $2 AND NOT app_conversation_muted($1, membership_id)`, [conv.id, ctx.membership.id]);
       const preview = input.body.length > 120 ? `${input.body.slice(0, 117)}…` : input.body;
@@ -285,10 +369,78 @@ export async function sendMessage(ctx: OrgContext, input: SendInput, opts: { via
           title: `${ctx.user.displayName} sent you a message${task ? ` about “${task.title}”` : ""}${via}`, body: preview,
           resourceType: "conversation", resourceId: conv.id, href: `/app/${ctx.org.slug}/messages?c=${conv.id}`, dedupKey: `message:${m.id}`,
         });
+        directNotified.add(o.membership_id);
       }
     }
-    return { id: m.id, createdAt: m.created_at, authorKind };
-  }));
+    const mentions = opts.via !== "assistant" && input.mentions?.length && (await schema0041Ready(db))
+      ? await storeMentions(db, ctx, { conversation: conv, messageId: m.id, body: input.body, tokens: input.mentions, directNotified })
+      : { mentionId: null, mentioned: [] };
+    return { id: m.id, createdAt: m.created_at, authorKind, ...mentions };
+  })));
+  if (sent.mentionId && opts.startMention !== false) await kickMentions([sent.mentionId]);
+  return sent;
+}
+
+/**
+ * The mentions of a message just inserted, in the send's transaction, as the sender (row-level security checks each
+ * insert again: a fresh, unedited text message of their own; their own assistant; people who read the conversation).
+ */
+async function storeMentions(db: Db, ctx: OrgContext, m: {
+  conversation: { id: string; kind: ConversationKind }; messageId: string; body: string; tokens: NonNullable<SendInput["mentions"]>; directNotified: Set<string>;
+}): Promise<{ mentionId: string | null; mentioned: string[] }> {
+  const me = ctx.membership.id;
+  const ids = [...new Set(m.tokens.flatMap((t) => (t.kind === "person" && t.membershipId.toLowerCase() !== me.toLowerCase() ? [t.membershipId.toLowerCase()] : [])))];
+  const people = ids.length
+    ? await db.query<{ id: string; display_name: string }>(
+      `SELECT m.id, p.display_name FROM memberships m JOIN profiles p ON p.id = m.user_id
+       WHERE m.id = ANY($1::uuid[]) AND m.organisation_id = $2 AND m.status = 'active' AND app_conversation_has_reader($3, m.id)`,
+      [ids, ctx.org.id, m.conversation.id])
+    : [];
+  const hasAssistant = m.tokens.some((t) => t.kind === "assistant");
+  const ownAssistantName = hasAssistant ? (await readPersonalAssistant(db, me)).name : "";
+  const valid = validateMentions(m.body, m.tokens, { ownAssistantName, people: people.map((p) => ({ membershipId: p.id, name: p.display_name })), selfMembershipId: me });
+  if (!valid.assistant && !valid.people.length) return { mentionId: null, mentioned: [] };
+  for (const p of valid.people) {
+    await db.query(`INSERT INTO message_mentions(message_id, conversation_id, organisation_id, kind, membership_id, label) VALUES ($1, $2, $3, 'person', $4, $5)`,
+      [m.messageId, m.conversation.id, ctx.org.id, p.membershipId, p.label]);
+  }
+  let mentionId: string | null = null;
+  if (valid.assistant) {
+    await db.query(`INSERT INTO message_mentions(message_id, conversation_id, organisation_id, kind, membership_id, label) VALUES ($1, $2, $3, 'assistant', $4, $5)`,
+      [m.messageId, m.conversation.id, ctx.org.id, me, valid.assistant.label]);
+    mentionId = (await db.one<{ id: string }>(
+      `INSERT INTO assistant_mentions(organisation_id, conversation_id, message_id, tagger_membership_id) VALUES ($1, $2, $3, $4) RETURNING id`,
+      [ctx.org.id, m.conversation.id, m.messageId, me])).id;
+  }
+  if (valid.people.length) {
+    const named = await db.maybeOne<{ name: string | null }>(
+      `SELECT CASE c.kind WHEN 'team' THEN t.name WHEN 'channel' THEN c.title END AS name FROM conversations c LEFT JOIN teams t ON t.id = c.team_id WHERE c.id = $1`, [m.conversation.id]);
+    const where = mentionWhere(m.conversation.kind, named?.name ?? null);
+    // The sender's recent person mentions (this message's left out): per person here, and in all (security review,
+    // 8 October 2026: one member could ping a colleague without limit). Mentions notify even in a muted conversation
+    // (owner decision), so this throttle is what stops a flood.
+    const recent = await db.query<{ membership_id: string | null; n: number }>(
+      `SELECT CASE WHEN mm.conversation_id = $2 THEN mm.membership_id END AS membership_id, count(*)::int AS n
+       FROM message_mentions mm JOIN messages msg ON msg.id = mm.message_id
+       WHERE mm.organisation_id = $1 AND mm.kind = 'person' AND msg.sender_membership_id = $3 AND mm.message_id <> $4
+         AND mm.created_at > now() - interval '1 hour'
+       GROUP BY 1`, [ctx.org.id, m.conversation.id, me, m.messageId]);
+    const here = new Map(recent.filter((r) => r.membership_id).map((r) => [r.membership_id!.toLowerCase(), r.n]));
+    let budget = MENTION_LIMITS.notifyPerSenderPerHour - recent.reduce((n, r) => n + r.n, 0);
+    for (const p of valid.people) {
+      // In a direct thread the usual notification already told them, unless they muted it.
+      if (m.conversation.kind === "direct" && m.directNotified.has(p.membershipId)) continue;
+      if ((here.get(p.membershipId.toLowerCase()) ?? 0) >= MENTION_LIMITS.notifyPerPersonPerHour || budget <= 0) continue;
+      budget--;
+      await notify(db, {
+        organisationId: ctx.org.id, recipientMembershipId: p.membershipId, type: "message.mention",
+        title: `${ctx.user.displayName} mentioned you in ${where}`, body: clip(m.body, 120),
+        resourceType: "conversation", resourceId: m.conversation.id, href: `/app/${ctx.org.slug}/messages?c=${m.conversation.id}#m-${m.messageId}`,
+        dedupKey: `mention:${m.messageId}:${p.membershipId}`,
+      });
+    }
+  }
+  return { mentionId, mentioned: valid.people.map((p) => p.membershipId) };
 }
 
 export type IncomingMessage = {
@@ -370,14 +522,28 @@ export async function voiceFor(ctx: OrgContext, messageId: string) {
  */
 const notAssistantsOwn = async (db: Db) => ((await schema0037Ready(db)) ? "AND author_kind <> 'assistant'" : "");
 
-/** Withdraws one of the caller's own messages. The row stays (with an empty body) so the thread keeps its shape. */
+/**
+ * Withdraws one of the caller's own messages. The row stays (with an empty body) so the thread keeps its shape. A
+ * message that tagged the person's assistant and is still waiting stops there (migration 0041: the worker marks its
+ * mention withdrawn; a run already thinking notices when it completes and posts nothing).
+ */
 export async function withdrawMessage(ctx: OrgContext, messageId: string) {
-  return withUser(ctx.user.profileId, async (db) => {
+  const done = await withUser(ctx.user.profileId, async (db) => {
     const r = await db.query<{ id: string; voice_key: string | null }>(`UPDATE messages SET deleted_at = now() WHERE id = $1 AND organisation_id = $2 AND sender_membership_id = $3 AND deleted_at IS NULL ${await notAssistantsOwn(db)} RETURNING id, voice_key`, [messageId, ctx.org.id, ctx.membership.id]);
     if (r.length === 0) throw notFound("That message is not yours or was already withdrawn.");
     if (r[0].voice_key) await storage().delete(r[0].voice_key).catch(() => undefined);
     return { id: messageId };
   });
+  try {
+    await withWorker(async (db) => {
+      if (!(await schema0041Ready(db))) return;
+      await db.query(`UPDATE assistant_mentions SET status = 'withdrawn', lease_until = NULL, finished_at = now() WHERE message_id = $1 AND status = 'pending'`, [messageId]);
+    });
+  } catch (err) {
+    if (isMissingSchema(err)) forget0041();
+    else console.warn(`[mentions] stopping a withdrawn message's mention: ${(err as Error)?.message ?? String(err)}`);
+  }
+  return done;
 }
 
 /** A task the caller can see, for the "ask for an update" chip. Null when it does not exist or is hidden. */

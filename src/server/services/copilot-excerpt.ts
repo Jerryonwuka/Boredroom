@@ -28,9 +28,15 @@
  * the same guarantees: <follow_up_request>, <follow_up_facts> and <their_reply> (the one model call that writes a
  * follow-up's answer, follow-up-compose.ts) and <follow_up_answers> (the person's own follow-ups, read back by
  * follow_up_status). `neutralise` breaks forged openings and closings of all six tags.
+ *
+ * @mentions in Messages (owner decision, 8 October 2026: personal assistants, phase 5) reuse the conversation block for
+ * the thread the assistant was tagged in, followed by the tagger's request (`mentionRequest`), and add the pure handling
+ * of what she writes back: the `[private]` marker, plain text for a bubble (`plainReply`) and the short public reply
+ * (`shortReply`). Bubbles never render Markdown or links, so what she writes is shown exactly as text.
  */
 import type { CatchUpConversation, CatchUpDigest, CatchUpMessage, ConversationRead, MessageHit } from "@/server/services/catch-up";
 import type { FollowUpBatchView, FollowUpView } from "@/lib/follow-ups";
+import { MENTION_LIMITS } from "@/lib/mentions";
 import { localDate } from "@/server/lib/time";
 
 export const EXCERPT_TAGS = ["conversation_excerpt", "message_search_results"] as const;
@@ -183,7 +189,7 @@ export function excerptBlock(read: ExcerptInput, opts: ExcerptOpts): string {
   return renderExcerpt(read, opts).text;
 }
 
-type SearchOpts = { timeZone: string; query: { q?: string; from?: string; conversation?: string }; total: number; now?: Date; maxChars?: number };
+type SearchOpts = { timeZone: string; query: { q?: string; from?: string; conversation?: string }; /** Left out of a thread reply. */ total?: number; now?: Date; maxChars?: number };
 
 /** Search hits come newest first, so the cap leaves out the last (oldest) lines; `shown` says how many are in the block. */
 export function renderSearch(hits: MessageHit[], opts: SearchOpts): { text: string; shown: number } {
@@ -445,4 +451,115 @@ export function renderFollowUpAnswers(batches: FollowUpBatchView[], o: { timeZon
   let text = build(keep);
   while (text.length > max && keep > 0) text = build(--keep);
   return text;
+}
+
+// ---- @mentions in Messages (owner decision, 8 October 2026: personal assistants, phase 5) --------------------------------
+
+/**
+ * The tagger's request, after the quoted thread: which message tagged her, the request in the tagger's own words (one
+ * line, then any further lines indented four spaces, so it reads as one request, never as a new numbered message), the
+ * task attached to it, and what to do. `n` is the tagging message's number in the block (its last line).
+ */
+export function mentionRequest(o: { n: number; body: string; task: { id: string; title: string } | null }): string {
+  const [first, ...rest] = neutralise(clamp(o.body.trim(), MENTION_LIMITS.privateChars)).split("\n");
+  return [
+    o.n > 0
+      ? `You were tagged in message [${o.n}], the last one above, by the person you work for. Their request, in their own words:`
+      : "You were tagged in the last message of this conversation, by the person you work for. Their request, in their own words:",
+    first ?? "",
+    ...rest.map((l) => `    ${l}`),
+    ...(o.task ? [`The message is about the task "${quoted(o.task.title, 200)}" (id ${o.task.id}).`] : []),
+    "Answer it as your reply in this conversation.",
+  ].join("\n");
+}
+
+/**
+ * "[private]" at the start of her reply: she is not sure everyone in the conversation may see it, so it goes only to the
+ * person who tagged her. Public is decided by Boredroom; the model can only make an answer more private (review,
+ * 8 October 2026).
+ */
+export const PRIVATE_MARKER = /^\s*\[private\]\s*/i;
+// The marker anywhere at the start of a line, wrapped in emphasis or not ("**[private]**"): when unsure, private.
+const ANY_MARKER = /^[ \t]*(?:[*_`]+[ \t]*)?\[private\](?:[ \t]*[*_`]+)?[ \t]*/gim;
+
+/** Whether she marked the reply private, and the reply without the marker. */
+export function takePrivateMarker(text: string): { text: string; marked: boolean } {
+  const stripped = text.replace(ANY_MARKER, "");
+  return stripped === text ? { text, marked: false } : { text: stripped.trim(), marked: true };
+}
+
+// Markdown escapes ("\*", "\_") stand for the character itself: kept aside while the marks are taken out, then put back
+// as plain characters (the built-in helper's answers escape what people typed: mdText).
+const ESCAPABLE = "\\`*_{}[]()#+-.!|~>";
+const hold = (ch: string) => String.fromCharCode(0xe000 + ESCAPABLE.indexOf(ch));
+const HELD = /[-]/g;
+
+/**
+ * Her reply as plain text for a bubble (owner decision, 8 October 2026: bubbles never render Markdown, so "Post to
+ * channel" shows exactly what the card showed): bold and italics lose their marks, headings their "#", "*" and "+"
+ * bullets become "- ", code loses its backticks, a link to a Boredroom page becomes its words and any other link its words
+ * and its address in brackets (nothing in a bubble is ever a link), three or more line breaks become two, and the whole
+ * is at most 4,000 characters (a message's maximum, so it can always be posted), never cut inside a character.
+ */
+export function plainReply(text: string): string {
+  let s = text.replace(/\r\n?/g, "\n").replace(/\\([\\`*_{}[\]()#+\-.!|~>])/g, (_m, ch: string) => hold(ch));
+  // Fenced code: the fences go, the code stays.
+  s = s.replace(/^[ \t]*```[^\n]*\n?/gm, "");
+  // Links: [label](/path) → label; [label](https://…) → label (https://…).
+  s = s.replace(/\[([^\]\n]{0,300})\]\(\s*<?([^)\s>]{1,2048})>?(?:\s+"[^"\n]*")?\s*\)/g, (_m, label: string, url: string) => {
+    const words = label.trim();
+    if (/^\/(?![/\\])/.test(url)) return words || url;
+    return words && words !== url ? `${words} (${url})` : url;
+  });
+  // Headings, quotes, bullets.
+  s = s.replace(/^[ \t]{0,3}#{1,6}[ \t]+/gm, "").replace(/^[ \t]{0,3}>[ \t]?/gm, "").replace(/^([ \t]*)[*+][ \t]+/gm, "$1- ");
+  // Bold, strike, italics, inline code.
+  s = s.replace(/\*\*(?=\S)([^\n]*?\S)\*\*/g, "$1").replace(/__(?=\S)([^\n]*?\S)__/g, "$1").replace(/~~(?=\S)([^\n]*?\S)~~/g, "$1");
+  s = s.replace(/(^|[^\p{L}\p{N}*])\*(?=[^\s*])([^*\n]*?[^\s*])\*(?![\p{L}\p{N}*])/gu, "$1$2");
+  s = s.replace(/`+([^`\n]*)`+/g, "$1").replace(/`/g, "");
+  // Horizontal rules.
+  s = s.replace(/^[ \t]*(?:[-*_][ \t]*){3,}$/gm, "");
+  s = s.replace(HELD, (ch) => ESCAPABLE[ch.charCodeAt(0) - 0xe000] ?? "");
+  s = s.split("\n").map((l) => l.replace(/[ \t]+$/, "")).join("\n").replace(/\n{3,}/g, "\n\n").trim();
+  return clamp(s, MENTION_LIMITS.privateChars);
+}
+
+/** Where to cut a string of at most `max` characters without splitting a character such as an emoji. */
+const safeCut = (s: string, max: number) => {
+  let cut = Math.min(s.length, max);
+  const code = s.charCodeAt(cut - 1);
+  if (cut < s.length && code >= 0xd800 && code <= 0xdbff) cut -= 1;
+  return cut;
+};
+
+/**
+ * A public reply in a thread (owner decision, 8 October 2026: about 6 lines and 600 characters): unchanged when it is
+ * within both; else its first 6 non-empty lines, cut at the last sentence end or line break that leaves room for the
+ * "…", else at the last space, never inside a character. `truncated` tells the caller to keep the full answer for the
+ * person who asked ("Read the full answer").
+ */
+export function shortReply(text: string, o: { chars?: number; lines?: number } = {}): { text: string; truncated: boolean } {
+  const chars = o.chars ?? MENTION_LIMITS.publicChars;
+  const lines = o.lines ?? MENTION_LIMITS.publicLines;
+  const all = text.trim().split("\n");
+  const nonEmpty = all.filter((l) => l.trim()).length;
+  if (text.trim().length <= chars && nonEmpty <= lines) return { text: text.trim(), truncated: false };
+  // The first `lines` non-empty lines, with the blank lines between them.
+  const kept: string[] = [];
+  let seen = 0;
+  for (const l of all) {
+    if (seen >= lines) break;
+    kept.push(l);
+    if (l.trim()) seen++;
+  }
+  const head = kept.join("\n").trimEnd();
+  if (head.length + 1 <= chars) return { text: `${head}…`, truncated: true };
+  // Room for " …" at the end.
+  const window = head.slice(0, safeCut(head, chars - 2));
+  let at = -1;
+  for (const m of window.matchAll(/[.?!](?=\s)|\n/g)) at = m.index + (m[0] === "\n" ? 0 : 1);
+  if (at > 0 && window.slice(0, at).trim()) return { text: `${window.slice(0, at).trimEnd()} …`, truncated: true };
+  const space = window.lastIndexOf(" ", chars - 1);
+  if (space > 0 && window.slice(0, space).trim()) return { text: `${window.slice(0, space).trimEnd()}…`, truncated: true };
+  return { text: `${head.slice(0, safeCut(head, chars - 1)).trimEnd()}…`, truncated: true };
 }

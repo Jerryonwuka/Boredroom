@@ -24,7 +24,11 @@
    Follow-ups between assistants (owner decision, 8 October 2026: phase 4): the request card (the asker's assistant, the
    question in a quoted bubble, four quick replies, a one-line note, what will be shared) and the answer card (two
    overlapping faces, the answer as plain text). Orange there: the chosen quick reply's dot (chosen, accent rules), the
-   open microphone while the note is said, and Send, the card's one standout; badges keep their status colours. */
+   open microphone while the note is said, and Send, the card's one standout; badges keep their status colours.
+   Asking your assistant in Messages (owner decision, 8 October 2026: phase 5): the mention cards add no styles of their
+   own. Someone's message is the follow-up's quoted bubble (`.quote`), the assistant's reply or private answer the answer's
+   plain text (`.answer`), and the title may run to two lines (`.title.wrap`). No new orange: the badges are neutral
+   words, and amber (`.pill.warn`) marks only the one waiting for the person's Confirm. */
 
 /* Inter and Geist Mono, from @fontsource-variable (SIL Open Font License, fonts/OFL.txt). Nothing loads remotely. */
 @font-face { font-family: "Inter Variable"; font-style: normal; font-display: swap; font-weight: 100 900; src: url(fonts/inter-latin-ext-wght-normal.woff2) format("woff2");

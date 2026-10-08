@@ -16,10 +16,11 @@ const code = sql.split("\n").map((l) => l.replace(/--.*$/, "")).join("\n");
 const listed = (re: RegExp) => re.exec(code)?.[1].split(",").map((s) => s.trim().replace(/^'|'$/g, ""));
 
 describe("migration 0037", () => {
-  it("lets the database hold exactly the purposes the ledger records (0039 adds 'followup' after it)", () => {
+  it("lets the database hold exactly the purposes the ledger records (0039 adds 'followup' and 0041 'mention' after it)", () => {
     // Personal assistants, phase 4 (owner decision, 8 October 2026): 0039 widens the same CHECK with 'followup'; its own
-    // list is checked against USAGE_PURPOSES in follow-ups-lib.test.ts.
-    expect(listed(/ai_usage_purpose_check CHECK \(purpose IN \(([^)]*)\)\)/)).toEqual(USAGE_PURPOSES.filter((p) => p !== "followup"));
+    // list is checked against USAGE_PURPOSES in follow-ups-lib.test.ts. Phase 5 (owner decision, 8 October 2026): 0041
+    // widens it again with 'mention' (checked in mentions-lib.test.ts).
+    expect(listed(/ai_usage_purpose_check CHECK \(purpose IN \(([^)]*)\)\)/)).toEqual(USAGE_PURPOSES.filter((p) => p !== "followup" && p !== "mention"));
   });
 
   it("lets a message be written by exactly the kinds of author the code knows, the person by default", () => {
@@ -60,10 +61,11 @@ describe("migration 0037", () => {
 });
 
 describe("the limits", () => {
-  it("are the owner's: 150 requests a day for chat, the to-do planner and follow-ups, 20 a minute in bursts", () => {
+  it("are the owner's: 150 requests a day for chat, the to-do planner, follow-ups and mentions, 20 a minute in bursts", () => {
     expect(AI_DAILY_REQUEST_LIMIT).toBe(150);
     // Phase 4 (owner decision, 8 October 2026): a follow-up ask counts against the requester's allowance, once per batch.
-    expect([...LIMITED_PURPOSES]).toEqual(["chat", "plan", "report", "followup"]);
+    // Phase 5 (owner decision, 8 October 2026): so does a mention in Messages, once per mention.
+    expect([...LIMITED_PURPOSES]).toEqual(["chat", "plan", "report", "followup", "mention"]);
     expect(AI_BURST).toEqual({ requests: 20, windowSeconds: 60 });
     expect(AI_BURST_MESSAGE).toBe("That's a lot of requests in one minute. Wait a moment, then try again.");
   });

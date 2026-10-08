@@ -7,9 +7,9 @@
  *
  * - Rows are written by the server: as the person under row-level security (their own row only) or through the worker
  *   (any row). People read their own; owners and HR their organisation's. Nothing updates or deletes a row.
- * - Each person may make AI_DAILY_REQUEST_LIMIT requests a day (chat turns and to-do planner calls), counted in the
- *   organisation's own day from local midnight; after that the built-in helper answers until midnight. Bursts are held
- *   separately, per person per minute, by the auth module's rate limiter.
+ * - Each person may make AI_DAILY_REQUEST_LIMIT requests a day (chat turns, to-do planner calls, follow-ups and
+ *   mentions in Messages), counted in the organisation's own day from local midnight; after that the built-in helper
+ *   answers until midnight. Bursts are held separately, per person per minute, by the auth module's rate limiter.
  * - Owners and HR see this month's usage in Settings → Brenda: requests and tokens, by purpose, the people who asked
  *   most. No prices anywhere.
  *
@@ -34,8 +34,13 @@ export const AI_BURST_MESSAGE = "That's a lot of requests in one minute. Wait a 
  * widens the column's CHECK) is the one call that writes a follow-up's answer from the facts and the person's reply,
  * recorded against the person who asked. Before 0039 the database refuses it, so nothing is recorded (and nothing calls
  * the model for a follow-up before 0039 anyway).
+ *
+ * 'mention' (owner decision, 8 October 2026: personal assistants, phase 5; migration 0041 widens the CHECK the same way)
+ * is the person's own assistant answering them in a conversation they tagged it in ("@Max …"): every model call of one
+ * mention shares the mention's id as its request id, so one mention counts once, against the person who asked. Before
+ * 0041 nothing is processed, so nothing is recorded.
  */
-export const USAGE_PURPOSES = ["chat", "plan", "report", "summary", "test", "other", "followup"] as const;
+export const USAGE_PURPOSES = ["chat", "plan", "report", "summary", "test", "other", "followup", "mention"] as const;
 export type UsagePurpose = (typeof USAGE_PURPOSES)[number];
 /**
  * Purposes that count towards the person's daily limit. A team report the person asked for counts too (review,
@@ -43,9 +48,10 @@ export type UsagePurpose = (typeof USAGE_PURPOSES)[number];
  * report has gone out); one asked for in a chat turn shares that turn's request id, so it is not counted twice. The
  * end-of-day send is the workspace's own (membership NULL) and counts towards nobody. A follow-up's calls share their
  * batch's id (its request id), so one ask counts once however many people it covers (owner decision, 8 October 2026:
- * personal assistants, phase 4).
+ * personal assistants, phase 4). A mention in Messages counts too, once per mention (owner decision, 8 October 2026:
+ * personal assistants, phase 5: it comes out of the same 150 a day).
  */
-export const LIMITED_PURPOSES: readonly UsagePurpose[] = ["chat", "plan", "report", "followup"];
+export const LIMITED_PURPOSES: readonly UsagePurpose[] = ["chat", "plan", "report", "followup", "mention"];
 
 /** The API's usage block (Anthropic Messages API `res.usage`), as it comes. */
 export type ModelUsage = { input_tokens?: number | null; output_tokens?: number | null; cache_read_input_tokens?: number | null; cache_creation_input_tokens?: number | null } | null | undefined;

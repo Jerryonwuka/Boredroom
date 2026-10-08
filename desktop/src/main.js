@@ -81,6 +81,16 @@
 // (or `brenda.followup_batch` for a group): the answer card shows both assistants' faces and the answer as plain text,
 // never Markdown, with Open and Done. Everything other people wrote goes through esc() only, and only Boredroom paths
 // open. An older server (no `followUps`) gets the plain notification cards, as before.
+//
+// Asking your assistant in Messages (owner decision, 8 October 2026: personal assistants, phase 5). "@Max …" in a
+// conversation makes the person's own assistant reply there, and "@Ben" tells Ben. Nothing new in the desktop state: the
+// notifications carry it all (type, title, body, href). `message.mention` ("Olu Adeyemi mentioned you in #design") shows
+// the message in a quoted bubble; to the person who asked, `brenda.mention_reply` ("Max replied in #design") the reply,
+// `brenda.mention_confirm` ("Max needs you to confirm in #design") what waits for their Confirm, which is given only in
+// the conversation (the tokens never leave the server), and `brenda.mention_private` ("Max answered you in #design", or
+// "Max couldn't answer in #design") the answer only they can see, or why there was none. Every one is the person's own
+// assistant's face and plain text through esc(), never Markdown or a link; Open goes to the conversation (Boredroom paths
+// only) and OK marks it read.
 
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
@@ -269,6 +279,11 @@ function moodOf() {
     if (t === "brenda.clock_in") return { mood: "happy", tone: "ok" };
     if (t === "brenda.daily_report") return { mood: "happy", tone: "violet" };
     if (t.startsWith("review")) return { mood: "alert", tone: "warn" };
+    // Mentions in Messages (phase 5, 8 October 2026): a reply posted pleases her; a Confirm waiting is a warning; a private
+    // answer or note stays neutral; someone mentioning the person is the usual arrival.
+    if (t === "brenda.mention_reply") return { mood: "happy", tone: "ok" };
+    if (t === "brenda.mention_confirm") return { mood: "alert", tone: "warn" };
+    if (t === "brenda.mention_private") return {};
     return { mood: "alert", tone: "accent" };
   }
   if (card.kind === "error") return { mood: "sad", tone: "bad" };
@@ -416,6 +431,7 @@ function cardView() {
   const b = data?.briefing;
   if (card.kind === "notification") {
     const n = card.n;
+    if (mentionCard(n.type)) return mentionView(n);
     // Badges as on the web: neutral on fill-1, green for clocked in, amber for a review, and the orange "New" badge only
     // for a task that has just arrived.
     const pill = n.type === "brenda.reminder" ? `<span class="pill">Reminder</span>` : n.type === "brenda.clock_in" ? `<span class="pill ok"><span class="d"></span>In</span>` : n.type === "brenda.daily_report" ? `<span class="pill">Daily report</span>` : n.type === "task.assigned" ? `<span class="pill acc">New task</span>` : n.type.startsWith("review") ? `<span class="pill warn">Review</span>` : "";
@@ -580,8 +596,10 @@ function nextNotification() {
   // an older server, the plain notification card.
   const fu = followUpCard(n);
   if (fu) { openCard(fu); return Sound.play(fu.kind === "followup_ask" ? "attention" : "reply"); }
-  openCard({ kind: "notification", n });
-  Sound.play(n.type === "brenda.clock_in" ? "success" : "notify");
+  // Mentions in Messages (phase 5): a reply, a Confirm or a private answer has more to read, so it stays as long as a reply.
+  const mention = mentionCard(n.type);
+  openCard({ kind: "notification", n, ...(mention?.long ? { closeAfter: REPLY_CLOSE_MS } : {}) });
+  Sound.play(n.type === "brenda.clock_in" ? "success" : mention?.sound ?? "notify");
 }
 
 /** The morning briefing, once per day per computer. */
@@ -1705,6 +1723,41 @@ function followUpAnswerView() {
     ${text ? `<p class="answer fade">${esc(text)}</p>` : ""}
     ${a?.engine === "claude" && text ? `<p class="cap fade">Written by AI from ${theirs ? `${esc(theirs)}'s` : "their"} work.</p>` : ""}
     <div class="actions">${href ? `<button class="btn" data-act="open-href" data-href="${esc(href)}">Open${icon("open")}</button>` : ""}<button class="btn primary" data-act="read" data-id="${esc(n.id)}">Done</button></div>`;
+}
+
+// ---- mentions in Messages ----------------------------------------------------------------------------------------
+// Owner decision, 8 October 2026 (personal assistants, phase 5; the header says what the cards show). What each
+// notification's body holds (src/server/services/messaging.ts and mentions.ts): a mention's, the message clamped to 120
+// characters; a reply's, the reply clamped to 300; a Confirm's, the first thing waiting for it; a private answer's,
+// "Only visible to you. " and the answer clamped to 280, or a note's words when there was no answer. The "Only you" badge
+// already says the first part, so the card leaves it out. Other people's words go in a quoted bubble, as a follow-up's
+// question does; the assistant's in the answer's plain text, line breaks kept.
+
+/** Each type's badge (a word with every colour, amber only for a Confirm), its sound, and whether it stays as long as a reply. */
+const MENTION_CARDS = {
+  "message.mention": { pill: `<span class="pill">Mention</span>`, sound: "notify", long: false },
+  "brenda.mention_reply": { pill: `<span class="pill">Reply</span>`, sound: "reply", long: true },
+  "brenda.mention_confirm": { pill: `<span class="pill warn">Confirm</span>`, sound: "attention", long: true },
+  "brenda.mention_private": { pill: `<span class="pill">Only you</span>`, sound: "notify", long: true },
+};
+const PRIVATE_LEAD = /^Only visible to you\.\s*/;
+/** A mention notification's card, or null (own keys only: a type is never looked up on the prototype). */
+const mentionCard = (type) => (typeof type === "string" && Object.hasOwn(MENTION_CARDS, type) ? MENTION_CARDS[type] : null);
+
+function mentionView(n) {
+  const body = String(n.body ?? "").trim();
+  const at = n.created_at ? atWhen(n.created_at) : "";
+  const href = boredroomPath(n.href);
+  const answer = n.type === "brenda.mention_private" && PRIVATE_LEAD.test(body) ? body.replace(PRIVATE_LEAD, "") : null;
+  // Under the title: the time when the words follow below; otherwise the words themselves (a Confirm's summary, a note).
+  let under = at ? `<p class="cap">${esc(at)}</p>` : "", words = "";
+  if (n.type === "message.mention") words = body ? `<p class="quote fade">“${esc(body)}”</p>` : "";
+  else if (n.type === "brenda.mention_reply") words = body ? `<p class="answer fade">${esc(body)}</p>` : "";
+  else if (answer !== null) words = answer ? `<p class="answer fade">${esc(answer)}</p>` : "";
+  else if (body) under = `<p class="sub">${esc(body)}</p>`;
+  return `<div class="row top fade">${face(moodOf())}<div class="grow"><p class="title wrap">${esc(n.title)}</p>${under}</div>${mentionCard(n.type).pill}</div>
+    ${words}
+    <div class="actions">${href ? `<button class="btn" data-act="open-href" data-href="${esc(href)}">Open${icon("open")}</button>` : ""}<button class="btn primary" data-act="read" data-id="${esc(n.id)}">OK</button></div>`;
 }
 
 // ---- poking and admiring Brenda -----------------------------------------------------------------------------------
