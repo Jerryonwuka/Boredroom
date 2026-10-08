@@ -608,7 +608,7 @@ html[data-brenda-chat] #workspace-sidebar, html:has([data-brenda-chat-view]) #wo
   transition: transform 250ms var(--ease-out), rotate 250ms var(--ease-out), translate 160ms var(--ease-out), filter 400ms var(--ease-out); animation: brenda-breathe 3.6s ease-in-out infinite; }
 /* The visor is her exact bean outline (--brenda-visor, engine.ts visorPath) as a mask, placed as the drawn character
    places it (R = 0.42 of the face: 1.6 R wide, 0.86 R tall, its centre 0.19 R above the middle), so it keeps its shape
-   at every size; the eyes sit 0.84 R apart, a little above the visor's middle, sized in whole pixels per size. */
+   at every size; the eyes sit 0.84 R apart, a little above the visor's middle, sized per face size. */
 .brenda-face .eyes { position: absolute; left: 16.4%; width: 67.2%; top: 24.4%; height: 36.1%; box-sizing: border-box; padding-bottom: 4.3%; display: flex; align-items: center; justify-content: center;
   background: #0b0b0e; -webkit-mask: var(--brenda-visor) center / 100% 100% no-repeat; mask: var(--brenda-visor) center / 100% 100% no-repeat;
   transform: translate(calc(var(--lx) * var(--reach-x)), calc(var(--ly) * var(--reach-y))); }
@@ -625,10 +625,14 @@ html[data-brenda-chat] #workspace-sidebar, html:has([data-brenda-chat-view]) #wo
 .brenda-face[data-tone="warn"] { --glow: var(--warning); } .brenda-face[data-tone="bad"] { --glow: var(--danger); }
 .brenda-face[data-tone="blue"], .brenda-face[data-tone="violet"] { --glow: transparent; }
 .brenda-face.happy .eyes > span { height: 3px; width: 6px; background: transparent; box-shadow: none; border: 2px solid #fff; border-bottom: 0; border-radius: 6px 6px 0 0; }
-.brenda-face-sm.happy .eyes > span { width: 4px; height: 2px; border-width: 1.5px; }
+/* Happy arcs: border-box and fixed (they never flex), centred where the pill eyes sit, whole-pixel strokes, inside the bean. */
+.brenda-face.happy .eyes > span { box-sizing: border-box; flex: none; }
+.brenda-face.brenda-face-sm.happy .eyes { gap: 3.5px; } .brenda-face.brenda-face-sm.happy .eyes > span { width: 3px; height: 2px; border-width: 1px; }
+.brenda-face.brenda-face-md.happy .eyes { gap: 4.5px; } .brenda-face.brenda-face-md.happy .eyes > span { width: 4.5px; height: 3px; border-width: 1px; }
+.brenda-face.brenda-face-lg.happy .eyes { gap: 6px; } .brenda-face.brenda-face-lg.happy .eyes > span { width: 6px; height: 3px; border-width: 2px; }
 .brenda-face.brenda-face-sm.dizzy .eyes > span { width: 3.5px; height: 3.5px; border-width: 1px; } .brenda-face.brenda-face-sm.dizzy .eyes { gap: 2.5px; } .brenda-face.brenda-face-lg.dizzy .eyes { gap: 6px; } .brenda-face.brenda-face-lg.love .eyes { gap: 4px; }
 .brenda-face.brenda-face-sm.love .eyes { gap: 2.5px; } .brenda-face.brenda-face-sm.love .eyes > span { width: 4.5px; height: 4.5px; clip-path: path("M2.25 4.18 L.51 2.38 A1.09 1.09 0 0 1 2.25 .9 A1.09 1.09 0 0 1 3.99 2.38 Z"); }
-.brenda-face.brenda-face-md.love .eyes { gap: 3px; } .brenda-face.brenda-face-md.dizzy .eyes { gap: 4.5px; } .brenda-face.brenda-face-md.happy .eyes > span { width: 5px; }
+.brenda-face.brenda-face-md.love .eyes { gap: 3px; } .brenda-face.brenda-face-md.dizzy .eyes { gap: 4.5px; }
 .brenda-face.sad .eyes > span { height: 2px; border-radius: 1px; }
 .brenda-face.alert { animation: brenda-hop 600ms var(--ease-out) 1, brenda-breathe 3.6s ease-in-out 600ms infinite; }
 .brenda-face.think .eyes { transform: translate(calc(var(--reach-x) * .8), calc(var(--reach-y) * -1)); }

@@ -53,13 +53,16 @@ function Visor() {
     <>
       <mask id={id} maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24">
         <rect width="24" height="24" fill="#fff" stroke="none" />
-        <motion.g variants={GLANCE} stroke="#000" strokeWidth={1.5}>
+        <motion.g variants={GLANCE} stroke="#000" strokeWidth={1.6}>
           <motion.path d={eye(8.8).rest} variants={eyeVariants(8.8)} />
           <motion.path d={eye(15.2).rest} variants={eyeVariants(15.2)} />
         </motion.g>
       </mask>
-      {/* A touch smaller than her drawn visor so it clears the tufted outline. */}
-      <path d={VISOR} fill="currentColor" strokeWidth={1} mask={`url(#${id})`} transform="translate(12 10.6) scale(.88) translate(-12 -10.6)" />
+      {/* Only the visor shrinks (a touch smaller than her drawn one, so it clears the tufted outline); the eye mask stays in
+          the icon's own grid, so the eyes are cut as crisply as before. */}
+      <g mask={`url(#${id})`}>
+        <path d={VISOR} fill="currentColor" strokeWidth={1} transform="translate(12 10.6) scale(.88) translate(-12 -10.6)" />
+      </g>
     </>
   );
 }
