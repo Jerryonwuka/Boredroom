@@ -433,6 +433,8 @@ type FurKit = {
   ring: HTMLCanvasElement | null;
   back: Tuft[]; front: Tuft[]; crest: Tuft[];
   patterns: WeakMap<CanvasRenderingContext2D, CanvasPattern>;
+  /** The animation frame it was last drawn in: the cache never evicts a coat drawn this frame. */
+  usedAt: number;
 };
 type FurJob = { kit: FurKit; steps: [g: CanvasRenderingContext2D, run: () => void][]; next: number };
 
@@ -445,9 +447,10 @@ const FUR_MAX_KITS = 8;
 /** How long she takes to fade in when her first frame had to wait for her coat. */
 const APPEAR_MS = 180;
 /**
- * Each animation frame's bake stops once this much (ms) has been spent, setting up a new size's job included; a step
- * that starts under the budget runs to its end, so a frame can go about a step over. A still frame (after settle())
- * finishes its bake at once.
+ * Each animation frame's bake stops once this much (ms) has been spent, and no new size's job is set up once it is
+ * spent. A step that starts under the budget runs to its end, so a frame can go a step over; the longest step is a
+ * detail level's one-time coat layout (several milliseconds, more on a slow machine), which runs whole. A still frame
+ * (after settle()) finishes its bake at once.
  */
 const BAKE_SLICE_MS = 4;
 const furKits = new Map<number, FurKit>();
@@ -457,8 +460,8 @@ let sliceAt = -1e9, sliceSpent = 0;
 const rungFor = (rpx: number) => FUR_RUNGS.find((r) => r >= rpx * 0.97) ?? FUR_RUNGS[FUR_RUNGS.length - 1];
 /**
  * Detail by size (a rung, in device pixels): many fibrous locks when large; fewer, coarser ones from the orb's size down
- * (her 72px home has tufts at every pixel ratio, 1x included); below about 26 device pixels of radius (a 40px chat
- * canvas at 1x) a soft coat with a ring of fine wisps round her edge, as more would only be noise.
+ * (her 72px home has tufts at every pixel ratio from 1x up); below about 26 device pixels of radius (a canvas of about
+ * 40px at 1x) a soft coat with a ring of fine wisps round her edge, as more would only be noise.
  */
 const lodFor = (rung: number) => (rung >= 80 ? 2 : rung >= 28 ? 1 : 0);
 // The coat's locks and the tufts are laid out from a seed per detail level and never changed, so each level's layout is
@@ -480,7 +483,7 @@ function startJob(rpx: number): FurJob {
   steps.push([hg, () => bakeHollow(hg, rpx)]);
   const kit: FurKit = {
     rpx, lod, coat, atlas: null, cw: 0, ch: 0, unit: 0, fringe: null, hollow, ring: null,
-    back: [], front: [], crest: [], patterns: new WeakMap(),
+    back: [], front: [], crest: [], patterns: new WeakMap(), usedAt: -1,
   };
   if (lod === 0) {
     const [ring, rg] = canvas2d(2 * RING_EXT * rpx, 2 * RING_EXT * rpx);
@@ -489,11 +492,18 @@ function startJob(rpx: number): FurJob {
     kit.ring = ring;
     return { kit, steps, next: 0 };
   }
-  const locks = coatFor(lod), frnd = seeded(0xf1b2e + lod), fw = fibreWidth(rpx, lod);
-  for (let i = 0; i < locks.length; i += 10) {
-    const chunk = locks.slice(i, i + 10);
-    steps.push([cg, () => { for (const k of chunk) paintCoatLock(cg, k, fw, frnd); }]);
-  }
+  const frnd = seeded(0xf1b2e + lod), fw = fibreWidth(rpx, lod);
+  // The coat's layout is a step of its own (the first time at a detail level it is the longest single step, so it gets
+  // a frame's budget to itself where it can), and queues the painting of its locks, ten at a time, straight after it.
+  const paintAt = steps.length + 1;
+  steps.push([cg, () => {
+    const locks = coatFor(lod), chunks: [CanvasRenderingContext2D, () => void][] = [];
+    for (let i = 0; i < locks.length; i += 10) {
+      const chunk = locks.slice(i, i + 10);
+      chunks.push([cg, () => { for (const k of chunk) paintCoatLock(cg, k, fw, frnd); }]);
+    }
+    steps.splice(paintAt, 0, ...chunks);
+  }]);
   const unit = TUFT_BAKE * rpx, cw = Math.ceil(CELL_W * unit), ch = Math.ceil(CELL_H * unit);
   const [atlas, ag] = canvas2d(cw * (TUFT_KINDS + 1), ch * 2);
   for (let v = 0; v <= TUFT_KINDS; v++) {
@@ -515,7 +525,8 @@ function startJob(rpx: number): FurJob {
   const [fringe, fg] = canvas2d(FRINGE_W * rpx, FRINGE_H * rpx);
   fg.translate(-FRINGE_X0 * rpx, -FRINGE_Y0 * rpx); fg.scale(rpx, rpx);
   for (const half of [0, 1]) steps.push([fg, () => bakeFringe(fg, lod, fw, half)]);
-  Object.assign(kit, { atlas, cw, ch, unit, fringe, ...tuftsFor(lod) });
+  Object.assign(kit, { atlas, cw, ch, unit, fringe });
+  steps.push([ag, () => { Object.assign(kit, tuftsFor(lod)); }]);
   return { kit, steps, next: 0 };
 }
 
@@ -526,14 +537,20 @@ function startJob(rpx: number): FurJob {
  */
 function furKit(rpxIn: number, now: boolean): FurKit | null {
   const rpx = rungFor(rpxIn);
+  const t0 = performance.now();
+  // One budget per animation frame: every requestAnimationFrame callback in a frame sees the same timeline time (where
+  // there is no document timeline, 16 ms buckets of the clock stand in for frames). Kept current on every call, as the
+  // frame a coat was last drawn in is what protects it from eviction.
+  const tl = typeof document !== "undefined" ? document.timeline?.currentTime : null;
+  const frame = tl != null ? Number(tl) : Math.floor(t0 / 16);
+  if (frame !== sliceAt) { sliceAt = frame; sliceSpent = 0; }
   const hit = furKits.get(rpx);
   if (hit) { furKits.delete(rpx); furKits.set(rpx, hit); return hit; }
-  const t0 = performance.now();
-  // One budget per animation frame: every requestAnimationFrame callback in a frame sees the same timeline time.
-  const frame = Number((typeof document !== "undefined" && document.timeline?.currentTime) ?? t0);
-  if (frame !== sliceAt) { sliceAt = frame; sliceSpent = 0; }
   let job = furJobs.get(rpx);
-  if (!job) { job = startJob(rpx); furJobs.set(rpx, job); }
+  if (!job) {
+    if (!now && sliceSpent >= BAKE_SLICE_MS) return null;
+    job = startJob(rpx); furJobs.set(rpx, job);
+  }
   while (job.next < job.steps.length && (now || sliceSpent + performance.now() - t0 < BAKE_SLICE_MS)) {
     const [g, run] = job.steps[job.next++];
     run();
@@ -543,35 +560,36 @@ function furKit(rpxIn: number, now: boolean): FurKit | null {
   if (job.next < job.steps.length) return null;
   furJobs.delete(rpx);
   furKits.set(rpx, job.kit);
-  if (furKits.size > FUR_MAX_KITS) { const old = furKits.keys().next().value; if (old !== undefined) furKits.delete(old); }
+  // Over the limit, drop the least recently used coat that was not drawn this frame (with more sizes on screen than
+  // the limit, the cache grows instead of evicting a coat in use and baking it again every frame).
+  if (furKits.size > FUR_MAX_KITS) {
+    for (const [r, k] of furKits) if (k.usedAt !== sliceAt && k !== job.kit) { furKits.delete(r); break; }
+  }
   return job.kit;
 }
 
 /**
- * While a size's coat bakes: the nearest size already baked at the same detail level, scaled (the same layout, only a
- * little softer), so nothing changes shape when the real coat arrives. For the plain coat, the smallest rung (a moment's
- * bake) is that same look. Otherwise null when `anyLevel` is false (on her first appearance she waits and fades in), or
- * the nearest coat of any level (she is already on screen and is changing size, so she must not vanish).
+ * While a size's coat bakes, for a Brenda already on screen (she must never vanish): the nearest size already baked at
+ * the same detail level, scaled (the same layout, only a little softer), so nothing changes shape when the real coat
+ * arrives; else the nearest coat of any level; else rung 22's plain coat (FUR_RUNGS[3]), baked at once outside the
+ * budget (a few milliseconds).
  */
-function stopgapKit(rpx: number, anyLevel: boolean): FurKit | null {
+function stopgapKit(rpx: number): FurKit {
   const lod = lodFor(rungFor(rpx));
   const nearest = (ok: (k: FurKit) => boolean) => {
     let best: FurKit | null = null;
     for (const k of furKits.values()) if (ok(k) && (!best || Math.abs(Math.log(k.rpx / rpx)) < Math.abs(Math.log(best.rpx / rpx)))) best = k;
     return best;
   };
-  const same = nearest((k) => k.lod === lod);
-  if (same) return same;
-  if (lod === 0) return furKit(FUR_RUNGS[3], true);
-  return anyLevel ? nearest(() => true) ?? furKit(FUR_RUNGS[3], true) : null;
+  return nearest((k) => k.lod === lod) ?? nearest(() => true) ?? (furKit(FUR_RUNGS[3], true) as FurKit);
 }
 
 /**
  * The gradients a frame needs that depend only on her size: the coat's feathered edge (with tufts it stops a little
- * inside her silhouette; small, it fills her circle), the plain disc under it, the light on her fur (from the upper
- * left, greying gently towards the lower right rim; no grey before 0.6 of the way, at most 0.22 at the rim), and a faint
- * grey on her outermost fur all round, so a white page never swallows her top and left edge (weaker on the plain coat,
- * where more would grey her wisps).
+ * inside her silhouette; small, it fills her circle), the plain disc under it, and the light on her fur (from the upper
+ * left, greying gently towards the lower right rim; no grey before 0.6 of the way, at most 0.22 at the rim). There is no
+ * outline round her: in her home's orb her white edge against the orb is what sets her apart, and a grey rim there (and
+ * on dark pages) only dulls it.
  */
 function furGradients(x: CanvasRenderingContext2D, R: number, small: boolean) {
   const feather = x.createRadialGradient(0, 0, (small ? 0.9 : 0.82) * R, 0, 0, (small ? 1 : 0.95) * R);
@@ -581,9 +599,7 @@ function furGradients(x: CanvasRenderingContext2D, R: number, small: boolean) {
   const light = x.createRadialGradient(-R * 0.4, -R * 0.5, 0, -R * 0.08, -R * 0.1, R * 1.4);
   light.addColorStop(0, "rgba(255,255,255,0.3)"); light.addColorStop(0.32, "rgba(255,255,255,0)");
   light.addColorStop(0.6, "rgba(82,86,98,0)"); light.addColorStop(0.82, "rgba(82,86,98,0.1)"); light.addColorStop(1, "rgba(82,86,98,0.22)");
-  const rim = x.createRadialGradient(0, 0, R * 0.86, 0, 0, R * 1.3), k = small ? 0.45 : 1;
-  rim.addColorStop(0, "rgba(82,86,98,0)"); rim.addColorStop(0.31, `rgba(82,86,98,${0.14 * k})`); rim.addColorStop(1, `rgba(82,86,98,${0.18 * k})`);
-  return { feather, under, light, rim };
+  return { feather, under, light };
 }
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
@@ -632,10 +648,11 @@ export class BrendaEngine {
   private pathR = -1;
   private visorP: Path2D | null = null;
   /** The gradients that depend only on her size (the coat's feather, the plain disc under it, the light), and for which size. */
-  private grads: { R: number; small: boolean; feather: CanvasGradient; under: CanvasGradient; light: CanvasGradient; rim: CanvasGradient } | null = null;
+  private grads: { R: number; small: boolean; feather: CanvasGradient; under: CanvasGradient; light: CanvasGradient } | null = null;
   /**
    * How far she has faded in (0 to 1), and when that began. -1 until her first frame: if her coat is ready then she is
-   * simply there; if not, she waits for it (no stand-in of another shape) and fades in over APPEAR_MS.
+   * simply there; if not, she waits for her own coat (no stand-in before she has been seen) and fades in over APPEAR_MS.
+   * Once any of her is on screen she never vanishes: while a new size bakes she is drawn from stopgapKit.
    */
   private appear = -1;
   private appearAt = 0;
@@ -829,7 +846,10 @@ export class BrendaEngine {
     this.furAwake += (1 - this.furAwake) * (1 - Math.pow(0.2, dt));
   }
 
-  /** Draws into a canvas of W×H CSS pixels (the caller applies the device pixel ratio). */
+  /**
+   * Draws into a canvas of W×H CSS pixels (the caller applies the device pixel ratio). The canvas holds only her: it is
+   * cleared first, and while she fades in the whole canvas is faded.
+   */
   draw(x: CanvasRenderingContext2D, W: number, H: number) {
     x.clearRect(0, 0, W, H);
     const R = Math.min(W, H) * 0.34;   // the sphere's radius: room around her for the glow, hops and particles
@@ -843,8 +863,9 @@ export class BrendaEngine {
       if (this.appear < 0) this.appear = 1;
       else { if (!this.appearAt) this.appearAt = n; this.appear = Math.min(1, (n - this.appearAt) / APPEAR_MS); }
     }
-    const kit = ready ?? stopgapKit(rpx, this.appear >= 1);
-    if (!kit) { this.appear = 0; this.appearAt = 0; return; }   // not on screen yet and her coat is baking: she fades in once it is ready
+    if (!ready && this.appear <= 0) { this.appear = 0; this.appearAt = 0; return; }   // not seen yet, coat baking: wait
+    const kit = ready ?? stopgapKit(rpx);
+    kit.usedAt = sliceAt;
     if (R !== this.pathR) { this.pathR = R; this.visorP = visorPath(R); }
 
     // Where the visor is: it slides across her and foreshortens as she turns, and goes round the back when she spins.
@@ -929,7 +950,6 @@ export class BrendaEngine {
     x.globalCompositeOperation = "source-atop";
     x.beginPath(); x.arc(0, 0, R * 1.3, 0, Math.PI * 2);
     x.fillStyle = gr.light; x.fill();
-    x.fillStyle = gr.rim; x.fill();
     // Her mood as a rim light in the fur along her lower half (her top stays white).
     if (this.tint > 0.01) {
       const tg = x.createLinearGradient(0, R * 0.2, 0, R * 1.15);
@@ -1003,7 +1023,7 @@ export class BrendaEngine {
     // Fading in on her first appearance: her canvas holds only her, so this fades glow, coat, visor and particles alike.
     if (this.appear < 1) {
       x.save(); x.setTransform(1, 0, 0, 1, 0, 0); x.globalCompositeOperation = "destination-in";
-      x.fillStyle = `rgba(0,0,0,${this.appear})`; x.fillRect(0, 0, x.canvas.width, x.canvas.height);
+      x.fillStyle = `rgba(0,0,0,${Math.max(0, this.appear)})`; x.fillRect(0, 0, x.canvas.width, x.canvas.height);
       x.restore();
     }
   }

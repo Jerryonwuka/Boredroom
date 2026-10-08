@@ -625,11 +625,12 @@ html[data-brenda-chat] #workspace-sidebar, html:has([data-brenda-chat-view]) #wo
 .brenda-face[data-tone="warn"] { --glow: var(--warning); } .brenda-face[data-tone="bad"] { --glow: var(--danger); }
 .brenda-face[data-tone="blue"], .brenda-face[data-tone="violet"] { --glow: transparent; }
 .brenda-face.happy .eyes > span { height: 3px; width: 6px; background: transparent; box-shadow: none; border: 2px solid #fff; border-bottom: 0; border-radius: 6px 6px 0 0; }
-/* Happy arcs: border-box and fixed (they never flex), centred where the pill eyes sit, whole-pixel strokes, inside the bean. */
+/* Happy arcs: border-box and fixed (they never flex), centred where the pill eyes sit, whole-pixel strokes, inside the bean;
+   never over a passing reaction (dizzy, love) on a happy face. */
 .brenda-face.happy .eyes > span { box-sizing: border-box; flex: none; }
-.brenda-face.brenda-face-sm.happy .eyes { gap: 3.5px; } .brenda-face.brenda-face-sm.happy .eyes > span { width: 3px; height: 2px; border-width: 1px; }
-.brenda-face.brenda-face-md.happy .eyes { gap: 4.5px; } .brenda-face.brenda-face-md.happy .eyes > span { width: 4.5px; height: 3px; border-width: 1px; }
-.brenda-face.brenda-face-lg.happy .eyes { gap: 6px; } .brenda-face.brenda-face-lg.happy .eyes > span { width: 6px; height: 3px; border-width: 2px; }
+.brenda-face.brenda-face-sm.happy:not(.dizzy):not(.love) .eyes { gap: 3.5px; } .brenda-face.brenda-face-sm.happy:not(.dizzy):not(.love) .eyes > span { width: 3px; height: 2px; border-width: 1px; }
+.brenda-face.brenda-face-md.happy:not(.dizzy):not(.love) .eyes { gap: 4.5px; } .brenda-face.brenda-face-md.happy:not(.dizzy):not(.love) .eyes > span { width: 4.5px; height: 3px; border-width: 1px; }
+.brenda-face.brenda-face-lg.happy:not(.dizzy):not(.love) .eyes { gap: 6px; } .brenda-face.brenda-face-lg.happy:not(.dizzy):not(.love) .eyes > span { width: 6px; height: 3px; border-width: 2px; }
 .brenda-face.brenda-face-sm.dizzy .eyes > span { width: 3.5px; height: 3.5px; border-width: 1px; } .brenda-face.brenda-face-sm.dizzy .eyes { gap: 2.5px; } .brenda-face.brenda-face-lg.dizzy .eyes { gap: 6px; } .brenda-face.brenda-face-lg.love .eyes { gap: 4px; }
 .brenda-face.brenda-face-sm.love .eyes { gap: 2.5px; } .brenda-face.brenda-face-sm.love .eyes > span { width: 4.5px; height: 4.5px; clip-path: path("M2.25 4.18 L.51 2.38 A1.09 1.09 0 0 1 2.25 .9 A1.09 1.09 0 0 1 3.99 2.38 Z"); }
 .brenda-face.brenda-face-md.love .eyes { gap: 3px; } .brenda-face.brenda-face-md.dizzy .eyes { gap: 4.5px; }
@@ -649,7 +650,7 @@ html[data-brenda-chat] #workspace-sidebar, html:has([data-brenda-chat-view]) #wo
 .brenda-face.dizzy { animation: brenda-wobble 450ms ease-in-out infinite alternate; }
 .brenda-face.dizzy .eyes > span { width: 5px; height: 5px; border-radius: 50%; background: transparent; box-shadow: none; border: 1.5px solid #fff; border-right-color: transparent; animation: brenda-spin 550ms linear infinite; }
 .brenda-face.love { --glow: var(--accent); }
-.brenda-face.love .eyes > span { width: 7px; height: 7px; box-shadow: none; border-radius: 0; background: var(--accent); clip-path: path("M3.5 6.5 L0.8 3.7 A1.7 1.7 0 0 1 3.5 1.4 A1.7 1.7 0 0 1 6.2 3.7 Z"); animation: brenda-thump 700ms ease-in-out infinite; }
+.brenda-face.love .eyes > span { width: 7px; height: 7px; box-shadow: none; border: 0; border-radius: 0; background: var(--accent); clip-path: path("M3.5 6.5 L0.8 3.7 A1.7 1.7 0 0 1 3.5 1.4 A1.7 1.7 0 0 1 6.2 3.7 Z"); animation: brenda-thump 700ms ease-in-out infinite; }
 @keyframes brenda-breathe { 0%, 100% { scale: 1; } 50% { scale: 1.035; } }
 @keyframes brenda-hop { 0% { translate: 0 0; } 35% { translate: 0 -4px; } 70% { translate: 0 1px; } 100% { translate: 0 0; } }
 @keyframes brenda-scan { 0%, 100% { translate: 0 0; } 50% { translate: -2px 0; } }

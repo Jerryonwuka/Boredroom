@@ -145,8 +145,8 @@ svg.ic { width: 14px; height: 14px; flex: none; }
 .face.happy .eyes span { height: 3px; width: 6px; background: transparent; border: 2px solid var(--ink); border-bottom: 0; border-radius: 6px 6px 0 0; }
 /* Happy arcs: border-box and fixed (they never flex), centred where the pill eyes sit, inside the bean. */
 .face.happy .eyes span { box-sizing: border-box; flex: none; }
-.face.happy:not(.small) .eyes { gap: 4.9px; } .face.happy:not(.small) .eyes span { width: 5px; }
-.face.small.happy .eyes { gap: 3.8px; } .face.small.happy .eyes span { width: 4px; height: 2px; border-width: 1px; }
+.face.happy:not(.small):not(.dizzy):not(.love) .eyes { gap: 4.9px; } .face.happy:not(.small):not(.dizzy):not(.love) .eyes span { width: 5px; }
+.face.small.happy:not(.dizzy):not(.love) .eyes { gap: 3.8px; } .face.small.happy:not(.dizzy):not(.love) .eyes span { width: 4px; height: 2px; border-width: 1px; }
 .face.dizzy .eyes { gap: 4.5px; } .face.small.dizzy .eyes { gap: 3px; } .face.dizzy .eyes span { box-sizing: border-box; } .face.love:not(.small) .eyes { gap: 3.5px; }
 .face.small.dizzy .eyes span { width: 4px; height: 4px; border-width: 1px; } .face.small.love .eyes { gap: 2px; }
 .face.sad .eyes span { height: 2px; border-radius: 1px; }
@@ -399,7 +399,7 @@ kbd { display: inline-flex; align-items: center; justify-content: center; box-si
 .face.dizzy { animation: wobble .45s ease-in-out infinite alternate; }
 .face.dizzy .eyes span { width: 5px; height: 5px; border-radius: 50%; background: transparent; border: 1.5px solid var(--ink); border-right-color: transparent; animation: spin .55s linear infinite; }
 .face.love { --glow: var(--accent); }
-.face.love .eyes span { width: 6px; height: 6px; border-radius: 0; background: var(--accent); clip-path: path("M3 5.6 L0.7 3.2 A1.45 1.45 0 0 1 3 1.2 A1.45 1.45 0 0 1 5.3 3.2 Z"); animation: thump .7s ease-in-out infinite; }
+.face.love .eyes span { width: 6px; height: 6px; border: 0; border-radius: 0; background: var(--accent); clip-path: path("M3 5.6 L0.7 3.2 A1.45 1.45 0 0 1 3 1.2 A1.45 1.45 0 0 1 5.3 3.2 Z"); animation: thump .7s ease-in-out infinite; }
 @keyframes squash { 0% { transform: scale(1); } 30% { transform: scale(1.2, .76); } 62% { transform: scale(.92, 1.1); } 100% { transform: scale(1); } }
 @keyframes wobble { from { rotate: -9deg; } to { rotate: 9deg; } }
 @keyframes spin { to { transform: rotate(360deg); } }
