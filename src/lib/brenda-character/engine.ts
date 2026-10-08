@@ -1,10 +1,21 @@
 /**
- * Brenda, drawn (owner decision, 5 October 2026). A small canvas engine for Boredroom's AI teammate. Her look (owner
- * design, 7 October 2026, from the owner's artwork): a glossy white sphere with a black bean-shaped visor and two white
- * pill eyes glowing behind it. The visor turns with her head, sliding across the sphere and foreshortening as she looks
+ * Brenda, drawn (owner decision, 5 October 2026). A small canvas engine for Boredroom's AI teammate. Her shape (owner
+ * design, 7 October 2026, from the owner's artwork): a white ball with a black bean-shaped visor and two white pill
+ * eyes glowing behind it. The visor turns with her head, sliding across the ball and foreshortening as she looks
  * around (and going round the back when she spins); the eyes sit a little deeper and move a little further. She blinks,
  * breathes, has a soft glow and rim light in the colour of her mood (which also tints her eyes), particles, and a set
  * of expressions.
+ *
+ * Her coat (owner decision, 8 October 2026: "go with the fluffy shaggy one", chosen from glossy, short plush, shaggy
+ * and fine fuzz previews): fluffy, shaggy white fur instead of the gloss. Her coat is soft, loosely scattered locks
+ * that flow out from her face, a touch greyer at the root and white at the tip, under the same upper-left light, as
+ * bright as the glossy sphere; a ring of longer tufts round her middle and bottom makes a cloud-like silhouette (kept
+ * short on top so she has room to hop), with a small cowlick. The visor stays black glass, set into a soft shaded
+ * hollow in the fur with fur all round it, and nothing ever covers it. The tufts have springy secondary motion: they
+ * lag, swing and overshoot when she hops, squashes, tilts or turns, and drift slightly at rest. The coat is laid out
+ * once from a seeded generator and baked into offscreen canvases for a short ladder of sizes, a few steps per frame (at
+ * once for a still frame), so a frame only stamps sprites. At chat and list sizes she is a soft round ball with a fine
+ * fuzzy edge.
  *
  * The techniques (eyes on a sphere with yaw and pitch, tweened squash and stretch, frame-rate independent smoothing,
  * particle bursts) follow the MIT-licensed engine of Coucou by Louis Raillé (github.com/Louis-CFM/coucou). Coucou's
@@ -57,16 +68,12 @@ export const STATES: Record<BrendaState, StateCfg> = {
   proud:     { eye: "star",   glow: "#ffc857", tint: 0.18, tilt: -0.08, sparkles: true },
 };
 
-// Her look (owner design, 7 October 2026): a glossy white sphere with a black bean-shaped visor, two white pill eyes
-// glowing behind the glass. Proportions are fractions of the sphere's radius, measured from the owner's artwork.
+// Her look (owner design, 7 October 2026): a white sphere with a black bean-shaped visor, two white pill eyes glowing
+// behind the glass. Proportions are fractions of the sphere's radius, measured from the owner's artwork.
 const VISOR_INK = "#0b0b0e";
 const VISOR_W = 0.8, VISOR_TOP = -0.42, VISOR_DIP = -0.28, VISOR_BOTTOM = 0.44;
 const VISOR_REACH = 0.62, VISOR_PITCH = Math.asin(0.19 / VISOR_REACH);   // the visor's centre sits 0.19 R above the middle
 const EYE_W = 0.15, EYE_H = 0.31, EYE_SPREAD = 0.42, EYE_Y = -0.04;
-const BODY_LIGHT: RGB = [1, 1, 1];
-const BODY_MID: RGB = [0.965, 0.965, 0.973];
-const BODY_SHADE: RGB = [0.87, 0.875, 0.895];
-const BODY_RIM: RGB = [0.72, 0.725, 0.76];
 
 /** The visor, centred on the origin: rounded lobes over each eye, a soft dip between them, a broad curve beneath. */
 function visorPath(R: number): Path2D {
@@ -118,6 +125,435 @@ function star(x: CanvasRenderingContext2D, ro: number, ri: number) {
   x.closePath();
 }
 
+// ---- Her coat -------------------------------------------------------------------------------------------------------
+// Everything here is drawn in units of her radius R. It is baked per size (a rung of a short ladder of radii in device
+// pixels) into offscreen canvases: the coat (locks of fur flowing out from her face), an atlas of tuft sprites (the
+// shaggy ring round her silhouette, and the cowlick), the fringe (short fur round the visor) and the hollow (the shade
+// the visor sits in); at the smallest sizes a single ring sprite (a fine fuzzy edge) stands in for the tufts. A frame
+// fills a circle with the coat, feathers its edge, stamps the tufts with their sway, and lights the lot.
+
+const COAT_EXT = 1.2;                                   // the coat covers ±1.2 R, so it can slide a little as she turns
+const COAT_SLIDE = 0.19;                                // and slides at most this far (in R) each way
+const CELL_X0 = -0.72, CELL_Y0 = -1.28, CELL_W = 1.44, CELL_H = 1.5;   // a tuft sprite's box, in tuft lengths
+const TUFT_BAKE = 0.42;                                 // tuft sprites are baked for a tuft this long (in R)
+const TUFT_REACH = 1.1;                                 // how far a tuft's tip reaches, in tuft lengths
+const FRINGE_X0 = -1, FRINGE_Y0 = -0.66, FRINGE_W = 2, FRINGE_H = 1.32;
+const RING_EXT = 1.2;                                   // the small sizes' ring sprite covers ±1.2 R
+const TUFT_KINDS = 6;
+const CREST = TUFT_KINDS;                               // the cowlick's column in the atlas
+const CROWN_Y = -0.19;                                  // her fur flows out from her face (the visor's centre)
+const UNDERPAINT = "#f1f2f5";
+/** The visor's outline on its far side (x > 0, in R, about its centre): its widest point, shoulder, lobe and lower curve. */
+const VISOR_EDGE: [x: number, y: number][] = [[0.8, -0.02], [0.69, -0.354], [0.4, -0.42], [0.586, 0.352], [0.334, 0.42]];
+/** How far from her middle (in R) the glass may reach, so there is always fur between it and her silhouette. */
+const VISOR_KEEP = 0.93;
+/** Her glow round the fur: alpha (times the glow's strength) at each radius (in R), fading out by 1.32 R. */
+const HALO: [r: number, a: number][] = [[0.85, 1], [1, 0.72], [1.1, 0.4], [1.2, 0.14], [1.32, 0]];
+
+/** A seeded generator (mulberry32): her coat is laid out the same way on every frame and every page. */
+function seeded(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function canvas2d(w: number, h: number): [HTMLCanvasElement, CanvasRenderingContext2D] {
+  const c = document.createElement("canvas");
+  c.width = Math.max(1, Math.ceil(w)); c.height = Math.max(1, Math.ceil(h));
+  // Read back after each bake step (so a frame's bake budget counts the real drawing), hence willReadFrequently.
+  const g = c.getContext("2d", { willReadFrequently: true });
+  if (!g) throw new Error("Brenda: no 2D canvas");
+  return [c, g];
+}
+
+type Tone = [r: number, g: number, b: number];
+type LockInk = { root: Tone; tip: Tone };
+// Neutral, bright greys (her body is white): the root only a touch darker than the tip.
+const INK_FRONT: LockInk = { root: [238, 240, 244], tip: [255, 255, 255] };
+const INK_FRINGE: LockInk = { root: [208, 210, 217], tip: [246, 247, 250] };
+const tone = (c: Tone, k: number, a: number) => `rgba(${Math.round(c[0] * k)},${Math.round(c[1] * k)},${Math.round(c[2] * k)},${a})`;
+const smooth = (e0: number, e1: number, v: number) => { const t = Math.max(0, Math.min(1, (v - e0) / (e1 - e0))); return t * t * (3 - 2 * t); };
+
+/** One lock of fur's outline: its root at the origin, pointing up (to -y), its tip `bend` to one side, `round` (0 to 1) blunt. */
+function lockPath(len: number, wid: number, bend: number, round = 0.5): Path2D {
+  const hw = wid / 2, p = new Path2D();
+  p.moveTo(bend, -len);
+  p.bezierCurveTo(bend + hw * round, -len * (0.8 + round * 0.2), hw, -len * 0.72, hw, -len * 0.4);
+  p.bezierCurveTo(hw, len * 0.08, -hw, len * 0.08, -hw, -len * 0.4);
+  p.bezierCurveTo(-hw, -len * 0.72, bend - hw * round, -len * (0.8 + round * 0.2), bend, -len);
+  p.closePath();
+  return p;
+}
+
+/**
+ * Paints a lock as a bundle of fibres `fw` wide over a soft body (so the bundle never shows through): rooted across its
+ * base, gathering into a rounded clump at its tip, fading in at the root and out at the tip, a touch greyer at the root.
+ * The fibres go down as two strokes (a few are darker, for texture), each with one gradient along the lock, so a bake
+ * stays quick. `stray` is the share that wander off; with no fibres (`fw` 0) the soft body alone is the lock. The coat's
+ * locks go without the body (`soft` false): its underpaint already fills between their fibres.
+ */
+function paintLock(g: CanvasRenderingContext2D, len: number, wid: number, bend: number, ink: LockInk, fw: number, rnd: () => number,
+  spread = 0.4, stray = 0.1, alpha = 1, soft = true) {
+  if (soft) {
+    g.save(); g.translate(bend * 0.3, -len * 0.42); g.scale(wid * 0.48, len * 0.52);
+    const mid: Tone = [(ink.root[0] + ink.tip[0]) / 2, (ink.root[1] + ink.tip[1]) / 2, (ink.root[2] + ink.tip[2]) / 2];
+    const body = g.createRadialGradient(0, 0, 0, 0, 0, 1);
+    body.addColorStop(0, tone(mid, 1, 0.95 * alpha)); body.addColorStop(0.65, tone(mid, 1, 0.7 * alpha)); body.addColorStop(1, tone(mid, 1, 0));
+    g.fillStyle = body; g.fillRect(-1, -1, 2, 2);
+    g.restore();
+  }
+  if (!fw) return;
+  const n = Math.max(4, Math.min(18, Math.round(wid / fw)));
+  const main = new Path2D(), dark = new Path2D();
+  for (let i = 0; i < n; i++) {
+    const f = (i + rnd()) / n - 0.5;                                  // across the lock, -0.5 to 0.5
+    const x0 = f * wid * 0.78, y0 = len * (0.04 - rnd() * 0.3);       // rooted across its base, some further up
+    const wild = rnd() < stray;                                       // a few wander off: the fluff
+    const reach = (0.9 + rnd() * 0.14 - Math.abs(f) * 0.28) * (wild ? 1.04 : 1);   // the middle fibres make the tip
+    const x1 = bend * reach + f * wid * spread + (rnd() - 0.5) * wid * (wild ? 0.7 : 0.1), y1 = -len * reach;
+    const mx = (x0 + x1) / 2 + f * wid * 0.22 + bend * 0.15 + (wild ? (rnd() - 0.5) * wid * 0.4 : 0);
+    const p = rnd() < 0.14 ? dark : main;
+    p.moveTo(x0, y0); p.quadraticCurveTo(mx, (y0 + y1) / 2, x1, y1);
+  }
+  g.lineCap = "round";
+  for (const [p, k, w] of [[main, 1, 1], [dark, 0.95, 0.85]] as const) {
+    const sg = g.createLinearGradient(0, len * 0.04, bend, -len);
+    sg.addColorStop(0, tone(ink.root, k, 0)); sg.addColorStop(0.2, tone(ink.root, k, 0.9 * alpha));
+    sg.addColorStop(0.7, tone(ink.tip, k, 0.9 * alpha)); sg.addColorStop(1, tone(ink.tip, k, 0));
+    g.strokeStyle = sg; g.lineWidth = fw * w; g.stroke(p);
+  }
+}
+
+/**
+ * How wide a fibre is (in R) at a size: fine enough to read as fur, never under a device pixel. At the smallest sizes
+ * the coat has none, only a soft underpaint and the fine wisps of its ring.
+ */
+const fibreWidth = (rpx: number, lod: number) => lod === 2 ? Math.max(0.0075, 0.9 / rpx) : lod === 1 ? Math.max(0.012, 1 / rpx) : 1 / rpx;
+
+/** Points at least `r` apart, scattered at random over a square of ±`ext` (Bridson's Poisson-disc sampling). */
+function scatter(rnd: () => number, ext: number, r: number): [number, number][] {
+  const cell = r / Math.SQRT2, n = Math.ceil((2 * ext) / cell);
+  const grid = new Int32Array(n * n).fill(-1);
+  const pts: [number, number][] = [], active: number[] = [];
+  const put = (x: number, y: number) => {
+    grid[Math.min(n - 1, Math.floor((y + ext) / cell)) * n + Math.min(n - 1, Math.floor((x + ext) / cell))] = pts.length;
+    active.push(pts.length); pts.push([x, y]);
+  };
+  put((rnd() - 0.5) * r, (rnd() - 0.5) * r);
+  while (active.length) {
+    const ai = Math.floor(rnd() * active.length), [px, py] = pts[active[ai]];
+    let found = false;
+    for (let k = 0; k < 24 && !found; k++) {
+      const a = rnd() * Math.PI * 2, d = r * (1 + rnd());
+      const x = px + Math.cos(a) * d, y = py + Math.sin(a) * d;
+      if (x < -ext || x >= ext || y < -ext || y >= ext) continue;
+      const gx = Math.floor((x + ext) / cell), gy = Math.floor((y + ext) / cell);
+      let ok = true;
+      for (let yy = Math.max(0, gy - 2); ok && yy <= Math.min(n - 1, gy + 2); yy++) {
+        for (let xx = Math.max(0, gx - 2); xx <= Math.min(n - 1, gx + 2); xx++) {
+          const j = grid[yy * n + xx];
+          if (j >= 0 && (pts[j][0] - x) ** 2 + (pts[j][1] - y) ** 2 < r * r) { ok = false; break; }
+        }
+      }
+      if (ok) { put(x, y); found = true; }
+    }
+    if (!found) active.splice(ai, 1);
+  }
+  return pts;
+}
+
+/** A lock of her coat: where it grows (in R), which way it lies, its size, and whether it is a loose bit of fluff. */
+type CoatLock = { x: number; y: number; a: number; len: number; wid: number; bend: number; fluff: boolean };
+
+/**
+ * Her coat's locks, scattered (no rows), each lying away from her face and drooping a little, varied in length and
+ * angle; near her face (the middle, seen when she spins) they fall downwards rather than radiating from a point. Painted
+ * roughly outermost first so tips overlap roots, then a pass of loose fluff over the lot.
+ */
+function layCoat(lod: number): CoatLock[] {
+  const rnd = seeded(0x5eed + lod * 7919);
+  const gs = lod === 2 ? 0.125 : 0.17;
+  const flow = (x: number, y: number) => {
+    const dx = x, dy = y - CROWN_Y, d = Math.hypot(dx, dy) || 1e-3, w = smooth(0.05, 0.5, d);
+    return Math.atan2(dx / d * w, -(dy / d * w + (1 - w) + 0.35));
+  };
+  const locks: (CoatLock & { o: number })[] = scatter(rnd, COAT_EXT + 0.05, gs).map(([x, y]) => {
+    const r = Math.hypot(x, y), len = gs * (1.9 + 0.6 * Math.min(1, r)) * (0.6 + rnd() * 0.8);
+    return {
+      x, y, a: flow(x, y) + (rnd() - 0.5) * 1.2, len, wid: gs * (1.5 + rnd() * 0.5), bend: (rnd() - 0.5) * 0.5 * len, fluff: false,
+      o: Math.hypot(x, y - CROWN_Y) + (rnd() - 0.5) * 0.35,
+    };
+  });
+  locks.sort((p, q) => q.o - p.o);
+  // Loose fluff on top, lying every which way, so no row of locks survives.
+  for (let i = 0, n = lod === 2 ? 56 : 34; i < n; i++) {
+    const a = rnd() * Math.PI * 2, r = Math.sqrt(rnd()) * 1.15, x = Math.cos(a) * r, y = Math.sin(a) * r, len = gs * (1 + rnd() * 0.7);
+    locks.push({ x, y, a: flow(x, y) + (rnd() - 0.5) * 2.4, len, wid: gs * (1 + rnd() * 0.4), bend: (rnd() - 0.5) * 0.6 * len, fluff: true, o: 0 });
+  }
+  return locks;
+}
+
+function paintCoatLock(g: CanvasRenderingContext2D, k: CoatLock, fw: number, rnd: () => number) {
+  g.save(); g.translate(k.x, k.y); g.rotate(k.a);
+  paintLock(g, k.len, k.wid, k.bend, INK_FRONT, fw, rnd, 0.42, 0.1, k.fluff ? 0.8 : 1, false);
+  g.restore();
+}
+
+/**
+ * One shaggy tuft in its atlas cell: a long lock with smaller ones splaying from it, gathered into soft clumps. Or the
+ * cowlick: a lock that rises and leans over to one side in a gentle curve.
+ */
+function bakeTuft(g: CanvasRenderingContext2D, crest: boolean, ink: LockInk, fw: number, shade: number, unit: number, rnd: () => number) {
+  type Lock = [x: number, y: number, a: number, len: number, wid: number, bend: number];
+  const locks: Lock[] = crest
+    ? [[-0.05, -0.12, -0.34, 0.5, 0.36, -0.04], [0, 0, 0.08, 0.86, 0.5, 0.24], [0.06, -0.4, 0.42, 0.5, 0.34, 0.14]]
+    : [
+      ...[-1, 1].map((s): Lock => [s * 0.1, -0.18 - rnd() * 0.2, s * (0.35 + rnd() * 0.25), 0.55 + rnd() * 0.15, 0.42 + rnd() * 0.08, s * 0.06]),
+      [0, 0, 0, 1, 0.68 + rnd() * 0.14, (rnd() - 0.5) * 0.3],
+    ];
+  // The soft shadow the tuft throws on the coat, towards her middle (the sprite's root is at the bottom). Only the
+  // shadow is wanted, so the shape is drawn far to the left and its shadow brought back.
+  g.save();
+  g.shadowColor = `rgba(56,58,68,${shade})`; g.shadowBlur = 0.2 * unit; g.shadowOffsetX = 50 * unit; g.shadowOffsetY = 0.12 * unit;
+  g.translate(-50, 0); g.fillStyle = "#000"; g.fill(lockPath(0.8, crest ? 0.55 : 0.9, 0));
+  g.restore();
+  for (const [x, y, a, len, wid, bend] of locks) {
+    g.save(); g.translate(x, y); g.rotate(a); paintLock(g, len, wid, bend, ink, fw, rnd, 0.28, 0.06); g.restore();
+  }
+  // Fade the root into the coat.
+  g.globalCompositeOperation = "destination-out";
+  const fade = g.createLinearGradient(0, CELL_Y0 + CELL_H, 0, -0.45);
+  fade.addColorStop(0, "rgba(0,0,0,1)"); fade.addColorStop(0.35, "rgba(0,0,0,0.75)"); fade.addColorStop(1, "rgba(0,0,0,0)");
+  g.fillStyle = fade; g.fillRect(CELL_X0, -0.45, CELL_W, CELL_Y0 + CELL_H + 0.45);
+  g.globalCompositeOperation = "source-over";
+}
+
+/** Points round the visor's outline (in R), with their outward normals: where the fur meets the glass. */
+function visorOutline(perSeg: number): [x: number, y: number, nx: number, ny: number][] {
+  const a = VISOR_W, t = VISOR_TOP, d = VISOR_DIP, b = VISOR_BOTTOM, m = -0.02;
+  const segs: number[][] = [
+    [-a, m, -a, t * 0.9, -a * 0.8, t, -a * 0.5, t],
+    [-a * 0.5, t, -a * 0.28, t, -a * 0.16, d, 0, d],
+    [0, d, a * 0.16, d, a * 0.28, t, a * 0.5, t],
+    [a * 0.5, t, a * 0.8, t, a, t * 0.9, a, m],
+    [a, m, a, b * 0.8, a * 0.62, b, 0, b],
+    [0, b, -a * 0.62, b, -a, b * 0.8, -a, m],
+  ];
+  const out: [number, number, number, number][] = [];
+  for (const [x0, y0, x1, y1, x2, y2, x3, y3] of segs) {
+    for (let i = 0; i < perSeg; i++) {
+      const u = (i + 0.5) / perSeg, v = 1 - u;
+      const px = v * v * v * x0 + 3 * v * v * u * x1 + 3 * v * u * u * x2 + u * u * u * x3;
+      const py = v * v * v * y0 + 3 * v * v * u * y1 + 3 * v * u * u * y2 + u * u * u * y3;
+      const tx = 3 * v * v * (x1 - x0) + 6 * v * u * (x2 - x1) + 3 * u * u * (x3 - x2);
+      const ty = 3 * v * v * (y1 - y0) + 6 * v * u * (y2 - y1) + 3 * u * u * (y3 - y2);
+      const l = Math.hypot(tx, ty) || 1;
+      out.push([px, py, ty / l, -tx / l]);
+    }
+  }
+  return out;
+}
+
+/** Short fur round the visor's rim, leaning back from the glass, darker at the root where it dips into the hollow. */
+function bakeFringe(g: CanvasRenderingContext2D, lod: number, fw: number, half: number) {
+  const rnd = seeded(0xf1a9e + lod * 7 + half), pts = visorOutline(lod === 2 ? 16 : 9);
+  for (const [x0, y0, nx, ny] of pts.slice(half * (pts.length >> 1), (half + 1) * (pts.length >> 1))) {
+    const len = (lod === 2 ? 0.055 : 0.065) * (0.75 + rnd() * 0.5);
+    g.save(); g.translate(x0 - nx * 0.012, y0 - ny * 0.012); g.rotate(Math.atan2(nx, -ny) + (rnd() - 0.5) * 0.9);
+    paintLock(g, len, len * 1.1, (rnd() - 0.5) * len * 0.5, INK_FRINGE, fw, rnd, 0.4, 0.08, 0.9);
+    g.restore();
+  }
+}
+
+/** The hollow the visor sits in: a tight shade all round the glass (the glass itself is cut out; the visor covers it). */
+function bakeHollow(g: CanvasRenderingContext2D, rpx: number) {
+  const v = visorPath(1);
+  g.save(); g.shadowColor = "rgba(40,42,50,0.55)"; g.shadowBlur = 0.06 * rpx; g.shadowOffsetY = 0.02 * rpx;
+  g.fillStyle = "#000"; g.fill(v); g.restore();
+  g.globalCompositeOperation = "destination-out"; g.fill(v); g.globalCompositeOperation = "source-over";
+}
+
+/**
+ * The smallest sizes' edge (in place of the tufts, which would only be noise there): a near-round ring of fine wisps
+ * and a few soft tufts, one of them the cowlick, over a soft fade. Shorter on top, for room to hop.
+ */
+function bakeRing(g: CanvasRenderingContext2D, rpx: number) {
+  const rnd = seeded(0x41a6), fw = 1 / rpx;
+  for (const [a, len] of [[Math.PI * 0.64, 0.24], [Math.PI * 0.33, 0.22], [Math.PI * 1.06, 0.2], [-Math.PI * 0.56, 0.18]]) {
+    g.save(); g.translate(Math.cos(a) * 0.82, Math.sin(a) * 0.82); g.rotate(a + Math.PI / 2 + (a < 0 ? 0.35 : 0.12));
+    paintLock(g, len, 0.3, len * 0.15, INK_FRONT, fw, rnd, 0.3, 0.04);
+    g.restore();
+  }
+  g.lineCap = "round";
+  for (let i = 0, n = 60; i < n; i++) {
+    const a = ((i + (rnd() - 0.5) * 0.8) / n) * Math.PI * 2, top = Math.max(0, -Math.sin(a));
+    const r0 = 0.86 + rnd() * 0.05, r1 = 1.0 + rnd() * 0.08 - top * 0.05, b = a + (rnd() - 0.5) * 0.12;
+    const x0 = Math.cos(a) * r0, y0 = Math.sin(a) * r0, x1 = Math.cos(b) * r1, y1 = Math.sin(b) * r1;
+    const sg = g.createLinearGradient(x0, y0, x1, y1);
+    sg.addColorStop(0, tone(INK_FRONT.root, 1, 0)); sg.addColorStop(0.35, tone(INK_FRONT.root, 1, 0.9));
+    sg.addColorStop(0.75, tone(INK_FRONT.tip, 1, 0.75)); sg.addColorStop(1, tone(INK_FRONT.tip, 1, 0));
+    g.strokeStyle = sg; g.lineWidth = fw * (0.9 + rnd() * 0.4);
+    g.beginPath(); g.moveTo(x0, y0); g.quadraticCurveTo((x0 + x1) / 2 + (rnd() - 0.5) * 0.03, (y0 + y1) / 2 + (rnd() - 0.5) * 0.03, x1, y1); g.stroke();
+  }
+}
+
+/** A tuft round her silhouette: where it grows, how long, and how it moves. */
+type Tuft = { a: number; r: number; len: number; wid: number; cell: number; row: number; flex: number; ph: number; w: number };
+
+function layTufts(lod: number): { back: Tuft[]; front: Tuft[]; crest: Tuft[] } {
+  const rnd = seeded(0x7a11 + lod * 131);
+  const nF = lod === 2 ? 34 : 24, nB = lod === 2 ? 24 : 18;
+  const ring = (n: number, row: number, r: number, len: number, off: number): Tuft[] => Array.from({ length: n }, (_, i) => {
+    const a = ((i + off + (rnd() - 0.5) * 0.5) / n) * Math.PI * 2;
+    // Longer underneath, where the fur hangs, and short on top, so she has room to hop in her canvas.
+    const hang = Math.max(0, Math.sin(a)) * 0.05, top = 1 - Math.max(0, -Math.sin(a)) * 0.4;
+    return {
+      a, r: r + (rnd() - 0.5) * 0.1, len: (len + (rnd() - 0.3) * 0.1 + hang) * top, wid: (0.95 + rnd() * 0.3) / Math.sqrt(top),
+      cell: Math.floor(rnd() * TUFT_KINDS), row, flex: 0.8 + rnd() * 0.45, ph: rnd() * Math.PI * 2, w: 0.7 + rnd() * 0.8,
+    };
+  });
+  const back = ring(nB, 1, 0.82, 0.27, 0.5);
+  // The front ring is drawn from the bottom up, so each tuft lies over the one below it, as fur hangs.
+  const front = ring(nF, 0, 0.78, 0.25, 0).sort((p, q) => Math.sin(q.a) - Math.sin(p.a));
+  const crest: Tuft = { a: -Math.PI / 2 - 0.12, r: 0.68, len: 0.38, wid: 1.0, cell: CREST, row: 0, flex: 1.5, ph: 1.3, w: 1.1 };
+  return { back, front, crest: [crest] };
+}
+
+type FurKit = {
+  rpx: number; lod: number;
+  coat: HTMLCanvasElement;
+  atlas: HTMLCanvasElement | null; cw: number; ch: number; unit: number;
+  fringe: HTMLCanvasElement | null;
+  hollow: HTMLCanvasElement;
+  ring: HTMLCanvasElement | null;
+  back: Tuft[]; front: Tuft[]; crest: Tuft[];
+  patterns: WeakMap<CanvasRenderingContext2D, CanvasPattern>;
+};
+type FurJob = { kit: FurKit; steps: [g: CanvasRenderingContext2D, run: () => void][]; next: number };
+
+/**
+ * The radii (device pixels) her coat is baked at, about 1.19x apart: every size draws from the next rung up (scaled
+ * down a little), so a handful of bakes cover every size and pixel ratio. The app's sizes land on or just under a rung.
+ */
+const FUR_RUNGS = [12, 15, 18, 22, 26, 31, 37, 44, 52, 62, 74, 88, 104, 124, 146, 170];
+const FUR_MAX_KITS = 8;
+/** At most this much of a frame (ms) goes to baking; a still frame (after settle()) finishes its bake at once. */
+const BAKE_SLICE_MS = 4;
+const furKits = new Map<number, FurKit>();
+const furJobs = new Map<number, FurJob>();
+let sliceAt = -1e9, sliceSpent = 0;
+
+const rungFor = (rpx: number) => FUR_RUNGS.find((r) => r >= rpx * 0.97) ?? FUR_RUNGS[FUR_RUNGS.length - 1];
+
+/** Sets up the bake of a rung's kit as a list of small steps (each a millisecond or two). */
+function startJob(rpx: number): FurJob {
+  // Detail by size: many fibrous locks when large; fewer, coarser ones at the orb's size; at a list or chat size a soft
+  // coat with a ring of fine wisps round her edge (more would only be noise).
+  const lod = rpx >= 80 ? 2 : rpx >= 44 ? 1 : 0;
+  const steps: [CanvasRenderingContext2D, () => void][] = [];
+  const [coat, cg] = canvas2d(2 * COAT_EXT * rpx, 2 * COAT_EXT * rpx);
+  cg.translate(coat.width / 2, coat.height / 2); cg.scale(rpx, rpx);
+  steps.push([cg, () => { cg.fillStyle = UNDERPAINT; cg.fillRect(-COAT_EXT - 0.1, -COAT_EXT - 0.1, COAT_EXT * 2 + 0.2, COAT_EXT * 2 + 0.2); }]);
+  const [hollow, hg] = canvas2d(FRINGE_W * rpx, FRINGE_H * rpx);
+  hg.translate(-FRINGE_X0 * rpx, -FRINGE_Y0 * rpx); hg.scale(rpx, rpx);
+  steps.push([hg, () => bakeHollow(hg, rpx)]);
+  const kit: FurKit = {
+    rpx, lod, coat, atlas: null, cw: 0, ch: 0, unit: 0, fringe: null, hollow, ring: null,
+    back: [], front: [], crest: [], patterns: new WeakMap(),
+  };
+  if (lod === 0) {
+    const [ring, rg] = canvas2d(2 * RING_EXT * rpx, 2 * RING_EXT * rpx);
+    rg.translate(ring.width / 2, ring.height / 2); rg.scale(rpx, rpx);
+    steps.push([rg, () => bakeRing(rg, rpx)]);
+    kit.ring = ring;
+    return { kit, steps, next: 0 };
+  }
+  const locks = layCoat(lod), frnd = seeded(0xf1b2e + lod), fw = fibreWidth(rpx, lod);
+  for (let i = 0; i < locks.length; i += 10) {
+    const chunk = locks.slice(i, i + 10);
+    steps.push([cg, () => { for (const k of chunk) paintCoatLock(cg, k, fw, frnd); }]);
+  }
+  const unit = TUFT_BAKE * rpx, cw = Math.ceil(CELL_W * unit), ch = Math.ceil(CELL_H * unit);
+  const [atlas, ag] = canvas2d(cw * (TUFT_KINDS + 1), ch * 2);
+  for (let v = 0; v <= TUFT_KINDS; v++) {
+    steps.push([ag, () => {
+      const rnd = seeded(0x7f4a7c15 + v * 977 + lod * 31);
+      ag.save();
+      ag.translate(v * cw, 0); ag.beginPath(); ag.rect(2, 2, cw - 4, ch - 4); ag.clip();   // a clear gutter, so no cell bleeds into the next
+      ag.translate(-CELL_X0 * unit, -CELL_Y0 * unit); ag.scale(unit, unit);
+      bakeTuft(ag, v === CREST, INK_FRONT, fw / TUFT_BAKE, v === CREST ? 0.06 : 0.1, unit, rnd);
+      ag.restore();
+    }]);
+  }
+  // The back row: the same tufts a shade dimmer (they sit behind her coat), copied rather than painted again.
+  steps.push([ag, () => {
+    ag.drawImage(atlas, 0, 0, atlas.width, ch, 0, ch, atlas.width, ch);
+    ag.globalCompositeOperation = "source-atop"; ag.fillStyle = "rgba(30,32,40,0.065)"; ag.fillRect(0, ch, atlas.width, ch);
+    ag.globalCompositeOperation = "source-over";
+  }]);
+  const [fringe, fg] = canvas2d(FRINGE_W * rpx, FRINGE_H * rpx);
+  fg.translate(-FRINGE_X0 * rpx, -FRINGE_Y0 * rpx); fg.scale(rpx, rpx);
+  for (const half of [0, 1]) steps.push([fg, () => bakeFringe(fg, lod, fw, half)]);
+  Object.assign(kit, { atlas, cw, ch, unit, fringe, ...layTufts(lod) });
+  return { kit, steps, next: 0 };
+}
+
+/**
+ * Her coat for a radius in device pixels (never baked at module load: this file is server-rendered too), shared by
+ * every Brenda that size. A bake is spread over frames, a few milliseconds a frame, and the kit is returned once it is
+ * done (null until then); `now` finishes it at once, for a still frame. The cache keeps the most recently used kits.
+ */
+function furKit(rpxIn: number, now: boolean): FurKit | null {
+  const rpx = rungFor(rpxIn);
+  const hit = furKits.get(rpx);
+  if (hit) { furKits.delete(rpx); furKits.set(rpx, hit); return hit; }
+  let job = furJobs.get(rpx);
+  if (!job) { job = startJob(rpx); furJobs.set(rpx, job); }
+  const t0 = performance.now();
+  if (t0 - sliceAt > 16 || t0 < sliceAt) { sliceAt = t0; sliceSpent = 0; }
+  while (job.next < job.steps.length && (now || sliceSpent + performance.now() - t0 < BAKE_SLICE_MS)) {
+    const [g, run] = job.steps[job.next++];
+    run();
+    if (!now) g.getImageData(0, 0, 1, 1);         // draw it now, so the time it takes counts against this frame
+  }
+  sliceSpent += performance.now() - t0;
+  if (job.next < job.steps.length) return null;
+  furJobs.delete(rpx);
+  furKits.set(rpx, job.kit);
+  if (furKits.size > FUR_MAX_KITS) { const old = furKits.keys().next().value; if (old !== undefined) furKits.delete(old); }
+  return job.kit;
+}
+
+/** While a size's coat bakes: the nearest size already baked, scaled, or else the smallest coat (a moment's bake). */
+function stopgapKit(rpx: number): FurKit {
+  let best: FurKit | null = null;
+  for (const k of furKits.values()) if (!best || Math.abs(Math.log(k.rpx / rpx)) < Math.abs(Math.log(best.rpx / rpx))) best = k;
+  return best ?? (furKit(FUR_RUNGS[3], true) as FurKit);
+}
+
+/**
+ * The gradients a frame needs that depend only on her size: the coat's feathered edge (with tufts it stops a little
+ * inside her silhouette; small, it fills her circle), the plain disc under it, and the light on her fur (from the upper
+ * left, greying gently towards the lower right rim; no grey before 0.6 of the way, at most 0.22 at the rim).
+ */
+function furGradients(x: CanvasRenderingContext2D, R: number, small: boolean) {
+  const feather = x.createRadialGradient(0, 0, (small ? 0.9 : 0.82) * R, 0, 0, (small ? 1 : 0.95) * R);
+  feather.addColorStop(0, "#000"); feather.addColorStop(1, "rgba(0,0,0,0)");
+  const under = x.createRadialGradient(0, 0, R * 0.84, 0, 0, R * 0.94);
+  under.addColorStop(0, UNDERPAINT); under.addColorStop(1, "rgba(241,242,245,0)");
+  const light = x.createRadialGradient(-R * 0.4, -R * 0.5, 0, -R * 0.08, -R * 0.1, R * 1.4);
+  light.addColorStop(0, "rgba(255,255,255,0.3)"); light.addColorStop(0.32, "rgba(255,255,255,0)");
+  light.addColorStop(0.6, "rgba(82,86,98,0)"); light.addColorStop(0.82, "rgba(82,86,98,0.1)"); light.addColorStop(1, "rgba(82,86,98,0.22)");
+  return { feather, under, light };
+}
+
+const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+
 export class BrendaEngine {
   state: BrendaState = "idle";
   private cfg: StateCfg = STATES.idle;
@@ -144,6 +580,25 @@ export class BrendaEngine {
   private particles: Particle[] = [];
   private tweens = new Map<Prop, { keys: Key[]; i: number; from: number; start: number }>();
   private t0 = nowS();
+  // Her fur's secondary motion: how far the tuft tips lag behind her body (in R, on the page), behind her squash and
+  // stretch, and behind her tilt, each on a soft spring. `furWas` is last frame's pose (ox, oy, sx, sy, tilt, yaw,
+  // pitch, roll), to see how far she moved; `furPrimed` says whether there is one. `furClock` (advanced only by
+  // update()) drives the drift at rest, and `furAwake` eases it in after settle(), so a still frame is always the same.
+  private furLx = 0; private furLy = 0; private furVx = 0; private furVy = 0;
+  private furSx = 0; private furSy = 0; private furVsx = 0; private furVsy = 0;
+  private furT = 0; private furVt = 0;
+  private furWas = new Float64Array(8);
+  private furPrimed = false;
+  private furClock = 0; private furAwake = 1;
+  /** Set by settle(): the next frame is a still one, so it finishes any bake it needs at once. */
+  private still = false;
+  // Kept between frames (nothing is allocated per frame): her body's transform, the coat pattern's, and the visor's outline.
+  private bm = new Float64Array(6);
+  private patM: DOMMatrix | null = null;
+  private pathR = -1;
+  private visorP: Path2D | null = null;
+  /** The gradients that depend only on her size (the coat's feather, the plain disc under it, the light), and for which size. */
+  private grads: { R: number; small: boolean; feather: CanvasGradient; under: CanvasGradient; light: CanvasGradient } | null = null;
 
   setState(next: BrendaState) {
     if (next === this.state) return;
@@ -218,6 +673,8 @@ export class BrendaEngine {
     this.tilt = this.cfg.tilt ?? 0;
     this.eyeScale = this.eyeScaleTarget;
     this.glow = this.glowTarget; this.tint = this.cfg.tint;
+    this.furLx = this.furLy = this.furVx = this.furVy = this.furSx = this.furSy = this.furVsx = this.furVsy = this.furT = this.furVt = 0;
+    this.furPrimed = false; this.furClock = 0; this.furAwake = 0; this.still = true;
   }
 
   /** Where her eyes are headed: the caret or the pointer, unless her state has its own look. */
@@ -296,6 +753,40 @@ export class BrendaEngine {
     }
     for (const p of this.particles) { p.age += dt; p.x += p.vx * dt; p.y += p.vy * dt; p.vy += (p.kind === "z" ? -0.02 : 0.25) * dt; }
     this.particles = this.particles.filter((p) => p.age < p.life);
+    this.furStep(dt);
+  }
+
+  /**
+   * Her fur's secondary motion. The tips stay where they were as she moves (a hop, a shake, a squash, a tilt, a turn of
+   * the head, which carries the surface of her face along with it), then a soft, lightly damped spring pulls them back
+   * after her, so they lag, overshoot and settle.
+   */
+  private furStep(dt: number) {
+    const was = this.furWas;
+    if (this.furPrimed) {
+      let dRoll = this.roll - was[7];
+      if (Math.abs(dRoll) > 1) dRoll = 0;               // a spin ending snaps roll back to 0
+      this.furLx -= this.ox - was[0] + (this.yaw - was[5]) * 0.3;
+      this.furLy -= this.oy - was[1] - (this.pitch - was[6] + dRoll * 0.4) * 0.3;
+      this.furSx -= this.sx - was[2]; this.furSy -= this.sy - was[3];
+      this.furT -= this.tilt - was[4];
+    }
+    was[0] = this.ox; was[1] = this.oy; was[2] = this.sx; was[3] = this.sy;
+    was[4] = this.tilt; was[5] = this.yaw; was[6] = this.pitch; was[7] = this.roll;
+    this.furPrimed = true;
+    const h = Math.min(dt, 0.1), n = Math.max(1, Math.ceil(h * 120)), d = h / n;
+    for (let i = 0; i < n; i++) {
+      this.furVx += (-110 * this.furLx - 6 * this.furVx) * d; this.furLx += this.furVx * d;
+      this.furVy += (-110 * this.furLy - 6 * this.furVy) * d; this.furLy += this.furVy * d;
+      this.furVsx += (-150 * this.furSx - 7 * this.furVsx) * d; this.furSx += this.furVsx * d;
+      this.furVsy += (-150 * this.furSy - 7 * this.furVsy) * d; this.furSy += this.furVsy * d;
+      this.furVt += (-120 * this.furT - 6 * this.furVt) * d; this.furT += this.furVt * d;
+    }
+    this.furLx = clamp(this.furLx, -0.25, 0.25); this.furLy = clamp(this.furLy, -0.25, 0.25);
+    this.furSx = clamp(this.furSx, -0.3, 0.3); this.furSy = clamp(this.furSy, -0.3, 0.3);
+    this.furT = clamp(this.furT, -0.4, 0.4);
+    this.furClock += dt;
+    this.furAwake += (1 - this.furAwake) * (1 - Math.pow(0.2, dt));
   }
 
   /** Draws into a canvas of W×H CSS pixels (the caller applies the device pixel ratio). */
@@ -304,46 +795,136 @@ export class BrendaEngine {
     const R = Math.min(W, H) * 0.34;   // the sphere's radius: room around her for the glow, hops and particles
     const cx = W / 2 + this.ox * R, cy = H / 2 + this.oy * R + R * 0.04;
     const eyeInk = mix([1, 1, 1], this.glow, Math.min(1, this.tint * 1.6));
+    const m0 = x.getTransform(), rpx = R * (Math.hypot(m0.a, m0.b) || 1);
+    const kit = furKit(rpx, this.still) ?? stopgapKit(rpx);
+    this.still = false;
+    if (R !== this.pathR) { this.pathR = R; this.visorP = visorPath(R); }
 
-    // The mood light beneath her.
+    // Where the visor is: it slides across her and foreshortens as she turns, and goes round the back when she spins.
+    let p = VISOR_PITCH + this.pitch + this.roll;
+    p = ((((p + Math.PI) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)) - Math.PI;
+    const cy0 = Math.cos(this.yaw), cp = Math.cos(p), facing = cy0 * cp;
+    let vx = Math.sin(this.yaw) * cp * R * VISOR_REACH;
+    const vy = -Math.sin(p) * R * VISOR_REACH, vsy = Math.max(0.2, cp / Math.cos(VISOR_PITCH));
+    // The glass stays inside her fur: its far side never comes nearer her silhouette than VISOR_KEEP, so there is always
+    // fur all round it. Near her rim it foreshortens a little harder, and past that slides a little less.
+    const vsx0 = Math.max(0.2, cy0);
+    let vsx = vsx0, ax = Math.abs(vx) / R;
+    for (const [ex, ey] of VISOR_EDGE) {
+      const Y = vy / R + ey * vsy, room = VISOR_KEEP * VISOR_KEEP - Y * Y;
+      vsx = Math.min(vsx, room > 0 ? (Math.sqrt(room) - ax) / ex : 0);
+    }
+    vsx = Math.max(vsx, vsx0 * 0.85);
+    for (const [ex, ey] of VISOR_EDGE) {
+      const Y = vy / R + ey * vsy, room = VISOR_KEEP * VISOR_KEEP - Y * Y;
+      ax = Math.min(ax, Math.max(0, (room > 0 ? Math.sqrt(room) : 0) - ex * vsx));
+    }
+    vx = Math.sign(vx) * ax * R;
+    const shown = facing > 0.05, fa = Math.min(1, (facing - 0.05) * 6);
+
+    // Her body's transform (centre, tilt, squash), composed by hand so the tufts can be stamped onto it.
+    const ct = Math.cos(this.tilt), st = Math.sin(this.tilt), bm = this.bm;
+    bm[0] = (m0.a * ct + m0.c * st) * this.sx; bm[1] = (m0.b * ct + m0.d * st) * this.sx;
+    bm[2] = (m0.c * ct - m0.a * st) * this.sy; bm[3] = (m0.d * ct - m0.b * st) * this.sy;
+    bm[4] = m0.a * cx + m0.c * cy + m0.e; bm[5] = m0.b * cx + m0.d * cy + m0.f;
+    x.save();
+    x.setTransform(bm[0], bm[1], bm[2], bm[3], bm[4], bm[5]);
+    // The fur's lag, turned into her own frame; how far up her tufts may reach before the top of the canvas.
+    const lx = this.furLx * ct + this.furLy * st, ly = -this.furLx * st + this.furLy * ct;
+    const roomUp = cy / R - 0.03;
+
+    // The coat, filling her circle. It turns a little with her head (its locks grow from her face), rolls with her when
+    // she spins (more as her face goes round the back) and sways with her tufts.
+    let pat = kit.patterns.get(x);
+    if (!pat) { pat = x.createPattern(kit.coat, "no-repeat") ?? undefined; if (pat) kit.patterns.set(x, pat); }
+    if (pat) {
+      const m = (this.patM ??= new DOMMatrix()), s = R / kit.rpx;
+      const away = clamp((0.3 - facing) / 0.3, 0, 1);
+      const sx = clamp(Math.sin(this.yaw) * 0.1 + lx * 0.12, -COAT_SLIDE, COAT_SLIDE);
+      const sy = clamp(-Math.sin(p) * (0.08 + away * 0.09) + 0.025 + ly * 0.12, -COAT_SLIDE, COAT_SLIDE);
+      m.a = s; m.d = s; m.e = -kit.coat.width * s / 2 + sx * R; m.f = -kit.coat.height * s / 2 + sy * R;
+      pat.setTransform(m);
+      x.fillStyle = pat;
+    } else x.fillStyle = UNDERPAINT;
+    // With tufts, the coat stops a little inside her silhouette, so her edge is all fibrous tufts (a smooth fade would
+    // show as a pale cap where the tufts are short, on top); small, it fills her circle and the ring of wisps is her edge.
+    const small = !kit.atlas, cr = (small ? 1 : 0.95) * R;
+    let gr = this.grads;
+    if (!gr || gr.R !== R || gr.small !== small) gr = this.grads = { R, small, ...furGradients(x, R, small) };
+    x.beginPath(); x.arc(0, 0, cr, 0, Math.PI * 2); x.fill();
+    // Feather its edge into the tufts (only the coat is on the canvas yet, so this touches nothing else).
+    x.save(); x.beginPath(); x.rect(-cr, -cr, 2 * cr, 2 * cr); x.clip();      // (destination-in would sweep the whole canvas)
+    x.globalCompositeOperation = "destination-in";
+    x.fillStyle = gr.feather; x.beginPath(); x.arc(0, 0, cr, 0, Math.PI * 2); x.fill();
+    x.restore();
+    // The far tufts behind the coat; the near tufts and the cowlick over its edge (or, small, the ring of wisps).
+    if (kit.atlas) {
+      // Under the coat's fade, a plain disc of its colour, so nothing shows through between the coat and the tufts.
+      x.globalCompositeOperation = "destination-over";
+      x.fillStyle = gr.under; x.beginPath(); x.arc(0, 0, R * 0.94, 0, Math.PI * 2); x.fill();
+      this.drawTufts(x, kit, kit.atlas, kit.back, R, lx, ly, ct, st, roomUp);
+      x.globalCompositeOperation = "source-over";
+      this.drawTufts(x, kit, kit.atlas, kit.front, R, lx, ly, ct, st, roomUp);
+      this.drawTufts(x, kit, kit.atlas, kit.crest, R, lx, ly, ct, st, roomUp);
+    } else {
+      x.globalCompositeOperation = "source-over";
+      if (kit.ring) { const e = kit.ring.width / kit.rpx / 2; x.drawImage(kit.ring, -e * R, -e * R, 2 * e * R, 2 * e * R); }
+    }
+    // Short fur round the visor.
+    if (shown && kit.fringe) {
+      x.save(); x.translate(vx, vy); x.scale(vsx, vsy); x.globalAlpha = fa;
+      x.drawImage(kit.fringe, FRINGE_X0 * R, FRINGE_Y0 * R, kit.fringe.width / kit.rpx * R, kit.fringe.height / kit.rpx * R);
+      x.restore();
+    }
+
+    // Light on the fur only (source-atop keeps it to what is drawn so far): lit from the upper left, greying gently
+    // towards the lower right rim.
+    x.globalCompositeOperation = "source-atop";
+    x.beginPath(); x.arc(0, 0, R * 1.3, 0, Math.PI * 2);
+    x.fillStyle = gr.light; x.fill();
+    // Her mood as a rim light in the fur along her lower half (her top stays white).
+    if (this.tint > 0.01) {
+      const tg = x.createLinearGradient(0, R * 0.2, 0, R * 1.15);
+      tg.addColorStop(0, rgba(this.glow, 0)); tg.addColorStop(1, rgba(this.glow, 0.6 * this.tint));
+      x.fillStyle = tg; x.fill();
+    }
+    // The hollow the visor sits in, after the light so the sheen cannot wash it out.
+    if (shown) {
+      x.save(); x.translate(vx, vy); x.scale(vsx, vsy); x.globalAlpha = fa;
+      x.drawImage(kit.hollow, FRINGE_X0 * R, FRINGE_Y0 * R, kit.hollow.width / kit.rpx * R, kit.hollow.height / kit.rpx * R);
+      x.restore();
+    }
+    // Her glow, behind the fur (destination-over paints under what is there): as soft and as far as the glossy
+    // sphere's, and never past the canvas edge, even mid-hop or mid-squash.
+    x.globalCompositeOperation = "destination-over";
+    const cap = Math.min(HALO[HALO.length - 1][0], Math.min(cy, H - cy) / (R * this.sy), Math.min(cx, W - cx) / (R * this.sx)) - 0.02;
+    if (cap > HALO[0][0] + 0.05) {
+      const r0 = HALO[0][0], a = 0.24 + this.heard * 0.25;
+      const hg = x.createRadialGradient(0, R * 0.05, R * r0, 0, R * 0.05, R * cap);
+      for (const [r, k] of HALO) if (r < cap) hg.addColorStop((r - r0) / (cap - r0), rgba(this.glow, a * k));
+      hg.addColorStop(1, rgba(this.glow, 0));
+      x.fillStyle = hg; x.beginPath(); x.arc(0, R * 0.05, R * cap, 0, Math.PI * 2); x.fill();
+    }
+    x.restore();
+
+    // The mood light beneath her, under everything.
+    x.save();
+    x.globalCompositeOperation = "destination-over";
     const g = x.createRadialGradient(cx, cy + R * 0.2, R * 0.6, cx, cy + R * 0.2, R * 1.3);
     g.addColorStop(0, rgba(this.glow, 0.42 + this.heard * 0.28)); g.addColorStop(1, rgba(this.glow, 0));
     x.fillStyle = g; x.fillRect(0, 0, W, H);
+    x.restore();
 
-    x.save();
-    x.translate(cx, cy);
-    x.rotate(this.tilt);
-    x.scale(this.sx, this.sy);
-
-    // The sphere: glossy white, lit from the upper left, shading to a cool grey at the lower right rim.
-    const body = new Path2D(); body.arc(0, 0, R, 0, Math.PI * 2);
-    x.save(); x.shadowColor = rgba(this.glow, 0.5 + this.heard * 0.25); x.shadowBlur = R * (0.3 + this.heard * 0.2); x.fillStyle = "#fff"; x.fill(body); x.restore();
-    const bg = x.createRadialGradient(-R * 0.34, -R * 0.42, 0, -R * 0.1, -R * 0.12, R * 1.18);
-    bg.addColorStop(0, rgba(BODY_LIGHT)); bg.addColorStop(0.5, rgba(BODY_MID)); bg.addColorStop(0.85, rgba(BODY_SHADE)); bg.addColorStop(1, rgba(BODY_RIM));
-    x.fillStyle = bg; x.fill(body);
-    // Her mood as a rim light along the bottom of the sphere.
-    if (this.tint > 0.01) {
-      const tg = x.createRadialGradient(0, R * 0.2, R * 0.55, 0, R * 0.2, R * 1.05);
-      tg.addColorStop(0, rgba(this.glow, 0)); tg.addColorStop(1, rgba(this.glow, 0.55 * this.tint));
-      x.fillStyle = tg; x.fill(body);
-    }
-    // The gloss: a soft sheen up and to the left, and a crisp highlight inside it.
-    const sheen = x.createRadialGradient(-R * 0.42, -R * 0.55, 0, -R * 0.42, -R * 0.55, R * 0.6);
-    sheen.addColorStop(0, "rgba(255,255,255,0.95)"); sheen.addColorStop(1, "rgba(255,255,255,0)");
-    x.fillStyle = sheen; x.fill(body);
-    x.lineWidth = Math.max(1, R * 0.015); x.strokeStyle = "rgba(20,24,40,0.1)"; x.stroke(body);
-
-    // The visor turns with her head: it slides across the sphere and foreshortens as it nears the edge, and goes round
-    // the back when she spins.
-    let p = VISOR_PITCH + this.pitch + this.roll;
-    p = ((((p + Math.PI) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)) - Math.PI;
-    const cy0 = Math.cos(this.yaw), cp = Math.cos(p);
-    if (cy0 * cp > 0.05) {
-      x.save(); x.clip(body);
-      x.translate(Math.sin(this.yaw) * cp * R * VISOR_REACH, -Math.sin(p) * R * VISOR_REACH);
-      x.scale(Math.max(0.2, cy0), Math.max(0.2, cp / Math.cos(VISOR_PITCH)));
-      const visor = visorPath(R);
-      // The lip where the visor sits into the shell, then the black glass.
+    // The visor, over everything: black glass with the eyes behind it.
+    if (shown) {
+      x.save();
+      x.translate(cx, cy);
+      x.rotate(this.tilt);
+      x.scale(this.sx, this.sy);
+      x.translate(vx, vy);
+      x.scale(vsx, vsy);
+      const visor = this.visorP as Path2D;
+      // The lip where the visor sits into the fur, then the black glass.
       x.save(); x.shadowColor = "rgba(30,32,44,0.45)"; x.shadowBlur = R * 0.06; x.shadowOffsetY = R * 0.015; x.fillStyle = VISOR_INK; x.fill(visor); x.restore();
       const vg = x.createRadialGradient(0, R * 0.05, R * 0.1, 0, 0, R * 0.85);
       vg.addColorStop(0, "#0a0a0d"); vg.addColorStop(1, "#24252c");
@@ -369,9 +950,42 @@ export class BrendaEngine {
       x.restore();
       x.restore();
     }
-    x.restore();
 
     this.drawParticles(x, R, cx, cy);
+  }
+
+  /**
+   * Stamps tufts round her edge from the atlas, each bent by the fur's lag (the part of it across the tuft swings it,
+   * the part along it stretches or squashes it), by the lag of her squash and her tilt, by a little droop where the
+   * fur hangs, and by a slow drift at rest; tufts that point up are kept below the top of the canvas (`roomUp`, in R
+   * from her centre). Her body's transform is `bm`; each tuft's is composed onto it by hand.
+   */
+  private drawTufts(x: CanvasRenderingContext2D, kit: FurKit, atlas: HTMLCanvasElement, tufts: Tuft[], R: number, lx: number, ly: number,
+    ct: number, st: number, roomUp: number) {
+    const bm = this.bm, sw = kit.cw / kit.unit, shh = kit.ch / kit.unit, t = this.furClock, awake = this.furAwake;
+    const squash = this.furSy - this.furSx;
+    for (const f of tufts) {
+      const ca = Math.cos(f.a), sa = Math.sin(f.a);
+      const across = -lx * sa + ly * ca, along = lx * ca + ly * sa;
+      const drift = (Math.sin(t * f.w + f.ph) * 0.035 + Math.sin(t * 0.9 + f.a * 2) * 0.02) * awake;
+      const bend = clamp((across / f.len) * f.flex * 1.6 + this.furT * 1.4 * f.flex + ca * 0.2 + (drift + squash * sa * ca * 1.5) * f.flex, -0.9, 0.9);
+      let stretch = clamp(1 + along * 2 * f.flex + (this.furSy * sa * sa + this.furSx * ca * ca) * 1.1, 0.65, 1.4);
+      // Room above: how far up the page the tip would reach (with her tilt and squash), kept under `roomUp`.
+      const ta = f.a + bend, ut = -(st * this.sx * Math.cos(ta) + ct * this.sy * Math.sin(ta));
+      if (ut > 0) {
+        const ub = -(st * this.sx * ca + ct * this.sy * sa);
+        stretch = Math.min(stretch, Math.max(0.3, (roomUp - f.r * ub) / (TUFT_REACH * f.len * ut)));
+      }
+      const ang = f.a + Math.PI / 2 + bend, c = Math.cos(ang), s = Math.sin(ang);
+      const L = f.len * R * stretch, Wd = f.len * R * f.wid;
+      const la = c * Wd, lb = s * Wd, lc = -s * L, ld = c * L, le = f.r * R * ca, lf = f.r * R * sa;
+      x.setTransform(
+        bm[0] * la + bm[2] * lb, bm[1] * la + bm[3] * lb, bm[0] * lc + bm[2] * ld, bm[1] * lc + bm[3] * ld,
+        bm[0] * le + bm[2] * lf + bm[4], bm[1] * le + bm[3] * lf + bm[5],
+      );
+      x.drawImage(atlas, f.cell * kit.cw, f.row * kit.ch, kit.cw, kit.ch, CELL_X0, CELL_Y0, sw, shh);
+    }
+    x.setTransform(bm[0], bm[1], bm[2], bm[3], bm[4], bm[5]);
   }
 
   private eye(x: CanvasRenderingContext2D, shape: EyeShape, w: number, h: number, sd: number, ink: string): void {
