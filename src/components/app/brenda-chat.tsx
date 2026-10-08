@@ -52,10 +52,21 @@
  * (`assistantItemId`) and the done line becomes the item's live status card (assistant-item-status-card: "Ben has seen
  * it, 14:02.", "Ada accepted: to-do added.", with "Cancel request" or "Withdraw note" while possible), after the Confirm
  * it came from, as a follow-up's; the Open button stays. Saved with the conversation, so a past chat shows it as it is now.
+ *
+ * Act without asking (owner decision, 8 October 2026: "you can toggle it on and off, just like the way it is on Claude
+ * Code"). Her box starts with the person's mode (act-mode-pill: "Ask first" or "Acting without asking"; Shift+Tab in the
+ * box switches it), and a message waits for a switch to be saved before it is sent. What she did at once (in either
+ * mode) comes back with Undo for 10 minutes on its done line (or on its live card, beside Open): pressed, the row reads
+ * "Undone" with the server's words under it, and a polite status says it; a refusal ("It has changed since…") shows in
+ * the chat's error alert and the button goes, and Undo hides on its own when its time is up. A line done without asking
+ * says so under it ("Done without asking. You can undo it until 14:32."). A Confirm that still asks in that mode says why
+ * under its summary ("Still asking: Max read other people's words in this reply."). A reply that read other people's
+ * words is marked (`tainted`) and sent back with the conversation, so the server keeps asking in that chat. Saved: the
+ * marks, the undone words and the why; never an Undo token (a reopened chat offers no Undo).
  */
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Check, ShieldCheck, Square, Volume2 } from "lucide-react";
+import { Check, Loader2, ShieldCheck, Square, Undo2, Volume2 } from "lucide-react";
 // Her reply rows' buttons are plain buttons styled with buttonVariants, so they carry the animated twins themselves.
 import { AnimatedAlarmClock, AnimatedArrowUpRight, AnimatedCheck, AnimatedPlay, AnimatedPlus } from "@/components/ui/animated-icons";
 import { buttonVariants } from "@/components/ui/button";
@@ -68,6 +79,8 @@ import { Markdown } from "@/components/app/docs-markdown";
 import { useAssistant } from "@/components/app/assistant-context";
 import { FollowUpStatusCard } from "@/components/app/follow-up-status-card";
 import { AssistantItemStatusCard } from "@/components/app/assistant-item-status-card";
+import { ActModePill, useActMode } from "@/components/app/act-mode-pill";
+import { ACT_WORDS, undoOpen, type ActState, type UndoOffer } from "@/lib/act-mode";
 import { playSound } from "@/lib/brenda-sound";
 import { useDictation } from "@/hooks/use-dictation";
 import { useSpeech } from "@/hooks/use-assistant-speech";
@@ -81,12 +94,32 @@ import type { Conversation, ConversationSummary, StoredMessage } from "@/server/
 
 /**
  * What she did, as the chat keeps it: a confirmed follow-up carries its batch, and something sent to another person's
- * assistant its item (copilot's Action gains the same fields).
+ * assistant its item (copilot's Action gains the same fields). Act without asking (8 October 2026): `auto`, it ran
+ * without a Confirm press; `undo`, its Undo while the offer stands (never saved); `undone`, the server's words once it
+ * was undone.
  */
-export type ChatAction = Action & { followUpBatchId?: string; assistantItemId?: string };
+export type ChatAction = Omit<Action, "auto" | "undo"> & { followUpBatchId?: string; assistantItemId?: string; auto?: boolean; undo?: UndoOffer; undone?: string };
 /** An action shown as a live card (a follow-up's or an item's) in place of its done line. */
 const liveCard = (a: ChatAction) => !!a.followUpBatchId || !!a.assistantItemId;
-export type BrendaMsg = { role: "user" | "assistant"; content: string; actions?: ChatAction[]; proposals?: (Proposal & { done?: string })[]; engine?: ChatResult["engine"]; note?: string | null };
+/** A prepared action as the chat keeps it: marked once answered (`done`); a Confirm that still asks in auto mode says why. */
+export type ChatProposal = Proposal & { done?: string; why?: string };
+/** `tainted`: the reply read other people's words; sent back with the conversation so the server keeps asking. */
+export type BrendaMsg = { role: "user" | "assistant"; content: string; actions?: ChatAction[]; proposals?: ChatProposal[]; engine?: ChatResult["engine"]; note?: string | null; tainted?: boolean };
+/** Her reply as the chat route answers it, with what act without asking adds (copilot's ChatResult gains the same). */
+type ChatReply = ChatResult & { tainted?: boolean; act?: ActState };
+/** The answer to an Undo (POST /brenda/undo). */
+type UndoResult = { undone: true; summary: string; spoken?: string };
+/**
+ * An Undo refused for good: not valid (400), someone else's (403), gone (404), or moved on (409: UNDO_EXPIRED,
+ * UNDO_TOO_LATE, UNDO_CHANGED). Its button goes; after anything else (no answer, a fault) it stays, to try again.
+ */
+const UNDO_GONE = new Set([400, 403, 404, 409]);
+/** An action without its Undo token. */
+function withoutUndo(a: ChatAction): ChatAction {
+  const copy = { ...a };
+  delete copy.undo;
+  return copy;
+}
 
 // The drawer's starters, listed one under another. Catching up on Messages is second for everyone (owner decision,
 // 8 October 2026: personal assistants, phase 3).
@@ -124,8 +157,11 @@ const summaryOf = (c: Conversation): ConversationSummary => ({ id: c.id, title: 
 
 /** Two copies of one message: the same words from the same side. */
 const sameWords = (a: BrendaMsg, b: BrendaMsg) => a.role === b.role && clip(a.content, KEEP.content) === clip(b.content, KEEP.content);
-/** A message with what was made of it (Done, Not done, what a Confirm did), to tell whether a copy of it has moved on. */
-const marks = (m: BrendaMsg) => JSON.stringify([m.role, clip(m.content, KEEP.content), m.proposals?.map((p) => p.done ?? "") ?? [], m.actions?.length ?? 0]);
+/**
+ * A message with what was made of it (Done, Not done, what a Confirm did, what was undone), to tell whether a copy of it
+ * has moved on.
+ */
+const marks = (m: BrendaMsg) => JSON.stringify([m.role, clip(m.content, KEEP.content), m.proposals?.map((p) => p.done ?? "") ?? [], m.actions?.length ?? 0, m.actions?.map((a) => (a.undone ? 1 : 0)) ?? []]);
 /** Whether `theirs` is this save itself: it landed, and only the answer to it was lost on the way. */
 const landed = (theirs: BrendaMsg[], mine: BrendaMsg[]) => {
   const kept = mine.slice(-KEEP.messages);
@@ -135,7 +171,7 @@ const landed = (theirs: BrendaMsg[], mine: BrendaMsg[]) => {
 /**
  * Ours carried onto theirs, after a save was refused because the conversation was saved from somewhere else since
  * `base` (the copy this chat last saved or opened). What we added after base goes after theirs; a message we marked
- * since (Done, Not done, what a Confirm did) takes the place of its unmarked twin in theirs, and where theirs marked it
+ * since (Done, Not done, what a Confirm did, Undone) takes the place of its unmarked twin in theirs, and where theirs marked it
  * too, theirs stands (`lost`). Whole exchanges theirs already holds right after base are this chat's own earlier save,
  * which landed though its answer was lost on the way: they are not added twice. Null when ours cannot be put onto
  * theirs at all: ours no longer starts with base, or theirs no longer holds base's newest message.
@@ -151,7 +187,7 @@ export function rebase(ours: BrendaMsg[], base: BrendaMsg[], theirs: BrendaMsg[]
   const after = base.length - skip;
   let held = 0;
   for (let k = 0; k < added.length && after + k < theirs.length && sameWords(added[k], theirs[after + k]); k++) if (added[k].role === "assistant") held = k + 1;
-  const marked = (m: BrendaMsg) => !!m.proposals?.some((p) => p.done);
+  const marked = (m: BrendaMsg) => !!m.proposals?.some((p) => p.done) || !!m.actions?.some((a) => a.undone);
   let lost = false, changed = false;
   const carried = theirs.map((t, i) => {
     const b = base[i + skip], o = ours[i + skip];
@@ -169,12 +205,17 @@ function titleOf(messages: BrendaMsg[]) {
   return first ? clip(first, KEEP.title) : "New chat";
 }
 
-/** The conversation as it is saved: the newest messages, each within the length kept, and no Confirm tokens. */
+/**
+ * The conversation as it is saved: the newest messages, each within the length kept, no Confirm tokens and no Undo
+ * tokens (an Undo belongs to the window it was offered in). What a reply read (`tainted`), what ran without asking
+ * (`auto`), what was undone and why a Confirm still asked are kept.
+ */
 function forSaving(messages: BrendaMsg[]) {
   return messages.slice(-KEEP.messages).map((m) => ({
     ...m,
     content: clip(m.content, KEEP.content),
-    proposals: m.proposals?.map((p) => (p.kind === "confirm" ? { kind: p.kind, summary: p.summary, tool: p.tool, ...(p.detail ? { detail: p.detail } : {}), done: p.done } : p)),
+    actions: m.actions?.map(withoutUndo),
+    proposals: m.proposals?.map((p) => (p.kind === "confirm" ? { kind: p.kind, summary: p.summary, tool: p.tool, ...(p.detail ? { detail: p.detail } : {}), ...(p.why ? { why: p.why } : {}), done: p.done } : p)),
   }));
 }
 
@@ -313,6 +354,13 @@ export function useBrendaChat({ orgSlug, keysActive = true, visible = true, onLe
   const [error, setError] = useState<string | null>(null);
   // Said quietly when another window's copy of this conversation stood over a change made here (CHANGED_ELSEWHERE).
   const [notice, setNotice] = useState<string | null>(null);
+  // The person's mode (owner decision, 8 October 2026: act without asking), shared with every box and Settings on the page.
+  const actMode = useActMode(orgSlug);
+  // The Undo presses on their way ("message:action" indexes), and what the last one did, for the polite status.
+  const [undoing, setUndoing] = useState<readonly string[]>([]);
+  // The same, at once, so a double press sends one Undo.
+  const undoingNow = useRef(new Set<string>());
+  const [said, setSaid] = useState("");
   const [conversationId, setConversationId] = useState<string | null>(opened?.id ?? null);
   // Her passing reaction to what just arrived: a reply pleases her (her faces smile for a moment), something done is a
   // celebration. Each one is a new object, so her drawn character plays it once (brenda-home).
@@ -417,13 +465,22 @@ export function useBrendaChat({ orgSlug, keysActive = true, visible = true, onLe
       if (!q) return;
       const next: BrendaMsg[] = [...messages, { role: "user", content: q }];
       const mine = epoch.current;
-      setMessages(next); setText(""); setPending(true); setError(null); setNotice(null);
+      setMessages(next); setText(""); setPending(true); setError(null); setNotice(null); setSaid("");
       voiced.current = false;
       playSound("send");
       try {
-        const r = await api<ChatResult>(`/api/orgs/${orgSlug}/assistant/chat`, { method: "POST", body: { messages: next.slice(-20).map((m) => ({ role: m.role, content: m.content })) }, retries: 0 });
+        // A switch of mode just made (the pill, Shift+Tab) is saved first, so the message runs in the mode shown.
+        await actMode.settled();
+        const since = actMode.rev();
+        // Each reply that read other people's words goes back marked, so the server keeps asking in this chat.
+        // Every reply of hers says whether it read other people's words, false included: the server counts a reply with no
+        // flag (an older tab, a chat saved before the flag) as having read them (review, 8 October 2026: fails closed).
+        const body = { messages: next.slice(-20).map((m) => ({ role: m.role, content: m.content, ...(m.role === "assistant" ? { tainted: m.tainted !== false } : {}) })) };
+        const r = await api<ChatReply>(`/api/orgs/${orgSlug}/assistant/chat`, { method: "POST", body, retries: 0 });
+        // The mode the server used: the pill follows it, unless the person switched since the message left.
+        if (r.act) actMode.seed(r.act, since);
         if (epoch.current !== mine) { if (r.actions?.length) router.refresh(); return; }
-        const reply: BrendaMsg = { role: "assistant", content: r.reply, actions: r.actions, proposals: r.proposals, engine: r.engine, note: r.note };
+        const reply: BrendaMsg = { role: "assistant", content: r.reply, actions: r.actions, proposals: r.proposals, engine: r.engine, note: r.note, tainted: !!r.tainted };
         setMessages((cur) => [...cur, reply]);
         // Read aloud as the person chose: every reply, or the reply to what they said. Only her words: never a
         // Confirm's result, an error or the built-in helper's note.
@@ -461,7 +518,11 @@ export function useBrendaChat({ orgSlug, keysActive = true, visible = true, onLe
       else if (p.kind === "confirm") {
         const r = await api<{ actions: Action[]; error: string | null }>(`/api/orgs/${orgSlug}/brenda/confirm`, { method: "POST", body: { token: p.token }, retries: 0 });
         if (epoch.current !== mine) { router.refresh(); return; }
-        if (r.error) { setError(r.error); playSound("error"); return; }
+        if (r.error) {
+          // What ran before the failure keeps its done line (review, 8 October 2026).
+          if (r.actions.length) { mark(mi, pi, "Done"); setMessages((cur) => cur.map((m, i) => (i === mi ? keepId(m, { ...m, actions: [...(m.actions ?? []), ...r.actions] }) : m))); router.refresh(); }
+          setError(r.error); playSound("error"); return;
+        }
         mark(mi, pi, "Done");
         playSound("success");
         react(r.actions.length ? "celebrate" : "pleased");
@@ -478,6 +539,43 @@ export function useBrendaChat({ orgSlug, keysActive = true, visible = true, onLe
 
   const decline = (mi: number, pi: number) => mark(mi, pi, "Not done");
 
+  /** Changes one of her done lines in place (its Undo spent or refused), unless New chat replaced that conversation. */
+  const changeAction = (mine: number, mi: number, ai: number, change: (a: ChatAction) => ChatAction) => {
+    if (epoch.current === mine) setMessages((cur) => cur.map((m, i) => (i === mi && m.actions?.[ai] ? keepId(m, { ...m, actions: m.actions.map((x, j) => (j === ai ? change(x) : x)) }) : m)));
+  };
+
+  /**
+   * Undo on a done line (owner decision, 8 October 2026: act without asking): the person acting again, once, through
+   * POST /brenda/undo. Done, the line reads "Undone" with the server's words, and a polite status says them; already
+   * undone (another tab), it reads "Undone" without a word. A refusal shows the server's words in the chat's alert and
+   * the button goes; with no answer it stays, to try again.
+   */
+  async function undo(mi: number, ai: number, a: ChatAction) {
+    const offer = a.undo;
+    const key = `${mi}:${ai}`;
+    if (!offer || a.undone || undoingNow.current.has(key)) return;
+    const mine = epoch.current;
+    undoingNow.current.add(key);
+    setError(null); setSaid("");
+    setUndoing((cur) => [...cur, key]);
+    try {
+      const r = await api<UndoResult>(`/api/orgs/${orgSlug}/brenda/undo`, { method: "POST", body: { token: offer.token }, retries: 0 });
+      if (epoch.current !== mine) { router.refresh(); return; }
+      changeAction(mine, mi, ai, (x) => ({ ...withoutUndo(x), undone: r.summary || ACT_WORDS.chat.undone }));
+      setSaid(ACT_WORDS.chat.undoneStatus(r.summary));
+      router.refresh();
+    } catch (err) {
+      if (epoch.current !== mine) return;
+      if (isApiFailure(err) && err.error.code === "ALREADY_UNDONE") { changeAction(mine, mi, ai, (x) => ({ ...withoutUndo(x), undone: ACT_WORDS.chat.undone })); return; }
+      if (isApiFailure(err) && UNDO_GONE.has(err.error.status)) changeAction(mine, mi, ai, withoutUndo);
+      setError(isApiFailure(err) ? (err.error.status < 500 || err.error.code === "NOT_READY" ? err.error.message : "Something went wrong. Nothing was undone; try again.") : "Cannot reach the server.");
+      playSound("error");
+    } finally {
+      undoingNow.current.delete(key);
+      setUndoing((cur) => cur.filter((k) => k !== key));
+    }
+  }
+
   /**
    * Moves to another conversation: an empty one, or a past chat. The one being left saves its last change first.
    * Anything still on its way from it (a reply, a Confirm, a past chat being fetched) is dropped when it lands.
@@ -492,7 +590,8 @@ export function useBrendaChat({ orgSlug, keysActive = true, visible = true, onLe
     // switches (its conversation deleted from Past chats here) and must not cut off what this page is reading.
     quiet();
     voiced.current = false;
-    setMessages(next?.messages ?? []); setText(""); setError(null); setNotice(null); setPending(false); setReaction(null);
+    setMessages(next?.messages ?? []); setText(""); setError(null); setNotice(null); setPending(false); setReaction(null); setUndoing([]); setSaid("");
+    undoingNow.current = new Set();
     setConversationId(next?.id ?? null);
   }
 
@@ -591,7 +690,8 @@ export function useBrendaChat({ orgSlug, keysActive = true, visible = true, onLe
     return () => document.removeEventListener("keydown", onKey);
   });
 
-  return { orgSlug, timeZone, messages, text, setText: setBox, pending, error, notice, dictation, send, act, decline, reset, load, remove, saveNow, conversationId, look, state, reaction, lastIndex, waitingAt, speechId, listen, quiet };
+  return { orgSlug, timeZone, messages, text, setText: setBox, pending, error, notice, dictation, send, act, decline, reset, load, remove, saveNow, conversationId, look, state, reaction, lastIndex, waitingAt, speechId, listen, quiet,
+    actMode, undo, undoing, said };
 }
 
 export type BrendaChat = ReturnType<typeof useBrendaChat>;
@@ -624,6 +724,36 @@ export function BrendaMessages({ chat, onLeave, size = "md" }: { chat: BrendaCha
   const { messages, pending, error, act, decline, look, lastIndex, waitingAt } = chat;
   const voice = useSpeech();
   const lg = size === "lg";
+  const now = useUndoClock(messages);
+  const until = useMemo(() => {
+    const f = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", hourCycle: "h23", ...(chat.timeZone ? { timeZone: chat.timeZone } : {}) });
+    return (iso: string) => { try { return f.format(new Date(iso)); } catch { return ""; } };
+  }, [chat.timeZone]);
+  /**
+   * What a done line offers after its summary (owner decision, 8 October 2026: act without asking): Undo while its offer
+   * stands, "Undone" once it was undone, else nothing.
+   */
+  const undoFor = (mi: number, ai: number, a: ChatAction) => {
+    if (a.undone) return <span className="shrink-0 px-1.5 text-xs font-medium text-secondary">{ACT_WORDS.chat.undone}</span>;
+    if (!undoOpen(a.undo, now)) return null;
+    const busy = chat.undoing.includes(`${mi}:${ai}`);
+    return (
+      <button type="button" className={btn("ghost", "xs")} aria-label={ACT_WORDS.chat.undoLabel(a.summary)} disabled={busy} aria-busy={busy || undefined}
+        onClick={(e) => {
+          // The button goes once it has done its work: the focus stays on its line rather than falling to the page.
+          const row = e.currentTarget.closest<HTMLElement>("[data-undo-row]");
+          void chat.undo(mi, ai, a).then(() => { if (row?.isConnected && (!document.activeElement || document.activeElement === document.body)) row.focus(); });
+        }}>
+        {busy ? <Loader2 className="animate-spin" aria-hidden /> : <Undo2 aria-hidden />}{ACT_WORDS.chat.undo}
+      </button>
+    );
+  };
+  /** The line under a done line's summary: the server's words once undone, else whether it was done without asking. */
+  const undoNote = (a: ChatAction) => {
+    if (a.undone) return a.undone !== ACT_WORDS.chat.undone ? a.undone : null;
+    if (!a.auto) return null;
+    return undoOpen(a.undo, now) && until(a.undo.until) ? ACT_WORDS.chat.doneUntil(until(a.undo.until)) : ACT_WORDS.chat.doneWithoutAsking;
+  };
   // A link in her reply to a Boredroom page opens it here, as her Open buttons do.
   const open = (href: string) => { onLeave?.(); router.push(href); };
   const type = lg ? "text-base" : "text-sm";
@@ -654,11 +784,15 @@ export function BrendaMessages({ chat, onLeave, size = "md" }: { chat: BrendaCha
                 <ul className={cn("space-y-2", indent)}>{m.actions.map((a, ai) => {
                   if (liveCard(a)) return null;
                   const openIt = a.href ? <button type="button" className={btn("ghost", "xs")} onClick={() => { onLeave?.(); router.push(a.href!); }}>Open<AnimatedArrowUpRight aria-hidden /></button> : null;
+                  const note = undoNote(a);
+                  // The check, the summary on one line and the buttons; under them, from the summary's edge to the row's,
+                  // whether it was done without asking (or what undoing it did), wrapping on a phone.
                   return (
-                    <li key={ai} className="flex min-h-11 items-center gap-2.5 rounded-xl border border-border py-1.5 pl-3 pr-1.5 text-sm">
-                      <Check className="size-4 shrink-0 text-success" aria-hidden />
-                      <span className="min-w-0 flex-1 truncate font-normal text-foreground">{a.summary}</span>
-                      {openIt}
+                    <li key={ai} data-undo-row tabIndex={-1} className="grid min-h-11 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-2.5 rounded-xl border border-border py-1.5 pl-3 pr-1.5 text-sm outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ring)]">
+                      {a.undone ? <Undo2 className="size-4 shrink-0 text-secondary" aria-hidden /> : <Check className="size-4 shrink-0 text-success" aria-hidden />}
+                      <span className={cn("min-w-0 truncate font-normal", a.undone ? "text-secondary" : "text-foreground")}>{a.summary}</span>
+                      <span className="flex shrink-0 items-center gap-1">{undoFor(mi, ai, a)}{openIt}</span>
+                      {note ? <span className="col-span-2 col-start-2 pb-1 pr-1.5 text-meta font-normal text-secondary">{note}</span> : null}
                     </li>
                   );
                 })}</ul>
@@ -669,6 +803,8 @@ export function BrendaMessages({ chat, onLeave, size = "md" }: { chat: BrendaCha
                   return p.kind === "confirm" ? (
                     <li key={pi} className="rounded-xl border border-border-input p-3 text-sm">
                       <p className="flex items-start gap-2.5 font-medium text-foreground"><ShieldCheck className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden /><span className="min-w-0">{p.summary}</span></p>
+                      {/* Why it still asks though the person chose Act without asking (8 October 2026), as the server said it. */}
+                      {p.why ? <p className="ml-[26px] mt-1 text-meta font-normal text-secondary">{p.why}</p> : null}
                       {/* The whole message it will send, every word (review, 8 October 2026); a long one scrolls. */}
                       {p.detail && !(p.done && m.actions?.some(liveCard)) ? <div role="region" tabIndex={0} aria-label="The full message" className="ml-[26px] mt-2 max-h-48 overflow-y-auto whitespace-pre-wrap break-words rounded-lg bg-fill-0 px-3 py-2 font-normal text-foreground outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ring)]">{p.detail}</div> : null}
                       <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
@@ -696,13 +832,17 @@ export function BrendaMessages({ chat, onLeave, size = "md" }: { chat: BrendaCha
                 <ul className={cn("space-y-2", indent)}>{m.actions.map((a, ai) => {
                   if (!liveCard(a)) return null;
                   const openIt = a.href ? <button type="button" className={btn("ghost", "xs")} onClick={() => { onLeave?.(); router.push(a.href!); }}>Open<AnimatedArrowUpRight aria-hidden /></button> : null;
+                  // Undo (act without asking, 8 October 2026) goes in the card's action slot, before Open.
+                  const actions = <>{undoFor(mi, ai, a)}{openIt}</>;
+                  const note = undoNote(a);
                   // A confirmed follow-up (phase 4) or something sent to another person's assistant (phase 6): its live
                   // card in place of the done line; the Open button stays.
                   return (
-                    <li key={ai} className="text-sm">
+                    <li key={ai} data-undo-row tabIndex={-1} className="rounded-xl text-sm outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ring)]">
                       {a.followUpBatchId
-                        ? <FollowUpStatusCard orgSlug={chat.orgSlug} batchId={a.followUpBatchId} onLeave={onLeave} timeZone={chat.timeZone} action={openIt} />
-                        : <AssistantItemStatusCard orgSlug={chat.orgSlug} itemId={a.assistantItemId!} onLeave={onLeave} timeZone={chat.timeZone} action={openIt} />}
+                        ? <FollowUpStatusCard orgSlug={chat.orgSlug} batchId={a.followUpBatchId} onLeave={onLeave} timeZone={chat.timeZone} action={actions} />
+                        : <AssistantItemStatusCard orgSlug={chat.orgSlug} itemId={a.assistantItemId!} onLeave={onLeave} timeZone={chat.timeZone} action={actions} />}
+                      {note ? <p className="mt-1 px-3 text-meta font-normal text-secondary">{note}</p> : null}
                     </li>
                   );
                 })}</ul>
@@ -718,9 +858,34 @@ export function BrendaMessages({ chat, onLeave, size = "md" }: { chat: BrendaCha
         </div>
       ) : null}
       <Presence show={!!error}><Alert tone="danger">{error}</Alert></Presence>
+      {/* What an Undo did ("Undone: Removed the to-do"); always mounted, so it is announced. */}
+      <p role="status" aria-live="polite" className="sr-only">{chat.said}</p>
       <DictationNotes chat={chat} />
     </>
   );
+}
+
+/**
+ * The time Undo offers are judged by: the moment the list first showed, moved on when the soonest open offer ends (so
+ * its button goes and its line says only "Done without asking."). Never read from the clock during a render.
+ */
+function useUndoClock(messages: BrendaMsg[]): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = Date.now();
+    let next = Infinity;
+    let passed = false;
+    for (const m of messages) for (const a of m.actions ?? []) {
+      if (!a.undo || a.undone) continue;
+      const end = Date.parse(a.undo.until);
+      if (!Number.isFinite(end)) continue;
+      if (end <= t) { if (end > now) passed = true; } else if (end < next) next = end;
+    }
+    if (!passed && next === Infinity) return;
+    const timer = setTimeout(() => setNow(Date.now()), passed ? 0 : next - t + 50);
+    return () => clearTimeout(timer);
+  }, [messages, now]);
+  return now;
 }
 
 /**
@@ -850,15 +1015,28 @@ export function useReadAlong() {
  * PromptInputBox draws it from `recordingHint` and `transcribing`). `onSend` replaces plain sending (Brenda's page opens
  * the full chat first). `leading` takes the pill's round "+" on the left (the hero box's "More asks" on its bottom
  * row); `trailing` small things before the microphone.
+ *
+ * The person's mode comes first in `trailing` on every box of hers (owner decision, 8 October 2026: act without asking):
+ * the act-mode pill. Shift+Tab while typing here switches it, like Claude Code; only while the box has text (review, 8
+ * October 2026: a keyboard or screen-reader user passing back through an empty box must not change a permission, so
+ * there Shift+Tab moves the focus back as usual), never while dictating or while it cannot be switched, and Tab still
+ * leaves the box forwards. The text may narrow to make room, so the pill never pushes the microphone or Send off the
+ * row; in the drawer (`variant` pill) the pill is its icon alone in a narrow box, so the placeholder keeps one line.
  */
 export function BrendaComposer({ chat, placeholder, className, onSend, label, leading, trailing, variant, size }: {
   chat: BrendaChat; placeholder?: string; className?: string; onSend?: (message: string) => void; /** The box's accessible name. */ label?: string;
   leading?: React.ReactNode; trailing?: React.ReactNode; variant?: "pill" | "hero"; size?: "md" | "sm";
 }) {
-  const { text, setText, send, pending, dictation } = chat;
-  const { name } = useAssistant().personal;
+  const { text, setText, send, pending, dictation, actMode } = chat;
+  const { personal: { name }, ai } = useAssistant();
   // She reads along as you type here; once it is sent she stops reading and gets to work.
   const readAlong = useReadAlong();
+  const onKeyDown = (e: React.KeyboardEvent<HTMLElement>) => {
+    if (e.key !== "Tab" || !e.shiftKey || e.altKey || e.ctrlKey || e.metaKey || e.nativeEvent.isComposing) return;
+    if (!(e.target instanceof HTMLTextAreaElement) || !e.target.value.trim() || dictation.listening || dictation.busy || !actMode.canToggle) return;
+    e.preventDefault();
+    actMode.toggle();
+  };
   const submit = (m: string) => { attention.release(); if (onSend) onSend(m); else void send(m, true); };
   // How far the on-device model has come while it downloads, announced in quarter steps only (the card is a live region).
   const pct = dictation.progress !== null ? Math.round(dictation.progress * 100) : null;
@@ -871,11 +1049,12 @@ export function BrendaComposer({ chat, placeholder, className, onSend, label, le
       : "Speak naturally. Press stop or send when you're done.";
   return (
     // No box of its own (`contents`): it only hears the typing in the box.
-    <div className="contents" {...readAlong}>
-      <PromptInputBox value={text} onValueChange={setText} onSend={submit} isLoading={pending} placeholder={placeholder ?? `Tell ${name} what you need…`} className={className} label={label ?? `Message ${name}`}
+    <div className="contents" {...readAlong} onKeyDown={onKeyDown}>
+      <PromptInputBox value={text} onValueChange={setText} onSend={submit} isLoading={pending} placeholder={placeholder ?? `Tell ${name} what you need…`} className={cn("[&_textarea]:min-w-0", className)} label={label ?? `Message ${name}`}
         recording={dictation.listening} transcribing={dictation.busy} onToggleRecording={() => void dictation.toggle()} recordingSupported={dictation.supported !== false}
         recordingPlaceholder={dictation.engine === "whisper" ? "Listening… your words appear when you stop" : undefined}
-        recordingHint={hint} recordingHeard={dictation.heard || null} onCancelRecording={() => dictation.cancel()} leading={leading} trailing={trailing} variant={variant} size={size} />
+        recordingHint={hint} recordingHeard={dictation.heard || null} onCancelRecording={() => dictation.cancel()} leading={leading}
+        trailing={actMode.state.ready || trailing ? <><ActModePill control={actMode} compact={variant !== "hero"} ai={ai} />{trailing}</> : undefined} variant={variant} size={size} />
     </div>
   );
 }

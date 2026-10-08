@@ -49,10 +49,21 @@
  * turn); respond_to_item accepts, declines, replies, marks seen, cancels or withdraws, after Confirm. Who may send what,
  * the limits and every refusal are the assistant-items service's (services/assistant-items.ts). The built-in helper
  * understands the common phrasings (assistant-talk-intent.ts). RULES and TOOLS changed once for this (the cached prefix).
+ *
+ * Act without asking (owner decision, 8 October 2026: "there should be a setting where we can bypass the permission, you
+ * can toggle it on and off, just like the way it is on Claude Code"): a person may choose 'auto' (assistant_profiles,
+ * migration 0045; owners and HR may turn the choice off for everyone). Boredroom decides in askFirst, never the prompt
+ * (services/act-decision.ts): in the person's own private chat, an action that would show a Confirm card runs at once
+ * instead, through the very path a press runs (the same signed token, confirmAction, the same claim, the same tool branch),
+ * and its log row is marked `auto`. The safety floors still ask, and the card says why ("Still asking: …"): a turn or a
+ * conversation holding other people's words, threads, broadcasts, the built-in helper, and the irreversible. Whatever ran
+ * without a Confirm press (in either mode) carries an Undo for 10 minutes (services/undo.ts), recorded by each tool branch
+ * in done(). The mode goes in the uncached situation; RULES and TOOLS are untouched.
  */
 import { z } from "zod";
 import type { OrgContext } from "@/server/lib/api";
 import { withUser, withSystem } from "@/server/db";
+import { isMissingSchema } from "@/server/lib/schema-0045";
 import { resolveAssistant, planBuiltin, matchPerson, type AssistantConnection } from "@/server/services/assistant";
 import { assignableMembers, quickTodo, updateTask, completeTask, setDailyPlan } from "@/server/services/tasks";
 import { myDay, teamStatus, tasksView, policyView } from "@/server/services/views";
@@ -84,16 +95,23 @@ import { submitTask } from "@/server/services/evidence";
 import { briefing, createReminder, listReminders, cancelReminder, recordAction, brendaSettings } from "@/server/services/brenda";
 import { listDocs, getDoc, createDoc, updateDoc, DOC_VISIBILITIES, type DocSummary, type DocVisibility } from "@/server/services/docs";
 import { workSummary, SUMMARY_PERIODS, isSummaryPeriod } from "@/server/services/work-summary";
-import { teamReportNow } from "@/server/services/daily-report";
+import { REPORT_FOLDER, teamReportNow } from "@/server/services/daily-report";
 import { assistantProfiles } from "@/server/services/assistant-profile";
-import { signPayload, verifyPayload, sha256 } from "@/server/lib/crypto";
+import { signPayload, verifyPayload, sha256, randomToken } from "@/server/lib/crypto";
 import { AppError, conflict, forbidden, invalid } from "@/server/lib/errors";
-import { isPresence } from "@/lib/presence";
+import { isPresence, type Presence } from "@/lib/presence";
+import { UNDO_WINDOW_MINUTES, actStateOf, whyStillAsking, type ActState, type UndoOffer } from "@/lib/act-mode";
+import { actSituation, decideAct, earlierTaintOf, type ActContext, type ActFacts } from "@/server/services/act-decision";
+import { undoOffer, type TaskBefore, type UndoSpec } from "@/server/services/undo";
 import { DEFAULT_ASSISTANT_NAME, type AssistantProfile } from "@/lib/assistant-look";
 import { todayLocal, localParts, offsetAt, localDate } from "@/server/lib/time";
 
+/**
+ * `tainted` (act without asking, 8 October 2026): the client sends back that an earlier reply of hers read other people's
+ * words (ChatResult.tainted), so they are still in the model's context and nothing acts without asking in this chat.
+ */
 export const chatSchema = z.object({
-  messages: z.array(z.object({ role: z.enum(["user", "assistant"]), content: z.string().trim().min(1).max(4000) })).min(1).max(30),
+  messages: z.array(z.object({ role: z.enum(["user", "assistant"]), content: z.string().trim().min(1).max(4000), tainted: z.boolean().optional() })).min(1).max(30),
 });
 
 /**
@@ -101,7 +119,13 @@ export const chatSchema = z.object({
  * (phase 4); the chat shows its live status card in place of the plain line. `assistantItemId` (phase 6): a message,
  * request or report note she sent to another assistant; the chat shows its live status card the same way.
  */
-export type Action = { kind: string; summary: string; href?: string; followUpBatchId?: string; assistantItemId?: string };
+export type Action = {
+  kind: string; summary: string; href?: string; followUpBatchId?: string; assistantItemId?: string;
+  /** Ran without a Confirm press because the person chose Act without asking (owner decision, 8 October 2026). */
+  auto?: true;
+  /** Undo for UNDO_WINDOW_MINUTES, offered on whatever ran without a Confirm press, in either mode (services/undo.ts). */
+  undo?: UndoOffer;
+};
 /** Something offered as a button (the built-in helper, and page links from either engine). */
 export type Proposal =
   | { kind: "todo"; title: string; description: string | null; dueAt: string | null; assigneeMembershipId: string | null; assigneeName: string | null; estimateMinutes: number | null }
@@ -111,11 +135,19 @@ export type Proposal =
   /**
    * A consequential action Brenda prepared; it runs only when the person presses Confirm (owner decision, 3 October 2026).
    * `detail`: the whole text it will send (a message), shown in full on the card, so every word is seen before the yes
-   * (review, 8 October 2026).
+   * (review, 8 October 2026). `why`: "Still asking: …", only when the person chose Act without asking and a safety floor
+   * kept it asking (owner decision, 8 October 2026).
    */
-  | { kind: "confirm"; token: string; summary: string; tool: string; detail?: string };
+  | { kind: "confirm"; token: string; summary: string; tool: string; detail?: string; why?: string };
 
-export type ChatResult = { reply: string; engine: "claude" | "builtin"; actions: Action[]; proposals: Proposal[]; note: string | null };
+/**
+ * `tainted`: this reply read other people's words (act without asking, 8 October 2026); the client keeps it on the
+ * message and sends it back. `act`: the person's mode as the server read it this turn (the composer's pill follows it).
+ */
+export type ChatResult = {
+  reply: string; engine: "claude" | "builtin"; actions: Action[]; proposals: Proposal[]; note: string | null;
+  tainted: boolean; act?: ActState;
+};
 
 type Role = OrgContext["membership"]["role"];
 type Page = { label: string; path: string; what: string; roles: Role[] };
@@ -199,16 +231,70 @@ type Person = { membership_id: string; display_name: string; role: string; teams
  * `shared`: she was tagged in a conversation (owner decision, 8 October 2026: personal assistants, phase 5) and runTool
  * decides, tool by tool, whether her answer may still be posted for everyone in it. `items`: what a per-item tool just
  * returned (tasks, documents or conversations), set by the tool itself, for that decision.
+ * Act without asking (owner decision, 8 October 2026): `act` is the person's mode and the turn's facts, loaded once per
+ * chat turn (absent in threads, confirm presses and tests that give none: then everything asks as before). `auto`: this
+ * confirm-mode run is Boredroom pressing Confirm for the person (runWithoutAsking), so done() marks the log row and offers
+ * Undo. `othersWords`: a tool returned free text someone else wrote (a task's comments, someone's document); it keeps
+ * auto from acting for the rest of the turn but, unlike `tainted`, refuses nothing (ask mode is unchanged).
+ * `autoLogged` counts refusals runWithoutAsking already logged, so the chat loop does not log them twice.
  */
 type ToolCtx = {
   ctx: OrgContext; base: string; actions: Action[]; proposals: Proposal[]; people: Person[]; mode: "chat" | "confirm"; tainted: boolean; requestId: string; box?: Promise<Inbox>; followUpStart?: boolean;
   shared?: SharedScope; items?: { kind: "task" | "doc" | "conversation"; ids: string[] };
+  act?: ActContext | null; auto?: boolean; othersWords?: boolean; autoLogged?: number;
 };
 /** The person's inbox, read once per turn (or Confirm) and shared by every Messages tool in it (review, 8 October 2026). */
 const inboxFor = (t: ToolCtx) => {
   if (!t.box) { t.box = inbox(t.ctx); t.box.catch(() => { t.box = undefined; }); }
   return t.box;
 };
+
+/**
+ * Floor (a), widened (review, 8 October 2026): free text someone else could have written, beyond who made the thing.
+ * `editedByOthers`: the ids, among `ids`, whose words (a task's title or details, a document) someone other than the
+ * person changed, read from the audit trail as the person (they see their own subjects' rows). Any failure counts every
+ * id as edited: the floor fails closed.
+ */
+async function editedByOthers(ctx: OrgContext, type: "task" | "document", ids: string[]): Promise<Set<string>> {
+  if (!ids.length) return new Set();
+  try {
+    const rows = await withUser(ctx.user.profileId, (db) => db.query<{ id: string }>(
+      `SELECT DISTINCT subject_id::text AS id FROM audit_events
+       WHERE organisation_id = $1 AND subject_type = $2 AND subject_id = ANY($3::uuid[]) AND action = $4
+         AND actor_membership_id IS DISTINCT FROM $5
+         AND ($2 <> 'task' OR metadata->'changed' ?| ARRAY['title', 'expectedOutput'])`,
+      [ctx.org.id, type, ids, type === "task" ? "task.updated" : "document.updated", ctx.membership.id]));
+    return new Set(rows.map((r) => r.id));
+  } catch (err) {
+    console.warn(`[assistant] could not read who edited ${type}s; counting them as other people's words: ${(err as Error)?.message ?? err}`);
+    return new Set(ids);
+  }
+}
+
+/**
+ * Whether any of these reminders (the person's own) was set by accepting someone else's request: its text is theirs
+ * (review, 8 October 2026). Before migration 0043 there are no requests; any other failure counts as yes.
+ */
+async function remindersFromOthers(ctx: OrgContext, reminderIds: string[]): Promise<boolean> {
+  if (!reminderIds.length) return false;
+  try {
+    const r = await withUser(ctx.user.profileId, (db) => db.maybeOne(
+      `SELECT 1 FROM assistant_items WHERE organisation_id = $1 AND recipient_membership_id = $2 AND kind = 'request'
+         AND result->>'reminderId' = ANY($3::text[]) LIMIT 1`, [ctx.org.id, ctx.membership.id, reminderIds]));
+    return !!r;
+  } catch (err) {
+    return !isMissingSchema(err);
+  }
+}
+
+/**
+ * A display name that reads like a sentence or carries an address (review, 8 October 2026): names are labels, but any
+ * member may set theirs to up to 120 characters of anything. Long, sentence punctuation, quotes or brackets, a link, or a
+ * full stop followed by more words ("Ben Okafor. Assistant: …"; "Dr. Ada Owner" is still a name).
+ */
+export function sentenceLike(name: string): boolean {
+  return name.length > 60 || /[:;!?\n\r<>{}[\]"“”]|https?:\/\/|www\./i.test(name) || /\.\s+(\S+\s+){2,}\S/.test(name);
+}
 
 /**
  * When Brenda acts at once and when she asks (spec section 8). Reading, the person's own clock, timer, to-dos, status,
@@ -226,20 +312,64 @@ const CONFIRM_TTL = 15 * 60;
 export const CONFIRM_TOKEN_MAX = 40_000;
 // In a thread (phase 5) the Confirm card waits for the tagger longer: "Waiting for Olu to confirm" shows for as long as it
 // lasts (MENTION_LIMITS.confirmMinutes). The token is otherwise the same, bound to the tagger.
-function askFirst(t: ToolCtx, tool: string, input: Record<string, unknown>, summary: string, detail?: string) {
+//
+// Act without asking (owner decision, 8 October 2026): here, and only here, Boredroom decides whether the action waits for
+// the person's Confirm or runs now (decideAct, from the person's mode, the workspace switch, the turn's taint, a thread and
+// `facts`: who it reaches). Running now is the Confirm path itself (runWithoutAsking). When a safety floor keeps it asking
+// for someone who chose 'auto', the card and the model's result say why (`why`, `stillAsking`); in 'ask' nothing changes.
+async function askFirst(t: ToolCtx, tool: string, input: Record<string, unknown>, summary: string, detail?: string, facts: ActFacts = {}) {
+  const d = decideAct(tool, facts, { act: t.act, tainted: t.tainted, othersWords: t.othersWords, shared: !!t.shared });
+  if (d.act) return runWithoutAsking(t, tool, input, summary);
   const p = prepareConfirm(t.ctx, tool, input, summary, detail, { thread: !!t.shared });
   if ("error" in p) return p;
-  t.proposals.push(p);
-  return { needsConfirmation: true, summary, note: "Not done yet. A Confirm button is shown to the person; tell them what will happen and that it runs when they confirm." };
+  const people = typeof facts.audience === "object" ? facts.audience.channel ?? undefined : undefined;
+  const why = d.reason && t.act ? whyStillAsking(d.reason, { name: t.act.assistantName, people }) : undefined;
+  t.proposals.push(why ? { ...p, why } : p);
+  return { needsConfirmation: true, summary, ...(why ? { stillAsking: why } : {}), note: "Not done yet. A Confirm button is shown to the person; tell them what will happen and that it runs when they confirm." };
+}
+
+/**
+ * The Confirm the person would have pressed, pressed by Boredroom (owner decision, 8 October 2026: act without asking):
+ * the same signed token (with a nonce, so two identical requests are two actions and each still runs once), the same
+ * confirmAction with its checks and idempotency claim, the same tool branch, the same audit; the log row is marked
+ * `auto` (done()). A refusal comes back as the tool's error, already logged (`autoLogged`).
+ */
+async function runWithoutAsking(t: ToolCtx, tool: string, input: Record<string, unknown>, summary: string) {
+  const p = prepareConfirm(t.ctx, tool, input, summary, undefined, { thread: false, nonce: true });
+  if ("error" in p) return p;
+  const logged = () => { t.autoLogged = (t.autoLogged ?? 0) + 1; };
+  let r: { actions: Action[]; error: string | null };
+  try { r = await confirmAction(t.ctx, p.token, { start: t.followUpStart, auto: true }); }
+  catch (err) {
+    // confirmAction logs what a tool returned as an error; what it threw is logged here, marked the same way.
+    const refused = err instanceof AppError && (err.status < 500 || err.status === 503);
+    logged();
+    void recordProblem(t.ctx, tool, refused ? "refused" : "failed", (err as { message?: string })?.message ?? String(err), input, "chat", { auto: true });
+    if (refused) return { error: (err as AppError).message };
+    throw err;
+  }
+  if (r.error) {
+    logged();
+    // What ran before the failure is kept, with its done lines and Undo (review, 8 October 2026).
+    if (r.actions.length) { t.actions.push(...r.actions); return { error: r.error, partlyDone: r.actions.map((a) => a.summary).join("; ") }; }
+    return { error: r.error };
+  }
+  t.actions.push(...r.actions);
+  return {
+    done: true, summary: r.actions.map((a) => a.summary).join("; ") || summary, withoutAsking: true,
+    // Said only when it is true: a follow-up that was already open, for one, has nothing new to undo.
+    ...(r.actions.some((a) => a.undo) ? { undo: `The person can undo this for ${UNDO_WINDOW_MINUTES} minutes.` } : {}),
+  };
 }
 
 /**
  * A Confirm card for `tool` with `input`, signed for the person (the same token askFirst makes), for a caller outside a
  * chat turn: someone else's assistant tagged in a thread prepares the tagger's hand_over_request card this way (owner
  * decision, 8 October 2026: personal assistants, phase 6). `thread`: it waits as long as a mention's Confirm does.
+ * `nonce` (act without asking, 8 October 2026): the token carries a random `n`, so a request made twice is claimed twice.
  */
-export function prepareConfirm(ctx: OrgContext, tool: string, input: Record<string, unknown>, summary: string, detail: string | undefined, opts: { thread: boolean }): ConfirmProposal | { error: string } {
-  const token = signPayload({ k: "brenda", o: ctx.org.id, m: ctx.membership.id, tool, input }, opts.thread ? MENTION_LIMITS.confirmMinutes * 60 : CONFIRM_TTL);
+export function prepareConfirm(ctx: OrgContext, tool: string, input: Record<string, unknown>, summary: string, detail: string | undefined, opts: { thread: boolean; nonce?: boolean }): ConfirmProposal | { error: string } {
+  const token = signPayload({ k: "brenda", o: ctx.org.id, m: ctx.membership.id, tool, input, ...(opts.nonce ? { n: randomToken(8) } : {}) }, opts.thread ? MENTION_LIMITS.confirmMinutes * 60 : CONFIRM_TTL);
   if (token.length > CONFIRM_TOKEN_MAX) return { error: "That is too long to prepare for a Confirm button. Make it shorter, or do it on the page itself (offer the link)." };
   return { kind: "confirm", token, summary, tool, ...(detail ? { detail } : {}) };
 }
@@ -338,6 +468,72 @@ function taskChanges(input: Record<string, unknown>, timeZone: string): { patch:
   return { patch, changes };
 }
 
+// ---- Undo: what each action records (owner decision, 8 October 2026: act without asking) -------------------------------
+// Whatever runs without a Confirm press carries an Undo for UNDO_WINDOW_MINUTES (services/undo.ts runs it, as the person,
+// once). These read what Undo needs to put back, before the action; a read that fails only means no Undo button.
+
+/**
+ * The line's Undo offer; null (no button) when it cannot be signed. It never fails an action that already ran. `auto`:
+ * it ran without asking, so the Undo's own log row is marked the same way.
+ */
+function offerUndo(ctx: OrgContext, spec: UndoSpec, label: string, auto: boolean): UndoOffer | null {
+  try { return undoOffer(ctx, spec, clamp(label, 300), auto ? { auto: true } : {}); }
+  catch (err) { console.warn(`[assistant] undo offer failed: ${(err as Error)?.message ?? err}`); return null; }
+}
+
+/** update_task's row as it was: the fields Undo can put back. */
+type TaskRowBefore = {
+  version: number; title: string; assignee_membership_id: string; expected_output: string | null; due_at: string | null; estimate_minutes: number | null;
+  priority: string; status: string; blocked_reason: string | null; progress_percent: number | null;
+};
+const UNDO_PRIORITIES = ["low", "normal", "high", "urgent"] as const;
+/** The statuses a task can be put back to (in review and done are reached by submitting and checking, never by Undo). */
+const UNDO_STATUSES = ["todo", "in_progress", "blocked"] as const;
+const isOneOf = <T extends string>(xs: readonly T[], v: unknown): v is T => typeof v === "string" && (xs as readonly string[]).includes(v);
+
+/** The old value of each field the patch touched (status with its reason); null when any of them cannot be put back. */
+function taskBefore(row: TaskRowBefore, patch: Record<string, unknown>): TaskBefore | null {
+  const before: TaskBefore = {};
+  if ("title" in patch) before.title = row.title;
+  if ("expectedOutput" in patch) { if (!row.expected_output?.trim()) return null; before.expectedOutput = row.expected_output; }
+  if ("dueAt" in patch) before.dueAt = row.due_at;
+  if ("estimateMinutes" in patch) before.estimateMinutes = row.estimate_minutes;
+  if ("priority" in patch) { if (!isOneOf(UNDO_PRIORITIES, row.priority)) return null; before.priority = row.priority; }
+  if ("status" in patch) { if (!isOneOf(UNDO_STATUSES, row.status)) return null; before.status = row.status; before.reason = row.blocked_reason; }
+  if ("progressPercent" in patch) before.progressPercent = row.progress_percent ?? 0;
+  return Object.keys(before).length ? before : null;
+}
+
+/** The person's status before set_status changes it. */
+async function presenceOf(ctx: OrgContext): Promise<Presence | null> {
+  try {
+    const r = await withUser(ctx.user.profileId, (db) => db.maybeOne<{ presence: string }>(`SELECT presence FROM profiles WHERE id = $1`, [ctx.user.profileId]));
+    const v = r?.presence;
+    return isPresence(v) ? v : null;
+  } catch (err) { console.warn(`[assistant] status before the change unavailable: ${(err as Error)?.message ?? err}`); return null; }
+}
+
+/** Today's list before plan_day replaces it, first to last. */
+async function planOf(ctx: OrgContext, localDate: string): Promise<string[] | null> {
+  try {
+    const rows = await withUser(ctx.user.profileId, (db) => db.query<{ task_id: string }>(
+      `SELECT task_id FROM daily_plan_items WHERE membership_id = $1 AND local_date = $2 ORDER BY position`, [ctx.membership.id, localDate]));
+    return rows.map((r) => r.task_id);
+  } catch (err) { console.warn(`[assistant] today's list before the change unavailable: ${(err as Error)?.message ?? err}`); return null; }
+}
+
+/**
+ * How many people read a named channel, the person included, asked as the person (app_conversation_readers, migration
+ * 0041). Null when it cannot be known (before 0041, or a failure): the message then asks (act without asking, 8 October
+ * 2026: a small group acts, a large or unknown one asks).
+ */
+async function readersOf(ctx: OrgContext, conversationId: string): Promise<number | null> {
+  try {
+    const r = await withUser(ctx.user.profileId, (db) => db.one<{ n: number }>(`SELECT count(*)::int AS n FROM app_conversation_readers($1)`, [conversationId]));
+    return r.n >= 1 ? r.n : null;
+  } catch (err) { console.warn(`[assistant] channel readers unavailable: ${(err as Error)?.message ?? err}`); return null; }
+}
+
 // ---- Other people's assistants: small helpers (owner decision, 8 October 2026: personal assistants, phase 6) -------------
 
 const RESPOND_ACTIONS = ["accept", "decline", "reply", "seen", "cancel", "withdraw"] as const;
@@ -417,7 +613,7 @@ async function runTool(t: ToolCtx, name: string, input: Record<string, unknown>)
     const words = await describeSharedAction(t, name, input);
     if ("error" in words) return { error: words.error };
     const before = t.proposals.length;
-    const prepared = askFirst(t, name, input, words.summary, words.detail);
+    const prepared = await askFirst(t, name, input, words.summary, words.detail);
     if (t.proposals.length > before) narrow("proposal");
     return prepared;
   }
@@ -478,14 +674,29 @@ async function runToolInner(t: ToolCtx, name: string, input: Record<string, unkn
    */
   const conversationNames = async () => { t.tainted = true; return (await listCatchUp(ctx, { limit: 50, box: inboxFor(t) })).conversations.map((c) => neutralise(c.name.replace(/\s+/g, " "))).join(", ") || "none yet"; };
   /**
+   * Whatever runs without a Confirm press offers Undo (owner decision, 8 October 2026: act without asking): Boredroom
+   * pressing it for the person (`auto`), or an action that runs at once in their own chat, in either mode. A press does
+   * not (it was asked and answered), and nothing runs at once in a thread.
+   */
+  const offersUndo = !!t.auto || (t.mode === "chat" && !t.shared);
+  /**
    * A done line: `summary` is shown to the person in the chat. The log row (which owners and HR also see, in Settings →
    * Brenda) says `logged` when given, and the person's own Activity page shows `personal` (default: `summary`) from the
    * row's detail (review, 8 October 2026: who someone messages and their channel names are theirs).
+   * Act without asking (owner decision, 8 October 2026): run by Boredroom for the person (`t.auto`), the row is 'done' from
+   * the chat, marked `detail.auto` (nobody pressed Confirm; the person asked in their chat), and the line says so. `undo`:
+   * what Undo needs, signed into the line's offer when it ran without a press.
    */
-  const done = (kind: string, summary: string, href?: string, o: { logged?: string; personal?: string; followUpBatchId?: string; assistantItemId?: string } = {}) => {
-    t.actions.push({ kind, summary, href, ...(o.followUpBatchId ? { followUpBatchId: o.followUpBatchId } : {}), ...(o.assistantItemId ? { assistantItemId: o.assistantItemId } : {}) });
+  const done = (kind: string, summary: string, href?: string, o: { logged?: string; personal?: string; followUpBatchId?: string; assistantItemId?: string; undo?: UndoSpec | null } = {}) => {
+    const auto = !!t.auto;
+    const undo = o.undo && offersUndo ? offerUndo(ctx, o.undo, summary, auto) : null;
+    t.actions.push({
+      kind, summary, href, ...(o.followUpBatchId ? { followUpBatchId: o.followUpBatchId } : {}), ...(o.assistantItemId ? { assistantItemId: o.assistantItemId } : {}),
+      ...(auto ? { auto: true as const } : {}), ...(undo ? { undo } : {}),
+    });
     const personal = o.personal ?? (o.logged ? summary : undefined);
-    void recordAction(ctx, { tool: name, summary: o.logged ?? summary, outcome: t.mode === "confirm" ? "confirmed" : "done", source: t.mode === "confirm" ? "confirm" : "chat", detail: { href, ...(personal ? { personalSummary: personal } : {}) } });
+    const pressed = t.mode === "confirm" && !auto;
+    void recordAction(ctx, { tool: name, summary: o.logged ?? summary, outcome: pressed ? "confirmed" : "done", source: pressed ? "confirm" : "chat", detail: { href, ...(personal ? { personalSummary: personal } : {}), ...(auto ? { auto: true } : {}) } });
     return { done: true, summary };
   };
   const confirmMode = t.mode === "confirm";
@@ -509,6 +720,9 @@ async function runToolInner(t: ToolCtx, name: string, input: Record<string, unkn
     }
     case "list_people": {
       const ps = await people();
+      // A display name is free text its owner chose (review, 8 October 2026): one that reads like a sentence or carries an
+      // address is other people's words in context, so nothing acts without asking for the rest of the turn.
+      if (ps.some((p) => p.membership_id !== ctx.membership.id && sentenceLike(p.display_name))) t.othersWords = true;
       return { you: { membershipId: ctx.membership.id, name: ctx.user.displayName, role }, people: ps.map((p) => ({ membershipId: p.membership_id, name: p.display_name, role: p.role, teams: p.teams })) };
     }
     case "list_tasks": {
@@ -519,6 +733,7 @@ async function runToolInner(t: ToolCtx, name: string, input: Record<string, unkn
     }
     case "search": {
       const r = await searchWorkspace(ctx, String(input.q ?? "").slice(0, 120) || " ");
+      if (r.hits.some((h) => h.kind === "person" && sentenceLike(h.title))) t.othersWords = true;
       // In a thread only the task hits are checked: people, teams and projects are seen by every member.
       t.items = { kind: "task", ids: r.hits.filter((h) => h.kind === "task").map((h) => h.id) };
       return { hits: r.hits.map((h) => ({ kind: h.kind, id: h.id, title: h.title, hint: h.hint, href: h.href.replace(base, "") })) };
@@ -600,7 +815,7 @@ async function runToolInner(t: ToolCtx, name: string, input: Record<string, unkn
       if (!confirmMode) return askFirst(t, name, { conversationIds: found.map((c) => c.id) }, `Mark ${label} as read`);
       for (const c of found) await setConversationPrefs(ctx, c.id, { unread: false });
       // Owners and HR see that she marked some conversations as read, never which (review, 8 October 2026).
-      return done("mark_read", `Marked ${label} as read`, `${base}/messages`, { logged: `Marked ${plural(found.length, "conversation")} as read` });
+      return done("mark_read", `Marked ${label} as read`, `${base}/messages`, { logged: `Marked ${plural(found.length, "conversation")} as read`, undo: { kind: "conversations_read", conversationIds: found.map((c) => c.id) } });
     }
     // ---- Follow-ups between assistants (owner decision, 8 October 2026: personal assistants, phase 4) ----
     // Who may be asked, about which task, and every limit are decided by the follow-ups service, as the person, at both
@@ -632,7 +847,7 @@ async function runToolInner(t: ToolCtx, name: string, input: Record<string, unkn
         const logged = asked.length === 1 ? "Asked a colleague's assistant for an update" : `Asked ${asked.length} colleagues' assistants for updates`;
         // Nothing new was made (the same follow-up was already open): its own page, and no new status card.
         if (!r.created.length) return { ...done("follow_up", `${summary.replace(/^Asked/, "Already asking")}`, `${base}/home/follow-ups/${r.reused[0].id}`, { logged, personal: summary }), ...(notAsked ? { notAsked } : {}) };
-        return { ...done("follow_up", summary, `${base}/home/follow-ups?batch=${r.batchId}`, { logged, personal: summary, followUpBatchId: r.batchId }), ...(notAsked ? { notAsked } : {}) };
+        return { ...done("follow_up", summary, `${base}/home/follow-ups?batch=${r.batchId}`, { logged, personal: summary, followUpBatchId: r.batchId, undo: { kind: "follow_up_asked", batchId: r.batchId, followUpIds: r.created.map((c) => c.id) } }), ...(notAsked ? { notAsked } : {}) };
       }
       const people = Array.isArray(input.people) ? (input.people as unknown[]).filter((x): x is string => typeof x === "string" && !!x.trim()).map((x) => x.trim().slice(0, 120)).slice(0, FOLLOW_UP_LIMITS.batchMax * 2) : [];
       const team = typeof input.team === "string" && input.team.trim() ? input.team.trim().slice(0, 120) : null;
@@ -656,11 +871,13 @@ async function runToolInner(t: ToolCtx, name: string, input: Record<string, unkn
       // Names in alphabetical order, so the same ask always reads the same.
       const names = subjects.map((x) => x.name).sort((x, y) => x.localeCompare(y, "en-GB"));
       const detail = [`Question: “${plan.question}”`, `People: ${names.join(", ")}`, ...(skippedWords ? [`Not asked: ${skippedWords}`] : [])].join("\n");
-      const prepared = askFirst(t, name, {
+      const prepared = await askFirst(t, name, {
         subjectMembershipIds: subjects.map((x) => x.membershipId), teamId: plan.team?.id ?? null, taskId: plan.task?.id ?? null, question: plan.question,
         // For the done line's words only; the ids above are what is checked and created.
         taskTitle: plan.task?.title ?? null, teamName: plan.team?.name ?? null,
-      }, summary, detail);
+      // A team named ("my team", a team name) is a team follow-up whether or not it came down to one team (review, 8 October
+      // 2026: a lead of two teams saying "my team" has no single plan.team, and it must still ask).
+      }, summary, detail, { followUp: { people: subjects.length, team: !!team || !!plan.team } });
       return { ...prepared, people: names, skipped: plan.skipped, task: plan.task?.title ?? null, team: plan.team?.name ?? null };
     }
     case "follow_up_status": {
@@ -698,7 +915,7 @@ async function runToolInner(t: ToolCtx, name: string, input: Record<string, unkn
         if ("error" in sent) return sent;
         const v = sent.ok;
         const who = recipientWords(v);
-        return { ...done("assistant_message", `Passed your message to ${who}`, `${base}/home/assistants/items/${v.id}`, { logged: "Passed a message to a colleague's assistant", personal: `Passed a message to ${who}`, assistantItemId: v.id }), itemId: v.id };
+        return { ...done("assistant_message", `Passed your message to ${who}`, `${base}/home/assistants/items/${v.id}`, { logged: "Passed a message to a colleague's assistant", personal: `Passed a message to ${who}`, assistantItemId: v.id, undo: { kind: "assistant_message", itemId: v.id } }), itemId: v.id };
       }
       const to = String(input.to ?? "").trim().slice(0, 200), body = String(input.body ?? "").trim();
       if (!to || !body) return { error: "to and body are required: who it is for, and the person's words." };
@@ -707,7 +924,7 @@ async function runToolInner(t: ToolCtx, name: string, input: Record<string, unkn
       const r = plan.recipient;
       const tidied = input.tidied === true;
       // The card shows exactly what is delivered (detail), every word of it, before the yes.
-      const prepared = askFirst(t, name, { recipientMembershipId: r.membershipId, body: plan.body, tidied, origin: originOfThread(t) },
+      const prepared = await askFirst(t, name, { recipientMembershipId: r.membershipId, body: plan.body, tidied, origin: originOfThread(t) },
         `Pass this to ${r.firstName}'s ${r.assistant.name}? ${r.firstName} gets it as your message.${tidied ? " It's reworded as you asked." : ""}`, plan.body);
       return { ...prepared, to: { name: r.name, firstName: r.firstName, assistantName: r.assistant.name } };
     }
@@ -724,7 +941,7 @@ async function runToolInner(t: ToolCtx, name: string, input: Record<string, unkn
         if ("error" in sent) return sent;
         const v = sent.ok;
         const words = `Asked ${v.recipient?.firstName ?? "them"} to accept: ${v.request?.summary ?? "a change"}`;
-        return { ...done("assistant_request", words, `${base}/home/assistants/items/${v.id}`, { logged: "Sent a request to a colleague's assistant", personal: words, assistantItemId: v.id }), itemId: v.id };
+        return { ...done("assistant_request", words, `${base}/home/assistants/items/${v.id}`, { logged: "Sent a request to a colleague's assistant", personal: words, assistantItemId: v.id, undo: { kind: "assistant_request", itemId: v.id } }), itemId: v.id };
       }
       const to = String(input.to ?? "").trim().slice(0, 200);
       const kind = (REQUEST_KINDS as readonly string[]).includes(String(input.kind)) ? (input.kind as RequestKind) : null;
@@ -736,7 +953,7 @@ async function runToolInner(t: ToolCtx, name: string, input: Record<string, unkn
       if (!plan.ok) return { error: plan.code === "not_ready" ? ASSISTANT_TALK_NOT_READY : neutralise(plan.error) };
       const r = plan.recipient;
       const detail = [...plan.lines, ...(plan.note ? [`Your note: “${plan.note}”`] : [])].join("\n");
-      const prepared = askFirst(t, name, { recipientMembershipId: r.membershipId, payload: plan.payload, note: plan.note, origin: originOfThread(t) },
+      const prepared = await askFirst(t, name, { recipientMembershipId: r.membershipId, payload: plan.payload, note: plan.note, origin: originOfThread(t) },
         `Ask ${r.firstName} to accept: ${plan.summary}? Nothing changes until ${r.firstName} accepts.`, detail || undefined);
       return { ...prepared, to: { name: r.name, firstName: r.firstName, assistantName: r.assistant.name }, request: plan.summary };
     }
@@ -747,13 +964,13 @@ async function runToolInner(t: ToolCtx, name: string, input: Record<string, unkn
         if (!body) return { error: "That note could not be read. Ask again." };
         const sent = await refusedOr(() => items.sendAssistantItem(ctx, { kind: "report_note", body }));
         if ("error" in sent) return sent;
-        return { ...done("assistant_report_note", "Added your note to today's team report", `${base}/home/assistants/items/${sent.ok.id}`, { logged: "Added a note to the team report", assistantItemId: sent.ok.id }), itemId: sent.ok.id };
+        return { ...done("assistant_report_note", "Added your note to today's team report", `${base}/home/assistants/items/${sent.ok.id}`, { logged: "Added a note to the team report", assistantItemId: sent.ok.id, undo: { kind: "report_note", itemId: sent.ok.id } }), itemId: sent.ok.id };
       }
       const body = String(input.body ?? "").trim();
       if (!body) return { error: "body is required: the note, in the person's own words." };
       const plan = await items.planReportNote(ctx, { body });
       if (!plan.ok) return { error: plan.code === "not_ready" ? ASSISTANT_TALK_NOT_READY : neutralise(plan.error) };
-      const prepared = askFirst(t, name, { body: plan.body },
+      const prepared = await askFirst(t, name, { body: plan.body },
         `Add this note to today's team report? The people who receive it read it at ${plan.reportTime}, or sooner if they ask for the report early, from you. You can withdraw it until a report with it is written.`, plan.body);
       return { ...prepared, reportTime: plan.reportTime };
     }
@@ -796,8 +1013,6 @@ async function runToolInner(t: ToolCtx, name: string, input: Record<string, unkn
       if (!confirmMode) {
         const refusal = respondRefusal(action, v);
         if (refusal) return { error: refusal };
-        // The card quotes what others wrote (the request, its task): from here nothing runs on its own.
-        if (v.viewer === "recipient") t.tainted = true;
         const mine = v.recipient?.assistant.name ?? "Your assistant";
         const words: Record<RespondAction, string> = {
           accept: `Accept ${first}'s request: ${summary}? ${mine} does it for you, as you.`,
@@ -814,7 +1029,12 @@ async function runToolInner(t: ToolCtx, name: string, input: Record<string, unkn
           ? [...v.request.lines, ...(v.body ? [`${first}'s note: “${v.body}”`] : [])].join("\n")
           : "";
         const detail = action === "accept" ? acceptDetail : action === "reply" || action === "decline" ? text : "";
-        return askFirst(t, name, { itemId: id, action, ...(text ? { text } : {}) }, words[action], detail || undefined);
+        // Always a Confirm (an answer to someone else, or what can't be undone); its card says which when the person chose
+        // Act without asking (8 October 2026), so the turn is tainted only after it is prepared.
+        const prepared = await askFirst(t, name, { itemId: id, action, ...(text ? { text } : {}) }, words[action], detail || undefined, { respond: action });
+        // The card quotes what others wrote (the request, its task): from here nothing runs on its own.
+        if (v.viewer === "recipient") t.tainted = true;
+        return prepared;
       }
       const runs: Record<RespondAction, () => Promise<AssistantItemView>> = {
         accept: () => items.acceptItem(ctx, id), decline: () => items.declineItem(ctx, id, text || null), reply: () => items.replyToItem(ctx, id, text),
@@ -838,7 +1058,12 @@ async function runToolInner(t: ToolCtx, name: string, input: Record<string, unkn
         default: return done("assistant_respond", "Withdrew your note from today's team report", href, { logged: "Withdrew a note from the team report", assistantItemId: id });
       }
     }
-    case "get_briefing": return briefing(ctx);
+    case "get_briefing": {
+      const b = await briefing(ctx);
+      // A reminder someone else's accepted request set is in their words (review, 8 October 2026).
+      if (await remindersFromOthers(ctx, b.remindersToday.map((r) => r.id))) t.othersWords = true;
+      return b;
+    }
     case "get_task": {
       const taskId = uuid(input.taskId); if (!taskId) return { error: "taskId must be a task id." };
       const { taskDetail } = await import("@/server/services/views");
@@ -846,7 +1071,14 @@ async function runToolInner(t: ToolCtx, name: string, input: Record<string, unkn
       if (!d) return { error: "That task is not visible to you." };
       const x = d.task;
       t.items = { kind: "task", ids: [x.id] };
-      return { id: x.id, title: x.title, details: x.expected_output, status: x.status, priority: x.priority, project: x.project_name, assignee: x.assignee_name, assigneeMembershipId: x.assignee_membership_id, reviewer: x.reviewer_name, createdBy: x.created_by_name, due: x.due_at, estimateMinutes: x.estimate_minutes, trackedSeconds: x.tracked_seconds, progressPercent: x.progress_percent, blockedReason: x.blocked_reason, comments: d.comments.slice(-6).map((c) => ({ by: c.author_name, at: c.created_at, body: c.body })), history: d.history.slice(-6).map((h) => ({ from: h.from_status, to: h.to_status, by: h.actor_name, at: h.occurred_at, reason: h.reason })) };
+      const comments = d.comments.slice(-6), history = d.history.slice(-6);
+      // Act without asking (8 October 2026): a task someone else wrote, or its comments and status reasons, are other
+      // people's words in context, so nothing acts without asking for the rest of the turn (nothing is refused).
+      // Review, 8 October 2026: the assignee, the reviewer and managers may rewrite the title and details, so a task anyone
+      // else holds, checks or made counts, and so does the person's own when someone else edited its words since.
+      const mine = x.created_by === ctx.membership.id && x.assignee_membership_id === ctx.membership.id && (!x.reviewer_membership_id || x.reviewer_membership_id === ctx.membership.id);
+      if (!mine || comments.length || (x.blocked_reason ?? "").trim() || history.some((h) => (h.reason ?? "").trim()) || (await editedByOthers(ctx, "task", [x.id])).size) t.othersWords = true;
+      return { id: x.id, title: x.title, details: x.expected_output, status: x.status, priority: x.priority, project: x.project_name, assignee: x.assignee_name, assigneeMembershipId: x.assignee_membership_id, reviewer: x.reviewer_name, createdBy: x.created_by_name, due: x.due_at, estimateMinutes: x.estimate_minutes, trackedSeconds: x.tracked_seconds, progressPercent: x.progress_percent, blockedReason: x.blocked_reason, comments: comments.map((c) => ({ by: c.author_name, at: c.created_at, body: c.body })), history: history.map((h) => ({ from: h.from_status, to: h.to_status, by: h.actor_name, at: h.occurred_at, reason: h.reason })) };
     }
     case "create_todos": {
       const items = Array.isArray(input.items) ? (input.items as Record<string, unknown>[]).slice(0, 15) : [];
@@ -869,37 +1101,48 @@ async function runToolInner(t: ToolCtx, name: string, input: Record<string, unkn
       if (!plan.length) return { error: "Give each to-do a title." };
       const forOthers = plan.filter((p) => p.person);
       if (forOthers.length && !confirmMode) {
-        return askFirst(t, name, input, plan.length === 1 ? `Create “${plan[0].title}” for ${plan[0].person?.display_name ?? "you"}${plan[0].due ? `, due ${new Date(plan[0].due).toLocaleString("en-GB", { timeZone: ctx.org.timezone, weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}` : ""}` : `Create ${plan.length} tasks: ${plan.map((p) => `${p.title}${p.person ? ` (${p.person.display_name})` : ""}`).join("; ")}`);
+        // How many different people get one: more than FOLLOW_UP_AUTO_MAX at once is a fan-out (review, 8 October 2026).
+        const others = new Set(forOthers.map((p) => p.person?.id).filter((x) => x && x !== ctx.membership.id)).size;
+        return askFirst(t, name, input, plan.length === 1 ? `Create “${plan[0].title}” for ${plan[0].person?.display_name ?? "you"}${plan[0].due ? `, due ${new Date(plan[0].due).toLocaleString("en-GB", { timeZone: ctx.org.timezone, weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}` : ""}` : `Create ${plan.length} tasks: ${plan.map((p) => `${p.title}${p.person ? ` (${p.person.display_name})` : ""}`).join("; ")}`, undefined, { todos: { people: others } });
       }
       const created: { id: string; title: string; assignee: string | null }[] = [];
       for (const p of plan) {
-        const r = await quickTodo(ctx, { title: p.title, description: p.description, dueAt: p.due, assigneeMembershipId: p.person?.id ?? null, estimateMinutes: p.est });
-        const id = (r as { id?: string }).id ?? "";
+        const r = await quickTodo(ctx, { title: p.title, description: p.description, dueAt: p.due, assigneeMembershipId: p.person?.id ?? null, estimateMinutes: p.est }) as { id?: string; version?: number };
+        const id = r.id ?? "";
         created.push({ id, title: p.title, assignee: p.person?.display_name ?? null });
-        done("todo", `${p.person ? "Created" : "Added to-do"}: ${p.title}${p.person ? ` for ${p.person.display_name}` : ""}`, id ? `${base}/tasks/${id}` : undefined);
+        // Undo removes it (archived) while it is untouched (act without asking, 8 October 2026).
+        const undo: UndoSpec | null = id && typeof r.version === "number" ? { kind: "todo_created", tasks: [{ id, version: r.version }] } : null;
+        done("todo", `${p.person ? "Created" : "Added to-do"}: ${p.title}${p.person ? ` for ${p.person.display_name}` : ""}`, id ? `${base}/tasks/${id}` : undefined, { undo });
       }
       return { created };
     }
     case "assign_task": {
       const taskId = uuid(input.taskId), to = uuid(input.assigneeMembershipId);
       if (!taskId || !to) return { error: "taskId and assigneeMembershipId must be ids from list_tasks and list_people." };
-      const task = await withUser(ctx.user.profileId, (db) => db.maybeOne<{ version: number; title: string }>(`SELECT version, title FROM tasks WHERE id = $1 AND organisation_id = $2`, [taskId, ctx.org.id]));
+      const task = await withUser(ctx.user.profileId, (db) => db.maybeOne<{ version: number; title: string; assignee_membership_id: string | null }>(`SELECT version, title, assignee_membership_id FROM tasks WHERE id = $1 AND organisation_id = $2`, [taskId, ctx.org.id]));
       if (!task) return { error: "That task is not visible to you." };
       const who = (await people()).find((p) => p.membership_id === to);
       if (!confirmMode) return askFirst(t, name, input, `Assign “${task.title}” to ${who?.display_name ?? "them"}`);
-      await updateTask(ctx, taskId, { expectedVersion: task.version, assigneeMembershipId: to });
-      return done("assign", `Assigned "${task.title}" to ${who?.display_name ?? "them"}`, `${base}/tasks/${taskId}`);
+      const r = await updateTask(ctx, taskId, { expectedVersion: task.version, assigneeMembershipId: to });
+      // Undo gives it back to whoever held it (act without asking, 8 October 2026).
+      const previous = task.assignee_membership_id;
+      return done("assign", `Assigned "${task.title}" to ${who?.display_name ?? "them"}`, `${base}/tasks/${taskId}`, {
+        undo: previous && previous !== to ? { kind: "task_assigned", taskId, version: r.version, previousAssignee: previous } : null,
+      });
     }
     case "update_task": {
       const taskId = uuid(input.taskId); if (!taskId) return { error: "taskId must be a task id." };
-      const task = await withUser(ctx.user.profileId, (db) => db.maybeOne<{ version: number; title: string; assignee_membership_id: string }>(`SELECT version, title, assignee_membership_id FROM tasks WHERE id = $1 AND organisation_id = $2`, [taskId, ctx.org.id]));
+      // The fields Undo puts back are read with the version (act without asking, 8 October 2026).
+      const task = await withUser(ctx.user.profileId, (db) => db.maybeOne<TaskRowBefore>(
+        `SELECT version, title, assignee_membership_id, expected_output, due_at, estimate_minutes, priority, status, blocked_reason, progress_percent FROM tasks WHERE id = $1 AND organisation_id = $2`, [taskId, ctx.org.id]));
       if (!task) return { error: "That task is not visible to you." };
       const { patch, changes } = taskChanges(input, ctx.org.timezone);
       if (!changes.length) return { error: "Say what to change." };
       const summary = `Update “${task.title}”: ${changes.join(", ")}`;
       if (task.assignee_membership_id !== ctx.membership.id && !confirmMode) return askFirst(t, name, input, summary);
-      await updateTask(ctx, taskId, { expectedVersion: task.version, ...patch } as Parameters<typeof updateTask>[2]);
-      return done("update", summary.replace(/^Update/, "Updated"), `${base}/tasks/${taskId}`);
+      const r = await updateTask(ctx, taskId, { expectedVersion: task.version, ...patch } as Parameters<typeof updateTask>[2]);
+      const before = taskBefore(task, patch);
+      return done("update", summary.replace(/^Update/, "Updated"), `${base}/tasks/${taskId}`, { undo: before ? { kind: "task_changed", taskId, version: r.version, before } : null });
     }
     case "add_comment": {
       const taskId = uuid(input.taskId); const body = String(input.body ?? "").trim().slice(0, 4000);
@@ -921,13 +1164,18 @@ async function runToolInner(t: ToolCtx, name: string, input: Record<string, unkn
       const body = String(input.body ?? "").trim().slice(0, 500);
       if (!body || typeof input.at !== "string" || Number.isNaN(Date.parse(input.at))) return { error: "body and at (ISO 8601 with offset) are required." };
       const r = await createReminder(ctx, { body, remindAt: new Date(input.at).toISOString(), taskId: uuid(input.taskId) });
-      return done("reminder", `Reminder set for ${new Date(r.remind_at).toLocaleString("en-GB", { timeZone: ctx.org.timezone, weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}: ${body}`, `${base}/notifications`);
+      return done("reminder", `Reminder set for ${new Date(r.remind_at).toLocaleString("en-GB", { timeZone: ctx.org.timezone, weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}: ${body}`, `${base}/notifications`, { undo: { kind: "reminder_set", reminderId: r.id } });
     }
-    case "list_reminders": return { reminders: (await listReminders(ctx)).map((r) => ({ id: r.id, body: r.body, at: r.remind_at, taskId: r.task_id })) };
+    case "list_reminders": {
+      const rs = await listReminders(ctx);
+      // A reminder someone else's accepted request set is in their words (review, 8 October 2026).
+      if (await remindersFromOthers(ctx, rs.map((r) => r.id))) t.othersWords = true;
+      return { reminders: rs.map((r) => ({ id: r.id, body: r.body, at: r.remind_at, taskId: r.task_id })) };
+    }
     case "cancel_reminder": {
       const id = uuid(input.reminderId); if (!id) return { error: "reminderId must be an id from list_reminders." };
       const r = await cancelReminder(ctx, id);
-      return done("reminder_cancel", `Cancelled the reminder: ${r.body}`);
+      return done("reminder_cancel", `Cancelled the reminder: ${r.body}`, undefined, { undo: { kind: "reminder_cancelled", reminderId: id } });
     }
     case "complete_task": {
       const taskId = uuid(input.taskId);
@@ -1026,16 +1274,26 @@ async function runToolInner(t: ToolCtx, name: string, input: Record<string, unkn
         }
       }
       // Every message waits for Confirm, direct threads included (review, 8 October 2026: personal assistants, phase 3):
-      // it is marked as sent via the person's assistant "after they confirmed it", which has to be true, and nothing she
+      // it is marked as sent via the person's assistant "at their request" (review, 8 October 2026: no longer "after they confirmed it", untrue without asking), which has to be true, and nothing she
       // read in someone's message can send one on its own. Opening a direct thread waits too. The card shows the whole
-      // message (detail), never only its opening.
-      if (!confirmMode) return askFirst(t, name, { to, body, ...(taskId ? { taskId } : {}), target }, `Message ${target.label}:`, body);
+      // message (detail), never only its opening. Act without asking (owner decision, 8 October 2026): the person's own
+      // choice of 'auto' stands in for that press only for what they asked in their own untainted chat, to one person or a
+      // small group (askFirst); "via Max" stays true either way.
+      if (!confirmMode) {
+        // Who it reaches decides whether it may go without asking (act without asking, 8 October 2026): a direct thread or a
+        // named channel of at most SMALL_GROUP_MAX readers; never everyone or a team channel. Readers are counted only
+        // when it can matter, as the person; unknown asks.
+        const audience: ActFacts["audience"] = target.kind === "channel"
+          ? { channel: t.act?.state.effective === "auto" && !t.shared && target.conversationId ? await readersOf(ctx, target.conversationId) : null }
+          : target.kind;
+        return askFirst(t, name, { to, body, ...(taskId ? { taskId } : {}), target }, `Message ${target.label}:`, body, { audience });
+      }
       const conversationId = target.conversationId ?? (target.membershipId ? await openDirect(ctx, target.membershipId) : null);
       if (!conversationId) return { error: "That conversation could not be opened." };
-      await sendMessage(ctx, { conversationId, body, taskId }, { via: "assistant" });
+      const sent = await sendMessage(ctx, { conversationId, body, taskId }, { via: "assistant" });
       // Owners and HR see that she sent a message and to what kind of place; the person also sees where (review, 8 October 2026).
       const kindWords = target.kind === "everyone" ? "to everyone" : target.kind === "team" ? "to a team channel" : target.kind === "channel" ? "to a channel" : "in a direct thread";
-      return done("message", `Sent to ${target.name}: ${quote}`, `${base}/messages?c=${conversationId}`, { logged: `Sent a message ${kindWords}`, personal: `Sent a message to ${target.name}` });
+      return done("message", `Sent to ${target.name}: ${quote}`, `${base}/messages?c=${conversationId}`, { logged: `Sent a message ${kindWords}`, personal: `Sent a message to ${target.name}`, undo: { kind: "message_sent", messageId: sent.id, conversationId } });
     }
     case "create_team": {
       if (!ORG.includes(role)) return { error: "Only organisation accounts create teams." };
@@ -1062,8 +1320,10 @@ async function runToolInner(t: ToolCtx, name: string, input: Record<string, unkn
     }
     case "set_status": {
       if (!isPresence(input.presence)) return { error: "presence must be active, away, busy or offline." };
+      // Undo puts the status back as it was (act without asking, 8 October 2026): read first, only when it is offered.
+      const previous = offersUndo ? await presenceOf(ctx) : null;
       await setMyPresence(ctx.user, input.presence);
-      return done("status", `Status set to ${input.presence === "busy" ? "do not disturb" : input.presence}`);
+      return done("status", `Status set to ${input.presence === "busy" ? "do not disturb" : input.presence}`, undefined, { undo: previous && previous !== input.presence ? { kind: "status_set", previous, set: input.presence } : null });
     }
     case "plan_day": {
       if (!WORKERS.includes(role)) return { error: "Organisation accounts have no day plan." };
@@ -1074,13 +1334,21 @@ async function runToolInner(t: ToolCtx, name: string, input: Record<string, unkn
       const titles = new Map(own.map((x) => [x.id, x.title]));
       const order = ids.filter((id) => titles.has(id));
       if (!order.length) return { error: "None of those are the person's open tasks." };
-      await setDailyPlan(ctx, { localDate: todayLocal(ctx.org.timezone), taskIds: order });
-      const r = done("plan", `Arranged today: ${order.map((id, i) => `${i + 1}. ${titles.get(id)}`).join("; ")}`.slice(0, 480), `${base}/todos`);
+      const localDate = todayLocal(ctx.org.timezone);
+      // Undo puts today's list back as it was (act without asking, 8 October 2026): read first, only when it is offered.
+      const previous = offersUndo ? await planOf(ctx, localDate) : null;
+      await setDailyPlan(ctx, { localDate, taskIds: order });
+      const r = done("plan", `Arranged today: ${order.map((id, i) => `${i + 1}. ${titles.get(id)}`).join("; ")}`.slice(0, 480), `${base}/todos`, { undo: previous ? { kind: "day_planned", localDate, previous, planned: order } : null });
       return { ...r, skipped: ids.length - order.length || undefined };
     }
     case "list_docs": {
       const r = await listDocs(ctx, { q: typeof input.q === "string" ? input.q : undefined, folder: typeof input.folder === "string" && input.folder.trim() ? input.folder : undefined, limit: 30 });
       t.items = { kind: "doc", ids: r.docs.map((d) => d.id) };
+      // Someone else's text in an excerpt is other people's words in context (act without asking, 8 October 2026).
+      // Review, 8 October 2026: Brenda's team reports quote colleagues' notes, and owners and HR may edit anyone's document.
+      const withText = r.docs.filter((d) => d.excerpt?.trim());
+      if (withText.some((d) => d.createdBy.membershipId !== ctx.membership.id || d.folder === REPORT_FOLDER)) t.othersWords = true;
+      else if ((await editedByOthers(ctx, "document", withText.map((d) => d.id))).size) t.othersWords = true;
       return { docs: r.docs.map((d) => ({ id: d.id, title: d.title, folder: d.folder, readBy: audience(d), by: d.createdBy.name, updated: d.updatedAt, excerpt: d.excerpt, youCanEdit: d.canEdit, path: `/docs/${d.id}` })), folders: r.folders };
     }
     case "read_doc": {
@@ -1088,6 +1356,10 @@ async function runToolInner(t: ToolCtx, name: string, input: Record<string, unkn
       const d = await getDoc(ctx, id);
       if (!d) return { error: "That document is not shared with the person, or it was archived." };
       t.items = { kind: "doc", ids: [d.id] };
+      // Someone else's document is other people's words in context (act without asking, 8 October 2026).
+      // Review, 8 October 2026: also Brenda's team reports (they quote colleagues' notes word for word) and the person's own
+      // document when someone else (owners and HR may) edited it.
+      if (d.createdBy.membershipId !== ctx.membership.id || d.folder === REPORT_FOLDER || (await editedByOthers(ctx, "document", [d.id])).size) t.othersWords = true;
       const CAP = 12_000;
       return { id: d.id, title: d.title, folder: d.folder, readBy: audience(d), by: d.createdBy.name, updated: d.updatedAt, youCanEdit: d.canEdit, path: `/docs/${d.id}`, text: d.body.slice(0, CAP), ...(d.body.length > CAP ? { truncated: `Only the first ${CAP} of ${d.body.length} characters are shown; the rest is on the page.` } : {}) };
     }
@@ -1104,11 +1376,14 @@ async function runToolInner(t: ToolCtx, name: string, input: Record<string, unkn
       const shareLater = visibility === "organisation" && !confirmMode;
       const doc = await createDoc(ctx, { title, body, folder, visibility: shareLater ? "private" : visibility, teamId: team?.id ?? null });
       const path = `/docs/${doc.id}`;
+      // Undo archives what was saved (act without asking, 8 October 2026); sharing with everyone always asks.
+      // `updatedAt`: Undo refuses once it was written in since (review, 8 October 2026).
+      const undo: UndoSpec = { kind: "doc_created", docId: doc.id, updatedAt: doc.updatedAt };
       if (shareLater) {
-        done("doc", `Saved a private draft: ${title}`, `${base}${path}`);
-        return { ...askFirst(t, "update_doc", { docId: doc.id, visibility: "organisation" }, `Share “${title}” with everyone at ${ctx.org.name}`), savedAsPrivateDraft: true, docId: doc.id, path };
+        done("doc", `Saved a private draft: ${title}`, `${base}${path}`, { undo });
+        return { ...(await askFirst(t, "update_doc", { docId: doc.id, visibility: "organisation" }, `Share “${title}” with everyone at ${ctx.org.name}`, undefined, { share: "organisation" })), savedAsPrivateDraft: true, docId: doc.id, path };
       }
-      return { ...done("doc", `Saved “${title}”${team ? ` for ${team.name}` : visibility === "organisation" ? " for everyone" : " (only you can see it)"}`, `${base}${path}`), docId: doc.id, path };
+      return { ...done("doc", `Saved “${title}”${team ? ` for ${team.name}` : visibility === "organisation" ? " for everyone" : " (only you can see it)"}`, `${base}${path}`, { undo }), docId: doc.id, path };
     }
     case "update_doc": {
       const id = uuid(input.docId); if (!id) return { error: "docId must be a document id from list_docs." };
@@ -1131,14 +1406,15 @@ async function runToolInner(t: ToolCtx, name: string, input: Record<string, unkn
       if (!changes.length) return { error: share ? `It is already ${share}.` : "Say what to change." };
       const mine = d.createdBy.membershipId === ctx.membership.id;
       const href = `${base}/docs/${id}`;
-      if (!confirmMode && !mine) return askFirst(t, name, input, `Change “${d.title}” by ${d.createdBy.name}: ${changes.join(", ")}`);
-      if (!confirmMode && vis === "organisation" && d.visibility !== "organisation") {
+      const sharing = vis === "organisation" && d.visibility !== "organisation";
+      if (!confirmMode && !mine) return askFirst(t, name, input, `Change “${d.title}” by ${d.createdBy.name}: ${changes.join(", ")}`, undefined, { someoneElsesDoc: true, ...(sharing ? { share: "organisation" as const } : {}) });
+      if (!confirmMode && sharing) {
         // The person's own edits run now; only the share with everyone waits.
         const rest = { ...patch }; delete rest.visibility; delete rest.teamId;
         const others = changes.filter((c) => c !== share);
         let alsoDone: string | undefined;
         if (others.length) { await updateDoc(ctx, id, rest); alsoDone = done("doc_update", `Updated “${d.title}”: ${others.join(", ")}`, href).summary; }
-        return { ...askFirst(t, name, { docId: id, visibility: "organisation" }, `Share “${patch.title ?? d.title}” with everyone at ${ctx.org.name}`), ...(alsoDone ? { alsoDone } : {}), path: `/docs/${id}` };
+        return { ...(await askFirst(t, name, { docId: id, visibility: "organisation" }, `Share “${patch.title ?? d.title}” with everyone at ${ctx.org.name}`, undefined, { share: "organisation" })), ...(alsoDone ? { alsoDone } : {}), path: `/docs/${id}` };
       }
       await updateDoc(ctx, id, patch);
       return { ...done("doc_update", `Updated “${d.title}”${mine ? "" : ` by ${d.createdBy.name}`}: ${changes.join(", ")}`, href), path: `/docs/${id}` };
@@ -1156,6 +1432,9 @@ async function runToolInner(t: ToolCtx, name: string, input: Record<string, unkn
         people(),
       ]);
       const s = org.schedule;
+      // The monitoring notice is free text someone else wrote (act without asking, 8 October 2026): nothing acts without
+      // asking for the rest of the turn; nothing is refused.
+      if (p.policy?.notice_text?.trim()) t.othersWords = true;
       const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
       const [sh, sm] = s.start_local.split(":").map(Number);
       const lateFrom = sh * 60 + sm + s.clock_grace_minutes;
@@ -1273,7 +1552,7 @@ function clockWords(now: Date, timeZone: string): { today: string; weekday: stri
   return { today, weekday, offset, clockNow };
 }
 
-async function chatWithClaude(ctx: OrgContext, conn: AssistantConnection, messages: { role: "user" | "assistant"; content: string }[]): Promise<ChatResult> {
+async function chatWithClaude(ctx: OrgContext, conn: AssistantConnection, messages: { role: "user" | "assistant"; content: string; tainted?: boolean }[]): Promise<ChatResult> {
   const { default: Anthropic } = await import("@anthropic-ai/sdk");
   const client = new Anthropic({ apiKey: conn.apiKey, maxRetries: 2, timeout: 90_000 });
   const role = ctx.membership.role;
@@ -1286,6 +1565,12 @@ async function chatWithClaude(ctx: OrgContext, conn: AssistantConnection, messag
   // The person's own assistant and the workspace's (owner decision, 7 October 2026: personal assistants), read alongside
   // the team; cached per request, so the shell's read is reused when there is one.
   const [team, assistants] = await Promise.all([role === "manager" ? assignableMembers(ctx) : Promise.resolve([]), assistantProfiles(ctx)]);
+  // Act without asking (owner decision, 8 October 2026): the person's mode as read with their assistant (ASK_STATE before
+  // 0045, or while someone else is signed in as them), and whether an earlier reply in what the model sees read other
+  // people's words. askFirst decides from it; the model only learns the mode from the situation, below.
+  const act: ActContext = { state: actStateOf(assistants), engine: "claude", earlierTaint: earlierTaintOf(messages.slice(-20)), assistantName: assistants.personal.name };
+  t.act = act;
+  const actLine = actSituation(act);
   // Two parts: the rules (RULES), the same for everyone and cached with the tool list, then who, when and where, which
   // changes per person and per minute (the situation, below).
   // The name the person gave their assistant goes here, in the uncached part, never in the rules: the cached prefix stays
@@ -1302,6 +1587,8 @@ async function chatWithClaude(ctx: OrgContext, conn: AssistantConnection, messag
     `Pages in this workspace for this person (paths are relative to the workspace): ${pagesFor(role).map((p) => `${p.label} (${p.path}): ${p.what}`).join("; ")}.`,
     `The workspace's paths sit under ${base}: a link in a reply uses the full path, such as [Tasks](${base}/tasks) or [the document](${base}/docs/<id>); open_page takes the relative path.`,
     role === "owner" || role === "hr" ? "Organisation accounts do not clock in, have no to-dos and no timers, and do not give reviews; they supervise, assign, message, create teams and invite people." : role === "manager" ? `The person is a team lead and may add to-dos for these team members: ${team.map((p) => p.display_name).join(", ") || "nobody yet"}; they may also assign existing tasks to them.` : "The person is staff: every to-do is their own; they cannot see other people's activity or assign work.",
+    // Only when the person chose Act without asking and it is in force; never in the cached rules.
+    ...(actLine ? [actLine] : []),
   ].join("\n");
   const system = [
     { type: "text" as const, text: RULES, cache_control: { type: "ephemeral" as const } },
@@ -1314,9 +1601,18 @@ async function chatWithClaude(ctx: OrgContext, conn: AssistantConnection, messag
   // (open_page needs no answer back, so the loop ends there without another call). Text written alongside other tool
   // calls is usually a preamble ("I'll find that task first") and is kept only as a fallback.
   let reply = "", fallback = "";
+  // Review, 8 October 2026: when the model fails after something already ran (without asking, or at once) or a Confirm was
+  // prepared, the turn ends here with what it did: the done lines (and Undo) and the cards are never dropped for the
+  // built-in helper's answer, which could offer the same thing again.
+  let cutShort: unknown = null;
   for (let step = 0; step < 10; step++) {
     const t0 = Date.now();
-    const res = await client.messages.create({ model: conn.model, max_tokens: 8000, system, tools: TOOLS, messages: thread });
+    const res = await client.messages.create({ model: conn.model, max_tokens: 8000, system, tools: TOOLS, messages: thread }).catch((err: unknown) => {
+      if (!t.actions.length && !t.proposals.length) throw err;
+      cutShort = err;
+      return null;
+    });
+    if (!res) break;
     // Every model call is one row in the ledger (never throws; nothing before migration 0037).
     void recordUsage(ctx, { purpose: "chat", model: res.model ?? conn.model, usage: res.usage, requestId: t.requestId });
     if (process.env.BRENDA_DEBUG) console.log("[brenda]", step, `${Date.now() - t0}ms`, res.stop_reason, res.content.map((b) => b.type === "tool_use" ? `tool:${b.name}` : b.type).join(","), `cached ${res.usage.cache_read_input_tokens ?? 0}`);
@@ -1333,10 +1629,13 @@ async function chatWithClaude(ctx: OrgContext, conn: AssistantConnection, messag
       let out: unknown;
       let failed = false;
       const t1 = Date.now();
+      const loggedBefore = t.autoLogged ?? 0;
       try { out = await runTool(t, u.name, (u.input ?? {}) as Record<string, unknown>); }
       catch (err) { failed = true; out = { error: ((err as { message?: string }).message ?? String(err)).slice(0, 300) }; }
       const isError = failed || (!!out && typeof out === "object" && "error" in (out as Record<string, unknown>));
-      if (isError && (ACTION_TOOLS.has(u.name) || IMMEDIATE_TOOLS.has(u.name))) void recordProblem(ctx, u.name, failed ? "failed" : "refused", String((out as { error?: string }).error ?? ""), (u.input ?? {}) as Record<string, unknown>, "chat");
+      // A refusal of an action run without asking was already logged, marked (runWithoutAsking): not twice.
+      const alreadyLogged = (t.autoLogged ?? 0) > loggedBefore;
+      if (isError && !alreadyLogged && (ACTION_TOOLS.has(u.name) || IMMEDIATE_TOOLS.has(u.name))) void recordProblem(ctx, u.name, failed ? "failed" : "refused", String((out as { error?: string }).error ?? ""), (u.input ?? {}) as Record<string, unknown>, "chat");
       if (process.env.BRENDA_DEBUG) console.log("[brenda]   ", u.name, `${Date.now() - t1}ms`);
       results.push({ type: "tool_result" as const, tool_use_id: u.id, content: toolResultText(out), ...(isError ? { is_error: true } : {}) });
     }
@@ -1344,10 +1643,16 @@ async function chatWithClaude(ctx: OrgContext, conn: AssistantConnection, messag
     if (linkOnly && text) break;
   }
   reply ||= fallback;
+  if (cutShort && !reply) reply = t.actions.length ? "I did what is listed below, then lost the connection before I could finish." : "I prepared what is below, then lost the connection before I could finish.";
   // After reading other people's messages, no link in her reply leaves Boredroom (review, 8 October 2026): an address
   // could carry what she read away in one click. Such links show as their address, to see and copy.
   if (t.tainted) reply = defuseLinks(reply);
-  return { reply: reply || (t.actions.length ? "Done." : "I could not work that one out. Try asking in a different way."), engine: "claude", actions: t.actions, proposals: t.proposals, note: null };
+  return {
+    reply: reply || (t.actions.length ? "Done." : "I could not work that one out. Try asking in a different way."), engine: "claude", actions: t.actions, proposals: t.proposals,
+    note: cutShort ? `Claude stopped before finishing (${describeError(cutShort)}). What is listed was done; check it before asking again.` : null,
+    // The client keeps it on this reply and sends it back, so later turns of this chat still ask (B.4).
+    tainted: t.tainted || !!t.othersWords, act: act.state,
+  };
 }
 
 /**
@@ -1372,12 +1677,26 @@ function toolResultText(out: unknown): string {
  * (they run). `tainted` starts the call as if messages had been read earlier in the turn. `shared`: as in a thread she
  * was tagged in (phase 5): `exposure` says whether her answer could still be posted for everyone after this tool, and
  * `reasons` what made it private (null exposure outside a thread).
+ * Act without asking (owner decision, 8 October 2026): `act` gives the turn's mode, or "read" reads the person's own (as
+ * her chat does, Claude engine, no earlier taint); without it everything asks as before. `othersWords` starts the call as
+ * if a tool had returned someone else's text earlier in the turn, and the result says whether it now has.
  */
-export async function runBrendaTool(ctx: OrgContext, name: string, input: Record<string, unknown>, mode: "chat" | "confirm" = "chat", opts: { tainted?: boolean; start?: boolean; shared?: { conversationId: string; mentionId?: string } } = {}): Promise<{ out: unknown; actions: Action[]; proposals: Proposal[]; tainted: boolean; exposure: "public" | "private" | null; reasons: string[] }> {
+export async function runBrendaTool(ctx: OrgContext, name: string, input: Record<string, unknown>, mode: "chat" | "confirm" = "chat", opts: { tainted?: boolean; othersWords?: boolean; start?: boolean; shared?: { conversationId: string; mentionId?: string }; act?: ActContext | "read" } = {}): Promise<{ out: unknown; actions: Action[]; proposals: Proposal[]; tainted: boolean; othersWords: boolean; exposure: "public" | "private" | null; reasons: string[] }> {
   const shared: SharedScope | undefined = opts.shared ? { conversationId: opts.shared.conversationId, mentionId: opts.shared.mentionId ?? null, exposure: "public", reasons: [] } : undefined;
-  const t: ToolCtx = { ctx, base: `/app/${ctx.org.slug}`, actions: [], proposals: [], people: [], mode, tainted: !!opts.tainted || !!shared, requestId: newRequestId(), followUpStart: opts.start, ...(shared ? { shared } : {}) };
+  const act = opts.act === "read" ? await readActContext(ctx) : opts.act ?? null;
+  const t: ToolCtx = {
+    ctx, base: `/app/${ctx.org.slug}`, actions: [], proposals: [], people: [], mode, tainted: !!opts.tainted || !!shared, requestId: newRequestId(), followUpStart: opts.start, ...(shared ? { shared } : {}),
+    ...(act ? { act } : {}), ...(opts.othersWords ? { othersWords: true } : {}),
+  };
   const out = await runTool(t, name, input);
-  return { out, actions: t.actions, proposals: t.proposals, tainted: t.tainted, exposure: shared?.exposure ?? null, reasons: shared ? [...shared.reasons] : [] };
+  return { out, actions: t.actions, proposals: t.proposals, tainted: t.tainted, othersWords: !!t.othersWords, exposure: shared?.exposure ?? null, reasons: shared ? [...shared.reasons] : [] };
+}
+
+/** The person's mode as her chat reads it (Claude engine, no earlier taint), with their assistant's name. */
+async function readActContext(ctx: OrgContext): Promise<ActContext> {
+  const { actModeFor } = await import("@/server/services/act-mode");
+  const [state, profiles] = await Promise.all([actModeFor(ctx), assistantProfiles(ctx).catch(() => null)]);
+  return { state, engine: "claude", earlierTaint: false, assistantName: profiles?.personal.name ?? DEFAULT_ASSISTANT_NAME };
 }
 
 export const ACTION_TOOLS: ReadonlySet<string> = new Set(["create_todos", "assign_task", "update_task", "add_comment", "submit_for_review", "remind_me", "cancel_reminder", "complete_task", "clock", "timer", "send_message", "create_team", "invite_person", "set_status", "plan_day", "create_doc", "update_doc", "mark_read", "follow_up",
@@ -1410,16 +1729,20 @@ export function taintRefusal(name: string, t: Pick<ToolCtx, "tainted" | "mode">)
  * "Didn't add 2 to-dos: you had just read messages, so ask again". The tool's own error is written for the model; it is
  * kept out of the words for the Messages tools, whose errors list the person's conversations.
  */
-function recordProblem(ctx: OrgContext, tool: string, outcome: "refused" | "failed", error: string, input: Record<string, unknown>, source: "chat" | "confirm") {
+// `detail` (act without asking, 8 October 2026): `{ auto: true }` on a refusal of an action run without asking.
+function recordProblem(ctx: OrgContext, tool: string, outcome: "refused" | "failed", error: string, input: Record<string, unknown>, source: "chat" | "confirm", detail?: Record<string, unknown>) {
   const summary = problemSummary(tool, outcome, error, { input, tainted: error === TAINT_ERROR });
-  return recordAction(ctx, { tool, summary, outcome, source });
+  return recordAction(ctx, { tool, summary, outcome, source, ...(detail ? { detail } : {}) });
 }
 
 /**
  * Runs an action Brenda prepared, once the person pressed Confirm. The token is signed, expires and is bound to them.
  * `start` false: a confirmed follow-up is created but not processed here (the tests process it without the model).
+ * `auto` (owner decision, 8 October 2026: act without asking): Boredroom pressed it for the person (runWithoutAsking,
+ * never the confirm route). Everything is the same (the checks, the claim, the tool branch) except that what it logs is
+ * marked: the done lines and their rows (done()), and a refusal, logged from the chat with `detail.auto`.
  */
-export async function confirmAction(ctx: OrgContext, token: string, opts: { start?: boolean } = {}): Promise<{ actions: Action[]; error: string | null }> {
+export async function confirmAction(ctx: OrgContext, token: string, opts: { start?: boolean; auto?: boolean } = {}): Promise<{ actions: Action[]; error: string | null }> {
   const p = verifyPayload<{ k: string; o: string; m: string; tool: string; input: Record<string, unknown>; exp: number }>(token);
   if (!p || p.k !== "brenda") throw invalid("That confirmation is not valid. Ask again.");
   if (p.exp * 1000 < Date.now()) throw invalid("That confirmation expired. Ask again.");
@@ -1432,11 +1755,24 @@ export async function confirmAction(ctx: OrgContext, token: string, opts: { star
     `INSERT INTO idempotency_keys(actor_user_id, route, key, request_hash) VALUES ($1, $2, $3, $3) ON CONFLICT (actor_user_id, route, key) DO NOTHING RETURNING id`, claim));
   if (!claimed) throw conflict("ALREADY_CONFIRMED", "That was already done. Ask again if you need it once more.");
   const release = () => withSystem((db) => db.query(`DELETE FROM idempotency_keys WHERE actor_user_id = $1 AND route = $2 AND key = $3`, claim));
-  const t: ToolCtx = { ctx, base: `/app/${ctx.org.slug}`, actions: [], proposals: [], people: [], mode: "confirm", tainted: false, requestId: newRequestId(), followUpStart: opts.start };
+  const t: ToolCtx = { ctx, base: `/app/${ctx.org.slug}`, actions: [], proposals: [], people: [], mode: "confirm", tainted: false, requestId: newRequestId(), followUpStart: opts.start, ...(opts.auto ? { auto: true } : {}) };
   let out: { error?: string };
   try { out = await runTool(t, p.tool, p.input) as { error?: string }; }
-  catch (err) { if (!t.actions.length) await release(); throw err; }
-  if (out && out.error) { if (!t.actions.length) await release(); void recordProblem(ctx, p.tool, "refused", out.error, p.input ?? {}, "confirm"); return { actions: [], error: out.error }; }
+  catch (err) {
+    if (!t.actions.length) { await release(); throw err; }
+    // Part of it ran (the 3rd of 4 to-dos failed, say): what ran keeps its done lines and Undo, and the rest is said
+    // (review, 8 October 2026). The claim stays: pressing again would repeat what already ran.
+    const message = err instanceof AppError && err.status < 500 ? err.message : "Something went wrong partway through. What is listed was done; the rest was not.";
+    console.error(`[assistant] ${p.tool} failed partway: ${(err as Error)?.message ?? err}`);
+    void recordProblem(ctx, p.tool, "failed", message, p.input ?? {}, opts.auto ? "chat" : "confirm", opts.auto ? { auto: true } : undefined);
+    return { actions: t.actions, error: message };
+  }
+  if (out && out.error) {
+    if (!t.actions.length) await release();
+    void recordProblem(ctx, p.tool, "refused", out.error, p.input ?? {}, opts.auto ? "chat" : "confirm", opts.auto ? { auto: true } : undefined);
+    // Anything that ran before the refusal keeps its done line (review, 8 October 2026).
+    return { actions: t.actions, error: out.error };
+  }
   return { actions: t.actions, error: null };
 }
 
@@ -1460,20 +1796,26 @@ async function builtinTodos(ctx: OrgContext, last: string, opts: { connected?: b
   const proposals: Proposal[] = items.map((it) => ({ kind: "todo", title: it.title, description: it.description, dueAt: it.dueAt, assigneeMembershipId: it.assigneeMembershipId, assigneeName: it.assigneeName, estimateMinutes: it.estimateMinutes }));
   if (!proposals.length) return null;
   // The to-dos themselves are the rows under the reply, each with its Add button: the words do not list them again.
-  return { reply: `I read ${plural(proposals.length, "to-do")} in that. Check the titles below and add the ones you want.${opts.connected ? "" : "\n\nConnect Claude under Settings, AI assistant, and I'll add them myself."}`, engine: "builtin", actions: [], proposals, note: null };
+  return { reply: `I read ${plural(proposals.length, "to-do")} in that. Check the titles below and add the ones you want.${opts.connected ? "" : "\n\nConnect Claude under Settings, AI assistant, and I'll add them myself."}`, engine: "builtin", actions: [], proposals, note: null, tainted: false };
 }
 
 /**
  * `connected`: an AI connection exists but did not answer this time (past the daily limit, or Claude could not be reached),
  * so the reply does not tell the person to connect Claude; the note under it says why (review, 8 October 2026).
  */
-export async function chatBuiltin(ctx: OrgContext, messages: { role: "user" | "assistant"; content: string }[], opts: { connected?: boolean } = {}): Promise<ChatResult> {
+export async function chatBuiltin(ctx: OrgContext, messages: { role: "user" | "assistant"; content: string; tainted?: boolean }[], opts: { connected?: boolean } = {}): Promise<ChatResult> {
   const last = messages[messages.length - 1]?.content ?? "";
   const role = ctx.membership.role;
   const base = `/app/${ctx.org.slug}`;
   const lc = last.toLowerCase();
   const pages = pagesFor(role);
-  const out = (reply: string, proposals: Proposal[]): ChatResult => ({ reply, engine: "builtin", actions: [], proposals, note: null });
+  // The person's assistant and mode, read once (act without asking, owner decision, 8 October 2026): the helper never
+  // acts on its own, so in 'auto' its Confirm cards say why they still ask.
+  const profiles = await assistantProfiles(ctx).catch(() => null);
+  const act: ActContext = { state: actStateOf(profiles), engine: "builtin", earlierTaint: earlierTaintOf(messages), assistantName: profiles?.personal.name ?? DEFAULT_ASSISTANT_NAME };
+  // `tainted`: the answer holds other people's words (a catch-up, follow-up answers, the assistant inbox).
+  const out = (reply: string, proposals: Proposal[], tainted = false): ChatResult => ({ reply, engine: "builtin", actions: [], proposals, note: null, tainted, act: act.state });
+  const withAct = (r: ChatResult): ChatResult => ({ ...r, act: act.state });
   // Replies are as easy to scan as hers with Claude (owner request, 7 October 2026): the answer first in one sentence,
   // then anything with two or more items as a list, each starting with its key words in bold, under bold labels.
   const tz = ctx.org.timezone;
@@ -1493,27 +1835,26 @@ export async function chatBuiltin(ctx: OrgContext, messages: { role: "user" | "a
   // to-dos: "Tell Ben's assistant …", "Ask Ada's assistant to add …", "Put this in today's team report: …", "Anything
   // from other assistants?" run the same tools as hers in chat mode, so the person gets the same plan, refusals and card.
   if (TALK_HINT.test(last)) {
-    const names = await assistantProfiles(ctx).catch(() => null);
-    const talk = assistantTalkIntent(last, { workspaceAssistantName: names?.workspace.name ?? DEFAULT_ASSISTANT_NAME, ownAssistantName: names?.personal.name ?? DEFAULT_ASSISTANT_NAME });
-    if (talk) { const r = await builtinAssistantTalk(ctx, talk); return out(r.reply, r.proposals); }
+    const talk = assistantTalkIntent(last, { workspaceAssistantName: profiles?.workspace.name ?? DEFAULT_ASSISTANT_NAME, ownAssistantName: profiles?.personal.name ?? DEFAULT_ASSISTANT_NAME });
+    if (talk) { const r = await builtinAssistantTalk(ctx, talk, act); return out(r.reply, r.proposals, !!r.tainted); }
   }
 
   // Follow-ups between assistants (owner decision, 8 October 2026: personal assistants, phase 4), before catching up: the
   // same plan and the same Confirm as hers; "any answers on my follow-ups?" lists them.
   const fu = followUpIntent(last);
   if (fu) {
-    const r = await builtinFollowUp(ctx, fu);
+    const r = await builtinFollowUp(ctx, fu, act);
     // Task words that fit no task the person holds or checks: when the sentence also reads as to-dos ("Ask Ben for an
     // update on the budget by Friday"), offer those instead of only the refusal (correctness review, 8 October 2026).
     const todos = r.unmatchedTask ? await builtinTodos(ctx, last, opts) : null;
-    return todos ?? out(r.reply, r.proposals);
+    return todos ? withAct(todos) : out(r.reply, r.proposals, !!r.tainted);
   }
 
   // Catching up on Messages (owner decision, 8 October 2026: personal assistants, phase 3): the same reads as hers, as the
   // person, answered from the facts with Open links; nothing is marked as read.
   const intent = catchUpIntent(last);
   const caughtUp = intent ? await builtinCatchUp(ctx, intent) : null;
-  if (caughtUp) return out(caughtUp.reply, caughtUp.proposals);
+  if (caughtUp) return out(caughtUp.reply, caughtUp.proposals, caughtUp.tainted);
 
   if (/\b(waiting|what should i|brief|attention|due today|overdue)\b/.test(lc)) {
     const b = await briefing(ctx);
@@ -1534,7 +1875,8 @@ export async function chatBuiltin(ctx: OrgContext, messages: { role: "user" | "a
       ...(first && WORKERS.includes(role) && !b.timer ? [{ kind: "start_timer" as const, taskId: first.id, taskTitle: first.title }] : []),
       ...(b.waitingForYourReview.length ? [{ kind: "open" as const, href: `${base}/reviews`, label: "Reviews" }] : []),
       { kind: "open", href: `${base}/tasks`, label: "Tasks" },
-    ]);
+    // A reminder someone else's accepted request set is their words: later turns of this chat count it (review, 8 October 2026).
+    ], await remindersFromOthers(ctx, b.remindersToday.map((r) => r.id)));
   }
 
   const words = lc.split(/[^a-z]+/).filter((w) => w.length > 3 && !STOP.has(w));
@@ -1542,7 +1884,7 @@ export async function chatBuiltin(ctx: OrgContext, messages: { role: "user" | "a
     .filter((x) => x.score > 0).sort((a, b) => b.score - a.score).slice(0, 3).map((x) => x.p);
 
   const todos = await builtinTodos(ctx, last, opts);
-  if (todos) return todos;
+  if (todos) return withAct(todos);
 
   if (/\b(who|team|working|clocked|attendance|late)\b/.test(lc) && role !== "employee") {
     const a = await attendanceBoard(ctx);
@@ -1583,25 +1925,27 @@ export async function chatBuiltin(ctx: OrgContext, messages: { role: "user" | "a
  * question named something that is not one of their conversations and did not say it was about Messages ("what's new in
  * the docs?"): the helper's other answers take it from there (review, 8 October 2026).
  */
-async function builtinCatchUp(ctx: OrgContext, intent: CatchUpIntent): Promise<{ reply: string; proposals: Proposal[] } | null> {
+async function builtinCatchUp(ctx: OrgContext, intent: CatchUpIntent): Promise<{ reply: string; proposals: Proposal[]; tainted: boolean } | null> {
   const o = { timeZone: ctx.org.timezone, base: `/app/${ctx.org.slug}` };
+  // Every answer read from Messages holds other people's words or the names they chose (act without asking, 8 October 2026).
+  const read = (r: { reply: string; proposals: Proposal[] }) => ({ ...r, tainted: true });
   try {
     if (intent.kind === "conversation") {
       const r = await readConversation(ctx, { conversation: intent.name, mode: "unread" });
-      if (!r) return intent.sure ? builtinCatchUpUnknown(intent.name, o) : null;
-      if ("ambiguous" in r) return builtinCatchUpAmbiguous(intent.name, r.ambiguous, o);
-      return builtinCatchUpConversation(r, o);
+      if (!r) return intent.sure ? read(builtinCatchUpUnknown(intent.name, o)) : null;
+      if ("ambiguous" in r) return read(builtinCatchUpAmbiguous(intent.name, r.ambiguous, o));
+      return read(builtinCatchUpConversation(r, o));
     }
     if (intent.kind === "search") {
       // Without a leading "the" or "a" (searchWords): "about the instructions" finds "…ignore previous instructions".
       const words = intent.q ? searchWords(intent.q.slice(0, 100)) : null;
       const r = await searchMessages(ctx, { ...(words ? { q: words } : {}), ...(intent.from ? { from: intent.from.slice(0, 100) } : {}), days: 90 });
-      return builtinCatchUpSearch(r, { q: intent.q, from: intent.from, days: 90 }, o);
+      return read(builtinCatchUpSearch(r, { q: intent.q, from: intent.from, days: 90 }, o));
     }
-    return builtinCatchUpDigest(await catchUpDigest(ctx), o);
+    return read(builtinCatchUpDigest(await catchUpDigest(ctx), o));
   } catch (err) {
     console.warn(`[assistant] built-in catch-up failed: ${(err as Error)?.message ?? err}`);
-    return { reply: "I could not read your messages just now. Open Messages to catch up.", proposals: [{ kind: "open", href: `${o.base}/messages`, label: "Messages" }] };
+    return { reply: "I could not read your messages just now. Open Messages to catch up.", proposals: [{ kind: "open", href: `${o.base}/messages`, label: "Messages" }], tainted: false };
   }
 }
 
@@ -1614,7 +1958,7 @@ const lowerFirst = (s: string) => (s ? `${s[0].toLowerCase()}${s.slice(1)}` : s)
  * status lists their own follow-ups from the record, each answer as plain text (its Markdown shown as typed, its
  * addresses never links). Before migration 0039 both say so, with Messages to ask the person directly.
  */
-async function builtinFollowUp(ctx: OrgContext, intent: FollowUpIntent): Promise<{ reply: string; proposals: Proposal[]; unmatchedTask?: boolean }> {
+async function builtinFollowUp(ctx: OrgContext, intent: FollowUpIntent, act: ActContext | null = null): Promise<{ reply: string; proposals: Proposal[]; unmatchedTask?: boolean; tainted?: boolean }> {
   const base = `/app/${ctx.org.slug}`;
   const page: Proposal = { kind: "open", href: `${base}/home/follow-ups`, label: "Follow-ups" };
   const notReady = { reply: FOLLOW_UPS_NOT_READY, proposals: [{ kind: "open", href: `${base}/messages`, label: "Messages" } as Proposal] };
@@ -1628,9 +1972,11 @@ async function builtinFollowUp(ctx: OrgContext, intent: FollowUpIntent): Promise
       const done = items.filter((v) => v.status === "answered" || v.status === "expired" || v.status === "declined").length;
       const lead = open && done ? `You have ${plural(done, "answer")} and ${plural(open, "follow-up")} still open.` : open ? `${plural(open, "follow-up is", "follow-ups are")} still open.` : `You have ${plural(done, "answer")}.`;
       const lines = items.slice(0, 8).map((v) => `**${mdText(v.subject.name)}**, ${v.task ? mdText(v.task.title) : "what they're working on"}: ${lowerFirst(badgeOf(v).label)}${v.answer ? `. ${mdText(clamp(oneLine(v.answer), 140))}` : ""}`);
-      return { reply: defuseLinks(`${lead}\n\n${listOf(lines, 8)}`), proposals: [page] };
+      // The answers are other people's words (act without asking, 8 October 2026).
+      return { reply: defuseLinks(`${lead}\n\n${listOf(lines, 8)}`), proposals: [page], tainted: true };
     }
-    const t: ToolCtx = { ctx, base, actions: [], proposals: [], people: [], mode: "chat", tainted: false, requestId: newRequestId() };
+    // The person's mode (act without asking, 8 October 2026): the helper still asks, and in 'auto' its card says why.
+    const t: ToolCtx = { ctx, base, actions: [], proposals: [], people: [], mode: "chat", tainted: false, requestId: newRequestId(), act };
     const r = await runTool(t, "follow_up", { people: intent.people, team: intent.team, task: intent.task, question: intent.question }) as { error?: string; people?: string[]; skipped?: { name: string; reason: string }[]; task?: string | null; team?: string | null };
     if (r.error) return r.error === FOLLOW_UPS_NOT_READY ? notReady : { reply: mdText(r.error), proposals: [page], unmatchedTask: r.error.startsWith(NO_TASK_LIKE) };
     const names = r.people ?? [];
@@ -1666,11 +2012,12 @@ const whenProblem = (w: string, o: { timeZone: string; now: Date }) => whenProbl
  * reply; the inbox is listed from the record, other people's words shown as typed (never Markdown, never a link).
  * Before migration 0043 it says so, with Messages to reach the person directly.
  */
-async function builtinAssistantTalk(ctx: OrgContext, intent: AssistantTalkIntent): Promise<{ reply: string; proposals: Proposal[] }> {
+async function builtinAssistantTalk(ctx: OrgContext, intent: AssistantTalkIntent, act: ActContext | null = null): Promise<{ reply: string; proposals: Proposal[]; tainted?: boolean }> {
   const base = `/app/${ctx.org.slug}`;
   const page: Proposal = { kind: "open", href: `${base}/home/assistants`, label: "Between assistants" };
   const notReady = { reply: ASSISTANT_TALK_NOT_READY, proposals: [{ kind: "open", href: `${base}/messages`, label: "Messages" } as Proposal] };
-  const t: ToolCtx = { ctx, base, actions: [], proposals: [], people: [], mode: "chat", tainted: false, requestId: newRequestId() };
+  // The person's mode (act without asking, 8 October 2026): the helper still asks, and in 'auto' its card says why.
+  const t: ToolCtx = { ctx, base, actions: [], proposals: [], people: [], mode: "chat", tainted: false, requestId: newRequestId(), act };
   // Only the inbox answer links to Between assistants (spec F.6): a send's own status card carries its Open link, so a
   // second "Between assistants" card on every send or refusal is noise (review, 8 October 2026).
   const failed = (r: { error?: string }) => (r.error === ASSISTANT_TALK_NOT_READY ? notReady : { reply: mdText(r.error ?? "That couldn't be prepared."), proposals: [] as Proposal[] });
@@ -1727,7 +2074,8 @@ async function builtinAssistantTalk(ctx: OrgContext, intent: AssistantTalkIntent
           : `${plural(lines.length, "thing is", "things are")} waiting for you from other people's assistants.`;
         const shown = (l: string[], max: number, more: boolean) => (l.length > max || more ? `${listOf(l.slice(0, max), max)}\n\nAnd more in Between assistants.` : listOf(l, max));
         const reply = [lead, ...(lines.length ? [shown(lines, 5, moreWaiting)] : []), ...(mine.length ? [`**You sent**\n${shown(mine, 3, !!sent.nextBefore)}`] : [])].join("\n\n");
-        return { reply: defuseLinks(reply), proposals: [page] };
+        // What others' assistants brought is other people's words (act without asking, 8 October 2026).
+        return { reply: defuseLinks(reply), proposals: [page], tainted: true };
       }
     }
   } catch (err) {

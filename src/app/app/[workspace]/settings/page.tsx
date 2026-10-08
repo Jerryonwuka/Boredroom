@@ -21,9 +21,11 @@ import { orgBilling } from "@/server/admin/billing";
 import { BillingCard } from "@/components/app/billing-card";
 import { PageNote, PageNotes } from "@/components/ui/page-notes";
 import { AssistantScope } from "@/components/app/assistant-context";
-import { MyAssistantSettings, WorkspaceAssistantSettings } from "@/components/app/assistant-settings";
+import { MyActModeSettings, MyAssistantSettings, WorkspaceAssistantSettings } from "@/components/app/assistant-settings";
+import { ActModeWorkspaceSettings } from "@/components/app/act-mode-settings";
+import { workspaceActSetting } from "@/server/services/act-mode";
 import { MyVoiceSettings } from "@/components/app/assistant-voice-settings";
-import { assistantProfiles } from "@/server/services/assistant-profile";
+import { aiConnected, assistantProfiles } from "@/server/services/assistant-profile";
 import { AssistantActivityCard } from "@/components/app/assistant-activity";
 import { listActivity } from "@/server/services/assistant-activity";
 import { BrendaUsageCard } from "@/components/app/brenda-usage";
@@ -39,6 +41,7 @@ import { assistantTalkPreferences, listMutes, reportNoteSettings } from "@/serve
 import { withUser } from "@/server/db";
 import type { AssistantProfiles } from "@/lib/assistant-look";
 import { ASSISTANT_ITEM_WORDS } from "@/lib/assistant-items";
+import { ACT_WORDS, actStateOf } from "@/lib/act-mode";
 import { cn } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -96,6 +99,14 @@ const MODE_LABEL: Record<string, string> = { disabled: "Off", optional: "On, eac
  * whose assistants the person muted, each with Unmute. The Brenda section gains "Notes from the team" after Messages,
  * for owners and HR: "Let people add notes to the team report" (on by default; needs the daily report). Both read their
  * own columns with a readiness check (migration 0043) and show disabled under an info alert until it is applied.
+ *
+ * Act without asking (owner decision, 8 October 2026: "there should be a setting where we can bypass the permission, you
+ * can toggle it on and off, just like the way it is on Claude Code"): "Your assistant" gains "Permissions" after Voice
+ * ("Ask me before acting", the default, or "Act without asking"; the pill in her box shows and switches the same). The
+ * Brenda section gains "Acting without asking" after the Brenda card, for owners and HR: "Allow people to let their assistant
+ * act without asking", since review on 8 October 2026 "Allow people to let their assistant act without asking" (on by default; off, everyone's assistant asks). Both read their columns with a readiness check
+ * (migration 0045) and show disabled under an info alert until it is applied. The notes say that what is done without
+ * asking is logged, marked, and most of it can be undone for 10 minutes.
  */
 export default async function SettingsPage({ params, searchParams }: { params: Promise<{ workspace: string }>; searchParams: Promise<{ section?: string; setup?: string; billing?: string; plan?: string }> }) {
   const { workspace } = await params;
@@ -115,7 +126,7 @@ export default async function SettingsPage({ params, searchParams }: { params: P
   // The open section's explanatory notes, shown at the bottom of the page after "Every change is audited."
   let notes: ReactNode = null;
   if (section === "assistant") {
-    const [a, activity, followUps, talk, mutes] = await Promise.all([assistantProfiles(ctx), listActivity(ctx, { limit: 5 }), followUpPreference(ctx), assistantTalkPreferences(ctx), listMutes(ctx)]);
+    const [a, activity, followUps, talk, mutes, ai] = await Promise.all([assistantProfiles(ctx), listActivity(ctx, { limit: 5 }), followUpPreference(ctx), assistantTalkPreferences(ctx), listMutes(ctx), aiConnected(ctx.org.id)]);
     assistants = a;
     const { name } = a.personal;
     const now = new Date(); // the server's clock, so "Today" in the activity rows reads the same on both sides
@@ -126,6 +137,9 @@ export default async function SettingsPage({ params, searchParams }: { params: P
       <>
         <MyAssistantSettings orgSlug={ctx.org.slug} initial={a.personal} impersonated={!!ctx.user.impersonation} />
         <MyVoiceSettings orgSlug={ctx.org.slug} name={name} speak={a.speak} impersonated={!!ctx.user.impersonation} />
+        {/* Whether the assistant asks before acting (owner decision, 8 October 2026: act without asking). */}
+        {/* Review, 8 October 2026: says when acting without asking waits for the AI, and links owners and HR to the switch. */}
+        <MyActModeSettings orgSlug={ctx.org.slug} name={name} initial={actStateOf(a)} ai={ai} workspaceHref={admin ? `${base}/settings?section=brenda#act-mode` : undefined} />
         <FollowUpPreferenceSettings orgSlug={ctx.org.slug} initial={followUps} name={name} impersonated={!!ctx.user.impersonation} />
         {/* Other people's assistants (phase 6): tagging the person's assistant in Messages, and whose assistants are muted. */}
         <AssistantTalkSettings orgSlug={ctx.org.slug} name={name} preferences={talk} mutes={mutes} impersonated={!!ctx.user.impersonation} />
@@ -135,6 +149,7 @@ export default async function SettingsPage({ params, searchParams }: { params: P
     notes = (
       <>
         <PageNote section="Your assistant">The name and look change how your assistant appears to you and in the desktop app. What it can do for you stays the same. Voices come from this computer; your choice of voice and speed is kept in this browser.</PageNote>
+        <PageNote section="Permissions">{ACT_WORDS.settings.pageNote(name)}</PageNote>
         <PageNote section="Follow-ups">Follow-ups between assistants never change anyone&apos;s task. Owners and HR see in Audit that a follow-up happened, not what was said.</PageNote>
         <PageNote section="Other people's assistants">Nothing another person&apos;s assistant asks for changes your account until you accept it. Owners and HR see that something passed between assistants, not what was said.</PageNote>
         <PageNote section={`What ${name} did`}>{name} reads your conversations only when you ask it to catch you up, and only conversations you are in. Reading never marks them as read.</PageNote>
@@ -240,9 +255,9 @@ export default async function SettingsPage({ params, searchParams }: { params: P
       );
     }
   } else if (section === "brenda") {
-    const [ai, brenda, a, usage, collection, mentions, notesSetting] = await Promise.all([assistantStatus(ctx), brendaOverview(ctx), assistantProfiles(ctx), usageSummary(ctx),
+    const [ai, brenda, a, usage, collection, mentions, notesSetting, actSetting] = await Promise.all([assistantStatus(ctx), brendaOverview(ctx), assistantProfiles(ctx), usageSummary(ctx),
       withUser(ctx.user.profileId, (db) => followUpSettings(db, ctx.org.id)), withUser(ctx.user.profileId, (db) => mentionSettings(db, ctx.org.id)),
-      withUser(ctx.user.profileId, (db) => reportNoteSettings(db, ctx.org.id))]);
+      withUser(ctx.user.profileId, (db) => reportNoteSettings(db, ctx.org.id)), withUser(ctx.user.profileId, (db) => workspaceActSetting(db, ctx.org.id))]);
     assistants = a;
     body = (
       <>
@@ -252,6 +267,8 @@ export default async function SettingsPage({ params, searchParams }: { params: P
           action={<Badge tone={ai.source === "none" ? "warning" : "success"} dot>{ai.source === "none" ? "AI not connected" : "On Claude"}</Badge>}>
           <div className="card-panel"><BrendaOrgSettings orgSlug={ctx.org.slug} initial={brenda} canEdit /></div>
         </SettingsSection>
+        {/* Whether people may let their assistant act without asking (owner decision, 8 October 2026). */}
+        <ActModeWorkspaceSettings orgSlug={ctx.org.slug} initial={actSetting} canEdit={admin} />
         {/* The Reports page is gone; Brenda sends supervisors the day's team report instead (owner decision, 5 October 2026). */}
         <BrendaReportSettings orgSlug={ctx.org.slug} initial={brenda.settings} timezone={ctx.org.timezone} inPlan={ctx.plan.features.AI_ASSISTANT === true} />
         {/* Updates for that report from everyone's assistant (owner decision, 8 October 2026: personal assistants, phase 4). */}
@@ -271,7 +288,8 @@ export default async function SettingsPage({ params, searchParams }: { params: P
     notes = (
       <>
         <PageNote section="Workspace assistant">Each person still has their own assistant; this one only signs what the workspace sends by itself.</PageNote>
-        <PageNote section="Brenda">She reads what each person is allowed to see, does their own work for them, and asks before anything that lands on someone else.</PageNote>
+        <PageNote section="Brenda">She reads what each person is allowed to see, does their own work for them, and asks before anything that lands on someone else, unless the person chose to let their assistant act without asking.</PageNote>
+        <PageNote section="Acting without asking">{ACT_WORDS.workspace.pageNote}</PageNote>
         <PageNote section="Updates before the report">Updates are collected on working days, from what each person&apos;s work already shows. People who chose &ldquo;Always ask me first&rdquo; for their own assistant are asked once, even when asking is off here.</PageNote>
         <PageNote section="Updates before the report">Owners and HR see in Audit that updates were collected. A person sees under Asked about you exactly what their assistant shared.</PageNote>
         <PageNote section="Messages">Replies show who asked. Anything only the person asking can see stays private to them.</PageNote>
@@ -317,7 +335,7 @@ export default async function SettingsPage({ params, searchParams }: { params: P
 
   return (
     <AppShell ctx={ctx} counts={counts} teams={navTeams}>
-      <PageHeader title="Settings" description={admin ? "How the workspace runs: working hours, screen recording, Brenda, the plan, your assistant and your linked computers." : "Your assistant's name, look and voice in this workspace, how it answers follow-ups about your work, and what other people's assistants may do."} divider />
+      <PageHeader title="Settings" description={admin ? "How the workspace runs: working hours, screen recording, Brenda, the plan, your assistant and your linked computers." : "Your assistant's name, look and voice in this workspace, whether it asks before acting, how it answers follow-ups about your work, and what other people's assistants may do."} divider />
       {sp.setup && admin ? <Alert tone="success" className="mb-6" title="Workspace ready">Work through the setup list to finish.</Alert> : null}
       <div className="grid gap-6 md:grid-cols-[12.5rem_minmax(0,1fr)] md:gap-10">
         {/* Sub-navigation (spec §6): 32px items, r8, fill-1 and the orange marker for the open one, fill-0 on hover; a scrolling row on a phone. */}

@@ -280,7 +280,9 @@ export function itemBadge(v: Pick<AssistantItemView, "kind" | "status" | "viewer
       default: return { label: "Cancelled", tone: "neutral" };
     }
   }
-  // A message (with or without its reply) or a reply.
+  // A message (with or without its reply) or a reply. A message its sender withdrew (Undo, act without asking, 8 October
+  // 2026; migration 0045) is read by the sender alone: the recipient no longer sees it.
+  if (v.kind === "message" && v.status === "withdrawn") return { label: "Withdrawn", tone: "neutral" };
   if (v.kind === "message" && v.reply) return { label: "Replied", tone: "success" };
   if (v.status === "seen") return { label: "Seen", tone: "success" };
   return v.viewer === "recipient" ? { label: "New", tone: "warning" } : { label: "Delivered", tone: "neutral" };
@@ -367,6 +369,8 @@ export const ASSISTANT_ITEM_WORDS = {
     expired: "This request has expired.",
     alreadyReplied: "You've already replied to this.",
     tooLate: "Today's report has already been written, so the note stays in it.",
+    /** A message to an assistant can be withdrawn for 10 minutes (act without asking, 8 October 2026: Undo). */
+    messageTooLate: "It's been more than 10 minutes, so it can't be withdrawn now.",
     reasonTooLong: `Keep the reason to ${ASSISTANT_ITEM_LIMITS.declineReasonMax} characters.`,
     replyEmpty: "Write a reply first.",
     replyTooLong: `Keep the reply to ${ASSISTANT_ITEM_LIMITS.replyMax} characters.`,
@@ -408,6 +412,8 @@ export const ASSISTANT_ITEM_WORDS = {
     declinedBody: (reason: string | null) => (reason ? `“${clip(reason, 280)}”` : "No reason given."),
     expiredBody: (summary: string) => `Your request to ${summary} expired.`,
     requestCancelled: (senderFirst: string) => `${senderFirst} cancelled this request.`,
+    /** The recipient's notification for a message its sender withdrew (act without asking, 8 October 2026: Undo). */
+    messageWithdrawn: (senderFirst: string) => `${senderFirst} withdrew this message.`,
     requestExpired: "This request expired.",
     requestAnswered: "You answered this request.",
   },
@@ -510,6 +516,8 @@ export const ASSISTANT_ITEM_WORDS = {
     noteOpen: (time: string) => `Goes in today's report at ${time}.`,
     noteDone: "In the report.",
     noteWithdrawn: "You withdrew this note.",
+    /** A message to an assistant its sender withdrew (Undo; act without asking, 8 October 2026). */
+    messageWithdrawn: "You withdrew it.",
     noteNotSent: "Not sent: no team report went out with it.",
     couldNotRefresh: "Couldn't refresh",
     retry: "Retry",

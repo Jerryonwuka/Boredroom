@@ -8,6 +8,10 @@
  * Brenda (`brendaOverview`), but what she read for someone is theirs alone (row-level security hides it from owners and
  * HR too). While an administrator is signed in as the person, the reads are left out here as well (review,
  * 8 October 2026: decision 4).
+ *
+ * Act without asking (owner decision, 8 October 2026): a row the assistant wrote when the person asked in their own chat
+ * and nobody pressed Confirm carries `detail.auto = true`; the list reads it as `auto` ("done without asking"). Undoing
+ * one is a row of its own (tool 'undo'), whose words for owners and HR are generic.
  */
 import { z } from "zod";
 import { withUser } from "@/server/db";
@@ -24,6 +28,8 @@ export type ActivityItem = {
   /** The page it is about (detail.href) when it is inside this workspace; else null. */
   href: string | null;
   createdAt: string;
+  /** Done without a Confirm press because the person chose Act without asking (detail.auto; 8 October 2026). */
+  auto?: boolean;
 };
 export type ActivityPage = { items: ActivityItem[]; nextCursor: string | null; readsAvailable: boolean; readsHidden: boolean };
 
@@ -82,7 +88,10 @@ export function attemptOf(tool: string, input: Record<string, unknown> = {}): st
 // and why it didn't go ("Ben isn't taking messages from your assistant right now" would reveal Ben's mute), are theirs
 // too; the tool names and the log kinds the done lines use are both listed.
 export const PRIVATE_TOOLS: ReadonlySet<string> = new Set(["send_message", "mark_read", "read_conversation", "search_messages", "list_conversations", "follow_up", "follow_up_status", "follow_up_answer",
-  "pass_message", "hand_over_request", "add_report_note", "assistant_inbox", "respond_to_item", "assistant_message", "assistant_request", "assistant_report_note", "assistant_respond"]);
+  "pass_message", "hand_over_request", "add_report_note", "assistant_inbox", "respond_to_item", "assistant_message", "assistant_request", "assistant_report_note", "assistant_respond",
+  // Act without asking (owner decision, 8 October 2026): an Undo's own words ("Undid: Sent Ben …") are the person's; the
+  // row's summary for owners and HR says only what kind of thing was undone ("Undid a message").
+  "undo"]);
 
 /** The model-facing words of the tainted-turn refusal (copilot.ts TAINT_ERROR), recognised in rows logged before this change. */
 const TAINTED = /^Not done: you read other people's messages/;
@@ -166,8 +175,9 @@ export async function listActivity(ctx: OrgContext, opts: { kind?: ActivityKind;
       where += ` AND (a.created_at, a.id) < ($3::timestamptz, $4::uuid)`;
     }
     params.push(limit + 1);
-    const rows = await db.query<{ id: string; tool: string; summary: string; outcome: ActivityItem["outcome"]; source: ActivityItem["source"]; href: string | null; personal_summary: string | null; created_at: string; stamp: string }>(
-      `SELECT a.id, a.tool, a.summary, a.outcome, a.source, a.detail->>'href' AS href, a.detail->>'personalSummary' AS personal_summary, a.created_at,
+    const rows = await db.query<{ id: string; tool: string; summary: string; outcome: ActivityItem["outcome"]; source: ActivityItem["source"]; href: string | null; personal_summary: string | null; auto: boolean; created_at: string; stamp: string }>(
+      `SELECT a.id, a.tool, a.summary, a.outcome, a.source, a.detail->>'href' AS href, a.detail->>'personalSummary' AS personal_summary,
+              COALESCE((a.detail->>'auto') = 'true', false) AS auto, a.created_at,
               to_char(a.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US') || 'Z' AS stamp
        FROM brenda_actions a
        WHERE ${where}
@@ -177,6 +187,7 @@ export async function listActivity(ctx: OrgContext, opts: { kind?: ActivityKind;
       id: r.id, tool: r.tool, summary: rowSummary({ ...r, personalSummary: r.personal_summary }, true), outcome: r.outcome, source: r.source,
       href: typeof r.href === "string" && r.href.startsWith(base) && !r.href.includes("//") ? r.href : null,
       createdAt: r.created_at,
+      ...(r.auto ? { auto: true } : {}),
     }));
     const last = page[page.length - 1];
     return { items, nextCursor: rows.length > limit && last ? encodeCursor(last.stamp, last.id) : null, readsAvailable, readsHidden };

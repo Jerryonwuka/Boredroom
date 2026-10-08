@@ -60,6 +60,29 @@ export function verifyPayload<T = Record<string, unknown>>(token: string): T | n
   }
 }
 
+/**
+ * As verifyPayload; with `allowExpired` a genuine token past its time still reads (its `exp` says when it ended), so the
+ * caller can tell "too late" from "not ours" (act without asking, 8 October 2026: an Undo pressed after its 10 minutes
+ * says so, a forged one is simply not valid). Null when the signature does not match or the body is not ours.
+ */
+export function verifySignedPayload<T = Record<string, unknown>>(token: string, opts: { allowExpired?: boolean } = {}): (T & { exp: number }) | null {
+  if (typeof token !== "string") return null;
+  const [body, sig] = token.split(".");
+  if (!body || !sig) return null;
+  const expected = createHmac("sha256", secret()).update(body).digest("base64url");
+  const a = Buffer.from(sig);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
+  try {
+    const parsed = JSON.parse(Buffer.from(body, "base64url").toString("utf8"));
+    if (!parsed || typeof parsed !== "object" || typeof parsed.exp !== "number") return null;
+    if (!opts.allowExpired && parsed.exp < Math.floor(Date.now() / 1000)) return null;
+    return parsed as T & { exp: number };
+  } catch {
+    return null;
+  }
+}
+
 // ---- Secrets at rest (AES-256-GCM keyed from APP_SECRET) -------------------
 function aesKey(): Buffer { return createHash("sha256").update(`boredroom-secrets:${secret()}`).digest(); }
 

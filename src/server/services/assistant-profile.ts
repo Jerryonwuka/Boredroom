@@ -15,13 +15,20 @@
  * 'never'). It travels with the profiles (`speak` beside `personal`), is saved on its own by `saveMySpeak` (Settings →
  * Your assistant → Voice) and reaches the notch through the desktop state. Until 0036 is applied everyone reads 'voice'
  * and a save is refused with a plain 503, never a broken transaction.
+ *
+ * Act without asking (owner decision, 8 October 2026): migration 0045 adds `assistant_profiles.act_mode` and
+ * `brenda_settings.allow_auto_act`. The profiles read carries the resulting state (`act`, lib/act-mode) in the same one
+ * statement, so the chat, the pill, Settings and the notch all read what the server enforces; before 0045 it is
+ * `ASK_STATE`. Saving it lives in services/act-mode.
  */
 import { cache } from "react"; // React 19 exports cache in Node too (a pass-through outside a render), so the worker can import this file
 import { z } from "zod";
-import { withUser, type Db } from "@/server/db";
+import { withSystem, withUser, type Db } from "@/server/db";
 import type { OrgContext } from "@/server/lib/api";
 import { AppError, forbidden } from "@/server/lib/errors";
 import { logAction } from "@/server/services/brenda";
+import { forget0045, retryWithout0045, schema0045Ready } from "@/server/lib/schema-0045";
+import { ASK_STATE, actStateFrom } from "@/lib/act-mode";
 import {
   ASSISTANT_COLOURS, ASSISTANT_EYES, ASSISTANT_SPEAK, ASSISTANT_VISORS, DEFAULT_ASSISTANT, DEFAULT_PROFILES, EYES, PALETTE, VISORS,
   assistantNameProblem, normaliseAssistantName, toProfile, toSpeak,
@@ -121,15 +128,23 @@ export async function readWorkspaceAssistant(db: Db, orgId: string): Promise<Ass
 type ProfilesRow = {
   name: string | null; colour: string | null; visor: string | null; eyes: string | null; setup_done_at: string | null; speak: string | null;
   assistant_name: string | null; assistant_colour: string | null; assistant_visor: string | null; assistant_eyes: string | null;
+  act_mode: string | null; allow_auto_act: boolean | null;
 };
 
-/** Both assistants, and when the person's own speaks, in one statement (a distant database: every round trip shows). */
-export async function readAssistantProfiles(db: Db, ctx: Pick<OrgContext, "org" | "membership">): Promise<AssistantProfiles> {
-  if (!(await assistantSchemaReady(db))) return { ...DEFAULT_PROFILES, setupDone: true, canEditWorkspace: canEdit(ctx) };
+/**
+ * Both assistants, when the person's own speaks and whether it asks before acting, in one statement (a distant database:
+ * every round trip shows). `ctx.user` carries the impersonation that locks the person's mode to 'ask' (act without
+ * asking, 8 October 2026); callers without it read the mode unlocked.
+ */
+export async function readAssistantProfiles(db: Db, ctx: Pick<OrgContext, "org" | "membership"> & { user?: { impersonation?: unknown } }): Promise<AssistantProfiles> {
+  if (!(await assistantSchemaReady(db))) return { ...DEFAULT_PROFILES, setupDone: true, canEditWorkspace: canEdit(ctx), act: { ...ASK_STATE } };
   // Before 0036 the column is not there to name: the statement reads NULL instead, which toSpeak turns into 'voice'.
   const speak = (await assistantSpeakReady(db)) ? "p.speak" : "NULL::text AS speak";
+  // Before 0045 the same: NULLs, which actStateFrom (not ready) turns into ASK_STATE.
+  const act45 = await schema0045Ready(db);
+  const act = act45 ? "p.act_mode, b.allow_auto_act" : "NULL::text AS act_mode, NULL::boolean AS allow_auto_act";
   const r = await db.one<ProfilesRow>(
-    `SELECT p.name, p.colour, p.visor, p.eyes, p.setup_done_at, ${speak},
+    `SELECT p.name, p.colour, p.visor, p.eyes, p.setup_done_at, ${speak}, ${act},
             b.assistant_name, b.assistant_colour, b.assistant_visor, b.assistant_eyes
      FROM (SELECT 1) one
      LEFT JOIN assistant_profiles p ON p.membership_id = $2
@@ -140,6 +155,7 @@ export async function readAssistantProfiles(db: Db, ctx: Pick<OrgContext, "org" 
     setupDone: !!r.setup_done_at,
     canEditWorkspace: canEdit(ctx),
     speak: toSpeak(r.speak),
+    act: actStateFrom({ ready: act45, mode: r.act_mode, allowed: r.allow_auto_act, impersonated: !!ctx.user?.impersonation }),
   };
 }
 
@@ -147,19 +163,37 @@ export async function readAssistantProfiles(db: Db, ctx: Pick<OrgContext, "org" 
  * The person's own assistant and the workspace's, for the workspace pages. React's cache dedupes it per request: the
  * shell and the page call it with the same `ctx` object (from the cached `orgContext`). Before migration 0035 everyone
  * sees Brenda, and "Meet your assistant" never shows (there is no table to save to). Before 0036 everyone's assistant
- * speaks only to what they say ('voice').
+ * speaks only to what they say ('voice'); before 0045 it asks before acting (`act` is ASK_STATE).
  */
 export const assistantProfiles = cache(async (ctx: OrgContext): Promise<AssistantProfiles> => {
   try {
-    return await withUser(ctx.user.profileId, (db) => readAssistantProfiles(db, ctx));
+    // A database restored to before 0045 while the process runs: once more without the act columns, not Brenda for all.
+    const p = await retryWithout0045(() => withUser(ctx.user.profileId, (db) => readAssistantProfiles(db, ctx)));
+    // Only for someone who chose 'auto' (review, 8 October 2026): without AI the built-in helper always asks, and the
+    // drawer, Brenda's page and the notch say so instead of promising it acts straight away.
+    return p.act?.mode === "auto" ? { ...p, ai: await aiConnected(ctx.org.id) } : p;
   } catch (err) {
     if (!isMissingSchema(err)) throw err;
     schemaReady = false;
     speakReady = false;
+    forget0045();
     warnOnce();
-    return { ...DEFAULT_PROFILES, setupDone: true, canEditWorkspace: canEdit(ctx) };
+    return { ...DEFAULT_PROFILES, setupDone: true, canEditWorkspace: canEdit(ctx), act: { ...ASK_STATE } };
   }
 });
+
+/**
+ * Whether the workspace has an AI connection (its own key, or the server's), read without decrypting anything or calling
+ * the model (review, 8 October 2026: act without asking needs it; the built-in helper always asks). A failed read says
+ * yes, so nothing claims it is missing when it may not be.
+ */
+export async function aiConnected(orgId: string): Promise<boolean> {
+  if (process.env.ANTHROPIC_API_KEY) return true;
+  try {
+    const r = await withSystem((db) => db.maybeOne<{ ok: boolean }>(`SELECT assistant_key_enc IS NOT NULL AS ok FROM organisation_secrets WHERE organisation_id = $1`, [orgId]));
+    return !!r?.ok;
+  } catch { return true; }
+}
 
 // ---- Saving --------------------------------------------------------------------------------------------------------------
 

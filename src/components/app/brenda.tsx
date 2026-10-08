@@ -13,11 +13,14 @@
  *
  * Personal assistants (owner decision, 7 October 2026): the toast, the person's switches and their action log name the
  * person's own assistant (`useAssistant`); the organisation's card in Settings is about the product and keeps "Brenda".
+ *
+ * Act without asking (owner decision, 8 October 2026): a row done when the person asked in their own chat and nobody
+ * pressed Confirm (`auto`) reads "done without asking", with the done disc.
  */
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Check, X, ShieldCheck, AlarmClock } from "lucide-react";
+import { Check, X, ShieldCheck, AlarmClock, Undo2 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { BrendaFace } from "@/components/app/brenda-face";
 import { useAssistant } from "@/components/app/assistant-context";
@@ -25,6 +28,7 @@ import { lookOf } from "@/lib/assistant-look";
 import { Badge } from "@/components/ui/badge";
 import { Alert } from "@/components/ui/states";
 import { api, isApiFailure } from "@/lib/api-client";
+import { ACT_WORDS } from "@/lib/act-mode";
 import { formatDateTime } from "@/lib/utils";
 
 const DAY_KEY = (orgSlug: string) => `brenda-presence:${orgSlug}:${new Date().toISOString().slice(0, 10)}`;
@@ -69,7 +73,7 @@ export function BrendaPresence({ orgSlug }: { orgSlug: string }) {
   return null;
 }
 
-type Action = { id: string; tool: string; summary: string; outcome: string; source: string; created_at: string; display_name: string };
+type Action = { id: string; tool: string; summary: string; outcome: string; source: string; created_at: string; display_name: string; /** Done without asking (8 October 2026). */ auto?: boolean };
 type Overview = { settings: { autoClockIn: boolean; reminders: boolean }; prefs: { autoClockIn: boolean; reminders: boolean }; actions: Action[] };
 
 /** `name`: who the log is about, the person's own assistant on their profile, "Brenda" (the product) in Settings. */
@@ -80,11 +84,11 @@ function ActionLog({ actions, showWho, name }: { actions: Action[]; showWho: boo
       {actions.map((a) => (
         <li key={a.id} className="flex items-start gap-3 py-2 text-sm">
           <span className={`mt-0.5 grid size-6 shrink-0 place-items-center rounded-full ${a.outcome === "refused" || a.outcome === "failed" ? "bg-danger/12 text-danger" : a.source === "automatic" ? "bg-fill-1 text-secondary" : "bg-success/12 text-success"}`}>
-            {a.outcome === "refused" || a.outcome === "failed" ? <X className="size-3.5" aria-hidden /> : a.source === "automatic" ? <AlarmClock className="size-3.5" aria-hidden /> : a.outcome === "confirmed" ? <ShieldCheck className="size-3.5" aria-hidden /> : <Check className="size-3.5" aria-hidden />}
+            {a.outcome === "refused" || a.outcome === "failed" ? <X className="size-3.5" aria-hidden /> : a.source === "automatic" ? <AlarmClock className="size-3.5" aria-hidden /> : a.tool === "undo" ? <Undo2 className="size-3.5" aria-hidden /> : a.outcome === "confirmed" ? <ShieldCheck className="size-3.5" aria-hidden /> : <Check className="size-3.5" aria-hidden />}
           </span>
           <span className="min-w-0 flex-1">
             <span className="block font-medium text-foreground">{a.summary}</span>
-            <span className="block text-meta font-normal text-secondary">{showWho ? `For ${a.display_name}, ` : ""}{formatDateTime(a.created_at)}, {a.source === "automatic" ? "automatic" : a.outcome === "confirmed" ? "confirmed by them" : a.outcome}</span>
+            <span className="block text-meta font-normal text-secondary">{showWho ? `For ${a.display_name}, ` : ""}{formatDateTime(a.created_at)}, {a.source === "automatic" ? "automatic" : a.tool === "undo" && a.outcome === "done" ? ACT_WORDS.log.undoneByThem : a.auto && a.outcome === "done" ? ACT_WORDS.log.label : a.outcome === "confirmed" ? "confirmed by them" : a.outcome}</span>
           </span>
         </li>
       ))}

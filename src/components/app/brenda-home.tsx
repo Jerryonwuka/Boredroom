@@ -79,6 +79,7 @@ import { BrendaFace } from "@/components/app/brenda-face";
 import { BrendaComposer, BrendaMessages, DictationNotes, useBrendaChat, type BrendaChat } from "@/components/app/brenda-chat";
 import { BrendaHistory } from "@/components/app/brenda-history";
 import { useAssistant } from "@/components/app/assistant-context";
+import { ACT_WORDS } from "@/lib/act-mode";
 import { AssistantWaiting } from "@/components/app/assistant-waiting";
 import { isApiFailure } from "@/lib/api-client";
 import type { FollowUpView } from "@/lib/follow-ups";
@@ -478,7 +479,7 @@ function ChatView({ data, chat, box, onBack, onNewChat, history, sheet, onSheet,
   onBack: () => void; onNewChat: () => void; history: React.ReactNode; sheet: boolean; onSheet: (open: boolean) => void;
   more: React.ReactNode; onAsk: (prompt: string) => void;
 }) {
-  const { name } = useAssistant().personal;
+  const { personal: { name }, ai: assistantAi } = useAssistant();
   const scroller = useRef<HTMLDivElement>(null);
   const sheetButton = useRef<HTMLButtonElement>(null);
   const panel = useRef<HTMLElement>(null);
@@ -604,7 +605,8 @@ function ChatView({ data, chat, box, onBack, onNewChat, history, sheet, onSheet,
           <div className="shrink-0 border-t border-border bg-background px-5 pb-4 pt-3 md:pb-5">
             <div ref={box} className="mx-auto max-w-3xl">
               <BrendaComposer chat={chat} leading={more} variant="hero" size="sm" placeholder={empty ? `What do you need, ${data.firstName}?` : `Reply to ${name}, ${data.firstName}…`} />
-              <p className="mt-2 text-center text-xs font-normal text-subtle">{name} asks before anything that lands on someone else.</p>
+              {/* By the mode in force (review, 8 October 2026: it said "asks before" under the "Acting without asking" pill). */}
+              <p className="mt-2 text-center text-xs font-normal text-subtle">{ACT_WORDS.chat.footer(name, chat.actMode.state.effective === "auto", assistantAi)}</p>
             </div>
           </div>
         </section>

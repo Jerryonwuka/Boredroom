@@ -33,7 +33,12 @@
    update cards are built from the follow-up's parts (the quoted bubble, the one-line box with the talk keys, two
    overlapping faces) plus a request's "What would change" panel, a result line that may run long, and actions that stay
    in view. Orange there: Send on a reply and Accept on a request, each its card's one standout; badges keep their status
-   colours (green done, red couldn't be done, neutral words for the rest). */
+   colours (green done, red couldn't be done, neutral words for the rest).
+   Acting without asking (owner decision, 8 October 2026): the chat card's header carries the mode while it is in force, an
+   amber pill with the Zap mark and its words (`.pill.warn.mode`; caution, never orange, and never colour alone); a done
+   line may run to two lines so "(without asking)" stays readable, and carries a ghost Undo while it can be undone; undone,
+   its arrow and words go grey and it ends "Undone"; a Confirm that still asks has its reason under the summary, in the
+   secondary grey (`.why`). No new orange. */
 
 /* Inter and Geist Mono, from @fontsource-variable (SIL Open Font License, fonts/OFL.txt). Nothing loads remotely. */
 @font-face { font-family: "Inter Variable"; font-style: normal; font-display: swap; font-weight: 100 900; src: url(fonts/inter-latin-ext-wght-normal.woff2) format("woff2");
@@ -457,6 +462,26 @@ kbd { display: inline-flex; align-items: center; justify-content: center; box-si
    (a long message or note with the reply box open), as the follow-up's request card does. */
 .notch > .actions.stick { position: sticky; bottom: -16px; margin: 0 -16px -16px; padding: 8px 16px 16px; background: var(--island); z-index: 1; }
 
+/* Acting without asking (owner decision, 8 October 2026). The mode's pill: the amber badge with its mark, beside what was
+   asked (the reply keeps the card's full width under them) or at the end of the thinking card's row. */
+.pill .ic { width: 12px; height: 12px; }
+.said-row { display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
+.said-row .said { flex: 1; min-width: 0; }
+/* A done line runs to two lines before it is cut, so the summary reads beside Undo; one done without asking runs to three,
+   and main.js shortens its summary so "(without asking)" always ends it. */
+.list li.done { padding-top: 6px; padding-bottom: 6px; }
+.list li.done .t { white-space: normal; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
+.list li.done.auto .t { -webkit-line-clamp: 3; line-clamp: 3; }
+.list li.done .t .s { white-space: nowrap; }
+.list li.done .btn { flex: none; }
+/* Undone: the undo arrow instead of the check, the words in grey, and "Undone" at the end (12/16 medium, as the web's). */
+.list li .k.was { margin-left: 0; display: inline-flex; color: var(--secondary); }
+.list li .k.was .ic { width: 16px; height: 16px; }
+.list li.undone .t { color: var(--secondary); }
+.list li .k.gone { font-size: 12px; line-height: 16px; font-weight: 500; }
+/* Why a Confirm still asks: a line under its summary, aligned with the summary's words, in the secondary grey. */
+.confirm .why { display: block; margin-top: 4px; font-size: 13px; line-height: 19.5px; font-weight: 400; color: var(--secondary); }
+
 /* Typing to Brenda: the web's prompt pill at the notch's size (a solid fill-1 surface with a hairline ring that turns
    orange while it has focus), and a round 32px send button, orange with a near-black arrow once there is something to
    send (the card's standout action then), grey until then. */
@@ -540,6 +565,9 @@ kbd { display: inline-flex; align-items: center; justify-content: center; box-si
 :is(.btn, .link):is(:hover, :focus-visible) > .ic-plus { animation-name: ic-turn; }
 :is(.btn, .link):is(:hover, :focus-visible) > .ic-alarm { animation-name: ic-ring; transform-origin: 50% 55%; }
 :is(.btn, .link):is(:hover, :focus-visible) > .ic-mic { animation-name: ic-tip; transform-origin: 50% 90%; }
+/* Undo (acting without asking, 8 October 2026) nudges back the way its arrow points. */
+@keyframes ic-back { 0%, 100% { translate: 0 0; } 45% { translate: -2px 0; } }
+:is(.btn, .link):is(:hover, :focus-visible) > .ic-undo { animation-name: ic-back; }
 /* The check draws itself: its one path is drawn from nothing to whole (pathLength="1" in main.js). */
 :is(.btn, .link):is(:hover, :focus-visible) > .ic-check path { stroke-dasharray: 1; animation: ic-draw .42s var(--ease) 1 both; }
 /* A disabled or busy button's icon stays still. */
@@ -558,3 +586,8 @@ kbd { display: inline-flex; align-items: center; justify-content: center; box-si
   .btn .ic-check path { stroke-dasharray: none; }
   .orb.think i { opacity: .8; }
 }
+
+/* Undone: the server's words under the line, in secondary grey (review, 8 October 2026: they were for screen readers
+   only, so "They may have seen it already" never showed). */
+.list li.undone .tw { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.list li.undone .u { color: var(--secondary); font-size: 12px; line-height: 16px; font-weight: 400; overflow-wrap: anywhere; }

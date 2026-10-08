@@ -28,7 +28,9 @@ beforeAll(async () => {
 describe("the person's own assistant", () => {
   it("is Brenda with setup not done until they choose", async () => {
     const p = await assistantProfiles(a.employeeCtx);
-    expect(p).toEqual({ personal: DEFAULT_ASSISTANT, workspace: DEFAULT_ASSISTANT, setupDone: false, canEditWorkspace: false, speak: "voice" });
+    // Act without asking (8 October 2026): the profiles read carries the person's mode too, 'ask' until they choose.
+    expect(p).toEqual({ personal: DEFAULT_ASSISTANT, workspace: DEFAULT_ASSISTANT, setupDone: false, canEditWorkspace: false, speak: "voice",
+      act: { ready: true, mode: "ask", allowed: true, effective: "ask", locked: null } });
     expect((await assistantProfiles(a.hrCtx)).canEditWorkspace).toBe(true);
     expect((await assistantProfiles(a.managerCtx)).canEditWorkspace).toBe(false);
   });

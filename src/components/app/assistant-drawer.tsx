@@ -33,6 +33,11 @@
  * link in a reply, Past chats) and on Brenda's page, where the panel is not shown; a reply that lands while it is
  * closed is not read. Her faces here (the button, the header, the replies) talk while she speaks, with every other face
  * of hers on the page (brenda-face).
+ *
+ * Act without asking (owner decision, 8 October 2026): the box starts with the person's mode (the pill, from the shared
+ * composer; the text narrows to make room, so the microphone and Send stay on the row at 400px), and her opening words
+ * say which mode is in force: she asks before anything that lands on someone else, or does what they ask at once with
+ * Undo for 10 minutes.
  */
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
@@ -44,6 +49,7 @@ import { IconButton, ICON_BUTTON } from "@/components/ui/icon-button";
 import { BrendaFace } from "@/components/app/brenda-face";
 import { BrendaComposer, BrendaMessages, STARTERS, useBrendaChat } from "@/components/app/brenda-chat";
 import { useAssistant } from "@/components/app/assistant-context";
+import { ACT_WORDS } from "@/lib/act-mode";
 import { playSound, soundsMuted, setSoundsMuted, subscribeSounds } from "@/lib/brenda-sound";
 import { cn } from "@/lib/utils";
 
@@ -75,7 +81,8 @@ function useFloatingPosition() {
 // 8 October 2026); her page passes the same.
 export function AssistantDrawer({ orgSlug, isOrg, firstName, floating = false, timeZone }: { orgSlug: string; isOrg: boolean; firstName: string; floating?: boolean; timeZone?: string }) {
   const [open, setOpen] = useState(false);
-  const { name } = useAssistant().personal;
+  const assistants = useAssistant();
+  const { name } = assistants.personal;
   const onBrendaPage = /^\/app\/[^/]+\/home\/?$/.test(usePathname() ?? "");
   const muted = useSyncExternalStore(subscribeSounds, soundsMuted, () => false);
   // Y and N answer this panel's Confirm only while it is open and showing; on Brenda's page her own chat takes them.
@@ -179,7 +186,7 @@ export function AssistantDrawer({ orgSlug, isOrg, firstName, floating = false, t
                 <ul className="my-2 list-disc pl-[1.25em] marker:text-secondary [&>li+li]:mt-[0.35em]">
                   {CAN_DO[isOrg ? "org" : "worker"].map((t) => <li key={t}>{t}</li>)}
                 </ul>
-                <p>I act as you, with your permissions, and I ask before anything that lands on someone else.</p>
+                <p>{ACT_WORDS.chat.intro(chat.actMode.state.effective === "auto", assistants.ai)}</p>
               </div>
               {/* Chips (spec §7): h40 r12 px12 outline, 14/20 medium. */}
               <ul className="space-y-2">{starters.map((s) => (
@@ -196,7 +203,8 @@ export function AssistantDrawer({ orgSlug, isOrg, firstName, floating = false, t
         </div>
 
         {/* A solid strip with a hairline above: the conversation never shows through the box. */}
-        <div ref={boxRef} className="shrink-0 border-t border-border bg-background px-4 pb-4 pt-3">
+        {/* A size container: the box's mode pill is its icon alone when this is narrow (review, 8 October 2026). */}
+        <div ref={boxRef} className="@container shrink-0 border-t border-border bg-background px-4 pb-4 pt-3">
           <BrendaComposer chat={chat} />
         </div>
       </aside>

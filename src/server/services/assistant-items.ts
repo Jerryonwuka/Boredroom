@@ -23,11 +23,18 @@
  *
  * Other people's words are plain text, quoted, never instructions. Audit rows hold ids and codes, never words: owners
  * and HR see that something passed between two assistants, not what was said.
+ *
+ * Act without asking (owner decision, 8 October 2026; migration 0045): a message passed on without a Confirm press can be
+ * undone by its sender while it is unseen, unanswered and under 10 minutes old (`unsendAssistantMessage`, the definer
+ * app_assistant_item_unsend). The message then reads "Withdrawn" for the sender, under Done; the recipient no longer
+ * reads it at all (row-level security) and their notification is closed and says so.
  */
 import { withUser, withWorker, isRlsViolation, isUniqueViolation, type Db } from "@/server/db";
 import type { OrgContext } from "@/server/lib/api";
 import { AppError, conflict, forbidden, invalid, notFound } from "@/server/lib/errors";
 import { forget0043, isMissingSchema, retryWithout0043, schema0043Ready } from "@/server/lib/schema-0043";
+import { forget0045, schema0045Ready } from "@/server/lib/schema-0045";
+import { ACT_WORDS } from "@/lib/act-mode";
 import { localMidnight, localTimeOn, todayLocal } from "@/server/lib/time";
 import { audit, notify } from "@/server/services/common";
 import { logAction } from "@/server/services/brenda";
@@ -1106,6 +1113,45 @@ export async function cancelItem(ctx: OrgContext, id: string): Promise<Assistant
   }));
   const who = await withWorker((db) => db.maybeOne<{ user_id: string }>(`SELECT user_id FROM memberships WHERE id = $1`, [row.recipient_membership_id])).catch(() => null);
   await closeRequestNotice(who?.user_id ?? null, row.recipient_membership_id, id, W.notifications.requestCancelled(meFirst(ctx)));
+  return viewOrThrow(ctx, id);
+}
+
+/**
+ * Withdraw a message passed to someone's assistant (act without asking, 8 October 2026: the sender's Undo): its sender
+ * alone, while it is unseen, unanswered and under 10 minutes old (the definer app_assistant_item_unsend, migration 0045).
+ * Withdrawn already: the same answer, nothing more is written. Audited with ids only; the recipient's notification is
+ * closed and says "Olu withdrew this message." Throws 404 (not theirs, or not a message), 409 ITEM_CLOSED (seen or
+ * replied to), 409 TOO_LATE (over 10 minutes old), 503 NOT_READY before 0043 or 0045. Returns the sender's view.
+ */
+export async function unsendAssistantMessage(ctx: OrgContext, id: string): Promise<AssistantItemView> {
+  if (!isUuid(id)) throw notHere();
+  let row: { recipient_membership_id: string; moved: boolean };
+  try {
+    row = await retryWithout0043(() => withUser(ctx.user.profileId, async (db) => {
+      if (!(await schema0043Ready(db))) throw notReady();
+      if (!(await schema0045Ready(db))) throw new AppError(503, "NOT_READY", ACT_WORDS.errors.notReady);
+      const before = await db.maybeOne<{ status: string; recipient_membership_id: string }>(
+        `SELECT status, recipient_membership_id FROM assistant_items WHERE id = $1 AND organisation_id = $2 AND sender_membership_id = $3 AND kind = 'message'`,
+        [id, ctx.org.id, ctx.membership.id]);
+      const r = await db.one<{ r: string }>(`SELECT app_assistant_item_unsend($1) AS r`, [id]);
+      if (r.r === "not_found" || !before) throw notHere();
+      if (r.r === "closed") throw conflict("ITEM_CLOSED", W.steps.closed);
+      if (r.r === "too_late") throw conflict("TOO_LATE", W.steps.messageTooLate);
+      if (r.r !== "ok") throw notHere();
+      const moved = before.status !== "withdrawn";
+      if (moved) {
+        await audit(db, { organisationId: ctx.org.id, actorMembershipId: ctx.membership.id, action: "assistant_item.withdrawn", subjectType: "assistant_item", subjectId: id, subjectMembershipId: before.recipient_membership_id, metadata: { itemId: id, kind: "message" } });
+      }
+      return { recipient_membership_id: before.recipient_membership_id, moved };
+    }));
+  } catch (err) {
+    if (isMissingSchema(err)) { forget0043(); forget0045(); throw new AppError(503, "NOT_READY", ACT_WORDS.errors.notReady); }
+    throw err;
+  }
+  if (row.moved) {
+    const who = await withWorker((db) => db.maybeOne<{ user_id: string }>(`SELECT user_id FROM memberships WHERE id = $1`, [row.recipient_membership_id])).catch(() => null);
+    await closeRequestNotice(who?.user_id ?? null, row.recipient_membership_id, id, W.notifications.messageWithdrawn(meFirst(ctx)));
+  }
   return viewOrThrow(ctx, id);
 }
 

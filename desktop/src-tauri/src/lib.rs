@@ -234,6 +234,13 @@ async fn send(state: &State<'_, AppState>, method: &str, path: &str, body: Optio
     if let Some(b) = body {
         req = req.json(&b);
     }
+    // A chat turn can take several model calls and, when the person chose to act without asking, act as it goes: the
+    // client's 20 s limit used to give up while the server carried on, so the notch showed a failure (and no Undo) for
+    // what was done, and asking again did it twice (review, 8 October 2026). Chat and Confirm wait as long as the server's
+    // model calls can take; everything else keeps the short limit.
+    if path.ends_with("/assistant/chat") || path.ends_with("/brenda/confirm") {
+        req = req.timeout(std::time::Duration::from_secs(180));
+    }
     let res = req.send().await.map_err(|e| ApiError::new(0, format!("Cannot reach Boredroom: {e}")))?;
     let status = res.status().as_u16();
     let value: Value = res.json().await.unwrap_or(Value::Null);

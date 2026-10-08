@@ -4,7 +4,8 @@
  * row-level security (see db/migrations/0015_messaging.sql); this module only shapes queries.
  *
  * Who wrote a message (owner decision, 8 October 2026: personal assistants, phase 3; migration 0037): the person
- * ('person'), the person's own assistant for them after they confirmed it ('via_assistant': her send_message tool, the
+ * ('person'), the person's own assistant for them after they confirmed it, or because they chose Act without asking and
+ * asked in their own chat (owner decision, 8 October 2026) ('via_assistant': her send_message tool, the
  * only caller of `sendMessage(..., { via: "assistant" })`; the Messages composer can never ask for it), or the assistant
  * itself ('assistant': its own words in a thread, written only by the worker; reserved for phases 4 and 5). A message
  * that is not the person's carries the sender's own assistant (name and look, from assistant_profiles, which everyone in
@@ -49,7 +50,7 @@ export type Participant = { membership_id: string; display_name: string; role: s
 
 export type ConversationKind = "direct" | "team" | "organisation" | "channel";
 
-/** Who wrote a message (migration 0037): the person, their own assistant for them after they confirmed, or the assistant itself. */
+/** Who wrote a message (migration 0037): the person, their own assistant for them (after they confirmed, or in 'auto'), or the assistant itself. */
 export type AuthorKind = "person" | "via_assistant" | "assistant";
 export const AUTHOR_KINDS: readonly AuthorKind[] = ["person", "via_assistant", "assistant"];
 

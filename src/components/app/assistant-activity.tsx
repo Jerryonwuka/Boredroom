@@ -16,15 +16,19 @@
  *
  * Reads are the person's alone (review, 8 October 2026): owners and HR see the assistant's actions organisation-wide,
  * never what it read for someone, and while an administrator is signed in as the person the list leaves reads out.
+ *
+ * Act without asking (owner decision, 8 October 2026): what the assistant did when the person asked in their own chat and
+ * nobody pressed Confirm (`auto`) reads "done without asking", with the done disc.
  */
 import { useEffect, useId, useRef, useState } from "react";
 import Link from "next/link";
-import { AlarmClock, Check, Eye, ShieldCheck, X } from "lucide-react";
+import { AlarmClock, Check, Eye, ShieldCheck, Undo2, X } from "lucide-react";
 import { AnimatedArrowUpRight } from "@/components/ui/animated-icons";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Alert, EmptyState } from "@/components/ui/states";
 import { SettingsFooter, SettingsGroup, SettingsSection } from "@/components/app/settings-forms";
 import { api, isApiFailure } from "@/lib/api-client";
+import { ACT_WORDS } from "@/lib/act-mode";
 import { cn } from "@/lib/utils";
 import type { ActivityItem, ActivityKind, ActivityPage } from "@/server/services/assistant-activity";
 
@@ -64,13 +68,16 @@ function timeOf(at: string, timeZone: string): string {
   return new Intl.DateTimeFormat("en-GB", { timeZone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(at));
 }
 
-/** How a row went, in words for its meta line, and its disc. A read is always "read for you". */
+/** How a row went, in words for its meta line, and its disc. A read is always "read for you"; one done without asking says so. */
 function look(item: ActivityItem): { label: string; disc: string; icon: React.ReactNode } {
   const icon = "size-3.5";
   if (item.source === "read") return { label: "read for you", disc: "bg-fill-1 text-secondary", icon: <Eye className={icon} aria-hidden /> };
   if (item.outcome === "refused") return { label: "not allowed", disc: "bg-danger/12 text-danger", icon: <X className={icon} aria-hidden /> };
   if (item.outcome === "failed") return { label: "failed", disc: "bg-danger/12 text-danger", icon: <X className={icon} aria-hidden /> };
   if (item.source === "automatic") return { label: "automatic", disc: "bg-fill-1 text-secondary", icon: <AlarmClock className={icon} aria-hidden /> };
+  // An Undo the person pressed keeps the auto marker when what it undid ran without asking: it reads as an undo.
+  if (item.tool === "undo") return { label: ACT_WORDS.log.undoneByYou, disc: "bg-fill-1 text-secondary", icon: <Undo2 className={icon} aria-hidden /> };
+  if (item.auto) return { label: ACT_WORDS.log.label, disc: "bg-success/12 text-success", icon: <Check className={icon} aria-hidden /> };
   if (item.outcome === "confirmed") return { label: "confirmed by you", disc: "bg-success/12 text-success", icon: <ShieldCheck className={icon} aria-hidden /> };
   return { label: "done", disc: "bg-success/12 text-success", icon: <Check className={icon} aria-hidden /> };
 }

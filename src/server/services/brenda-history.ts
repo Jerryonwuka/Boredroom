@@ -7,7 +7,10 @@
  * delete it; for anyone else, the owner and HR included, it does not exist (404). The chat saves the whole
  * conversation after each exchange; the newest 200 messages are kept. Confirm tokens are removed before anything is
  * stored: a prepared action can only be confirmed in the conversation it was offered in, while its token is fresh,
- * and a restored one reads as expired.
+ * and a restored one reads as expired. Undo tokens go the same way (owner decision, 8 October 2026: act without asking):
+ * the offer belongs to the window it was made in, so a reopened chat shows no Undo; what is kept is that an action ran
+ * without asking (`auto`), that it was undone (`undone`), why a Confirm still asked (`why`), and that a reply read other
+ * people's words (`tainted`), which the chat sends back so the next turn still asks.
  *
  * Someone signed in as the person is someone else too: while a Boredroom administrator is impersonating them (support),
  * past chats are closed: the list is empty, a conversation is not there, and nothing is saved or deleted in their name.
@@ -52,7 +55,14 @@ const done = text(80).optional();
 // `followUpBatchId`: a confirmed follow-up's batch, so a saved chat keeps its live card (owner decision, 8 October 2026:
 // personal assistants, phase 4). Only an id: the card reads the follow-up as it is now, as the person may see it.
 // `assistantItemId`: the same for a message, request or report note sent to another assistant (phase 6).
-const actionSchema = z.object({ kind: text(80), summary: told(2000), href: href.optional(), followUpBatchId: z.string().uuid().optional(), assistantItemId: z.string().uuid().optional() });
+// Act without asking (owner decision, 8 October 2026): `auto` (it ran without a Confirm press) and `undone` (the words the
+// row showed once it was undone) are kept; `undo` (its token) is not in the schema, so it is never stored (z.object drops
+// keys it does not name). A flag a client sent as false is kept as nothing (stripTokens).
+const flag = z.boolean().optional();
+const actionSchema = z.object({
+  kind: text(80), summary: told(2000), href: href.optional(), followUpBatchId: z.string().uuid().optional(), assistantItemId: z.string().uuid().optional(),
+  auto: flag, undone: told(2000).optional(),
+});
 // The kinds of Proposal (server/services/copilot.ts), each with the label it was marked with ("Added", "Not done").
 const proposalSchema = z.discriminatedUnion("kind", [
   z.object({
@@ -64,13 +74,17 @@ const proposalSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("start_timer"), taskId: z.string().uuid(), taskTitle: text(500), done }),
   z.object({ kind: z.literal("open"), href, label: text(200), done }),
   // The token is accepted so a client may send the conversation as it holds it; it is never stored. `detail` is the whole
-  // message a Confirm would send (up to 4,000 characters).
-  z.object({ kind: z.literal("confirm"), token: text(CONFIRM_TOKEN_MAX).optional(), summary: told(2000), tool: text(80), detail: told(4000).optional(), done }),
+  // message a Confirm would send (up to 4,000 characters). `why`: "Still asking: …" when the person chose Act without
+  // asking (owner decision, 8 October 2026).
+  z.object({ kind: z.literal("confirm"), token: text(CONFIRM_TOKEN_MAX).optional(), summary: told(2000), tool: text(80), detail: told(4000).optional(), why: told(300).optional(), done }),
 ]);
 
 const messageSchema = z.object({
   role: z.enum(["user", "assistant"]),
   content: text(CONVERSATION_LIMITS.content),
+  // The reply read other people's words (act without asking, 8 October 2026): sent back with the conversation, so the next
+  // turn still asks after a reopened chat.
+  tainted: flag,
   actions: z.array(actionSchema).max(50).optional(),
   proposals: z.array(proposalSchema).max(20).optional(),
   engine: text(40).optional(),
@@ -90,8 +104,8 @@ export const updateConversationSchema = createConversationSchema.extend({
 });
 
 type ParsedMessage = z.infer<typeof messageSchema>;
-type StoredProposal = Exclude<NonNullable<ParsedMessage["proposals"]>[number], { kind: "confirm" }> | { kind: "confirm"; summary: string; tool: string; detail?: string; done?: string };
-/** A message as stored and returned: a confirm proposal keeps its summary and done label, never its token. */
+type StoredProposal = Exclude<NonNullable<ParsedMessage["proposals"]>[number], { kind: "confirm" }> | { kind: "confirm"; summary: string; tool: string; detail?: string; why?: string; done?: string };
+/** A message as stored and returned: a confirm proposal keeps its summary, why and done label, never its token. */
 export type StoredMessage = Omit<ParsedMessage, "proposals"> & { proposals?: StoredProposal[] };
 
 export type ConversationSummary = { id: string; title: string; preview: string; messageCount: number; createdAt: string; updatedAt: string };
@@ -117,12 +131,26 @@ export async function parseConversationBody<T>(req: Request, schema: z.ZodType<T
   return parseBody(new Request(req.url, { method: req.method, headers: { "content-type": req.headers.get("content-type") ?? "" }, body: raw }), schema);
 }
 
-/** Removes every Confirm token: what is stored can be shown again, never confirmed again. */
+/**
+ * Removes every Confirm token: what is stored can be shown again, never confirmed again. Undo tokens never get this far
+ * (the schema does not name them), and an action's flags are kept only when set.
+ */
 export function stripTokens(messages: ParsedMessage[]): StoredMessage[] {
-  return messages.map((m) => (m.proposals ? {
-    ...m,
-    proposals: m.proposals.map((p): StoredProposal => (p.kind === "confirm" ? { kind: "confirm", summary: p.summary, tool: p.tool, ...(p.detail ? { detail: p.detail } : {}), ...(p.done ? { done: p.done } : {}) } : p)),
-  } : m));
+  return messages.map((m) => {
+    const { tainted, actions, proposals, ...rest } = m;
+    return {
+      ...rest,
+      // Kept as it was sent, false included (review, 8 October 2026): a reply with no flag counts as having read other
+      // people's words when the chat is reopened (the earlier-taint floor fails closed).
+      ...(typeof tainted === "boolean" ? { tainted } : {}),
+      ...(actions ? { actions: actions.map(({ auto, undone, ...a }) => ({ ...a, ...(auto ? { auto: true as const } : {}), ...(undone ? { undone } : {}) })) } : {}),
+      ...(proposals ? {
+        proposals: proposals.map((p): StoredProposal => (p.kind === "confirm"
+          ? { kind: "confirm", summary: p.summary, tool: p.tool, ...(p.detail ? { detail: p.detail } : {}), ...(p.why ? { why: p.why } : {}), ...(p.done ? { done: p.done } : {}) }
+          : p)),
+      } : {}),
+    };
+  });
 }
 
 /**

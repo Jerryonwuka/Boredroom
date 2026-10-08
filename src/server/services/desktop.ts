@@ -25,6 +25,11 @@
  * in the last 24 hours (their requests decided or expired, replies to their messages: its update card). Notifications
  * of type `assistant.*` carry the item's id as `resource_id`, so an unread one opens its card. Before migration 0043
  * `assistantItems` is `{ ready: false, waiting: [], updates: [] }`; an older notch ignores it.
+ *
+ * Act without asking (owner decision, 8 October 2026): the state's `assistant.act` is the person's permission mode as
+ * the server enforces it (lib/act-mode `ActState`: what they chose, whether the workspace allows it, the lock), so the
+ * notch shows "Acting without asking" when it is in force. Before migration 0045 it reads `ready: false` and the notch
+ * shows nothing; an older notch ignores it.
  */
 import { z } from "zod";
 import { withSystem, withUser } from "@/server/db";
@@ -32,15 +37,16 @@ import type { OrgContext } from "@/server/lib/api";
 import type { CurrentUser } from "@/server/auth";
 import { rateLimitIn } from "@/server/auth";
 import { randomToken, sha256 } from "@/server/lib/crypto";
-import { AppError, invalid, notFound } from "@/server/lib/errors";
+import { AppError, forbidden, invalid, notFound } from "@/server/lib/errors";
 import { briefing, brendaPrefs, brendaSettings } from "@/server/services/brenda";
 import { currentSession } from "@/server/services/sessions";
 import { myClock } from "@/server/services/attendance";
 import { teamStatus } from "@/server/services/views";
-import { readAssistantProfiles } from "@/server/services/assistant-profile";
+import { aiConnected, readAssistantProfiles } from "@/server/services/assistant-profile";
 import { followUpsForDesktop, type DesktopFollowUps } from "@/server/services/follow-ups";
 import { assistantItemsForDesktop, type DesktopAssistantItems } from "@/server/services/assistant-items";
 import { PALETTE, type AssistantEyes, type AssistantProfile, type AssistantSpeak, type AssistantVisor, type FaceShades } from "@/lib/assistant-look";
+import { actStateOf, type ActState } from "@/lib/act-mode";
 
 const CODE_TTL_SECONDS = 10 * 60;
 const DESKTOP_SESSION_DAYS = 90;
@@ -78,6 +84,9 @@ export const approveSchema = z.object({ userCode: z.string().trim().min(8).max(1
 
 /** Step two, in Boredroom, by the signed-in person: this computer may act as me in this workspace. */
 export async function approveLink(user: CurrentUser, input: z.infer<typeof approveSchema>) {
+  // Review, 8 October 2026: someone signed in as the person (support) cannot link a computer as them. Its session would
+  // carry no impersonation, so it would also slip every lock that holds while they are signed in (act without asking).
+  if (user.impersonation) throw forbidden("Only the person can link a computer. It can't be done while you are signed in as them.");
   const code = normalise(input.userCode);
   return withSystem(async (db) => {
     await rateLimitIn(db, `desktop.approve:${user.authUserId}`, 30, 3600);
@@ -176,6 +185,10 @@ export async function desktopState(ctx: OrgContext) {
   ]);
   const s = session?.session ?? null;
   const running = s ? extra.progress.find((p) => p.id === s.taskId) : undefined;
+  // Whether an AI is connected, only for someone who chose 'auto' (review, 8 October 2026): the notch's pill then says
+  // that acting without asking waits for it.
+  const act = actStateOf(extra.assistants);
+  const ai = act.mode === "auto" ? await aiConnected(ctx.org.id) : undefined;
   return {
     serverNow: new Date().toISOString(),
     me: { displayName: ctx.user.displayName, role: ctx.membership.role, presence: ctx.user.presence ?? "active" },
@@ -183,8 +196,9 @@ export async function desktopState(ctx: OrgContext) {
     brendaEnabled: ctx.plan.features.AI_ASSISTANT === true,
     // The person's own assistant and the workspace's, resolved, with the face colours the notch draws (it cannot import
     // lib/assistant-look) (owner decision, 7 October 2026: personal assistants), and when the person's own reads replies
-    // aloud (phase 2: her voice; the notch reads anything else, or its absence from an older server, as 'voice').
-    assistant: { personal: forNotch(extra.assistants.personal), workspace: forNotch(extra.assistants.workspace), speak: extra.assistants.speak } satisfies { personal: DesktopAssistant; workspace: DesktopAssistant; speak: AssistantSpeak },
+    // aloud (phase 2: her voice; the notch reads anything else, or its absence from an older server, as 'voice'), and
+    // whether it asks before acting (act without asking, 8 October 2026; `ready: false` before 0045).
+    assistant: { personal: forNotch(extra.assistants.personal), workspace: forNotch(extra.assistants.workspace), speak: extra.assistants.speak, act, ...(ai === undefined ? {} : { ai }) } satisfies { personal: DesktopAssistant; workspace: DesktopAssistant; speak: AssistantSpeak; act: ActState; ai?: boolean },
     settings: extra.settings, prefs: extra.prefs,
     clock: clock ? { status: clock.status, workingDay: clock.workingDay, startAt: clock.scheduledStartAt, endAt: clock.scheduledEndAt, clockInAt: clock.record?.clock_in_at ?? null, lateSeconds: clock.record?.late_seconds ?? 0 } : null,
     timer: s ? { id: s.id, version: s.version, state: s.state, taskId: s.taskId, taskTitle: s.taskTitle, confirmedSeconds: s.confirmedSeconds, openIntervalStartedAt: s.openIntervalStartedAt, serverNow: s.serverNow, estimateMinutes: s.estimateMinutes, progress: running?.progress_percent ?? 0, taskVersion: running?.version ?? null } : null,

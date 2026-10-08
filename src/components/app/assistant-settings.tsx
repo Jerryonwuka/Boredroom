@@ -15,15 +15,27 @@
  * Her voice (owner decision, 7 October 2026: phase 2): "Your assistant" is followed by its Voice card
  * (assistant-voice-settings, rendered by the Settings page). The workspace assistant's preview is `quiet`: it is not the
  * person's own, so it never talks while theirs speaks.
+ *
+ * Permissions (owner decision, 8 October 2026: act without asking, "you can toggle it on and off, just like the way it is
+ * on Claude Code"): `MyActModeSettings`, after Voice. Two radios, "Ask me before acting" (the default) and "Act without
+ * asking", saved the moment one is chosen through the page's shared mode (act-mode-pill's `useActMode`), so her box's
+ * pill follows at once; the choice shows at once and goes back, with the reason, if the save fails, the last of a burst
+ * winning. Disabled, with the saved choice shown, while the workspace has it turned off (an info alert says so), while
+ * someone else is signed in as the person, and before migration 0045. No orange of its own: the chosen radio is the
+ * primitive's.
  */
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useId, useRef, useState, type FormEvent } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { Radio } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import { api, isApiFailure } from "@/lib/api-client";
 import { SettingsSection, SettingsFooter, SettingsAlert, SETTINGS_GROUP } from "@/components/app/settings-forms";
 import { AssistantEditor, AssistantPreview, assistantBody, assistantFieldErrors, keepErrors, profileKey, type AssistantFieldErrors } from "@/components/app/assistant-editor";
+import { useActMode } from "@/components/app/act-mode-pill";
 import { DEFAULT_ASSISTANT, assistantNameProblem, type AssistantProfile } from "@/lib/assistant-look";
+import { ACT_WORDS, type ActMode, type ActState } from "@/lib/act-mode";
 
 const OFFLINE = "Could not save. Check your connection and try again.";
 
@@ -102,6 +114,79 @@ export function MyAssistantSettings({ orgSlug, initial, impersonated = false }: 
       {/* Only the person chooses: an administrator signed in as them sees it read-only (the server refuses the save too). */}
       <AssistantForm initial={initial} idPrefix="my-assistant" url={`/api/orgs/${orgSlug}/brenda/assistant`} read={readPersonal} canEdit={!impersonated}
         readOnly="Only the person can change their assistant. It stays as it is while you are signed in as them." />
+    </SettingsSection>
+  );
+}
+
+const P = ACT_WORDS.settings;
+
+/**
+ * "Permissions": whether the person's assistant asks before acting (owner decision, 8 October 2026). `initial`: the page's
+ * read of the person's mode (`assistantProfiles(ctx).act`). Review, 8 October 2026: `ai` false (no AI connected) says that
+ * acting without asking needs it, since the built-in helper always asks; the floors are a list under the choice, not a
+ * paragraph; `workspaceHref` (owners and HR) links the workspace lock to the switch in Settings → Brenda.
+ */
+export function MyActModeSettings({ orgSlug, name, initial, ai = true, workspaceHref }: { orgSlug: string; name: string; initial: ActState; ai?: boolean; workspaceHref?: string }) {
+  const id = useId();
+  const labelId = `${id}-label`;
+  const { state, set } = useActMode(orgSlug, initial);
+  const locked = !state.ready || !!state.locked;
+  const [save, setSave] = useState<{ state: "idle" | "saving" | "saved" | "error"; message?: string }>({ state: "idle" });
+  // Only the newest choice made here says how it went.
+  const latest = useRef(0);
+
+  const choose = async (mode: ActMode) => {
+    if (locked || mode === state.mode) return;
+    const mine = ++latest.current;
+    setSave({ state: "saving" });
+    const r = await set(mode, { quiet: true });
+    if (latest.current !== mine) return;
+    setSave(!r ? { state: "idle" } : r.ok ? { state: "saved" } : { state: "error", message: r.message });
+  };
+
+  // What still asks, as a list under the choices (a list is never a paragraph; owner rule, 7 October 2026), outside the
+  // radio's label so its name stays short; the "Act without asking" radio is described by it.
+  const floorsId = `${id}-floors`;
+  const options: { value: ActMode; label: string; hint: string; describedBy?: string }[] = [
+    { value: "ask", label: P.ask.label, hint: P.ask.hint(name) },
+    { value: "auto", label: P.auto.label, hint: P.auto.hint(name), describedBy: floorsId },
+  ];
+  return (
+    <SettingsSection id="permissions" title={P.section} description={P.description(name)}>
+      <div className={cn(SETTINGS_GROUP, "@container")}>
+        {!state.ready ? <SettingsAlert tone="info">{P.notReady}</SettingsAlert>
+          : state.locked === "workspace" ? (
+            <SettingsAlert tone="info">
+              {P.lockedWorkspace(name)}
+              {workspaceHref ? <> <Link href={workspaceHref} className="link-inline font-medium">{P.openWorkspaceSetting}</Link></> : null}
+            </SettingsAlert>
+          ) : !ai ? <SettingsAlert tone="info">{P.needsAi(name)}</SettingsAlert> : null}
+        {/* A settings row: the group's name in the label column, the two choices beside it (under it on a phone). */}
+        <div className="grid min-w-0 gap-x-8 gap-y-3 px-5 py-4 @2xl:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] @2xl:items-start">
+          <p id={labelId} className="text-sm font-medium text-foreground">{P.group(name)}</p>
+          <div className="grid min-w-0 gap-3">
+            <div role="radiogroup" aria-labelledby={labelId} className="grid min-w-0 gap-3">
+              {options.map((o) => (
+                <Radio key={o.value} name={`${id}-act-mode`} value={o.value} checked={state.mode === o.value} disabled={locked} onChange={() => void choose(o.value)} hint={o.hint} aria-describedby={o.describedBy}>
+                  {o.label}
+                </Radio>
+              ))}
+            </div>
+            <div id={floorsId} className={cn("pl-[26px] text-meta font-normal text-secondary", locked && "opacity-60")}>
+              <p>{P.auto.stillAsksLead}</p>
+              <ul className="mt-0.5 list-disc pl-[1.25em] marker:text-secondary [&>li+li]:mt-0.5">
+                {P.auto.stillAsks.map((x) => <li key={x}>{x}</li>)}
+              </ul>
+            </div>
+            {state.locked === "impersonated" ? <p className="text-meta font-normal text-secondary">{P.lockedImpersonated}</p>
+              : !locked ? <p className="text-meta font-normal text-secondary">{P.tip(name)}</p> : null}
+          </div>
+        </div>
+        {save.state === "error" ? <SettingsAlert>{save.message}</SettingsAlert> : null}
+        {/* The footer only says what happened, so it shows only then; its live region stays in place for screen readers. */}
+        <SettingsFooter className={save.state === "saving" || save.state === "saved" ? undefined : "sr-only"}
+          busy={save.state === "saving" ? P.saving : undefined} status={save.state === "saved" ? P.saved : undefined} />
+      </div>
     </SettingsSection>
   );
 }

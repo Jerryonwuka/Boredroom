@@ -105,6 +105,22 @@
 // marks anything seen. `assistant.tagged` (their assistant was tagged in Messages) and `assistant.thread_reply` (someone's
 // assistant answered their tag) are mention cards. An older server (no `assistantItems`, or not ready) gets the plain
 // notification cards, as before.
+//
+// Acting without asking (owner decision, 8 October 2026: "there should be a setting where we can bypass the permission,
+// you can toggle it on and off, just like the way it is on Claude Code"). The person's mode is on their assistant profile
+// and Boredroom decides with it (the desktop state's `assistant.act` and each chat answer's `act`, an ActState from
+// src/lib/act-mode.ts): in "Act without asking" what they ask for in their own chat runs at once instead of waiting for
+// Confirm, and the safety floors still ask. The notch shows the mode and leaves changing it to Boredroom (Settings, Your
+// assistant, or the pill in the chat's box): while it is in force the chat card's header carries an amber "Acting without
+// asking" pill; before the database update (`ready: false`), while the workspace has it off or someone else is signed in
+// as the person, and from an older server, nothing shows. What she did comes back as done lines: one done without asking
+// ends "(without asking)", and one that can be undone has Undo while the server's offer lasts (its `until`, 10 minutes;
+// the card folding away ends it here). Undo is the person acting again, once (POST /brenda/undo); the line then reads
+// "Undone", the server's words are said under the same rule as a Confirm's result, and a refusal shows the server's words
+// on the card. A Confirm that still asks says why under its summary ("Still asking: Max read other people's words in this
+// reply."). Each answer's `tainted` is kept on it and sent back with the conversation, so Boredroom knows other people's
+// words are earlier in this chat; past chats keep `tainted`, `auto`, `undone` and `why`, never an Undo token (as never a
+// Confirm token).
 
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
@@ -118,6 +134,8 @@ const WIDE = 420;
 const POLL_MS = 20_000;
 const PRESENCE_MS = 10 * 60_000;
 const CLOSE_AFTER_MS = 8_000;
+/** A reply with a line that can still be undone stays this long (review, 8 October 2026), longer while the pointer is on it. */
+const UNDO_CLOSE_MS = 60_000;
 
 let config = null;          // { baseUrl, signedIn, workspaceSlug, workspaceName, displayName }
 let data = null;            // the last desktop state from Boredroom
@@ -244,6 +262,9 @@ const ICONS = {
   alarm: `<circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2"/><path d="M5 3 2 6"/><path d="m22 6-3-3"/>`,
   volume: `<path d="M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z"/><path d="M16 9a5 5 0 0 1 0 6"/><path d="M19.364 18.364a9 9 0 0 0 0-12.728"/>`,
   chevron: `<path d="m9 18 6-6-6-6"/>`,
+  // Acting without asking (8 October 2026): the mode's amber mark (lucide Zap) and Undo (lucide Undo2), as on the web.
+  zap: `<path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/>`,
+  undo: `<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11"/>`,
 };
 /** An icon; its class (`ic-<name>`) picks the small move it makes when its button is hovered or focused (style.css). */
 const icon = (name) => `<svg class="ic ic-${name}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name]}</svg>`;
@@ -416,6 +437,7 @@ function render() {
   if (talking) talkLevel(talkLast); // the faces were drawn again: the level she is at, at once
   stepFace();
   updateTuck();
+  armUndoClock();
 }
 
 /** Team leads and organisation accounts: who is working right now, each with their own small face. */
@@ -539,6 +561,8 @@ el.addEventListener("click", async (e) => {
     if (act === "voice-on") { voice = await invoke("set_voice", { enabled: true }); return openCard({ kind: "voice", phase: voice.modelReady ? "ready" : "downloading", progress: 0, sticky: !voice.modelReady }); }
     if (act === "voice-setup") return openCard({ kind: "voice", phase: voice.enabled ? (voice.modelReady ? "ready" : "downloading") : "off", progress: 0 });
     if (act === "confirm") return confirmProposal(target.dataset.token);
+    // Undo on a done line (acting without asking, 8 October 2026).
+    if (act === "undo") return undoDone(target.dataset.token);
     if (act === "drop-send") return sendDrop();
     if (act === "drop-task") { card.taskId = target.value; return; }
     if (act === "not-now") return declineConfirms(target.dataset.token);
@@ -944,7 +968,8 @@ function voiceView() {
     // She thinks; what is happening first (shimmering), then the words heard, in italic quotes. While the words are
     // written out the waveform carries on as a slow travelling wave and the time stays where it stopped.
     const words = c.phase === "transcribing";
-    return `<div class="row fade">${face(moodOf())}<div class="grow"><p class="title shimmer">${words ? "Getting your words…" : `${esc(me().name)} is on it…`}</p>${c.heard ? `<p class="said">“${esc(c.heard)}”</p>` : ""}</div>${words && c.startedAt ? `<span class="mic"><span class="clock">${mss(voiceSeconds(c))}</span></span>` : ""}</div>
+    // Thinking, the mode she is working in shows already (acting without asking, 8 October 2026).
+    return `<div class="row fade">${face(moodOf())}<div class="grow"><p class="title shimmer">${words ? "Getting your words…" : `${esc(me().name)} is on it…`}</p>${c.heard ? `<p class="said">“${esc(c.heard)}”</p>` : ""}</div>${words && c.startedAt ? `<span class="mic"><span class="clock">${mss(voiceSeconds(c))}</span></span>` : ""}${words ? "" : modePill()}</div>
       ${words ? `<div class="wave fade" aria-hidden="true"><canvas id="wave"></canvas></div>` : ""}`;
   }
   if (c.phase === "reply") {
@@ -956,10 +981,14 @@ function voiceView() {
     const offers = confirms.length ? [] : proposals.map((p, i) => ({ p, i })).filter(({ p }) => OFFER[p.kind]).slice(0, 3);
     // The note under her answer (past the daily limit, or Claude could not be reached), as the web shows it.
     const note = c.msg?.note ? `<p class="cap note">${esc(c.msg.note)}</p>` : "";
-    return `<div class="row fade top">${face(moodOf())}<div class="grow"><p class="said">“${esc(c.heard)}”</p><div class="reply">${md(c.reply)}</div>${note}</div></div>
-      ${c.actions?.length ? `<ul class="list fade">${c.actions.slice(0, confirms.length ? 2 : 4).map((a) => `<li class="done"><span class="k ok">${icon("check")}</span><span class="t">${esc(a.summary)}</span></li>`).join("")}</ul>` : ""}
+    // The header: what was asked and, while she acts without asking, the mode's pill beside it (the reply keeps the
+    // card's full width under them).
+    const pill = modePill();
+    const said = `<p class="said">“${esc(c.heard)}”</p>`;
+    return `<div class="row fade top">${face(moodOf())}<div class="grow">${pill ? `<div class="said-row">${said}${pill}</div>` : said}<div class="reply">${md(c.reply)}</div>${note}</div></div>
+      ${c.actions?.length ? `<ul class="list fade">${shownLines(c.actions, confirms.length ? 2 : 4).map(({ a, i }) => doneLine(a, i)).join("")}</ul>` : ""}
       ${offers.length ? `<ul class="list fade">${offers.map(({ p, i }) => `<li><span class="t">${offerLabel(p)}</span>${p.done ? `<span class="k ok end">${esc(p.done)}</span>` : `<button class="btn" data-act="offer" data-i="${i}" ${busy ? "disabled" : ""}>${icon(OFFER[p.kind].icon)}${OFFER[p.kind].label}</button>`}</li>`).join("")}</ul>` : ""}
-      ${confirms.map((p, i) => `<div class="confirm fade"><p class="sub">${icon("shield")}<span>${esc(p.summary)}</span></p>${p.detail ? `<div class="detail" tabindex="0" aria-label="The full message">${esc(p.detail)}</div>` : ""}<div class="actions">${i === 0 ? listenButton() : ""}<button class="btn ghost" data-act="not-now" data-token="${esc(p.token)}">Not now${i === 0 ? " <kbd>N</kbd>" : ""}</button><button class="btn primary" data-act="confirm" data-token="${esc(p.token)}" ${busy ? "disabled" : ""}>${icon("check")}Confirm${i === 0 ? " <kbd>Y</kbd>" : ""}</button></div></div>`).join("")}
+      ${confirms.map((p, i) => `<div class="confirm fade"><p class="sub">${icon("shield")}<span>${esc(p.summary)}${whyOf(p) ? `<span class="why">${esc(whyOf(p))}</span>` : ""}</span></p>${p.detail ? `<div class="detail" tabindex="0" aria-label="The full message">${esc(p.detail)}</div>` : ""}<div class="actions">${i === 0 ? listenButton() : ""}<button class="btn ghost" data-act="not-now" data-token="${esc(p.token)}">Not now${i === 0 ? " <kbd>N</kbd>" : ""}</button><button class="btn primary" data-act="confirm" data-token="${esc(p.token)}" ${busy ? "disabled" : ""}>${icon("check")}Confirm${i === 0 ? " <kbd>Y</kbd>" : ""}</button></div></div>`).join("")}
       ${!confirms.length ? askBox("Ask a follow-up…") : ""}
       ${!confirms.length ? `<div class="actions">${listenButton()}${opens.map((p) => `<button class="btn" data-act="open-href" data-href="${esc(p.href)}">${esc(p.label)}${icon("open")}</button>`).join("")}<button class="btn ghost" data-act="open-chat" title="Carry on with this chat on ${esc(`${me().name}'s`)} page in Boredroom">Open chat</button><button class="btn ghost" data-act="close">Done</button></div>` : ""}`;
   }
@@ -991,15 +1020,20 @@ async function ask(text, { spoken = true } = {}) {
   openCard({ kind: "voice", phase: "thinking", heard: text, sticky: true });
   try {
     if (data && !data.brendaEnabled) throw new Error("Brenda isn't part of your workspace's plan yet.");
-    const r = await call("POST", org("/assistant/chat"), { messages: talk.slice(-12).map(({ role, content }) => ({ role, content })) });
-    // Kept whole (what she did and offered too) for Past chats; only the words go back to her.
-    const msg = { role: "assistant", content: r.reply, actions: r.actions ?? [], proposals: r.proposals ?? [], engine: r.engine, note: r.note ?? null };
+    // Only the words go back to her, and whether an answer of hers read other people's words (acting without asking,
+    // 8 October 2026: Boredroom then still asks before acting in this chat).
+    const r = await call("POST", org("/assistant/chat"), { messages: talk.slice(-12).map(({ role, content, tainted }) => ({ role, content, ...(role === "assistant" ? { tainted: tainted !== false } : {}) })) });
+    // Kept whole (what she did and offered too) for Past chats.
+    const msg = { role: "assistant", content: r.reply, actions: r.actions ?? [], proposals: r.proposals ?? [], engine: r.engine, note: r.note ?? null, tainted: !!r.tainted };
+    keepAct(r.act); // the mode as Boredroom read it for this answer: the pill follows it at once
     talk.push(msg);
     const needsYes = msg.proposals.some((p) => p.kind === "confirm");
     // What she says: the server's speakable version (B3 in the phase 2 contract; "" when nothing in it can be said), or
     // the plain words from an older server.
     const spokenText = typeof r.spoken === "string" ? r.spoken.trim() : plain(r.reply);
-    openCard({ kind: "voice", phase: "reply", heard: text, spoken, spokenText, reply: r.reply, actions: r.actions, proposals: msg.proposals.map((p, at) => ({ ...p, at })), msg, sticky: needsYes, closeAfter: REPLY_CLOSE_MS });
+    // A line with Undo keeps the card open longer (review, 8 October 2026: it folded away with its Undo in about 16 s).
+    const closeAfter = (r.actions ?? []).some(undoable) ? UNDO_CLOSE_MS : REPLY_CLOSE_MS;
+    openCard({ kind: "voice", phase: "reply", heard: text, spoken, spokenText, reply: r.reply, actions: r.actions, proposals: msg.proposals.map((p, at) => ({ ...p, at })), msg, sticky: needsYes, closeAfter });
     Sound.play(needsYes ? "attention" : r.actions?.length ? "success" : "reply");
     if (speaksFor(spoken)) sayAloud(spokenText);
     if (!spoken) document.getElementById("ask")?.focus(); // typed: carry straight on with a follow-up
@@ -1007,7 +1041,10 @@ async function ask(text, { spoken = true } = {}) {
     saveChat();
   } catch (err) {
     talk.pop();
-    openCard({ kind: "voice", phase: "error", title: `${me().name} couldn't answer`, message: err?.message ?? "Can't reach Boredroom.", closeAfter: REPLY_CLOSE_MS });
+    // While she acts without asking, a lost answer may still have done something (review, 8 October 2026): say so, so
+    // the person checks before asking again.
+    const message = `${err?.message ?? "Can't reach Boredroom."}${actingAlone() && !(err?.status >= 400) ? ` ${me().name} may have done some of it already: check What ${me().name} did in Boredroom before asking again.` : ""}`;
+    openCard({ kind: "voice", phase: "error", title: `${me().name} couldn't answer`, message, closeAfter: REPLY_CLOSE_MS });
     Sound.play("error");
   }
 }
@@ -1038,7 +1075,7 @@ async function confirmProposal(token) {
   busy = false;
   const said = r.error ?? (r.actions?.map((a) => a.summary).join(". ") || "Done.");
   // Refused, the Confirm stays unanswered in the kept conversation, where it reads as expired.
-  if (!r.error) markDone(msg, at, "Done", r.actions ?? []);
+  if (!r.error || r.actions?.length) markDone(msg, at, "Done", r.actions ?? []);
   saveChat();
   refresh();
   Sound.play(r.error ? "error" : "success");
@@ -1047,7 +1084,11 @@ async function confirmProposal(token) {
   // its own yes or no, and the card stays open until it has one (review, 8 October 2026).
   const rest = (card.proposals ?? []).filter((p) => !(p.kind === "confirm" && p.token === token));
   const waiting = rest.some((p) => p.kind === "confirm");
-  card = { ...card, proposals: rest, sticky: waiting, reply: said, actions: r.error ? [] : r.actions,
+  // What the Confirm did joins the lines already there (review, 8 October 2026: it replaced them, Undo and all), and
+  // what ran before a failure is kept too.
+  const added = r.actions ?? [];
+  card = { ...card, proposals: rest, sticky: waiting, reply: said, actions: [...(card.actions ?? []), ...added],
+    ...(added.some(undoable) || (card.actions ?? []).some(undoable) ? { closeAfter: UNDO_CLOSE_MS } : {}),
     // The server's speakable words (never a URL, an id or a `say` command from a typed title); an older server's plain().
     spokenText: typeof r.spoken === "string" ? r.spoken : plain(said) };
   render(); if (!waiting) scheduleClose();
@@ -1101,6 +1142,154 @@ async function takeOffer(i) {
   } catch (err) { busy = false; error = err?.message ?? String(err); Sound.play("error"); render(); }
 }
 
+// ---- acting without asking ---------------------------------------------------------------------------------------
+// Owner decision, 8 October 2026 (the header says what the person sees). Boredroom decides whether something acts or
+// asks; the notch only shows what it was told: the mode in force (`assistant.act`), each done line's `auto` and `undo`
+// ({ token, until }: the server's offer, until the token expires), and a Confirm's `why`. Nothing here is drawn unchecked:
+// the mode must be a ready ActState, the offer a token with a valid time, the why a string, and every word goes through
+// esc(). The Undo button is the person pressing for themself, in their own chat, with their own sign-in; the server checks
+// the token is theirs, still fresh and not used.
+
+/** The person's mode as Boredroom read it (an ActState), or null: an older server, before 0045 (`ready: false`), or anything unexpected. */
+function actState() {
+  const a = data?.assistant?.act;
+  return a && typeof a === "object" && a.ready === true && (a.mode === "ask" || a.mode === "auto") ? a : null;
+}
+/** Acting without asking is in force: the person chose it and nothing locks it (the workspace's switch, someone else signed in as them). */
+const actingAlone = () => { const a = actState(); return !!a && a.effective === "auto" && !a.locked; };
+/**
+ * The chat card's mode pill while she acts without asking: amber with a word beside the mark (caution, never orange: the
+ * mode is not live or the one thing to do), as the web's composer pill. Nothing in "Ask first", nothing when locked.
+ */
+const modePill = () => (actingAlone()
+  // Review, 8 October 2026: the title says what holds here (Undo lasts while the reply shows; 10 minutes in Boredroom's
+  // chat), and, with no AI connected, that acting without asking waits for it (the built-in helper always asks).
+  ? `<span class="pill warn mode" title="${esc(data?.assistant?.ai === false
+    ? `Acting without asking needs the AI connected. Until then ${me().name} asks first. Change it in Boredroom: Settings, Your assistant.`
+    : `${me().name} does what you ask in your own chat straight away. Undo shows on the reply while it is open; in Boredroom's chat it lasts 10 minutes. Change it in Boredroom: Settings, Your assistant.`)}">${icon("zap")}Acting without asking</span>`
+  : "");
+/** A chat answer's `act` (the mode as the server read it for that answer) replaces the desktop state's until the next poll. */
+function keepAct(act) {
+  if (!act || typeof act !== "object" || typeof act.ready !== "boolean" || !data?.assistant || typeof data.assistant !== "object") return;
+  data.assistant = { ...data.assistant, act };
+}
+/** Why a Confirm still asks while the person chose to act without asking ("Still asking: …"), or "". */
+const whyOf = (p) => (typeof p?.why === "string" ? p.why.trim() : "");
+
+/** The server's clock now (`until` is on it). */
+const serverNow = () => Date.now() + offsetMs;
+/** The line's Undo is on offer: a token, a time it lasts until that has not passed, not undone yet. */
+const undoable = (a) => !!a && !a.undone && !!a.undo && typeof a.undo.token === "string" && a.undo.token.length > 0 && Date.parse(a.undo.until) > serverNow();
+/** The done line on the card whose Undo carries `token`. */
+const actionOf = (token) => (typeof token === "string" && token ? (card?.actions ?? []).find((a) => a?.undo?.token === token) ?? null : null);
+
+/** A line done without asking keeps this much of its summary, so "(without asking)" always shows at its end (the whole is its tooltip). */
+const AUTO_SUMMARY_MAX = 72;
+const shorten = (s, max) => { const c = [...String(s ?? "")]; return c.length > max ? `${c.slice(0, max - 1).join("").trimEnd()}…` : c.join(""); };
+
+/**
+ * One thing she did, as a line: the green check and what it was, "(without asking)" when the person's mode ran it, then
+ * Undo while the server's offer lasts (a ghost button named for what it undoes). Undone, the check becomes the undo arrow,
+ * the words go grey and the line ends "Undone" (the server's words for what it did follow for screen readers; the notch
+ * is a polite live region).
+ */
+function doneLine(a, i) {
+  const auto = a.auto === true;
+  const summary = String(a.summary ?? "");
+  const words = auto ? shorten(summary, AUTO_SUMMARY_MAX) : summary;
+  const text = `<span class="t"${words !== summary ? ` title="${esc(summary)}"` : ""}>${esc(words)}${auto ? `<span class="s"> (without asking)</span>` : ""}</span>`;
+  const cls = `done${auto ? " auto" : ""}`;
+  if (a.undone) {
+    // The server's words show under the line (review, 8 October 2026: "They may have seen it already" was for screen
+    // readers only).
+    const said = typeof a.undone === "string" && a.undone !== "Undone" ? `<span class="u">${esc(a.undone)}</span>` : "";
+    return `<li class="${cls} undone" data-i="${i}"><span class="k was">${icon("undo")}</span><span class="tw">${text}${said}</span><span class="k gone">Undone</span></li>`;
+  }
+  const undo = undoable(a)
+    ? `<button class="btn ghost" data-act="undo" data-token="${esc(a.undo.token)}" aria-label="${esc(`Undo: ${summary}`)}" ${a.undoing ? 'disabled aria-busy="true"' : ""}>${icon("undo")}Undo</button>`
+    : "";
+  return `<li class="${cls}" data-i="${i}"><span class="k ok">${icon("check")}</span>${text}${undo}</li>`;
+}
+/**
+ * The done lines a card shows, each with its place in `card.actions` (for paintDone): the first `max`, plus every later
+ * one that still offers Undo (review, 8 October 2026: a third line's Undo was hidden while a Confirm waited).
+ */
+function shownLines(actions, max) {
+  return actions.map((a, i) => ({ a, i })).filter(({ a, i }) => i < max || undoable(a));
+}
+/** The line drawn again where it is: the rest of the card, the ask box's words included, stays as it is. */
+function paintDone(a) {
+  const i = (card?.actions ?? []).indexOf(a);
+  const li = i < 0 ? null : el.querySelector(`li.done[data-i="${i}"]`);
+  if (li) li.outerHTML = doneLine(a, i);
+  fit();
+}
+/** The card's error line, in place (render() draws the same line at the same spot). */
+function showError() {
+  el.querySelector(":scope > .err")?.remove();
+  if (error) el.insertAdjacentHTML("beforeend", `<p class="err">${esc(error)}</p>`);
+  fit();
+}
+
+/**
+ * Undo on a done line: the person acting again, as themself, once (POST /brenda/undo with the line's token). Done, the
+ * line reads "Undone" and the server's words are said under the same rule as a Confirm's result; already undone (pressed
+ * twice, or meanwhile) reads the same, quietly. Refused because the thing has moved on (seen, answered, changed, past its
+ * time, not theirs), the card shows the server's words and the button goes; Boredroom out of reach keeps it, to try
+ * again. All in place, so words typed in the ask box stay; the card stays open while it is asked.
+ */
+async function undoDone(token) {
+  const a = actionOf(token);
+  if (!a || a.undoing || !undoable(a)) return;
+  a.undoing = true;
+  for (const b of el.querySelectorAll('[data-act="undo"]')) if (b.dataset.token === token) { b.disabled = true; b.setAttribute("aria-busy", "true"); }
+  error = null; showError();
+  clearTimeout(closeTimer); restartCountdown(0);
+  let r = null, quietly = false;
+  try { r = await call("POST", org("/brenda/undo"), { token }); }
+  catch (err) {
+    a.undoing = false;
+    if (!config?.signedIn) return; // signed out meanwhile: the link card is showing
+    if (err?.code === "ALREADY_UNDONE") quietly = true;
+    else {
+      // The server said no in words (too late, changed since, not theirs, not valid): it will not say yes later.
+      if (err?.status >= 400 && err.status < 500) delete a.undo;
+      error = err?.message ?? String(err);
+      Sound.play("error");
+      paintDone(a); showError();
+      if (card && !card.sticky) scheduleClose();
+      return;
+    }
+  }
+  a.undoing = false;
+  const said = typeof r?.summary === "string" ? r.summary.trim() : "";
+  a.undone = said || "Undone";
+  delete a.undo;
+  paintDone(a);
+  saveChat(); // the kept answer holds this same line
+  refresh();
+  if (!quietly) {
+    Sound.play("tick");
+    // What the Undo did is read aloud under the same rule as a Confirm's result; otherwise she stops reading the answer.
+    if (said && card?.kind === "voice" && speaksFor(card.spoken)) sayAloud(typeof r.spoken === "string" ? r.spoken : plain(said));
+    else hush();
+  }
+  if (card && !card.sticky) scheduleClose();
+}
+
+let undoTimer = null;
+/** Each Undo goes, in place, the moment the server's offer ends (the ask box keeps its words). */
+function armUndoClock() {
+  clearTimeout(undoTimer);
+  const next = Math.min(...(Array.isArray(card?.actions) ? card.actions : []).filter(undoable).map((a) => Date.parse(a.undo.until)));
+  if (!Number.isFinite(next)) return;
+  undoTimer = setTimeout(() => {
+    for (const b of el.querySelectorAll('[data-act="undo"]')) if (!undoable(actionOf(b.dataset.token))) b.remove();
+    fit();
+    armUndoClock();
+  }, Math.min(2 ** 31 - 1, Math.max(0, next - serverNow()) + 50));
+}
+
 // ---- past chats --------------------------------------------------------------------------------------------------
 // What is said to Brenda up here is kept with her chats in Boredroom (owner decision, 5 October 2026), privately to the
 // person, through the same conversations API the web uses (server/services/brenda-history.ts), so it shows in Past
@@ -1121,19 +1310,27 @@ const clip = (s, max) => (s.length > max ? `${s.slice(0, max - 1).trimEnd()}…`
 const newChat = (from = 0) => ({ id: null, updatedAt: null, saving: null, again: false, last: "", from, savedTo: from });
 let chat = newChat();
 
+// Acting without asking (8 October 2026): a done line is kept with whether it ran without asking (`auto`) and what its
+// Undo did (`undone`), never the Undo's token (the offer belongs to the card it was made on, as a Confirm's token does);
+// a Confirm keeps why it still asked (`why`), and an answer whether it read other people's words (`tainted`).
+const keptAction = (a) => ({ kind: a.kind, summary: a.summary, ...(a.href ? { href: a.href } : {}), ...(a.followUpBatchId ? { followUpBatchId: a.followUpBatchId } : {}),
+  ...(a.assistantItemId ? { assistantItemId: a.assistantItemId } : {}), ...(a.auto === true ? { auto: true } : {}), ...(a.undone ? { undone: a.undone } : {}) });
+
 function forSaving(messages) {
   return messages.slice(-KEEP.messages).map((m) => ({
     role: m.role,
     content: clip(String(m.content ?? ""), KEEP.content),
-    ...(m.actions?.length ? { actions: m.actions } : {}),
-    ...(m.proposals?.length ? { proposals: m.proposals.map((p) => (p.kind === "confirm" ? { kind: p.kind, summary: p.summary, tool: p.tool, ...(p.detail ? { detail: p.detail } : {}), ...(p.done ? { done: p.done } : {}) } : p)) } : {}),
+    ...(m.actions?.length ? { actions: m.actions.map(keptAction) } : {}),
+    ...(m.proposals?.length ? { proposals: m.proposals.map((p) => (p.kind === "confirm" ? { kind: p.kind, summary: p.summary, tool: p.tool, ...(p.detail ? { detail: p.detail } : {}), ...(p.done ? { done: p.done } : {}), ...(whyOf(p) ? { why: whyOf(p) } : {}) } : p)) } : {}),
     ...(m.engine ? { engine: m.engine } : {}),
     ...(m.note ? { note: m.note } : {}),
+    // False included (review, 8 October 2026): a reply with no flag counts as having read other people's words.
+    ...(m.role === "assistant" ? { tainted: m.tainted !== false } : {}),
   }));
 }
 
-/** A message with what was made of it (Done, Not done, what a Confirm did), as the web's chat compares two copies. */
-const marks = (m) => JSON.stringify([m.role, m.content, (m.proposals ?? []).map((p) => p.done ?? ""), m.actions?.length ?? 0]);
+/** A message with what was made of it (Done, Not done, what a Confirm did, what was undone), as the web's chat compares two copies. */
+const marks = (m) => JSON.stringify([m.role, m.content, (m.proposals ?? []).map((p) => p.done ?? ""), m.actions?.length ?? 0, (m.actions ?? []).map((a) => (a?.undone ? 1 : 0))]);
 
 /** Saves the conversation as it is now: the first save creates it, later ones replace it (or create it again if it was deleted on the web). */
 function saveChat(c = chat, messages = talk) {

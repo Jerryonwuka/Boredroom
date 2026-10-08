@@ -17,7 +17,8 @@
  *   standout); the outcome in words once answered ("Accepted. Added to your to-dos.", "Couldn't be done: …");
  * - a reply brought to the person: "Ben replied to your message", their message quoted small, the reply in a bubble;
  * - what the person sent: their own face, "To Ben's Brenda", the words and where it stands ("Ben has seen it, 14:02.",
- *   "Ben replied: “…”", "Ada declined: “…”"), with "Cancel request" while a request is open;
+ *   "Ben replied: “…”", "Ada declined: “…”", "You withdrew it." once a message was undone within its 10 minutes: act
+ *   without asking, 8 October 2026), with "Cancel request" while a request is open;
  * - a note for the team report: "From you via Max: “…”", when the report's readers read it, "Withdraw note" until then.
  *
  * Everything another person wrote (a message, a reply, a note, a decline reason, a task title in a request's lines) is
@@ -169,8 +170,10 @@ export function outcomeOf(item: AssistantItemView, o: { timeZone: string; now: n
       default: return null;
     }
   }
-  // A message or a reply.
+  // A message or a reply. A message its sender withdrew with Undo (act without asking, 8 October 2026) is read by the
+  // sender alone: the recipient no longer sees it.
   if (item.viewer === "sender") {
+    if (item.kind === "message" && item.status === "withdrawn") return { text: W.status.messageWithdrawn, tone: "neutral" };
     if (item.reply) return { text: W.status.replied(R, item.reply.body), tone: "neutral" };
     if (item.seenAt) return { text: W.status.seen(R, at(item.seenAt)), tone: "success" };
     return { text: W.status.delivered, tone: "neutral" };
@@ -449,7 +452,8 @@ export function AssistantItemCard({ orgSlug, item: given, timeZone, now, compact
         <Bubble>“{item.body}”</Bubble>
         {item.tidied ? <p className="mt-1 text-xs font-normal text-subtle">Reworded as you asked.</p> : null}
         {originLink}
-        {item.seenAt ? <p className="mt-1.5 text-meta font-normal text-secondary">{W.card.hasSeen(n.R, at(item.seenAt))}</p>
+        {item.status === "withdrawn" ? outcomeLine
+          : item.seenAt ? <p className="mt-1.5 text-meta font-normal text-secondary">{W.card.hasSeen(n.R, at(item.seenAt))}</p>
           : <p className="mt-1.5 text-meta font-normal text-secondary">Delivered. {n.RA} passes it to {n.R}.</p>}
         {item.reply ? quoteLine(`${n.R} replied:`, item.reply.body) : null}
       </>

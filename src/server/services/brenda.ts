@@ -18,7 +18,7 @@ import { notify } from "@/server/services/common";
 import { clockIn, myClock } from "@/server/services/attendance";
 import { currentSession } from "@/server/services/sessions";
 import { reviewQueue } from "@/server/services/views";
-import { invalid, notFound, forbidden } from "@/server/lib/errors";
+import { conflict, invalid, notFound, forbidden } from "@/server/lib/errors";
 import { localDate, weekdayOf } from "@/server/lib/time";
 import { assistantSchemaReady, readPersonalAssistant } from "@/server/services/assistant-profile";
 import { rowSummary } from "@/server/services/assistant-activity";
@@ -93,7 +93,9 @@ export async function setBrendaPrefs(ctx: OrgContext, input: z.infer<typeof sett
 /**
  * Everything the settings and profile pages show about Brenda for this person. The log is about her actions: what she
  * read for someone to catch them up (source 'read') is theirs alone and lives on their Activity page (owner decision,
- * 8 October 2026: personal assistants, phase 3; row-level security hides it from owners and HR as well).
+ * 8 October 2026: personal assistants, phase 3; row-level security hides it from owners and HR as well). `auto` on a
+ * row: it was done without a Confirm press because the person chose Act without asking (owner decision, 8 October 2026;
+ * `detail.auto`), so the log reads "done without asking".
  */
 export async function brendaOverview(ctx: OrgContext) {
   return withUser(ctx.user.profileId, async (db) => {
@@ -101,8 +103,8 @@ export async function brendaOverview(ctx: OrgContext) {
     const [settings, prefs, actions] = await Promise.all([
       brendaSettings(db, ctx.org.id),
       brendaPrefs(db, ctx.membership.id),
-      db.query<{ id: string; tool: string; summary: string; outcome: string; source: string; created_at: string; display_name: string }>(
-        `SELECT a.id, a.tool, a.summary, a.outcome, a.source, a.created_at, pr.display_name
+      db.query<{ id: string; tool: string; summary: string; outcome: string; source: string; auto: boolean; created_at: string; display_name: string }>(
+        `SELECT a.id, a.tool, a.summary, a.outcome, a.source, COALESCE((a.detail->>'auto') = 'true', false) AS auto, a.created_at, pr.display_name
          FROM brenda_actions a JOIN memberships m ON m.id = a.membership_id JOIN profiles pr ON pr.id = m.user_id
          WHERE a.organisation_id = $1 AND a.source <> 'read' ${isOrg ? "" : "AND a.membership_id = $2"} ORDER BY a.created_at DESC LIMIT 30`, isOrg ? [ctx.org.id] : [ctx.org.id, ctx.membership.id]),
     ]);
@@ -212,6 +214,21 @@ export async function cancelReminder(ctx: OrgContext, id: string) {
   return withUser(ctx.user.profileId, async (db) => {
     const r = await db.query<{ body: string }>(`UPDATE brenda_reminders SET cancelled_at = now() WHERE id = $1 AND membership_id = $2 AND sent_at IS NULL AND cancelled_at IS NULL RETURNING body`, [id, ctx.membership.id]);
     if (!r.length) throw notFound("That reminder is not yours, already went off, or was cancelled.");
+    return { id, body: r[0].body };
+  });
+}
+
+/**
+ * Puts back a reminder the person cancelled (act without asking, 8 October 2026: Undo of "Cancelled your reminder"),
+ * while its time is still ahead and it has not gone off. Theirs alone (the row's own policy, and the membership here).
+ * Throws 409 UNDO_TOO_LATE otherwise.
+ */
+export async function restoreReminder(ctx: OrgContext, id: string) {
+  return withUser(ctx.user.profileId, async (db) => {
+    const r = await db.query<{ body: string }>(
+      `UPDATE brenda_reminders SET cancelled_at = NULL WHERE id = $1 AND membership_id = $2 AND cancelled_at IS NOT NULL AND sent_at IS NULL AND remind_at > now() RETURNING body`,
+      [id, ctx.membership.id]);
+    if (!r.length) throw conflict("UNDO_TOO_LATE", "That reminder's time has passed.");
     return { id, body: r[0].body };
   });
 }

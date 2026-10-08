@@ -3,8 +3,9 @@
  * with a name, a sphere colour from this curated palette, a visor and eyes; the workspace has one of its own that signs
  * what the workspace sends on its own (the end-of-day team report). The default is Brenda as she was: white, the bean
  * visor, pill eyes. This module is the one source for the palette, the presets, the defaults and the name rule, shared by
- * the server, the canvas engine, the CSS faces and the glyph. It imports nothing, so client code can use it. The notch
- * cannot import it: the desktop state carries the resolved colours instead.
+ * the server, the canvas engine, the CSS faces and the glyph. It imports nothing but a type from lib/act-mode (itself
+ * import-free), so client code can use it. The notch cannot import it: the desktop state carries the resolved colours
+ * instead.
  *
  * Every combination stays readable: the visor is always near-black and the eyes always white, and every sphere colour is
  * light enough for the visor to stand out (at least 7:1 at the sphere's middle tone; tests/unit/assistant-look.test.ts).
@@ -14,6 +15,8 @@
  * sits beside `personal` in `AssistantProfiles`, not in a profile (the workspace assistant has none). Which voice and
  * how fast are kept on each device (lib/assistant-speech/prefs), never here.
  */
+
+import type { ActState } from "@/lib/act-mode";
 
 export const ASSISTANT_COLOURS = ["white", "grey", "yellow", "orange", "coral", "pink", "purple", "blue", "teal", "green"] as const;
 export const ASSISTANT_VISORS = ["bean", "band", "screen"] as const;
@@ -26,9 +29,15 @@ export type AssistantLook = { colour: AssistantColour; visor: AssistantVisor; ey
 export type AssistantProfile = AssistantLook & { name: string };
 /**
  * What the workspace pages know: the person's own assistant, the workspace's, whether "Meet your assistant" is done, and
- * when the person's own assistant speaks (phase 2).
+ * when the person's own assistant speaks (phase 2). `act` (owner decision, 8 October 2026: act without asking): whether
+ * it asks before acting, as the server reads it (lib/act-mode); optional so every existing literal still compiles, and
+ * read as `ASK_STATE` when absent (`actStateOf`).
  */
-export type AssistantProfiles = { personal: AssistantProfile; workspace: AssistantProfile; setupDone: boolean; canEditWorkspace: boolean; speak: AssistantSpeak };
+/**
+ * `ai` (review, 8 October 2026): whether the workspace has an AI connection, read only for someone who chose Act without
+ * asking (absent otherwise). False: the built-in helper answers, and it always asks first.
+ */
+export type AssistantProfiles = { personal: AssistantProfile; workspace: AssistantProfile; setupDone: boolean; canEditWorkspace: boolean; speak: AssistantSpeak; act?: ActState; ai?: boolean };
 
 /** The drawn sphere's four stops (lib/brenda-character/engine), from the lit upper left to the rim. */
 export type SphereShades = { light: string; mid: string; shade: string; rim: string };

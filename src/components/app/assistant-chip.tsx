@@ -3,9 +3,11 @@
 /**
  * Her mark on messages (owner decision, 8 October 2026: personal assistants, phase 3). A message carries who wrote it
  * (`messages.author_kind`, migration 0037), and Messages, the conversation list and the toasts say so:
- * - `via_assistant`: the person's own assistant sent it for them after they confirmed it. The person stays the author
- *   (their picture and name); `AssistantChip` sits beside the name (or beside the time under your own message): the
- *   assistant's small face and "via Max", with the tooltip "Sent by Max for Olu after Olu confirmed it".
+ * - `via_assistant`: the person's own assistant sent it for them, at their request (after their Confirm, or at once when
+ *   they chose Act without asking). The person stays the author (their picture and name); `AssistantChip` sits beside
+ *   the name (or beside the time under your own message): the assistant's small face and "via Max", with the tooltip
+ *   "Sent by Max for Olu at Olu's request". Review, 8 October 2026: it said "after Olu confirmed it", which is not true
+ *   of a message sent without asking; these words are true in both modes.
  * - `assistant`: the assistant's own words in a thread (written only by Boredroom's worker; phases 4 and 5). The
  *   assistant is the author: `AssistantAvatar` (its face on a grey disc) in place of the picture, its name, and a small
  *   "Olu's assistant" tag.
@@ -28,14 +30,14 @@ export function firstName(name: string): string {
   return name.trim().split(/\s+/)[0] || name;
 }
 
-/** The sentence behind "via Max": who sent it, for whom, and that they confirmed it first. */
+/** The sentence behind "via Max": who sent it, for whom, and that they asked for it (true whether or not they pressed Confirm). */
 export function viaAssistantSentence(assistantName: string, personName: string, isYou: boolean): string {
-  if (isYou) return `Sent by ${assistantName} for you after you confirmed it`;
+  if (isYou) return `Sent by ${assistantName} for you at your request`;
   const who = firstName(personName);
-  return `Sent by ${assistantName} for ${who} after ${who} confirmed it`;
+  return `Sent by ${assistantName} for ${who} at ${who}'s request`;
 }
 
-/** "via Max", with the assistant's face: on a message the person's own assistant sent for them after they confirmed it. */
+/** "via Max", with the assistant's face: on a message the person's own assistant sent for them at their request. */
 export function AssistantChip({ assistant, personName, isYou, className }: { assistant: AssistantProfile; personName: string; isYou: boolean; className?: string }) {
   const sentence = viaAssistantSentence(assistant.name, personName, isYou);
   return (
