@@ -69,6 +69,18 @@
 // syllables itself. The reply card has a Listen / Stop button whatever the preference and stays open while she talks;
 // she stops when the person types to her, asks something new, closes the card or signs out (the talk keys stop her in
 // Rust, and she never speaks over an open microphone).
+//
+// Follow-ups between assistants (owner decision, 8 October 2026: personal assistants, phase 4). "Instead of following up
+// with the people, the assistants follow up with each other's assistants." When someone's assistant asks about the
+// person's work and their work does not answer it, their own assistant asks them once: an unread `brenda.followup_ask`
+// whose follow-up is waiting (the desktop state's `followUps.waiting`) opens the request card, which stays until it is
+// answered, Not now or Esc. It shows the asker's assistant, the question quoted, when the reply is due, four quick replies
+// (On track, Blocked, Done, Not started), a one-line note typed or said (while it is open the talk keys write into the
+// note instead of asking her), what their assistant will share, and that a reply never changes the task. Not now tells
+// the asker's assistant they can't answer right now. The person's own follow-ups come back as `brenda.followup_answer`
+// (or `brenda.followup_batch` for a group): the answer card shows both assistants' faces and the answer as plain text,
+// never Markdown, with Open and Done. Everything other people wrote goes through esc() only, and only Boredroom paths
+// open. An older server (no `followUps`) gets the plain notification cards, as before.
 
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
@@ -96,6 +108,9 @@ let talk = [];              // the spoken conversation so far, forgotten after a
 let talkAt = 0;
 let cursor = null;          // the cursor in window coordinates, from Rust (for the eyes and hover)
 let gaze = null;            // the caret in the ask box while the person types to her (she reads along), or null
+// The boxes the person types in: the ask box, and a follow-up's note (phase 4, 8 October 2026). Typing in either keeps
+// the notch focused, cuts her off and has the face on the card read along.
+const TYPING = new Set(["ask", "fnote"]);
 let viewKey = "";           // which view is showing; content animates in only when it changes
 let wasOpen = false;
 let tucked = false, tuckTimer = null, alwaysVisible = false;
@@ -203,6 +218,7 @@ const ICONS = {
   plus: `<path d="M5 12h14"/><path d="M12 5v14"/>`,
   alarm: `<circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2"/><path d="M5 3 2 6"/><path d="m22 6-3-3"/>`,
   volume: `<path d="M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z"/><path d="M16 9a5 5 0 0 1 0 6"/><path d="M19.364 18.364a9 9 0 0 0 0-12.728"/>`,
+  chevron: `<path d="m9 18 6-6-6-6"/>`,
 };
 /** An icon; its class (`ic-<name>`) picks the small move it makes when its button is hovered or focused (style.css). */
 const icon = (name) => `<svg class="ic ic-${name}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name]}</svg>`;
@@ -256,6 +272,11 @@ function moodOf() {
     return { mood: "alert", tone: "accent" };
   }
   if (card.kind === "error") return { mood: "sad", tone: "bad" };
+  // Follow-ups (owner decision, 8 October 2026: phase 4): an ask waits on the person (alert, the accent glow) until it is
+  // sent (happy, green); an answer pleases only when it is one (happy, green), and a no-reply, a not now or a failure
+  // stays neutral.
+  if (card.kind === "followup_ask") return card.phase === "sent" ? { mood: "happy", tone: "ok" } : card.phase === "gone" ? {} : { mood: "alert", tone: "accent" };
+  if (card.kind === "followup_answer") return !card.a || card.a.status === "answered" ? { mood: "happy", tone: "ok" } : {};
   if (card.kind === "drop") {
     if (card.phase === "over") return { mood: "gulp", tone: card.hot ? "ok" : "blue" };
     if (card.phase === "uploading") return { mood: "think", tone: "violet" };
@@ -332,18 +353,21 @@ island.addEventListener("pointerdown", () => Sound.unlock());
 
 function render() {
   el.classList.toggle("compact", !!config?.signedIn && !card);
-  const key = !config?.signedIn ? `link:${!!link}:${editingServer}` : card ? `${card.kind}:${card.phase ?? ""}:${card.n?.id ?? ""}` : "compact";
+  const key = !config?.signedIn ? `link:${!!link}:${editingServer}` : card ? `${card.kind}:${card.phase ?? ""}:${card.n?.id ?? card.w?.id ?? ""}` : "compact";
+  // A follow-up's note keeps its words (they live on the card), its focus and its caret when the card is drawn again.
+  const noting = document.activeElement?.id === "fnote" ? { from: document.activeElement.selectionStart, to: document.activeElement.selectionEnd } : null;
   if (!config?.signedIn) el.innerHTML = linkView();
   else if (!card) el.innerHTML = compactView();
   else el.innerHTML = `${cardView()}${error ? `<p class="err">${esc(error)}</p>` : ""}`;
+  if (noting) { const n = document.getElementById("fnote"); if (n && !n.disabled) { n.focus(); try { n.setSelectionRange(noting.from, noting.to); } catch { /* not a text field any more */ } } }
   el.setAttribute("aria-label", me().name); // the notch is named after the person's assistant (Brenda while signed out)
   const m = moodOf();
   island.dataset.tone = m.tone ?? "";
   if (key !== viewKey) {
     viewKey = key;
-    el.classList.remove("enter"); void el.offsetWidth; el.classList.add("enter");
-  }
-  if (gaze && document.activeElement?.id !== "ask") gaze = null; // the box she was reading has gone
+    el.classList.remove("enter", "steady"); void el.offsetWidth; el.classList.add("enter");
+  } else el.classList.add("steady"); // the same view drawn again (busy, a poll, a sent reply): no second blur-in (review, 8 October 2026)
+  if (gaze && !TYPING.has(document.activeElement?.id)) gaze = null; // the box she was reading has gone
   fit();
   applyFx();
   if (talking) talkLevel(talkLast); // the faces were drawn again: the level she is at, at once
@@ -412,6 +436,7 @@ function cardView() {
     const greet = new Date().getHours() < 12 ? "Good morning" : new Date().getHours() < 17 ? "Good afternoon" : "Good evening";
     return `<div class="row fade">${face({ ...moodOf(), dot: data.me.presence })}<div class="grow"><p class="title">${greet}${config.displayName ? `, ${esc(config.displayName.split(" ")[0])}` : ""}. ${b.openTasks} open task${b.openTasks === 1 ? "" : "s"}.</p><p class="sub">${extra || (first ? `First up: ${esc(first.title)}` : "Nothing is waiting on you.")}</p></div></div>
       ${items.length ? `<ul class="list fade">${items.map((i) => `<li><span class="t">${esc(i.t.title)}</span><span class="k ${i.bad ? "bad" : ""}">${esc(i.k)}</span></li>`).join("")}</ul>` : ""}
+      ${waitingView()}
       ${teamView()}
       ${askBox()}
       <div class="actions">${talkButton()}<button class="btn ghost" data-act="close">Later</button><button class="btn" data-act="open-href" data-href="/app/${esc(config.workspaceSlug)}/tasks">Tasks</button>${first && !data.timer && data.clock ? `<button class="btn primary accent" data-act="start" data-id="${esc(first.id)}" ${busy ? "disabled" : ""}>Start ${esc(first.title.length > 22 ? `${first.title.slice(0, 21)}…` : first.title)}</button>` : ""}</div>`;
@@ -435,6 +460,8 @@ function cardView() {
   }
   if (card.kind === "voice") return voiceView();
   if (card.kind === "drop") return dropView();
+  if (card.kind === "followup_ask") return followUpAskView();
+  if (card.kind === "followup_answer") return followUpAnswerView();
   if (card.kind === "error") return `<div class="row fade">${face(moodOf())}<div class="grow"><p class="title">Can't reach Boredroom</p><p class="sub">${esc(card.message)}</p></div></div><div class="actions"><button class="btn" data-act="close">OK</button></div>`;
   return "";
 }
@@ -468,6 +495,13 @@ el.addEventListener("click", async (e) => {
     if (act === "drop-send") return sendDrop();
     if (act === "drop-task") { card.taskId = target.value; return; }
     if (act === "not-now") return declineConfirms(target.dataset.token);
+    // Follow-ups (phase 4, 8 October 2026): pick a quick reply, send it (or Not now), see what will be shared, open the
+    // task without losing the reply, or open a waiting ask from the day card.
+    if (act === "fu-choice") return chooseReply(target.dataset.choice);
+    if (act === "fu-send") return sendFollowUpReply(target.dataset.choice || null);
+    if (act === "fu-facts") return toggleFacts(target);
+    if (act === "fu-task") { const path = boredroomPath(target.dataset.href); if (path) await invoke("open_in_browser", { path }); return; }
+    if (act === "fu-open") return openWaiting(target.dataset.id);
     if (act === "read") { await call("PATCH", org(`/notifications/${target.dataset.id}`)); data.notifications = data.notifications.filter((n) => n.id !== target.dataset.id); return closeCard(); }
     busy = true; render();
     const t = data?.timer;
@@ -530,6 +564,7 @@ async function refresh() {
     offsetMs = Date.parse(data.serverNow) - Date.now();
     keepCached();
     if (!card) render();
+    else followUpClosedElsewhere();
   } catch (err) {
     if (err?.status && err.status !== 401 && !card) openCard({ kind: "error", message: err.message });
   }
@@ -541,6 +576,10 @@ function nextNotification() {
   const n = (data.notifications ?? []).find((x) => !shown.has(x.id));
   if (!n) return;
   shown.add(n.id);
+  // A follow-up's ask or answer gets its own card when the desktop state knows it (phase 4); otherwise, and always with
+  // an older server, the plain notification card.
+  const fu = followUpCard(n);
+  if (fu) { openCard(fu); return Sound.play(fu.kind === "followup_ask" ? "attention" : "reply"); }
   openCard({ kind: "notification", n });
   Sound.play(n.type === "brenda.clock_in" ? "success" : "notify");
 }
@@ -584,22 +623,32 @@ function askBox(placeholder) {
 }
 
 el.addEventListener("submit", (e) => {
+  // Return in a follow-up's note sends the reply once one is chosen.
+  if (e.target.closest("[data-fu]")) { e.preventDefault(); return sendFollowUpReply(null); }
   const form = e.target.closest("[data-ask]");
   if (!form) return;
   e.preventDefault();
   const q = form.q.value.trim();
   if (q) ask(q, { spoken: false });
 });
-// While the person is typing, the card stays open even if the pointer leaves it.
-el.addEventListener("focusin", (e) => { if (e.target.id === "ask" && card) { card.sticky = true; clearTimeout(closeTimer); invoke("focus_notch").catch(() => {}); } });
+// While the person is typing, the card stays open even if the pointer leaves it. (A follow-up's ask is sticky anyway; its
+// note only needs the notch to take the keyboard.)
+el.addEventListener("focusin", (e) => {
+  if (e.target.id === "fnote") return void invoke("focus_notch").catch(() => {});
+  if (e.target.id === "ask" && card) { card.sticky = true; clearTimeout(closeTimer); invoke("focus_notch").catch(() => {}); }
+});
 el.addEventListener("focusout", (e) => { if (e.target.id === "ask" && card && !e.target.value.trim() && !(card.proposals ?? []).some((p) => p.kind === "confirm")) { card.sticky = false; scheduleClose(); } });
-el.addEventListener("pointerdown", (e) => { if (e.target.id === "ask") invoke("focus_notch").catch(() => {}); });
-// Typing to her cuts her off (owner decision, 7 October 2026: her voice), as on the web.
-el.addEventListener("input", (e) => { if (e.target.id === "ask" && aloud()) hush(); });
+el.addEventListener("pointerdown", (e) => { if (TYPING.has(e.target.id)) invoke("focus_notch").catch(() => {}); });
+// Typing to her cuts her off (owner decision, 7 October 2026: her voice), as on the web; so does typing a follow-up's note,
+// which is kept on the card as it is typed.
+el.addEventListener("input", (e) => {
+  if (TYPING.has(e.target.id) && aloud()) hush();
+  if (e.target.id === "fnote" && card?.kind === "followup_ask") { card.note = e.target.value; showCount(); }
+});
 // Keys while the notch has focus: Esc folds the card away; on a Confirm, Y confirms and N declines (not while typing).
 window.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && card) { if (e.target.id === "ask") e.target.blur(); return closeCard(); }
-  if (e.target.id === "ask" || !card || busy) return;
+  if (e.key === "Escape" && card) { if (TYPING.has(e.target.id)) e.target.blur(); return closeCard(); }
+  if (TYPING.has(e.target.id) || !card || busy) return;
   const confirm = (card.proposals ?? []).find((p) => p.kind === "confirm");
   if (!confirm) return;
   if (e.key === "y" || e.key === "Y") confirmProposal(confirm.token);
@@ -1263,6 +1312,8 @@ listen("brenda://voice", ({ payload: e }) => {
     return;
   }
   if (!config?.signedIn) return;
+  // A follow-up's ask is open: the talk keys write its note instead of asking her (phase 4, 8 October 2026).
+  if (card?.kind === "followup_ask" && card.phase === "ask" && dictate(e)) return;
   if (e.phase === "listening") {
     if (card?.kind === "voice" && card.phase === "listening") {
       card.level = e.level;
@@ -1383,6 +1434,279 @@ listen("brenda://drag", ({ payload: d }) => {
   }
 });
 
+// ---- follow-ups between assistants -------------------------------------------------------------------------------
+// Owner decision, 8 October 2026 (personal assistants, phase 4; the header says what the cards do). The desktop state's
+// `followUps` (src/server/services/desktop.ts, DesktopFollowUps) is { ready, waiting, answered }: `waiting` are the asks
+// about this person still open (asker null: the workspace's own collection for the team report), with `facts` already
+// worded for them (factLines); `answered` are their own follow-ups closed in the last day. The reply goes to
+// POST /follow-ups/<id>/reply as { choice, note }, and the ask's notification is then marked read. A reply never changes
+// the task: "Done" is words. Nothing a person wrote is drawn as Markdown or a link; only Boredroom paths open.
+
+const FU_CHOICES = [["on_track", "On track"], ["blocked", "Blocked"], ["done", "Done"], ["not_started", "Not started"]];
+const FU_NOTE_MAX = 280;    // FOLLOW_UP_LIMITS.noteMax on the server
+const FU_COUNT_FROM = 240;  // the counter shows from here, as on the web
+/** The answer card's badge, as the web's FollowUpBadge (a word with every colour). */
+const FU_BADGE = { answered: { label: "Answered", tone: "ok" }, expired: { label: "No reply", tone: "" }, declined: { label: "Not now", tone: "" }, failed: { label: "Couldn't follow up", tone: "bad" } };
+const firstName = (name) => String(name ?? "").trim().split(/\s+/)[0] || "";
+const hhmm = (d) => d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+const dayOf = (d) => d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
+const sameDay = (a, b) => a.toDateString() === b.toDateString();
+/** A deadline as the server words it: "15:30" today, "12:00 tomorrow", else "Mon 12 Oct 12:00". */
+function byWhen(iso) {
+  const d = new Date(iso); if (Number.isNaN(d.getTime())) return "";
+  const now = new Date(), tomorrow = new Date(now); tomorrow.setDate(now.getDate() + 1);
+  return sameDay(d, now) ? hhmm(d) : sameDay(d, tomorrow) ? `${hhmm(d)} tomorrow` : `${dayOf(d)} ${hhmm(d)}`;
+}
+/** A moment that has passed: "15:40" today, else "Wed 7 Oct 16:02". */
+function atWhen(iso) {
+  const d = new Date(iso); if (Number.isNaN(d.getTime())) return "";
+  return sameDay(d, new Date()) ? hhmm(d) : `${dayOf(d)} ${hhmm(d)}`;
+}
+/** A path inside Boredroom the notch may open (never another site, never a removed page), or null. */
+const boredroomPath = (href) => (typeof href === "string" && /^\/(?![/\\])[^\s\\]{0,2000}$/.test(href) && !removedPage(href) ? href : null);
+/** The note as it may be sent: spaces collapsed, at most 280 characters. */
+const cleanNote = (s) => [...String(s ?? "").replace(/\s+/g, " ").trim()].slice(0, FU_NOTE_MAX).join("").trim();
+const followUps = () => (data?.followUps && data.followUps.ready === true ? data.followUps : null);
+const isItem = (x) => !!x && typeof x === "object" && typeof x.id === "string" && typeof x.title === "string";
+const waitingList = () => (followUps()?.waiting ?? []).filter(isItem);
+
+/** The card a follow-up notification opens, or null for the plain notification card (an older server, or not known). */
+function followUpCard(n) {
+  if (!followUps()) return null;
+  if (n.type === "brenda.followup_ask") {
+    const w = waitingList().find((x) => x.id === n.resource_id);
+    return w ? askCard(w, n) : null;
+  }
+  if (n.type === "brenda.followup_answer") {
+    const a = (followUps().answered ?? []).filter(isItem).find((x) => x.id === n.resource_id);
+    return a ? { kind: "followup_answer", n, a, closeAfter: REPLY_CLOSE_MS } : null;
+  }
+  // A group's answers arrive together, with the batch's summary as the notification's body.
+  if (n.type === "brenda.followup_batch") return { kind: "followup_answer", n, a: null, closeAfter: REPLY_CLOSE_MS };
+  return null;
+}
+const askCard = (w, n) => ({ kind: "followup_ask", phase: "ask", w, n: n ?? null, choice: null, note: "", factsOpen: false, dictating: null, dictMessage: null, sticky: true });
+
+/** The asker's assistant: theirs, or the workspace's for its own collection before the team report. */
+const askerOf = (w) => (w.asker ? assistantOf(w.asker.assistant) : ws());
+
+function followUpAskView() {
+  const c = card, w = c.w, from = askerOf(w), ra = from.name;
+  const m = moodOf();
+  if (c.phase === "sent") {
+    const notNow = c.sent === "not_now";
+    const label = FU_CHOICES.find(([k]) => k === c.sent)?.[1] ?? "";
+    return `<div class="row fade">${face({ ...m, who: from })}<div class="grow"><p class="title wrap">${notNow ? `Told ${esc(ra)} you can't answer right now.` : `Sent. ${esc(ra)} gets your answer.`}</p><p class="sub">${notNow ? `${esc(ra)} gets what your work shows instead.` : `Your answer: ${esc(label)}${c.sentNote ? `, “${esc(c.sentNote)}”` : ""}`}</p></div></div>
+      <div class="actions"><button class="btn primary" data-act="close">OK</button></div>`;
+  }
+  if (c.phase === "gone") {
+    return `<div class="row fade">${face({ ...m, who: from })}<div class="grow"><p class="title wrap">${esc(w.title)}</p><p class="sub">${esc(c.message)}</p></div></div>
+      <div class="actions">${c.n ? `<button class="btn primary" data-act="read" data-id="${esc(c.n.id)}">OK</button>` : `<button class="btn primary" data-act="close">OK</button>`}</div>`;
+  }
+  const by = w.deadlineAt ? byWhen(w.deadlineAt) : "";
+  const due = w.asker
+    ? `${by ? `Reply by ${by}. ` : ""}If you don't, ${ra} gets what your work shows.`
+    : `${by ? `Reply by ${by}. ` : ""}Your reply goes in the report your team lead, the owner and HR receive.`;
+  const facts = (Array.isArray(w.facts) ? w.facts : []).filter((l) => typeof l === "string" && l.trim()).slice(0, 12);
+  const task = boredroomPath(w.taskHref);
+  const off = busy ? "disabled" : "";
+  return `<div class="row top fade">${face({ ...m, who: from })}<div class="grow"><p class="title wrap">${esc(w.title)}</p><p class="sub">${esc(due)}</p></div></div>
+    ${w.question ? `<p class="quote fade">“${esc(w.question)}”</p>` : ""}
+    <div class="choices fade" role="group" aria-label="Your answer">${FU_CHOICES.map(([k, label]) => `<button type="button" class="btn choice" data-act="fu-choice" data-choice="${k}" aria-pressed="${c.choice === k}" ${off}>${label}</button>`).join("")}</div>
+    <form class="fu-note fade" data-fu><div class="fu-field"><input class="field" id="fnote" name="note" maxlength="${FU_NOTE_MAX}" value="${esc(c.note)}" placeholder="Add a line, if you like" aria-label="Add a line, if you like" aria-describedby="fhold fdict" autocomplete="off" spellcheck="true" ${off}>${talkKeys()}</div><div class="fu-meta"><div class="grow" id="fdict">${dictView()}</div><span class="cap num" id="fcount">${countText(c.note)}</span></div></form>
+    ${facts.length || task ? `<div class="fu-foot fade">${facts.length ? `<button type="button" class="link toggle" data-act="fu-facts" aria-expanded="${!!c.factsOpen}" aria-controls="ffacts">${icon("chevron")}What your assistant will share</button>` : ""}${task ? `<button type="button" class="link" data-act="fu-task" data-href="${esc(task)}">Open task${icon("open")}</button>` : ""}</div>` : ""}
+    ${facts.length ? `<ul class="facts fade" id="ffacts" ${c.factsOpen ? "" : "hidden"}>${facts.map((l) => `<li>${esc(l)}</li>`).join("")}</ul>` : ""}
+    <div class="actions"><span class="cap lead">${w.taskTitle ? "This doesn't change the task." : "This doesn't change any of your tasks."}</span><button class="btn ghost" data-act="fu-send" data-choice="not_now" ${off}>Not now</button><button class="btn primary accent" data-act="fu-send" ${busy || !c.choice ? "disabled" : ""}>Send</button></div>`;
+}
+
+/** The talk keys inside the note's field while voice is on: hold them and say the line (it goes into the note). */
+const talkKeys = () => (voice.enabled && voice.modelReady
+  ? `<span class="fu-keys" id="fhold">${mic}<kbd>${esc(voice.shortcut)}</kbd><span class="sr">Or hold ${esc(voice.shortcut)} and say it.</span></span>`
+  : "");
+
+/** Under the note: the microphone while the talk keys are held, the words being written out, or why it could not listen. */
+function dictView() {
+  const c = card;
+  if (c?.kind !== "followup_ask") return "";
+  if (c.dictating === "listening") {
+    return `<div class="dict"><span class="mic"><span class="rec-dot"></span><span class="clock live" id="vtime" role="timer">${mss(voiceSeconds(c))}</span></span><span class="cap">Listening. Let go of <kbd>${esc(voice.shortcut)}</kbd> when you're done.</span></div><div class="wave live" aria-hidden="true"><canvas id="wave"></canvas></div>`;
+  }
+  if (c.dictating === "transcribing") return `<p class="cap shimmer">Getting your words…</p><div class="wave" aria-hidden="true"><canvas id="wave"></canvas></div>`;
+  if (c.dictMessage) return `<p class="cap">${esc(c.dictMessage)}</p>`;
+  return "";
+}
+const countText = (s) => { const n = [...String(s ?? "")].length; return n > FU_COUNT_FROM ? `${n}/${FU_NOTE_MAX}` : ""; };
+function showCount() {
+  const t = document.getElementById("fcount");
+  if (!t || card?.kind !== "followup_ask") return;
+  const next = countText(card.note), was = t.textContent;
+  if (next === was) return;
+  t.textContent = next;
+  if (!next !== !was) fit(); // the line under the note came or went
+}
+function showDictation() { const d = document.getElementById("fdict"); if (d) d.innerHTML = dictView(); fit(); }
+
+/** One quick reply chosen, in place (the note keeps its words and focus); Send lights up. */
+function chooseReply(choice) {
+  if (card?.kind !== "followup_ask" || card.phase !== "ask" || busy || !FU_CHOICES.some(([k]) => k === choice)) return;
+  card.choice = choice;
+  hush();
+  for (const b of el.querySelectorAll('[data-act="fu-choice"]')) b.setAttribute("aria-pressed", String(b.dataset.choice === choice));
+  const send = el.querySelector('[data-act="fu-send"]:not([data-choice])');
+  if (send) send.disabled = false;
+  el.querySelector(".err")?.remove();
+  Sound.play("tick");
+  fit();
+}
+
+function toggleFacts(button) {
+  const list = document.getElementById("ffacts");
+  if (!list || card?.kind !== "followup_ask") return;
+  list.hidden = !list.hidden;
+  card.factsOpen = !list.hidden;
+  button.setAttribute("aria-expanded", String(card.factsOpen));
+  fit();
+  if (card.factsOpen) list.scrollIntoView({ block: "nearest" }); // a tall card scrolls inside the island
+}
+
+/**
+ * Sends the reply: the chosen one with the note, or Not now (no note). Closed meanwhile (answered on the web, past its
+ * time, cancelled) the card says so in the server's words; any other refusal stays on the card under it.
+ */
+async function sendFollowUpReply(choice) {
+  const c = card;
+  if (c?.kind !== "followup_ask" || c.phase !== "ask" || busy) return;
+  const pick = choice ?? c.choice;
+  if (!pick) { error = "Pick an answer first."; Sound.play("error"); return render(); }
+  const input = document.getElementById("fnote");
+  const note = pick === "not_now" ? "" : cleanNote(input?.value ?? c.note);
+  c.note = input?.value ?? c.note;
+  hush();
+  busy = true; error = null; render();
+  Sound.play("send");
+  try {
+    await call("POST", org(`/follow-ups/${encodeURIComponent(c.w.id)}/reply`), { choice: pick, ...(note ? { note } : {}) });
+  } catch (err) {
+    busy = false;
+    const still = card?.kind === "followup_ask" && card.w.id === c.w.id;
+    Sound.play("error");
+    if (err?.status === 404 || err?.status === 409) {
+      forgetAsk(c, false);
+      if (still) { card = { ...card, phase: "gone", message: err?.message || "This follow-up is already closed.", dictating: null, sticky: true }; render(); holdThenClose(CLOSE_AFTER_MS); }
+      return;
+    }
+    error = err?.message ?? String(err);
+    return still ? render() : undefined;
+  }
+  busy = false;
+  forgetAsk(c, true);
+  Sound.play("success");
+  if (card?.kind === "followup_ask" && card.w.id === c.w.id) {
+    card = { ...card, phase: "sent", sent: pick, sentNote: note, dictating: null, sticky: true };
+    render(); holdThenClose(CLOSE_AFTER_MS);
+  }
+  refresh();
+}
+
+/**
+ * "Sent." stays for the usual delay and then folds away, even though the shorter card has slipped out from under the
+ * pointer that pressed Send (a card that is not sticky folds the moment the pointer leaves it). OK and Esc close it at
+ * once; the pointer resting on it holds it, as on every card.
+ */
+function holdThenClose(ms) {
+  const held = card;
+  clearTimeout(closeTimer);
+  restartCountdown(ms);
+  const tick = () => { if (card !== held) return; if (hovering) closeTimer = setTimeout(tick, 1000); else closeCard(); };
+  closeTimer = setTimeout(tick, ms);
+}
+
+/** The ask is no longer waiting: off the day card, and its notification read once it was answered from here. */
+function forgetAsk(c, answered) {
+  const ids = new Set((data?.notifications ?? []).filter((n) => n.type === "brenda.followup_ask" && n.resource_id === c.w.id).map((n) => n.id));
+  if (c.n) ids.add(c.n.id);
+  if (answered) for (const id of ids) call("PATCH", org(`/notifications/${encodeURIComponent(id)}`)).catch(() => {});
+  if (data) {
+    if (answered) data.notifications = (data.notifications ?? []).filter((n) => !ids.has(n.id));
+    if (followUps()) data.followUps = { ...data.followUps, waiting: waitingList().filter((x) => x.id !== c.w.id) };
+  }
+}
+
+/** A waiting ask opened from the day card (its notification may have been shown and folded away already). */
+function openWaiting(id) {
+  const w = waitingList().find((x) => x.id === id);
+  if (!w) return;
+  const n = (data?.notifications ?? []).find((x) => x.type === "brenda.followup_ask" && x.resource_id === id) ?? null;
+  if (n) shown.add(n.id);
+  openCard(askCard(w, n));
+}
+
+/** The day card's waiting asks, at most two, each with Reply (the rest wait in Boredroom). */
+function waitingView() {
+  const list = waitingList();
+  if (!list.length) return "";
+  return `<ul class="list fade" aria-label="Waiting for your reply">${list.slice(0, 2).map((w) => `<li><span class="t">${esc(w.title)}</span><button class="btn" data-act="fu-open" data-id="${esc(w.id)}">Reply</button></li>`).join("")}</ul>`;
+}
+
+/** After a poll: the ask on the card was answered on the web, ran out of time or was cancelled meanwhile. */
+function followUpClosedElsewhere() {
+  if (card?.kind !== "followup_ask" || card.phase !== "ask" || busy || !followUps()) return;
+  if (waitingList().some((x) => x.id === card.w.id)) return;
+  card = { ...card, phase: "gone", message: "This follow-up is already closed.", dictating: null, sticky: true };
+  render(); holdThenClose(CLOSE_AFTER_MS);
+}
+
+/**
+ * The talk keys while an ask is open: the waveform and the time under the note while they are held, then the words heard
+ * added to the note (never sent to her). Returns whether the event was the card's.
+ */
+function dictate(e) {
+  const c = card;
+  if (busy) return ["listening", "transcribing", "heard", "too-short", "limit", "off", "needs-model", "error"].includes(e.phase);
+  if (e.phase === "listening") {
+    if (c.dictating === "listening") { Wave.level(e.level ?? 0); return true; }
+    hush(); Sound.play("listen");
+    Object.assign(c, { dictating: "listening", dictMessage: null, startedAt: Date.now(), endedAt: null });
+    showDictation(); Wave.start(e.level ?? 0);
+    return true;
+  }
+  if (e.phase === "transcribing") { Sound.play("heard"); Object.assign(c, { dictating: "transcribing", endedAt: Date.now() }); showDictation(); Wave.process(); return true; }
+  if (e.phase === "heard") {
+    const input = document.getElementById("fnote");
+    const before = String(input?.value ?? c.note ?? "").trim();
+    c.note = cleanNote(before ? `${before} ${e.text ?? ""}` : e.text);
+    c.dictating = null;
+    if (input) input.value = c.note;
+    showDictation(); showCount(); Sound.play("tick");
+    return true;
+  }
+  if (e.phase === "limit") return true;
+  const why = { "too-short": null, off: "Voice is off, so type the line instead.", "needs-model": "Voice is still getting ready. Type the line for now.", error: e.message || "I didn't catch that. Type the line instead." };
+  if (!(e.phase in why)) return false;
+  if (e.phase === "error") Sound.play("error");
+  Object.assign(c, { dictating: null, dictMessage: why[e.phase] });
+  showDictation();
+  return true;
+}
+
+function followUpAnswerView() {
+  const c = card, a = c.a, n = c.n, m = moodOf();
+  const subject = a ? assistantOf(a.subject?.assistant) : null;
+  const title = a?.title || n.title;
+  const text = a ? a.answer : n.body;
+  const href = boredroomPath(a?.href) ?? boredroomPath(n.href);
+  const badge = a ? FU_BADGE[a.status] : null;
+  // Both names, as on the web's exchange ("Olu's Max asked Ben's Brenda"), and when it was answered.
+  const mine = firstName(data?.me?.displayName ?? config?.displayName);
+  const theirs = firstName(a?.subject?.name);
+  const at = a?.answeredAt ? atWhen(a.answeredAt) : n.created_at ? atWhen(n.created_at) : "";
+  const line = a ? `${mine ? `${mine}'s ${me().name}` : `Your ${me().name}`} asked ${theirs ? `${theirs}'s ${subject.name}` : subject.name}${at ? `, ${at}` : ""}` : at;
+  return `<div class="row top fade"><span class="faces">${face(m)}${subject ? face({ ...m, who: subject }) : ""}</span><div class="grow"><p class="title wrap">${esc(title)}</p>${line ? `<p class="cap">${esc(line)}</p>` : ""}</div>${badge ? `<span class="pill ${badge.tone}">${badge.label}</span>` : ""}</div>
+    ${text ? `<p class="answer fade">${esc(text)}</p>` : ""}
+    ${a?.engine === "claude" && text ? `<p class="cap fade">Written by AI from ${theirs ? `${esc(theirs)}'s` : "their"} work.</p>` : ""}
+    <div class="actions">${href ? `<button class="btn" data-act="open-href" data-href="${esc(href)}">Open${icon("open")}</button>` : ""}<button class="btn primary" data-act="read" data-id="${esc(n.id)}">Done</button></div>`;
+}
+
 // ---- poking and admiring Brenda -----------------------------------------------------------------------------------
 // A click on her face in an open card squashes her and she looks cross for a moment; three in under 1.7 seconds make
 // her dizzy for three; resting the pointer on her for 1.9 seconds gives her heart eyes (Coucou's rules).
@@ -1418,7 +1742,8 @@ function watchAdmiration() {
 // Her eyes follow the cursor with a lag (tanh of the distance, eased each frame, as in Coucou's engine), she blinks
 // every 2.2 to 5.4 seconds (twice in a row about one time in five), and the frame loop stops once her eyes settle.
 // While the person types to her (owner decision, 7 October 2026) she reads along instead: her eyes go to the ask box
-// and follow the caret, more keenly than they follow the pointer, until the box loses focus.
+// and follow the caret, more keenly than they follow the pointer, until the box loses focus. A follow-up's note is read
+// the same way, by the face on its card (phase 4, 8 October 2026).
 
 const look = { x: 0, y: 0 };
 let lookFrame = null;
@@ -1438,12 +1763,12 @@ function caretAt(input) {
   return { x: Math.max(left, Math.min(right, x)), y: r.top + r.height / 2 };
 }
 function readAlong(e) {
-  if (e.target?.id !== "ask") return;
+  if (!TYPING.has(e.target?.id)) return;
   gaze = caretAt(e.target);
   stepFace();
 }
 for (const type of ["focusin", "input", "keyup", "pointerup", "select"]) el.addEventListener(type, readAlong);
-el.addEventListener("focusout", (e) => { if (e.target?.id === "ask") { gaze = null; stepFace(); } });
+el.addEventListener("focusout", (e) => { if (TYPING.has(e.target?.id)) { gaze = null; stepFace(); } });
 
 function stepFace() {
   if (lookFrame) return;

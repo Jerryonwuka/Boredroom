@@ -16,6 +16,12 @@
  * refreshed on each ask until they edit it; the end-of-day run refreshes it a last time and sends it.
  *
  * Plain counts, not a score: nobody is ranked or judged.
+ *
+ * Updates (owner decision, 8 October 2026: personal assistants, phase 4): when the owner or HR switch on "Before the team
+ * report, collect updates from everyone's assistant", the workspace's own assistant asks each person's assistant what
+ * they worked on today, a set time before the report (services/follow-ups.ts, collectWorkspaceUpdates; the worker runs
+ * it). The answers go in the report under "Updates", read as the recipient (workspaceUpdatesFor: only the people the
+ * recipient may see the records of). Before migration 0039, or when nothing was collected, there is no such section.
  */
 import { withUser, withWorker, type Db } from "@/server/db";
 import type { OrgContext } from "@/server/lib/api";
@@ -31,6 +37,10 @@ import { DOC_BODY_MAX } from "@/server/services/docs";
 import { workSummary, type PersonWork, type WorkSummary } from "@/server/services/work-summary";
 import { readPersonalAssistant, readWorkspaceAssistant } from "@/server/services/assistant-profile";
 import { DEFAULT_ASSISTANT_NAME, type AssistantProfile } from "@/lib/assistant-look";
+import { workspaceUpdatesFor, type WorkspaceUpdate } from "@/server/services/follow-ups";
+import { composeTemplate, type ComposeInput } from "@/server/services/follow-up-compose";
+import { clamp, oneLine } from "@/server/services/copilot-excerpt";
+import { factsOrNull, firstName, whenLabel } from "@/lib/follow-ups";
 
 export const REPORT_FOLDER = "Daily reports";
 
@@ -73,6 +83,13 @@ export type DailyReport = {
   headline: string; attention: string[]; waitingForYourReview: number;
   /** Nothing happened in the scope and nothing needs a word (attendance, overdue or blocked work, reviews): nothing is sent. */
   empty: boolean;
+  /**
+   * What each person's assistant said when the workspace's own assistant collected today's updates (phase 4), one line
+   * per person, plain text; empty when the collection is off, has not run, or before migration 0039.
+   */
+  updates: { membershipId: string; name: string; line: string }[];
+  /** When the collection was made. */
+  updatesAt: string | null;
 };
 
 type Extra = {
@@ -90,6 +107,21 @@ const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? o
 const hours = (h: number) => h === 0 ? "no confirmed hours" : `${h} confirmed ${h === 1 ? "hour" : "hours"}`;
 /** Names and titles go into markdown as text, never as markup. */
 const md = (s: string) => s.replace(/[\\`*_[\]|~<>#]/g, "\\$&");
+/**
+ * Other people's words in the report (the Updates lines quote their comments and replies) as text, with any web or mail
+ * address shown as code, never as a link (owner decision, 8 October 2026: personal assistants, phase 4: "outside links
+ * defused"). The Docs renderer reads code spans before bare addresses, so a quoted address cannot become one.
+ */
+const ADDRESS = /\b(?:https?:\/\/|mailto:|www\.)[^\s<>`]*[^\s<>`.,:;'!?)\]”]/gi;
+export function mdQuoted(s: string): string {
+  let out = "";
+  let last = 0;
+  for (const m of s.matchAll(ADDRESS)) {
+    out += `${md(s.slice(last, m.index))}\`${m[0].replace(/`/g, "")}\``;
+    last = m.index + m[0].length;
+  }
+  return out + md(s.slice(last));
+}
 /** "a, b and c". */
 function listOf(items: string[]): string {
   return items.length <= 1 ? (items[0] ?? "") : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
@@ -142,8 +174,57 @@ export async function buildDailyReport(ctx: OrgContext, opts: { useAssistant?: b
   const headline = opts.useAssistant === false || empty ? plain : (await assistantHeadline(ctx, summary, people, attention, opts.usage ?? "person", opts.requestId)) ?? plain;
   return {
     localDate, title: `Team report, ${dayLabel(localDate)}`, scope: summary.scope, people, totals: summary.totals,
-    headline, attention, waitingForYourReview: extra.waitingForYou, empty,
+    headline, attention, waitingForYourReview: extra.waitingForYou, empty, updates: [], updatesAt: null,
   };
+}
+
+// ---- Updates collected by the workspace's assistant (owner decision, 8 October 2026: personal assistants, phase 4) ----
+
+/** The question the workspace's collection asks (services/follow-ups.ts), for a line written here from its facts. */
+const UPDATE_QUESTION = "What did you work on today?";
+/** One person's line in the report is at most this long (the document-size guard still holds the whole). */
+export const UPDATE_LINE_MAX = 400;
+
+/**
+ * One person's update as a line: the answer their assistant gave; for one still open when the report is written, the
+ * same template the answer would use, from the facts gathered so far (a reply that came in but is not written up yet,
+ * a reply still due, or no reply by the deadline); "No update yet." when nothing was gathered.
+ */
+export function updateLine(u: WorkspaceUpdate, timeZone: string, now: Date = new Date()): string {
+  if (u.answer?.trim()) return clamp(oneLine(u.answer), UPDATE_LINE_MAX);
+  const facts = factsOrNull(u.facts);
+  if (!facts) return u.status === "failed" || u.status === "cancelled" ? "No update." : "No update yet.";
+  const first = firstName(u.name);
+  const base: Omit<ComposeInput, "answeredFrom" | "reply"> = {
+    question: UPDATE_QUESTION, kind: "person", facts, capped: false,
+    subject: { name: u.name, firstName: first, assistantName: "" }, requester: null,
+    deadlineAt: u.deadlineAt, timeZone, now,
+  };
+  const due = u.deadlineAt ? Date.parse(u.deadlineAt) : NaN;
+  let line: string;
+  if (u.reply && u.reply.choice !== "not_now") line = composeTemplate({ ...base, answeredFrom: "person", reply: { ...u.reply, at: now.toISOString() } });
+  // Still due (a report asked for while the collection runs): said as it is, never "no reply" before the time is up.
+  else if (u.status === "asking" && due > now.getTime()) line = `${first} hasn't replied yet, the reply is due by ${whenLabel(u.deadlineAt!, timeZone, now)}. ${composeTemplate({ ...base, answeredFrom: "facts", reply: null })}`;
+  else if (u.status === "asking" || u.answeredFrom === "deadline") line = composeTemplate({ ...base, answeredFrom: "deadline", reply: null });
+  // Being answered (a reply is in but not yet written up, and not shown until it is): what their work shows.
+  else line = composeTemplate({ ...base, answeredFrom: "facts", reply: null });
+  return clamp(oneLine(line), UPDATE_LINE_MAX);
+}
+
+/**
+ * Today's collected updates for the people in the report, read as the recipient. Never fails the report: anything wrong
+ * here (before 0039, a hiccup) leaves the section out.
+ */
+async function reportUpdates(ctx: OrgContext, r: DailyReport): Promise<Pick<DailyReport, "updates" | "updatesAt">> {
+  if (!r.people.length) return { updates: [], updatesAt: null };
+  try {
+    const u = await workspaceUpdatesFor(ctx, r.localDate, r.people.map((p) => p.membershipId));
+    const now = new Date();
+    return { updatesAt: u.collectedAt, updates: u.updates.map((x) => ({ membershipId: x.membershipId, name: x.name, line: updateLine(x, ctx.org.timezone, now) })) };
+  } catch (err) {
+    console.warn(`[daily report] updates left out: ${(err as Error)?.message ?? err}`);
+    return { updates: [], updatesAt: null };
+  }
 }
 
 function attentionList(people: PersonDay[], waitingForYou: number): string[] {
@@ -221,7 +302,7 @@ async function assistantHeadline(ctx: OrgContext, s: WorkSummary, people: Person
  * assistant who wrote it (owner decision, 7 October 2026: personal assistants): the workspace's own assistant for the
  * end-of-day report, the asker's own for a report they asked for; Brenda when nobody says.
  */
-export function reportMarkdown(ctx: OrgContext, r: DailyReport, opts: { writtenAt: Date; endOfDay: boolean; reportTime: string; author?: string }): string {
+export function reportMarkdown(ctx: OrgContext, r: DailyReport, opts: { writtenAt: Date; endOfDay: boolean; reportTime: string; author?: string; workspaceName?: string }): string {
   const tz = ctx.org.timezone;
   const author = opts.author ?? DEFAULT_ASSISTANT_NAME;
   const by = opts.endOfDay
@@ -243,6 +324,12 @@ export function reportMarkdown(ctx: OrgContext, r: DailyReport, opts: { writtenA
     lines.push(`## ${md(p.name)}`, "", `${p.teams.length ? `${p.teams.map(md).join(", ")}. ` : ""}${sentence(hours(p.trackedHours))}.`, "", ...notes, "");
   }
   if (quiet.length) lines.push(`Nothing recorded today for ${listOf(quiet)}.`, "");
+  // What each person's assistant said when the workspace's own assistant collected today's updates (phase 4).
+  if (r.updates?.length) {
+    const asker = opts.workspaceName ?? DEFAULT_ASSISTANT_NAME;
+    lines.push("## Updates", "", `_${md(asker)} asked everyone's assistant for today's update${r.updatesAt ? ` at ${hhmm(r.updatesAt, tz)}` : ""}._`, "",
+      ...r.updates.map((u) => `- **${md(u.name)}**: ${mdQuoted(clamp(oneLine(u.line), UPDATE_LINE_MAX))}`), "");
+  }
   lines.push("## Needs your attention", "");
   const shown = r.attention.slice(0, 10);
   if (shown.length) lines.push(...shown.map((x) => `- ${x}`), ...(r.attention.length > shown.length ? [`- And ${plural(r.attention.length - shown.length, "more item")} in the sections above`] : []));
@@ -264,7 +351,7 @@ const headlineOf = (body: string) => /^\*\*(.+)\*\*$/m.exec(body)?.[1]?.replace(
  * notification. Otherwise the person asked: today's sent report is returned as it is, or the report so far is
  * written (or refreshed, if they have not edited it since) and lands only on them.
  */
-async function deliver(ctx: OrgContext, mode: "end_of_day" | "asked", opts: { useAssistant?: boolean; reportTime: string; author: string; requestId?: string }): Promise<Outcome> {
+async function deliver(ctx: OrgContext, mode: "end_of_day" | "asked", opts: { useAssistant?: boolean; reportTime: string; author: string; workspaceName: string; requestId?: string }): Promise<Outcome> {
   const today = todayLocal(ctx.org.timezone);
   const href = (id: string) => `/app/${ctx.org.slug}/docs/${id}`;
   type Row = { id: string; doc_id: string | null; sent_at: string | null; title: string | null; body: string | null; readable: boolean };
@@ -278,8 +365,10 @@ async function deliver(ctx: OrgContext, mode: "end_of_day" | "asked", opts: { us
   // The end-of-day send is the workspace's own job in the usage ledger; a report asked for is the person's.
   const report = await buildDailyReport(ctx, { useAssistant: opts.useAssistant, usage: mode === "end_of_day" ? "workspace" : "person", requestId: opts.requestId });
   if (report.empty) return { status: "nothing" };
+  // The updates the workspace's assistant collected today, read as the recipient (phase 4); none before 0039 or when off.
+  Object.assign(report, await reportUpdates(ctx, report));
   // Asked for after the end-of-day report went out (and was archived since): it is written as the day's report, not "so far".
-  const body = reportMarkdown(ctx, report, { writtenAt: new Date(), endOfDay: mode === "end_of_day" || !!before?.sent_at, reportTime: opts.reportTime, author: opts.author });
+  const body = reportMarkdown(ctx, report, { writtenAt: new Date(), endOfDay: mode === "end_of_day" || !!before?.sent_at, reportTime: opts.reportTime, author: opts.author, workspaceName: opts.workspaceName });
 
   return withUser(ctx.user.profileId, async (db) => {
     // The day's row, created if need be and locked: two runs for the same person and day take turns here, and the
@@ -324,8 +413,9 @@ export async function teamReportNow(ctx: OrgContext, opts: { useAssistant?: bool
     if (a?.ready && a.remaining <= 0) opts = { ...opts, useAssistant: false };
   }
   // A report the person asked for is signed by their own assistant (owner decision, 7 October 2026: personal assistants).
-  const { settings, personal } = await withUser(ctx.user.profileId, async (db) => ({ settings: await brendaSettings(db, ctx.org.id), personal: await readPersonalAssistant(db, ctx.membership.id) }));
-  const r = await deliver(ctx, "asked", { useAssistant: opts.useAssistant, reportTime: settings.dailyReportTime, author: personal.name, requestId: opts.requestId });
+  // The Updates section is signed by the workspace's own assistant, which collected them (phase 4).
+  const { settings, personal, workspace } = await withUser(ctx.user.profileId, async (db) => ({ settings: await brendaSettings(db, ctx.org.id), personal: await readPersonalAssistant(db, ctx.membership.id), workspace: await readWorkspaceAssistant(db, ctx.org.id) }));
+  const r = await deliver(ctx, "asked", { useAssistant: opts.useAssistant, reportTime: settings.dailyReportTime, author: personal.name, workspaceName: workspace.name, requestId: opts.requestId });
   if (r.status === "nothing" || !("saved" in r) || !r.saved) return { status: "nothing", message: "Nothing has happened on your teams today yet and nothing needs you (no confirmed time, nothing finished or sent for review, nothing overdue or blocked, no late or missing clock-ins), so there is no report to write." };
   return { status: r.status === "existing" ? "existing" : "saved", endOfDay: r.status === "existing", ...r.saved };
 }
@@ -378,7 +468,7 @@ export async function runDailyReportJob(p: { organisationId: string; membershipI
   });
   if ("skip" in pre) return { status: pre.skip };
   const { ctx, email } = pre.who;
-  const r = await deliver(ctx, "end_of_day", { useAssistant: opts.useAssistant, reportTime: pre.settings.dailyReportTime, author: pre.workspace.name });
+  const r = await deliver(ctx, "end_of_day", { useAssistant: opts.useAssistant, reportTime: pre.settings.dailyReportTime, author: pre.workspace.name, workspaceName: pre.workspace.name });
   if (r.status !== "sent" || !("saved" in r) || !r.saved) return { status: r.status === "nothing" ? "nothing" : "already_sent" };
   let emailed = false;
   if (email && !mailConfigProblem()) {

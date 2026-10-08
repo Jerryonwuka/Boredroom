@@ -10,7 +10,9 @@
  *
  * The page (`/home/activity`) renders the first 30 on the server; "Show more" fetches the next page from
  * `GET /api/orgs/{org}/brenda/activity` by its opaque cursor and appends it, and a polite status says how many show.
- * Settings → Your assistant shows the latest five (`AssistantActivityCard`) with "See everything".
+ * Settings → Your assistant shows the latest five (`AssistantActivityCard`) with "See everything", and beside it "Asked
+ * about you": every follow-up about the person's work and what their assistant shared (owner decision, 8 October 2026:
+ * personal assistants, phase 4).
  *
  * Reads are the person's alone (review, 8 October 2026): owners and HR see the assistant's actions organisation-wide,
  * never what it read for someone, and while an administrator is signed in as the person the list leaves reads out.
@@ -191,7 +193,7 @@ export function AssistantActivity({ orgSlug, timeZone, kind, initial, name, now,
 
 /**
  * Settings → Your assistant: the latest five things the assistant did or read for the person (the day in each row's meta
- * line, there being no headings), or a line saying nothing has happened yet, and "See everything".
+ * line, there being no headings), or a line saying nothing has happened yet, then "Asked about you" and "See everything".
  */
 export function AssistantActivityCard({ orgSlug, timeZone, name, items, now }: { orgSlug: string; timeZone: string; name: string; items: ActivityItem[]; now: number }) {
   const today = dayKey(now, timeZone);
@@ -208,6 +210,7 @@ export function AssistantActivityCard({ orgSlug, timeZone, name, items, now }: {
           )}
         </div>
         <SettingsFooter>
+          <Link href={`/app/${orgSlug}/home/follow-ups/about-you`} className={buttonVariants({ variant: "ghost", size: "sm" })}>Asked about you</Link>
           <Link href={`/app/${orgSlug}/home/activity`} className={buttonVariants({ variant: "secondary", size: "sm" })}>See everything</Link>
         </SettingsFooter>
       </SettingsGroup>

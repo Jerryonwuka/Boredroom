@@ -12,6 +12,12 @@
  * Her voice (owner decision, 7 October 2026: personal assistants, phase 2): the state's `assistant.speak` says when the
  * person's own assistant reads replies aloud ('voice', 'always' or 'never'), the same preference the web follows, so a
  * change in Settings reaches the notch on its next poll.
+ *
+ * Follow-ups between assistants (owner decision, 8 October 2026: personal assistants, phase 4): the state's `followUps`
+ * holds the asks waiting for the person's reply (the notch's request card) and the answers to their own follow-ups from
+ * the last 24 hours (its answer card), and each notification carries its `resource_id`, so an unread ask opens its
+ * request card. Before migration 0039 `followUps` is `{ ready: false, waiting: [], answered: [] }`; an older notch
+ * ignores it.
  */
 import { z } from "zod";
 import { withSystem, withUser } from "@/server/db";
@@ -25,6 +31,7 @@ import { currentSession } from "@/server/services/sessions";
 import { myClock } from "@/server/services/attendance";
 import { teamStatus } from "@/server/services/views";
 import { readAssistantProfiles } from "@/server/services/assistant-profile";
+import { followUpsForDesktop, type DesktopFollowUps } from "@/server/services/follow-ups";
 import { PALETTE, type AssistantEyes, type AssistantProfile, type AssistantSpeak, type AssistantVisor, type FaceShades } from "@/lib/assistant-look";
 
 const CODE_TTL_SECONDS = 10 * 60;
@@ -128,6 +135,9 @@ export async function revokeDevice(user: CurrentUser, sessionId: string) {
 export type DesktopAssistant = { name: string; colour: string; visor: AssistantVisor; eyes: AssistantEyes; face: FaceShades };
 const forNotch = (p: AssistantProfile): DesktopAssistant => ({ name: p.name, colour: p.colour, visor: p.visor, eyes: p.eyes, face: PALETTE[p.colour].face });
 
+export type { DesktopFollowUps };
+const NO_FOLLOW_UPS: DesktopFollowUps = { ready: false, waiting: [], answered: [] };
+
 /**
  * Everything the notch shows, in one read: the briefing, the timer, the clock, unread notifications (Brenda's
  * reminders and nudges, assignments, confirmations), what the person allows, and their own assistant and the
@@ -136,7 +146,7 @@ const forNotch = (p: AssistantProfile): DesktopAssistant => ({ name: p.name, col
 export async function desktopState(ctx: OrgContext) {
   const worker = ctx.membership.role === "employee" || ctx.membership.role === "manager";
   const lead = ctx.membership.role !== "employee";
-  const [brief, session, clock, team, extra] = await Promise.all([
+  const [brief, session, clock, team, extra, followUps] = await Promise.all([
     briefing(ctx),
     worker ? currentSession(ctx) : Promise.resolve(null),
     worker ? myClock(ctx) : Promise.resolve(null),
@@ -144,12 +154,14 @@ export async function desktopState(ctx: OrgContext) {
     withUser(ctx.user.profileId, async (db) => ({
       settings: await brendaSettings(db, ctx.org.id),
       prefs: await brendaPrefs(db, ctx.membership.id),
-      notifications: await db.query<{ id: string; type: string; title: string; body: string | null; href: string | null; created_at: string }>(
-        `SELECT id, type, title, body, href, created_at FROM notifications WHERE recipient_membership_id = $1 AND read_at IS NULL ORDER BY created_at DESC LIMIT 10`, [ctx.membership.id]),
+      notifications: await db.query<{ id: string; type: string; title: string; body: string | null; href: string | null; resource_id: string | null; created_at: string }>(
+        `SELECT id, type, title, body, href, resource_id, created_at FROM notifications WHERE recipient_membership_id = $1 AND read_at IS NULL ORDER BY created_at DESC LIMIT 10`, [ctx.membership.id]),
       progress: await db.query<{ id: string; title: string; due_at: string | null; progress_percent: number; version: number }>(
         `SELECT id, title, due_at, progress_percent::int AS progress_percent, version FROM tasks WHERE assignee_membership_id = $1 AND status IN ('todo','in_progress','blocked') AND archived_at IS NULL ORDER BY due_at NULLS LAST, created_at DESC`, [ctx.membership.id]),
       assistants: await readAssistantProfiles(db, ctx),
     })),
+    // A follow-up problem never takes the rest of the notch down with it.
+    followUpsForDesktop(ctx).catch((err) => { console.warn(`[desktop] follow-ups: ${(err as Error)?.message ?? String(err)}`); return NO_FOLLOW_UPS; }),
   ]);
   const s = session?.session ?? null;
   const running = s ? extra.progress.find((p) => p.id === s.taskId) : undefined;
@@ -167,6 +179,8 @@ export async function desktopState(ctx: OrgContext) {
     timer: s ? { id: s.id, version: s.version, state: s.state, taskId: s.taskId, taskTitle: s.taskTitle, confirmedSeconds: s.confirmedSeconds, openIntervalStartedAt: s.openIntervalStartedAt, serverNow: s.serverNow, estimateMinutes: s.estimateMinutes, progress: running?.progress_percent ?? 0, taskVersion: running?.version ?? null } : null,
     briefing: brief,
     notifications: extra.notifications,
+    // Asks waiting for the person's reply and answers to their own follow-ups (owner decision, 8 October 2026: phase 4).
+    followUps: followUps satisfies DesktopFollowUps,
     // The person's own open tasks, soonest due first: where a dropped file can go.
     myTasks: worker ? extra.progress.slice(0, 8).map((t) => ({ id: t.id, title: t.title, due: t.due_at })) : [],
     // Team leads and organisation accounts: who is working right now, for the small faces in the notch.

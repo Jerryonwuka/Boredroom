@@ -1,5 +1,6 @@
 import { withWorker } from "../src/server/db";
-import { audit } from "../src/server/services/common";
+import { audit, enqueueJob } from "../src/server/services/common";
+import { localTimeOn } from "../src/server/lib/time";
 
 export type JobContext = { jobId: string; attempt: number };
 export type Handler = (payload: Record<string, unknown>, ctx: JobContext) => Promise<void>;
@@ -12,6 +13,59 @@ const brendaDailyReport: Handler = async (payload) => {
   const { runDailyReportJob } = await import("../src/server/services/daily-report");
   const { organisationId, membershipId, localDate } = payload as { organisationId: string; membershipId: string; localDate: string };
   await runDailyReportJob({ organisationId, membershipId, localDate });
+};
+
+// ---- Follow-ups between assistants (owner decision, 8 October 2026: personal assistants, phase 4) ----------------------
+// The fast path (gather, decide, answer) runs in the web process right after the Confirm; the worker owns what must
+// happen even when nobody is looking: deadlines (no reply in time: answered from the person's work), anything stuck, and
+// the workspace's collection before the end-of-day report. Every job stays short (the loop runs one job at a time) and
+// none calls the model: the worker's answers are the template's. Each returns at once before migration 0039.
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const LOCAL_DATE = /^\d{4}-\d{2}-\d{2}$/;
+/** Rows one followup.process job handles: each is a few short transactions. */
+export const FOLLOW_UP_PROCESS_CHUNK = 10;
+
+/** Deadlines passed, rows stuck pending or half-answered, batches left open: at most 25 rows a run. */
+const followUpSweep: Handler = async () => {
+  const { sweepFollowUps } = await import("../src/server/services/follow-ups");
+  const r = await sweepFollowUps({ limit: 25 });
+  if (r.expired || r.retried || r.batchesClosed) console.log(`[worker] follow-ups: ${r.expired} past their deadline, ${r.retried} retried, ${r.batchesClosed} batch(es) closed`);
+};
+
+/**
+ * The workspace's own collection of today's updates for one organisation, a set time before its report: inserts the
+ * batch and its rows (deduplicated per organisation per day), then hands the rows to followup.process in chunks of 10.
+ */
+const followUpCollect: Handler = async (payload) => {
+  const organisationId = String(payload.organisationId ?? "");
+  const localDate = String(payload.localDate ?? "");
+  if (!UUID.test(organisationId) || !LOCAL_DATE.test(localDate)) return;
+  const { collectWorkspaceUpdates } = await import("../src/server/services/follow-ups");
+  // The report time as it is now (Settings may have moved it since the job was queued), on the organisation's clock.
+  const org = await withWorker((db) => db.maybeOne<{ timezone: string; report_time: string }>(
+    `SELECT o.timezone, to_char(COALESCE(b.daily_report_time, '18:00'::time), 'HH24:MI') AS report_time
+     FROM organisations o LEFT JOIN brenda_settings b ON b.organisation_id = o.id WHERE o.id = $1`, [organisationId]));
+  if (!org) return;
+  const reportAt = localTimeOn(localDate, org.report_time, org.timezone);
+  const r = await collectWorkspaceUpdates({ organisationId, localDate, reportAt });
+  if (!r.batchId || !r.pendingIds.length) return;
+  const batchId = r.batchId;
+  await withWorker(async (db) => {
+    for (let i = 0; i * FOLLOW_UP_PROCESS_CHUNK < r.pendingIds.length; i++) {
+      const ids = r.pendingIds.slice(i * FOLLOW_UP_PROCESS_CHUNK, (i + 1) * FOLLOW_UP_PROCESS_CHUNK);
+      await enqueueJob(db, "followup.process", { ids }, { dedupKey: `followup.process:${batchId}:${i}` });
+    }
+  });
+  console.log(`[worker] follow-ups: collecting today's updates for ${r.pendingIds.length} people (${organisationId})`);
+};
+
+/** Up to 10 follow-ups taken as far as they go now: answered from the facts, or the person asked once. Never the model. */
+const followUpProcess: Handler = async (payload) => {
+  const ids = Array.isArray(payload.ids) ? [...new Set((payload.ids as unknown[]).filter((x): x is string => typeof x === "string" && UUID.test(x)))].slice(0, FOLLOW_UP_PROCESS_CHUNK) : [];
+  if (!ids.length) return;
+  const { processFollowUpIds } = await import("../src/server/services/follow-ups");
+  await processFollowUpIds(ids, { useModel: false });
 };
 
 const retentionDelete: Handler = async (payload) => {
@@ -44,6 +98,9 @@ import { controlCenterHandlers } from "./control-center";
 export const handlers: Record<string, Handler> = {
   ...controlCenterHandlers,
   "brenda.daily_report": brendaDailyReport,
+  "followup.sweep": followUpSweep,
+  "followup.collect": followUpCollect,
+  "followup.process": followUpProcess,
   "recording.retention_delete": retentionDelete,
   "recording.assemble": assembleRecording,
   "deliverable.scan": scanDeliverable,

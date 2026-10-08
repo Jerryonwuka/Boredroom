@@ -29,15 +29,23 @@ export const AI_DAILY_REQUEST_LIMIT = 150;
 export const AI_BURST = { requests: 20, windowSeconds: 60 } as const;
 export const AI_BURST_MESSAGE = "That's a lot of requests in one minute. Wait a moment, then try again.";
 
-export const USAGE_PURPOSES = ["chat", "plan", "report", "summary", "test", "other"] as const;
+/**
+ * What a model call was for. 'followup' (owner decision, 8 October 2026: personal assistants, phase 4; migration 0039
+ * widens the column's CHECK) is the one call that writes a follow-up's answer from the facts and the person's reply,
+ * recorded against the person who asked. Before 0039 the database refuses it, so nothing is recorded (and nothing calls
+ * the model for a follow-up before 0039 anyway).
+ */
+export const USAGE_PURPOSES = ["chat", "plan", "report", "summary", "test", "other", "followup"] as const;
 export type UsagePurpose = (typeof USAGE_PURPOSES)[number];
 /**
  * Purposes that count towards the person's daily limit. A team report the person asked for counts too (review,
  * 8 October 2026: it calls the model each time it is asked, from Settings or by her team_report, until the end-of-day
  * report has gone out); one asked for in a chat turn shares that turn's request id, so it is not counted twice. The
- * end-of-day send is the workspace's own (membership NULL) and counts towards nobody.
+ * end-of-day send is the workspace's own (membership NULL) and counts towards nobody. A follow-up's calls share their
+ * batch's id (its request id), so one ask counts once however many people it covers (owner decision, 8 October 2026:
+ * personal assistants, phase 4).
  */
-export const LIMITED_PURPOSES: readonly UsagePurpose[] = ["chat", "plan", "report"];
+export const LIMITED_PURPOSES: readonly UsagePurpose[] = ["chat", "plan", "report", "followup"];
 
 /** The API's usage block (Anthropic Messages API `res.usage`), as it comes. */
 export type ModelUsage = { input_tokens?: number | null; output_tokens?: number | null; cache_read_input_tokens?: number | null; cache_creation_input_tokens?: number | null } | null | undefined;

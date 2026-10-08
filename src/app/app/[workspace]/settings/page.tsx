@@ -28,6 +28,10 @@ import { AssistantActivityCard } from "@/components/app/assistant-activity";
 import { listActivity } from "@/server/services/assistant-activity";
 import { BrendaUsageCard } from "@/components/app/brenda-usage";
 import { usageSummary } from "@/server/services/ai-usage";
+import { FollowUpPreferenceSettings } from "@/components/app/follow-up-settings";
+import { FollowUpCollectionSettings } from "@/components/app/follow-up-collection-settings";
+import { followUpPreference, followUpSettings } from "@/server/services/follow-ups";
+import { withUser } from "@/server/db";
 import type { AssistantProfiles } from "@/lib/assistant-look";
 import { cn } from "@/lib/utils";
 
@@ -67,6 +71,13 @@ const MODE_LABEL: Record<string, string> = { disabled: "Off", optional: "On, eac
  * five things the person's assistant did or read for them and a link to the whole list (/home/activity). The Brenda
  * section gains "Usage this month" for owners and HR (requests and tokens by purpose and the people with the most
  * requests; no prices), after the daily report and before the AI connection.
+ *
+ * Personal assistants, phase 4 (owner decision, 8 October 2026: assistant-to-assistant follow-ups): "Your assistant"
+ * gains "Follow-ups" after Voice, the person's choice of how their assistant answers another person's assistant about
+ * their work ("Answer from my work, ask me only if it can't", or "Always ask me first"). The Brenda section gains
+ * "Updates before the report" after the daily report, for owners and HR: the workspace's own assistant collects an
+ * update from everyone's assistant for the end-of-day report. Both read their own columns with a readiness check
+ * (migration 0039) and show disabled under an info alert until it is applied.
  */
 export default async function SettingsPage({ params, searchParams }: { params: Promise<{ workspace: string }>; searchParams: Promise<{ section?: string; setup?: string; billing?: string; plan?: string }> }) {
   const { workspace } = await params;
@@ -86,22 +97,25 @@ export default async function SettingsPage({ params, searchParams }: { params: P
   // The open section's explanatory notes, shown at the bottom of the page after "Every change is audited."
   let notes: ReactNode = null;
   if (section === "assistant") {
-    const [a, activity] = await Promise.all([assistantProfiles(ctx), listActivity(ctx, { limit: 5 })]);
+    const [a, activity, followUps] = await Promise.all([assistantProfiles(ctx), listActivity(ctx, { limit: 5 }), followUpPreference(ctx)]);
     assistants = a;
     const { name } = a.personal;
     const now = new Date(); // the server's clock, so "Today" in the activity rows reads the same on both sides
     // Her voice (owner decision, 7 October 2026: phase 2): a second card under the name and look, saved as it changes.
-    // Then what the assistant did or read for the person (phase 3), always their own whatever the role.
+    // Then how it answers other people's assistants about the person's work (phase 4), and what the assistant did or
+    // read for the person (phase 3), always their own whatever the role.
     body = (
       <>
         <MyAssistantSettings orgSlug={ctx.org.slug} initial={a.personal} impersonated={!!ctx.user.impersonation} />
         <MyVoiceSettings orgSlug={ctx.org.slug} name={name} speak={a.speak} impersonated={!!ctx.user.impersonation} />
+        <FollowUpPreferenceSettings orgSlug={ctx.org.slug} initial={followUps} name={name} impersonated={!!ctx.user.impersonation} />
         <AssistantActivityCard orgSlug={ctx.org.slug} timeZone={ctx.org.timezone} name={name} items={activity.items} now={now.getTime()} />
       </>
     );
     notes = (
       <>
         <PageNote section="Your assistant">The name and look change how your assistant appears to you and in the desktop app. What it can do for you stays the same. Voices come from this computer; your choice of voice and speed is kept in this browser.</PageNote>
+        <PageNote section="Follow-ups">Follow-ups between assistants never change anyone&apos;s task. Owners and HR see in Audit that a follow-up happened, not what was said.</PageNote>
         <PageNote section={`What ${name} did`}>{name} reads your conversations only when you ask it to catch you up, and only conversations you are in. Reading never marks them as read.</PageNote>
         {activity.readsHidden ? <PageNote section={`What ${name} did`}>What {name} read is hidden while someone else is signed in as this person.</PageNote> : null}
       </>
@@ -205,7 +219,8 @@ export default async function SettingsPage({ params, searchParams }: { params: P
       );
     }
   } else if (section === "brenda") {
-    const [ai, brenda, a, usage] = await Promise.all([assistantStatus(ctx), brendaOverview(ctx), assistantProfiles(ctx), usageSummary(ctx)]);
+    const [ai, brenda, a, usage, collection] = await Promise.all([assistantStatus(ctx), brendaOverview(ctx), assistantProfiles(ctx), usageSummary(ctx),
+      withUser(ctx.user.profileId, (db) => followUpSettings(db, ctx.org.id))]);
     assistants = a;
     body = (
       <>
@@ -217,6 +232,9 @@ export default async function SettingsPage({ params, searchParams }: { params: P
         </SettingsSection>
         {/* The Reports page is gone; Brenda sends supervisors the day's team report instead (owner decision, 5 October 2026). */}
         <BrendaReportSettings orgSlug={ctx.org.slug} initial={brenda.settings} timezone={ctx.org.timezone} inPlan={ctx.plan.features.AI_ASSISTANT === true} />
+        {/* Updates for that report from everyone's assistant (owner decision, 8 October 2026: personal assistants, phase 4). */}
+        <FollowUpCollectionSettings orgSlug={ctx.org.slug} initial={collection} reportEnabled={brenda.settings.dailyReportEnabled} reportTime={brenda.settings.dailyReportTime}
+          inPlan={ctx.plan.features.AI_ASSISTANT === true} canEdit={admin} />
         {/* This month's requests and tokens (owner decision, 8 October 2026: personal assistants, phase 3). */}
         <BrendaUsageCard usage={usage} />
         <SettingsSection id="ai" title="AI connection" description="Brenda runs on Claude. Connect an Anthropic API key so she can act; without one a simple built-in helper answers and only suggests, and says so.">
@@ -228,6 +246,8 @@ export default async function SettingsPage({ params, searchParams }: { params: P
       <>
         <PageNote section="Workspace assistant">Each person still has their own assistant; this one only signs what the workspace sends by itself.</PageNote>
         <PageNote section="Brenda">She reads what each person is allowed to see, does their own work for them, and asks before anything that lands on someone else.</PageNote>
+        <PageNote section="Updates before the report">Updates are collected on working days, from what each person&apos;s work already shows. People who chose &ldquo;Always ask me first&rdquo; for their own assistant are asked once, even when asking is off here.</PageNote>
+        <PageNote section="Updates before the report">Owners and HR see in Audit that updates were collected. A person sees under Asked about you exactly what their assistant shared.</PageNote>
         <PageNote section="Usage this month">Usage counts requests from this month only and resets on the 1st.</PageNote>
         {isOwner ? (
           <>
@@ -268,7 +288,7 @@ export default async function SettingsPage({ params, searchParams }: { params: P
 
   return (
     <AppShell ctx={ctx} counts={counts} teams={navTeams}>
-      <PageHeader title="Settings" description={admin ? "How the workspace runs: working hours, screen recording, Brenda, the plan, your assistant and your linked computers." : "Your assistant's name, look and voice in this workspace."} divider />
+      <PageHeader title="Settings" description={admin ? "How the workspace runs: working hours, screen recording, Brenda, the plan, your assistant and your linked computers." : "Your assistant's name, look and voice in this workspace, and how it answers follow-ups about your work."} divider />
       {sp.setup && admin ? <Alert tone="success" className="mb-6" title="Workspace ready">Work through the setup list to finish.</Alert> : null}
       <div className="grid gap-6 md:grid-cols-[12.5rem_minmax(0,1fr)] md:gap-10">
         {/* Sub-navigation (spec §6): 32px items, r8, fill-1 and the orange marker for the open one, fill-0 on hover; a scrolling row on a phone. */}

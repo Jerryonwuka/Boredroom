@@ -49,7 +49,9 @@ const told = (max: number) => z.string().transform((s) => (s.length > max ? `${s
 const href = z.string().max(2000).regex(/^\/(?!\/)/, "Links stay inside Boredroom.");
 const done = text(80).optional();
 
-const actionSchema = z.object({ kind: text(80), summary: told(2000), href: href.optional() });
+// `followUpBatchId`: a confirmed follow-up's batch, so a saved chat keeps its live card (owner decision, 8 October 2026:
+// personal assistants, phase 4). Only an id: the card reads the follow-up as it is now, as the person may see it.
+const actionSchema = z.object({ kind: text(80), summary: told(2000), href: href.optional(), followUpBatchId: z.string().uuid().optional() });
 // The kinds of Proposal (server/services/copilot.ts), each with the label it was marked with ("Added", "Not done").
 const proposalSchema = z.discriminatedUnion("kind", [
   z.object({

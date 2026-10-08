@@ -21,10 +21,18 @@ export const metadata = { title: "Notifications" };
 /**
  * The kind of notification in words; anything not named here reads from its type ("task.assigned" is "Task assigned").
  * Nudges, reminders and clock-ins come from the person's own assistant, the daily report from the workspace's (owner
- * decision, 7 October 2026: personal assistants), each by the name it was given.
+ * decision, 7 October 2026: personal assistants), each by the name it was given. Follow-ups between assistants (owner
+ * decision, 8 October 2026: personal assistants, phase 4) come from the person's own assistant too: the request to
+ * reply about their own work (`brenda.followup_ask`, even when the workspace's assistant is collecting for the report:
+ * their own assistant asks them), and the answers to what they asked (`brenda.followup_answer` for one person,
+ * `brenda.followup_batch` for a group).
  */
 function kindsFor(personal: string, workspace: string): Record<string, string> {
-  return { "message.direct": "Direct message", "brenda.nudge": `From ${personal}`, "brenda.reminder": `Reminder from ${personal}`, "brenda.clock_in": `From ${personal}`, "brenda.daily_report": `Daily report from ${workspace}`, "capture.exception": "Recording problem", "adjustment.requested": "Time correction requested" };
+  return {
+    "message.direct": "Direct message", "brenda.nudge": `From ${personal}`, "brenda.reminder": `Reminder from ${personal}`, "brenda.clock_in": `From ${personal}`,
+    "brenda.daily_report": `Daily report from ${workspace}`, "brenda.followup_ask": `Follow-up from ${personal}`, "brenda.followup_answer": "Follow-up answer",
+    "brenda.followup_batch": "Follow-up answers", "capture.exception": "Recording problem", "adjustment.requested": "Time correction requested",
+  };
 }
 
 /** The filters, as underline tabs (owner brief, 6 October 2026). Each type belongs to at most one group besides All. The
@@ -63,7 +71,7 @@ function emptyFor(personal: string): Record<Filter, { title: string; description
     unread: { title: "You are all caught up", description: "Nothing unread. New notifications show here first." },
     tasks: { title: "No task notifications", description: "Assignments, comments, blockers and review requests on your tasks show here." },
     messages: { title: "No message notifications", description: "Direct messages sent while you were away show here." },
-    brenda: { title: `Nothing from ${personal} yet`, description: "Reminders, nudges and daily reports show here." },
+    brenda: { title: `Nothing from ${personal} yet`, description: "Reminders, nudges, follow-ups and daily reports show here." },
   };
 }
 
@@ -102,7 +110,7 @@ export default async function NotificationsPage({ params, searchParams }: { para
 
   return (
     <AppShell ctx={ctx} counts={counts} teams={teams}>
-      <PageHeader title="Notifications" description="Assignments, review requests, decisions, blockers and reminders."
+      <PageHeader title="Notifications" description="Assignments, review requests, decisions, blockers, reminders and follow-ups."
         actions={unreadItems.length ? <MarkAllRead orgSlug={ctx.org.slug} ids={unreadItems.map((n) => n.id)} /> : undefined}
         tabsLabel="Show" tabValue={show} tabParam="show"
         tabs={FILTERS.map((f) => ({ label: f.value === "brenda" ? personal.name : f.label, value: f.value, href: f.value === "all" ? `${base}/notifications` : `${base}/notifications?show=${f.value}`, count: f.value === "unread" ? unreadItems.length : undefined, attention: f.value === "unread" }))} />

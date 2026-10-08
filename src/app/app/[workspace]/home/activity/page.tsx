@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { workspacePage } from "@/server/lib/workspace-page";
 import { orgContext } from "@/server/lib/api";
 import { AppShell } from "@/components/app/shell";
 import { PageHeader } from "@/components/ui/card";
+import { buttonVariants } from "@/components/ui/button";
 import { PageNote, PageNotes } from "@/components/ui/page-notes";
 import { AssistantActivity } from "@/components/app/assistant-activity";
 import { assistantProfiles } from "@/server/services/assistant-profile";
@@ -32,6 +34,10 @@ const TAB_LABEL: Record<ActivityKind, string> = { all: "All", actions: "Actions"
  * `?kind=` picks the tab (All, Actions, Reads, Didn't go through); anything else reads as All. The header's meta line
  * shows today's requests against the daily limit once migration 0037 is applied and while the plan includes the
  * assistant. Not gated by the plan otherwise: a record of what happened stays readable, as past chats are.
+ *
+ * Follow-ups between assistants (owner decision, 8 October 2026: personal assistants, phase 4): the header's actions link
+ * to "Follow-ups" (what the person asked other people's assistants) and "Asked about you" (every follow-up about their
+ * work and exactly what their assistant shared, including the ones answered without disturbing them).
  */
 export default async function AssistantActivityPage({ params, searchParams }: { params: Promise<{ workspace: string }>; searchParams: Promise<{ kind?: string | string[] }> }) {
   const { workspace } = await params;
@@ -52,6 +58,10 @@ export default async function AssistantActivityPage({ params, searchParams }: { 
       {/* The header and its tabs run the page's width on their hairline; the list reads in a 768px column. */}
       <PageHeader back={{ href: `${base}/home`, label: `Back to ${name}` }} title={`What ${name} did`}
         description={`Everything ${name} did or read for you, newest first.`}
+        actions={<>
+          <Link href={`${base}/home/follow-ups`} className={buttonVariants({ variant: "secondary", size: "sm" })}>Follow-ups</Link>
+          <Link href={`${base}/home/follow-ups/about-you`} className={buttonVariants({ variant: "secondary", size: "sm" })}>Asked about you</Link>
+        </>}
         meta={allowance.ready && aiEnabled ? <><span className="tabular-nums">{allowance.used}</span> of <span className="tabular-nums">{allowance.limit}</span> requests used today</> : undefined}
         tabsLabel="Show" tabValue={kind} tabParam="kind"
         tabs={ACTIVITY_KINDS.map((k) => ({ label: TAB_LABEL[k], value: k, href: k === "all" ? `${base}/home/activity` : `${base}/home/activity?kind=${k}` }))} />

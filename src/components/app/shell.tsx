@@ -178,7 +178,7 @@ export async function AppShell({ ctx, counts, teams = [], children, bleed = fals
         {bleed
           ? <main id="main" className="flex min-h-0 flex-1 flex-col md:h-[calc(100dvh-var(--header-height)-var(--shell-banners,0px))]">{children}</main>
           : <PageColumn>{children}</PageColumn>}
-        {ctx.plan.features.AI_ASSISTANT ? <AssistantDrawer orgSlug={ctx.org.slug} isOrg={isOrg} firstName={ctx.user.displayName.split(" ")[0]} floating /> : null}
+        {ctx.plan.features.AI_ASSISTANT ? <AssistantDrawer orgSlug={ctx.org.slug} isOrg={isOrg} firstName={ctx.user.displayName.split(" ")[0]} timeZone={ctx.org.timezone} floating /> : null}
         {ctx.plan.features.AI_ASSISTANT && !isOrg ? <BrendaPresence orgSlug={ctx.org.slug} /> : null}
         {showSetup ? <AssistantSetup orgSlug={ctx.org.slug} orgName={ctx.org.name} /> : null}
         <RealtimeRefresher orgSlug={ctx.org.slug} />

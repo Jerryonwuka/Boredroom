@@ -40,6 +40,12 @@
  * whatever the choice (Stop while it plays). One utterance at a time on the page: she stops when you type in her box,
  * send, start a new chat or open another, when this chat goes away or is put away (`quiet`, the drawer closing), and,
  * through the controller, whenever a microphone opens. A reply that lands while the chat is not on screen is not read.
+ *
+ * Follow-ups between assistants (owner decision, 8 October 2026: personal assistants, phase 4): once the person
+ * confirms a follow-up, its action carries the batch's id (`followUpBatchId`) and the done line becomes the live
+ * status card (follow-up-status-card), which goes from asking to answered in place; the Open button stays. The id is
+ * saved with the conversation, so a past chat shows the follow-up as it is now. Times on the card are in the
+ * organisation's time zone when the chat knows it (`timeZone`, her page), else this browser's.
  */
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -54,6 +60,7 @@ import { PromptInputBox } from "@/components/ui/ai-prompt-box";
 import { BrendaFace, type BrendaMood, type BrendaTone } from "@/components/app/brenda-face";
 import { Markdown } from "@/components/app/docs-markdown";
 import { useAssistant } from "@/components/app/assistant-context";
+import { FollowUpStatusCard } from "@/components/app/follow-up-status-card";
 import { playSound } from "@/lib/brenda-sound";
 import { useDictation } from "@/hooks/use-dictation";
 import { useSpeech } from "@/hooks/use-assistant-speech";
@@ -65,7 +72,9 @@ import { attention, READ_BLUR_HOLD_MS, type BrendaState, type ReadCue } from "@/
 import type { Action, ChatResult, Proposal } from "@/server/services/copilot";
 import type { Conversation, ConversationSummary, StoredMessage } from "@/server/services/brenda-history";
 
-export type BrendaMsg = { role: "user" | "assistant"; content: string; actions?: Action[]; proposals?: (Proposal & { done?: string })[]; engine?: ChatResult["engine"]; note?: string | null };
+/** What she did, as the chat keeps it: a confirmed follow-up carries its batch (copilot's Action gains the same field). */
+export type ChatAction = Action & { followUpBatchId?: string };
+export type BrendaMsg = { role: "user" | "assistant"; content: string; actions?: ChatAction[]; proposals?: (Proposal & { done?: string })[]; engine?: ChatResult["engine"]; note?: string | null };
 
 // The drawer's starters, listed one under another. Catching up on Messages is second for everyone (owner decision,
 // 8 October 2026: personal assistants, phase 3).
@@ -268,8 +277,9 @@ class ConversationSaver {
   }
 }
 
-export function useBrendaChat({ orgSlug, keysActive = true, visible = true, onLeave, initialText = "", initial = null, onSaved }: {
+export function useBrendaChat({ orgSlug, keysActive = true, visible = true, onLeave, initialText = "", initial = null, onSaved, timeZone }: {
   orgSlug: string; /** Y/N answer a Confirm while true. */ keysActive?: boolean;
+  /** The organisation's time zone, for the times on a follow-up's card; this browser's when not given. */ timeZone?: string;
   /** Whether the chat is on screen: a reply that lands while it is not (the drawer closed meanwhile) is not read aloud. */ visible?: boolean;
   /** Called before Brenda opens a page. */ onLeave?: () => void;
   /** Words already in the box (a link's `?ask=`); never sent on its own. */ initialText?: string;
@@ -569,7 +579,7 @@ export function useBrendaChat({ orgSlug, keysActive = true, visible = true, onLe
     return () => document.removeEventListener("keydown", onKey);
   });
 
-  return { orgSlug, messages, text, setText: setBox, pending, error, notice, dictation, send, act, decline, reset, load, remove, saveNow, conversationId, look, state, reaction, lastIndex, waitingAt, speechId, listen, quiet };
+  return { orgSlug, timeZone, messages, text, setText: setBox, pending, error, notice, dictation, send, act, decline, reset, load, remove, saveNow, conversationId, look, state, reaction, lastIndex, waitingAt, speechId, listen, quiet };
 }
 
 export type BrendaChat = ReturnType<typeof useBrendaChat>;
@@ -626,14 +636,20 @@ export function BrendaMessages({ chat, onLeave, size = "md" }: { chat: BrendaCha
               {voice.blocked !== null && voice.blocked === chat.speechId(m) ? (
                 <p role="status" className={cn("text-xs font-normal text-subtle", indent)}>{name} couldn&apos;t speak in this browser.</p>
               ) : null}
-              {m.actions?.length ? (
-                <ul className={cn("space-y-2", indent)}>{m.actions.map((a, ai) => (
-                  <li key={ai} className="flex min-h-11 items-center gap-2.5 rounded-xl border border-border py-1.5 pl-3 pr-1.5 text-sm">
-                    <Check className="size-4 shrink-0 text-success" aria-hidden />
-                    <span className="min-w-0 flex-1 truncate font-normal text-foreground">{a.summary}</span>
-                    {a.href ? <button type="button" className={btn("ghost", "xs")} onClick={() => { onLeave?.(); router.push(a.href!); }}>Open<AnimatedArrowUpRight aria-hidden /></button> : null}
-                  </li>
-                ))}</ul>
+              {/* Done lines first; a confirmed follow-up's live card goes after the Confirm it came from, below (visual
+                  review, 8 October 2026: the result read before the question that produced it). */}
+              {m.actions?.some((a) => !a.followUpBatchId) ? (
+                <ul className={cn("space-y-2", indent)}>{m.actions.map((a, ai) => {
+                  if (a.followUpBatchId) return null;
+                  const openIt = a.href ? <button type="button" className={btn("ghost", "xs")} onClick={() => { onLeave?.(); router.push(a.href!); }}>Open<AnimatedArrowUpRight aria-hidden /></button> : null;
+                  return (
+                    <li key={ai} className="flex min-h-11 items-center gap-2.5 rounded-xl border border-border py-1.5 pl-3 pr-1.5 text-sm">
+                      <Check className="size-4 shrink-0 text-success" aria-hidden />
+                      <span className="min-w-0 flex-1 truncate font-normal text-foreground">{a.summary}</span>
+                      {openIt}
+                    </li>
+                  );
+                })}</ul>
               ) : null}
               {m.proposals?.length ? (
                 <ul className={cn("space-y-2", indent)}>{m.proposals.map((p, pi) => {
@@ -642,7 +658,7 @@ export function BrendaMessages({ chat, onLeave, size = "md" }: { chat: BrendaCha
                     <li key={pi} className="rounded-xl border border-border-input p-3 text-sm">
                       <p className="flex items-start gap-2.5 font-medium text-foreground"><ShieldCheck className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden /><span className="min-w-0">{p.summary}</span></p>
                       {/* The whole message it will send, every word (review, 8 October 2026); a long one scrolls. */}
-                      {p.detail ? <div role="region" tabIndex={0} aria-label="The full message" className="ml-[26px] mt-2 max-h-48 overflow-y-auto whitespace-pre-wrap break-words rounded-lg bg-fill-0 px-3 py-2 font-normal text-foreground outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ring)]">{p.detail}</div> : null}
+                      {p.detail && !(p.done && m.actions?.some((a) => a.followUpBatchId)) ? <div role="region" tabIndex={0} aria-label="The full message" className="ml-[26px] mt-2 max-h-48 overflow-y-auto whitespace-pre-wrap break-words rounded-lg bg-fill-0 px-3 py-2 font-normal text-foreground outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ring)]">{p.detail}</div> : null}
                       <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
                         {p.done ? <span className="text-xs font-medium text-secondary">{p.done}</span> : !p.token ? <span className="text-xs font-normal text-subtle">Expired. Ask {name} again.</span> : <>
                           <button type="button" className={btn("ghost", "sm")} aria-keyshortcuts={keys ? "N" : undefined} onClick={() => decline(mi, pi)}>Not now{keys ? <KeyHint>N</KeyHint> : null}</button>
@@ -660,6 +676,18 @@ export function BrendaMessages({ chat, onLeave, size = "md" }: { chat: BrendaCha
                           {p.kind === "todo" ? <><AnimatedPlus aria-hidden />Add</> : p.kind === "start_timer" ? <><AnimatedPlay aria-hidden />Start</> : p.kind === "open" ? <>Open<AnimatedArrowUpRight aria-hidden /></> : <><AnimatedAlarmClock aria-hidden />{p.kind === "clock_in" ? "Clock in" : "Clock out"}</>}
                         </button>
                       )}
+                    </li>
+                  );
+                })}</ul>
+              ) : null}
+              {m.actions?.some((a) => a.followUpBatchId) ? (
+                <ul className={cn("space-y-2", indent)}>{m.actions.map((a, ai) => {
+                  if (!a.followUpBatchId) return null;
+                  const openIt = a.href ? <button type="button" className={btn("ghost", "xs")} onClick={() => { onLeave?.(); router.push(a.href!); }}>Open<AnimatedArrowUpRight aria-hidden /></button> : null;
+                  // A confirmed follow-up: its live card in place of the done line (phase 4); the Open button stays.
+                  return (
+                    <li key={ai} className="text-sm">
+                      <FollowUpStatusCard orgSlug={chat.orgSlug} batchId={a.followUpBatchId} onLeave={onLeave} timeZone={chat.timeZone} action={openIt} />
                     </li>
                   );
                 })}</ul>

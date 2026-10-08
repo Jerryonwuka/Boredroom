@@ -46,6 +46,12 @@
  * for everyone and "Catch me up on messages" is in "More asks"; like every ask they only fill the box. "What Max did"
  * (/home/activity: everything the person's assistant did or read for them) is a pill in the home screen's top row,
  * between Past chats and Brenda settings, and an icon link in the chat's header right after Past chats, at every width.
+ *
+ * Follow-ups between assistants (owner decision, 8 October 2026: personal assistants, phase 4): a "Follow-ups" pill in
+ * the top row after "What Max did" (with an orange count of the asks waiting for the person, when any; it opens "Asked
+ * about you" then, else "You asked"), the same icon link in the chat's header, and "Follow up with someone" in "More
+ * asks". When someone's assistant is waiting for the person's reply, "Waiting for you" sits inside her panel above the
+ * quick asks (two cards at most, then "See all"), never in the chat. All hidden until migration 0039 is applied.
  */
 import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
@@ -66,7 +72,9 @@ import { BrendaFace } from "@/components/app/brenda-face";
 import { BrendaComposer, BrendaMessages, DictationNotes, useBrendaChat, type BrendaChat } from "@/components/app/brenda-chat";
 import { BrendaHistory } from "@/components/app/brenda-history";
 import { useAssistant } from "@/components/app/assistant-context";
+import { WaitingForYou } from "@/components/app/follow-up-reply";
 import { isApiFailure } from "@/lib/api-client";
+import type { FollowUpView } from "@/lib/follow-ups";
 import { cn } from "@/lib/utils";
 import type { Conversation, ConversationSummary } from "@/server/services/brenda-history";
 
@@ -87,6 +95,12 @@ export type HomeData = {
   chat: Conversation | null;
   /** `?chat=` named a conversation that is not there. */
   chatMissing: boolean;
+  /** The organisation's time zone (the times on follow-ups). */
+  timeZone: string;
+  /** Follow-ups between assistants (phase 4): migration 0039 is applied. */
+  followUpsReady: boolean;
+  /** Other people's assistants waiting for this person's reply, the nearest deadline first (none before 0039). */
+  waiting: FollowUpView[];
 };
 
 type Ask = { icon: React.ComponentType<{ "aria-hidden"?: boolean }>; label: string; prompt: string };
@@ -145,7 +159,7 @@ const CARDS: Record<"worker" | "lead", Card[]> = {
 };
 
 /** "More asks" in her box: more things to ask, each a sentence to finish in the box. Clocking and the timer only for people who clock in. */
-function moreAsks(role: HomeData["role"]): Ask[] {
+function moreAsks(role: HomeData["role"], followUps: boolean): Ask[] {
   const worker = role === "employee" || role === "manager";
   return [
     ...(role !== "employee" ? [{ icon: AnimatedUserPlus, label: "Assign a task", prompt: "Assign a task to " }] : []),
@@ -153,6 +167,8 @@ function moreAsks(role: HomeData["role"]): Ask[] {
     ...(worker ? [{ icon: AnimatedClock, label: "Clock me in", prompt: "Clock me in." }, { icon: AnimatedPlay, label: "Start my timer", prompt: "Start the timer on " }] : []),
     { icon: AnimatedAlarmClock, label: "Set a reminder", prompt: "Remind me to " },
     { icon: AnimatedSend, label: "Send a message", prompt: "Send a message to " },
+    // Phase 4: ask someone's assistant how their work is going, instead of asking them.
+    ...(followUps ? [{ icon: AnimatedMessageSquareReply, label: "Follow up with someone", prompt: "Follow up with " }] : []),
     { icon: AnimatedInbox, label: "Catch me up on messages", prompt: "Catch me up on my messages." },
     { icon: AnimatedFileText, label: "Write a document", prompt: "Help me write a document about " },
   ];
@@ -181,7 +197,7 @@ export function BrendaHome({ data }: { data: HomeData }) {
   const [view, setView] = useState<"start" | "chat">(data.aiEnabled && (data.chat || openOnList) ? "chat" : "start");
   // Each save moves the conversation to the top of Past chats (or adds it there). A reply that lands while her home
   // screen is up (Back pressed while it was on its way) is not read aloud, as in the closed drawer (review, 7 October 2026).
-  const chat = useBrendaChat({ orgSlug: data.orgSlug, initialText: data.ask, initial: data.chat, visible: view === "chat", onSaved: (c) => setHistory((cur) => [c, ...cur.filter((x) => x.id !== c.id)]) });
+  const chat = useBrendaChat({ orgSlug: data.orgSlug, initialText: data.ask, initial: data.chat, visible: view === "chat", timeZone: data.timeZone, onSaved: (c) => setHistory((cur) => [c, ...cur.filter((x) => x.id !== c.id)]) });
   const character = useRef<BrendaCharacterHandle>(null);
   const box = useRef<HTMLDivElement>(null);
   // The chat may stay open with no conversation in it: opened on its past chats, after New chat, or after deleting the
@@ -270,7 +286,7 @@ export function BrendaHome({ data }: { data: HomeData }) {
     if (chatting && !chat.pending && idle && !covered) focusBoxIn(box.current);
   }, [chatting, chat.pending]); // eslint-disable-line react-hooks/exhaustive-deps -- closing the sheet is not a reason to move the focus
 
-  const more = <MoreMenu role={role} onPick={(p) => fill(p, true)} />;
+  const more = <MoreMenu role={role} followUps={data.followUpsReady} onPick={(p) => fill(p, true)} />;
 
   if (chatting) {
     return (
@@ -282,6 +298,7 @@ export function BrendaHome({ data }: { data: HomeData }) {
 
   const kind = lead ? "lead" : "worker";
   const isOrg = role === "owner" || role === "hr";
+  const waiting = data.followUpsReady ? data.waiting.length : 0;
   // Her character is monochrome like the rest of v4 (her light takes the orb's orange); the orb brightens while she
   // listens (a live microphone).
   const listening = chat.state === "listening";
@@ -325,6 +342,14 @@ export function BrendaHome({ data }: { data: HomeData }) {
             <Link href={`${base}/home/activity`} className={cn(pill, iconOnPhones)}>
               <span className="max-sm:sr-only">What {name} did</span><AnimatedActivity aria-hidden />
             </Link>
+            {/* Follow-ups between assistants (phase 4): to "Asked about you" while someone waits for the person's reply
+                (the orange count asks them to act), else to what they asked. Not plan-gated: a record stays readable. */}
+            {data.followUpsReady ? (
+              <Link href={`${base}/home/follow-ups${waiting ? "/about-you" : ""}`} className={cn(pill, waiting ? "max-sm:px-2.5" : iconOnPhones)}>
+                <span className="max-sm:sr-only">Follow-ups</span>
+                {waiting ? <><CountPill count={waiting} tone="attention" /><span className="sr-only">waiting for you</span></> : null}<AnimatedMessageSquareReply aria-hidden />
+              </Link>
+            ) : null}
             {isOrg ? (
               <Link href={`${base}/settings?section=brenda`} className={cn(pill, iconOnPhones)}>
                 <span className="max-sm:sr-only">Brenda settings</span><AnimatedSettings aria-hidden />
@@ -343,6 +368,13 @@ export function BrendaHome({ data }: { data: HomeData }) {
         </div>
 
         <div className="@container mx-auto w-full max-w-[720px] text-left">
+          {/* Someone's assistant is waiting for the person's reply (phase 4): above the quick asks, two at most. Answering
+              does not need the plan's assistant, so it shows on every plan. Kept mounted while 0039 is there, so a card
+              just answered stays as "Sent." after the refresh drops it; with nothing to show it renders nothing. */}
+          {data.followUpsReady ? (
+            <WaitingForYou orgSlug={data.orgSlug} items={data.waiting} timeZone={data.timeZone} now={data.now} max={2} seeAllHref={`${base}/home/follow-ups/about-you`}
+              cardClassName="bg-[color:var(--brenda-fill)] shadow-none" className="mb-5" />
+          ) : null}
           {data.aiEnabled ? (
             <>
               <div role="group" aria-label="Quick asks" className="mb-3 flex flex-wrap gap-2">
@@ -404,12 +436,12 @@ function ActionCard({ card, onPick }: { card: Card; onPick: () => void }) {
 }
 
 /** "More asks" on the left of her box's bottom row: a menu of more things to ask. Choosing one puts its sentence in the box. */
-function MoreMenu({ role, onPick }: { role: HomeData["role"]; onPick: (prompt: string) => void }) {
+function MoreMenu({ role, followUps, onPick }: { role: HomeData["role"]; followUps: boolean; onPick: (prompt: string) => void }) {
   const { name } = useAssistant().personal;
   return (
     <Menu label={`Ask ${name} to`} trigger={<PromptTextAction><AnimatedPlus aria-hidden />More asks</PromptTextAction>}>
       <MenuLabel>Ask {name} to…</MenuLabel>
-      {moreAsks(role).map((a) => <MenuItem key={a.label} icon={<a.icon aria-hidden />} onSelect={() => onPick(a.prompt)}>{a.label}</MenuItem>)}
+      {moreAsks(role, followUps).map((a) => <MenuItem key={a.label} icon={<a.icon aria-hidden />} onSelect={() => onPick(a.prompt)}>{a.label}</MenuItem>)}
     </Menu>
   );
 }
@@ -521,6 +553,15 @@ function ChatView({ data, chat, box, onBack, onNewChat, history, sheet, onSheet,
         </IconButton>
         {/* Everything the person's assistant did or read for them (phase 3), at every width; the tooltip reads its name. */}
         <Link href={`/app/${data.orgSlug}/home/activity`} className={ICON_BUTTON} aria-label={`What ${name} did`}><AnimatedActivity aria-hidden /></Link>
+        {/* Follow-ups (phase 4), right after "What Max did": an orange dot while someone waits for the person's reply,
+            with the count in its name (a word beside the colour). */}
+        {data.followUpsReady ? (
+          <Link href={`/app/${data.orgSlug}/home/follow-ups${data.waiting.length ? "/about-you" : ""}`} className={ICON_BUTTON}
+            aria-label={data.waiting.length ? `Follow-ups, ${data.waiting.length} waiting for you` : "Follow-ups"}>
+            <AnimatedMessageSquareReply aria-hidden />
+            {data.waiting.length ? <span aria-hidden className="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-accent" /> : null}
+          </Link>
+        ) : null}
         {/* Icon only on phones, as the home pills are, so her name and status keep their room at ~400px. */}
         <button type="button" onClick={onNewChat} className={cn(buttonVariants({ variant: "secondary", size: "sm" }), "max-sm:w-8 max-sm:px-0 max-sm:pointer-coarse:w-10")}><AnimatedPlus aria-hidden /><span className="max-sm:sr-only">New chat</span></button>
       </header>

@@ -19,7 +19,14 @@
      (`synthetic`, no levels: the page makes the syllables). The mock `speak` and `stop_speaking` commands answer the same
      way after a short pause for rendering, so Listen and Stop work on any reply (&synthetic applies to them too).
      ?speak=always|never sets the person's choice (the default, voice, speaks only answers to the talk keys). ?look=… gives
-     the glow her colour. -->
+     the glow her colour.
+     Follow-ups between assistants (owner decision, 8 October 2026: phase 4): ?state=ask opens the request card (Olu's Max
+     asks about "Landing page"; pick a quick reply, type or say a line, Send or Not now), ?state=ask-ws the workspace's
+     collection before the team report, ?state=answer the answer card (Ben's Brenda answered), ?state=no-reply an expired
+     one, ?state=batch a group's answers, ?state=waiting the day card with a waiting ask and its Reply button. &card=dictate
+     holds the talk keys for two seconds on the open ask and writes the words heard into its note; &reply=closed answers the
+     reply with the server's 409 (closed meanwhile), &reply=error with a 503; &old drops `followUps`, as an older server
+     does, so the plain notification cards show. -->
 <html lang="en"><head><meta charset="utf-8"><title>Brenda notch preview</title><link rel="stylesheet" href="src/style.css">
 <style>html,body{background:#3b3b3b!important;height:100%;overflow:hidden!important} body::before{content:"";position:fixed;inset:0 0 auto;height:40px;background:rgb(0 0 0 / .28);box-shadow:inset 0 -1px 0 rgb(255 255 255 / .075)} #stage{position:relative;width:480px;height:440px;margin:0 auto;outline:1px dashed rgb(255 255 255 / .1)}</style></head>
 <body><div id="stage"><div id="island" class="island"><main id="notch" class="notch compact"></main><i id="countdown" class="countdown"></i></div></div>
@@ -45,6 +52,27 @@ const assistantFrom = (look, name) => {
 };
 const personal = assistantFrom(q.get("look"), q.get("name"));
 const workspace = assistantFrom(q.get("ws"), q.get("wsname"));
+// Follow-ups (phase 4): Olu's assistant Max asks about Ben's "Landing page"; Ben's Brenda answers Ada's follow-up.
+const max = assistantFrom("orange,band,round", "Max"), brenda = assistantFrom("white", "Brenda");
+const hours = (h) => new Date(Date.now() + h * 3600_000).toISOString();
+const ASK = "f1111111-1111-4111-8111-111111111111", ANSWER = "f2222222-2222-4222-8222-222222222222", BATCH = "b3333333-3333-4333-8333-333333333333";
+const asks = {
+  ask: { id: ASK, title: "Olu's Max wants an update on “Landing page”", question: "Where are you on the landing page? The client asked this morning.", taskTitle: "Landing page", taskHref: "/app/company-a/tasks/66666666-6666-4666-8666-666666666666",
+    asker: { name: "Olu Adeyemi", assistant: max }, deadlineAt: hours(4),
+    facts: ["“Landing page” is in progress, 60% done, due Fri 9 Oct 17:00", "Latest from you: a comment, Wed 7 Oct 16:02: “Copy is done, waiting on images”", "Time: not shared, Olu can't see your timesheets"] },
+  "ask-ws": { id: ASK, title: `${workspace.name} is collecting updates for today's team report`, question: "What did you work on today?", taskTitle: null, taskHref: null, asker: null, deadlineAt: hours(1),
+    facts: ["Open: “Landing page” (in progress, 60%), “Brand deck refresh” (blocked)", "Time on it: 3 h 10 min today, 14 h 5 min this week", "Nothing recorded on this lately"] },
+};
+const answers = {
+  answer: { id: ANSWER, title: "Ben's Brenda answered about “Landing page”", status: "answered", subject: { name: "Ben Okafor", assistant: brenda }, answeredAt: now, href: `/app/company-a/home/follow-ups/${ANSWER}`,
+    answer: "Ben says it's on track: “Images land tomorrow morning”. “Landing page” is in progress, 60% done, due Fri 9 Oct 17:00. Ben's latest update was a comment on Wed 7 Oct 16:02: “Copy is done, waiting on images”." },
+  "no-reply": { id: ANSWER, title: "No reply from Ben about “Landing page”", status: "expired", subject: { name: "Ben Okafor", assistant: brenda }, answeredAt: now, href: `/app/company-a/home/follow-ups/${ANSWER}`,
+    answer: "No reply from Ben by 19:41. “Landing page” is in progress, 60% done, due Fri 9 Oct 17:00. Nothing has been recorded on it by Ben lately." },
+};
+const fuState = q.has("old") ? undefined : { ready: true, waiting: asks[state] ? [asks[state]] : state === "waiting" ? [asks.ask] : [], answered: answers[state] ? [answers[state]] : [] };
+const fuNotes = asks[state] ? [{ id: "n9", type: "brenda.followup_ask", resource_id: ASK, title: asks[state].title, body: asks[state].asker ? `Reply in a tap or say not now. If you don't reply by 19:41, Max gets what your work shows.` : "Reply before 16:55. Your reply goes in the report your team lead, the owner and HR receive.", href: `/app/company-a/home/follow-ups/about-you?f=${ASK}`, created_at: now }]
+  : answers[state] ? [{ id: "n8", type: "brenda.followup_answer", resource_id: ANSWER, title: answers[state].title, body: answers[state].answer, href: answers[state].href, created_at: now }]
+  : state === "batch" ? [{ id: "n7", type: "brenda.followup_batch", resource_id: BATCH, title: "Updates from Design are in", body: "6 people: 4 answered from their work, 1 replied, 1 didn't reply in time.", href: `/app/company-a/home/follow-ups?batch=${BATCH}`, created_at: now }] : [];
 const sample = {
   serverNow: now, me: { displayName: "Ada Employee", role: "employee", presence: "active" }, workspace: { slug: "company-a", name: "Company A" }, brendaEnabled: true,
   settings: { autoClockIn: true, reminders: true }, prefs: { autoClockIn: true, reminders: true }, assistant: { personal, workspace, speak: q.get("speak") || "voice" },
@@ -54,7 +82,8 @@ const sample = {
   myTasks: [{ id: "11111111-1111-1111-1111-111111111111", title: "KITA onboarding flow", due: now }, { id: "22222222-2222-2222-2222-222222222222", title: "Landing page copy", due: null }],
   team: state === "lead" || state === "idle" ? [{ id: "m1", name: "Ada Employee", state: "running", task: "Homepage hero illustrations" }, { id: "m2", name: "Ben Employee", state: "paused", task: "Brand deck refresh" }, { id: "m3", name: "Chidi Okafor", state: null, task: null }] : [],
   notifications: state === "reminder" ? [{ id: "n1", type: "brenda.reminder", title: "Reminder: Call Josh", body: `You asked ${personal.name} to remind you.`, href: null, created_at: now }]
-    : state === "report" ? [{ id: "n2", type: "brenda.daily_report", title: "Your team report for Monday 5 October is ready", body: "Ada and Ben logged 13h 20m; Ben finished the brand deck and Ada sent the onboarding flow for review.", href: "/app/company-a/docs/44444444-4444-4444-4444-444444444444", created_at: now }] : [],
+    : state === "report" ? [{ id: "n2", type: "brenda.daily_report", title: "Your team report for Monday 5 October is ready", body: "Ada and Ben logged 13h 20m; Ben finished the brand deck and Ada sent the onboarding flow for review.", href: "/app/company-a/docs/44444444-4444-4444-4444-444444444444", created_at: now }] : fuNotes,
+  followUps: fuState,
 };
 const replies = {
   // `spoken` is what the server makes speakable (src/lib/assistant-speech/speakable.ts): no Markdown, links or ids.
@@ -77,6 +106,16 @@ window.__TAURI__ = {
       if (q.get("confirm") === "already") throw { status: 409, code: "ALREADY_CONFIRMED", message: "That was already done. Ask again if you need it once more." };
       return { actions: [{ kind: "todo", summary: "Created “Review the brand deck” for Ada" }], error: null };
     }
+    if (cmd === "api" && /\/follow-ups\/[^/]+\/reply$/.test(path)) {
+      await new Promise((r) => setTimeout(r, 700));
+      console.log("follow-up reply", args.body);
+      if (q.get("reply") === "closed") throw { status: 409, code: "FOLLOW_UP_CLOSED", message: "This follow-up is already closed." };
+      if (q.get("reply") === "error") throw { status: 503, code: "NOT_READY", message: "Follow-ups need a database update first. Try again later." };
+      // As the server does: the ask is no longer waiting and its notification is read.
+      if (sample.followUps) sample.followUps.waiting = sample.followUps.waiting.filter((w) => !path.includes(w.id));
+      sample.notifications = sample.notifications.filter((n) => n.type !== "brenda.followup_ask");
+      return { followUp: {} };
+    }
     if (cmd === "api" && path.includes("/brenda/conversations")) { saved.push({ method: args.method, path, body: args.body }); console.log("past chat saved", args.method, path, args.body); return { id: "55555555-5555-5555-5555-555555555555", updatedAt: new Date().toISOString() }; }
     if (cmd === "api" && args.method !== "GET") { await new Promise((r) => setTimeout(r, 300)); return {}; }
     if (cmd === "upload_dropped") { await new Promise((r) => setTimeout(r, 700)); return { id: "33333333-3333-3333-3333-333333333333" }; }
@@ -91,6 +130,8 @@ window.__TAURI__ = {
   event: { listen: (name, fn) => { (window.__h ??= {})[name] = fn; } },
 };
 try { if (!q.has("keep")) localStorage.clear(); } catch {}
+// The follow-up states open their card first, not the morning briefing (?state=waiting shows the briefing).
+try { if (asks[state] || answers[state] || state === "batch") localStorage.setItem(`brenda-briefing:company-a:${new Date().toDateString()}`, "1"); } catch {}
 </script>
 <script src="src/sound.js"></script>
 <script src="src/main.js"></script>
@@ -137,6 +178,8 @@ setTimeout(() => {
   if (c === "offer") ask("Add calling Josh and start my top task", { spoken: false });
   if (c === "error") voiceEvent({ phase: "error", message: "The microphone is blocked. Allow it in System Settings, Privacy, Microphone." });
   if (c === "voice-off") voiceEvent({ phase: "off" });
+  // Holding the talk keys on an open ask: the words go into its note, never to her.
+  if (c === "dictate") setTimeout(() => { talkFor(2000); setTimeout(() => voiceEvent({ phase: "heard", text: "Images land tomorrow morning, then it's ready for a check." }), 3200); }, 600);
   if (c === "drop") window.__h?.["brenda://drag"]?.({ payload: { phase: "drop", x: 240, y: 20, count: 2, files: [{ index: 0, name: "onboarding-flow-v3.pdf", size: 1843200, problem: null }, { index: 1, name: "notes.docx", size: 20480, problem: "Only PDF, PNG, JPEG, WebP and TXT files." }] } });
 }, 400);
 // ?card=typing: a question typed letter by letter into the open card's ask box (the timer card opens first for a timer).

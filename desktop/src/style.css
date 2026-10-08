@@ -20,7 +20,11 @@
    The window is a fixed transparent stage. The island inside it changes shape, with motion values after Coucou by
    Louis Raillé (MIT); its shape, motion and timings are unchanged.
    Her voice (owner decision, 7 October 2026: phase 2): her faces talk while she reads a reply aloud (`.face.talk`, the
-   web's `.brenda-face[data-talking]`), and the reply card's Listen / Stop is a round ghost icon button. */
+   web's `.brenda-face[data-talking]`), and the reply card's Listen / Stop is a round ghost icon button.
+   Follow-ups between assistants (owner decision, 8 October 2026: phase 4): the request card (the asker's assistant, the
+   question in a quoted bubble, four quick replies, a one-line note, what will be shared) and the answer card (two
+   overlapping faces, the answer as plain text). Orange there: the chosen quick reply's dot (chosen, accent rules), the
+   open microphone while the note is said, and Send, the card's one standout; badges keep their status colours. */
 
 /* Inter and Geist Mono, from @fontsource-variable (SIL Open Font License, fonts/OFL.txt). Nothing loads remotely. */
 @font-face { font-family: "Inter Variable"; font-style: normal; font-display: swap; font-weight: 100 900; src: url(fonts/inter-latin-ext-wght-normal.woff2) format("woff2");
@@ -114,6 +118,9 @@ svg.ic { width: 14px; height: 14px; flex: none; }
 /* New content arrives after the island has started to grow: fade, unblur, settle. Only when the view changes. */
 .notch.enter > * { animation: enter .3s ease-out .14s both; }
 .notch.compact.enter > * { animation-delay: .06s; animation-duration: .22s; }
+/* Once per view (review, 8 October 2026): the same view drawn again (a button going busy, a poll redrawing the compact
+   bar, a follow-up's reply going out) keeps still instead of blurring in a second time. */
+.notch.enter.steady > * { animation-name: none; }
 @keyframes enter { from { opacity: 0; filter: blur(6px); transform: scale(.97); } to { opacity: 1; filter: none; transform: none; } }
 .island.hover:not(.open) .face { transform: scale(1.08); }
 .row { display: flex; align-items: center; gap: 12px; min-width: 0; }
@@ -213,6 +220,7 @@ svg.ic { width: 14px; height: 14px; flex: none; }
 .pill.ok { color: var(--success); background: color-mix(in srgb, var(--success) 12%, transparent); }
 .pill.warn { color: var(--warning); background: color-mix(in srgb, var(--warning) 12%, transparent); }
 .pill.acc { color: var(--accent-text); background: var(--accent-soft); }
+.pill.bad { color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); }
 /* The recording mark, as on the web's voice card: a dot with a 15% halo that pulses and the time in Geist Mono. The open
    microphone is live, so the dot and the running digits are orange (accent rules), not red; stopped, the time is grey. */
 .mic { display: inline-flex; align-items: center; gap: 6px; flex: none; white-space: nowrap; font-size: 12px; line-height: 16px; font-weight: 500; color: var(--secondary); }
@@ -376,6 +384,57 @@ kbd { display: inline-flex; align-items: center; justify-content: center; box-si
 .confirm .detail { max-height: 132px; overflow-y: auto; padding: 8px 10px; border-radius: 8px; background: color-mix(in srgb, var(--foreground) 5%, transparent); font-size: 13px; line-height: 19.5px; font-weight: 400; color: var(--foreground); white-space: pre-wrap; overflow-wrap: anywhere; }
 .reply + .note { margin-top: 6px; }
 
+/* Follow-ups between assistants (owner decision, 8 October 2026: personal assistants, phase 4).
+   A title that may run to two lines (the ask and the answer name a task), then cut. */
+.title.wrap { white-space: normal; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
+/* The question, in the asker's words: a quoted bubble on fill-1 (the web exchange's bubble), never a link, scrolled when long. */
+.quote { padding: 8px 12px; border-radius: var(--radius-control); background: var(--fill-1); font-size: 14px; line-height: 20px; font-weight: 400; color: var(--foreground);
+  white-space: pre-wrap; overflow-wrap: anywhere; max-height: 100px; overflow-y: auto; -webkit-user-select: text; user-select: text; }
+/* The four quick replies: outline pills sharing the row, one chosen at a time (`aria-pressed`). The chosen one gets a white
+   hairline, the fill and a small orange dot before its word (chosen, accent rules; the word carries the meaning). */
+.choices { display: flex; gap: 6px; }
+.btn.choice { flex: 1 1 auto; padding: 0 10px; }
+.btn.choice[aria-pressed="true"] { border-color: var(--foreground); background: var(--fill-150); }
+.btn.choice[aria-pressed="true"]::before { content: ""; width: 6px; height: 6px; border-radius: 50%; flex: none; background: var(--accent); }
+/* The note: a field with the talk keys inside its end while voice is on, and under it, only when there is something to
+   say, the microphone while it is open (the voice card's live dot, time and waveform), why it could not listen, and the
+   count once the note is nearly full. */
+.fu-note { display: grid; gap: 6px; margin: 0; }
+.fu-field { position: relative; }
+.fu-field:has(.fu-keys) .field { padding-right: 92px; }
+.fu-keys { position: absolute; right: 8px; top: 50%; translate: 0 -50%; display: inline-flex; align-items: center; gap: 6px; color: var(--subtle); pointer-events: none; }
+.fu-keys .ic { width: 14px; height: 14px; }
+.sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.fu-meta { display: flex; align-items: flex-start; gap: 8px; }
+.fu-meta:has(#fdict:empty):has(#fcount:empty) { display: none; }
+.fu-meta .cap { margin-top: 0; }
+.fu-meta #fcount { flex: none; font-variant-numeric: tabular-nums; }
+.dict { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.fu-meta .wave { margin: 2px 0 -4px; }
+/* What their assistant will share (a quiet toggle) and the task (a link that keeps the card open) share a row; the facts
+   open under it as plain lines on the near-black panel. The actions row starts with the reminder that a reply is words. */
+.fu-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; }
+.fu-foot .link { display: inline-flex; align-items: center; gap: 4px; }
+.fu-foot .link .ic { width: 14px; height: 14px; }
+.actions .lead { margin: 0 auto 0 0; color: var(--subtle); }
+.link.toggle .ic { width: 14px; height: 14px; transition: rotate .15s var(--ease); }
+.link.toggle[aria-expanded="true"] .ic { rotate: 90deg; }
+.facts { margin: 0; padding: 8px 12px 8px 28px; background: var(--background); border: 1px solid var(--border); border-radius: var(--radius-card-sm);
+  font-size: 13px; line-height: 19.5px; font-weight: 400; color: var(--secondary); overflow-wrap: anywhere; max-height: 132px; overflow-y: auto; -webkit-user-select: text; user-select: text; }
+.facts li + li { margin-top: 2px; }
+.facts li::marker { color: var(--subtle); }
+.facts[hidden] { display: none; }
+/* The request card (a follow-up's ask): its list of what will be shared stays short, and Not now and Send stay in
+   view at the bottom of the island when the card is taller than the stage (visual review, 8 October 2026: opening the
+   facts pushed the card past 440px, a scrollbar showed and Send could scroll away). */
+.notch:has(> .choices) .facts { max-height: 100px; }
+.notch:has(> .choices) > .actions { position: sticky; bottom: -16px; margin: 0 -16px -16px; padding: 8px 16px 16px; background: var(--island); z-index: 1; }
+/* The answer, written by the other person's assistant: plain text, kept as written, never Markdown or links. */
+.answer { font-size: 14px; line-height: 20px; font-weight: 400; color: var(--foreground); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 172px; overflow-y: auto; -webkit-user-select: text; user-select: text; }
+/* Two assistants side by side: the person's own, then the other one overlapping it, cut out of it by the island's black. */
+.faces { display: inline-flex; flex: none; margin-top: 2px; }
+.faces .face + .face { margin-left: -7px; outline: 2px solid var(--island); }
+
 /* Typing to Brenda: the web's prompt pill at the notch's size (a solid fill-1 surface with a hairline ring that turns
    orange while it has focus), and a round 32px send button, orange with a near-black arrow once there is something to
    send (the card's standout action then), grey until then. */
@@ -452,6 +511,8 @@ kbd { display: inline-flex; align-items: center; justify-content: center; box-si
 :is(.btn, .link):is(:hover, :focus-visible) > .ic-play { animation-name: ic-nudge; }
 /* Listen (her voice, 7 October 2026) nudges forward like Play, the sound going out. */
 :is(.btn, .link):is(:hover, :focus-visible) > .ic-volume { animation-name: ic-nudge; }
+/* The follow-up card's "What your assistant will share" chevron nudges the way it opens (phase 4, 8 October 2026). */
+:is(.btn, .link):is(:hover, :focus-visible) > .ic-chevron { animation-name: ic-nudge; }
 :is(.btn, .link):is(:hover, :focus-visible) > .ic-pause { animation-name: ic-bars; }
 :is(.btn, .link):is(:hover, :focus-visible) > .ic-stop { animation-name: ic-press; }
 :is(.btn, .link):is(:hover, :focus-visible) > .ic-plus { animation-name: ic-turn; }

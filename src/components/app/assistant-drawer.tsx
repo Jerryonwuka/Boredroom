@@ -58,8 +58,8 @@ const clamp = (x: number, y: number) => ({ x: Math.min(Math.max(8, x), window.in
 
 /** What she can do, in her opening words before the first message. */
 const CAN_DO: Record<"org" | "worker", string[]> = {
-  org: ["See what is waiting", "Assign work", "Follow up on tasks nobody picked up", "Message people", "Set reminders"],
-  worker: ["See what is waiting", "Start and stop your timer", "Clock in", "Update your tasks", "Set reminders"],
+  org: ["See what is waiting", "Assign work", "Ask someone's assistant where they are", "Follow up on tasks nobody picked up", "Message people", "Set reminders"],
+  worker: ["See what is waiting", "Start and stop your timer", "Clock in", "Update your tasks", "Ask a colleague's assistant where they are", "Set reminders"],
 };
 
 /** The saved position, kept inside the viewport, or null for the default corner. */
@@ -71,14 +71,16 @@ function useFloatingPosition() {
   return clamp(x, y);
 }
 
-export function AssistantDrawer({ orgSlug, isOrg, firstName, floating = false }: { orgSlug: string; isOrg: boolean; firstName: string; floating?: boolean }) {
+// `timeZone`: the organisation's, for the times on a follow-up's live card in the chat (phase 4, integration review,
+// 8 October 2026); her page passes the same.
+export function AssistantDrawer({ orgSlug, isOrg, firstName, floating = false, timeZone }: { orgSlug: string; isOrg: boolean; firstName: string; floating?: boolean; timeZone?: string }) {
   const [open, setOpen] = useState(false);
   const { name } = useAssistant().personal;
   const onBrendaPage = /^\/app\/[^/]+\/home\/?$/.test(usePathname() ?? "");
   const muted = useSyncExternalStore(subscribeSounds, soundsMuted, () => false);
   // Y and N answer this panel's Confirm only while it is open and showing; on Brenda's page her own chat takes them.
   const showing = open && !onBrendaPage;
-  const chat = useBrendaChat({ orgSlug, keysActive: showing, visible: showing, onLeave: () => setOpen(false) });
+  const chat = useBrendaChat({ orgSlug, keysActive: showing, visible: showing, timeZone, onLeave: () => setOpen(false) });
   const { messages, pending, dictation, look, quiet } = chat;
   // Every way the panel goes away (each sets `open` false) stops what this chat was reading aloud; so does her page.
   useEffect(() => { if (!showing) quiet(); }, [showing, quiet]);

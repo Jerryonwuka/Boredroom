@@ -56,6 +56,9 @@ export function attemptOf(tool: string, input: Record<string, unknown> = {}): st
     case "update_doc": return "change a document";
     case "mark_read": return "mark conversations as read";
     case "team_report": return "write the team report";
+    // Follow-ups between assistants (owner decision, 8 October 2026: personal assistants, phase 4).
+    case "follow_up": return "follow up with someone";
+    case "follow_up_status": return "check your follow-ups";
     default: return "do that";
   }
 }
@@ -66,7 +69,10 @@ export function attemptOf(tool: string, input: Record<string, unknown> = {}): st
  * person's private channel names, who they message or what they wrote. The person's own fuller words live in the row's
  * detail (`personalSummary`) and show only on their own Activity page (review, 8 October 2026).
  */
-export const PRIVATE_TOOLS: ReadonlySet<string> = new Set(["send_message", "mark_read", "read_conversation", "search_messages", "list_conversations"]);
+// Follow-ups too (owner decision, 8 October 2026: personal assistants, phase 4): who someone asked about, and what their
+// own assistant shared about them (follow_up_answer, logged on the subject's side), are theirs; owners and HR see that a
+// follow-up happened in Audit, never its words.
+export const PRIVATE_TOOLS: ReadonlySet<string> = new Set(["send_message", "mark_read", "read_conversation", "search_messages", "list_conversations", "follow_up", "follow_up_status", "follow_up_answer"]);
 
 /** The model-facing words of the tainted-turn refusal (copilot.ts TAINT_ERROR), recognised in rows logged before this change. */
 const TAINTED = /^Not done: you read other people's messages/;
