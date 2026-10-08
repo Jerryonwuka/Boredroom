@@ -58,6 +58,12 @@ export function attemptOf(tool: string, input: Record<string, unknown> = {}): st
     case "team_report": return "write the team report";
     // Follow-ups between assistants (owner decision, 8 October 2026: personal assistants, phase 4).
     case "follow_up": return "follow up with someone";
+    // Assistants talk to each other (owner decision, 8 October 2026: personal assistants, phase 6).
+    case "pass_message": return "pass a message to someone's assistant";
+    case "hand_over_request": return "send a request to someone's assistant";
+    case "add_report_note": return "add a note to the team report";
+    case "assistant_inbox": return "check what other assistants brought you";
+    case "respond_to_item": return "answer something another assistant brought you";
     case "follow_up_status": return "check your follow-ups";
     default: return "do that";
   }
@@ -72,7 +78,11 @@ export function attemptOf(tool: string, input: Record<string, unknown> = {}): st
 // Follow-ups too (owner decision, 8 October 2026: personal assistants, phase 4): who someone asked about, and what their
 // own assistant shared about them (follow_up_answer, logged on the subject's side), are theirs; owners and HR see that a
 // follow-up happened in Audit, never its words.
-export const PRIVATE_TOOLS: ReadonlySet<string> = new Set(["send_message", "mark_read", "read_conversation", "search_messages", "list_conversations", "follow_up", "follow_up_status", "follow_up_answer"]);
+// Phase 6 (owner decision, 8 October 2026: assistants talk to each other): who someone passed a message or a request to,
+// and why it didn't go ("Ben isn't taking messages from your assistant right now" would reveal Ben's mute), are theirs
+// too; the tool names and the log kinds the done lines use are both listed.
+export const PRIVATE_TOOLS: ReadonlySet<string> = new Set(["send_message", "mark_read", "read_conversation", "search_messages", "list_conversations", "follow_up", "follow_up_status", "follow_up_answer",
+  "pass_message", "hand_over_request", "add_report_note", "assistant_inbox", "respond_to_item", "assistant_message", "assistant_request", "assistant_report_note", "assistant_respond"]);
 
 /** The model-facing words of the tainted-turn refusal (copilot.ts TAINT_ERROR), recognised in rows logged before this change. */
 const TAINTED = /^Not done: you read other people's messages/;

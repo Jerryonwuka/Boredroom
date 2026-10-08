@@ -35,6 +35,9 @@ vi.mock("@/server/services/mentions", () => ({
   completeMentionPublic: m.completeMentionPublic, completeMentionPrivate: m.completeMentionPrivate, refuseMention: m.refuseMention,
   failMention: m.failMention, mentionReaders: m.mentionReaders, nextPendingMention: m.nextPendingMention, staleMentions: m.staleMentions, settleMentionConfirms: m.settleMentionConfirms,
   visibleToReaders: async () => new Set<string>(),
+  // Phase 6: someone else's assistant (none in these tests; the sweep finds nothing to bring up to date).
+  linkMentionFollowUp: async () => false, ownerThreadState: async () => null, postOwnerThread: async () => null, withdrawOwnerMention: async () => false,
+  ownerMentionsToSync: async () => [] as string[],
 }));
 vi.mock("@/server/services/catch-up", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/server/services/catch-up")>()),
@@ -339,7 +342,7 @@ describe("the worker's jobs", () => {
     m.staleMentions.mockResolvedValue([{ id: M1, attempts: 0 }, { id: M2, attempts: 1 }]);
     const now = new Date("2026-10-08T10:17:00Z");
     const window = Math.floor(now.getTime() / 600_000);
-    expect(await sweepMentions({ limit: 5, now })).toEqual({ settled: 2, queued: 2 });
+    expect(await sweepMentions({ limit: 5, now })).toEqual({ settled: 2, queued: 2, synced: 0 });
     expect(m.staleMentions).toHaveBeenCalledWith(expect.objectContaining({ limit: 5 }));
     // Once per attempt in a ten-minute window: a row whose conversation was busy is tried again in the next window.
     expect(db.jobs.map((j) => j.dedupKey)).toEqual([`mention.process:${M1}:0:${window}`, `mention.process:${M2}:1:${window}`]);

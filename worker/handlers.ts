@@ -74,11 +74,14 @@ const followUpProcess: Handler = async (payload) => {
 // that did not answer). Unlike the follow-ups' jobs the worker may call the model here, bounded: one mention per job, at
 // most 4 model steps. Each returns at once before migration 0041.
 
-/** Expired Confirms settled, then each stuck mention handed to its own mention.process job (at most 5 a run). */
+/**
+ * Expired Confirms settled, then each stuck mention handed to its own mention.process job (at most 5 a run); and (phase
+ * 6) the threads where someone else's assistant asked its owner brought up to date once the follow-up closed (at most 10).
+ */
 const mentionSweep: Handler = async () => {
   const { sweepMentions } = await import("../src/server/services/mention-processor");
   const r = await sweepMentions({ limit: 5 });
-  if (r.settled || r.queued) console.log(`[worker] mentions: ${r.settled} Confirm(s) expired, ${r.queued} queued again`);
+  if (r.settled || r.queued || r.synced) console.log(`[worker] mentions: ${r.settled} Confirm(s) expired, ${r.queued} queued again, ${r.synced} thread(s) brought up to date`);
 };
 
 /** One mention taken as far as it goes now; the next one waiting in the same conversation gets its own job. */
@@ -87,6 +90,20 @@ const mentionProcess: Handler = async (payload) => {
   if (!UUID.test(id)) return;
   const { processMentionJob } = await import("../src/server/services/mention-processor");
   await processMentionJob(id);
+};
+
+// ---- Assistants talk to each other (owner decision, 8 October 2026: personal assistants, phase 6) ------------------------
+// Delivery, seen, replies, accepting and declining happen in the web process as the people do them; the worker owns
+// what must happen even when nobody is looking: requests past their time expire (the sender is told), an accepted request
+// a crash left half-done is closed as interrupted (never run again: no second to-do), and today's report notes settle
+// once the report is written. No model. Returns at once before migration 0043 (the service checks), so an old worker
+// that does not know the job only leaves it for this one (rearmFollowUpJobs).
+
+/** Requests past their time, accepted requests left half-done, report notes past the report: at most 50 a run. */
+const assistantItemSweep: Handler = async () => {
+  const { sweepAssistantItems } = await import("../src/server/services/assistant-items");
+  const r = await sweepAssistantItems({ limit: 50 });
+  if (r.expired || r.interrupted || r.notesSettled) console.log(`[worker] assistant items: ${r.expired} expired, ${r.interrupted} interrupted, ${r.notesSettled} report note(s) settled`);
 };
 
 const retentionDelete: Handler = async (payload) => {
@@ -124,6 +141,7 @@ export const handlers: Record<string, Handler> = {
   "followup.process": followUpProcess,
   "mention.sweep": mentionSweep,
   "mention.process": mentionProcess,
+  "assistant_item.sweep": assistantItemSweep,
   "recording.retention_delete": retentionDelete,
   "recording.assemble": assembleRecording,
   "deliverable.scan": scanDeliverable,

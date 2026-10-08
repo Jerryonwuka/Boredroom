@@ -22,6 +22,13 @@
  * they worked on today, a set time before the report (services/follow-ups.ts, collectWorkspaceUpdates; the worker runs
  * it). The answers go in the report under "Updates", read as the recipient (workspaceUpdatesFor: only the people the
  * recipient may see the records of). Before migration 0039, or when nothing was collected, there is no such section.
+ *
+ * Notes from the team (owner decision, 8 October 2026: personal assistants, phase 6): anyone may tell their assistant
+ * "Put this in today's team report: …"; the note goes in a "Notes from the team" section after the Updates, "From Olu
+ * via Max", read as the recipient (reportNotesFor: row-level security lets only the people who may view the author's
+ * records read it: their team leads, the owner and HR). A day with notes is sent even when nothing else happened. The
+ * note is quoted as typed (its Markdown shown, its addresses as code). Never fails the report: anything wrong leaves the
+ * section out; before migration 0043 there is none.
  */
 import { withUser, withWorker, type Db } from "@/server/db";
 import type { OrgContext } from "@/server/lib/api";
@@ -90,6 +97,11 @@ export type DailyReport = {
   updates: { membershipId: string; name: string; line: string }[];
   /** When the collection was made. */
   updatesAt: string | null;
+  /**
+   * Notes people asked their assistant to put in today's report (phase 6), oldest first, as the recipient may read them;
+   * empty before migration 0043 or when there are none.
+   */
+  notes: { id?: string; membershipId: string; name: string; assistantName: string; body: string; at: string }[];
 };
 
 type Extra = {
@@ -174,8 +186,27 @@ export async function buildDailyReport(ctx: OrgContext, opts: { useAssistant?: b
   const headline = opts.useAssistant === false || empty ? plain : (await assistantHeadline(ctx, summary, people, attention, opts.usage ?? "person", opts.requestId)) ?? plain;
   return {
     localDate, title: `Team report, ${dayLabel(localDate)}`, scope: summary.scope, people, totals: summary.totals,
-    headline, attention, waitingForYourReview: extra.waitingForYou, empty, updates: [], updatesAt: null,
+    headline, attention, waitingForYourReview: extra.waitingForYou, empty, updates: [], updatesAt: null, notes: [],
   };
+}
+
+// ---- Notes from the team (owner decision, 8 October 2026: personal assistants, phase 6) -------------------------------
+
+/** A note in the report is at most this long (the note itself holds at most 500 characters). */
+export const NOTE_MAX = 500;
+
+/**
+ * Today's notes for the team report, read as the recipient (row-level security: the authors whose records they may
+ * view). Loaded when needed. Never fails the report: anything wrong (before 0043, a hiccup) leaves the section out.
+ */
+async function reportNotes(ctx: OrgContext, localDate: string): Promise<DailyReport["notes"]> {
+  try {
+    const { reportNotesFor } = await import("@/server/services/assistant-items");
+    return await reportNotesFor(ctx, localDate);
+  } catch (err) {
+    console.warn(`[daily report] notes left out: ${(err as Error)?.message ?? err}`);
+    return [];
+  }
 }
 
 // ---- Updates collected by the workspace's assistant (owner decision, 8 October 2026: personal assistants, phase 4) ----
@@ -330,6 +361,11 @@ export function reportMarkdown(ctx: OrgContext, r: DailyReport, opts: { writtenA
     lines.push("## Updates", "", `_${md(asker)} asked everyone's assistant for today's update${r.updatesAt ? ` at ${hhmm(r.updatesAt, tz)}` : ""}._`, "",
       ...r.updates.map((u) => `- **${md(u.name)}**: ${mdQuoted(clamp(oneLine(u.line), UPDATE_LINE_MAX))}`), "");
   }
+  // What people asked their assistant to put in today's report (phase 6), in their own words, quoted as typed.
+  if (r.notes?.length) {
+    lines.push("## Notes from the team", "",
+      ...r.notes.map((x) => `- **${md(x.name)}** via ${md(x.assistantName)}, ${hhmm(x.at, tz)}: “${mdQuoted(clamp(oneLine(x.body), NOTE_MAX))}”`), "");
+  }
   lines.push("## Needs your attention", "");
   const shown = r.attention.slice(0, 10);
   if (shown.length) lines.push(...shown.map((x) => `- ${x}`), ...(r.attention.length > shown.length ? [`- And ${plural(r.attention.length - shown.length, "more item")} in the sections above`] : []));
@@ -364,13 +400,16 @@ async function deliver(ctx: OrgContext, mode: "end_of_day" | "asked", opts: { us
 
   // The end-of-day send is the workspace's own job in the usage ledger; a report asked for is the person's.
   const report = await buildDailyReport(ctx, { useAssistant: opts.useAssistant, usage: mode === "end_of_day" ? "workspace" : "person", requestId: opts.requestId });
+  // Notes from the team (phase 6), read as the recipient: a day with notes is sent even when nothing else happened.
+  report.notes = await reportNotes(ctx, report.localDate);
+  if (report.notes.length) report.empty = false;
   if (report.empty) return { status: "nothing" };
   // The updates the workspace's assistant collected today, read as the recipient (phase 4); none before 0039 or when off.
   Object.assign(report, await reportUpdates(ctx, report));
   // Asked for after the end-of-day report went out (and was archived since): it is written as the day's report, not "so far".
   const body = reportMarkdown(ctx, report, { writtenAt: new Date(), endOfDay: mode === "end_of_day" || !!before?.sent_at, reportTime: opts.reportTime, author: opts.author, workspaceName: opts.workspaceName });
 
-  return withUser(ctx.user.profileId, async (db) => {
+  const written = await withUser(ctx.user.profileId, async (db) => {
     // The day's row, created if need be and locked: two runs for the same person and day take turns here, and the
     // second sees what the first wrote.
     await db.query(`INSERT INTO brenda_report_log(organisation_id, membership_id, local_date) VALUES ($1, $2, $3) ON CONFLICT (membership_id, local_date) DO NOTHING`, [ctx.org.id, ctx.membership.id, report.localDate]);
@@ -391,6 +430,13 @@ async function deliver(ctx: OrgContext, mode: "end_of_day" | "asked", opts: { us
     await logAction(db, ctx, { tool: "team_report", summary: `${mode === "end_of_day" ? "Sent you" : refreshed ? "Brought up to date" : "Wrote you"} the team report for ${dayLabel(report.localDate)}`, outcome: "done", source: mode === "end_of_day" ? "automatic" : "chat", detail: { docId, people: report.people.length } });
     return { status: mode === "end_of_day" ? "sent" as const : "saved" as const, saved: { docId, title: report.title, headline: report.headline, href: href(docId), people: report.people.length } };
   });
+  // The notes it carried are in a report now (one asked for early included): their authors can no longer withdraw them
+  // (review, 8 October 2026).
+  if ((written.status === "sent" || written.status === "saved") && report.notes.length) {
+    const { markNotesInReport } = await import("@/server/services/assistant-items");
+    await markNotesInReport(report.notes.map((n) => n.id ?? "").filter(Boolean));
+  }
+  return written;
 }
 
 export type TeamReportNow =

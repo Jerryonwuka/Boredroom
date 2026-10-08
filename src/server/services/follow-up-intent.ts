@@ -124,7 +124,9 @@ function core(text: string): string {
  * Ada"), items after semicolons or list marks. Never one follow-up: the to-do path reads those (correctness review,
  * 8 October 2026: the task words swallowed every other line).
  */
-const SEVERAL = /[\r\n\u2028\u2029;]|(?:^|\s)[-*•]\s|(?:^|\s)\d+[.)]\s/;
+// Exported for the helper's ear for other people's assistants (assistant-talk-intent.ts; owner decision, 8 October
+// 2026: personal assistants, phase 6), which holds itself to the same rule.
+export const SEVERAL = /[\r\n\u2028\u2029;]|(?:^|\s)[-*•]\s|(?:^|\s)\d+[.)]\s/;
 
 /** What a follow-up sentence asks for, or null when it is not one. */
 export function followUpIntent(text: string): FollowUpIntent | null {

@@ -17,12 +17,23 @@
  *
  * Faces here are `quiet` (they never talk along); no orange button (Confirm is the white primary); every press refreshes
  * the page, and a press that fails says why inline (`role="alert"`).
+ *
+ * Someone else's assistant (owner decision, 8 October 2026: personal assistants, phase 6, contract H.4): "@Ben's Brenda,
+ * where is the deck?" makes BEN's assistant answer. `MentionView.assistant` is then the answering assistant and
+ * `MentionView.owner` its owner, so every row here shows the answering assistant's face and name, the badge "Ben's
+ * assistant" ("Your assistant" for Ben) and "asked by Olu" ("asked by you" for Olu). Its private card (Olu's alone)
+ * names "Ben's Brenda", never offers Post to channel (what Ben's work shows is not Olu's to post), and "Continue with"
+ * names Olu's OWN assistant. "I've asked Ben. I'll reply here." and Ben's reply are messages of Ben's assistant in the
+ * thread (the page draws them, with "asked by Olu"); while the mention is 'asked' nothing more shows under the tagging
+ * message. In a message's text a tag of someone else's assistant is marked like any assistant tag, titled "Ben's
+ * assistant", in the orange tint for Ben (it wants his attention).
  */
 import { Fragment, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Check, EyeOff, Loader2, ShieldCheck } from "lucide-react";
 import { AssistantAvatar } from "@/components/app/assistant-chip";
+import { useAssistant } from "@/components/app/assistant-context";
 import { focusComposer } from "@/components/app/messages";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -50,16 +61,26 @@ const Spin = ({ on }: { on: boolean }) => (on ? <Loader2 className="animate-spin
 /**
  * A message's text with its stored mentions marked (contract F.2). `me` is the viewer's membership; `senderName` names
  * whose assistant an assistant tag is ("Olu's assistant"; "Your assistant" on your own).
+ *
+ * Phase 6: an assistant tag whose membership is not the sender's (`senderId`) is someone else's assistant; `owners`
+ * names its owner ("Ben's assistant", or the label's own words when the owner is not listed here any more). It is in the
+ * orange tint for its owner, as a mention of them is: someone asked their assistant.
  */
-export function MentionText({ body, refs, me, senderName }: { body: string; refs: MentionRef[]; me: string; senderName: string }) {
+export function MentionText({ body, refs, me, senderName, senderId, owners }: { body: string; refs: MentionRef[]; me: string; senderName: string; senderId?: string; owners?: Record<string, string> }) {
   const pieces = splitMentions(body, refs);
   return (
     <span className="whitespace-pre-wrap break-words">
       {pieces.map((p, i) => {
         if (!("ref" in p)) return <Fragment key={i}>{p.text}</Fragment>;
         const you = p.ref.membershipId === me;
-        const title = p.ref.kind === "assistant" ? (you ? "Your assistant" : `${firstName(senderName)}'s assistant`) : p.ref.label.replace(/^@/, "");
-        return <span key={i} title={title} className={cn("rounded px-0.5 font-medium", p.ref.kind === "person" && you ? "bg-accent-soft text-accent-text" : "bg-fill-150 text-foreground ring-1 ring-inset ring-border-input")}>{p.text}</span>;
+        const theirs = p.ref.kind === "assistant" && senderId !== undefined && p.ref.membershipId !== senderId;
+        const owner = theirs ? owners?.[p.ref.membershipId] : undefined;
+        const title = p.ref.kind === "person" ? p.ref.label.replace(/^@/, "")
+          : you ? MENTION_WORDS.assistantOption
+            : theirs ? (owner ? MENTION_WORDS.otherAssistantSecondary(firstName(owner)) : p.ref.label.replace(/^@/, ""))
+              : `${firstName(senderName)}'s assistant`;
+        const tint = you && (p.ref.kind === "person" || theirs);
+        return <span key={i} title={title} className={cn("rounded px-0.5 font-medium", tint ? "bg-accent-soft text-accent-text" : "bg-fill-150 text-foreground ring-1 ring-inset ring-border-input")}>{p.text}</span>;
       })}
     </span>
   );
@@ -67,7 +88,10 @@ export function MentionText({ body, refs, me, senderName }: { body: string; refs
 
 // ---- Under the tagging message --------------------------------------------------------------------------------------
 
-/** A line under a bubble, on the left like an assistant's own message: the tagger's assistant's 24px face, then the line. */
+/**
+ * A line under a bubble, on the left like an assistant's own message: the answering assistant's 24px face (the
+ * tagger's own, or, phase 6, the owner's when someone else's assistant was tagged), then the line.
+ */
 function Row({ assistant, wide = false, children }: { assistant: AssistantProfile; wide?: boolean; children: ReactNode }) {
   return (
     <div className="mt-2 flex w-full justify-start">
@@ -79,16 +103,25 @@ function Row({ assistant, wide = false, children }: { assistant: AssistantProfil
   );
 }
 
-/** "Olu's assistant", or "Your assistant" for the person who asked. */
+/**
+ * Whose assistant answers: "Olu's assistant", or "Your assistant" for the person who asked; for someone else's
+ * assistant (phase 6) "Ben's assistant" ("Your assistant" for Ben), then "asked by Olu" ("asked by you" for Olu).
+ */
 function WhoseBadge({ mention }: { mention: MentionView }) {
-  return <Badge size="sm">{MENTION_WORDS.badge(mention.tagger.firstName, mention.tagger.isYou)}</Badge>;
+  return <>
+    <Badge size="sm">{MENTION_WORDS.badgeFor(mention)}</Badge>
+    {mention.owner ? <span className="text-meta font-normal text-secondary">{MENTION_WORDS.askedBy(mention.tagger.firstName, mention.tagger.isYou)}</span> : null}
+  </>;
 }
+
+/** The answering assistant as the private card names it: "Max", or "Ben's Brenda" when it is someone else's (phase 6). */
+const answeringName = (mention: MentionView) => (mention.owner ? MENTION_WORDS.otherAssistantOption(mention.owner.firstName, mention.assistant.name) : mention.assistant.name);
 
 /** How often, and for how long, a thinking row looks again when the live updates bring nothing. */
 const THINKING_POLL_MS = 4000;
 const THINKING_POLL_FOR_MS = 120_000;
 
-/** "Max is thinking…": everyone in the conversation sees it while the run is on (static under reduced motion). */
+/** "Max is thinking…" (or "Brenda is thinking…" for Ben's): everyone in the conversation sees it while the run is on (static under reduced motion). */
 export function ThinkingRow({ mention }: { mention: MentionView }) {
   const router = useRouter();
   // The live updates usually replace this row with the answer; when they bring nothing (a connection that drops
@@ -128,8 +161,9 @@ export function WaitingRow({ mention }: { mention: MentionView }) {
 }
 
 /**
- * What goes under a message that tagged its sender's assistant: the thinking line, the waiting line, or the tagger's
- * private card, whichever applies now (nothing once it is answered in public, refused for someone else, or dismissed).
+ * What goes under a message that tagged an assistant: the thinking line, the waiting line, or the tagger's private card,
+ * whichever applies now (nothing once it is answered in public, refused for someone else, or dismissed; nothing while
+ * someone else's assistant has asked its owner, phase 6: its "I've asked Ben" message says so in the thread).
  */
 export function MentionRows({ orgSlug, mention, conversationKind }: { orgSlug: string; mention: MentionView; conversationKind: string }) {
   // Dismissed here: gone at once, before the refresh brings `dismissedAt`.
@@ -152,9 +186,15 @@ export function MentionRows({ orgSlug, mention, conversationKind }: { orgSlug: s
  * assistant's name; the answer (plain text); a note (why it was not answered in public); each Confirm card; then Post
  * to channel ("Post to chat" in a direct thread; only when it can be posted), Dismiss, and Continue with Max (their own
  * chat). Posted, it collapses to "Posted to the conversation."
+ *
+ * Phase 6, someone else's assistant answered privately: the card names "Ben's Brenda", has no Post to channel (the
+ * server says `canPost` false; what Ben's work shows the tagger is theirs alone, and the card never offers it either
+ * way), and "Continue with" names the tagger's own assistant, whose chat it opens. A request it could not make itself
+ * ("add … to Ben's to-dos") comes as a Confirm card here: confirmed, Ben gets it to accept in his inbox.
  */
 export function PrivateAnswerCard({ orgSlug, mention, conversationKind, onDismissed }: { orgSlug: string; mention: MentionView; conversationKind: string; onDismissed: () => void }) {
   const router = useRouter();
+  const { personal } = useAssistant();
   const headId = useId();
   const [busy, setBusy] = useState<"post" | "dismiss" | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -164,7 +204,8 @@ export function PrivateAnswerCard({ orgSlug, mention, conversationKind, onDismis
   useEffect(() => { if (posted) postedLine.current?.focus(); }, [posted]);
   const p = mention.private;
   if (!p) return null;
-  const name = mention.assistant.name;
+  const name = answeringName(mention);
+  const canPost = p.canPost && !mention.owner;
   const base = `/api/orgs/${orgSlug}/mentions/${mention.id}`;
 
   if (posted || p.postedAt) {
@@ -201,9 +242,9 @@ export function PrivateAnswerCard({ orgSlug, mention, conversationKind, onDismis
       ) : null}
       {error ? <p role="alert" className="mt-2 text-meta font-medium text-danger">{error}</p> : null}
       <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
-        {p.canPost ? <Button size="sm" variant="secondary" {...busyProps(busy !== null, busy === "post")} onClick={() => void post()}><Spin on={busy === "post"} />{busy === "post" ? "Posting…" : MENTION_WORDS.post(conversationKind === "direct")}</Button> : null}
+        {canPost ? <Button size="sm" variant="secondary" {...busyProps(busy !== null, busy === "post")} onClick={() => void post()}><Spin on={busy === "post"} />{busy === "post" ? "Posting…" : MENTION_WORDS.post(conversationKind === "direct")}</Button> : null}
         <Button size="sm" variant="ghost" {...busyProps(busy !== null, busy === "dismiss")} onClick={() => void dismiss()}><Spin on={busy === "dismiss"} />{MENTION_WORDS.dismiss}</Button>
-        <Link href={`/app/${orgSlug}/home`} className={buttonVariants({ variant: "ghost", size: "sm" })}>{MENTION_WORDS.continueWith(name)}</Link>
+        <Link href={`/app/${orgSlug}/home`} className={buttonVariants({ variant: "ghost", size: "sm" })}>{MENTION_WORDS.continueWith(personal.name)}</Link>
       </div>
     </div>
   );

@@ -4,6 +4,8 @@ import { reportRecipients } from "../src/server/services/daily-report";
 import { localDate, localTimeOn, weekdayOf } from "../src/server/lib/time";
 import { schema0039Ready } from "../src/server/lib/schema-0039";
 import { schema0041Ready } from "../src/server/lib/schema-0041";
+import { schema0043Ready } from "../src/server/lib/schema-0043";
+import { NOTE_SETTLE_GRACE_MINUTES } from "../src/server/services/assistant-items";
 
 /**
  * Brenda's end-of-day team report (owner decision, 5 October 2026): on each working day of an organisation that keeps
@@ -109,17 +111,44 @@ export async function scheduleFollowUpSweep(now: Date = new Date()) {
  */
 export async function scheduleMentionSweep(now: Date = new Date()) {
   if (!(await withWorker((db) => schema0041Ready(db)))) return { queued: false, due: false };
-  const { staleMentions } = await import("../src/server/services/mentions");
+  const { staleMentions, ownerMentionsToSync } = await import("../src/server/services/mentions");
   const stale = await staleMentions({ now, limit: 1 });
+  // Phase 6: a thread where someone else's assistant asked its owner and the follow-up has closed since (none before 0043).
+  const toSync = stale.length ? [] : await ownerMentionsToSync({ limit: 1 }).catch(() => [] as string[]);
   return withWorker(async (db) => {
     const minute = Math.floor(now.getTime() / 60_000);
-    const expired = stale.length ? null : await db.maybeOne(
+    const expired = stale.length || toSync.length ? null : await db.maybeOne(
       `SELECT 1 FROM assistant_mentions WHERE status = 'waiting_confirm' AND confirm_until <= $1::timestamptz LIMIT 1`, [now.toISOString()]);
-    const due = stale.length > 0 || !!expired;
+    const due = stale.length > 0 || toSync.length > 0 || !!expired;
     if (due) await enqueueJob(db, "mention.sweep", {}, { dedupKey: `mention.sweep:${minute}` });
     // Once an hour whatever happens (its own key, so a loop that misses a minute still runs it).
     await enqueueJob(db, "mention.sweep", {}, { dedupKey: `mention.sweep:h${Math.floor(minute / 60)}` });
     return { queued: true, due };
+  });
+}
+
+/**
+ * The assistant items sweep (owner decision, 8 October 2026: personal assistants, phase 6): requests past their time,
+ * accepted requests left half-done (decided more than 5 minutes ago with the lease run out), and report notes whose
+ * report time has passed. Queued in the minute something is due (deduplicated on the minute) and once an hour as a
+ * safety net; jobs are never purged, so only when there is work. Reads also settle on the spot, so expiry works with an
+ * older worker too. Nothing before migration 0043.
+ */
+export async function scheduleAssistantItemSweep(now: Date = new Date()) {
+  return withWorker(async (db) => {
+    if (!(await schema0043Ready(db))) return { queued: false, due: false };
+    const minute = Math.floor(now.getTime() / 60_000);
+    const at = now.toISOString();
+    // The same rows sweepAssistantItems picks up (the partial indexes on expires_at and decided_at answer this).
+    const due = await db.maybeOne(
+      `SELECT 1 FROM assistant_items
+       WHERE (kind = 'request' AND status IN ('delivered', 'seen') AND expires_at <= $1::timestamptz)
+          OR (status = 'accepted' AND decided_at < $1::timestamptz - interval '5 minutes' AND (lease_until IS NULL OR lease_until < $1::timestamptz))
+          OR (kind = 'report_note' AND status = 'delivered' AND expires_at <= $1::timestamptz - make_interval(mins => $2))
+       LIMIT 1`, [at, NOTE_SETTLE_GRACE_MINUTES]);
+    if (due) await enqueueJob(db, "assistant_item.sweep", {}, { dedupKey: `assistant_item.sweep:${minute}` });
+    await enqueueJob(db, "assistant_item.sweep", {}, { dedupKey: `assistant_item.sweep:h${Math.floor(minute / 60)}` });
+    return { queued: true, due: !!due };
   });
 }
 
@@ -130,13 +159,14 @@ export async function scheduleMentionSweep(now: Date = new Date()) {
  * organisation would get no collection that day. This puts such jobs from the last day back in the queue (attempts
  * reset) for a worker that knows them; a job the old worker claims again comes back on the next run. Harmless once
  * every worker runs phase 4: then nothing matches. The proper fix is deploying the worker before (or with) this one.
- * The mentions' jobs too (owner decision, 8 October 2026: personal assistants, phase 5), for a worker without phase 5.
+ * The mentions' jobs too (owner decision, 8 October 2026: personal assistants, phase 5), for a worker without phase 5,
+ * and the assistant items sweep (phase 6), for a worker without phase 6.
  */
 export async function rearmFollowUpJobs() {
   return withWorker(async (db) => {
     const r = await db.query<{ id: string }>(
       `UPDATE jobs SET state = 'pending', attempts = 0, last_error = NULL, finished_at = NULL, locked_at = NULL, locked_by = NULL, next_run_at = now()
-       WHERE state = 'dead' AND type IN ('followup.collect', 'followup.process', 'followup.sweep', 'mention.sweep', 'mention.process')
+       WHERE state = 'dead' AND type IN ('followup.collect', 'followup.process', 'followup.sweep', 'mention.sweep', 'mention.process', 'assistant_item.sweep')
          AND last_error LIKE 'no handler for job type %' AND created_at > now() - interval '1 day'
        RETURNING id`);
     return { rearmed: r.length };
@@ -155,7 +185,9 @@ export async function scheduleMaintenance() {
   await scheduleFollowUpSweep().catch((err) => console.error("[worker] follow-up sweep schedule", (err as Error).message));
   // @mentions in Messages (phase 5): expired Confirms and mentions nobody is answering.
   await scheduleMentionSweep().catch((err) => console.error("[worker] mention sweep schedule", (err as Error).message));
-  await rearmFollowUpJobs().then((r) => { if (r.rearmed) console.warn(`[worker] ${r.rearmed} follow-up or mention job(s) killed by an older worker put back in the queue: deploy the worker everywhere`); }, (err) => console.error("[worker] follow-up job re-arm", (err as Error).message));
+  // Assistants talking to each other (phase 6): requests past their time, interrupted accepts, report notes.
+  await scheduleAssistantItemSweep().catch((err) => console.error("[worker] assistant item sweep schedule", (err as Error).message));
+  await rearmFollowUpJobs().then((r) => { if (r.rearmed) console.warn(`[worker] ${r.rearmed} follow-up, mention or assistant item job(s) killed by an older worker put back in the queue: deploy the worker everywhere`); }, (err) => console.error("[worker] follow-up job re-arm", (err as Error).message));
   await withWorker(async (db) => {
     const expiring = await db.query<{ id: string }>(`SELECT id FROM recordings WHERE deleted_at IS NULL AND upload_state <> 'deleted' AND expires_at <= now()`);
     for (const r of expiring) await enqueueJob(db, "recording.retention_delete", { recordingId: r.id, reason: "retention" }, { dedupKey: `recording.delete:${r.id}` });

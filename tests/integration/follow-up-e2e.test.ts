@@ -206,7 +206,7 @@ describe("request → ask → reply → answer", () => {
 
   it("a third ask about the same task the same day is refused (twice a day per person and task)", async () => {
     const r = await runBrendaTool(olu, "follow_up", { people: ["Ben Okafor"], taskId: pricing, question: "And now?" });
-    expect((r.out as { error?: string }).error).toBe("You've already followed up with Ben about this twice today. The answers are in Follow-ups.");
+    expect((r.out as { error?: string }).error).toBe("You've already followed up with Ben about this twice today. The answers are in Between assistants, under Sent.");
     expect(confirmOf(r.proposals)).toBeUndefined();
   });
 });

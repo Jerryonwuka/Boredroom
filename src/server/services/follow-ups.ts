@@ -29,6 +29,13 @@
  *
  * Nothing is shared about a person's own to-dos, day plan, documents, messages or chats with their assistant. Audit rows
  * never hold the question, a note or an answer: owners and HR see that a follow-up happened, not what was said.
+ *
+ * Asked in a thread (owner decision, 8 October 2026: personal assistants, phase 6; migration 0043): "@Ben's Brenda,
+ * where is the deck?" makes a follow-up in thread mode (thread_mode 'facts': answer from Ben's work when it can; 'ask':
+ * always ask Ben, the question is not about the state of his work), linked from its mention. It is never reused by an
+ * ordinary follow-up, nor reuses one; Ben's ask says his reply is posted in the thread; the asker gets no answer
+ * notification (the thread reply notifies them); and after every transition the thread is brought up to date
+ * (mention-processor's syncThreadFollowUp, loaded when needed, never throwing). Before 0043 none of it exists.
  */
 import { after } from "next/server";
 import { z } from "zod";
@@ -37,6 +44,7 @@ import type { OrgContext } from "@/server/lib/api";
 import { AppError, conflict, forbidden, invalid, notFound } from "@/server/lib/errors";
 import { resolveEntitlements } from "@/server/lib/entitlements";
 import { forget0039, isMissingSchema, retryWithout0039, schema0039Ready } from "@/server/lib/schema-0039";
+import { schema0043Ready } from "@/server/lib/schema-0043";
 import { memberContext } from "@/server/lib/member-context";
 import { addWorkingTime } from "@/server/lib/working-time";
 import { localMidnight, localTimeOn, todayLocal } from "@/server/lib/time";
@@ -123,8 +131,12 @@ type Checked = {
   todayCount: number;
 };
 
-/** Every permission and limit for these subjects (and task), as the requester. Audits each refusal (no question text). */
-async function checkSubjects(db: Db, ctx: OrgContext, subjectIds: string[], taskId: string | null): Promise<Checked> {
+/**
+ * Every permission and limit for these subjects (and task), as the requester. Audits each refusal (no question text).
+ * `reuse` false (a follow-up asked in a thread, phase 6): an open follow-up is never reused; and an ordinary one never
+ * reuses a thread's (thread_mode, once 0043 is applied).
+ */
+async function checkSubjects(db: Db, ctx: OrgContext, subjectIds: string[], taskId: string | null, opts: { reuse?: boolean } = {}): Promise<Checked> {
   const refusals = await db.query<{ id: string; reason: string | null }>(
     `SELECT s.id, app_follow_up_refusal($1, s.id, $2::uuid) AS reason FROM unnest($3::uuid[]) WITH ORDINALITY AS s(id, n) ORDER BY s.n`,
     [ctx.org.id, taskId, subjectIds]);
@@ -134,10 +146,11 @@ async function checkSubjects(db: Db, ctx: OrgContext, subjectIds: string[], task
   }
   const ok = refusals.filter((r) => !r.reason).map((r) => r.id);
   const since = todayStart(ctx).toISOString();
+  const ordinaryOnly = (await schema0043Ready(db)) ? "AND thread_mode IS NULL" : "";
   const [open, pairs, today] = [
-    await db.query<{ id: string; subject_membership_id: string; batch_id: string }>(
+    opts.reuse === false ? [] : await db.query<{ id: string; subject_membership_id: string; batch_id: string }>(
       `SELECT DISTINCT ON (subject_membership_id) id, subject_membership_id, batch_id FROM follow_ups
-       WHERE organisation_id = $1 AND requester_membership_id = $2 AND status IN ${OPEN_SQL} AND task_id IS NOT DISTINCT FROM $3::uuid AND subject_membership_id = ANY($4::uuid[])
+       WHERE organisation_id = $1 AND requester_membership_id = $2 AND status IN ${OPEN_SQL} AND task_id IS NOT DISTINCT FROM $3::uuid AND subject_membership_id = ANY($4::uuid[]) ${ordinaryOnly}
        ORDER BY subject_membership_id, created_at DESC`, [ctx.org.id, ctx.membership.id, taskId, ok]),
     await db.query<{ subject_membership_id: string; n: number }>(
       `SELECT subject_membership_id, count(*)::int AS n FROM follow_ups
@@ -260,7 +273,7 @@ export async function planFollowUps(ctx: OrgContext, input: FollowUpPlanInput): 
     const asked = [...c.allowed, ...c.reused.map((r) => r.subjectId)];
     if (!asked.length) {
       if (!group && c.refused.length) { const n = nameOf(c.refused[0].id); return { ok: false, error: refusalWords(c.refused[0].code, n, firstName(n)) }; }
-      if (!group && c.pairSkipped.length) return { ok: false, error: `You've already followed up with ${firstName(nameOf(c.pairSkipped[0]))} about this twice today. The answers are in Follow-ups.` };
+      if (!group && c.pairSkipped.length) return { ok: false, error: `You've already followed up with ${firstName(nameOf(c.pairSkipped[0]))} about this twice today. The answers are in Between assistants, under Sent.` };
       return { ok: false, error: `I can't ask any of them: ${skipped.map((s) => `${s.name} (${s.reason})`).join(", ")}.` };
     }
     if (c.allowed.length && c.allowed.length + c.todayCount > FOLLOW_UP_LIMITS.perRequesterPerDay) {
@@ -287,8 +300,11 @@ export type CreateFollowUpsResult = {
  * more), audits `followup.requested` per row (no question text), and re-checks every permission and limit. An open
  * follow-up with the same person about the same thing is reused, not repeated. Does NOT start processing: the caller
  * calls `startFollowUps(batchId)`.
+ *
+ * `threadMode` (phase 6): asked in a thread by tagging someone else's assistant; written on the rows ('facts' or 'ask').
+ * `reuse` false: never reuse an open follow-up (a thread's question gets its own). Before 0043 a thread mode is refused.
  */
-export async function createFollowUps(ctx: OrgContext, input: CreateFollowUpsInput): Promise<CreateFollowUpsResult> {
+export async function createFollowUps(ctx: OrgContext, input: CreateFollowUpsInput, opts: { threadMode?: "facts" | "ask"; reuse?: boolean } = {}): Promise<CreateFollowUpsResult> {
   const ids = [...new Set((input.subjectMembershipIds ?? []).filter(isUuid).map((s) => s.toLowerCase()))];
   if (!ids.length) throw invalid("Say who to follow up with.");
   if (ids.length > FOLLOW_UP_LIMITS.batchMax) throw invalid(TOO_MANY);
@@ -298,6 +314,8 @@ export async function createFollowUps(ctx: OrgContext, input: CreateFollowUpsInp
   // A refusal is returned out of the transaction and thrown after it commits, so its audit row stays.
   const out = await retryWithout0039(() => withUser(ctx.user.profileId, async (db): Promise<CreateFollowUpsResult | { refused: AppError }> => {
     if (!(await schema0039Ready(db))) throw notReady();
+    const threadMode = opts.threadMode === "facts" || opts.threadMode === "ask" ? opts.threadMode : null;
+    if (threadMode && !(await schema0043Ready(db))) throw notReady();
     // One create at a time per person, so two Confirms cannot both pass the daily count.
     await db.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [`followup.create:${ctx.membership.id}`]);
     const names = new Map((await db.query<{ id: string; name: string }>(
@@ -306,7 +324,7 @@ export async function createFollowUps(ctx: OrgContext, input: CreateFollowUpsInp
     const task = taskId ? await db.maybeOne<{ id: string; title: string }>(`SELECT id, title FROM tasks WHERE id = $1 AND organisation_id = $2 AND archived_at IS NULL`, [taskId, ctx.org.id]) : null;
     if (taskId && !task) throw invalid(refusalWords("task_not_found", "", ""));
     const team = teamId ? await db.maybeOne<{ id: string }>(`SELECT id FROM teams WHERE id = $1 AND organisation_id = $2`, [teamId, ctx.org.id]) : null;
-    const c = await checkSubjects(db, ctx, ids, taskId);
+    const c = await checkSubjects(db, ctx, ids, taskId, { reuse: opts.reuse });
     const skipped = [
       ...c.refused.map((r) => ({ name: nameOf(r.id), reason: SKIP_REASONS[r.code] })),
       ...c.pairSkipped.map((id) => ({ name: nameOf(id), reason: SKIP_REASONS.pair_cap })),
@@ -328,17 +346,23 @@ export async function createFollowUps(ctx: OrgContext, input: CreateFollowUpsInp
       `INSERT INTO follow_up_batches(organisation_id, requester_membership_id, kind, team_id, task_id, question, local_date, size)
        VALUES ($1, $2, $3, $4, $5, $6, $7::date, $8) RETURNING id`,
       [ctx.org.id, ctx.membership.id, kind, team?.id ?? null, taskId, question, todayLocal(ctx.org.timezone), c.allowed.length]);
-    const rows = await db.query<{ id: string; subject_membership_id: string }>(
-      `INSERT INTO follow_ups(organisation_id, batch_id, requester_membership_id, subject_membership_id, task_id, question)
-       SELECT $1, $2, $3, s.id, $4, $5 FROM unnest($6::uuid[]) WITH ORDINALITY AS s(id, n) ORDER BY s.n
-       RETURNING id, subject_membership_id`,
-      [ctx.org.id, batch.id, ctx.membership.id, taskId, question, c.allowed]);
+    const rows = threadMode
+      ? await db.query<{ id: string; subject_membership_id: string }>(
+        `INSERT INTO follow_ups(organisation_id, batch_id, requester_membership_id, subject_membership_id, task_id, question, thread_mode)
+         SELECT $1, $2, $3, s.id, $4, $5, $7 FROM unnest($6::uuid[]) WITH ORDINALITY AS s(id, n) ORDER BY s.n
+         RETURNING id, subject_membership_id`,
+        [ctx.org.id, batch.id, ctx.membership.id, taskId, question, c.allowed, threadMode])
+      : await db.query<{ id: string; subject_membership_id: string }>(
+        `INSERT INTO follow_ups(organisation_id, batch_id, requester_membership_id, subject_membership_id, task_id, question)
+         SELECT $1, $2, $3, s.id, $4, $5 FROM unnest($6::uuid[]) WITH ORDINALITY AS s(id, n) ORDER BY s.n
+         RETURNING id, subject_membership_id`,
+        [ctx.org.id, batch.id, ctx.membership.id, taskId, question, c.allowed]);
     for (const r of rows) {
       await audit(db, {
         organisationId: ctx.org.id, actorMembershipId: ctx.membership.id, action: "followup.requested", subjectType: "follow_up", subjectId: r.id,
         // No task title: the subject's team leads read this row and may not see the task (security review, 8 October
         // 2026); the Audit page names it from the id, under the reader's own row-level security.
-        subjectMembershipId: r.subject_membership_id, metadata: { batchId: batch.id, taskId, kind },
+        subjectMembershipId: r.subject_membership_id, metadata: { batchId: batch.id, taskId, kind, ...(threadMode ? { threadMode } : {}) },
       });
     }
     const created = c.allowed.map((id) => ({ id: rows.find((r) => r.subject_membership_id === id)!.id, subjectMembershipId: id, subjectName: nameOf(id) }));
@@ -361,9 +385,11 @@ type ProcRow = {
   sa_name: string | null; sa_colour: string | null; sa_visor: string | null; sa_eyes: string | null;
   ra_name: string | null; ra_colour: string | null; ra_visor: string | null; ra_eyes: string | null;
   w_name: string | null; w_colour: string | null; w_visor: string | null; w_eyes: string | null;
+  /** Phase 6: asked in a thread (null before 0043, and for an ordinary follow-up), and that thread's name and kind. */
+  thread_mode: "facts" | "ask" | null; thread_kind: string | null; thread_name: string | null;
 };
 
-const PROC_SQL = `
+const procSql = (ready43: boolean) => `
   SELECT f.id, f.organisation_id, f.batch_id, f.requester_membership_id, f.subject_membership_id, f.task_id, f.question, f.status,
          f.answered_from, f.capped, f.fresh, f.reply_choice, f.reply_note, f.replied_at, f.deadline_at, f.asked_at,
          b.kind AS batch_kind, b.local_date, o.slug, o.timezone, o.status AS org_status,
@@ -373,7 +399,10 @@ const PROC_SQL = `
          t.title AS task_title,
          sa.name AS sa_name, sa.colour AS sa_colour, sa.visor AS sa_visor, sa.eyes AS sa_eyes,
          ra.name AS ra_name, ra.colour AS ra_colour, ra.visor AS ra_visor, ra.eyes AS ra_eyes,
-         ws.assistant_name AS w_name, ws.assistant_colour AS w_colour, ws.assistant_visor AS w_visor, ws.assistant_eyes AS w_eyes
+         ws.assistant_name AS w_name, ws.assistant_colour AS w_colour, ws.assistant_visor AS w_visor, ws.assistant_eyes AS w_eyes,
+         ${ready43
+           ? `f.thread_mode, tc.kind AS thread_kind, CASE tc.kind WHEN 'organisation' THEN 'Everyone' WHEN 'team' THEN '#' || tct.name WHEN 'channel' THEN '#' || tc.title END AS thread_name`
+           : "NULL::text AS thread_mode, NULL::text AS thread_kind, NULL::text AS thread_name"}
   FROM follow_ups f
   JOIN follow_up_batches b ON b.id = f.batch_id
   JOIN organisations o ON o.id = f.organisation_id
@@ -383,6 +412,9 @@ const PROC_SQL = `
   LEFT JOIN assistant_profiles ra ON ra.membership_id = f.requester_membership_id
   LEFT JOIN brenda_settings ws ON ws.organisation_id = f.organisation_id
   LEFT JOIN tasks t ON t.id = f.task_id
+  ${ready43 ? `LEFT JOIN assistant_mentions tam ON tam.follow_up_id = f.id
+  LEFT JOIN conversations tc ON tc.id = tam.conversation_id
+  LEFT JOIN teams tct ON tct.id = tc.team_id` : ""}
   WHERE f.id = $1`;
 
 /** Who is who in one follow-up, with their assistants' names (R, RA, S, SA and W in the contract's words). */
@@ -399,9 +431,21 @@ function namesOf(r: ProcRow): Names {
 async function loadProc(id: string): Promise<ProcRow | null> {
   return withWorker(async (db) => {
     if (!(await schema0039Ready(db))) return null;
-    return db.maybeOne<ProcRow>(PROC_SQL, [id]);
+    return db.maybeOne<ProcRow>(procSql(await schema0043Ready(db)), [id]);
   });
 }
+
+/**
+ * A follow-up asked in a thread (phase 6): brings the thread up to date after a transition, once its transaction has
+ * committed. Loaded when needed (the processor imports this file); never throws, never waits.
+ */
+function syncThread(r: Pick<ProcRow, "id" | "thread_mode">): void {
+  if (!r.thread_mode) return;
+  void import("@/server/services/mention-processor").then((m) => m.syncThreadFollowUp(r.id)).catch(warn("bringing the thread up to date"));
+}
+
+/** Where a thread follow-up was asked, in the subject's words: "#Design", "Everyone", "your chat", or "Messages" before it is linked. */
+const threadWhere = (r: Pick<ProcRow, "thread_kind" | "thread_name">) => (r.thread_kind === "direct" ? "your chat" : r.thread_name ?? "Messages");
 const statusNow = (id: string) => withWorker((db) => db.maybeOne<{ status: FollowUpStatus }>(`SELECT status FROM follow_ups WHERE id = $1`, [id])).then((r) => r?.status ?? null);
 
 /** One activity row in the subject's "What … did" (their own assistant acted for them); written by the worker. */
@@ -447,7 +491,8 @@ async function fail(r: ProcRow, failure: FollowUpFailure): Promise<FollowUpStatu
     const ok = await db.maybeOne(`UPDATE follow_ups SET status = 'failed', failure = $2, lease_until = NULL WHERE id = $1 AND status IN ${OPEN_SQL} RETURNING id`, [r.id, failure]);
     if (!ok) return false;
     await audit(db, { organisationId: r.organisation_id, action: "followup.failed", subjectType: "follow_up", subjectId: r.id, subjectMembershipId: r.subject_membership_id, metadata: { followUpId: r.id, reason: failure } });
-    if (r.batch_kind === "person" && r.requester_membership_id) {
+    // Asked in a thread (phase 6): the thread says so, not a notification.
+    if (r.batch_kind === "person" && r.requester_membership_id && !r.thread_mode) {
       const n = namesOf(r);
       await notify(db, {
         organisationId: r.organisation_id, recipientMembershipId: r.requester_membership_id, type: "brenda.followup_answer",
@@ -460,6 +505,7 @@ async function fail(r: ProcRow, failure: FollowUpFailure): Promise<FollowUpStatu
   if (!moved) return statusNow(r.id);
   if (r.asked_at) await closeAsk(r.subject_profile_id, r.subject_membership_id, r.id, "Closed. Nothing more is needed from you.");
   await closeBatch(r.batch_id).catch(warn("closing a batch"));
+  syncThread(r);
   return "failed";
 }
 
@@ -492,7 +538,8 @@ async function decide(r: ProcRow, now: Date, opts: { useModel?: boolean }): Prom
   const facts = await gatherFacts(scopeOf(requester), { organisationId: r.organisation_id, subjectMembershipId: r.subject_membership_id, taskId: r.task_id, now });
   if ("gone" in facts) return fail(r, "task_gone");
   const workspace = !r.requester_membership_id;
-  const wantAsk = r.preference === "ask_first" || (!facts.fresh && (!workspace || r.collect_ask));
+  // Asked in a thread about something other than the state of their work (phase 6): only the person can answer it.
+  const wantAsk = r.preference === "ask_first" || r.thread_mode === "ask" || (!facts.fresh && (!workspace || r.collect_ask));
   let capped = false;
   if (wantAsk) {
     const clock = await withWorker((db) => orgClock(db, r.organisation_id, now));
@@ -515,19 +562,25 @@ async function decide(r: ProcRow, now: Date, opts: { useModel?: boolean }): Prom
           [r.id, JSON.stringify(facts), facts.fresh, deadline.toISOString()]);
         if (!moved) return "lost" as const;
         const by = deadlineLabel(deadline.toISOString(), r.timezone, now);
+        // Asked in a thread (phase 6): the reply is posted there, for everyone in it.
+        const where = threadWhere(r);
+        const threadBody = r.thread_kind === "direct"
+          ? `Reply in a tap or say not now. Your reply is posted in your chat with ${n.R ?? "them"}. If you don't reply by ${by}, ${n.SA.name} says so there.`
+          : `Reply in a tap or say not now. Your reply is posted in ${where === "Messages" ? "the conversation" : where} for everyone there. If you don't reply by ${by}, ${n.SA.name} says so there.`;
         await notify(db, {
           organisationId: r.organisation_id, recipientMembershipId: r.subject_membership_id, type: "brenda.followup_ask",
-          title: askTitle(n, r.task_title),
-          body: workspace
+          title: r.thread_mode ? `${n.R ?? "Someone"} asked your ${n.SA.name} in ${where}` : askTitle(n, r.task_title),
+          body: r.thread_mode ? threadBody : workspace
             ? `Reply before ${by}. Your reply goes in the report your team lead, the owner and HR receive.`
             : `Reply in a tap or say not now. If you don't reply by ${by}, ${n.RA?.name ?? "they"} gets what your work shows.`,
           resourceType: "follow_up", resourceId: r.id, href: askHref(r.slug, r.id), dedupKey: `followup.ask:${r.id}`,
         });
-        await audit(db, { organisationId: r.organisation_id, action: "followup.asked_person", subjectType: "follow_up", subjectId: r.id, subjectMembershipId: r.subject_membership_id, metadata: { followUpId: r.id, deadlineAt: deadline.toISOString(), workspace } });
-        await logForSubject(db, r, "Asked you for an update", workspace ? "Asked you for an update for today's team report" : `Asked you for an update for ${askerPhrase(n)}`);
+        await audit(db, { organisationId: r.organisation_id, action: "followup.asked_person", subjectType: "follow_up", subjectId: r.id, subjectMembershipId: r.subject_membership_id, metadata: { followUpId: r.id, deadlineAt: deadline.toISOString(), workspace, ...(r.thread_mode ? { threadMode: r.thread_mode } : {}) } });
+        await logForSubject(db, r, "Asked you for an update",
+          workspace ? "Asked you for an update for today's team report" : r.thread_mode ? `Asked you to answer ${n.R ?? "a colleague"} in ${where}` : `Asked you for an update for ${askerPhrase(n)}`);
         return "asked" as const;
       });
-      if (asked === "asked") return "asking";
+      if (asked === "asked") { syncThread(r); return "asking"; }
       if (asked === "lost") return statusNow(r.id);
       capped = true;
     }
@@ -589,14 +642,15 @@ async function compose(r: ProcRow, now: Date, opts: { useModel?: boolean }, pre?
        WHERE id = $1 AND status = 'answering' RETURNING status`, [r.id, JSON.stringify(facts), answer, out.engine]);
     if (!done) return null;
     await audit(db, { organisationId: r.organisation_id, action: "followup.answered", subjectType: "follow_up", subjectId: r.id, subjectMembershipId: r.subject_membership_id, metadata: { followUpId: r.id, status: done.status, answeredFrom, engine: out.engine } });
-    if (r.batch_kind === "person" && r.requester_membership_id) {
+    // Asked in a thread (phase 6): the thread reply notifies the asker, and the owner's activity is written with it.
+    if (r.batch_kind === "person" && r.requester_membership_id && !r.thread_mode) {
       await notify(db, {
         organisationId: r.organisation_id, recipientMembershipId: r.requester_membership_id, type: "brenda.followup_answer",
         title: answerTitle(done.status, n, r.task_title), body: clip(answer, 300), resourceType: "follow_up", resourceId: r.id,
         href: followUpHref(r.slug, r.id), dedupKey: `followup.answer:${r.id}`,
       });
     }
-    if (answeredFrom === "facts") {
+    if (answeredFrom === "facts" && !r.thread_mode) {
       const who = askerPhrase(n);
       await logForSubject(db, r, "Answered a follow-up from your work",
         who ? `Answered ${who} ${r.task_title ? `about ${tq(r.task_title)} ` : ""}from your work` : "Answered for today's team report from your work");
@@ -607,9 +661,12 @@ async function compose(r: ProcRow, now: Date, opts: { useModel?: boolean }, pre?
   // No reply by the deadline: the ask the subject was sent is closed, saying what happened.
   if (status === "expired" && r.asked_at) {
     const to = askerPhrase(n);
-    await closeAsk(r.subject_profile_id, r.subject_membership_id, r.id, to ? `Closed: the time to reply has passed. ${n.RA?.name ?? to} got what your work shows.` : "Closed: the time to reply has passed. Today's team report got what your work shows.");
+    await closeAsk(r.subject_profile_id, r.subject_membership_id, r.id, r.thread_mode
+      ? `Closed: the time to reply has passed. ${n.SA.name} said so in ${threadWhere(r)}.`
+      : to ? `Closed: the time to reply has passed. ${n.RA?.name ?? to} got what your work shows.` : "Closed: the time to reply has passed. Today's team report got what your work shows.");
   }
   await closeBatch(r.batch_id).catch(warn("closing a batch"));
+  syncThread(r);
   return status;
 }
 
@@ -727,7 +784,22 @@ type ViewRow = {
   subject_name: string; requester_name: string | null; task_title: string | null;
   sa_name: string | null; sa_colour: string | null; sa_visor: string | null; sa_eyes: string | null;
   ra_name: string | null; ra_colour: string | null; ra_visor: string | null; ra_eyes: string | null;
+  thread_mode: "facts" | "ask" | null; thread_kind: string | null; thread_name: string | null;
 };
+
+/**
+ * The conversation a thread follow-up was asked in, so the subject's reply card and the notch can say the reply is posted
+ * there (security review, 8 October 2026). Read as the viewer: a conversation they no longer read gives no name.
+ */
+const viewThreadSql = (ready43: boolean) => ready43
+  ? `, f.thread_mode, tc.kind AS thread_kind,
+       CASE tc.kind WHEN 'organisation' THEN 'Everyone' WHEN 'team' THEN '#' || tct.name WHEN 'channel' THEN '#' || tc.title END AS thread_name
+     FROM follow_ups f
+     LEFT JOIN LATERAL (SELECT am.conversation_id FROM assistant_mentions am WHERE f.thread_mode IS NOT NULL AND am.follow_up_id = f.id ORDER BY am.created_at LIMIT 1) tam ON true
+     LEFT JOIN conversations tc ON tc.id = tam.conversation_id
+     LEFT JOIN teams tct ON tct.id = tc.team_id`
+  : `, NULL::text AS thread_mode, NULL::text AS thread_kind, NULL::text AS thread_name
+     FROM follow_ups f`;
 
 const VIEW_SQL = `
   SELECT f.id, f.batch_id, f.requester_membership_id, f.subject_membership_id, f.task_id, f.question, f.status, f.answered_from, f.facts, f.capped,
@@ -735,7 +807,7 @@ const VIEW_SQL = `
          sp.display_name AS subject_name, rp.display_name AS requester_name, COALESCE(t.title, f.facts->'task'->>'title') AS task_title,
          sa.name AS sa_name, sa.colour AS sa_colour, sa.visor AS sa_visor, sa.eyes AS sa_eyes,
          ra.name AS ra_name, ra.colour AS ra_colour, ra.visor AS ra_visor, ra.eyes AS ra_eyes
-  FROM follow_ups f
+  __FROM__
   JOIN memberships sm ON sm.id = f.subject_membership_id JOIN profiles sp ON sp.id = sm.user_id
   LEFT JOIN memberships rm ON rm.id = f.requester_membership_id LEFT JOIN profiles rp ON rp.id = rm.user_id
   LEFT JOIN assistant_profiles sa ON sa.membership_id = f.subject_membership_id
@@ -748,7 +820,8 @@ const VIEW_SQL = `
  * assistant shared and what they replied.
  */
 async function loadViews(db: Db, ctx: OrgContext, where: string, params: unknown[], tail = "ORDER BY f.created_at DESC, f.id DESC"): Promise<FollowUpView[]> {
-  const rows = await db.query<ViewRow>(`${VIEW_SQL} WHERE f.organisation_id = $1 AND (${where}) ${tail}`, [ctx.org.id, ...params]);
+  const sql = VIEW_SQL.replace("__FROM__", viewThreadSql(await schema0043Ready(db)));
+  const rows = await db.query<ViewRow>(`${sql} WHERE f.organisation_id = $1 AND (${where}) ${tail}`, [ctx.org.id, ...params]);
   const workspace = rows.some((r) => !r.requester_membership_id) ? await readWorkspaceAssistant(db, ctx.org.id) : null;
   return rows.map((r) => toView(r, ctx, workspace));
 }
@@ -772,6 +845,9 @@ function toView(r: ViewRow, ctx: OrgContext, workspace: AssistantProfile | null)
     askedAt: r.asked_at, deadlineAt: r.deadline_at, repliedAt: replyShared ? r.replied_at : null, answeredAt: r.answered_at, createdAt: r.created_at,
     failure: r.failure,
     viewer,
+    thread: r.thread_mode
+      ? { mode: r.thread_mode, direct: r.thread_kind === "direct", where: r.thread_kind === "direct" ? `your chat with ${viewer === "subject" ? r.requester_name ?? "them" : r.subject_name}` : r.thread_name ?? "the conversation" }
+      : null,
     canReply: viewer === "subject" && r.status === "asking",
     canCancel: viewer === "requester" && (r.status === "pending" || r.status === "asking"),
     href: followUpHref(ctx.org.slug, r.id),
@@ -970,7 +1046,9 @@ export async function cancelFollowUp(ctx: OrgContext, id: string): Promise<Follo
     const r = await db.one<{ r: string }>(`SELECT app_follow_up_cancel($1) AS r`, [id]);
     if (r.r === "not_found") throw notFound("Follow-up not found.");
     if (r.r === "closed") throw conflict("FOLLOW_UP_CLOSED", CLOSED);
-    const row = await db.one<{ batch_id: string; subject_membership_id: string; asked_at: string | null }>(`SELECT batch_id, subject_membership_id, asked_at FROM follow_ups WHERE id = $1`, [id]);
+    const ready43 = await schema0043Ready(db);
+    const row = await db.one<{ batch_id: string; subject_membership_id: string; asked_at: string | null; thread_mode: "facts" | "ask" | null }>(
+      `SELECT batch_id, subject_membership_id, asked_at, ${ready43 ? "thread_mode" : "NULL::text AS thread_mode"} FROM follow_ups WHERE id = $1`, [id]);
     await audit(db, { organisationId: ctx.org.id, actorMembershipId: ctx.membership.id, action: "followup.cancelled", subjectType: "follow_up", subjectId: id, subjectMembershipId: row.subject_membership_id, metadata: { followUpId: id } });
     return row;
   }));
@@ -980,9 +1058,38 @@ export async function cancelFollowUp(ctx: OrgContext, id: string): Promise<Follo
     if (subject) await closeAsk(subject.user_id, row.subject_membership_id, id, `${firstName(ctx.user.displayName)} cancelled this follow-up. Nothing more is needed from you.`);
   }
   await closeBatch(row.batch_id).catch(warn("closing a batch"));
+  // Asked in a thread (phase 6): the thread says it closed.
+  syncThread({ id, thread_mode: row.thread_mode });
   const view = await getFollowUp(ctx, id);
   if (!view) throw notFound("Follow-up not found.");
   return view;
+}
+
+/**
+ * A thread's follow-up no longer needed (phase 6: the question that asked it was withdrawn), cancelled by Boredroom's
+ * worker while it is open; the subject's ask is closed with `body` ("Olu withdrew the question."). True when it moved now.
+ */
+export async function cancelThreadFollowUp(id: string, body: string): Promise<boolean> {
+  if (!isUuid(id)) return false;
+  try {
+    const row = await withWorker(async (db) => {
+      if (!(await schema0039Ready(db))) return null;
+      const r = await db.maybeOne<{ batch_id: string; organisation_id: string; subject_membership_id: string; asked_at: string | null; user_id: string }>(
+        `UPDATE follow_ups f SET status = 'cancelled', lease_until = NULL FROM memberships sm
+         WHERE f.id = $1 AND f.status IN ${OPEN_SQL} AND sm.id = f.subject_membership_id
+         RETURNING f.batch_id, f.organisation_id, f.subject_membership_id, f.asked_at, sm.user_id`, [id]);
+      if (!r) return null;
+      await audit(db, { organisationId: r.organisation_id, action: "followup.cancelled", subjectType: "follow_up", subjectId: id, subjectMembershipId: r.subject_membership_id, metadata: { followUpId: id, reason: "question_withdrawn" } });
+      return r;
+    });
+    if (!row) return false;
+    if (row.asked_at) await closeAsk(row.user_id, row.subject_membership_id, id, body);
+    await closeBatch(row.batch_id).catch(warn("closing a batch"));
+    return true;
+  } catch (err) {
+    if (isMissingSchema(err)) { forget0039(); return false; }
+    throw err;
+  }
 }
 
 // ---- The person's choice and the workspace's collection settings ------------------------------------------------------
@@ -1067,7 +1174,9 @@ export type DesktopFollowUps = {
   /** Asks waiting for this person (status asking), oldest deadline first, max 5. */
   waiting: { id: string; title: string; question: string; taskTitle: string | null; taskHref: string | null;
              asker: { name: string; assistant: DesktopAssistant } | null;   // null: the workspace (use assistant.workspace)
-             deadlineAt: string; facts: string[] }[];
+             deadlineAt: string; facts: string[];
+             /** Asked in a conversation (phase 6): the reply is posted in `where` for everyone there; no facts are shared. */
+             thread?: { where: string; direct: boolean } | null }[];
   /** This person's follow-ups answered in the last 24 hours, newest first, max 5. */
   answered: { id: string; title: string; answer: string; status: "answered" | "expired" | "declined" | "failed";
               subject: { name: string; assistant: DesktopAssistant }; answeredAt: string; href: string;
@@ -1096,11 +1205,15 @@ export async function followUpsForDesktop(ctx: OrgContext): Promise<DesktopFollo
       return {
         ready: true,
         waiting: waiting.slice(0, 5).map((v) => ({
-          id: v.id, title: askTitle(viewNames(v, workspace), v.task?.title ?? null), question: v.question,
+          id: v.id,
+          title: v.thread ? `${v.requester?.firstName ?? "Someone"} asked your ${v.subject.assistant.name} in ${v.thread.direct ? "your chat" : v.thread.where}` : askTitle(viewNames(v, workspace), v.task?.title ?? null),
+          question: v.question,
           taskTitle: v.task?.title ?? null, taskHref: v.task?.href ?? null,
           asker: v.requester ? { name: v.requester.name, assistant: forNotch(v.requester.assistant) } : null,
           deadlineAt: v.deadlineAt ?? v.createdAt,
-          facts: v.facts ? factLines(v.facts, { timeZone: tz, first: v.subject.firstName, forSubject: true, asker: v.requester?.name ?? null }) : [],
+          // In a thread nothing from the work is shared on the person's behalf: only their reply is posted.
+          facts: v.facts && !v.thread ? factLines(v.facts, { timeZone: tz, first: v.subject.firstName, forSubject: true, asker: v.requester?.name ?? null }) : [],
+          thread: v.thread ? { where: v.thread.where, direct: v.thread.direct } : null,
         })),
         answered: answered.map((v) => ({
           id: v.id, title: answerTitle(v.status, viewNames(v, workspace), v.task?.title ?? null),

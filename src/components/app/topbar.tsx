@@ -17,6 +17,10 @@
  *
  * The account menu links to the person's own assistant in Settings, "Your assistant", with its glyph (owner decision,
  * 7 October 2026: personal assistants; Settings opens for everyone for that section).
+ *
+ * Between assistants (owner decision, 8 October 2026: personal assistants, phase 6): a notification another person's
+ * assistant brought says what kind it is after its time ("2 min ago, Request to accept"), as the Notifications page does,
+ * so a request to accept reads differently from a passed-on message at a glance; each opens its card.
  */
 import { useState } from "react";
 import Link from "next/link";
@@ -86,6 +90,12 @@ function MarkRead({ orgSlug, id }: { orgSlug: string; id: string }) {
   );
 }
 
+/** The kind of a phase 6 notification in words (the Notifications page uses the same). */
+const ASSISTANT_KINDS: Record<string, string> = {
+  "assistant.message": "Passed-on message", "assistant.request": "Request to accept", "assistant.reply": "Reply", "assistant.outcome": "Request update",
+  "assistant.tagged": "Your assistant in Messages", "assistant.thread_reply": "Reply in Messages",
+};
+
 function Notifications({ orgSlug, unread, recent }: { orgSlug: string; unread: number; recent: RecentNotification[] }) {
   return (
     <Popover align="end" label="Notifications" width="min(360px, calc(100vw - 16px))" className="p-1"
@@ -114,7 +124,7 @@ function Notifications({ orgSlug, unread, recent }: { orgSlug: string; unread: n
                       ? <Link href={n.href} onClick={close} className="block rounded-sm text-sm font-medium text-foreground after:absolute after:inset-0 after:rounded-lg">{n.title}{n.read_at ? null : <span className="sr-only"> (unread)</span>}</Link>
                       : <p className="text-sm font-medium text-foreground">{n.title}{n.read_at ? null : <span className="sr-only"> (unread)</span>}</p>}
                     {n.body ? <p className="mt-0.5 line-clamp-2 text-meta font-normal text-secondary">{n.body}</p> : null}
-                    <p className="mt-0.5 text-xs text-subtle"><time dateTime={n.created_at}>{relativeTime(n.created_at)}</time></p>
+                    <p className="mt-0.5 text-xs text-subtle"><time dateTime={n.created_at}>{relativeTime(n.created_at)}</time>{ASSISTANT_KINDS[n.type] ? `, ${ASSISTANT_KINDS[n.type]}` : null}</p>
                   </div>
                   {!n.read_at ? <MarkRead orgSlug={orgSlug} id={n.id} /> : null}
                 </li>

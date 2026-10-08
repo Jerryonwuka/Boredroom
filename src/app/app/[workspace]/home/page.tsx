@@ -7,6 +7,7 @@ import { assistantConfigured } from "@/server/services/assistant";
 import { getConversation, listConversations } from "@/server/services/brenda-history";
 import { assistantProfiles } from "@/server/services/assistant-profile";
 import { waitingForMe } from "@/server/services/follow-ups";
+import { assistantItemsReady, waitingItems } from "@/server/services/assistant-items";
 import { schema0039Ready } from "@/server/lib/schema-0039";
 import { withUser } from "@/server/db";
 import { localParts, todayLocal } from "@/server/lib/time";
@@ -41,6 +42,11 @@ type Search = { ask?: string | string[]; tab?: string | string[]; chat?: string 
  * Follow-ups between assistants (owner decision, 8 October 2026: personal assistants, phase 4): the asks waiting for
  * this person's reply (`waitingForMe`, which also settles any that are past their deadline) show as "Waiting for you"
  * in her panel, and her top row links to Follow-ups. Before migration 0039 none of it shows.
+ *
+ * Assistants talk to each other (owner decision, 8 October 2026: personal assistants, phase 6): "Waiting for you" also
+ * holds the requests other people's assistants handed over (Accept or Decline in place) and the messages and replies
+ * they passed on that the person has not seen (`waitingItems`, which settles expired requests as it reads); her top
+ * row's pill is now "Between assistants", with the count of both. Before migration 0043 only the follow-up asks show.
  */
 export default async function HomePage({ params, searchParams }: { params: Promise<{ workspace: string }>; searchParams: Promise<Search> }) {
   const { workspace } = await params;
@@ -54,7 +60,7 @@ export default async function HomePage({ params, searchParams }: { params: Promi
   const { ctx, counts, teams } = await workspacePage(workspace, `/app/${workspace}/home`);
   const role = ctx.membership.role;
   const aiEnabled = ctx.plan.features.AI_ASSISTANT === true;
-  const [history, chat, connected, followUpsReady, waiting] = await Promise.all([
+  const [history, chat, connected, followUpsReady, waiting, itemsReady, items] = await Promise.all([
     // Past chats are only shown while the plan includes Brenda (carrying one on needs her).
     aiEnabled ? listConversations(ctx) : Promise.resolve([]),
     aiEnabled && chatId ? getConversation(ctx, chatId) : Promise.resolve(null),
@@ -63,6 +69,9 @@ export default async function HomePage({ params, searchParams }: { params: Promi
     // Follow-ups (phase 4) are not plan-gated: answering one never needs the AI. [] before 0039.
     withUser(ctx.user.profileId, (db) => schema0039Ready(db)),
     waitingForMe(ctx),
+    // Phase 6 items are not plan-gated either: accepting, declining or replying never needs the AI. [] before 0043.
+    assistantItemsReady(ctx),
+    waitingItems(ctx),
   ]);
   const now = new Date();
   const hour = localParts(now, ctx.org.timezone).hour;
@@ -84,6 +93,8 @@ export default async function HomePage({ params, searchParams }: { params: Promi
     timeZone: ctx.org.timezone,
     followUpsReady,
     waiting: followUpsReady ? waiting : [],
+    itemsReady,
+    items: itemsReady ? items : [],
   };
   return (
     <AppShell ctx={ctx} counts={counts} teams={teams}>

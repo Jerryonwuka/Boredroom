@@ -33,8 +33,12 @@ import { FollowUpCollectionSettings } from "@/components/app/follow-up-collectio
 import { followUpPreference, followUpSettings } from "@/server/services/follow-ups";
 import { MentionSettings } from "@/components/app/mention-settings";
 import { mentionSettings } from "@/server/services/mentions";
+import { AssistantTalkSettings } from "@/components/app/assistant-talk-settings";
+import { ReportNotesSettings } from "@/components/app/report-notes-settings";
+import { assistantTalkPreferences, listMutes, reportNoteSettings } from "@/server/services/assistant-items";
 import { withUser } from "@/server/db";
 import type { AssistantProfiles } from "@/lib/assistant-look";
+import { ASSISTANT_ITEM_WORDS } from "@/lib/assistant-items";
 import { cn } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -86,6 +90,12 @@ const MODE_LABEL: Record<string, string> = { disabled: "Off", optional: "On, eac
  * default), whether "@Max …" in a conversation makes the person's own assistant reply there. It reads its own column with
  * a readiness check (migration 0041) and shows disabled under an info alert until it is applied. The notes say that
  * replies show who asked and, for owners under AI connection, that the conversation's recent messages go to Anthropic.
+ *
+ * Personal assistants, phase 6 (owner decision, 8 October 2026: assistants talk to each other): "Your assistant" gains
+ * "Other people's assistants" after Follow-ups: "Let people tag {name} in Messages" (on by default) and the colleagues
+ * whose assistants the person muted, each with Unmute. The Brenda section gains "Notes from the team" after Messages,
+ * for owners and HR: "Let people add notes to the team report" (on by default; needs the daily report). Both read their
+ * own columns with a readiness check (migration 0043) and show disabled under an info alert until it is applied.
  */
 export default async function SettingsPage({ params, searchParams }: { params: Promise<{ workspace: string }>; searchParams: Promise<{ section?: string; setup?: string; billing?: string; plan?: string }> }) {
   const { workspace } = await params;
@@ -105,7 +115,7 @@ export default async function SettingsPage({ params, searchParams }: { params: P
   // The open section's explanatory notes, shown at the bottom of the page after "Every change is audited."
   let notes: ReactNode = null;
   if (section === "assistant") {
-    const [a, activity, followUps] = await Promise.all([assistantProfiles(ctx), listActivity(ctx, { limit: 5 }), followUpPreference(ctx)]);
+    const [a, activity, followUps, talk, mutes] = await Promise.all([assistantProfiles(ctx), listActivity(ctx, { limit: 5 }), followUpPreference(ctx), assistantTalkPreferences(ctx), listMutes(ctx)]);
     assistants = a;
     const { name } = a.personal;
     const now = new Date(); // the server's clock, so "Today" in the activity rows reads the same on both sides
@@ -117,6 +127,8 @@ export default async function SettingsPage({ params, searchParams }: { params: P
         <MyAssistantSettings orgSlug={ctx.org.slug} initial={a.personal} impersonated={!!ctx.user.impersonation} />
         <MyVoiceSettings orgSlug={ctx.org.slug} name={name} speak={a.speak} impersonated={!!ctx.user.impersonation} />
         <FollowUpPreferenceSettings orgSlug={ctx.org.slug} initial={followUps} name={name} impersonated={!!ctx.user.impersonation} />
+        {/* Other people's assistants (phase 6): tagging the person's assistant in Messages, and whose assistants are muted. */}
+        <AssistantTalkSettings orgSlug={ctx.org.slug} name={name} preferences={talk} mutes={mutes} impersonated={!!ctx.user.impersonation} />
         <AssistantActivityCard orgSlug={ctx.org.slug} timeZone={ctx.org.timezone} name={name} items={activity.items} now={now.getTime()} />
       </>
     );
@@ -124,6 +136,7 @@ export default async function SettingsPage({ params, searchParams }: { params: P
       <>
         <PageNote section="Your assistant">The name and look change how your assistant appears to you and in the desktop app. What it can do for you stays the same. Voices come from this computer; your choice of voice and speed is kept in this browser.</PageNote>
         <PageNote section="Follow-ups">Follow-ups between assistants never change anyone&apos;s task. Owners and HR see in Audit that a follow-up happened, not what was said.</PageNote>
+        <PageNote section="Other people's assistants">Nothing another person&apos;s assistant asks for changes your account until you accept it. Owners and HR see that something passed between assistants, not what was said.</PageNote>
         <PageNote section={`What ${name} did`}>{name} reads your conversations only when you ask it to catch you up, and only conversations you are in. Reading never marks them as read.</PageNote>
         {activity.readsHidden ? <PageNote section={`What ${name} did`}>What {name} read is hidden while someone else is signed in as this person.</PageNote> : null}
       </>
@@ -227,8 +240,9 @@ export default async function SettingsPage({ params, searchParams }: { params: P
       );
     }
   } else if (section === "brenda") {
-    const [ai, brenda, a, usage, collection, mentions] = await Promise.all([assistantStatus(ctx), brendaOverview(ctx), assistantProfiles(ctx), usageSummary(ctx),
-      withUser(ctx.user.profileId, (db) => followUpSettings(db, ctx.org.id)), withUser(ctx.user.profileId, (db) => mentionSettings(db, ctx.org.id))]);
+    const [ai, brenda, a, usage, collection, mentions, notesSetting] = await Promise.all([assistantStatus(ctx), brendaOverview(ctx), assistantProfiles(ctx), usageSummary(ctx),
+      withUser(ctx.user.profileId, (db) => followUpSettings(db, ctx.org.id)), withUser(ctx.user.profileId, (db) => mentionSettings(db, ctx.org.id)),
+      withUser(ctx.user.profileId, (db) => reportNoteSettings(db, ctx.org.id))]);
     assistants = a;
     body = (
       <>
@@ -245,6 +259,8 @@ export default async function SettingsPage({ params, searchParams }: { params: P
           inPlan={ctx.plan.features.AI_ASSISTANT === true} canEdit={admin} />
         {/* Asking your own assistant in a conversation (owner decision, 8 October 2026: personal assistants, phase 5). */}
         <MentionSettings orgSlug={ctx.org.slug} initial={mentions} canEdit={admin} />
+        {/* Notes from the team in the end-of-day report (owner decision, 8 October 2026: personal assistants, phase 6). */}
+        <ReportNotesSettings orgSlug={ctx.org.slug} initial={notesSetting} reportEnabled={brenda.settings.dailyReportEnabled} canEdit={admin} />
         {/* This month's requests and tokens (owner decision, 8 October 2026: personal assistants, phase 3). */}
         <BrendaUsageCard usage={usage} />
         <SettingsSection id="ai" title="AI connection" description="Brenda runs on Claude. Connect an Anthropic API key so she can act; without one a simple built-in helper answers and only suggests, and says so.">
@@ -259,6 +275,7 @@ export default async function SettingsPage({ params, searchParams }: { params: P
         <PageNote section="Updates before the report">Updates are collected on working days, from what each person&apos;s work already shows. People who chose &ldquo;Always ask me first&rdquo; for their own assistant are asked once, even when asking is off here.</PageNote>
         <PageNote section="Updates before the report">Owners and HR see in Audit that updates were collected. A person sees under Asked about you exactly what their assistant shared.</PageNote>
         <PageNote section="Messages">Replies show who asked. Anything only the person asking can see stays private to them.</PageNote>
+        <PageNote section="Notes from the team">{ASSISTANT_ITEM_WORDS.settings.notesPageNote}</PageNote>
         <PageNote section="Usage this month">Usage counts requests from this month only and resets on the 1st.</PageNote>
         {isOwner ? (
           <>
@@ -300,7 +317,7 @@ export default async function SettingsPage({ params, searchParams }: { params: P
 
   return (
     <AppShell ctx={ctx} counts={counts} teams={navTeams}>
-      <PageHeader title="Settings" description={admin ? "How the workspace runs: working hours, screen recording, Brenda, the plan, your assistant and your linked computers." : "Your assistant's name, look and voice in this workspace, and how it answers follow-ups about your work."} divider />
+      <PageHeader title="Settings" description={admin ? "How the workspace runs: working hours, screen recording, Brenda, the plan, your assistant and your linked computers." : "Your assistant's name, look and voice in this workspace, how it answers follow-ups about your work, and what other people's assistants may do."} divider />
       {sp.setup && admin ? <Alert tone="success" className="mb-6" title="Workspace ready">Work through the setup list to finish.</Alert> : null}
       <div className="grid gap-6 md:grid-cols-[12.5rem_minmax(0,1fr)] md:gap-10">
         {/* Sub-navigation (spec §6): 32px items, r8, fill-1 and the orange marker for the open one, fill-0 on hover; a scrolling row on a phone. */}

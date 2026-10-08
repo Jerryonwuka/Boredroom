@@ -25,12 +25,25 @@
  *
  * Audit rows hold ids and codes, never words. Before migration 0041 everything here answers 503 NOT_READY, reads
  * `ready: false`, or returns null (server/lib/schema-0041).
+ *
+ * Someone else's assistant (owner decision, 8 October 2026: personal assistants, phase 6; migration 0043): "@Ben's
+ * Brenda, where is the deck?" queues a row that names the assistant's owner (owner_membership_id). The claim also checks
+ * the owner: still active and reading the conversation ('owner_left'), tags switched on ('off_owner'), the tagger not
+ * muted ('owner_muted'), and the owner's own limits ('limit_owner'). The run calls no model (mention-processor.ts): it
+ * hands a change on Ben's account over as a request for the tagger to confirm, passes a line on, or asks Ben's
+ * assistant through a follow-up (follow_up_id) and posts as Ben's assistant: a holding line ('asked', holding_message_id)
+ * and the answer. The thread shows the owner's assistant and who asked; the owner, the tagger or whoever runs the
+ * conversation may withdraw the reply. Before 0043 none of this is read or written (server/lib/schema-0043).
+ *
+ *   thinking ──holding line──▶ asked ──the owner's reply, the deadline, a closing line──▶ answered
+ *   thinking|asked ──a switch off, archived, the owner gone──▶ private;  ──failed──▶ failed;  ──withdrawn──▶ withdrawn
  */
 import { withUser, withWorker, type Db } from "@/server/db";
 import type { OrgContext } from "@/server/lib/api";
 import { AppError, conflict, forbidden, notFound } from "@/server/lib/errors";
 import { forget0041, isMissingSchema, retryWithout0041, schema0041Ready } from "@/server/lib/schema-0041";
 import { forget0042, schema0042Ready } from "@/server/lib/schema-0042";
+import { forget0043, schema0043Ready } from "@/server/lib/schema-0043";
 import { memberContext } from "@/server/lib/member-context";
 import { localMidnight, todayLocal } from "@/server/lib/time";
 import { audit, notify } from "@/server/services/common";
@@ -43,6 +56,7 @@ import {
   MENTION_LIMITS, MENTIONS_NOT_READY_SHORT, assistantLabels, findLabel, isMentionNoteCode, mentionNote,
   type MentionNoteCode, type MentionPrivateView, type MentionProposalView, type MentionStatus, type MentionToken, type MentionView,
 } from "@/lib/mentions";
+import type { FollowUpPreference, FollowUpStatus, ReplyChoice } from "@/lib/follow-ups";
 
 // ---- Types (the contract, D.2) ---------------------------------------------------------------------------------------------
 
@@ -57,6 +71,13 @@ export type MentionJob = {
   conversation: { id: string; kind: ConversationKind; name: string; archived: boolean };
   /** The tagger's own assistant. */
   assistant: AssistantProfile;
+  /**
+   * Phase 6: someone else's assistant was tagged; null for the tagger's own. `preference`: how the owner wants follow-ups
+   * answered ('auto' answers from their work, 'ask_first' always asks them).
+   */
+  owner: { membershipId: string; name: string; firstName: string; assistant: AssistantProfile; preference: FollowUpPreference } | null;
+  /** Phase 6: the follow-up a run of someone else's assistant already asked (a retried run goes on with it, never a second). */
+  followUpId: string | null;
 };
 
 /** A proposal as stored in assistant_mention_private.proposals (the token never leaves the server). */
@@ -88,8 +109,13 @@ const midnightIn = (timeZone: string, now: Date) => localMidnight(todayLocal(tim
 /**
  * Which of the composer's tokens hold (owner decision, 8 October 2026: personal assistants, phase 5). Invalid tokens are
  * dropped silently, never refused, so a race with someone leaving does not lose the message.
- * - assistant (at most one kept): the label is "@" + the sender's OWN assistant's name or "@assistant"
- *   (case-insensitive) and stands in the body as a whole mention; nobody can tag someone else's assistant.
+ * - assistant: the label is "@" + the sender's OWN assistant's name or "@assistant" (case-insensitive) and stands in
+ *   the body as a whole mention.
+ * - others_assistant (phase 6): someone else's assistant; valid when its owner is among `who.others` (readers of the
+ *   conversation, as the server looked them up), `allowed` (they let people tag it), and the label is one of its labels
+ *   (otherAssistantLabels) and stands in the body.
+ * - At most ONE assistant in all, own or someone else's: the first valid assistant token in the list wins, the rest are
+ *   dropped. `ownerMembershipId` is null for the sender's own assistant.
  * - person (deduplicated, at most 20): not the sender; among `people` (the active members who read the conversation, as
  *   the server looked them up); the label is "@" + their display name (case-insensitive) and stands in the body.
  * The stored label is the body's own spelling of it.
@@ -97,10 +123,10 @@ const midnightIn = (timeZone: string, now: Date) => localMidnight(todayLocal(tim
 export function validateMentions(
   body: string,
   tokens: MentionToken[],
-  who: { ownAssistantName: string; people: { membershipId: string; name: string }[]; selfMembershipId?: string },
-): { assistant: { label: string } | null; people: { membershipId: string; label: string }[] } {
+  who: { ownAssistantName: string; people: { membershipId: string; name: string }[]; selfMembershipId?: string; others?: { membershipId: string; labels: string[]; allowed: boolean }[] },
+): { assistant: { label: string; ownerMembershipId: string | null } | null; people: { membershipId: string; label: string }[] } {
   const own = assistantLabels(who.ownAssistantName).map(lower);
-  let assistant: { label: string } | null = null;
+  let assistant: { label: string; ownerMembershipId: string | null } | null = null;
   const people: { membershipId: string; label: string }[] = [];
   for (const t of tokens ?? []) {
     if (!t || typeof t.label !== "string") continue;
@@ -109,7 +135,16 @@ export function validateMentions(
       if (assistant || !own.includes(lower(label))) continue;
       const at = findLabel(body, label);
       if (at < 0) continue;
-      assistant = { label: body.slice(at, at + label.length) };
+      assistant = { label: body.slice(at, at + label.length), ownerMembershipId: null };
+    } else if (t.kind === "others_assistant") {
+      if (assistant) continue;
+      const id = String(t.membershipId ?? "").toLowerCase();
+      if (!isUuid(id) || id === who.selfMembershipId?.toLowerCase()) continue;
+      const owner = (who.others ?? []).find((o) => o.membershipId.toLowerCase() === id);
+      if (!owner || !owner.allowed || !owner.labels.some((l) => lower(l) === lower(label))) continue;
+      const at = findLabel(body, label);
+      if (at < 0) continue;
+      assistant = { label: body.slice(at, at + label.length), ownerMembershipId: owner.membershipId };
     } else if (t.kind === "person") {
       if (people.length >= MENTION_LIMITS.tokensPerMessage) continue;
       const id = String(t.membershipId ?? "").toLowerCase();
@@ -134,14 +169,34 @@ type ProcRow = {
   tagger_status: string; tagger_name: string;
   a_name: string | null; a_colour: string | null; a_visor: string | null; a_eyes: string | null;
   message_withdrawn: boolean; channel_name: string | null; other_id: string | null; other_name: string | null;
+  // Phase 6 (null before 0043, and for the tagger's own assistant).
+  owner_membership_id: string | null; follow_up_id: string | null; holding_message_id: string | null;
+  owner_status: string | null; owner_name: string | null; owner_profile_id: string | null; tagger_profile_id: string;
+  oa_name: string | null; oa_colour: string | null; oa_visor: string | null; oa_eyes: string | null;
+  owner_pref: string | null; owner_allows: boolean | null;
 };
 
-const PROC_SQL = `
+/** The phase 6 columns of a row, or NULLs before 0043 (the columns are not there to name). */
+const ownerColumns = (ready43: boolean) => ready43
+  ? `am.owner_membership_id, am.follow_up_id, am.holding_message_id, owm.status AS owner_status, owp.display_name AS owner_name, owm.user_id AS owner_profile_id,
+     oap.name AS oa_name, oap.colour AS oa_colour, oap.visor AS oa_visor, oap.eyes AS oa_eyes, COALESCE(oap.followups, 'auto') AS owner_pref,
+     COALESCE(oap.allow_thread_replies, true) AS owner_allows`
+  : `NULL::uuid AS owner_membership_id, NULL::uuid AS follow_up_id, NULL::uuid AS holding_message_id, NULL::text AS owner_status, NULL::text AS owner_name,
+     NULL::uuid AS owner_profile_id, NULL::text AS oa_name, NULL::text AS oa_colour, NULL::text AS oa_visor, NULL::text AS oa_eyes, NULL::text AS owner_pref,
+     NULL::boolean AS owner_allows`;
+const ownerJoins = (ready43: boolean) => ready43
+  ? `LEFT JOIN memberships owm ON owm.id = am.owner_membership_id
+     LEFT JOIN profiles owp ON owp.id = owm.user_id
+     LEFT JOIN assistant_profiles oap ON oap.membership_id = am.owner_membership_id`
+  : "";
+
+const procSql = (ready43: boolean) => `
   SELECT am.id, am.organisation_id, am.conversation_id, am.message_id, am.tagger_membership_id, am.status, am.reply_message_id, am.attempts,
          (am.lease_until IS NOT NULL AND am.lease_until > now()) AS lease_live, am.started_at, am.created_at,
          o.slug, o.timezone, o.status AS org_status,
          c.kind, (c.archived_at IS NOT NULL) AS archived, c.assistant_replies, COALESCE(bs.mention_replies, true) AS workspace_on,
-         tm.status AS tagger_status, tp.display_name AS tagger_name,
+         tm.status AS tagger_status, tp.display_name AS tagger_name, tp.id AS tagger_profile_id,
+         ${ownerColumns(ready43)},
          ap.name AS a_name, ap.colour AS a_colour, ap.visor AS a_visor, ap.eyes AS a_eyes,
          (msg.deleted_at IS NOT NULL) AS message_withdrawn,
          CASE c.kind WHEN 'organisation' THEN 'Everyone' WHEN 'team' THEN '#' || tt.name WHEN 'channel' THEN '#' || c.title END AS channel_name,
@@ -159,10 +214,17 @@ const PROC_SQL = `
                      WHERE c.kind = 'direct' AND cp.conversation_id = c.id AND cp.membership_id <> am.tagger_membership_id LIMIT 1) ocp ON true
   LEFT JOIN memberships om ON om.id = ocp.membership_id
   LEFT JOIN profiles op ON op.id = om.user_id
+  ${ownerJoins(ready43)}
   WHERE am.id = $1`;
 
-const lockRow = (db: Db, id: string) => db.maybeOne<ProcRow>(`${PROC_SQL} FOR UPDATE OF am`, [id]);
+const lockRow = async (db: Db, id: string) => db.maybeOne<ProcRow>(`${procSql(await schema0043Ready(db))} FOR UPDATE OF am`, [id]);
 const assistantOf = (r: Pick<ProcRow, "a_name" | "a_colour" | "a_visor" | "a_eyes">) => toProfile({ name: r.a_name, colour: r.a_colour, visor: r.a_visor, eyes: r.a_eyes });
+/** Someone else's assistant (phase 6): the owner's, by its name and look. */
+const ownerAssistantOf = (r: Pick<ProcRow, "oa_name" | "oa_colour" | "oa_visor" | "oa_eyes">) => toProfile({ name: r.oa_name, colour: r.oa_colour, visor: r.oa_visor, eyes: r.oa_eyes });
+/** Who answers, in the tagger's words: their own assistant ("Max"), or someone else's ("Ben's Brenda"). */
+const answeringName = (r: ProcRow) => (r.owner_membership_id ? `${firstName(r.owner_name ?? "Someone")}'s ${ownerAssistantOf(r).name}` : assistantOf(r).name);
+/** A note's words for this row: the owner's reasons name the owner and their assistant. */
+const noteWords = (r: ProcRow, code: MentionNoteCode) => mentionNote(code, answeringName(r), r.owner_membership_id ? { firstName: firstName(r.owner_name ?? "Someone"), assistantName: ownerAssistantOf(r).name } : null);
 /** "#Design", "Everyone", or for a direct thread "your chat with Ben Okafor" (the tagger's words). */
 const whereForTagger = (r: ProcRow) => (r.kind === "direct" ? `your chat with ${r.other_name ?? "someone"}` : r.channel_name ?? "a conversation");
 /** The conversation's name as the tagger sees it in the list: "#Design", "Everyone", "Ben Okafor". */
@@ -175,7 +237,8 @@ async function inWorker<T>(fn: (db: Db) => Promise<T>): Promise<T | null> {
   try {
     return await withWorker(async (db) => ((await schema0041Ready(db)) ? fn(db) : null));
   } catch (err) {
-    if (isMissingSchema(err)) { forget0041(); return null; }
+    // A database restored to before 0041 (or 0043, whose columns a row now reads): forget both, the next call falls back.
+    if (isMissingSchema(err)) { forget0041(); forget0043(); return null; }
     throw err;
   }
 }
@@ -191,13 +254,13 @@ async function writePrivate(db: Db, r: ProcRow, p: { kind: "answer" | "full_answ
 
 /** brenda.mention_private to the tagger: a private answer, or a note (refused, failed, no AI). */
 async function notifyPrivate(db: Db, r: ProcRow, p: { text: string | null; noteCode: MentionNoteCode | null }) {
-  const name = assistantOf(r).name;
+  const name = answeringName(r);
   const where = whereForTagger(r);
   const answered = !!p.text;
   await notify(db, {
     organisationId: r.organisation_id, recipientMembershipId: r.tagger_membership_id, type: "brenda.mention_private",
     title: answered ? `${name} answered you in ${where}` : `${name} couldn't answer in ${where}`,
-    body: answered ? `Only visible to you. ${clip(p.text!, 280)}` : mentionNote(p.noteCode ?? "failed", name),
+    body: answered ? `Only visible to you. ${clip(p.text!, 280)}` : noteWords(r, p.noteCode ?? "failed"),
     resourceType: "conversation", resourceId: r.conversation_id, href: hrefOf(r), dedupKey: `mention.private:${r.id}`,
   });
 }
@@ -210,7 +273,19 @@ async function logForTagger(db: Db, r: ProcRow, personal: string) {
 }
 
 const auditMention = (db: Db, r: ProcRow, action: string, metadata: Record<string, unknown> = {}, actor: string | null = null) =>
-  audit(db, { organisationId: r.organisation_id, actorMembershipId: actor, action, subjectType: "assistant_mention", subjectId: r.id, subjectMembershipId: r.tagger_membership_id, metadata: { mentionId: r.id, conversationId: r.conversation_id, messageId: r.message_id, ...metadata } });
+  audit(db, { organisationId: r.organisation_id, actorMembershipId: actor, action, subjectType: "assistant_mention", subjectId: r.id, subjectMembershipId: r.tagger_membership_id, metadata: { mentionId: r.id, conversationId: r.conversation_id, messageId: r.message_id, ...(r.owner_membership_id ? { ownerMembershipId: r.owner_membership_id } : {}), ...metadata } });
+
+/**
+ * Why the owner's assistant would not answer is the owner's own business: a mute ("a personal preference, not
+ * logged"), tags switched off, or no longer reading the conversation. The owner, HR and the tagger's team lead read
+ * audit rows, so these are audited as one neutral code without the owner's id; the tagger's private note keeps the real
+ * reason (security review, 8 October 2026).
+ */
+const OWNER_PRIVATE_CODES: ReadonlySet<MentionNoteCode> = new Set<MentionNoteCode>(["owner_muted", "off_owner", "owner_left"]);
+const auditRefusal = (db: Db, r: ProcRow, action: string, code: MentionNoteCode) =>
+  OWNER_PRIVATE_CODES.has(code)
+    ? auditMention(db, { ...r, owner_membership_id: null }, action, { code: "owner_unavailable" })
+    : auditMention(db, r, action, { code });
 
 /** refused, with its note, in the caller's worker transaction (the row is locked and open). */
 async function refuseIn(db: Db, r: ProcRow, code: MentionNoteCode): Promise<MentionStatus | null> {
@@ -218,7 +293,7 @@ async function refuseIn(db: Db, r: ProcRow, code: MentionNoteCode): Promise<Ment
   if (!moved) return null;
   await writePrivate(db, r, { kind: "note", body: null, noteCode: code });
   await notifyPrivate(db, r, { text: null, noteCode: code });
-  await auditMention(db, r, "mention.refused", { code });
+  await auditRefusal(db, r, "mention.refused", code);
   return "refused";
 }
 
@@ -272,6 +347,16 @@ export async function claimMention(id: string, opts: { now?: Date } = {}): Promi
     if (!r.workspace_on) { await refuseIn(db, r, "off_workspace"); return null; }
     if (!r.assistant_replies) { await refuseIn(db, r, "off_conversation"); return null; }
     if (r.archived) { await refuseIn(db, r, "archived"); return null; }
+    // Someone else's assistant (phase 6): its owner still active and reading here, tags still on, the tagger not muted.
+    if (r.owner_membership_id) {
+      const owner = await db.one<{ reads: boolean; muted: boolean }>(
+        `SELECT app_conversation_has_reader($1, $2) AS reads,
+                EXISTS (SELECT 1 FROM assistant_item_mutes x WHERE x.recipient_membership_id = $2 AND x.sender_membership_id = $3 AND x.muted) AS muted`,
+        [r.conversation_id, r.owner_membership_id, r.tagger_membership_id]);
+      if (r.owner_status !== "active" || !owner.reads) { await refuseIn(db, r, "owner_left"); return null; }
+      if (r.owner_allows === false) { await refuseIn(db, r, "off_owner"); return null; }
+      if (owner.muted) { await refuseIn(db, r, "owner_muted"); return null; }
+    }
     if (!r.started_at) {
       // The counts below read other claims' committed rows, so claims of the same organisation in different
       // conversations take turns here (security review, 8 October 2026: nine at once got past the 5 a minute). Always
@@ -287,11 +372,19 @@ export async function claimMention(id: string, opts: { now?: Date } = {}): Promi
          FROM assistant_mentions
          WHERE organisation_id = $1 AND started_at IS NOT NULL AND id <> $6 AND started_at >= LEAST($5::timestamptz, $4::timestamptz - interval '1 hour')`,
         [r.organisation_id, r.tagger_membership_id, r.conversation_id, at, midnight, r.id]);
+      // The owner's own limits (phase 6): their assistant tagged by anyone in the last hour, or by this tagger today.
+      const own = r.owner_membership_id ? await db.one<{ hour: number; day: number }>(
+        `SELECT count(*) FILTER (WHERE started_at > $3::timestamptz - interval '1 hour')::int AS hour,
+                count(*) FILTER (WHERE tagger_membership_id = $2 AND started_at >= $4::timestamptz)::int AS day
+         FROM assistant_mentions
+         WHERE owner_membership_id = $1 AND started_at IS NOT NULL AND id <> $5 AND started_at >= LEAST($4::timestamptz, $3::timestamptz - interval '1 hour')`,
+        [r.owner_membership_id, r.tagger_membership_id, at, midnight, r.id]) : null;
       const code: MentionNoteCode | null =
         n.minute >= MENTION_LIMITS.perTaggerPerMinute ? "limit_minute"
           : n.day >= MENTION_LIMITS.perTaggerPerDay ? "limit_day"
             : n.conv >= MENTION_LIMITS.perConversationPerHour ? "limit_conversation"
-              : n.org >= MENTION_LIMITS.perOrganisationPerDay ? "limit_workspace" : null;
+              : n.org >= MENTION_LIMITS.perOrganisationPerDay ? "limit_workspace"
+                : own && (own.hour >= MENTION_LIMITS.perOwnerPerHour || own.day >= MENTION_LIMITS.perTaggerOwnerPerDay) ? "limit_owner" : null;
       if (code) { await refuseIn(db, r, code); return null; }
     }
     const claimed = await db.maybeOne<{ attempts: number }>(
@@ -303,6 +396,11 @@ export async function claimMention(id: string, opts: { now?: Date } = {}): Promi
       attempts: claimed.attempts, createdAt: r.created_at, ctx,
       conversation: { id: r.conversation_id, kind: r.kind, name: nameForTagger(r), archived: r.archived },
       assistant: assistantOf(r),
+      owner: r.owner_membership_id ? {
+        membershipId: r.owner_membership_id, name: r.owner_name ?? "Someone", firstName: firstName(r.owner_name ?? "Someone"),
+        assistant: ownerAssistantOf(r), preference: r.owner_pref === "ask_first" ? "ask_first" : "auto",
+      } : null,
+      followUpId: r.follow_up_id,
     };
   });
   if (!job) return null;
@@ -446,18 +544,18 @@ async function privateIn(db: Db, r: ProcRow, p: { text: string | null; noteCode:
      WHERE id = $1 AND status = 'thinking' RETURNING id`, [r.id, status, p.engine, MENTION_LIMITS.confirmMinutes]);
   if (!moved) return statusIn(db, r.id);
   await writePrivate(db, r, { kind: text ? "answer" : "note", body: text, noteCode: note, proposals: stored });
-  const assistant = assistantOf(r);
   const where = whereForTagger(r);
   if (stored.length) {
     await notify(db, {
       organisationId: r.organisation_id, recipientMembershipId: r.tagger_membership_id, type: "brenda.mention_confirm",
-      title: `${assistant.name} needs you to confirm in ${where}`, body: stored[0].summary,
+      title: `${answeringName(r)} needs you to confirm in ${where}`, body: stored[0].summary,
       resourceType: "conversation", resourceId: r.conversation_id, href: hrefOf(r), dedupKey: `mention.confirm:${r.id}`,
     });
   } else {
     await notifyPrivate(db, r, { text, noteCode: note });
   }
-  if (text) await logForTagger(db, r, `Answered you privately in ${where}`);
+  // Someone else's assistant answered (phase 6): the tagger's own assistant did nothing for them, so no row of theirs.
+  if (text && !r.owner_membership_id) await logForTagger(db, r, `Answered you privately in ${where}`);
   await auditMention(db, r, "mention.private", { engine: p.engine, proposals: stored.length, ...(note ? { code: note } : {}) });
   return status;
 }
@@ -530,21 +628,29 @@ type ViewRow = {
   a_name: string | null; a_colour: string | null; a_visor: string | null; a_eyes: string | null;
   p_kind: MentionPrivateView["kind"] | null; p_body: string | null; p_note: string | null; p_proposals: unknown;
   p_posted_message_id: string | null; p_posted_at: string | null; p_dismissed_at: string | null;
+  // Phase 6: someone else's assistant (null before 0043 and for the tagger's own).
+  owner_membership_id: string | null; owner_name: string | null; oa_name: string | null; oa_colour: string | null; oa_visor: string | null; oa_eyes: string | null;
 };
 
-const VIEW_SQL = `
+const viewSql = (ready43: boolean) => `
   SELECT am.id, am.message_id, am.conversation_id, am.status, am.created_at, am.updated_at, am.tagger_membership_id, tp.display_name AS tagger_name,
          am.reply_message_id, am.confirm_until, am.lease_until, (c.archived_at IS NOT NULL) AS archived,
          (c.assistant_replies AND COALESCE((SELECT bs.mention_replies FROM brenda_settings bs WHERE bs.organisation_id = c.organisation_id), true)) AS replies_on,
          ap.name AS a_name, ap.colour AS a_colour, ap.visor AS a_visor, ap.eyes AS a_eyes,
          pv.kind AS p_kind, pv.body AS p_body, pv.note_code AS p_note, pv.proposals AS p_proposals,
-         pv.posted_message_id AS p_posted_message_id, pv.posted_at AS p_posted_at, pv.dismissed_at AS p_dismissed_at
+         pv.posted_message_id AS p_posted_message_id, pv.posted_at AS p_posted_at, pv.dismissed_at AS p_dismissed_at,
+         ${ready43
+           ? "am.owner_membership_id, owp.display_name AS owner_name, oap.name AS oa_name, oap.colour AS oa_colour, oap.visor AS oa_visor, oap.eyes AS oa_eyes"
+           : "NULL::uuid AS owner_membership_id, NULL::text AS owner_name, NULL::text AS oa_name, NULL::text AS oa_colour, NULL::text AS oa_visor, NULL::text AS oa_eyes"}
   FROM assistant_mentions am
   JOIN conversations c ON c.id = am.conversation_id
   JOIN memberships tm ON tm.id = am.tagger_membership_id
   JOIN profiles tp ON tp.id = tm.user_id
   LEFT JOIN assistant_profiles ap ON ap.membership_id = am.tagger_membership_id
-  LEFT JOIN assistant_mention_private pv ON pv.mention_id = am.id AND pv.tagger_membership_id = $2`;
+  LEFT JOIN assistant_mention_private pv ON pv.mention_id = am.id AND pv.tagger_membership_id = $2
+  ${ready43 ? `LEFT JOIN memberships owm ON owm.id = am.owner_membership_id
+  LEFT JOIN profiles owp ON owp.id = owm.user_id
+  LEFT JOIN assistant_profiles oap ON oap.membership_id = am.owner_membership_id` : ""}`;
 
 function proposalsOf(v: unknown): StoredProposal[] {
   if (!Array.isArray(v)) return [];
@@ -558,23 +664,32 @@ function proposalView(p: StoredProposal, now: number): MentionProposalView {
 }
 
 function toView(r: ViewRow, me: string, now: number): MentionView {
-  const assistant = toProfile({ name: r.a_name, colour: r.a_colour, visor: r.a_visor, eyes: r.a_eyes });
+  // The answering assistant: the tagger's own, or someone else's (phase 6), with its owner.
+  const owner = r.owner_membership_id
+    ? { membershipId: r.owner_membership_id, name: r.owner_name ?? "Someone", firstName: firstName(r.owner_name ?? "Someone"), isYou: r.owner_membership_id === me }
+    : null;
+  const assistant = owner
+    ? toProfile({ name: r.oa_name, colour: r.oa_colour, visor: r.oa_visor, eyes: r.oa_eyes })
+    : toProfile({ name: r.a_name, colour: r.a_colour, visor: r.a_visor, eyes: r.a_eyes });
   const isYou = r.tagger_membership_id === me;
   const code = r.p_note && isMentionNoteCode(r.p_note) ? r.p_note : null;
+  const words = (c: MentionNoteCode) => (owner ? mentionNote(c, `${owner.firstName}'s ${assistant.name}`, { firstName: owner.firstName, assistantName: assistant.name }) : mentionNote(c, assistant.name));
   const priv: MentionPrivateView | null = isYou && r.p_kind ? {
     kind: r.p_kind,
     text: r.p_body,
-    note: code ? { code, words: mentionNote(code, assistant.name) } : null,
+    note: code ? { code, words: words(code) } : null,
     proposals: proposalsOf(r.p_proposals).map((p) => proposalView(p, now)),
     postedMessageId: r.p_posted_message_id, postedAt: r.p_posted_at, dismissedAt: r.p_dismissed_at,
     // Not while assistant replies are off here (review, 8 October 2026: an answer kept private because a switch went off
-    // mid-run would otherwise be one press from the channel).
-    canPost: r.p_kind === "answer" && !!r.p_body && !r.p_posted_at && !r.p_dismissed_at && !r.archived && r.replies_on && r.status !== "withdrawn",
+    // mid-run would otherwise be one press from the channel). Never for someone else's assistant (phase 6): its private
+    // answer is what not everyone here may see about its owner's work, and not the tagger's to post.
+    canPost: !owner && r.p_kind === "answer" && !!r.p_body && !r.p_posted_at && !r.p_dismissed_at && !r.archived && r.replies_on && r.status !== "withdrawn",
   } : null;
   return {
     id: r.id, messageId: r.message_id, status: r.status, createdAt: r.created_at, updatedAt: r.updated_at,
     tagger: { membershipId: r.tagger_membership_id, name: r.tagger_name, firstName: firstName(r.tagger_name), isYou },
     assistant,
+    owner,
     replyMessageId: r.reply_message_id,
     thinking: (r.status === "pending" || r.status === "thinking") && Date.parse(r.created_at) > now - MENTION_LIMITS.thinkingShowsMinutes * 60_000,
     waiting: r.status === "waiting_confirm" && !!r.confirm_until && Date.parse(r.confirm_until) > now,
@@ -584,7 +699,7 @@ function toView(r: ViewRow, me: string, now: number): MentionView {
 
 /** Mentions this person may read (row-level security as them: readers of the conversation; the private part the tagger's only). */
 async function loadViews(db: Db, ctx: OrgContext, where: string, params: unknown[]): Promise<{ views: MentionView[]; rows: ViewRow[] }> {
-  const rows = await db.query<ViewRow>(`${VIEW_SQL} WHERE am.organisation_id = $1 AND (${where}) ORDER BY am.created_at, am.id`, [ctx.org.id, ctx.membership.id, ...params]);
+  const rows = await db.query<ViewRow>(`${viewSql(await schema0043Ready(db))} WHERE am.organisation_id = $1 AND (${where}) ORDER BY am.created_at, am.id`, [ctx.org.id, ctx.membership.id, ...params]);
   const now = Date.now();
   return { views: rows.map((r) => toView(r, ctx.membership.id, now)), rows };
 }
@@ -646,6 +761,8 @@ type MineRow = {
   id: string; conversation_id: string; message_id: string; status: MentionStatus; tagger_membership_id: string; kind: ConversationKind; archived: boolean;
   p_kind: "answer" | "full_answer" | "note"; p_body: string | null; p_posted_at: string | null; p_dismissed_at: string | null; p_proposals: unknown;
   a_name: string | null; can_read: boolean;
+  /** Phase 6: someone else's assistant answered (null for the tagger's own, and before 0043). */
+  owner_membership_id: string | null;
 };
 
 /** The tagger's own private row, read as them (row-level security: theirs alone, while they read the conversation). */
@@ -653,10 +770,12 @@ async function readMine(ctx: OrgContext, id: string): Promise<MineRow> {
   if (!isUuid(id)) throw notFound(NOT_YOURS);
   const row = await retryWithout0041(() => withUser(ctx.user.profileId, async (db) => {
     if (!(await schema0041Ready(db))) throw notReady();
+    const ready43 = await schema0043Ready(db);
     return db.maybeOne<MineRow>(
       `SELECT am.id, am.conversation_id, am.message_id, am.status, am.tagger_membership_id, c.kind, (c.archived_at IS NOT NULL) AS archived,
               pv.kind AS p_kind, pv.body AS p_body, pv.posted_at AS p_posted_at, pv.dismissed_at AS p_dismissed_at, pv.proposals AS p_proposals,
-              ap.name AS a_name, app_can_read_conversation(am.conversation_id) AS can_read
+              ap.name AS a_name, app_can_read_conversation(am.conversation_id) AS can_read,
+              ${ready43 ? "am.owner_membership_id" : "NULL::uuid AS owner_membership_id"}
        FROM assistant_mention_private pv
        JOIN assistant_mentions am ON am.id = pv.mention_id
        JOIN conversations c ON c.id = am.conversation_id
@@ -675,6 +794,9 @@ async function readMine(ctx: OrgContext, id: string): Promise<MineRow> {
 export async function postMention(ctx: OrgContext, id: string): Promise<{ messageId: string }> {
   const mine = await readMine(ctx, id);
   if (mine.p_kind !== "answer" || !mine.p_body) throw notFound(NOT_YOURS);
+  // Someone else's assistant (phase 6): what it told the tagger privately is about its owner's work and is not the
+  // tagger's to post (the card never offers it; this holds for a direct call too).
+  if (mine.owner_membership_id) throw forbidden("This answer stays with you: it holds what not everyone here may see.");
   if (mine.p_posted_at || mine.p_dismissed_at) throw conflict("ALREADY_POSTED", "That answer was already posted or dismissed.");
   if (mine.archived) throw conflict("CONVERSATION_ARCHIVED", "This channel is archived. Restore it to write here again.");
   if (mine.status === "withdrawn") throw notFound(NOT_YOURS);
@@ -748,17 +870,35 @@ export async function withdrawMentionReply(ctx: OrgContext, id: string): Promise
   if (!isUuid(id)) throw notFound("That reply is no longer there.");
   const row = await retryWithout0041(() => withUser(ctx.user.profileId, async (db) => {
     if (!(await schema0041Ready(db))) throw notReady();
-    return db.maybeOne<{ id: string; conversation_id: string; status: MentionStatus; tagger_membership_id: string; can_manage: boolean }>(
-      `SELECT am.id, am.conversation_id, am.status, am.tagger_membership_id, app_can_manage_conversation(am.conversation_id) AS can_manage
+    const ready43 = await schema0043Ready(db);
+    return db.maybeOne<{ id: string; conversation_id: string; status: MentionStatus; tagger_membership_id: string; owner_membership_id: string | null; can_manage: boolean }>(
+      `SELECT am.id, am.conversation_id, am.status, am.tagger_membership_id, ${ready43 ? "am.owner_membership_id" : "NULL::uuid AS owner_membership_id"},
+              app_can_manage_conversation(am.conversation_id) AS can_manage
        FROM assistant_mentions am WHERE am.id = $1 AND am.organisation_id = $2`, [id, ctx.org.id]);
   }));
   if (!row) throw notFound("That reply is no longer there.");
-  if (row.tagger_membership_id !== ctx.membership.id && !row.can_manage) throw forbidden("Only the person who asked or someone who runs this conversation can withdraw it.");
+  // Someone else's assistant (phase 6): its owner may withdraw what it said too.
+  const isOwner = !!row.owner_membership_id && row.owner_membership_id === ctx.membership.id;
+  if (row.tagger_membership_id !== ctx.membership.id && !isOwner && !row.can_manage) {
+    throw forbidden(row.owner_membership_id
+      ? "Only the person who asked, the assistant's owner or someone who runs this conversation can withdraw it."
+      : "Only the person who asked or someone who runs this conversation can withdraw it.");
+  }
   if (row.status !== "answered") throw conflict("ALREADY_WITHDRAWN", row.status === "withdrawn" ? "That reply was already withdrawn." : "There is no reply to withdraw yet.");
+  let retract: { ownerProfileId: string | null; ownerId: string | null; taggerProfileId: string | null } | null = null;
   await withWorker(async (db) => {
     await db.query(
       `UPDATE messages SET deleted_at = now()
        WHERE id = (SELECT reply_message_id FROM assistant_mentions WHERE id = $1 AND status = 'answered') AND author_kind = 'assistant' AND deleted_at IS NULL`, [id]);
+    // The "I've asked Ben" line goes with the reply (phase 6).
+    if (row.owner_membership_id) {
+      await db.query(
+        `UPDATE messages SET deleted_at = now()
+         WHERE id = (SELECT holding_message_id FROM assistant_mentions WHERE id = $1 AND status = 'answered') AND author_kind = 'assistant' AND deleted_at IS NULL`, [id]);
+      retract = await db.maybeOne<{ ownerProfileId: string | null; ownerId: string | null; taggerProfileId: string | null }>(
+        `SELECT om.user_id AS "ownerProfileId", om.id AS "ownerId", tm.user_id AS "taggerProfileId"
+         FROM assistant_mentions am LEFT JOIN memberships om ON om.id = am.owner_membership_id JOIN memberships tm ON tm.id = am.tagger_membership_id WHERE am.id = $1`, [id]);
+    }
     const moved = await db.maybeOne<{ id: string; organisation_id: string; tagger_membership_id: string; conversation_id: string; message_id: string; reply_message_id: string | null }>(
       `UPDATE assistant_mentions SET status = 'withdrawn', lease_until = NULL WHERE id = $1 AND status = 'answered'
        RETURNING id, organisation_id, tagger_membership_id, conversation_id, message_id, reply_message_id`, [id]);
@@ -768,9 +908,20 @@ export async function withdrawMentionReply(ctx: OrgContext, id: string): Promise
     if (await schema0042Ready(db)) await db.query(`SELECT app_retract_mention_reply($1)`, [id]);
     await audit(db, {
       organisationId: moved.organisation_id, actorMembershipId: ctx.membership.id, action: "mention.withdrawn", subjectType: "assistant_mention", subjectId: id,
-      subjectMembershipId: moved.tagger_membership_id, metadata: { mentionId: id, conversationId: moved.conversation_id, messageId: moved.message_id, replyMessageId: moved.reply_message_id, by: ctx.membership.id === moved.tagger_membership_id ? "tagger" : "manager" },
+      subjectMembershipId: moved.tagger_membership_id, metadata: { mentionId: id, conversationId: moved.conversation_id, messageId: moved.message_id, replyMessageId: moved.reply_message_id, by: ctx.membership.id === moved.tagger_membership_id ? "tagger" : isOwner ? "owner" : "manager" },
     });
   });
+  // Someone else's assistant (phase 6): the owner's "Olu asked your Brenda" and the tagger's "Ben's Brenda replied" stop
+  // quoting it. Notifications are changed only by their recipient (row-level security), so each as that person, after
+  // the withdrawal has committed; a failure here never undoes it.
+  const r = retract as { ownerProfileId: string | null; ownerId: string | null; taggerProfileId: string | null } | null;
+  if (r) {
+    const closeAs = (profileId: string | null, memberId: string, keys: string[]) => (profileId ? withUser(profileId, (db) => db.query(
+      `UPDATE notifications SET body = 'This reply was withdrawn.', read_at = COALESCE(read_at, now()) WHERE recipient_membership_id = $1 AND deduplication_key = ANY($2::text[])`,
+      [memberId, keys])).catch(warn("retracting a thread reply's notification")) : Promise.resolve());
+    if (r.ownerId) await closeAs(r.ownerProfileId, r.ownerId, [`mention.owner:${id}`]);
+    await closeAs(r.taggerProfileId, row.tagger_membership_id, [`mention.thread:${id}:1`, `mention.thread:${id}:2`]);
+  }
   return { id };
 }
 
@@ -822,6 +973,228 @@ export async function decideMentionProposal(ctx: OrgContext, id: string, index: 
     : await setState("done", clip(result.actions.map((a) => a.summary).filter(Boolean).join(". ") || "Done.", 500));
   const view = p ? proposalView(p, Date.now()) : { ...proposalView(stored, Date.now()), state: (result.error ? "failed" : "done") as MentionProposalView["state"], result: result.error };
   return { actions: result.actions, error: result.error, proposal: view };
+}
+
+// ---- Someone else's assistant in a thread (owner decision, 8 October 2026: personal assistants, phase 6) -------------------
+// The run (mention-processor.ts) calls no model. Every step below is one guarded worker transaction on the locked row,
+// so the processor, the follow-up's own transitions and the sweep may all call them, in any order, any number of times.
+
+/** Open for a run of someone else's assistant: working, or waiting for the owner's reply. */
+const OWNER_OPEN_SQL = `('thinking', 'asked')`;
+
+/** Like inWorker, and nothing before 0043 (the owner's columns are not there). */
+async function inWorker43<T>(fn: (db: Db) => Promise<T>): Promise<T | null> {
+  try {
+    return await withWorker(async (db) => ((await schema0041Ready(db)) && (await schema0043Ready(db)) ? fn(db) : null));
+  } catch (err) {
+    if (isMissingSchema(err)) { forget0041(); forget0043(); return null; }
+    throw err;
+  }
+}
+
+/** The conversation as the owner reads it in a notification: "#Design", "Everyone", or "your chat with Olu Adeyemi". */
+const whereForOwner = (r: ProcRow) => (r.kind === "direct" ? `your chat with ${r.tagger_name}` : r.channel_name ?? "a conversation");
+
+/** A run links the follow-up it asked (guarded: still thinking, none linked yet). */
+export async function linkMentionFollowUp(id: string, followUpId: string): Promise<boolean> {
+  if (!isUuid(id) || !isUuid(followUpId)) return false;
+  const r = await inWorker43((db) => db.maybeOne(
+    `UPDATE assistant_mentions SET follow_up_id = $2 WHERE id = $1 AND status = 'thinking' AND follow_up_id IS NULL AND owner_membership_id IS NOT NULL RETURNING id`, [id, followUpId]));
+  return !!r;
+}
+
+export type OwnerThreadState = {
+  mention: {
+    id: string; status: MentionStatus; organisationId: string; conversationId: string; messageId: string;
+    taggerMembershipId: string; taggerName: string; ownerMembershipId: string; ownerName: string; ownerAssistant: AssistantProfile;
+    holding: boolean; messageWithdrawn: boolean; slug: string; timezone: string;
+    /** The conversation in the owner's words: "#Design", "Everyone", "your chat with Olu Adeyemi". */
+    whereForOwner: string;
+  };
+  followUp: {
+    id: string; status: FollowUpStatus; answeredFrom: "facts" | "person" | "deadline" | null; capped: boolean;
+    replyChoice: ReplyChoice | null; replyNote: string | null; deadlineAt: string | null; facts: unknown; answer: string | null;
+    threadMode: "facts" | "ask" | null; taskId: string | null;
+  };
+};
+
+/** The mention a follow-up was asked for, and the follow-up as it stands (worker); null when there is none, or before 0043. */
+export async function ownerThreadState(followUpId: string): Promise<OwnerThreadState | null> {
+  if (!isUuid(followUpId)) return null;
+  const r = await inWorker43((db) => db.maybeOne<{
+    id: string; status: MentionStatus; organisation_id: string; conversation_id: string; message_id: string; tagger_membership_id: string; tagger_name: string;
+    owner_membership_id: string; owner_name: string; oa_name: string | null; oa_colour: string | null; oa_visor: string | null; oa_eyes: string | null;
+    holding: boolean; message_withdrawn: boolean; slug: string; timezone: string; kind: ConversationKind; channel_name: string | null;
+    f_status: FollowUpStatus; answered_from: OwnerThreadState["followUp"]["answeredFrom"]; capped: boolean; reply_choice: ReplyChoice | null; reply_note: string | null;
+    deadline_at: string | null; facts: unknown; answer: string | null; thread_mode: "facts" | "ask" | null; task_id: string | null;
+  }>(
+    `SELECT am.id, am.status, am.organisation_id, am.conversation_id, am.message_id, am.tagger_membership_id, tp.display_name AS tagger_name,
+            am.owner_membership_id, owp.display_name AS owner_name, oap.name AS oa_name, oap.colour AS oa_colour, oap.visor AS oa_visor, oap.eyes AS oa_eyes,
+            (am.holding_message_id IS NOT NULL) AS holding, (msg.id IS NULL OR msg.deleted_at IS NOT NULL) AS message_withdrawn, o.slug, o.timezone,
+            c.kind, CASE c.kind WHEN 'organisation' THEN 'Everyone' WHEN 'team' THEN '#' || tt.name WHEN 'channel' THEN '#' || c.title END AS channel_name,
+            f.status AS f_status, f.answered_from, f.capped, f.reply_choice, f.reply_note, f.deadline_at, f.facts, f.answer, f.thread_mode, f.task_id
+     FROM assistant_mentions am
+     JOIN follow_ups f ON f.id = am.follow_up_id
+     JOIN organisations o ON o.id = am.organisation_id
+     JOIN conversations c ON c.id = am.conversation_id
+     LEFT JOIN teams tt ON tt.id = c.team_id
+     JOIN memberships tm ON tm.id = am.tagger_membership_id JOIN profiles tp ON tp.id = tm.user_id
+     JOIN memberships owm ON owm.id = am.owner_membership_id JOIN profiles owp ON owp.id = owm.user_id
+     LEFT JOIN assistant_profiles oap ON oap.membership_id = am.owner_membership_id
+     LEFT JOIN messages msg ON msg.id = am.message_id
+     WHERE am.follow_up_id = $1`, [followUpId]));
+  if (!r) return null;
+  return {
+    mention: {
+      id: r.id, status: r.status, organisationId: r.organisation_id, conversationId: r.conversation_id, messageId: r.message_id,
+      taggerMembershipId: r.tagger_membership_id, taggerName: r.tagger_name, ownerMembershipId: r.owner_membership_id, ownerName: r.owner_name,
+      ownerAssistant: toProfile({ name: r.oa_name, colour: r.oa_colour, visor: r.oa_visor, eyes: r.oa_eyes }),
+      holding: r.holding, messageWithdrawn: r.message_withdrawn, slug: r.slug, timezone: r.timezone,
+      whereForOwner: r.kind === "direct" ? `your chat with ${r.tagger_name}` : r.channel_name ?? "a conversation",
+    },
+    followUp: {
+      id: followUpId, status: r.f_status, answeredFrom: r.answered_from, capped: !!r.capped, replyChoice: r.reply_choice, replyNote: r.reply_note,
+      deadlineAt: r.deadline_at, facts: r.facts, answer: r.answer, threadMode: r.thread_mode, taskId: r.task_id,
+    },
+  };
+}
+
+/**
+ * What a run of someone else's assistant does next in the thread:
+ * - holding: "I've asked Ben. I'll reply here by 15:30." (thinking → asked; the tagger is told).
+ * - final: its public line (thinking or asked → answered), with `privateText` kept for the tagger alone (an answer only
+ *   they may see), `ownerBody` for the owner's "Olu asked your Brenda" notification and `activity` for the owner's "What
+ *   Brenda did". `readers`: who read the conversation when its words were checked; anyone who has joined since was not,
+ *   so `fallback` is posted instead (or it all goes to the tagger privately).
+ * - private: kept for the tagger (thinking or asked → private), with a note code when there is one.
+ * - fail: the tagger's private note 'failed' (thinking or asked → failed).
+ * Checked first, in the same transaction: the tagging message withdrawn → withdrawn (its holding line too); archived or a
+ * switch now off (the workspace's, the conversation's, the owner's) → the words go to the tagger privately; the tagger no
+ * longer reads it → refused; the owner no longer reads it → private ('owner_left').
+ */
+export type OwnerPost =
+  | { kind: "holding"; text: string }
+  | { kind: "final"; text: string; privateText?: string | null; ownerBody?: string | null; activity?: string | null; readers?: string[] | null;
+      fallback?: { text: string; privateText: string | null; ownerBody: string | null } | null }
+  | { kind: "private"; text: string | null; noteCode: MentionNoteCode | null }
+  | { kind: "fail" };
+
+export async function postOwnerThread(id: string, p: OwnerPost): Promise<MentionStatus | null> {
+  if (!isUuid(id)) return null;
+  return inWorker43(async (db) => {
+    const r = await lockRow(db, id);
+    if (!r || !r.owner_membership_id) return r?.status ?? null;
+    if (r.status !== "thinking" && r.status !== "asked") return r.status;
+    if (p.kind === "holding" && (r.status !== "thinking" || r.holding_message_id)) return r.status;
+    if (r.message_withdrawn) return withdrawOwnerIn(db, r);
+    if (p.kind === "fail") return ownerEndIn(db, r, "failed", "failed");
+    const keepText = p.kind === "final" ? (p.privateText ?? p.text) : p.text;
+    if (p.kind === "private") return ownerPrivateIn(db, r, keepText, p.noteCode);
+    const kept: MentionNoteCode | null = r.archived ? "archived" : !r.workspace_on ? "off_workspace" : !r.assistant_replies ? "off_conversation" : r.owner_allows === false ? "off_owner" : null;
+    if (kept) return ownerPrivateIn(db, r, keepText, kept);
+    const reads = await db.one<{ tagger: boolean; owner: boolean }>(
+      `SELECT app_conversation_has_reader($1, $2) AS tagger, app_conversation_has_reader($1, $3) AS owner`, [r.conversation_id, r.tagger_membership_id, r.owner_membership_id]);
+    if (!reads.tagger) return ownerEndIn(db, r, "refused", "not_allowed");
+    if (!reads.owner || r.owner_status !== "active") return ownerPrivateIn(db, r, keepText, "owner_left");
+    let post = p;
+    if (p.kind === "final" && p.readers) {
+      const joined = await db.one<{ joined: boolean }>(
+        `SELECT EXISTS (SELECT 1 FROM app_conversation_readers($1) x WHERE NOT (x.membership_id = ANY($2::uuid[]))) AS joined`, [r.conversation_id, p.readers]);
+      if (joined.joined) {
+        if (!p.fallback) return ownerPrivateIn(db, r, keepText, null);
+        post = { kind: "final", text: p.fallback.text, privateText: p.fallback.privateText, ownerBody: p.fallback.ownerBody, activity: p.activity };
+      }
+    }
+    const text = bodyOf(post.text);
+    if (!text) return ownerPrivateIn(db, r, keepText, keepText ? null : "failed");
+    const msg = await db.one<{ id: string }>(
+      `INSERT INTO messages(organisation_id, conversation_id, sender_membership_id, body, reply_to_id, author_kind) VALUES ($1, $2, $3, $4, $5, 'assistant') RETURNING id`,
+      [r.organisation_id, r.conversation_id, r.owner_membership_id, text, r.message_id]);
+    const holding = post.kind === "holding";
+    const moved = holding
+      ? await db.maybeOne(`UPDATE assistant_mentions SET status = 'asked', holding_message_id = $2, engine = 'builtin', lease_until = NULL WHERE id = $1 AND status = 'thinking' AND holding_message_id IS NULL RETURNING id`, [r.id, msg.id])
+      : await db.maybeOne(`UPDATE assistant_mentions SET status = 'answered', reply_message_id = $2, engine = 'builtin', lease_until = NULL, finished_at = now() WHERE id = $1 AND status IN ${OWNER_OPEN_SQL} AND reply_message_id IS NULL RETURNING id`, [r.id, msg.id]);
+    if (!moved) throw new Error("mention moved while its reply was written");
+    const ownerFirst = firstName(r.owner_name ?? "Someone");
+    const oa = ownerAssistantOf(r);
+    if (post.kind === "final" && post.privateText) await writePrivate(db, r, { kind: "answer", body: post.privateText, noteCode: null });
+    await notify(db, {
+      organisationId: r.organisation_id, recipientMembershipId: r.tagger_membership_id, type: "assistant.thread_reply",
+      title: `${ownerFirst}'s ${oa.name} replied in ${whereForTagger(r)}`, body: clip(text, 300),
+      resourceType: "conversation", resourceId: r.conversation_id, href: hrefOf(r), dedupKey: `mention.thread:${r.id}:${holding ? 1 : 2}`,
+    });
+    if (post.kind === "final" && post.ownerBody) {
+      await notify(db, {
+        organisationId: r.organisation_id, recipientMembershipId: r.owner_membership_id, type: "assistant.tagged",
+        title: `${firstName(r.tagger_name)} asked your ${oa.name} in ${whereForOwner(r)}`, body: clip(post.ownerBody, 200),
+        resourceType: "conversation", resourceId: r.conversation_id, href: hrefOf(r), dedupKey: `mention.owner:${r.id}`,
+      });
+    }
+    if (post.kind === "final" && post.activity) {
+      await db.query(
+        `INSERT INTO brenda_actions(organisation_id, membership_id, tool, summary, outcome, source, detail) VALUES ($1, $2, 'follow_up_answer', $3, 'done', 'automatic', $4::jsonb)`,
+        [r.organisation_id, r.owner_membership_id, "Answered a colleague's question in Messages", JSON.stringify({ href: hrefOf(r), personalSummary: clip(post.activity, 500), conversationId: r.conversation_id, mentionId: r.id })]);
+    }
+    await auditMention(db, r, holding ? "mention.asked" : "mention.answered", { [holding ? "holdingMessageId" : "replyMessageId"]: msg.id, engine: "builtin" });
+    return (holding ? "asked" : "answered") as MentionStatus;
+  });
+}
+
+/** The tagging message was withdrawn: withdrawn, and the "I've asked Ben" line goes too. True when it moved now. */
+export async function withdrawOwnerMention(id: string): Promise<boolean> {
+  if (!isUuid(id)) return false;
+  const s = await inWorker43(async (db) => {
+    const r = await lockRow(db, id);
+    if (!r || !r.owner_membership_id) return null;
+    return withdrawOwnerIn(db, r);
+  });
+  return s === "withdrawn";
+}
+
+async function withdrawOwnerIn(db: Db, r: ProcRow): Promise<MentionStatus | null> {
+  const moved = await db.maybeOne(`UPDATE assistant_mentions SET status = 'withdrawn', lease_until = NULL, finished_at = now() WHERE id = $1 AND status IN ('pending', 'thinking', 'asked') RETURNING id`, [r.id]);
+  if (!moved) return statusIn(db, r.id);
+  if (r.holding_message_id) await db.query(`UPDATE messages SET deleted_at = now() WHERE id = $1 AND author_kind = 'assistant' AND deleted_at IS NULL`, [r.holding_message_id]);
+  await auditMention(db, r, "mention.withdrawn", { by: "tagger" });
+  return "withdrawn";
+}
+
+/** Kept for the tagger (thinking or asked → private), with the answer or a note; the tagger is told. */
+async function ownerPrivateIn(db: Db, r: ProcRow, text: string | null, noteCode: MentionNoteCode | null): Promise<MentionStatus | null> {
+  const body = text?.trim() ? text : null;
+  const note: MentionNoteCode | null = noteCode ?? (body ? null : "failed");
+  const moved = await db.maybeOne(
+    `UPDATE assistant_mentions SET status = 'private', engine = 'builtin', lease_until = NULL, confirm_until = NULL, finished_at = now() WHERE id = $1 AND status IN ${OWNER_OPEN_SQL} RETURNING id`, [r.id]);
+  if (!moved) return statusIn(db, r.id);
+  await writePrivate(db, r, { kind: body ? "answer" : "note", body, noteCode: note });
+  await notifyPrivate(db, r, { text: body, noteCode: note });
+  await auditMention(db, note && OWNER_PRIVATE_CODES.has(note) ? { ...r, owner_membership_id: null } : r, "mention.private", { engine: "builtin", proposals: 0, ...(note ? { code: OWNER_PRIVATE_CODES.has(note) ? "owner_unavailable" : note } : {}) });
+  return "private";
+}
+
+/** Refused or failed (thinking or asked), with the tagger's note. */
+async function ownerEndIn(db: Db, r: ProcRow, status: "refused" | "failed", code: MentionNoteCode): Promise<MentionStatus | null> {
+  const moved = await db.maybeOne(`UPDATE assistant_mentions SET status = $2, lease_until = NULL, finished_at = now() WHERE id = $1 AND status IN ${OWNER_OPEN_SQL} RETURNING id`, [r.id, status]);
+  if (!moved) return statusIn(db, r.id);
+  await writePrivate(db, r, { kind: "note", body: null, noteCode: code });
+  await notifyPrivate(db, r, { text: null, noteCode: code });
+  await auditRefusal(db, r, status === "refused" ? "mention.refused" : "mention.failed", code);
+  return status;
+}
+
+/**
+ * Runs of someone else's assistant that wait on a follow-up now closed, or whose tagging message was withdrawn: what the
+ * mention sweep syncs (the follow-up's own sync may have been lost to a restart). Their follow-up ids, oldest first.
+ */
+export async function ownerMentionsToSync(opts: { limit?: number } = {}): Promise<string[]> {
+  const limit = Math.min(25, Math.max(1, Math.round(opts.limit ?? 10)));
+  const rows = await inWorker43((db) => db.query<{ follow_up_id: string }>(
+    `SELECT am.follow_up_id FROM assistant_mentions am
+     JOIN follow_ups f ON f.id = am.follow_up_id
+     LEFT JOIN messages msg ON msg.id = am.message_id
+     WHERE am.status = 'asked' AND (f.status NOT IN ('pending', 'asking', 'answering') OR msg.id IS NULL OR msg.deleted_at IS NOT NULL)
+     ORDER BY am.updated_at, am.id LIMIT $1`, [limit]));
+  return (rows ?? []).map((r) => r.follow_up_id);
 }
 
 // ---- Switches -------------------------------------------------------------------------------------------------------------

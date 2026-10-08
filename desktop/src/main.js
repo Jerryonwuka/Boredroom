@@ -91,6 +91,20 @@
 // "Max couldn't answer in #design") the answer only they can see, or why there was none. Every one is the person's own
 // assistant's face and plain text through esc(), never Markdown or a link; Open goes to the conversation (Boredroom paths
 // only) and OK marks it read.
+//
+// Assistants talk to each other (owner decision, 8 October 2026: personal assistants, phase 6). "I want all the bots to be
+// able to communicate with each other." Someone's assistant can pass the person a message, hand them a request to accept,
+// and bring back a reply or the outcome of their own request; the desktop state's `assistantItems` (DesktopAssistantItems)
+// says what is waiting for the person and what came back in the last day. An unread `assistant.message` whose item is
+// waiting opens the message card: the sender's assistant's face, the message as sent in a quoted bubble (plain text through
+// esc(), never Markdown or a link), whether it was reworded, Seen and Reply (one line, typed or said with the talk keys,
+// then Send, the card's one standout). An `assistant.request` opens the request card: what would change, the sender's
+// note, that nothing changes until they accept and when it expires, Decline (with a reason, if they like) and Accept,
+// then what happened. Nothing on the person's account changes until they press Accept, and then Boredroom does it as them.
+// `assistant.outcome` and `assistant.reply` open an update card with both assistants' faces, Open and Done. Esc never
+// marks anything seen. `assistant.tagged` (their assistant was tagged in Messages) and `assistant.thread_reply` (someone's
+// assistant answered their tag) are mention cards. An older server (no `assistantItems`, or not ready) gets the plain
+// notification cards, as before.
 
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
@@ -118,8 +132,9 @@ let talk = [];              // the spoken conversation so far, forgotten after a
 let talkAt = 0;
 let cursor = null;          // the cursor in window coordinates, from Rust (for the eyes and hover)
 let gaze = null;            // the caret in the ask box while the person types to her (she reads along), or null
-// The boxes the person types in: the ask box, and a follow-up's note (phase 4, 8 October 2026). Typing in either keeps
-// the notch focused, cuts her off and has the face on the card read along.
+// The boxes the person types in: the ask box, and a card's one-line note (`fnote`: a follow-up's note, phase 4; a reply to
+// a passed-on message or a reason for declining a request, phase 6, 8 October 2026). Typing in either keeps the notch
+// focused, cuts her off and has the face on the card read along.
 const TYPING = new Set(["ask", "fnote"]);
 let viewKey = "";           // which view is showing; content animates in only when it changes
 let wasOpen = false;
@@ -284,8 +299,21 @@ function moodOf() {
     if (t === "brenda.mention_reply") return { mood: "happy", tone: "ok" };
     if (t === "brenda.mention_confirm") return { mood: "alert", tone: "warn" };
     if (t === "brenda.mention_private") return {};
+    // Someone's assistant answered the person's tag in Messages (phase 6): a reply, as above.
+    if (t === "assistant.thread_reply") return { mood: "happy", tone: "ok" };
     return { mood: "alert", tone: "accent" };
   }
+  // Assistants talk to each other (owner decision, 8 October 2026: phase 6): a message or a request waits on the person
+  // (alert, the accent glow) until it is answered; a reply sent or a request done pleases her (happy, green); a request
+  // that couldn't be done is sad (red); declined, closed elsewhere and the rest stay neutral. An update pleases her only
+  // when it is a reply or a request done.
+  if (card.kind === "item") {
+    if (card.phase === "sent") return { mood: "happy", tone: "ok" };
+    if (card.phase === "result") return card.item?.status === "done" ? { mood: "happy", tone: "ok" } : card.item?.status === "failed" ? { mood: "sad", tone: "bad" } : {};
+    if (card.phase === "gone") return {};
+    return { mood: "alert", tone: "accent" };
+  }
+  if (card.kind === "item_update") return card.u?.kind === "reply" || card.u?.status === "done" || (!card.u && card.n?.type === "assistant.reply") ? { mood: "happy", tone: "ok" } : {};
   if (card.kind === "error") return { mood: "sad", tone: "bad" };
   // Follow-ups (owner decision, 8 October 2026: phase 4): an ask waits on the person (alert, the accent glow) until it is
   // sent (happy, green); an answer pleases only when it is one (happy, green), and a no-reply, a not now or a failure
@@ -368,7 +396,7 @@ island.addEventListener("pointerdown", () => Sound.unlock());
 
 function render() {
   el.classList.toggle("compact", !!config?.signedIn && !card);
-  const key = !config?.signedIn ? `link:${!!link}:${editingServer}` : card ? `${card.kind}:${card.phase ?? ""}:${card.n?.id ?? card.w?.id ?? ""}` : "compact";
+  const key = !config?.signedIn ? `link:${!!link}:${editingServer}` : card ? `${card.kind}:${card.phase ?? ""}:${card.n?.id ?? card.w?.id ?? card.u?.id ?? ""}` : "compact";
   // A follow-up's note keeps its words (they live on the card), its focus and its caret when the card is drawn again.
   const noting = document.activeElement?.id === "fnote" ? { from: document.activeElement.selectionStart, to: document.activeElement.selectionEnd } : null;
   if (!config?.signedIn) el.innerHTML = linkView();
@@ -434,7 +462,8 @@ function cardView() {
     if (mentionCard(n.type)) return mentionView(n);
     // Badges as on the web: neutral on fill-1, green for clocked in, amber for a review, and the orange "New" badge only
     // for a task that has just arrived.
-    const pill = n.type === "brenda.reminder" ? `<span class="pill">Reminder</span>` : n.type === "brenda.clock_in" ? `<span class="pill ok"><span class="d"></span>In</span>` : n.type === "brenda.daily_report" ? `<span class="pill">Daily report</span>` : n.type === "task.assigned" ? `<span class="pill acc">New task</span>` : n.type.startsWith("review") ? `<span class="pill warn">Review</span>` : "";
+    // Phase 6's (8 October 2026), when the desktop state cannot open their own cards: neutral words.
+    const pill = n.type === "brenda.reminder" ? `<span class="pill">Reminder</span>` : n.type === "brenda.clock_in" ? `<span class="pill ok"><span class="d"></span>In</span>` : n.type === "brenda.daily_report" ? `<span class="pill">Daily report</span>` : n.type === "task.assigned" ? `<span class="pill acc">New task</span>` : n.type.startsWith("review") ? `<span class="pill warn">Review</span>` : Object.hasOwn(ITEM_PILLS, n.type) ? `<span class="pill">${ITEM_PILLS[n.type]}</span>` : "";
     // The end-of-day report is sent by the workspace, so its card shows the workspace's assistant (owner decision,
     // 7 October 2026: personal assistants); everything else comes from the person's own.
     const from = n.type === "brenda.daily_report" ? ws() : me();
@@ -478,6 +507,8 @@ function cardView() {
   if (card.kind === "drop") return dropView();
   if (card.kind === "followup_ask") return followUpAskView();
   if (card.kind === "followup_answer") return followUpAnswerView();
+  if (card.kind === "item") return itemView();
+  if (card.kind === "item_update") return itemUpdateView();
   if (card.kind === "error") return `<div class="row fade">${face(moodOf())}<div class="grow"><p class="title">Can't reach Boredroom</p><p class="sub">${esc(card.message)}</p></div></div><div class="actions"><button class="btn" data-act="close">OK</button></div>`;
   return "";
 }
@@ -518,6 +549,17 @@ el.addEventListener("click", async (e) => {
     if (act === "fu-facts") return toggleFacts(target);
     if (act === "fu-task") { const path = boredroomPath(target.dataset.href); if (path) await invoke("open_in_browser", { path }); return; }
     if (act === "fu-open") return openWaiting(target.dataset.id);
+    // Assistants talk to each other (phase 6, 8 October 2026): open a waiting item from the day card; on a message, Seen,
+    // Reply (the box opens) and Send; on a request, Decline (the reason box opens, then Decline again) and Accept; Back
+    // closes the box; Done on an update.
+    if (act === "ai-open") return openItem(target.dataset.id);
+    if (act === "ai-seen") return markItemSeen();
+    if (act === "ai-reply") return openItemNote("replying");
+    if (act === "ai-send") return sendItemReply();
+    if (act === "ai-decline") return card?.declining ? decideItem("decline") : openItemNote("declining");
+    if (act === "ai-accept") return decideItem("accept");
+    if (act === "ai-back") return closeItemNote();
+    if (act === "ai-ack") return ackUpdate();
     if (act === "read") { await call("PATCH", org(`/notifications/${target.dataset.id}`)); data.notifications = data.notifications.filter((n) => n.id !== target.dataset.id); return closeCard(); }
     busy = true; render();
     const t = data?.timer;
@@ -580,7 +622,7 @@ async function refresh() {
     offsetMs = Date.parse(data.serverNow) - Date.now();
     keepCached();
     if (!card) render();
-    else followUpClosedElsewhere();
+    else { followUpClosedElsewhere(); itemClosedElsewhere(); }
   } catch (err) {
     if (err?.status && err.status !== 401 && !card) openCard({ kind: "error", message: err.message });
   }
@@ -592,10 +634,11 @@ function nextNotification() {
   const n = (data.notifications ?? []).find((x) => !shown.has(x.id));
   if (!n) return;
   shown.add(n.id);
-  // A follow-up's ask or answer gets its own card when the desktop state knows it (phase 4); otherwise, and always with
-  // an older server, the plain notification card.
-  const fu = followUpCard(n);
-  if (fu) { openCard(fu); return Sound.play(fu.kind === "followup_ask" ? "attention" : "reply"); }
+  // A follow-up's ask or answer gets its own card when the desktop state knows it (phase 4), and so does a message, a
+  // request, a reply or a request's outcome brought by someone's assistant (phase 6); otherwise, and always with an older
+  // server, the plain notification card. What waits for an answer (an ask, a request) calls for attention.
+  const fu = followUpCard(n) ?? itemCard(n);
+  if (fu) { openCard(fu); return Sound.play(fu.kind === "followup_ask" || (fu.kind === "item" && fu.w.kind === "request") ? "attention" : "reply"); }
   // Mentions in Messages (phase 5): a reply, a Confirm or a private answer has more to read, so it stays as long as a reply.
   const mention = mentionCard(n.type);
   openCard({ kind: "notification", n, ...(mention?.long ? { closeAfter: REPLY_CLOSE_MS } : {}) });
@@ -641,8 +684,10 @@ function askBox(placeholder) {
 }
 
 el.addEventListener("submit", (e) => {
-  // Return in a follow-up's note sends the reply once one is chosen.
+  // Return in a follow-up's note sends the reply once one is chosen; in a message's reply box it sends the reply, and in a
+  // request's reason box it declines (phase 6).
   if (e.target.closest("[data-fu]")) { e.preventDefault(); return sendFollowUpReply(null); }
+  if (e.target.closest("[data-item]")) { e.preventDefault(); return card?.declining ? decideItem("decline") : sendItemReply(); }
   const form = e.target.closest("[data-ask]");
   if (!form) return;
   e.preventDefault();
@@ -661,7 +706,7 @@ el.addEventListener("pointerdown", (e) => { if (TYPING.has(e.target.id)) invoke(
 // which is kept on the card as it is typed.
 el.addEventListener("input", (e) => {
   if (TYPING.has(e.target.id) && aloud()) hush();
-  if (e.target.id === "fnote" && card?.kind === "followup_ask") { card.note = e.target.value; showCount(); }
+  if (e.target.id === "fnote" && noteCard()) { card.note = e.target.value; showCount(); if (card.kind === "item") showSend(); }
 });
 // Keys while the notch has focus: Esc folds the card away; on a Confirm, Y confirms and N declines (not while typing).
 window.addEventListener("keydown", (e) => {
@@ -1330,8 +1375,9 @@ listen("brenda://voice", ({ payload: e }) => {
     return;
   }
   if (!config?.signedIn) return;
-  // A follow-up's ask is open: the talk keys write its note instead of asking her (phase 4, 8 October 2026).
-  if (card?.kind === "followup_ask" && card.phase === "ask" && dictate(e)) return;
+  // A follow-up's ask is open (phase 4, 8 October 2026), or a message's reply box or a request's reason box (phase 6): the
+  // talk keys write into it instead of asking her.
+  if (noteCard() && dictate(e)) return;
   if (e.phase === "listening") {
     if (card?.kind === "voice" && card.phase === "listening") {
       card.level = e.level;
@@ -1505,16 +1551,24 @@ function followUpCard(n) {
 }
 const askCard = (w, n) => ({ kind: "followup_ask", phase: "ask", w, n: n ?? null, choice: null, note: "", factsOpen: false, dictating: null, dictMessage: null, sticky: true });
 
-/** The asker's assistant: theirs, or the workspace's for its own collection before the team report. */
-const askerOf = (w) => (w.asker ? assistantOf(w.asker.assistant) : ws());
+/** Asked in a conversation (phase 6): the reply is posted there for everyone; null for an ordinary follow-up or an older server. */
+const threadOf = (w) => (w.thread && typeof w.thread === "object" && typeof w.thread.where === "string" && w.thread.where.trim() ? w.thread : null);
+/** The asker's assistant: theirs, or the workspace's for its own collection before the team report; in a thread the person's own. */
+const askerOf = (w) => (threadOf(w) ? me() : w.asker ? assistantOf(w.asker.assistant) : ws());
 
 function followUpAskView() {
   const c = card, w = c.w, from = askerOf(w), ra = from.name;
   const m = moodOf();
+  const thread = threadOf(w);
+  const everyone = thread && !thread.direct ? " for everyone there" : "";
   if (c.phase === "sent") {
     const notNow = c.sent === "not_now";
     const label = FU_CHOICES.find(([k]) => k === c.sent)?.[1] ?? "";
-    return `<div class="row fade">${face({ ...m, who: from })}<div class="grow"><p class="title wrap">${notNow ? `Told ${esc(ra)} you can't answer right now.` : `Sent. ${esc(ra)} gets your answer.`}</p><p class="sub">${notNow ? `${esc(ra)} gets what your work shows instead.` : `Your answer: ${esc(label)}${c.sentNote ? `, “${esc(c.sentNote)}”` : ""}`}</p></div></div>
+    const title = thread
+      ? notNow ? `Done. ${esc(ra)} says in ${esc(thread.where)} that you can't answer right now.` : `Sent. Your reply is posted in ${esc(thread.where)}${everyone}.`
+      : notNow ? `Told ${esc(ra)} you can't answer right now.` : `Sent. ${esc(ra)} gets your answer.`;
+    const sub = notNow ? (thread ? "" : `${esc(ra)} gets what your work shows instead.`) : `Your answer: ${esc(label)}${c.sentNote ? `, “${esc(c.sentNote)}”` : ""}`;
+    return `<div class="row fade">${face({ ...m, who: from })}<div class="grow"><p class="title wrap">${title}</p>${sub ? `<p class="sub">${sub}</p>` : ""}</div></div>
       <div class="actions"><button class="btn primary" data-act="close">OK</button></div>`;
   }
   if (c.phase === "gone") {
@@ -1522,10 +1576,12 @@ function followUpAskView() {
       <div class="actions">${c.n ? `<button class="btn primary" data-act="read" data-id="${esc(c.n.id)}">OK</button>` : `<button class="btn primary" data-act="close">OK</button>`}</div>`;
   }
   const by = w.deadlineAt ? byWhen(w.deadlineAt) : "";
-  const due = w.asker
+  const due = thread
+    ? `${by ? `Reply by ${by}. ` : ""}Your reply is posted in ${thread.where}${everyone}. If you don't reply, ${ra} says so there.`
+    : w.asker
     ? `${by ? `Reply by ${by}. ` : ""}If you don't, ${ra} gets what your work shows.`
     : `${by ? `Reply by ${by}. ` : ""}Your reply goes in the report your team lead, the owner and HR receive.`;
-  const facts = (Array.isArray(w.facts) ? w.facts : []).filter((l) => typeof l === "string" && l.trim()).slice(0, 12);
+  const facts = thread ? [] : (Array.isArray(w.facts) ? w.facts : []).filter((l) => typeof l === "string" && l.trim()).slice(0, 12);
   const task = boredroomPath(w.taskHref);
   const off = busy ? "disabled" : "";
   return `<div class="row top fade">${face({ ...m, who: from })}<div class="grow"><p class="title wrap">${esc(w.title)}</p><p class="sub">${esc(due)}</p></div></div>
@@ -1545,7 +1601,7 @@ const talkKeys = () => (voice.enabled && voice.modelReady
 /** Under the note: the microphone while the talk keys are held, the words being written out, or why it could not listen. */
 function dictView() {
   const c = card;
-  if (c?.kind !== "followup_ask") return "";
+  if (!noteCard()) return "";
   if (c.dictating === "listening") {
     return `<div class="dict"><span class="mic"><span class="rec-dot"></span><span class="clock live" id="vtime" role="timer">${mss(voiceSeconds(c))}</span></span><span class="cap">Listening. Let go of <kbd>${esc(voice.shortcut)}</kbd> when you're done.</span></div><div class="wave live" aria-hidden="true"><canvas id="wave"></canvas></div>`;
   }
@@ -1556,7 +1612,7 @@ function dictView() {
 const countText = (s) => { const n = [...String(s ?? "")].length; return n > FU_COUNT_FROM ? `${n}/${FU_NOTE_MAX}` : ""; };
 function showCount() {
   const t = document.getElementById("fcount");
-  if (!t || card?.kind !== "followup_ask") return;
+  if (!t || !noteCard()) return;
   const next = countText(card.note), was = t.textContent;
   if (next === was) return;
   t.textContent = next;
@@ -1659,11 +1715,18 @@ function openWaiting(id) {
   openCard(askCard(w, n));
 }
 
-/** The day card's waiting asks, at most two, each with Reply (the rest wait in Boredroom). */
+/**
+ * The day card's "Waiting for you", at most two (the rest wait in Boredroom): follow-up asks first, each with Reply, then
+ * what other people's assistants brought (phase 6, 8 October 2026), oldest first: a request with Answer, a message or a
+ * reply with Read.
+ */
 function waitingView() {
-  const list = waitingList();
-  if (!list.length) return "";
-  return `<ul class="list fade" aria-label="Waiting for your reply">${list.slice(0, 2).map((w) => `<li><span class="t">${esc(w.title)}</span><button class="btn" data-act="fu-open" data-id="${esc(w.id)}">Reply</button></li>`).join("")}</ul>`;
+  const rows = [
+    ...waitingList().map((w) => ({ id: w.id, title: w.title, act: "fu-open", label: "Reply" })),
+    ...itemWaiting().map((w) => ({ id: w.id, title: w.title || itemTitle(w), act: "ai-open", label: w.kind === "request" ? "Answer" : "Read" })),
+  ].slice(0, 2);
+  if (!rows.length) return "";
+  return `<ul class="list fade" aria-label="Waiting for you">${rows.map((r) => `<li><span class="t">${esc(r.title)}</span><button class="btn" data-act="${r.act}" data-id="${esc(r.id)}">${r.label}</button></li>`).join("")}</ul>`;
 }
 
 /** After a poll: the ask on the card was answered on the web, ran out of time or was cancelled meanwhile. */
@@ -1675,8 +1738,9 @@ function followUpClosedElsewhere() {
 }
 
 /**
- * The talk keys while an ask is open: the waveform and the time under the note while they are held, then the words heard
- * added to the note (never sent to her). Returns whether the event was the card's.
+ * The talk keys while an ask is open, or a message's reply box or a request's reason box (phase 6): the waveform and the
+ * time under the box while they are held, then the words heard added to it (never sent to her). Returns whether the event
+ * was the card's.
  */
 function dictate(e) {
   const c = card;
@@ -1695,7 +1759,7 @@ function dictate(e) {
     c.note = cleanNote(before ? `${before} ${e.text ?? ""}` : e.text);
     c.dictating = null;
     if (input) input.value = c.note;
-    showDictation(); showCount(); Sound.play("tick");
+    showDictation(); showCount(); if (c.kind === "item") showSend(); Sound.play("tick");
     return true;
   }
   if (e.phase === "limit") return true;
@@ -1739,6 +1803,11 @@ const MENTION_CARDS = {
   "brenda.mention_reply": { pill: `<span class="pill">Reply</span>`, sound: "reply", long: true },
   "brenda.mention_confirm": { pill: `<span class="pill warn">Confirm</span>`, sound: "attention", long: true },
   "brenda.mention_private": { pill: `<span class="pill">Only you</span>`, sound: "notify", long: true },
+  // Tagging someone else's assistant (phase 6, 8 October 2026): to its owner, "Olu asked your Brenda in #design" with
+  // what it said (or that it shared privately, or passed it on); to the person who tagged it, "Ben's Brenda replied in
+  // #design" with the reply. Both are the assistant's own words, drawn as plain text like a reply.
+  "assistant.tagged": { pill: `<span class="pill">Tagged</span>`, sound: "reply", long: true },
+  "assistant.thread_reply": { pill: `<span class="pill">Reply</span>`, sound: "reply", long: true },
 };
 const PRIVATE_LEAD = /^Only visible to you\.\s*/;
 /** A mention notification's card, or null (own keys only: a type is never looked up on the prototype). */
@@ -1752,12 +1821,331 @@ function mentionView(n) {
   // Under the title: the time when the words follow below; otherwise the words themselves (a Confirm's summary, a note).
   let under = at ? `<p class="cap">${esc(at)}</p>` : "", words = "";
   if (n.type === "message.mention") words = body ? `<p class="quote fade">“${esc(body)}”</p>` : "";
-  else if (n.type === "brenda.mention_reply") words = body ? `<p class="answer fade">${esc(body)}</p>` : "";
+  else if (n.type === "brenda.mention_reply" || n.type === "assistant.tagged" || n.type === "assistant.thread_reply") words = body ? `<p class="answer fade">${esc(body)}</p>` : "";
   else if (answer !== null) words = answer ? `<p class="answer fade">${esc(answer)}</p>` : "";
   else if (body) under = `<p class="sub">${esc(body)}</p>`;
   return `<div class="row top fade">${face(moodOf())}<div class="grow"><p class="title wrap">${esc(n.title)}</p>${under}</div>${mentionCard(n.type).pill}</div>
     ${words}
     <div class="actions">${href ? `<button class="btn" data-act="open-href" data-href="${esc(href)}">Open${icon("open")}</button>` : ""}<button class="btn primary" data-act="read" data-id="${esc(n.id)}">OK</button></div>`;
+}
+
+// ---- assistants talk to each other -------------------------------------------------------------------------------
+// Owner decision, 8 October 2026 (personal assistants, phase 6; the header says what the cards do). The desktop state's
+// `assistantItems` (src/server/services/desktop.ts, DesktopAssistantItems) is { ready, waiting, updates }: `waiting` are
+// the messages, requests and replies brought to this person that still wait for them, oldest first, each with its sender
+// and their assistant (a request with the server's `lines` for what would change and the sender's `note`); `updates` are
+// the person's own requests decided or expired and replies to their messages in the last day. Every press goes to
+// /assistant-items/<id>/… with the person's own permissions (seen; reply { body }; accept; decline { reason }), and the
+// item's notification is then marked read. Accept is done on the server, as the person, and answers with what happened
+// (a request that couldn't be done still answers 200, `failed` with the words why). The card's titles and lines are the
+// contract's words (src/lib/assistant-items.ts, ASSISTANT_ITEM_WORDS, which this page cannot import). Nothing another
+// person wrote is drawn as Markdown or a link, and only Boredroom paths open.
+
+/** Each phase 6 notification's badge on the plain card (an older server, or an item not in the desktop state). */
+const ITEM_PILLS = { "assistant.message": "Message", "assistant.request": "Request", "assistant.reply": "Reply", "assistant.outcome": "Request update" };
+/** The notifications that bring the person an item that waits for them. */
+const ITEM_NOTES = ["assistant.message", "assistant.request", "assistant.reply"];
+const ITEM_NOTE_MAX = 280;  // ASSISTANT_ITEM_LIMITS.replyMax and .declineReasonMax (cleanNote and the counter use the same 280)
+/** A task status as the done line words it (STATUS_WORDS on the server, inside a sentence). */
+const TASK_WORDS = { todo: "to do", in_progress: "in progress", blocked: "blocked", in_review: "in review", completed: "done" };
+/** A request's outcome as its sender's badge (itemBadge on the server): a word with every colour. */
+const OUTCOME_BADGE = { done: { label: "Done", tone: "ok" }, failed: { label: "Couldn't be done", tone: "bad" }, declined: { label: "Declined", tone: "" }, expired: { label: "Expired", tone: "" }, cancelled: { label: "Cancelled", tone: "" }, accepted: { label: "Doing it", tone: "" } };
+
+const assistantItems = () => (data?.assistantItems && data.assistantItems.ready === true ? data.assistantItems : null);
+const str = (v) => (typeof v === "string" ? v : "");
+const isPerson = (p) => !!p && typeof p === "object" && typeof p.name === "string";
+const isWaiting = (x) => !!x && typeof x === "object" && typeof x.id === "string" && ["message", "request", "reply"].includes(x.kind) && isPerson(x.sender);
+const isUpdate = (x) => !!x && typeof x === "object" && typeof x.id === "string" && ["request", "reply"].includes(x.kind) && isPerson(x.other);
+const itemWaiting = () => { const a = assistantItems(); return (Array.isArray(a?.waiting) ? a.waiting : []).filter(isWaiting); };
+const itemUpdates = () => { const a = assistantItems(); return (Array.isArray(a?.updates) ? a.updates : []).filter(isUpdate); };
+/** "Olu's Max": a person's first name and their assistant's name (the assistant's alone without a name). */
+const whose = (p) => { const f = firstName(p?.name), a = assistantOf(p?.assistant).name; return f ? `${f}'s ${a}` : a; };
+/** "Olu's" (or "their") before a noun. */
+const possessive = (p, fallback) => { const f = firstName(p?.name); return f ? `${f}'s` : fallback; };
+/** When a request expires, as the web words it: "Sun 11 Oct, 14:00". */
+const expiresWhen = (iso) => { const d = new Date(iso); return Number.isNaN(d.getTime()) ? "" : `${dayOf(d)}, ${hhmm(d)}`; };
+/** Words the server may have quoted already (a notification's body) without their own quote marks, to be quoted once. */
+const unquote = (s) => { const t = String(s ?? "").trim(); return /^“[\s\S]*”$/.test(t) ? t.slice(1, -1).trim() : t; };
+const sameItem = (c) => card?.kind === "item" && card.w.id === c.w.id;
+/** Whether the open card has a one-line box the person is filling: a follow-up's note, a reply, a reason for declining. */
+const noteCard = () => (card?.kind === "followup_ask" && card.phase === "ask") || (card?.kind === "item" && card.phase === "open" && !!(card.replying || card.declining));
+
+/** A waiting item's card title, in the contract's words. */
+function itemTitle(w) {
+  if (w.kind === "message") return `${whose(w.sender)} passed on a message`;
+  if (w.kind === "request") return `${whose(w.sender)} asks you to accept a change`;
+  return `${firstName(w.sender.name) || "Someone"} replied to your message`;
+}
+
+/** The card an item's notification opens, or null for the plain notification card (an older server, or not known). */
+function itemCard(n) {
+  if (!assistantItems() || typeof n?.type !== "string") return null;
+  if (n.type === "assistant.message" || n.type === "assistant.request") {
+    const kind = n.type === "assistant.message" ? "message" : "request";
+    const w = itemWaiting().find((x) => x.id === n.resource_id && x.kind === kind);
+    return w ? itemCardOf(w, n) : null;
+  }
+  if (n.type === "assistant.reply" || n.type === "assistant.outcome") return { kind: "item_update", n, u: updateOf(n.resource_id), closeAfter: REPLY_CLOSE_MS };
+  return null;
+}
+/** What came back about `id`: one of the updates, or a reply still waiting to be seen, drawn as one. */
+function updateOf(id) {
+  const u = itemUpdates().find((x) => x.id === id);
+  if (u) return u;
+  const w = itemWaiting().find((x) => x.id === id && x.kind === "reply");
+  return w ? { id: w.id, kind: "reply", title: str(w.title) || itemTitle(w), body: w.body, status: "delivered", other: w.sender, at: w.createdAt, href: w.href } : null;
+}
+const itemCardOf = (w, n) => (w.kind === "reply"
+  ? { kind: "item_update", n: n ?? null, u: updateOf(w.id), closeAfter: REPLY_CLOSE_MS }
+  : { kind: "item", phase: "open", w, n: n ?? null, note: "", replying: false, declining: false, dictating: null, dictMessage: null, sticky: true });
+
+/** A waiting item opened from the day card (its notification may have been shown and folded away already). */
+function openItem(id) {
+  const w = itemWaiting().find((x) => x.id === id);
+  if (!w) return;
+  const n = (data?.notifications ?? []).find((x) => ITEM_NOTES.includes(x.type) && x.resource_id === id) ?? null;
+  if (n) shown.add(n.id);
+  openCard(itemCardOf(w, n));
+}
+
+/** The reply box or the reason box, under a message or a request; the card keeps its place (no second blur-in). */
+const itemNoteBox = (placeholder) => `<form class="fu-note fade" data-item><div class="fu-field"><input class="field" id="fnote" name="note" maxlength="${ITEM_NOTE_MAX}" value="${esc(card.note)}" placeholder="${esc(placeholder)}" aria-label="${esc(placeholder)}" aria-describedby="fhold fdict" autocomplete="off" spellcheck="true" ${busy ? "disabled" : ""}>${talkKeys()}</div><div class="fu-meta"><div class="grow" id="fdict">${dictView()}</div><span class="cap num" id="fcount">${countText(card.note)}</span></div></form>`;
+
+function itemView() {
+  const c = card, w = c.w, from = assistantOf(w.sender.assistant), m = moodOf();
+  const first = firstName(w.sender.name);
+  const off = busy ? "disabled" : "";
+  const head = (title, under, o = {}) => `<div class="row top fade">${face({ ...m, who: from })}<div class="grow"><p class="title ${o.full ? "full" : "wrap"}"${o.alert ? ' role="alert"' : ""}>${esc(title)}</p>${under}</div></div>`;
+  if (c.phase === "sent") {
+    return `${head(`Sent. ${from.name} passes it to ${first || "them"}.`, `<p class="sub">Your reply: “${esc(c.sentNote)}”</p>`)}
+      <div class="actions"><button class="btn primary" data-act="close">OK</button></div>`;
+  }
+  if (c.phase === "gone") {
+    return `${head(itemTitle(w), `<p class="sub">${esc(c.message)}</p>`)}
+      <div class="actions">${c.n ? `<button class="btn primary" data-act="read" data-id="${esc(c.n.id)}">OK</button>` : `<button class="btn primary" data-act="close">OK</button>`}</div>`;
+  }
+  if (c.phase === "result") {
+    const r = itemResult(c);
+    // "Couldn't be done" is announced only right after the press (as on the web).
+    return `${head(r, `<p class="sub">${esc(`${from.name} lets ${first || "them"} know.`)}</p>`, { full: true, alert: c.item?.status === "failed" })}
+      <div class="actions"><button class="btn primary" data-act="close">OK</button></div>`;
+  }
+  const at = w.createdAt ? atWhen(w.createdAt) : "";
+  if (w.kind === "message") {
+    const body = str(w.body).trim();
+    const how = w.tidied ? `${from.name} reworded it at ${possessive(w.sender, "their")} request.` : `${possessive(w.sender, "Their")} words, as sent.`;
+    return `${head(itemTitle(w), at ? `<p class="cap">${esc(at)}</p>` : "")}
+      ${body ? `<p class="quote fade">“${esc(body)}”</p>` : ""}
+      <p class="cap fade">${esc(how)}</p>
+      ${c.replying ? itemNoteBox("Reply in one line") : ""}
+      <div class="actions stick">${c.replying
+        ? `<button class="btn ghost" data-act="ai-back" ${off}>Back</button><button class="btn primary accent" data-act="ai-send" ${busy || !cleanNote(c.note) ? "disabled" : ""}>Send</button>`
+        : `<button class="btn ghost" data-act="ai-seen" ${off}>Seen</button>${w.canReply !== false ? `<button class="btn" data-act="ai-reply" ${off}>Reply</button>` : ""}`}</div>`;
+  }
+  const lines = (Array.isArray(w.lines) ? w.lines : []).filter((l) => typeof l === "string" && l.trim()).slice(0, 8);
+  const note = str(w.note).trim();
+  // The date and time stay on one line.
+  const exp = w.expiresAt ? expiresWhen(w.expiresAt).replace(/ /g, " ") : "";
+  return `${head(itemTitle(w), `<p class="sub">Nothing changes until you accept.${exp ? ` Expires ${esc(exp)}.` : ""}</p>`)}
+    ${lines.length ? `<div class="change fade"><p class="lbl" id="ichange">What would change</p><ul class="facts" aria-labelledby="ichange">${lines.map((l) => `<li>${esc(l)}</li>`).join("")}</ul></div>` : ""}
+    ${note ? `<div class="change fade"><p class="lbl">${esc(possessive(w.sender, "Their"))} note</p><p class="quote">“${esc(note)}”</p></div>` : ""}
+    ${c.declining ? itemNoteBox("Say why, if you like") : ""}
+    <div class="actions stick">${c.declining
+      ? `<button class="btn ghost" data-act="ai-back" ${off}>Back</button><button class="btn primary" data-act="ai-decline" ${off}>Decline</button>`
+      : `<button class="btn ghost" data-act="ai-decline" ${off}>Decline</button><button class="btn primary accent" data-act="ai-accept" ${off}>Accept</button>`}</div>`;
+}
+
+/** What answering a request did, in one line: "Done: added to your to-dos.", "Couldn't be done: …", "Declined.". */
+function itemResult(c) {
+  const it = c.item ?? {};
+  if (it.status === "done") { const words = doneWords(it); return words ? `Done: ${words}.` : "Done."; }
+  if (it.status === "failed") return `Couldn't be done: ${str(it.result?.words).trim() || "Something went wrong, so nothing was changed."}`;
+  if (it.status === "declined") return "Declined.";
+  if (it.status === "expired") return "This request has expired.";
+  if (it.status === "cancelled") return `${firstName(c.w.sender.name) || "They"} cancelled this request.`;
+  if (it.status === "accepted") return `Accepted. ${me().name} is doing it now.`;
+  return c.decided === "decline" ? "Declined." : "Accepted.";
+}
+/** What was done, from the request itself: "added to your to-dos", "“Landing page” is now in review". */
+function doneWords(it) {
+  const p = it.request?.payload && typeof it.request.payload === "object" ? it.request.payload : {};
+  const kind = it.request?.kind ?? p.kind;
+  const task = str(p.taskTitle).trim();
+  if (kind === "add_todo") return "added to your to-dos";
+  if (kind === "set_reminder") return "reminder set";
+  if (kind === "task_status" && task && p.to === "completed" && it.result?.sentForCheck === true) return `“${task}” is sent for a check before it's done`;
+  if (kind === "task_status" && task && Object.hasOwn(TASK_WORDS, p.to)) return `“${task}” is now ${TASK_WORDS[p.to]}`;
+  if (kind === "task_comment" && task) return `comment added to “${task}”`;
+  return str(it.result?.words).trim().replace(/[.!]+$/, "");
+}
+
+/** Reply or Decline opens its box under the card, focused; Back closes it. */
+function openItemNote(which) {
+  const c = card;
+  if (c?.kind !== "item" || c.phase !== "open" || busy) return;
+  if (which === "replying" ? c.w.kind !== "message" || c.w.canReply === false : c.w.kind !== "request") return;
+  Object.assign(c, { replying: which === "replying", declining: which === "declining", note: "", dictating: null, dictMessage: null });
+  error = null; render();
+  document.getElementById("fnote")?.focus();
+}
+function closeItemNote() {
+  const c = card;
+  if (c?.kind !== "item" || busy) return;
+  Object.assign(c, { replying: false, declining: false, note: "", dictating: null, dictMessage: null });
+  error = null; render();
+}
+/** Send lights up once the reply has words (the card's one standout), in place. */
+function showSend() {
+  const b = el.querySelector('[data-act="ai-send"]');
+  if (b) b.disabled = busy || !cleanNote(card?.note);
+}
+
+/**
+ * The item is no longer waiting: off the day card, and, once it was answered from here, its notification read (with the
+ * one on the card, `n`).
+ */
+function forgetItem(id, answered, n = null) {
+  const ids = new Set((data?.notifications ?? []).filter((x) => ITEM_NOTES.includes(x.type) && x.resource_id === id).map((x) => x.id));
+  if (n) ids.add(n.id);
+  if (answered) for (const nid of ids) call("PATCH", org(`/notifications/${encodeURIComponent(nid)}`)).catch(() => {});
+  if (!data) return;
+  if (answered) data.notifications = (data.notifications ?? []).filter((x) => !ids.has(x.id));
+  const a = assistantItems();
+  if (a) data.assistantItems = { ...a, waiting: (Array.isArray(a.waiting) ? a.waiting : []).filter((x) => x?.id !== id) };
+}
+
+/**
+ * A press refused. Closed or gone meanwhile (404, 409: answered on the web, expired, cancelled, already replied), the card
+ * says so in the server's words; anything else (signed in as someone else, not ready, offline) stays on the card under it.
+ */
+function itemRefused(c, err) {
+  Sound.play("error");
+  if (!sameItem(c)) return;
+  if (err?.status === 404 || err?.status === 409) {
+    forgetItem(c.w.id, false);
+    card = { ...card, phase: "gone", message: err?.message || "This was already answered.", dictating: null, sticky: true };
+    render(); return holdThenClose(CLOSE_AFTER_MS);
+  }
+  error = err?.message ?? String(err);
+  render();
+}
+
+/** Seen: the message (or request) is marked seen and the card folds away. Esc never does this. */
+async function markItemSeen() {
+  const c = card;
+  if (c?.kind !== "item" || c.phase !== "open" || busy) return;
+  busy = true; error = null; render();
+  try { await call("POST", org(`/assistant-items/${encodeURIComponent(c.w.id)}/seen`), {}); }
+  catch (err) { busy = false; return itemRefused(c, err); }
+  busy = false;
+  forgetItem(c.w.id, true, c.n);
+  Sound.play("tick");
+  if (sameItem(c)) closeCard();
+  refresh();
+}
+
+/** Send: the one-line reply goes back to the sender through their assistant (it marks the message seen too). */
+async function sendItemReply() {
+  const c = card;
+  if (c?.kind !== "item" || c.phase !== "open" || !c.replying || busy) return;
+  const input = document.getElementById("fnote");
+  c.note = input?.value ?? c.note;
+  const body = cleanNote(c.note);
+  if (!body) { error = "Write your reply first."; Sound.play("error"); return render(); }
+  hush();
+  busy = true; error = null; render();
+  Sound.play("send");
+  try { await call("POST", org(`/assistant-items/${encodeURIComponent(c.w.id)}/reply`), { body }); }
+  catch (err) { busy = false; return itemRefused(c, err); }
+  busy = false;
+  forgetItem(c.w.id, true, c.n);
+  Sound.play("success");
+  if (sameItem(c)) { card = { ...card, phase: "sent", sentNote: body, dictating: null, sticky: true }; render(); holdThenClose(CLOSE_AFTER_MS); }
+  refresh();
+}
+
+/**
+ * Accept or Decline (with the reason, if one was given). Accept is done on the server as the person, through the same
+ * services as Boredroom's own buttons; the card then says what happened.
+ */
+async function decideItem(decision) {
+  const c = card;
+  if (c?.kind !== "item" || c.phase !== "open" || c.w.kind !== "request" || busy) return;
+  if (c.declining) c.note = document.getElementById("fnote")?.value ?? c.note;
+  const reason = decision === "decline" ? cleanNote(c.note) : "";
+  hush();
+  busy = true; error = null; render();
+  if (decision === "accept") Sound.play("send");
+  let r;
+  try { r = await call("POST", org(`/assistant-items/${encodeURIComponent(c.w.id)}/${decision}`), decision === "decline" ? { reason: reason || null } : {}); }
+  catch (err) { busy = false; return itemRefused(c, err); }
+  busy = false;
+  forgetItem(c.w.id, true, c.n);
+  const item = r?.item && typeof r.item === "object" ? r.item : { status: decision === "decline" ? "declined" : "accepted" };
+  Sound.play(item.status === "failed" ? "error" : decision === "accept" ? "success" : "tick");
+  if (sameItem(c)) {
+    card = { ...card, phase: "result", item, decided: decision, dictating: null, sticky: true };
+    render(); holdThenClose(item.status === "failed" ? REPLY_CLOSE_MS : CLOSE_AFTER_MS);
+  }
+  refresh();
+}
+
+/**
+ * After a poll: the request on the card is no longer waiting. It is looked up (it may only have dropped past the first
+ * five), and when it was answered on the web, cancelled or ran out of time meanwhile, the card says so.
+ */
+async function itemClosedElsewhere() {
+  const c = card;
+  if (c?.kind !== "item" || c.phase !== "open" || c.w.kind !== "request" || busy || c.checking || !assistantItems()) return;
+  if (itemWaiting().some((x) => x.id === c.w.id)) return;
+  c.checking = true;
+  let message = null;
+  try {
+    const s = (await call("GET", org(`/assistant-items/${encodeURIComponent(c.w.id)}`)))?.item?.status;
+    if (s === "cancelled") message = `${firstName(c.w.sender.name) || "They"} cancelled this request.`;
+    else if (s === "expired") message = "This request has expired.";
+    else if (typeof s === "string" && s !== "delivered" && s !== "seen") message = "This was already answered.";
+  } catch (err) { if (err?.status === 404) message = "That isn't here any more."; }
+  c.checking = false;
+  if (!message || !sameItem(c) || card.phase !== "open" || busy) return;
+  card = { ...card, phase: "gone", message, dictating: null, sticky: true };
+  render(); holdThenClose(CLOSE_AFTER_MS);
+}
+
+/**
+ * The update card: what came back about the person's own request (accepted and done, couldn't be done, declined, expired)
+ * or a reply to their message. Both assistants' faces, the title, the words (theirs in a quoted bubble, Boredroom's as
+ * plain text), Open and Done.
+ */
+function itemUpdateView() {
+  const c = card, u = c.u, n = c.n, m = moodOf();
+  const other = u ? assistantOf(u.other.assistant) : null;
+  const title = str(u?.title) || str(n?.title);
+  const body = (u ? str(u.body) : str(n?.body)).trim();
+  const href = boredroomPath(u?.href) ?? boredroomPath(n?.href);
+  const at = u?.at ? atWhen(u.at) : n?.created_at ? atWhen(n.created_at) : "";
+  const line = u ? `From ${whose(u.other)}${at ? `, ${at}` : ""}` : at;
+  const reply = u ? u.kind === "reply" : n?.type === "assistant.reply";
+  const badge = reply ? { label: "Reply", tone: "" } : u && Object.hasOwn(OUTCOME_BADGE, u.status) ? OUTCOME_BADGE[u.status] : { label: "Request update", tone: "" };
+  const quoted = body && (reply || (u?.status === "declined" && body !== "No reason given."));
+  const text = quoted ? `<p class="quote fade">“${esc(unquote(body))}”</p>` : body ? `<p class="answer fade">${esc(body)}</p>` : "";
+  return `<div class="row top fade"><span class="faces">${face(m)}${other ? face({ ...m, who: other }) : ""}</span><div class="grow"><p class="title wrap">${esc(title)}</p>${line ? `<p class="cap">${esc(line)}</p>` : ""}</div><span class="pill ${badge.tone}">${badge.label}</span></div>
+    ${text}
+    <div class="actions">${href ? `<button class="btn" data-act="open-href" data-href="${esc(href)}">Open${icon("open")}</button>` : ""}<button class="btn primary" data-act="ai-ack" ${busy ? "disabled" : ""}>Done</button></div>`;
+}
+
+/** Done on an update: its notification read, and a reply to the person's message seen (they have read it here). */
+async function ackUpdate() {
+  const c = card;
+  if (c?.kind !== "item_update" || busy) return;
+  const reply = c.u?.kind === "reply" && itemWaiting().some((x) => x.id === c.u.id) ? c.u.id : null;
+  if (reply) { call("POST", org(`/assistant-items/${encodeURIComponent(reply)}/seen`), {}).catch(() => {}); forgetItem(reply, false); }
+  if (c.n) {
+    try { await call("PATCH", org(`/notifications/${encodeURIComponent(c.n.id)}`)); }
+    catch (err) { error = err?.message ?? String(err); Sound.play("error"); return render(); }
+    if (data) data.notifications = (data.notifications ?? []).filter((x) => x.id !== c.n.id);
+  }
+  closeCard();
 }
 
 // ---- poking and admiring Brenda -----------------------------------------------------------------------------------

@@ -28,7 +28,12 @@
    Asking your assistant in Messages (owner decision, 8 October 2026: phase 5): the mention cards add no styles of their
    own. Someone's message is the follow-up's quoted bubble (`.quote`), the assistant's reply or private answer the answer's
    plain text (`.answer`), and the title may run to two lines (`.title.wrap`). No new orange: the badges are neutral
-   words, and amber (`.pill.warn`) marks only the one waiting for the person's Confirm. */
+   words, and amber (`.pill.warn`) marks only the one waiting for the person's Confirm.
+   Assistants talk to each other (owner decision, 8 October 2026: personal assistants, phase 6): the message, request and
+   update cards are built from the follow-up's parts (the quoted bubble, the one-line box with the talk keys, two
+   overlapping faces) plus a request's "What would change" panel, a result line that may run long, and actions that stay
+   in view. Orange there: Send on a reply and Accept on a request, each its card's one standout; badges keep their status
+   colours (green done, red couldn't be done, neutral words for the rest). */
 
 /* Inter and Geist Mono, from @fontsource-variable (SIL Open Font License, fonts/OFL.txt). Nothing loads remotely. */
 @font-face { font-family: "Inter Variable"; font-style: normal; font-display: swap; font-weight: 100 900; src: url(fonts/inter-latin-ext-wght-normal.woff2) format("woff2");
@@ -438,6 +443,19 @@ kbd { display: inline-flex; align-items: center; justify-content: center; box-si
 /* Two assistants side by side: the person's own, then the other one overlapping it, cut out of it by the island's black. */
 .faces { display: inline-flex; flex: none; margin-top: 2px; }
 .faces .face + .face { margin-left: -7px; outline: 2px solid var(--island); }
+
+/* Assistants talk to each other (owner decision, 8 October 2026: personal assistants, phase 6). A request's "What would
+   change" and the sender's note: a small label over the near-black panel of lines (the follow-up's `.facts`, here in the
+   text colour, since it is what the person accepts) or over the quoted bubble. */
+.change { display: grid; gap: 6px; }
+.lbl { font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: .03px; color: var(--secondary); }
+.change .facts { color: var(--foreground); max-height: 120px; }
+.change .quote { max-height: 80px; }
+/* What answering did ("Couldn't be done: …" with the reason) is read whole, never cut. */
+.title.full { white-space: normal; overflow-wrap: anywhere; }
+/* The message's and the request's actions stay in view at the bottom of the island when the card is taller than the stage
+   (a long message or note with the reply box open), as the follow-up's request card does. */
+.notch > .actions.stick { position: sticky; bottom: -16px; margin: 0 -16px -16px; padding: 8px 16px 16px; background: var(--island); z-index: 1; }
 
 /* Typing to Brenda: the web's prompt pill at the notch's size (a solid fill-1 surface with a hairline ring that turns
    orange while it has focus), and a round 32px send button, orange with a near-black arrow once there is something to

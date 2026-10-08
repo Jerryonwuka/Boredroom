@@ -51,7 +51,8 @@ const done = text(80).optional();
 
 // `followUpBatchId`: a confirmed follow-up's batch, so a saved chat keeps its live card (owner decision, 8 October 2026:
 // personal assistants, phase 4). Only an id: the card reads the follow-up as it is now, as the person may see it.
-const actionSchema = z.object({ kind: text(80), summary: told(2000), href: href.optional(), followUpBatchId: z.string().uuid().optional() });
+// `assistantItemId`: the same for a message, request or report note sent to another assistant (phase 6).
+const actionSchema = z.object({ kind: text(80), summary: told(2000), href: href.optional(), followUpBatchId: z.string().uuid().optional(), assistantItemId: z.string().uuid().optional() });
 // The kinds of Proposal (server/services/copilot.ts), each with the label it was marked with ("Added", "Not done").
 const proposalSchema = z.discriminatedUnion("kind", [
   z.object({

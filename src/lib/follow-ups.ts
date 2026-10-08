@@ -355,6 +355,11 @@ export type FollowUpView = {
   askedAt: string | null; deadlineAt: string | null; repliedAt: string | null; answeredAt: string | null; createdAt: string;
   failure: FollowUpFailure | null;
   viewer: "requester" | "subject" | "reader";
+  /**
+   * Asked by tagging the subject's assistant in a conversation (phase 6): the reply is posted there, for everyone in it.
+   * `where` is "#Design", "Everyone" or "your chat with Olu Adeyemi"; null for an ordinary follow-up (or before 0043).
+   */
+  thread?: { mode: "facts" | "ask"; where: string; direct: boolean } | null;
   /** The viewer is the subject and their assistant is asking them. */
   canReply: boolean;
   /** The viewer is the requester and it is still pending or asking. */

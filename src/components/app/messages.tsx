@@ -11,6 +11,9 @@
  * person's own assistant first, then the conversation's people; components/app/mention-autocomplete) and sends the
  * picked mentions as tokens beside the text; a message's menu offers "Withdraw reply" on an assistant's reply to the
  * person who asked and to whoever runs the conversation (components/app/mention-thread draws the rest in the thread).
+ * Phase 6 (owner decision, 8 October 2026: assistants talk to each other): the suggestions also offer the conversation's
+ * people's assistants ("Ben's Brenda"); while one is tagged the line under the pill says how it answers, and "Withdraw
+ * reply" is offered to its owner too (the server says who may, `mention_reply.canWithdraw`).
  */
 import { createContext, useContext, useEffect, useId, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
@@ -33,7 +36,7 @@ import { cn } from "@/lib/utils";
 import { Avatar } from "@/components/ui/avatar";
 import { useAssistant } from "@/components/app/assistant-context";
 import { MentionListbox, useMentionAutocomplete, type ComposerMentions, type MentionPerson } from "@/components/app/mention-autocomplete";
-import { MENTION_WORDS } from "@/lib/mentions";
+import { MENTION_WORDS, type TaggableAssistant } from "@/lib/mentions";
 import type { Presence as PresenceStatus } from "@/lib/presence";
 
 type TaskRef = { id: string; title: string } | null;
@@ -79,6 +82,8 @@ export function focusComposer() {
 /** No people and no mentions: the composer as it was before migration 0041 (contract A.2). */
 const NO_PEOPLE: MentionPerson[] = [];
 const NO_MENTIONS: ComposerMentions = { ready: false, assistantAllowed: false };
+/** No one else's assistant to tag: before migration 0043 (phase 6, contract A.3). */
+const NO_TAGGABLE: TaggableAssistant[] = [];
 
 /** The small remove button on the composer's reply and task strips. */
 const STRIP_X = "grid size-7 shrink-0 place-items-center rounded-lg text-secondary transition-colors duration-75 hover:bg-fill-1 hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ring)] pointer-coarse:size-10";
@@ -94,8 +99,13 @@ const STRIP_X = "grid size-7 shrink-0 place-items-center rounded-lg text-seconda
  * suggestions above the pill; on send the picked (or typed in full) mentions go with the text as tokens, which the
  * server checks. While the person's own assistant is tagged, the line under the pill says that it replies for
  * everyone to see. Before 0041 (`ready` false) the composer is exactly as it was.
+ *
+ * Phase 6 (owner decision, 8 October 2026: assistants talk to each other): `taggable` are the conversation's people's
+ * assistants (`Thread.taggable`, none before 0043), offered after the people. While one of them is tagged the line
+ * under the pill says it answers from its owner's work or asks them, and that anything not everyone here can see goes
+ * only to the person asking.
  */
-export function Composer({ orgSlug, conversationId, task, prefill, placeholder, canVoice = true, people = NO_PEOPLE, mentions = NO_MENTIONS }: { canVoice?: boolean; orgSlug: string; conversationId: string; task: TaskRef; prefill?: string; placeholder: string; people?: MentionPerson[]; mentions?: ComposerMentions }) {
+export function Composer({ orgSlug, conversationId, task, prefill, placeholder, canVoice = true, people = NO_PEOPLE, mentions = NO_MENTIONS, taggable = NO_TAGGABLE }: { canVoice?: boolean; orgSlug: string; conversationId: string; task: TaskRef; prefill?: string; placeholder: string; people?: MentionPerson[]; mentions?: ComposerMentions; taggable?: TaggableAssistant[] }) {
   const router = useRouter();
   const [body, setBody] = useState(prefill ?? "");
   const { personal } = useAssistant();
@@ -144,7 +154,7 @@ export function Composer({ orgSlug, conversationId, task, prefill, placeholder, 
     finally { voiceSending.current = false; setSendingVoice(false); }
   };
   const grow = (el: HTMLTextAreaElement) => { el.style.height = "auto"; el.style.height = `${Math.min(el.scrollHeight, 200)}px`; };
-  const ac = useMentionAutocomplete({ enabled: mentions.ready && !card, value: body, setValue: setBody, boxRef: ref, people, assistant: personal, assistantAllowed: mentions.assistantAllowed, onInserted: grow });
+  const ac = useMentionAutocomplete({ enabled: mentions.ready && !card, value: body, setValue: setBody, boxRef: ref, people, assistant: personal, assistantAllowed: mentions.assistantAllowed, others: taggable, onInserted: grow });
   const send = async () => {
     const text = body.trim();
     if (!text || pending) return;
@@ -221,7 +231,8 @@ export function Composer({ orgSlug, conversationId, task, prefill, placeholder, 
         </div>
         <p className="mt-2 px-3 text-xs font-medium text-subtle">{voice.recording ? "Speak, then press Send. Up to ten minutes." : pending || sendingVoice ? "Sending…"
           : ac.assistantTagged ? MENTION_WORDS.composerHint(personal.name)
-            : `Enter sends, Shift+Enter starts a new line.${canRecord ? " The microphone records a voice note." : ""}`}</p>
+            : ac.otherTagged ? MENTION_WORDS.otherHint(ac.otherTagged.firstName, ac.otherTagged.assistant.name)
+              : `Enter sends, Shift+Enter starts a new line.${canRecord ? " The microphone records a voice note." : ""}`}</p>
       </div>
     </form>
   );

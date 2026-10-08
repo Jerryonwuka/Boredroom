@@ -381,7 +381,7 @@ describe("caps", () => {
     await expect(ask(olu, [ben, ada], pricing)).rejects.toMatchObject({ status: 403, message: "I can't ask any of them: Ada Employee (doesn't hold or check that task), Ben Employee (asked twice today already)." });
     const withDavid = await ask(olu, [ben, david], pricing);
     expect(withDavid).toMatchObject({ kind: "group", created: [{ subjectName: "David Manager" }], skipped: [{ name: "Ben Employee", reason: "asked twice today already" }] });
-    expect(await planFollowUps(olu, { people: ["Ben"], taskId: pricing })).toEqual({ ok: false, error: "You've already followed up with Ben about this twice today. The answers are in Follow-ups." });
+    expect(await planFollowUps(olu, { people: ["Ben"], taskId: pricing })).toEqual({ ok: false, error: "You've already followed up with Ben about this twice today. The answers are in Between assistants, under Sent." });
     await expect(ask(olu, [ben], pricing)).rejects.toMatchObject({ status: 409, code: "FOLLOW_UP_LIMIT" });
     const mixed = await ask(olu, [ben, ada], null);
     expect(mixed.kind).toBe("group");

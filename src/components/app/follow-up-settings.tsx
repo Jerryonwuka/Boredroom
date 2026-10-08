@@ -105,7 +105,8 @@ export function FollowUpPreferenceSettings({ orgSlug, initial, name, impersonate
         {/* Before 0039 nothing can be saved and there is nothing about them to see, so the card ends at its last row. */}
         {ready ? (
           <SettingsFooter status={status ?? undefined} busy={busy ? "Saving…" : undefined}>
-            <Link href={`/app/${orgSlug}/home/follow-ups/about-you`} className={buttonVariants({ variant: "secondary", size: "sm" })}>Asked about you</Link>
+            {/* "Asked about you" lives in Between assistants since phase 6: Received → Follow-ups about you. */}
+            <Link href={`/app/${orgSlug}/home/assistants/received?type=followups`} className={buttonVariants({ variant: "secondary", size: "sm" })}>Asked about you</Link>
           </SettingsFooter>
         ) : null}
       </div>

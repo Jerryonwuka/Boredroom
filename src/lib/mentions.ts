@@ -2,6 +2,12 @@
  * @mentions in Messages (owner decision, 8 October 2026: personal assistants, phase 5). "@Max …" in a conversation makes
  * the person's OWN assistant reply in the thread; "@Ben" highlights Ben and notifies him.
  *
+ * Phase 6 (owner decision, 8 October 2026: personal assistants, phase 6: "I want all the bots to be able to communicate
+ * with each other"): "@Ben's Brenda, where is the deck?" tags SOMEONE ELSE's assistant. Ben's assistant answers in the
+ * thread from Ben's work, under the follow-up rules, or asks Ben once and posts his reply; anything that would change
+ * Ben's account becomes a request Ben accepts. The mention row names the assistant's owner; the statuses gain 'asked'
+ * (the assistant asked its owner and said so in the thread); the notes gain the owner's reasons.
+ *
  * This file is what the server, the composer, the thread and the notch share: the statuses of an assistant mention, the
  * limits, the tokens the composer sends beside the body, the pure text helpers (where a label stands in a body, the
  * body cut into pieces for drawing, the "@…" being typed at the caret), the views a thread reads, and the fixed words.
@@ -12,10 +18,13 @@
  * is plain text. Message text and answers are plain text everywhere: nothing here turns them into Markdown or links.
  */
 import type { AssistantProfile } from "@/lib/assistant-look";
+import type { FollowUpFacts } from "@/lib/follow-ups";
 
 // ---- Statuses ----------------------------------------------------------------------------------------------------------
 
-export const MENTION_STATUSES = ["pending", "thinking", "answered", "private", "waiting_confirm", "refused", "failed", "withdrawn"] as const;
+// 'asked' (phase 6): someone else's assistant asked its owner and posted "I've asked Ben. I'll reply here."; it moves to
+// 'answered' when the reply (or the deadline) is posted.
+export const MENTION_STATUSES = ["pending", "thinking", "answered", "private", "waiting_confirm", "refused", "failed", "withdrawn", "asked"] as const;
 export type MentionStatus = (typeof MENTION_STATUSES)[number];
 /** Still moving: queued, or the assistant is working on it. */
 export const OPEN_MENTION_STATUSES: readonly MentionStatus[] = ["pending", "thinking"];
@@ -23,10 +32,31 @@ export const isMentionStatus = (v: unknown): v is MentionStatus => (MENTION_STAT
 
 // ---- Tokens --------------------------------------------------------------------------------------------------------------
 
-/** What the composer sends beside the body. `label` is the text as it stands in the body, "@" included. */
-export type MentionToken = { kind: "assistant"; label: string } | { kind: "person"; membershipId: string; label: string };
-/** What a message carries back (message_mentions), for highlighting. */
+/**
+ * What the composer sends beside the body. `label` is the text as it stands in the body, "@" included. `others_assistant`
+ * (phase 6): someone else's assistant, `membershipId` its owner's.
+ */
+export type MentionToken =
+  | { kind: "assistant"; label: string }
+  | { kind: "person"; membershipId: string; label: string }
+  | { kind: "others_assistant"; membershipId: string; label: string };
+/**
+ * What a message carries back (message_mentions), for highlighting. An assistant's `membershipId` is its owner's: the
+ * sender's for their own assistant, another reader's for theirs (phase 6).
+ */
 export type MentionRef = { kind: "person" | "assistant"; membershipId: string; label: string };
+
+/** Someone else's assistant in this conversation, as the composer offers it (Thread.taggable; phase 6). */
+export type TaggableAssistant = {
+  /** The owner. */
+  membershipId: string;
+  personName: string; firstName: string;
+  assistant: AssistantProfile;
+  /** What autocomplete inserts: "@Ben's Brenda", or "@Ben Okafor's Brenda" when another reader shares the first name. */
+  label: string;
+  /** false: the owner switched "Let people tag my assistant in Messages" off (shown disabled). */
+  allowed: boolean;
+};
 
 // ---- Limits (owner decision, 8 October 2026: constants in code, enforced by the server) ---------------------------------
 
@@ -46,6 +76,11 @@ export const MENTION_LIMITS = {
   // often per conversation, and at most this many people an hour in all; past that the mention is still marked in the
   // text, without a notification.
   notifyPerPersonPerHour: 3, notifyPerSenderPerHour: 60,
+  // Someone else's assistant (owner decision, 8 October 2026: personal assistants, phase 6): tags of one person's
+  // assistant by anyone in an hour, and by one tagger in the organisation's day; past them the tag is refused privately.
+  perOwnerPerHour: 20, perTaggerOwnerPerDay: 10,
+  /** The longest label: "@" + a 120-character name + "'s " + a 24-character assistant name (message_mentions allows 160). */
+  labelMax: 160,
 } as const;
 
 // ---- Text helpers ----------------------------------------------------------------------------------------------------------
@@ -90,6 +125,28 @@ export function assistantLabels(assistantName: string): string[] {
   const name = assistantName.trim().replace(/\s+/g, " ");
   const labels = name ? [`@${name}`, "@assistant"] : ["@assistant"];
   return labels.filter((l, i) => labels.findIndex((x) => lower(x) === lower(l)) === i);
+}
+
+/**
+ * Every label the server accepts for someone else's assistant (phase 6), case-insensitively, with "'" or "’": the
+ * first-name form ("@Ben's Brenda") only when the first name is unique among the readers other than the sender, and
+ * always the full-name form ("@Ben Okafor's Brenda"). The first is what autocomplete inserts. Labels longer than 160
+ * characters are left out (message_mentions' check).
+ */
+export function otherAssistantLabels(personName: string, assistantName: string, firstNameUnique: boolean): string[] {
+  const full = personName.trim().replace(/\s+/g, " ");
+  const name = assistantName.trim().replace(/\s+/g, " ");
+  if (!full || !name) return [];
+  const first = full.split(" ")[0];
+  const forms = [...(firstNameUnique && first !== full ? [first] : []), full];
+  const out: string[] = [];
+  for (const who of forms) {
+    for (const apostrophe of ["'", "’"]) {
+      const label = `@${who}${apostrophe}s ${name}`;
+      if (label.length <= MENTION_LIMITS.labelMax && !out.some((x) => lower(x) === lower(label))) out.push(label);
+    }
+  }
+  return out;
 }
 
 /**
@@ -149,13 +206,22 @@ export function mentionQueryAt(text: string, caret: number): { start: number; qu
 // ---- Notes: why the assistant did not answer publicly -----------------------------------------------------------------
 
 /** Why the assistant did not answer publicly, as a code (assistant_mention_private.note_code). */
-export const MENTION_NOTE_CODES = ["off_workspace", "off_conversation", "archived", "limit_minute", "limit_day", "limit_conversation", "limit_workspace", "allowance", "no_ai", "not_allowed", "failed"] as const;
+// Phase 6 (someone else's assistant): the owner switched tags off ('off_owner'), no longer reads the conversation
+// ('owner_left'), muted the tagger's assistant ('owner_muted'), may not be followed up by the tagger ('not_followable'),
+// or their assistant was tagged a lot ('limit_owner').
+export const MENTION_NOTE_CODES = ["off_workspace", "off_conversation", "archived", "limit_minute", "limit_day", "limit_conversation", "limit_workspace", "allowance", "no_ai", "not_allowed", "failed",
+  "off_owner", "owner_left", "owner_muted", "not_followable", "limit_owner"] as const;
 export type MentionNoteCode = (typeof MENTION_NOTE_CODES)[number];
 export const isMentionNoteCode = (v: unknown): v is MentionNoteCode => (MENTION_NOTE_CODES as readonly unknown[]).includes(v);
 
-/** The note's words, with the person's own assistant's name. */
-export function mentionNote(code: MentionNoteCode, assistantName: string): string {
+/**
+ * The note's words, with the person's own assistant's name. `owner` (phase 6): the tagged assistant's owner, for the
+ * owner's reasons ("Ben has switched off tags for their assistant").
+ */
+export function mentionNote(code: MentionNoteCode, assistantName: string, owner?: { firstName: string; assistantName: string } | null): string {
   const name = assistantName || "Brenda";
+  const first = owner?.firstName || "They";
+  const theirs = owner ? `${first}'s ${owner.assistantName || "Brenda"}` : "Their assistant";
   switch (code) {
     case "off_workspace": return `Assistant replies in Messages are off in this workspace. Ask ${name} in your own chat instead.`;
     case "off_conversation": return `Assistants can't reply in this conversation. Ask ${name} in your own chat instead.`;
@@ -169,6 +235,12 @@ export function mentionNote(code: MentionNoteCode, assistantName: string): strin
     case "no_ai": return `${name} can't answer that here without the AI connected.`;
     case "not_allowed": return `${name} couldn't answer: you can't read this conversation any more.`;
     case "failed": return `${name} couldn't answer this time. Ask again, or ask in your own chat.`;
+    case "off_owner": return `${first} has switched off tags for their assistant. Ask ${first} here.`;
+    case "owner_left": return `${first} isn't in this conversation any more, so ${theirs} can't answer here. Ask ${first} directly.`;
+    // The sender is told, in these words (owner decision as briefed, 8 October 2026: personal assistants, phase 6).
+    case "owner_muted": return `${first} isn't taking messages from your assistant right now.`;
+    case "not_followable": return `You can ask ${theirs} about ${first}'s work only when you work with ${first}. Ask ${first} here instead.`;
+    case "limit_owner": return `${theirs} has been asked a lot today. Ask ${first} here instead, or try again later.`;
   }
 }
 
@@ -186,14 +258,22 @@ export type MentionPrivateView = {
   note: { code: MentionNoteCode; words: string } | null;
   proposals: MentionProposalView[];
   postedMessageId: string | null; postedAt: string | null; dismissedAt: string | null;
-  /** kind answer with text, not posted, not dismissed, and the conversation not archived. */
+  /**
+   * kind answer with text, not posted, not dismissed, and the conversation not archived. Never for someone else's
+   * assistant (phase 6): its private answer holds what not everyone here may see, and it is not the tagger's to post.
+   */
   canPost: boolean;
 };
 export type MentionView = {
   id: string; messageId: string; status: MentionStatus; createdAt: string; updatedAt: string;
   tagger: { membershipId: string; name: string; firstName: string; isYou: boolean };
-  /** The tagger's own assistant (its name and look; Brenda's defaults when they never chose). */
+  /**
+   * The answering assistant (its name and look; Brenda's defaults when they never chose): the tagger's own, or for a
+   * tag of someone else's assistant (phase 6) the owner's.
+   */
   assistant: AssistantProfile;
+  /** Phase 6: the tagged assistant's owner when it is someone else's; null for the tagger's own assistant. */
+  owner: { membershipId: string; name: string; firstName: string; isYou: boolean } | null;
   replyMessageId: string | null;
   /** pending or thinking, and created less than thinkingShowsMinutes ago: draw "Max is thinking…". */
   thinking: boolean;
@@ -240,12 +320,26 @@ export const MENTION_WORDS = {
   noMatch: "No one here by that name",
   switchLabel: "Assistants can reply here",
   switchState: (on: boolean) => `Assistants can reply here: ${on ? "on" : "off"}`,
-  disclosure: "When someone tags their assistant here, it reads this conversation to answer. Replies show who asked.",
+  // Phase 6: any assistant may be tagged here, the tagger's own or someone else's.
+  disclosure: "When someone tags an assistant here, it reads this conversation to answer. Replies show whose assistant it is and who asked.",
   workspaceOff: "Assistant replies are off for the whole workspace in Settings.",
   settingsTitle: "Messages",
   settingsSwitch: "Let people ask their assistant in Messages",
   settingsHint: "Someone types @ and their assistant's name in a conversation; it reads the conversation and replies there, under its own name and who asked. Anything only they can see stays private to them.",
   notReady: "Mentions need a database update first.",
+  // ---- Someone else's assistant (owner decision, 8 October 2026: personal assistants, phase 6) ----
+  /** The badge beside the answering assistant: "Ben's assistant", or "Your assistant" for its owner. */
+  badgeFor: (m: Pick<MentionView, "tagger" | "owner">) => (m.owner ? (m.owner.isYou ? "Your assistant" : `${m.owner.firstName}'s assistant`) : m.tagger.isYou ? "Your assistant" : `${m.tagger.firstName}'s assistant`),
+  /** Under someone else's assistant's reply: "asked by Olu", or "asked by you" for the tagger. */
+  askedBy: (first: string, isYou: boolean) => (isYou ? "asked by you" : `asked by ${first}`),
+  /** The autocomplete row: "Ben's Brenda". */
+  otherAssistantOption: (first: string, name: string) => `${first}'s ${name}`,
+  /** Its secondary line: "Ben's assistant". */
+  otherAssistantSecondary: (first: string) => `${first}'s assistant`,
+  /** The disabled row when the owner switched tags off. */
+  otherOff: (first: string) => `${first} isn't taking tags`,
+  /** The composer's hint while someone else's assistant is tagged. */
+  otherHint: (first: string, name: string) => `${first}'s ${name} answers here from ${first}'s work, or asks ${first}. Anything not everyone here can see goes only to you.`,
 } as const;
 
 /**
@@ -253,7 +347,35 @@ export const MENTION_WORDS = {
  * private card, or "Waiting for Olu to confirm" for everyone else. The thread ends a run of bubbles there.
  */
 export function showsMentionRows(v: MentionView): boolean {
+  // 'asked' (phase 6): the holding message already says it, and the private card was never written.
   if (v.thinking) return true;
   if (v.tagger.isYou) return !!v.private && v.private.kind !== "full_answer" && !v.private.dismissedAt;
   return v.waiting;
+}
+
+// ---- What someone else's assistant may say in a thread (owner decision, 8 October 2026: personal assistants, phase 6) ----
+
+/**
+ * The part of a follow-up's facts that every current reader of the conversation may see, for a public answer by someone
+ * else's assistant (the audience rule; `visible`: the task ids every reader can see, from app_visible_to_readers as the
+ * tagger; a person's own to-do never counts). Time, the timer and the latest update are never public (timeVisible
+ * false). A task fact is public only when its task is in `visible`; its comments, history and submission belong to that
+ * task and stay. A person fact keeps only the open and finished tasks in `visible`, without counting the rest. Null when
+ * nothing is left: then the answer goes to the tagger privately.
+ */
+export function publicFacts(facts: FollowUpFacts, visible: Set<string>): FollowUpFacts | null {
+  const ok = new Set([...visible].map((x) => x.toLowerCase()));
+  const seen = (id: string | null | undefined) => !!id && ok.has(id.toLowerCase());
+  const base: FollowUpFacts = { ...facts, timeVisible: false, time: null, timer: null, lastUpdate: null };
+  if (facts.kind === "task") return facts.task && seen(facts.task.id) ? base : null;
+  const openTasks = (facts.openTasks ?? []).filter((t) => seen(t.id));
+  const completedToday = (facts.completedToday ?? []).filter((t) => seen(t.id));
+  if (!openTasks.length && !completedToday.length) return null;
+  const out: FollowUpFacts = { ...base, openTasks, completedToday };
+  delete out.openMore;
+  delete out.task;
+  delete out.comments;
+  delete out.history;
+  delete out.submission;
+  return out;
 }

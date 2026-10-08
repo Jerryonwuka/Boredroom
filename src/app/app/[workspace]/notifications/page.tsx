@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { ComponentType } from "react";
-import { AtSign, Bell, CalendarClock, CircleAlert, CreditCard, FileText, MessageSquare, ShieldCheck, SquareCheckBig, Video } from "lucide-react";
+import { AtSign, Bell, CalendarClock, CircleAlert, CircleCheck, ClipboardCheck, CreditCard, FileText, MessageSquare, MessageSquareQuote, MessageSquareReply, ShieldCheck, SquareCheckBig, Video } from "lucide-react";
 import { workspacePage } from "@/server/lib/workspace-page";
 import { AppShell } from "@/components/app/shell";
 import { PageHeader } from "@/components/ui/card";
@@ -32,6 +32,14 @@ export const metadata = { title: "Notifications" };
  * their own assistant in a conversation, it tells them how that went, in its own name: it replied there for everyone
  * (`brenda.mention_reply`), it needs them to confirm something only they see (`brenda.mention_confirm`, "Waiting for
  * you"), or it answered only them or couldn't answer (`brenda.mention_private`). Opening the conversation marks them read.
+ *
+ * Assistants talk to each other (owner decision, 8 October 2026: personal assistants, phase 6): what other people's
+ * assistants bring the person, each opening its card in "Between assistants": a "Passed-on message"
+ * (`assistant.message`), a "Request to accept" (`assistant.request`), a "Reply" to their own message
+ * (`assistant.reply`), a "Request update" on one they sent (`assistant.outcome`: accepted, declined, couldn't be done,
+ * expired); and in Messages, "Your assistant in Messages" when someone tagged their assistant (`assistant.tagged`) and
+ * "Reply in Messages" when someone's assistant answered their tag (`assistant.thread_reply`). They sit in the assistant
+ * tab with the follow-ups and mentions.
  */
 function kindsFor(personal: string, workspace: string): Record<string, string> {
   return {
@@ -39,6 +47,8 @@ function kindsFor(personal: string, workspace: string): Record<string, string> {
     "brenda.daily_report": `Daily report from ${workspace}`, "brenda.followup_ask": `Follow-up from ${personal}`, "brenda.followup_answer": "Follow-up answer",
     "brenda.followup_batch": "Follow-up answers", "brenda.mention_reply": `Reply from ${personal}`, "brenda.mention_confirm": "Waiting for you",
     "brenda.mention_private": `From ${personal}`, "capture.exception": "Recording problem", "adjustment.requested": "Time correction requested",
+    "assistant.message": "Passed-on message", "assistant.request": "Request to accept", "assistant.reply": "Reply", "assistant.outcome": "Request update",
+    "assistant.tagged": "Your assistant in Messages", "assistant.thread_reply": "Reply in Messages",
   };
 }
 
@@ -52,13 +62,19 @@ const FILTERS = [
   { value: "brenda", label: "Brenda" },
 ] as const;
 type Filter = (typeof FILTERS)[number]["value"];
-const group = (type: string): Filter | null => (/^(task|review|adjustment)\./.test(type) ? "tasks" : type.startsWith("message.") ? "messages" : type.startsWith("brenda.") ? "brenda" : null);
+const group = (type: string): Filter | null => (/^(task|review|adjustment)\./.test(type) ? "tasks" : type.startsWith("message.") ? "messages" : type.startsWith("brenda.") || type.startsWith("assistant.") ? "brenda" : null);
 
 type Icon = ComponentType<{ className?: string; "aria-hidden"?: boolean }>;
 /** A line icon per kind, in the 32px square at the head of each row. A `brenda.*` glyph draws the person's own assistant,
  * except the daily report's, which the page scopes to the workspace's (so the assistant's news about a mention it handled
  * carries its face). Someone mentioning the person (`message.mention`) draws an "@" instead of the message bubble. */
 function iconOf(type: string): Icon {
+  // Between assistants (phase 6): what another person's assistant brought, and what became of a request.
+  if (type === "assistant.message") return MessageSquareQuote;
+  if (type === "assistant.request") return ClipboardCheck;
+  if (type === "assistant.reply") return MessageSquareReply;
+  if (type === "assistant.outcome") return CircleCheck;
+  if (type === "assistant.tagged" || type === "assistant.thread_reply") return AtSign;
   if (type.startsWith("brenda.")) return BrendaGlyph as Icon;
   if (type === "message.reported") return CircleAlert;
   if (type.includes("mention")) return AtSign;
@@ -79,7 +95,7 @@ function emptyFor(personal: string): Record<Filter, { title: string; description
     unread: { title: "You are all caught up", description: "Nothing unread. New notifications show here first." },
     tasks: { title: "No task notifications", description: "Assignments, comments, blockers and review requests on your tasks show here." },
     messages: { title: "No message notifications", description: "Direct messages and mentions show here." },
-    brenda: { title: `Nothing from ${personal} yet`, description: "Reminders, nudges, follow-ups and daily reports show here." },
+    brenda: { title: `Nothing from ${personal} yet`, description: "Reminders, nudges, follow-ups, daily reports and what other people's assistants bring you show here." },
   };
 }
 

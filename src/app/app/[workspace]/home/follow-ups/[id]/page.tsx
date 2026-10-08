@@ -28,6 +28,10 @@ const loadFollowUp = cache(async (slug: string, id: string) => (isId(id) ? getFo
  * someone who may see that person's records. The whole exchange; the reply card while the person asked about still
  * owes a reply; "Cancel follow-up" for the person who asked while it is still open. Anyone else gets the workspace's
  * not-found page, the same as for a follow-up that does not exist. The notification of an answer links here.
+ *
+ * Phase 6 (owner decision, 8 October 2026: the assistants' inbox): the lists it came from moved into "Between
+ * assistants", so its back link goes to Sent → Follow-ups (the person who asked) or Received → Follow-ups about you
+ * (the person asked about). The page itself is unchanged and keeps its address.
  */
 export default async function FollowUpPage({ params }: { params: Promise<{ workspace: string; id: string }> }) {
   const { workspace, id } = await params;
@@ -43,7 +47,7 @@ export default async function FollowUpPage({ params }: { params: Promise<{ works
     if (await withUser(ctx.user.profileId, (db) => schema0039Ready(db))) notFound();
     return (
       <AppShell ctx={ctx} counts={counts} teams={teams}>
-        <PageHeader back={{ href: `${base}/home`, label: `Back to ${name}` }} title="Follow-up" />
+        <PageHeader back={{ href: `${base}/home/assistants`, label: "Back to Between assistants" }} title="Follow-up" />
         <div className="w-full min-w-0 max-w-3xl"><Alert tone="info">Follow-ups need a database update first.</Alert></div>
       </AppShell>
     );
@@ -51,7 +55,8 @@ export default async function FollowUpPage({ params }: { params: Promise<{ works
 
   const S = view.subject.firstName;
   const subjectView = view.viewer === "subject";
-  const back = subjectView ? { href: `${base}/home/follow-ups/about-you`, label: "Back to Asked about you" } : { href: `${base}/home/follow-ups`, label: "Back to Follow-ups" };
+  // Since phase 6 the lists live in "Between assistants": Received → Follow-ups about you, Sent → Follow-ups.
+  const back = subjectView ? { href: `${base}/home/assistants/received?type=followups`, label: "Back to Follow-ups about you" } : { href: `${base}/home/assistants/sent?type=followups`, label: "Back to Follow-ups" };
   const description = !view.requester ? `${S}'s update for today's team report.`
     : subjectView ? `${view.requester.firstName}'s ${view.requester.assistant.name} asked about your work.`
     : view.viewer === "requester" ? `You asked ${S}'s ${view.subject.assistant.name}.`

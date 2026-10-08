@@ -17,10 +17,10 @@ import { MessageBubble } from "@/components/ui/chat-messages";
 import { VoiceNote } from "@/components/app/voice-note";
 import { AssistantAvatar, AssistantChip } from "@/components/app/assistant-chip";
 import { FullAnswerToggle, MentionRows, MentionText } from "@/components/app/mention-thread";
-import { showsMentionRows } from "@/lib/mentions";
+import { MENTION_WORDS, showsMentionRows } from "@/lib/mentions";
 import { ConversationAssistantSwitch } from "@/components/app/conversation-assistant-switch";
 import { DEFAULT_ASSISTANT_NAME, toProfile } from "@/lib/assistant-look";
-import type { AssistantRepliesState, MentionView } from "@/lib/mentions";
+import type { AssistantRepliesState, MentionRef, MentionView, TaggableAssistant } from "@/lib/mentions";
 import { inbox, thread, openDirect, peopleToMessage, visibleTask, type AuthorKind, type ConversationSummary, type MessageRow, type Thread } from "@/server/services/messaging";
 import { navCounts } from "@/server/services/workspace";
 import { formatDateTime, formatLongDate, relativeTime, cn } from "@/lib/utils";
@@ -54,6 +54,29 @@ const authorOf = (m: Pick<MessageRow, "author_kind">): AuthorKind => (m.author_k
  */
 const NO_ASSISTANT_REPLIES: AssistantRepliesState = { ready: false, workspaceOn: true, here: true, canChange: false };
 const NO_MENTION_VIEWS: MentionView[] = [];
+/** Someone else's assistant to tag: none before migration 0043 (phase 6, contract A.3), nor from an older thread(). */
+const NO_TAGGABLE: TaggableAssistant[] = [];
+
+/** Who asked an assistant's reply, when it is someone else's assistant answering them (phase 6); null otherwise. */
+const askedByOf = (m: MessageRow) => {
+  const a = m.author_kind === "assistant" ? m.mention_reply?.askedBy : null;
+  return a && a.membershipId !== m.sender_membership_id ? a : null;
+};
+
+/**
+ * Whose assistant each tag of someone else's assistant in a message is (phase 6): the owner's name by membership, for the
+ * tag's title ("Ben's assistant"). Only those tags, so a message in Everyone does not carry the whole workspace.
+ */
+function ownersOf(senderId: string, refs: MentionRef[], names: Map<string, string>): Record<string, string> | undefined {
+  let out: Record<string, string> | undefined;
+  for (const r of refs) {
+    const name = r.kind === "assistant" && r.membershipId !== senderId ? names.get(r.membershipId) : undefined;
+    if (!name) continue;
+    out ??= {};
+    out[r.membershipId] = name;
+  }
+  return out;
+}
 
 /** The time and the unread count at a row's right edge step aside while the row's "…" menu shows over them. */
 const UNDER_ROW_MENU = "transition-opacity duration-75 group-hover:opacity-0 group-has-[[aria-haspopup=menu]:focus]:opacity-0 group-has-[[aria-expanded=true]]:opacity-0";
@@ -71,6 +94,14 @@ const UNDER_ROW_MENU = "transition-opacity duration-75 group-hover:opacity-0 gro
  * an assistant's shortened reply offers its asker "Read the full answer", and the asker or whoever runs the conversation
  * "Withdraw reply" in its menu; the composer suggests "@" names; the details pane carries the "Assistants can reply
  * here" switch and its one-line disclosure.
+ *
+ * Phase 6 (owner decision, 8 October 2026: assistants talk to each other): "@Ben's Brenda, where is the deck?" makes
+ * Ben's assistant answer Olu here. The composer offers the conversation's people's assistants after the people
+ * (`Thread.taggable`); a tag of one is marked in the text ("Ben's assistant", orange for Ben); the thinking and waiting
+ * rows show Ben's assistant with "Ben's assistant" and "asked by Olu"; its messages ("I've asked Ben. I'll reply
+ * here.", then Ben's reply, or its answer from Ben's work) are Ben's assistant's own messages with its face and name,
+ * the badge "Ben's assistant" and "asked by Olu" (`mention_reply.askedBy`); a run of them never hides who asked; Olu's
+ * private card for it has no Post to channel; Ben may withdraw its reply too (the server says who may).
  */
 export default async function MessagesPage({ params, searchParams }: { params: Promise<{ workspace: string }>; searchParams: Promise<{ c?: string; to?: string; task?: string; archived?: string }> }) {
   const { workspace } = await params;
@@ -161,6 +192,9 @@ export default async function MessagesPage({ params, searchParams }: { params: P
   // Only people still in the workspace: the server drops a mention of someone who left (review, 8 October 2026).
   const mentionPeople = !selected ? [] : selected.conversation.people.filter((p) => p.membership_id !== ctx.membership.id && p.active !== false)
     .map((p) => ({ membershipId: p.membership_id, name: p.display_name, profileId: p.profile_id, avatarKey: p.avatar_key, role: p.role }));
+  // Phase 6: the people's assistants the composer offers, and whose assistant a tag in a message is (for its title).
+  const taggable = selected?.taggable ?? NO_TAGGABLE;
+  const namesById = new Map((selected?.conversation.people ?? []).map((p) => [p.membership_id, p.display_name]));
   const where = !selected ? "" : other ? `the chat with ${title}` : selected.conversation.kind === "organisation" ? "Everyone" : `#${title}`;
 
   return (
@@ -229,7 +263,10 @@ export default async function MessagesPage({ params, searchParams }: { params: P
                         // assistant sent for them keeps its own name row, so its "via Max" chip always shows (review, 8 October 2026).
                         // A thinking row, a waiting row or a private card under the previous message ends the run (review, 8 October 2026).
                         const prevTagged = prev && !prev.deleted_at ? mentionByMessage.get(prev.id) : undefined;
+                        // Phase 6: someone else's assistant answering two different people starts a new run, so "asked by"
+                        // always shows (owner decision, 8 October 2026).
                         const grouped = !newDay && !!prev && !(prevTagged && showsMentionRows(prevTagged)) && prev.sender_membership_id === m.sender_membership_id && authorOf(prev) === authorOf(m) && authorOf(m) !== "via_assistant"
+                          && askedByOf(prev)?.membershipId === askedByOf(m)?.membershipId
                           && new Date(m.created_at).getTime() - new Date(prev.created_at).getTime() < 5 * 60_000;
                         // Phase 5: the mention this message started (its rows go under it, unless it was withdrawn), and
                         // for an assistant's reply the mention it answers (its full text, for the asker only).
@@ -239,7 +276,8 @@ export default async function MessagesPage({ params, searchParams }: { params: P
                           <li key={m.id} id={`m-${m.id}`} className="target-flash scroll-mt-4 rounded-xl">
                             {newDay ? <p className="mb-2 mt-6 flex items-center gap-3 text-xs font-medium text-subtle before:h-px before:flex-1 before:bg-border after:h-px after:flex-1 after:bg-border">{formatLongDate(dayKey(m.created_at, ctx.org.timezone))}</p> : null}
                             <Message m={m} me={ctx.membership.id} grouped={grouped} orgSlug={ctx.org.slug} timeZone={ctx.org.timezone} canReply={!selected.conversation.archived_at}
-                              fullAnswer={answers?.private?.kind === "full_answer" ? answers.private.text : null} />
+                              fullAnswer={answers?.private?.kind === "full_answer" && !m.mention_reply?.holding ? answers.private.text : null}
+                              owners={ownersOf(m.sender_membership_id, m.mentions ?? [], namesById)} />
                             {tagged ? <MentionRows orgSlug={ctx.org.slug} mention={tagged} conversationKind={selected.conversation.kind} /> : null}
                           </li>
                         );
@@ -250,7 +288,7 @@ export default async function MessagesPage({ params, searchParams }: { params: P
                 </div>
               </div>
               {selected.conversation.archived_at ? <p className="shrink-0 border-t border-border px-6 py-4 text-center text-sm font-normal text-secondary">This channel is archived. {selected.conversation.can_manage ? "Restore it from the menu to write here again." : "The person who made it, the owner or HR can restore it."}</p> : <Composer key={selected.conversation.id} canVoice={ctx.plan.features.VOICE_NOTES} orgSlug={ctx.org.slug} conversationId={selected.conversation.id}
-                people={mentionPeople} mentions={{ ready: assistantReplies.ready, assistantAllowed: assistantReplies.ready && assistantReplies.workspaceOn && assistantReplies.here }}
+                people={mentionPeople} mentions={{ ready: assistantReplies.ready, assistantAllowed: assistantReplies.ready && assistantReplies.workspaceOn && assistantReplies.here }} taggable={taggable}
                 task={task ? { id: task.id, title: task.title } : null}
                 prefill={task ? `How far with “${task.title}”?` : undefined}
                 placeholder={selected.conversation.kind === "direct" ? `Message ${title}` : `Message ${isRoom(selected.conversation.kind) ? `#${title}` : "everyone"}`} />}
@@ -271,7 +309,8 @@ export default async function MessagesPage({ params, searchParams }: { params: P
  * Who and what a conversation is: for a direct chat, the person (picture, name, status, title) and "Their day" where it
  * leads somewhere; for a room, its sign, name and kind. Then everyone in it, with their status dot and role; each
  * other person links to a direct thread with them. Then "Assistants" (phase 5): what a tagged assistant reads here, and
- * the switch for whoever runs the conversation (hidden before migration 0041).
+ * the switch for whoever runs the conversation (hidden before migration 0041). Since phase 6 the line says any
+ * assistant, yours or someone else's, and that replies show whose assistant it is and who asked.
  */
 function Details({ t, me, base, orgSlug, showTheirDay }: { t: Thread; me: string; base: string; orgSlug: string; showTheirDay: boolean }) {
   const c = t.conversation;
@@ -317,8 +356,12 @@ function Details({ t, me, base, orgSlug, showTheirDay }: { t: Thread; me: string
  * Phase 5: a text message's stored mentions are marked in it; an assistant's reply to a mention offers the person who
  * asked "Read the full answer" when it was shortened (`fullAnswer`), and "Withdraw reply" in its menu to them and to
  * whoever runs the conversation.
+ * Phase 6: someone else's assistant answering a tag ("I've asked Ben. I'll reply here.", Ben's reply, or an answer from
+ * Ben's work) is drawn as any assistant's own message, Ben's assistant's face and name with "Ben's assistant" ("Your
+ * assistant" for Ben), then "asked by Olu" ("asked by you" for Olu); its owner may withdraw it as well (`canWithdraw`).
+ * A tag of someone else's assistant in a person's message is titled with whose it is (`owners`).
  */
-function Message({ m, me, grouped, orgSlug, timeZone, canReply, fullAnswer = null }: { m: MessageRow; me: string; grouped: boolean; orgSlug: string; timeZone: string; canReply: boolean; fullAnswer?: string | null }) {
+function Message({ m, me, grouped, orgSlug, timeZone, canReply, fullAnswer = null, owners }: { m: MessageRow; me: string; grouped: boolean; orgSlug: string; timeZone: string; canReply: boolean; fullAnswer?: string | null; owners?: Record<string, string> }) {
   const author = authorOf(m);
   const assistant = author === "person" ? null : toProfile(m.assistant);
   const byAssistant = author === "assistant" && assistant ? assistant : null;
@@ -344,15 +387,18 @@ function Message({ m, me, grouped, orgSlug, timeZone, canReply, fullAnswer = nul
   const full = fullAnswer && byAssistant && !m.deleted_at ? <FullAnswerToggle text={fullAnswer} /> : null;
   const withdrawReply = byAssistant && m.mention_reply?.canWithdraw ? { mentionId: m.mention_reply.mentionId, assistantName: byAssistant.name } : null;
   const mentions = m.mentions ?? [];
+  // Phase 6: whose assistant it is, then who asked it, when it answered someone other than its owner.
+  const askedBy = byAssistant ? askedByOf(m) : null;
+  const whose = byAssistant ? <Badge size="sm">{isOwnAssistant ? "Your assistant" : `${firstName(m.sender_name)}'s assistant`}</Badge> : null;
   return (
     <MessageBubble mine={m.mine} grouped={grouped} withdrawn={!!m.deleted_at} name={name} time={time} quote={quote}
-      nameAdornment={byAssistant ? <Badge size="sm">{isOwnAssistant ? "Your assistant" : `${firstName(m.sender_name)}'s assistant`}</Badge> : m.mine ? null : via}
+      nameAdornment={whose ? (askedBy ? <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5">{whose}<span className="text-meta font-normal text-secondary">{MENTION_WORDS.askedBy(askedBy.firstName, askedBy.isYou)}</span></span> : whose) : m.mine ? null : via}
       timeAdornment={m.mine ? via : null}
       avatar={byAssistant ? <AssistantAvatar assistant={byAssistant} /> : <Avatar profileId={m.sender_profile_id} name={m.sender_name} avatarKey={m.sender_avatar_key} size={32} />}
       footer={taskLink && full ? <div className="grid justify-items-start gap-1.5">{taskLink}{full}</div> : taskLink ?? full}
       actions={!m.deleted_at ? <MessageMenu orgSlug={orgSlug} id={m.id} mine={m.mine} body={m.body} isVoice={!!m.voice_key} senderName={name} canReply={canReply} canReport={!m.mine && !isOwnAssistant} withdrawReply={withdrawReply} /> : null}>
       {m.deleted_at ? "Message withdrawn" : m.voice_key && m.voice_seconds ? <VoiceNote src={`/api/orgs/${orgSlug}/messages/${m.id}/voice`} seconds={m.voice_seconds} mine={m.mine} />
-        : mentions.length ? <MentionText body={m.body} refs={mentions} me={me} senderName={m.sender_name} /> : <span className="whitespace-pre-wrap break-words">{m.body}</span>}
+        : mentions.length ? <MentionText body={m.body} refs={mentions} me={me} senderName={m.sender_name} senderId={m.sender_membership_id} owners={owners} /> : <span className="whitespace-pre-wrap break-words">{m.body}</span>}
     </MessageBubble>
   );
 }

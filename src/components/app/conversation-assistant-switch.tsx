@@ -6,6 +6,12 @@
  * recent messages to answer there, under its own name and who asked; this section says so in one line to everyone who
  * reads the conversation, and lets the people who run it switch that off for this conversation alone.
  *
+ * Phase 6 (owner decision, 8 October 2026: assistants talk to each other): anyone here may also tag someone else's
+ * assistant ("@Ben's Brenda"), which answers from Ben's work or asks Ben. The line says so for any assistant: "When
+ * someone tags an assistant here, it reads this conversation to answer. Replies show whose assistant it is and who
+ * asked." (`MENTION_WORDS.disclosure`). The switch covers every assistant here, the person's own and others' alike;
+ * whether people may tag Ben's assistant at all is Ben's own choice, in Settings → Your assistant.
+ *
  * - Who may switch it (contract 0.11, `app_can_manage_conversation`): a named channel's creator, owners and HR; either
  *   person in a direct thread; owners and HR for Everyone; owners, HR and the team's leads for a team channel. They see
  *   a `Switch` "Assistants can reply here" that saves the moment it moves (PATCH …/messages/conversations/{id}

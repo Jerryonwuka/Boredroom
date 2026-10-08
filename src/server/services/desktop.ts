@@ -18,6 +18,13 @@
  * the last 24 hours (its answer card), and each notification carries its `resource_id`, so an unread ask opens its
  * request card. Before migration 0039 `followUps` is `{ ready: false, waiting: [], answered: [] }`; an older notch
  * ignores it.
+ *
+ * Assistants talk to each other (owner decision, 8 October 2026: personal assistants, phase 6): the state's
+ * `assistantItems` holds what other people's assistants brought the person and is waiting for them (a message passed
+ * on, a request to accept, a reply to one of theirs: the notch's message and request cards) and what came back to them
+ * in the last 24 hours (their requests decided or expired, replies to their messages: its update card). Notifications
+ * of type `assistant.*` carry the item's id as `resource_id`, so an unread one opens its card. Before migration 0043
+ * `assistantItems` is `{ ready: false, waiting: [], updates: [] }`; an older notch ignores it.
  */
 import { z } from "zod";
 import { withSystem, withUser } from "@/server/db";
@@ -32,6 +39,7 @@ import { myClock } from "@/server/services/attendance";
 import { teamStatus } from "@/server/services/views";
 import { readAssistantProfiles } from "@/server/services/assistant-profile";
 import { followUpsForDesktop, type DesktopFollowUps } from "@/server/services/follow-ups";
+import { assistantItemsForDesktop, type DesktopAssistantItems } from "@/server/services/assistant-items";
 import { PALETTE, type AssistantEyes, type AssistantProfile, type AssistantSpeak, type AssistantVisor, type FaceShades } from "@/lib/assistant-look";
 
 const CODE_TTL_SECONDS = 10 * 60;
@@ -135,8 +143,9 @@ export async function revokeDevice(user: CurrentUser, sessionId: string) {
 export type DesktopAssistant = { name: string; colour: string; visor: AssistantVisor; eyes: AssistantEyes; face: FaceShades };
 const forNotch = (p: AssistantProfile): DesktopAssistant => ({ name: p.name, colour: p.colour, visor: p.visor, eyes: p.eyes, face: PALETTE[p.colour].face });
 
-export type { DesktopFollowUps };
+export type { DesktopFollowUps, DesktopAssistantItems };
 const NO_FOLLOW_UPS: DesktopFollowUps = { ready: false, waiting: [], answered: [] };
+const NO_ITEMS: DesktopAssistantItems = { ready: false, waiting: [], updates: [] };
 
 /**
  * Everything the notch shows, in one read: the briefing, the timer, the clock, unread notifications (Brenda's
@@ -146,7 +155,7 @@ const NO_FOLLOW_UPS: DesktopFollowUps = { ready: false, waiting: [], answered: [
 export async function desktopState(ctx: OrgContext) {
   const worker = ctx.membership.role === "employee" || ctx.membership.role === "manager";
   const lead = ctx.membership.role !== "employee";
-  const [brief, session, clock, team, extra, followUps] = await Promise.all([
+  const [brief, session, clock, team, extra, followUps, assistantItems] = await Promise.all([
     briefing(ctx),
     worker ? currentSession(ctx) : Promise.resolve(null),
     worker ? myClock(ctx) : Promise.resolve(null),
@@ -162,6 +171,8 @@ export async function desktopState(ctx: OrgContext) {
     })),
     // A follow-up problem never takes the rest of the notch down with it.
     followUpsForDesktop(ctx).catch((err) => { console.warn(`[desktop] follow-ups: ${(err as Error)?.message ?? String(err)}`); return NO_FOLLOW_UPS; }),
+    // Nor does a problem with what other people's assistants brought the person (owner decision, 8 October 2026: phase 6).
+    assistantItemsForDesktop(ctx).catch((err) => { console.warn(`[desktop] assistant items: ${(err as Error)?.message ?? String(err)}`); return NO_ITEMS; }),
   ]);
   const s = session?.session ?? null;
   const running = s ? extra.progress.find((p) => p.id === s.taskId) : undefined;
@@ -181,6 +192,8 @@ export async function desktopState(ctx: OrgContext) {
     notifications: extra.notifications,
     // Asks waiting for the person's reply and answers to their own follow-ups (owner decision, 8 October 2026: phase 4).
     followUps: followUps satisfies DesktopFollowUps,
+    // Messages and requests from other people's assistants, and what came back (owner decision, 8 October 2026: phase 6).
+    assistantItems: assistantItems satisfies DesktopAssistantItems,
     // The person's own open tasks, soonest due first: where a dropped file can go.
     myTasks: worker ? extra.progress.slice(0, 8).map((t) => ({ id: t.id, title: t.title, due: t.due_at })) : [],
     // Team leads and organisation accounts: who is working right now, for the small faces in the notch.

@@ -52,12 +52,19 @@
  * about you" then, else "You asked"), the same icon link in the chat's header, and "Follow up with someone" in "More
  * asks". When someone's assistant is waiting for the person's reply, "Waiting for you" sits inside her panel above the
  * quick asks (two cards at most, then "See all"), never in the chat. All hidden until migration 0039 is applied.
+ *
+ * Assistants talk to each other (owner decision, 8 October 2026: personal assistants, phase 6): the pill becomes
+ * "Between assistants" (the same icon), with an orange count of everything waiting for the person (follow-up asks,
+ * requests to accept, messages and replies not yet seen), and opens the inbox (/home/assistants); the chat header's
+ * icon link goes there too. "Waiting for you" in her panel shows asks first, then requests and messages as compact
+ * rows that keep Accept/Decline or "Mark as seen"/"Reply" under the row (assistant-waiting), two at most, then "See
+ * all {n}". "Pass a message on" joins "More asks". The items show once migration 0043 is applied; the asks as before.
  */
 import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import {
   AnimatedActivity, AnimatedAlarmClock, AnimatedArrowLeft, AnimatedCalendarCheck, AnimatedCircleAlert, AnimatedClipboardCheck, AnimatedClock, AnimatedFileText,
-  AnimatedHistory, AnimatedInbox, AnimatedListOrdered, AnimatedListPlus, AnimatedMessageSquareReply, AnimatedMessagesSquare, AnimatedPlay, AnimatedPlus, AnimatedSend,
+  AnimatedHistory, AnimatedInbox, AnimatedListOrdered, AnimatedListPlus, AnimatedMessageSquare, AnimatedMessageSquareReply, AnimatedMessagesSquare, AnimatedPlay, AnimatedPlus, AnimatedSend,
   AnimatedSettings, AnimatedTimer, AnimatedUserPlus, AnimatedUsers,
 } from "@/components/ui/animated-icons";
 import { buttonVariants } from "@/components/ui/button";
@@ -72,9 +79,10 @@ import { BrendaFace } from "@/components/app/brenda-face";
 import { BrendaComposer, BrendaMessages, DictationNotes, useBrendaChat, type BrendaChat } from "@/components/app/brenda-chat";
 import { BrendaHistory } from "@/components/app/brenda-history";
 import { useAssistant } from "@/components/app/assistant-context";
-import { WaitingForYou } from "@/components/app/follow-up-reply";
+import { AssistantWaiting } from "@/components/app/assistant-waiting";
 import { isApiFailure } from "@/lib/api-client";
 import type { FollowUpView } from "@/lib/follow-ups";
+import type { AssistantItemView } from "@/lib/assistant-items";
 import { cn } from "@/lib/utils";
 import type { Conversation, ConversationSummary } from "@/server/services/brenda-history";
 
@@ -101,6 +109,10 @@ export type HomeData = {
   followUpsReady: boolean;
   /** Other people's assistants waiting for this person's reply, the nearest deadline first (none before 0039). */
   waiting: FollowUpView[];
+  /** Assistants talk to each other (phase 6): migration 0043 is applied. */
+  itemsReady: boolean;
+  /** Requests, unseen messages and replies other people's assistants brought this person (none before 0043). */
+  items: AssistantItemView[];
 };
 
 type Ask = { icon: React.ComponentType<{ "aria-hidden"?: boolean }>; label: string; prompt: string };
@@ -159,7 +171,7 @@ const CARDS: Record<"worker" | "lead", Card[]> = {
 };
 
 /** "More asks" in her box: more things to ask, each a sentence to finish in the box. Clocking and the timer only for people who clock in. */
-function moreAsks(role: HomeData["role"], followUps: boolean): Ask[] {
+function moreAsks(role: HomeData["role"], followUps: boolean, talk: boolean): Ask[] {
   const worker = role === "employee" || role === "manager";
   return [
     ...(role !== "employee" ? [{ icon: AnimatedUserPlus, label: "Assign a task", prompt: "Assign a task to " }] : []),
@@ -169,6 +181,8 @@ function moreAsks(role: HomeData["role"], followUps: boolean): Ask[] {
     { icon: AnimatedSend, label: "Send a message", prompt: "Send a message to " },
     // Phase 4: ask someone's assistant how their work is going, instead of asking them.
     ...(followUps ? [{ icon: AnimatedMessageSquareReply, label: "Follow up with someone", prompt: "Follow up with " }] : []),
+    // Phase 6: pass something on to someone's assistant, which delivers it as the person's own words.
+    ...(talk ? [{ icon: AnimatedMessageSquare, label: "Pass a message on", prompt: "Tell " }] : []),
     { icon: AnimatedInbox, label: "Catch me up on messages", prompt: "Catch me up on my messages." },
     { icon: AnimatedFileText, label: "Write a document", prompt: "Help me write a document about " },
   ];
@@ -286,7 +300,7 @@ export function BrendaHome({ data }: { data: HomeData }) {
     if (chatting && !chat.pending && idle && !covered) focusBoxIn(box.current);
   }, [chatting, chat.pending]); // eslint-disable-line react-hooks/exhaustive-deps -- closing the sheet is not a reason to move the focus
 
-  const more = <MoreMenu role={role} followUps={data.followUpsReady} onPick={(p) => fill(p, true)} />;
+  const more = <MoreMenu role={role} followUps={data.followUpsReady} talk={data.itemsReady} onPick={(p) => fill(p, true)} />;
 
   if (chatting) {
     return (
@@ -298,7 +312,9 @@ export function BrendaHome({ data }: { data: HomeData }) {
 
   const kind = lead ? "lead" : "worker";
   const isOrg = role === "owner" || role === "hr";
-  const waiting = data.followUpsReady ? data.waiting.length : 0;
+  // Everything waiting for the person between assistants: follow-up asks (phase 4) and items (phase 6).
+  const waiting = (data.followUpsReady ? data.waiting.length : 0) + (data.itemsReady ? data.items.length : 0);
+  const inbox = data.followUpsReady || data.itemsReady;
   // Her character is monochrome like the rest of v4 (her light takes the orb's orange); the orb brightens while she
   // listens (a live microphone).
   const listening = chat.state === "listening";
@@ -342,11 +358,11 @@ export function BrendaHome({ data }: { data: HomeData }) {
             <Link href={`${base}/home/activity`} className={cn(pill, iconOnPhones)}>
               <span className="max-sm:sr-only">What {name} did</span><AnimatedActivity aria-hidden />
             </Link>
-            {/* Follow-ups between assistants (phase 4): to "Asked about you" while someone waits for the person's reply
-                (the orange count asks them to act), else to what they asked. Not plan-gated: a record stays readable. */}
-            {data.followUpsReady ? (
-              <Link href={`${base}/home/follow-ups${waiting ? "/about-you" : ""}`} className={cn(pill, waiting ? "max-sm:px-2.5" : iconOnPhones)}>
-                <span className="max-sm:sr-only">Follow-ups</span>
+            {/* Between assistants (phases 4 and 6): the inbox opens on "Waiting for you"; the orange count asks the person
+                to act. Not plan-gated: answering never needs the AI, and a record stays readable. */}
+            {inbox ? (
+              <Link href={`${base}/home/assistants`} className={cn(pill, waiting ? "max-sm:px-2.5" : iconOnPhones)}>
+                <span className="max-sm:sr-only">Between assistants</span>
                 {waiting ? <><CountPill count={waiting} tone="attention" /><span className="sr-only">waiting for you</span></> : null}<AnimatedMessageSquareReply aria-hidden />
               </Link>
             ) : null}
@@ -368,12 +384,13 @@ export function BrendaHome({ data }: { data: HomeData }) {
         </div>
 
         <div className="@container mx-auto w-full max-w-[720px] text-left">
-          {/* Someone's assistant is waiting for the person's reply (phase 4): above the quick asks, two at most. Answering
-              does not need the plan's assistant, so it shows on every plan. Kept mounted while 0039 is there, so a card
-              just answered stays as "Sent." after the refresh drops it; with nothing to show it renders nothing. */}
-          {data.followUpsReady ? (
-            <WaitingForYou orgSlug={data.orgSlug} items={data.waiting} timeZone={data.timeZone} now={data.now} max={2} seeAllHref={`${base}/home/follow-ups/about-you`}
-              cardClassName="bg-[color:var(--brenda-fill)] shadow-none" className="mb-5" />
+          {/* Someone's assistant is waiting for the person (phases 4 and 6): above the quick asks, two at most, asks first.
+              Answering does not need the plan's assistant, so it shows on every plan. Kept mounted, so a card just
+              answered stays (as "Sent.", or what it became) after the refresh drops it; with nothing to show it renders
+              nothing. */}
+          {inbox ? (
+            <AssistantWaiting orgSlug={data.orgSlug} asks={data.followUpsReady ? data.waiting : []} items={data.itemsReady ? data.items : []} timeZone={data.timeZone} now={data.now}
+              max={2} seeAllHref={`${base}/home/assistants`} compact cardClassName="bg-[color:var(--brenda-fill)] shadow-none" className="mb-5" />
           ) : null}
           {data.aiEnabled ? (
             <>
@@ -436,12 +453,12 @@ function ActionCard({ card, onPick }: { card: Card; onPick: () => void }) {
 }
 
 /** "More asks" on the left of her box's bottom row: a menu of more things to ask. Choosing one puts its sentence in the box. */
-function MoreMenu({ role, followUps, onPick }: { role: HomeData["role"]; followUps: boolean; onPick: (prompt: string) => void }) {
+function MoreMenu({ role, followUps, talk, onPick }: { role: HomeData["role"]; followUps: boolean; talk: boolean; onPick: (prompt: string) => void }) {
   const { name } = useAssistant().personal;
   return (
     <Menu label={`Ask ${name} to`} trigger={<PromptTextAction><AnimatedPlus aria-hidden />More asks</PromptTextAction>}>
       <MenuLabel>Ask {name} to…</MenuLabel>
-      {moreAsks(role, followUps).map((a) => <MenuItem key={a.label} icon={<a.icon aria-hidden />} onSelect={() => onPick(a.prompt)}>{a.label}</MenuItem>)}
+      {moreAsks(role, followUps, talk).map((a) => <MenuItem key={a.label} icon={<a.icon aria-hidden />} onSelect={() => onPick(a.prompt)}>{a.label}</MenuItem>)}
     </Menu>
   );
 }
@@ -470,6 +487,7 @@ function ChatView({ data, chat, box, onBack, onNewChat, history, sheet, onSheet,
   // Listening or working is live (orange, breathing); an error, a question waiting and idle keep their status colours.
   const dot = chat.pending || chat.dictation.listening ? "live" : chat.error ? "danger" : chat.waitingAt >= 0 ? "warning" : "success";
   const empty = chat.messages.length === 0 && !chat.pending && !chat.error;
+  const waitingCount = (data.followUpsReady ? data.waiting.length : 0) + (data.itemsReady ? data.items.length : 0);
   // Past chats open as a sheet over the chat (small screens): a modal one.
   const small = useSyncExternalStore(subscribeSmall, smallNow, smallOnServer);
   const modal = sheet && small;
@@ -553,13 +571,13 @@ function ChatView({ data, chat, box, onBack, onNewChat, history, sheet, onSheet,
         </IconButton>
         {/* Everything the person's assistant did or read for them (phase 3), at every width; the tooltip reads its name. */}
         <Link href={`/app/${data.orgSlug}/home/activity`} className={ICON_BUTTON} aria-label={`What ${name} did`}><AnimatedActivity aria-hidden /></Link>
-        {/* Follow-ups (phase 4), right after "What Max did": an orange dot while someone waits for the person's reply,
-            with the count in its name (a word beside the colour). */}
-        {data.followUpsReady ? (
-          <Link href={`/app/${data.orgSlug}/home/follow-ups${data.waiting.length ? "/about-you" : ""}`} className={ICON_BUTTON}
-            aria-label={data.waiting.length ? `Follow-ups, ${data.waiting.length} waiting for you` : "Follow-ups"}>
+        {/* Between assistants (phases 4 and 6), right after "What Max did": an orange dot while anything waits for the
+            person, with the count in its name (a word beside the colour). */}
+        {data.followUpsReady || data.itemsReady ? (
+          <Link href={`/app/${data.orgSlug}/home/assistants`} className={ICON_BUTTON}
+            aria-label={waitingCount ? `Between assistants, ${waitingCount} waiting for you` : "Between assistants"}>
             <AnimatedMessageSquareReply aria-hidden />
-            {data.waiting.length ? <span aria-hidden className="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-accent" /> : null}
+            {waitingCount ? <span aria-hidden className="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-accent" /> : null}
           </Link>
         ) : null}
         {/* Icon only on phones, as the home pills are, so her name and status keep their room at ~400px. */}

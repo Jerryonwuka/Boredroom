@@ -65,9 +65,12 @@ export function FollowUpReplyCard({ orgSlug, view, timeZone, now, onDone, classN
   const radios = useRef<(HTMLButtonElement | null)[]>([]);
   const names = namesOf(view, personal.name);
   const workspace = !view.requester;
-  const askerProfile = view.requester?.assistant ?? view.workspaceAssistant ?? personal;
+  // In a thread it is the person's own assistant asking them (the tagger's question, posted back there).
+  const askerProfile = view.thread ? personal : view.requester?.assistant ?? view.workspaceAssistant ?? personal;
   const by = view.deadlineAt ? byLabel(view.deadlineAt, timeZone, now) : null;
-  const facts = view.facts && view.facts.v === 1 ? factLines(view.facts, { timeZone, now: new Date(now), first: view.subject.firstName, forSubject: true, asker: view.requester?.firstName ?? null }) : [];
+  // Asked in a conversation (phase 6): the reply is posted there for everyone, and nothing from the work is shared.
+  const thread = view.thread;
+  const facts = !thread && view.facts && view.facts.v === 1 ? factLines(view.facts, { timeZone, now: new Date(now), first: view.subject.firstName, forSubject: true, asker: view.requester?.firstName ?? null }) : [];
 
   async function reply(c: ReplyChoice) {
     if (busy) return;
@@ -112,7 +115,9 @@ export function FollowUpReplyCard({ orgSlug, view, timeZone, now, onDone, classN
         <span aria-hidden className="mt-px grid size-[18px] shrink-0 place-items-center rounded-full bg-success/12 text-success"><Check className="size-3" /></span>
         <span className="min-w-0 font-normal text-foreground">
           {/* "Not now" says what happens instead, as the notch does (visual review, 8 October 2026). */}
-          {sent === "not_now"
+          {thread
+            ? sent === "not_now" ? `Done. ${personal.name} says in ${thread.where} that you can't answer right now.` : `Sent. Your reply is posted in ${thread.where}${thread.direct ? "" : " for everyone there"}.`
+            : sent === "not_now"
             ? workspace ? `Told ${names.askerAssistantName} you can't answer right now. The report gets what your work shows instead.` : `Told ${names.askerAssistantName} you can't answer right now. ${names.askerAssistantName} gets what your work shows instead.`
             : `Sent. ${workspace ? `${names.askerAssistantName} puts your answer in today's team report.` : `${names.askerAssistantName} gets your answer.`}`}
         </span>
@@ -130,17 +135,20 @@ export function FollowUpReplyCard({ orgSlug, view, timeZone, now, onDone, classN
     <section id={id} tabIndex={id ? -1 : undefined} aria-labelledby={`${uid}-title`}
       className={cn("card-panel flex min-w-0 flex-col gap-3 p-4 outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ring)]", highlight && "border-accent-ring", className)}>
       <div className="flex items-start gap-2.5">
-        <AssistantFace profile={askerProfile} own={false} className="mt-px" />
+        <AssistantFace profile={askerProfile} own={!!view.thread} className="mt-px" />
         <div className="min-w-0 flex-1">
           <h3 id={`${uid}-title`} className="text-sm font-normal text-foreground">
-            {workspace ? <><strong className="font-semibold">{names.asker}</strong> is collecting updates for today&apos;s team report.</>
+            {thread ? <><strong className="font-semibold">{view.requester?.firstName ?? "Someone"}</strong> asked {personal.name} in {thread.direct ? "your chat" : thread.where}.</>
+              : workspace ? <><strong className="font-semibold">{names.asker}</strong> is collecting updates for today&apos;s team report.</>
               : view.task ? <><strong className="font-semibold">{names.asker}</strong> wants an update on “{view.task.title}”.</>
               : <><strong className="font-semibold">{names.asker}</strong> wants to know what you&apos;re working on.</>}
           </h3>
           <p className="mt-1.5 whitespace-pre-wrap break-words rounded-2xl bg-fill-1 px-3.5 py-2 text-sm font-normal text-foreground">“{view.question}”</p>
           {by ? (
             <p className="mt-1.5 text-meta font-normal text-secondary">
-              Reply by <span className="tabular-nums">{by}</span>. {workspace ? "Your reply goes in the report your team lead, the owner and HR receive." : `If you don't, ${names.askerAssistantName} gets what your work shows.`}
+              Reply by <span className="tabular-nums">{by}</span>. {thread
+                ? `Your reply is posted in ${thread.where}${thread.direct ? "" : " for everyone there"}. If you don't reply, ${personal.name} says so there.`
+                : workspace ? "Your reply goes in the report your team lead, the owner and HR receive." : `If you don't, ${names.askerAssistantName} gets what your work shows.`}
             </p>
           ) : null}
         </div>

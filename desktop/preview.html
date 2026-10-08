@@ -31,7 +31,18 @@
      mentions him in #design (his own Brenda's face, the message in a quoted bubble); the others are Olu's, whose
      assistant is Max (unless ?look=/?name= say otherwise): ?state=mention-reply (Max replied in #design),
      ?state=mention-confirm (something waits for her Confirm in the conversation), ?state=mention-private (an answer only
-     she can see; &note shows the "couldn't answer" note instead). OK marks it read; Open logs the conversation's link. -->
+     she can see; &note shows the "couldn't answer" note instead). OK marks it read; Open logs the conversation's link.
+     Assistants talk to each other (owner decision, 8 October 2026: phase 6): ?state=item-message is Ben's card when Olu's
+     Max passes on a message (&tidied: reworded at Olu's request; &card=reply opens the reply box with a line typed in;
+     &card=dictate opens it and holds the talk keys to say the line; &send=already answers the reply with the server's 409,
+     &send=error with a 503); ?state=item-request is Ada's card when Olu's Max asks her to accept a change (&kind=status|
+     comment|reminder for the other kinds, a to-do by default; &card=decline opens the reason box with a reason typed in;
+     Accept answers done, or &accept=failed couldn't be done, &accept=closed the server's 409; ?state=item-request&poll=gone
+     cancels it from "the web" two seconds after it opens). Olu's own: ?state=item-done (Ada accepted: to-do added),
+     ?state=item-declined (with Ada's reason), ?state=item-reply (Ben replied to her message), ?state=thread-reply (Ben's
+     Brenda replied to her tag in #design). Ben's ?state=tagged (Olu asked his Brenda in #design). ?state=waiting-items is
+     the day card with a request and a message waiting (?state=waiting adds a follow-up ask before them; two show). &old
+     drops `assistantItems` (and `followUps`), as an older server does, so the plain notification cards show. -->
 <html lang="en"><head><meta charset="utf-8"><title>Brenda notch preview</title><link rel="stylesheet" href="src/style.css">
 <style>html,body{background:#3b3b3b!important;height:100%;overflow:hidden!important} body::before{content:"";position:fixed;inset:0 0 auto;height:40px;background:rgb(0 0 0 / .28);box-shadow:inset 0 -1px 0 rgb(255 255 255 / .075)} #stage{position:relative;width:480px;height:440px;margin:0 auto;outline:1px dashed rgb(255 255 255 / .1)}</style></head>
 <body><div id="stage"><div id="island" class="island"><main id="notch" class="notch compact"></main><i id="countdown" class="countdown"></i></div></div>
@@ -55,8 +66,9 @@ const assistantFrom = (look, name) => {
   const colour = FACES[c] ? c : "white";
   return { name: name?.trim() || "Brenda", colour, visor: LOOK_VISORS.includes(v) ? v : "bean", eyes: LOOK_EYES.includes(e) ? e : "pill", face: FACES[colour] };
 };
-// The mention states that are Olu's (phase 5) draw her assistant, Max, unless the address names another look.
-const olus = ["mention-reply", "mention-confirm", "mention-private"].includes(state);
+// The mention states that are Olu's (phase 5), and what comes back to her from other people's assistants (phase 6), draw
+// her assistant, Max, unless the address names another look.
+const olus = ["mention-reply", "mention-confirm", "mention-private", "item-done", "item-declined", "item-reply", "thread-reply"].includes(state);
 const personal = assistantFrom(q.get("look") ?? (olus ? "orange,band,round" : null), q.get("name") ?? (olus ? "Max" : null));
 const workspace = assistantFrom(q.get("ws"), q.get("wsname"));
 // Follow-ups (phase 4): Olu's assistant Max asks about Ben's "Landing page"; Ben's Brenda answers Ada's follow-up.
@@ -87,11 +99,51 @@ const mentions = {
     ? { id: "n3", type: "brenda.mention_private", resource_id: DESIGN, title: "Max couldn't answer in #design", body: "Assistants can't reply in this conversation. Ask Max in your own chat instead.", href: thread, created_at: now }
     : { id: "n3", type: "brenda.mention_private", resource_id: DESIGN, title: "Max answered you in #design", body: "Only visible to you. Ben clocked in at 09:12 and has 3h 10m on “Landing page” today.\n- Chidi is on leave\n- Everyone else in Design is in", href: thread, created_at: now },
 };
+// Assistants talk to each other (phase 6): what DesktopAssistantItems carries (src/server/services/desktop.ts), worded as
+// the server words it. Olu's Max passes Ben a message and asks Ada to accept a change; Ada's Brenda and Ben's Brenda bring
+// Olu what came of hers.
+const MSG = "a7777777-7777-4777-8777-777777777777", REQ = "a8888888-8888-4888-8888-888888888888", REPLY = "a9999999-9999-4999-8999-999999999999";
+const item = (id) => `/app/company-a/home/assistants/items/${id}`;
+const friday = new Date(Date.now() + 2 * 86_400_000); friday.setHours(17, 0, 0, 0);
+const kinds = {
+  todo: { lines: ["Add to your to-dos: “Review pricing”", "Due: Fri 9 Oct, 17:00"], summary: "add the to-do “Review pricing”, due Fri 9 Oct, 17:00",
+    payload: { v: 1, kind: "add_todo", title: "Review pricing", dueAt: friday.toISOString() }, words: "Added “Review pricing” to your to-dos" },
+  status: { lines: ["Task: “Landing page”", "Move it from In progress to In review", "Note for the reviewer: “The client approved the copy.”"], summary: "move “Landing page” to In review",
+    payload: { v: 1, kind: "task_status", taskId: "66666666-6666-4666-8666-666666666666", taskTitle: "Landing page", from: "in_progress", to: "in_review", reason: "The client approved the copy." }, words: "Sent “Landing page” for review" },
+  comment: { lines: ["Task: “Landing page”", "Comment as you: “The client approved the copy.”"], summary: "comment on “Landing page”",
+    payload: { v: 1, kind: "task_comment", taskId: "66666666-6666-4666-8666-666666666666", taskTitle: "Landing page", text: "The client approved the copy." }, words: "Commented on “Landing page”" },
+  reminder: { lines: ["Remind you: “Call Josh about the invoice”", "When: Thu 8 Oct, 15:00"], summary: "remind you at Thu 8 Oct, 15:00 to call Josh about the invoice",
+    payload: { v: 1, kind: "set_reminder", text: "Call Josh about the invoice", at: hours(3) }, words: "Reminder set for Thu 8 Oct, 15:00" },
+};
+const req = kinds[q.get("kind")] ?? kinds.todo;
+const olu = { name: "Olu Adeyemi", assistant: max };
+const itemsWaiting = {
+  message: { id: MSG, kind: "message", title: "Olu's Max passed on a message", body: "The client moved the deadline to Friday. Can you check the hero images still fit the new copy?", lines: [], note: null,
+    sender: olu, createdAt: now, expiresAt: null, canReply: true, tidied: q.has("tidied"), href: item(MSG) },
+  request: { id: REQ, kind: "request", title: `Olu's Max asks you to accept: ${req.summary}`, body: null, lines: req.lines, note: "The client wants this before Friday's call.",
+    sender: olu, createdAt: now, expiresAt: hours(72), canReply: false, tidied: false, href: item(REQ) },
+};
+const itemsUpdates = {
+  "item-done": { id: REQ, kind: "request", title: "Ada accepted: to-do added", body: "Add the to-do “Review pricing”, due Fri 9 Oct, 17:00", status: "done", other: { name: "Ada Obi", assistant: brenda }, at: now, href: item(REQ) },
+  "item-declined": { id: REQ, kind: "request", title: "Ada declined your request", body: "We already reviewed pricing on Monday, so I'll leave it.", status: "declined", other: { name: "Ada Obi", assistant: brenda }, at: now, href: item(REQ) },
+  "item-reply": { id: REPLY, kind: "reply", title: "Ben replied to your message", body: "Thanks, they still fit. I'll send the final set on Thursday.", status: "delivered", other: { name: "Ben Okafor", assistant: brenda }, at: now, href: item(REPLY) },
+};
+const itemWaitingFor = state === "item-message" ? [itemsWaiting.message] : state === "item-request" ? [itemsWaiting.request] : ["waiting", "waiting-items"].includes(state) ? [itemsWaiting.request, itemsWaiting.message] : [];
+const itemsState = q.has("old") ? undefined : { ready: true, waiting: itemWaitingFor, updates: itemsUpdates[state] ? [itemsUpdates[state]] : [] };
+const itemNotes = {
+  "item-message": { id: "n11", type: "assistant.message", resource_id: MSG, title: "Olu's Max passed on a message", body: `“${itemsWaiting.message.body.slice(0, 119)}…”`, href: item(MSG), created_at: now },
+  "item-request": { id: "n12", type: "assistant.request", resource_id: REQ, title: `Olu's Max asks you to accept: ${req.summary}`, body: "Nothing changes until you accept. It expires Sun 11 Oct, 14:00.", href: item(REQ), created_at: now },
+  "item-done": { id: "n13", type: "assistant.outcome", resource_id: REQ, title: "Ada accepted: to-do added", body: "Add the to-do “Review pricing”, due Fri 9 Oct, 17:00", href: item(REQ), created_at: now },
+  "item-declined": { id: "n14", type: "assistant.outcome", resource_id: REQ, title: "Ada declined your request", body: "“We already reviewed pricing on Monday, so I'll leave it.”", href: item(REQ), created_at: now },
+  "item-reply": { id: "n15", type: "assistant.reply", resource_id: REPLY, title: "Ben replied to your message", body: "“Thanks, they still fit. I'll send the final set on Thursday.”", href: item(REPLY), created_at: now },
+  tagged: { id: "n16", type: "assistant.tagged", resource_id: DESIGN, title: "Olu asked your Brenda in #design", body: "“Landing page” is in progress, 60% done, due Fri 9 Oct 17:00. Ben's last update was a comment on Wed 7 Oct 16:02.", href: thread, created_at: now },
+  "thread-reply": { id: "n17", type: "assistant.thread_reply", resource_id: DESIGN, title: "Ben's Brenda replied in #design", body: "I've asked Ben. I'll reply here by 16:30.", href: thread, created_at: now },
+};
 const fuState = q.has("old") ? undefined : { ready: true, waiting: asks[state] ? [asks[state]] : state === "waiting" ? [asks.ask] : [], answered: answers[state] ? [answers[state]] : [] };
 const fuNotes = asks[state] ? [{ id: "n9", type: "brenda.followup_ask", resource_id: ASK, title: asks[state].title, body: asks[state].asker ? `Reply in a tap or say not now. If you don't reply by 19:41, Max gets what your work shows.` : "Reply before 16:55. Your reply goes in the report your team lead, the owner and HR receive.", href: `/app/company-a/home/follow-ups/about-you?f=${ASK}`, created_at: now }]
   : answers[state] ? [{ id: "n8", type: "brenda.followup_answer", resource_id: ANSWER, title: answers[state].title, body: answers[state].answer, href: answers[state].href, created_at: now }]
   : state === "batch" ? [{ id: "n7", type: "brenda.followup_batch", resource_id: BATCH, title: "Updates from Design are in", body: "6 people: 4 answered from their work, 1 replied, 1 didn't reply in time.", href: `/app/company-a/home/follow-ups?batch=${BATCH}`, created_at: now }]
-  : mentions[state] ? [mentions[state]] : [];
+  : mentions[state] ? [mentions[state]] : itemNotes[state] ? [itemNotes[state]] : [];
 const sample = {
   serverNow: now, me: { displayName: "Ada Employee", role: "employee", presence: "active" }, workspace: { slug: "company-a", name: "Company A" }, brendaEnabled: true,
   settings: { autoClockIn: true, reminders: true }, prefs: { autoClockIn: true, reminders: true }, assistant: { personal, workspace, speak: q.get("speak") || "voice" },
@@ -103,7 +155,19 @@ const sample = {
   notifications: state === "reminder" ? [{ id: "n1", type: "brenda.reminder", title: "Reminder: Call Josh", body: `You asked ${personal.name} to remind you.`, href: null, created_at: now }]
     : state === "report" ? [{ id: "n2", type: "brenda.daily_report", title: "Your team report for Monday 5 October is ready", body: "Ada and Ben logged 13h 20m; Ben finished the brand deck and Ada sent the onboarding flow for review.", href: "/app/company-a/docs/44444444-4444-4444-4444-444444444444", created_at: now }] : fuNotes,
   followUps: fuState,
+  assistantItems: itemsState,
 };
+// The answer to a press on an item card, as the routes give it ({ item }: the AssistantItemView, only what the card reads).
+const itemAnswer = (id, status, extra = {}) => ({ item: { id, kind: id === REQ ? "request" : "message", status, request: id === REQ ? { kind: req.payload.kind, payload: req.payload, summary: req.summary, lines: req.lines, expiresAt: hours(72) } : null, result: null, ...extra } });
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+/** As the server does once an item is answered: no longer waiting, and its notification read. */
+const answered = (id) => {
+  if (sample.assistantItems) sample.assistantItems.waiting = sample.assistantItems.waiting.filter((w) => w.id !== id);
+  sample.notifications = sample.notifications.filter((n) => n.resource_id !== id);
+};
+// ?state=item-request&poll=gone: Olu cancels it two seconds in, and the next poll finds it gone.
+let cancelled = false;
+if (state === "item-request" && q.get("poll") === "gone") setTimeout(() => { cancelled = true; answered(REQ); refresh(); }, 2000);
 const replies = {
   // `spoken` is what the server makes speakable (src/lib/assistant-speech/speakable.ts): no Markdown, links or ids.
   confirm: { reply: "Ada will get “Review the brand deck”, due tomorrow at 15:00, once you confirm.", spoken: "Ada will get “Review the brand deck”, due tomorrow at 15:00, once you confirm.", engine: "claude", actions: [], proposals: [{ kind: "confirm", token: "preview-token-123", summary: "Create “Review the brand deck” for Ada, due Tue 6 Oct, 15:00", tool: "create_todos" }], note: null },
@@ -135,6 +199,24 @@ window.__TAURI__ = {
       sample.notifications = sample.notifications.filter((n) => n.type !== "brenda.followup_ask");
       return { followUp: {} };
     }
+    // Assistants talk to each other (phase 6): the item routes.
+    const itemPath = /\/assistant-items\/([^/]+)(?:\/(seen|reply|accept|decline))?$/.exec(path);
+    if (cmd === "api" && itemPath) {
+      const [, id, step] = itemPath;
+      await wait(step ? 700 : 200);
+      console.log("assistant item", step ?? "read", id, args.body);
+      if (!step) return itemAnswer(id, cancelled ? "cancelled" : "delivered");
+      if (step === "reply" && q.get("send") === "already") throw { status: 409, code: "ALREADY_REPLIED", message: "You've already replied to this." };
+      if (step === "reply" && q.get("send") === "error") throw { status: 503, code: "NOT_READY", message: "This needs a database update first. Try again later." };
+      if (step === "accept" && q.get("accept") === "closed") throw { status: 409, code: "ITEM_CLOSED", message: "This was already answered." };
+      answered(id);
+      if (step === "seen") return itemAnswer(id, "seen");
+      if (step === "reply") return itemAnswer(id, "seen", { reply: { id: REPLY, body: args.body?.body, createdAt: new Date().toISOString(), seenAt: null } });
+      if (step === "decline") return itemAnswer(id, "declined", { declineReason: args.body?.reason ?? null });
+      return q.get("accept") === "failed"
+        ? itemAnswer(id, "failed", { result: { code: "not_allowed", words: "You don't hold “Landing page” any more, so nothing was changed." } })
+        : itemAnswer(id, "done", { result: { code: "done", words: req.words } });
+    }
     if (cmd === "api" && path.includes("/brenda/conversations")) { saved.push({ method: args.method, path, body: args.body }); console.log("past chat saved", args.method, path, args.body); return { id: "55555555-5555-5555-5555-555555555555", updatedAt: new Date().toISOString() }; }
     if (cmd === "api" && args.method !== "GET") { await new Promise((r) => setTimeout(r, 300)); return {}; }
     if (cmd === "upload_dropped") { await new Promise((r) => setTimeout(r, 700)); return { id: "33333333-3333-3333-3333-333333333333" }; }
@@ -150,7 +232,7 @@ window.__TAURI__ = {
 };
 try { if (!q.has("keep")) localStorage.clear(); } catch {}
 // The follow-up states open their card first, not the morning briefing (?state=waiting shows the briefing).
-try { if (asks[state] || answers[state] || state === "batch" || mentions[state]) localStorage.setItem(`brenda-briefing:company-a:${new Date().toDateString()}`, "1"); } catch {}
+try { if (asks[state] || answers[state] || state === "batch" || mentions[state] || itemNotes[state]) localStorage.setItem(`brenda-briefing:company-a:${new Date().toDateString()}`, "1"); } catch {}
 </script>
 <script src="src/sound.js"></script>
 <script src="src/main.js"></script>
@@ -186,19 +268,29 @@ const speakingFeed = (() => {
   };
 })();
 const talkFor = (ms) => { voiceEvent({ phase: "listening", level: 0 }); const every = setInterval(() => voiceEvent({ phase: "listening", level: speech() }), 70); if (ms) setTimeout(() => { clearInterval(every); voiceEvent({ phase: "transcribing" }); }, ms); };
+// The item cards (phase 6): their own ?card= steps, once the card has opened (after the first polls).
+const itemCardState = ["item-message", "item-request"].includes(state);
+if (itemCardState) setTimeout(() => {
+  const c = q.get("card");
+  const type = (words) => { const a = document.getElementById("fnote"); if (!a) return; a.value = words; a.dispatchEvent(new Event("input", { bubbles: true })); a.focus(); };
+  if (c === "reply") { openItemNote("replying"); type("Thanks, they still fit. I'll send the final set on Thursday."); }
+  if (c === "decline") { openItemNote("declining"); type("We already reviewed pricing on Monday."); }
+  // Holding the talk keys with the reply box open: the words go into the reply, never to her.
+  if (c === "dictate") { openItemNote("replying"); setTimeout(() => { talkFor(2000); setTimeout(() => voiceEvent({ phase: "heard", text: "Thanks, they still fit. I'll send the final set on Thursday." }), 3200); }, 600); }
+}, 1000);
 setTimeout(() => {
   const c = q.get("card");
   if (c === "listening") talkFor(0);
   if (c === "working") talkFor(2000);
   if (c === "thinking") openCard({ kind: "voice", phase: "thinking", heard: "What is Ben working on?", sticky: true });
-  if (c === "reply") ask("What is Ben working on?", { spoken: false });
+  if (c === "reply" && !itemCardState) ask("What is Ben working on?", { spoken: false });
   if (c === "speaking") ask("What is Ben working on?", { spoken: false }).then(() => speakingFeed.speakFor(4000, q.has("synthetic")));
   if (c === "confirm") ask("Give Ada the brand deck review for tomorrow at 3", { spoken: false });
   if (c === "offer") ask("Add calling Josh and start my top task", { spoken: false });
   if (c === "error") voiceEvent({ phase: "error", message: "The microphone is blocked. Allow it in System Settings, Privacy, Microphone." });
   if (c === "voice-off") voiceEvent({ phase: "off" });
   // Holding the talk keys on an open ask: the words go into its note, never to her.
-  if (c === "dictate") setTimeout(() => { talkFor(2000); setTimeout(() => voiceEvent({ phase: "heard", text: "Images land tomorrow morning, then it's ready for a check." }), 3200); }, 600);
+  if (c === "dictate" && !itemCardState) setTimeout(() => { talkFor(2000); setTimeout(() => voiceEvent({ phase: "heard", text: "Images land tomorrow morning, then it's ready for a check." }), 3200); }, 600);
   if (c === "drop") window.__h?.["brenda://drag"]?.({ payload: { phase: "drop", x: 240, y: 20, count: 2, files: [{ index: 0, name: "onboarding-flow-v3.pdf", size: 1843200, problem: null }, { index: 1, name: "notes.docx", size: 20480, problem: "Only PDF, PNG, JPEG, WebP and TXT files." }] } });
 }, 400);
 // ?card=typing: a question typed letter by letter into the open card's ask box (the timer card opens first for a timer).
