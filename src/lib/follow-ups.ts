@@ -13,6 +13,7 @@
  * written; nothing here turns them into Markdown or links (review, 8 October 2026).
  */
 import type { AssistantProfile } from "@/lib/assistant-look";
+import type { EvidenceRef } from "@/lib/evidence-links";
 
 // ---- Statuses and choices ---------------------------------------------------------------------------------------------
 
@@ -366,6 +367,12 @@ export type FollowUpView = {
   canCancel: boolean;
   /** /app/<slug>/home/follow-ups/<id> */
   href: string;
+  /**
+   * Where the answer comes from (owner decision, 8 October 2026: phase 7a, evidence links): the follow-up itself, its
+   * task, and the open tasks and work finished today that were shared, at most 5 (follow-up-compose answerSources).
+   * Only what the viewer may already see: the shared facts' tasks once there is an answer.
+   */
+  sources?: EvidenceRef[];
 };
 
 export type FollowUpBatchView = {

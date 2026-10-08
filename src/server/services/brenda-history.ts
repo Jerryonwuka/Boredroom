@@ -10,7 +10,8 @@
  * and a restored one reads as expired. Undo tokens go the same way (owner decision, 8 October 2026: act without asking):
  * the offer belongs to the window it was made in, so a reopened chat shows no Undo; what is kept is that an action ran
  * without asking (`auto`), that it was undone (`undone`), why a Confirm still asked (`why`), and that a reply read other
- * people's words (`tainted`), which the chat sends back so the next turn still asks.
+ * people's words (`tainted`), which the chat sends back so the next turn still asks. A Confirm keeps its readback (owner
+ * decision, 8 October 2026: phase 7a): who it would have gone to and what they would have got, as the card showed it.
  *
  * Someone signed in as the person is someone else too: while a Boredroom administrator is impersonating them (support),
  * past chats are closed: the list is empty, a conversation is not there, and nothing is saved or deleted in their name.
@@ -76,7 +77,11 @@ const proposalSchema = z.discriminatedUnion("kind", [
   // The token is accepted so a client may send the conversation as it holds it; it is never stored. `detail` is the whole
   // message a Confirm would send (up to 4,000 characters). `why`: "Still asking: …" when the person chose Act without
   // asking (owner decision, 8 October 2026).
-  z.object({ kind: z.literal("confirm"), token: text(CONFIRM_TOKEN_MAX).optional(), summary: told(2000), tool: text(80), detail: told(4000).optional(), why: told(300).optional(), done }),
+  // `readback` (phase 7a): the card's "Goes to" lines and "What they get", shortened to fit rather than refused.
+  z.object({
+    kind: z.literal("confirm"), token: text(CONFIRM_TOKEN_MAX).optional(), summary: told(2000), tool: text(80), detail: told(4000).optional(), why: told(300).optional(),
+    readback: z.object({ to: z.array(told(300)).max(50), what: told(1000).optional() }).optional(), done,
+  }),
 ]);
 
 const messageSchema = z.object({
@@ -104,7 +109,7 @@ export const updateConversationSchema = createConversationSchema.extend({
 });
 
 type ParsedMessage = z.infer<typeof messageSchema>;
-type StoredProposal = Exclude<NonNullable<ParsedMessage["proposals"]>[number], { kind: "confirm" }> | { kind: "confirm"; summary: string; tool: string; detail?: string; why?: string; done?: string };
+type StoredProposal = Exclude<NonNullable<ParsedMessage["proposals"]>[number], { kind: "confirm" }> | { kind: "confirm"; summary: string; tool: string; detail?: string; why?: string; readback?: { to: string[]; what?: string }; done?: string };
 /** A message as stored and returned: a confirm proposal keeps its summary, why and done label, never its token. */
 export type StoredMessage = Omit<ParsedMessage, "proposals"> & { proposals?: StoredProposal[] };
 
@@ -146,7 +151,11 @@ export function stripTokens(messages: ParsedMessage[]): StoredMessage[] {
       ...(actions ? { actions: actions.map(({ auto, undone, ...a }) => ({ ...a, ...(auto ? { auto: true as const } : {}), ...(undone ? { undone } : {}) })) } : {}),
       ...(proposals ? {
         proposals: proposals.map((p): StoredProposal => (p.kind === "confirm"
-          ? { kind: "confirm", summary: p.summary, tool: p.tool, ...(p.detail ? { detail: p.detail } : {}), ...(p.why ? { why: p.why } : {}), ...(p.done ? { done: p.done } : {}) }
+          ? {
+            kind: "confirm", summary: p.summary, tool: p.tool, ...(p.detail ? { detail: p.detail } : {}), ...(p.why ? { why: p.why } : {}),
+            ...(p.readback && (p.readback.to.length || p.readback.what) ? { readback: { to: p.readback.to, ...(p.readback.what ? { what: p.readback.what } : {}) } } : {}),
+            ...(p.done ? { done: p.done } : {}),
+          }
           : p)),
       } : {}),
     };

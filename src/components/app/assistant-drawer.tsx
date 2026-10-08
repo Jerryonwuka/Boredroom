@@ -38,6 +38,10 @@
  * composer; the text narrows to make room, so the microphone and Send stay on the row at 400px), and her opening words
  * say which mode is in force: she asks before anything that lands on someone else, or does what they ask at once with
  * Undo for 10 minutes.
+ *
+ * Quiet hours (owner decision, 8 October 2026: phase 7a): during the person's quiet hours the panel opens and closes
+ * without its chime, and her replies are not read aloud on their own (brenda-chat); Listen and the chimes switch work.
+ * Confirm cards here say who receives what (the shared BrendaMessages).
  */
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
@@ -128,7 +132,10 @@ export function AssistantDrawer({ orgSlug, isOrg, firstName, floating = false, t
   };
 
   const opened = useRef(false);
-  useEffect(() => { if (opened.current !== open) { if (open || opened.current) playSound(open ? "open" : "close"); opened.current = open; } }, [open]);
+  // Opening and closing chime, except during the person's quiet hours (owner decision, 8 October 2026: phase 7a).
+  const hushed = useRef(chat.hushed);
+  useEffect(() => { hushed.current = chat.hushed; });
+  useEffect(() => { if (opened.current !== open) { if ((open || opened.current) && !hushed.current) playSound(open ? "open" : "close"); opened.current = open; } }, [open]);
   useEffect(() => { if (!open) return; const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { void dictation.stop(); setOpen(false); } }; document.addEventListener("keydown", onKey); return () => document.removeEventListener("keydown", onKey); }, [open, dictation]);
   useEffect(() => { listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: "smooth" }); }, [messages, pending]);
 

@@ -63,6 +63,13 @@
  * under its summary ("Still asking: Max read other people's words in this reply."). A reply that read other people's
  * words is marked (`tainted`) and sent back with the conversation, so the server keeps asking in that chat. Saved: the
  * marks, the undone words and the why; never an Undo token (a reopened chat offers no Undo).
+ *
+ * Brenda keeps the loops closed (owner decision, 8 October 2026: phase 7a). Every Confirm card says exactly who receives
+ * what (`ConfirmReadback`, from the server's `readback`: "Goes to" with one line per person, channel and its member count,
+ * or assistant, then "What they get"), under the summary and the why, in her page, the drawer and Messages threads
+ * (mention-thread uses the same part); the Confirm button points at it (aria-describedby), and a saved Confirm keeps it.
+ * The person's quiet hours (`useAssistant().quiet`, re-judged when a window starts or ends: `useQuietNow`) keep her
+ * from reading a reply aloud on her own and from playing her sounds; Listen still plays (it is the person's own press).
  */
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -81,6 +88,8 @@ import { FollowUpStatusCard } from "@/components/app/follow-up-status-card";
 import { AssistantItemStatusCard } from "@/components/app/assistant-item-status-card";
 import { ActModePill, useActMode } from "@/components/app/act-mode-pill";
 import { ACT_WORDS, undoOpen, type ActState, type UndoOffer } from "@/lib/act-mode";
+import { READBACK_WORDS, moreWords, shownLines, whatLine, type Readback } from "@/lib/confirm-readback";
+import type { QuietState } from "@/lib/routines";
 import { playSound } from "@/lib/brenda-sound";
 import { useDictation } from "@/hooks/use-dictation";
 import { useSpeech } from "@/hooks/use-assistant-speech";
@@ -168,6 +177,9 @@ const landed = (theirs: BrendaMsg[], mine: BrendaMsg[]) => {
   return kept.length === theirs.length && kept.every((m, i) => marks(m) === marks(theirs[i]));
 };
 
+/** What a card's detail box holds, for a screen reader: a routine's is its preview and what it does each time. */
+const detailLabel = (tool: string | undefined) => (tool === "create_routine" || tool === "update_routine" ? "The preview and what it does each time" : "The full message");
+
 /**
  * Ours carried onto theirs, after a save was refused because the conversation was saved from somewhere else since
  * `base` (the copy this chat last saved or opened). What we added after base goes after theirs; a message we marked
@@ -208,15 +220,66 @@ function titleOf(messages: BrendaMsg[]) {
 /**
  * The conversation as it is saved: the newest messages, each within the length kept, no Confirm tokens and no Undo
  * tokens (an Undo belongs to the window it was offered in). What a reply read (`tainted`), what ran without asking
- * (`auto`), what was undone and why a Confirm still asked are kept.
+ * (`auto`), what was undone and why a Confirm still asked are kept; so is who it went to (`readback`, phase 7a), which
+ * server/services/brenda-history keeps too.
  */
 function forSaving(messages: BrendaMsg[]) {
   return messages.slice(-KEEP.messages).map((m) => ({
     ...m,
     content: clip(m.content, KEEP.content),
     actions: m.actions?.map(withoutUndo),
-    proposals: m.proposals?.map((p) => (p.kind === "confirm" ? { kind: p.kind, summary: p.summary, tool: p.tool, ...(p.detail ? { detail: p.detail } : {}), ...(p.why ? { why: p.why } : {}), done: p.done } : p)),
+    proposals: m.proposals?.map((p) => (p.kind === "confirm"
+      ? { kind: p.kind, summary: p.summary, tool: p.tool, ...(p.detail ? { detail: p.detail } : {}), ...(p.why ? { why: p.why } : {}), ...(p.readback ? { readback: p.readback } : {}), done: p.done }
+      : p)),
   }));
+}
+
+/**
+ * Whether the person's quiet hours are on now (owner decision, 8 October 2026: phase 7a, quiet hours). The server says
+ * so with every page (`useAssistant().quiet`: `active`, when it ends, when the next one starts); a timer re-judges it
+ * when the window ends or the next one starts, so a page left open all evening goes quiet at 22:00 without a reload.
+ * At each of those times the state is also read again (GET /brenda/quiet-hours, with `orgSlug`), so a window that
+ * started on the page knows its own end and the next start, and a page left open overnight speaks again in the morning
+ * (review, 8 October 2026). Never quiet before migration 0046 or with an older server (no `quiet`).
+ */
+export function useQuietNow(orgSlug?: string): boolean {
+  const served = useAssistant().quiet;
+  // What the server said when a window started or ended here, for as long as the page's own state is the same.
+  const [read, setRead] = useState<{ from: QuietState | undefined; q: QuietState } | null>(null);
+  const q = read && read.from === served ? read.q : served;
+  // When the timer last fired (null: as the state says).
+  const [at, setAt] = useState<{ q: QuietState | undefined; t: number } | null>(null);
+  const judgedAt = at && at.q === q ? at.t : null;
+  useEffect(() => {
+    if (!q?.ready) return;
+    // The next change not yet judged (one already past, on a page restored later, is judged at once).
+    const next = [q.active ? q.until : null, q.nextStart].map((s) => (s ? Date.parse(s) : NaN)).filter((t) => Number.isFinite(t) && (judgedAt === null || t > judgedAt));
+    if (!next.length) return;
+    let alive = true;
+    // setTimeout holds at most about 24 days; a quiet window starts within 8.
+    const wait = Math.min(Math.max(0, Math.min(...next) - Date.now()) + 250, 2_000_000_000);
+    const timer = setTimeout(() => {
+      setAt({ q, t: Date.now() });
+      if (!orgSlug) return;
+      // The state from here on (its end, the next start); kept as judged now until it comes.
+      api<{ ready?: boolean; state?: QuietState }>(`/api/orgs/${orgSlug}/brenda/quiet-hours`, { retries: 1 }).then(
+        (r) => { if (alive && r?.state && typeof r.state.active === "boolean") setRead({ from: served, q: { ...r.state, ready: r.state.ready !== false } }); },
+        () => { /* offline: the timer's own judgement stands */ },
+      );
+    }, wait);
+    return () => { alive = false; clearTimeout(timer); };
+  }, [q, judgedAt, orgSlug, served]);
+  return quietAt(q, judgedAt);
+}
+
+/** The quiet state at `t` (null: as the server said). */
+function quietAt(q: QuietState | undefined, t: number | null): boolean {
+  if (!q?.ready) return false;
+  if (t === null) return q.active;
+  const until = q.until ? Date.parse(q.until) : NaN;
+  const start = q.nextStart ? Date.parse(q.nextStart) : NaN;
+  if (q.active && (!Number.isFinite(until) || t < until)) return true;
+  return Number.isFinite(start) && t >= start;
 }
 
 /** A saved message as the chat shows it. A saved Confirm has no token, which reads as expired. */
@@ -345,8 +408,12 @@ export function useBrendaChat({ orgSlug, keysActive = true, visible = true, onLe
   // When she reads a reply aloud (owner decision, 7 October 2026: her voice): the person's choice, and whether the chat
   // is on screen and still here, kept for the reply that arrives after an await.
   const { speak: prefer } = useAssistant();
-  const voice = useRef({ prefer, visible, alive: true });
-  useEffect(() => { voice.current.prefer = prefer; voice.current.visible = visible; });
+  // During the person's quiet hours (phase 7a) she reads nothing aloud on her own and plays none of her sounds.
+  const hushed = useQuietNow(orgSlug);
+  const voice = useRef({ prefer, visible, alive: true, hushed });
+  useEffect(() => { voice.current.prefer = prefer; voice.current.visible = visible; voice.current.hushed = hushed; });
+  /** One of her sounds, unless it is the person's quiet hours. */
+  const chime = (kind: Parameters<typeof playSound>[0]) => { if (!voice.current.hushed) playSound(kind); };
   // Whether the message in the box was spoken: dictation wrote into it. Typing does not clear it (a dictated message
   // tidied by hand is still one you talked); emptying the box, sending and moving to another chat do.
   const voiced = useRef(false);
@@ -467,7 +534,7 @@ export function useBrendaChat({ orgSlug, keysActive = true, visible = true, onLe
       const mine = epoch.current;
       setMessages(next); setText(""); setPending(true); setError(null); setNotice(null); setSaid("");
       voiced.current = false;
-      playSound("send");
+      chime("send");
       try {
         // A switch of mode just made (the pill, Shift+Tab) is saved first, so the message runs in the mode shown.
         await actMode.settled();
@@ -483,11 +550,12 @@ export function useBrendaChat({ orgSlug, keysActive = true, visible = true, onLe
         const reply: BrendaMsg = { role: "assistant", content: r.reply, actions: r.actions, proposals: r.proposals, engine: r.engine, note: r.note, tainted: !!r.tainted };
         setMessages((cur) => [...cur, reply]);
         // Read aloud as the person chose: every reply, or the reply to what they said. Only her words: never a
-        // Confirm's result, an error or the built-in helper's note.
-        const { prefer: choice, visible: shown, alive } = voice.current;
-        if (alive && shown && (choice === "always" || (choice === "voice" && spoken))) speech.speak(reply.content, { id: speechId(reply) });
+        // Confirm's result, an error or the built-in helper's note. Never on her own during quiet hours (phase 7a):
+        // Listen still reads it.
+        const { prefer: choice, visible: shown, alive, hushed: quietNow } = voice.current;
+        if (alive && shown && !quietNow && (choice === "always" || (choice === "voice" && spoken))) speech.speak(reply.content, { id: speechId(reply) });
         const asks = r.proposals?.some((p) => p.kind === "confirm");
-        playSound(asks ? "attention" : r.actions?.length ? "success" : "reply");
+        chime(asks ? "attention" : r.actions?.length ? "success" : "reply");
         // Waiting for a yes is her alert look; otherwise a reply pleases her and something done is a celebration.
         if (!asks) react(r.actions?.length ? "celebrate" : "pleased");
         if (r.actions?.length) router.refresh();
@@ -495,7 +563,7 @@ export function useBrendaChat({ orgSlug, keysActive = true, visible = true, onLe
         // The message stays on screen as it is (setting it again would undo what changed meanwhile, such as another
         // window's copy taken in).
         if (epoch.current !== mine) return;
-        setError(isApiFailure(err) ? err.error.message : "Cannot reach the server."); playSound("error");
+        setError(isApiFailure(err) ? err.error.message : "Cannot reach the server."); chime("error");
       }
       finally { if (epoch.current === mine) setPending(false); }
     } finally { sending.current = false; }
@@ -521,10 +589,10 @@ export function useBrendaChat({ orgSlug, keysActive = true, visible = true, onLe
         if (r.error) {
           // What ran before the failure keeps its done line (review, 8 October 2026).
           if (r.actions.length) { mark(mi, pi, "Done"); setMessages((cur) => cur.map((m, i) => (i === mi ? keepId(m, { ...m, actions: [...(m.actions ?? []), ...r.actions] }) : m))); router.refresh(); }
-          setError(r.error); playSound("error"); return;
+          setError(r.error); chime("error"); return;
         }
         mark(mi, pi, "Done");
-        playSound("success");
+        chime("success");
         react(r.actions.length ? "celebrate" : "pleased");
         if (r.actions.length) setMessages((cur) => cur.map((m, i) => (i === mi ? keepId(m, { ...m, actions: [...(m.actions ?? []), ...r.actions] }) : m)));
       }
@@ -533,7 +601,7 @@ export function useBrendaChat({ orgSlug, keysActive = true, visible = true, onLe
       // A Confirm that already ran (pressed twice, or in another tab) is done, not an error.
       if (isApiFailure(err) && err.error.code === "ALREADY_CONFIRMED") { mark(mi, pi, "Done"); return; }
       if (epoch.current !== mine) return;
-      setError(isApiFailure(err) ? err.error.message : "Cannot reach the server."); playSound("error");
+      setError(isApiFailure(err) ? err.error.message : "Cannot reach the server."); chime("error");
     }
   }
 
@@ -569,7 +637,7 @@ export function useBrendaChat({ orgSlug, keysActive = true, visible = true, onLe
       if (isApiFailure(err) && err.error.code === "ALREADY_UNDONE") { changeAction(mine, mi, ai, (x) => ({ ...withoutUndo(x), undone: ACT_WORDS.chat.undone })); return; }
       if (isApiFailure(err) && UNDO_GONE.has(err.error.status)) changeAction(mine, mi, ai, withoutUndo);
       setError(isApiFailure(err) ? (err.error.status < 500 || err.error.code === "NOT_READY" ? err.error.message : "Something went wrong. Nothing was undone; try again.") : "Cannot reach the server.");
-      playSound("error");
+      chime("error");
     } finally {
       undoingNow.current.delete(key);
       setUndoing((cur) => cur.filter((k) => k !== key));
@@ -691,7 +759,7 @@ export function useBrendaChat({ orgSlug, keysActive = true, visible = true, onLe
   });
 
   return { orgSlug, timeZone, messages, text, setText: setBox, pending, error, notice, dictation, send, act, decline, reset, load, remove, saveNow, conversationId, look, state, reaction, lastIndex, waitingAt, speechId, listen, quiet,
-    actMode, undo, undoing, said };
+    actMode, undo, undoing, said, hushed };
 }
 
 export type BrendaChat = ReturnType<typeof useBrendaChat>;
@@ -723,6 +791,8 @@ export function BrendaMessages({ chat, onLeave, size = "md" }: { chat: BrendaCha
   const { name } = useAssistant().personal;
   const { messages, pending, error, act, decline, look, lastIndex, waitingAt } = chat;
   const voice = useSpeech();
+  // Each Confirm card's readback has its own id, for its Confirm button's aria-describedby.
+  const readbackId = useId();
   const lg = size === "lg";
   const now = useUndoClock(messages);
   const until = useMemo(() => {
@@ -800,17 +870,20 @@ export function BrendaMessages({ chat, onLeave, size = "md" }: { chat: BrendaCha
               {m.proposals?.length ? (
                 <ul className={cn("space-y-2", indent)}>{m.proposals.map((p, pi) => {
                   const keys = mi === lastIndex && pi === waitingAt;
+                  const rb = p.kind === "confirm" && p.readback && (p.readback.to.length || p.readback.what) ? `${readbackId}-${mi}-${pi}` : undefined;
                   return p.kind === "confirm" ? (
                     <li key={pi} className="rounded-xl border border-border-input p-3 text-sm">
                       <p className="flex items-start gap-2.5 font-medium text-foreground"><ShieldCheck className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden /><span className="min-w-0">{p.summary}</span></p>
                       {/* Why it still asks though the person chose Act without asking (8 October 2026), as the server said it. */}
                       {p.why ? <p className="ml-[26px] mt-1 text-meta font-normal text-secondary">{p.why}</p> : null}
+                      {/* Who receives what (phase 7a): Confirm points at it. */}
+                      {rb && p.readback ? <ConfirmReadback id={rb} readback={p.readback} /> : null}
                       {/* The whole message it will send, every word (review, 8 October 2026); a long one scrolls. */}
-                      {p.detail && !(p.done && m.actions?.some(liveCard)) ? <div role="region" tabIndex={0} aria-label="The full message" className="ml-[26px] mt-2 max-h-48 overflow-y-auto whitespace-pre-wrap break-words rounded-lg bg-fill-0 px-3 py-2 font-normal text-foreground outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ring)]">{p.detail}</div> : null}
+                      {p.detail && !(p.done && m.actions?.some(liveCard)) ? <div role="region" tabIndex={0} aria-label={detailLabel(p.tool)} className="ml-[26px] mt-2 max-h-48 overflow-y-auto whitespace-pre-wrap break-words rounded-lg bg-fill-0 px-3 py-2 font-normal text-foreground outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ring)]">{p.detail}</div> : null}
                       <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
                         {p.done ? <span className="text-xs font-medium text-secondary">{p.done}</span> : !p.token ? <span className="text-xs font-normal text-subtle">Expired. Ask {name} again.</span> : <>
                           <button type="button" className={btn("ghost", "sm")} aria-keyshortcuts={keys ? "N" : undefined} onClick={() => decline(mi, pi)}>Not now{keys ? <KeyHint>N</KeyHint> : null}</button>
-                          <button type="button" className={btn("primary", "sm")} aria-keyshortcuts={keys ? "Y" : undefined} onClick={() => void act(mi, pi, p)}><AnimatedCheck aria-hidden />Confirm{keys ? <KeyHint>Y</KeyHint> : null}</button>
+                          <button type="button" className={btn("primary", "sm")} aria-keyshortcuts={keys ? "Y" : undefined} aria-describedby={rb} onClick={() => void act(mi, pi, p)}><AnimatedCheck aria-hidden />Confirm{keys ? <KeyHint>Y</KeyHint> : null}</button>
                         </>}
                       </div>
                     </li>
@@ -886,6 +959,35 @@ function useUndoClock(messages: BrendaMsg[]): number {
     return () => clearTimeout(timer);
   }, [messages, now]);
   return now;
+}
+
+/**
+ * Who receives what, on a Confirm card (owner decision, 8 October 2026: phase 7a, Confirm readback). Under the summary
+ * (and the why), aligned with its text: "Goes to" (13px medium, secondary) over the server's lines as a list, one per
+ * person, place with its member count, or assistant ("Ben Okafor, in your direct messages", "#Design, a team channel of 6
+ * people", "Ben's Brenda, about Ben's work"), at most 6 then "and 2 more" (the rest still read out to a screen reader);
+ * then "What they get: …" in one secondary line. The words and the cap are lib/confirm-readback's, shared with the notch;
+ * the lines are plain text. `id` is what the card's Confirm points at (aria-describedby), so a screen reader hears who
+ * receives it before the yes. Her chat (her page and the drawer) and Messages threads (mention-thread) draw it alike.
+ */
+export function ConfirmReadback({ readback, id, className }: { readback: Readback; id: string; className?: string }) {
+  const { lines, more } = shownLines(readback);
+  const rest = readback.to.slice(lines.length);
+  if (!lines.length && !readback.what) return null;
+  return (
+    <div id={id} className={cn("ml-[26px] mt-2", className)}>
+      {lines.length ? (
+        <>
+          <p id={`${id}-to`} className="text-meta font-medium text-secondary">{READBACK_WORDS.goesTo}</p>
+          <ul aria-labelledby={`${id}-to`} className="mt-0.5 space-y-0.5 text-meta font-normal text-foreground">
+            {lines.map((line, i) => <li key={i} className="break-words">{line}</li>)}
+            {more ? <li className="text-secondary">{moreWords(more)}<span className="sr-only">: {rest.join("; ")}</span></li> : null}
+          </ul>
+        </>
+      ) : null}
+      {readback.what ? <p className={cn("break-words text-meta font-normal text-secondary", lines.length && "mt-1")}>{whatLine(readback.what)}</p> : null}
+    </div>
+  );
 }
 
 /**

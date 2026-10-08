@@ -30,6 +30,13 @@
  * the server enforces it (lib/act-mode `ActState`: what they chose, whether the workspace allows it, the lock), so the
  * notch shows "Acting without asking" when it is in force. Before migration 0045 it reads `ready: false` and the notch
  * shows nothing; an older notch ignores it.
+ *
+ * Brenda keeps the loops closed (owner decision, 8 October 2026: phase 7a): the state's `opener` is the morning opener
+ * (counts and one-tap actions, services/opener; `null` when it could not be read), which the notch shows instead of the
+ * briefing card once a day; `quiet` is whether the person is in their quiet hours (lib/routines `QuietState`: while
+ * active the notch opens nothing on its own, plays no sound and speaks nothing on its own); `routineRuns` holds the
+ * routine runs delivered in the last 24 hours with their lines, for the routine card. Before migration 0046 `quiet` is
+ * `{ ready: false, … }` (never quiet) and `routineRuns` `{ ready: false, recent: [] }`; an older notch ignores all three.
  */
 import { z } from "zod";
 import { withSystem, withUser } from "@/server/db";
@@ -47,6 +54,11 @@ import { followUpsForDesktop, type DesktopFollowUps } from "@/server/services/fo
 import { assistantItemsForDesktop, type DesktopAssistantItems } from "@/server/services/assistant-items";
 import { PALETTE, type AssistantEyes, type AssistantProfile, type AssistantSpeak, type AssistantVisor, type FaceShades } from "@/lib/assistant-look";
 import { actStateOf, type ActState } from "@/lib/act-mode";
+import { morningOpener } from "@/server/services/opener";
+import type { Opener } from "@/lib/opener";
+import { routineRunsForDesktop, type DesktopRoutineRuns } from "@/server/services/routines";
+import { schema0046Ready } from "@/server/lib/schema-0046";
+import { NO_QUIET, type QuietState } from "@/lib/routines";
 
 const CODE_TTL_SECONDS = 10 * 60;
 const DESKTOP_SESSION_DAYS = 90;
@@ -152,19 +164,33 @@ export async function revokeDevice(user: CurrentUser, sessionId: string) {
 export type DesktopAssistant = { name: string; colour: string; visor: AssistantVisor; eyes: AssistantEyes; face: FaceShades };
 const forNotch = (p: AssistantProfile): DesktopAssistant => ({ name: p.name, colour: p.colour, visor: p.visor, eyes: p.eyes, face: PALETTE[p.colour].face });
 
-export type { DesktopFollowUps, DesktopAssistantItems };
+export type { DesktopFollowUps, DesktopAssistantItems, DesktopRoutineRuns };
 const NO_FOLLOW_UPS: DesktopFollowUps = { ready: false, waiting: [], answered: [] };
 const NO_ITEMS: DesktopAssistantItems = { ready: false, waiting: [], updates: [] };
+const NO_RUNS: DesktopRoutineRuns = { ready: false, recent: [] };
+
+/** The morning opener for the notch, without the lists behind its counts (the card shows counts and actions). Never throws. */
+async function openerForNotch(ctx: OrgContext, brief: Awaited<ReturnType<typeof briefing>>): Promise<Opener | null> {
+  try {
+    const o = await morningOpener(ctx, { briefing: brief });
+    return Object.fromEntries(Object.entries(o).filter(([k]) => k !== "detail")) as Opener;
+  } catch (err) {
+    console.warn(`[desktop] opener: ${(err as Error)?.message ?? String(err)}`);
+    return null;
+  }
+}
 
 /**
  * Everything the notch shows, in one read: the briefing, the timer, the clock, unread notifications (Brenda's
  * reminders and nudges, assignments, confirmations), what the person allows, and their own assistant and the
- * workspace's. Polled every 20 seconds.
+ * workspace's. Polled every 20 seconds. `opener: false` (the notch has shown today's first card): the morning opener is
+ * not built (`opener: null`), as it costs a score of reads and the notch shows it once a day (review, 8 October 2026).
  */
-export async function desktopState(ctx: OrgContext) {
+export async function desktopState(ctx: OrgContext, o: { opener?: boolean } = {}) {
+  const wantOpener = o.opener !== false;
   const worker = ctx.membership.role === "employee" || ctx.membership.role === "manager";
   const lead = ctx.membership.role !== "employee";
-  const [brief, session, clock, team, extra, followUps, assistantItems] = await Promise.all([
+  const [brief, session, clock, team, extra, followUps, assistantItems, routineRuns] = await Promise.all([
     briefing(ctx),
     worker ? currentSession(ctx) : Promise.resolve(null),
     worker ? myClock(ctx) : Promise.resolve(null),
@@ -177,12 +203,21 @@ export async function desktopState(ctx: OrgContext) {
       progress: await db.query<{ id: string; title: string; due_at: string | null; progress_percent: number; version: number }>(
         `SELECT id, title, due_at, progress_percent::int AS progress_percent, version FROM tasks WHERE assignee_membership_id = $1 AND status IN ('todo','in_progress','blocked') AND archived_at IS NULL ORDER BY due_at NULLS LAST, created_at DESC`, [ctx.membership.id]),
       assistants: await readAssistantProfiles(db, ctx),
+      // Cached for the process once 0046 is there: whether "not quiet" means no quiet hours set or no database update yet.
+      quietReady: await schema0046Ready(db),
     })),
     // A follow-up problem never takes the rest of the notch down with it.
     followUpsForDesktop(ctx).catch((err) => { console.warn(`[desktop] follow-ups: ${(err as Error)?.message ?? String(err)}`); return NO_FOLLOW_UPS; }),
     // Nor does a problem with what other people's assistants brought the person (owner decision, 8 October 2026: phase 6).
     assistantItemsForDesktop(ctx).catch((err) => { console.warn(`[desktop] assistant items: ${(err as Error)?.message ?? String(err)}`); return NO_ITEMS; }),
+    // Nor does a problem with the routine runs (owner decision, 8 October 2026: phase 7a).
+    routineRunsForDesktop(ctx).catch((err) => { console.warn(`[desktop] routine runs: ${(err as Error)?.message ?? String(err)}`); return NO_RUNS; }),
   ]);
+  // The opener counts from the briefing just read (no second read of it), and only until the notch has shown today's
+  // first card.
+  const opener = wantOpener ? await openerForNotch(ctx, brief) : null;
+  // Quiet hours come with the profiles read: present only for someone who has them on.
+  const quiet: QuietState = extra.assistants.quiet ?? (extra.quietReady ? { ready: true, active: false, until: null, nextStart: null } : { ...NO_QUIET });
   const s = session?.session ?? null;
   const running = s ? extra.progress.find((p) => p.id === s.taskId) : undefined;
   // Whether an AI is connected, only for someone who chose 'auto' (review, 8 October 2026): the notch's pill then says
@@ -208,6 +243,10 @@ export async function desktopState(ctx: OrgContext) {
     followUps: followUps satisfies DesktopFollowUps,
     // Messages and requests from other people's assistants, and what came back (owner decision, 8 October 2026: phase 6).
     assistantItems: assistantItems satisfies DesktopAssistantItems,
+    // The morning opener, quiet hours and the routine runs delivered today (owner decision, 8 October 2026: phase 7a).
+    opener,
+    quiet,
+    routineRuns: routineRuns satisfies DesktopRoutineRuns,
     // The person's own open tasks, soonest due first: where a dropped file can go.
     myTasks: worker ? extra.progress.slice(0, 8).map((t) => ({ id: t.id, title: t.title, due: t.due_at })) : [],
     // Team leads and organisation accounts: who is working right now, for the small faces in the notch.

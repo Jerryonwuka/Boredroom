@@ -59,6 +59,16 @@
  * icon link goes there too. "Waiting for you" in her panel shows asks first, then requests and messages as compact
  * rows that keep Accept/Decline or "Mark as seen"/"Reply" under the row (assistant-waiting), two at most, then "See
  * all {n}". "Pass a message on" joins "More asks". The items show once migration 0043 is applied; the asks as before.
+ *
+ * The morning opener (owner decision, 8 October 2026: phase 7a, "Brenda keeps the loops closed"): on the person's first
+ * visit of the day the quick-ask chips give way to "Here's where things stand": the counts that matter this morning as a
+ * list of compact links (requests waiting, overdue tasks, answers to their follow-ups, messages from other assistants,
+ * reviews for leads; only those above 0, and "not available" in grey for one that could not be read, never 0), or one
+ * calm line on a quiet day, then 3 to 6 one-press actions in the chips' own look, chosen for those counts (a link opens
+ * its page; an ask fills the box and never sends, as every ask here). After it has been on screen for a second it counts
+ * as seen (POST /brenda/opener/seen, and a key in this browser), so later visits that day show the usual chips. Before
+ * migration 0046 the server cannot tell a first visit (`firstVisit: null`): this browser's key decides. No orange of its
+ * own: the panel keeps its glow, and the box its Send.
  */
 import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
@@ -81,14 +91,17 @@ import { BrendaHistory } from "@/components/app/brenda-history";
 import { useAssistant } from "@/components/app/assistant-context";
 import { ACT_WORDS } from "@/lib/act-mode";
 import { AssistantWaiting } from "@/components/app/assistant-waiting";
-import { isApiFailure } from "@/lib/api-client";
+import { api, isApiFailure } from "@/lib/api-client";
 import type { FollowUpView } from "@/lib/follow-ups";
+import { OPENER_WORDS, type Opener, type OpenerAction, type OpenerCount, type OpenerIcon } from "@/lib/opener";
 import type { AssistantItemView } from "@/lib/assistant-items";
 import { cn } from "@/lib/utils";
 import type { Conversation, ConversationSummary } from "@/server/services/brenda-history";
 
 export type HomeData = {
   orgSlug: string; firstName: string; role: "owner" | "hr" | "manager" | "employee";
+  /** The person's membership here: this browser's opener mark is theirs, not the next person's to sign in on it. */
+  memberId: string;
   greeting: string; dateLabel: string; aiEnabled: boolean;
   /** Her engine: Claude when the organisation's assistant is connected (its own key or the server's), else the built-in helper. */
   assistantConfigured: boolean;
@@ -114,6 +127,11 @@ export type HomeData = {
   itemsReady: boolean;
   /** Requests, unseen messages and replies other people's assistants brought this person (none before 0043). */
   items: AssistantItemView[];
+  /**
+   * The morning opener (phase 7a): on the first visit of the day, in place of the quick asks; null on later visits (or
+   * when it could not be read). `firstVisit: null`: the server could not tell (before 0046), this browser decides.
+   */
+  opener?: Opener | null;
 };
 
 type Ask = { icon: React.ComponentType<{ "aria-hidden"?: boolean }>; label: string; prompt: string };
@@ -179,6 +197,8 @@ function moreAsks(role: HomeData["role"], followUps: boolean, talk: boolean): As
     { icon: AnimatedListPlus, label: "Add to my to-dos", prompt: "Add to my to-dos: " },
     ...(worker ? [{ icon: AnimatedClock, label: "Clock me in", prompt: "Clock me in." }, { icon: AnimatedPlay, label: "Start my timer", prompt: "Start the timer on " }] : []),
     { icon: AnimatedAlarmClock, label: "Set a reminder", prompt: "Remind me to " },
+    // Phase 7a (owner decision, 8 October 2026): a routine of her own, set up from chat behind one Confirm.
+    { icon: AnimatedCalendarCheck, label: "Set up a routine", prompt: "Every Friday at 4pm, send me what's still owed" },
     { icon: AnimatedSend, label: "Send a message", prompt: "Send a message to " },
     // Phase 4: ask someone's assistant how their work is going, instead of asking them.
     ...(followUps ? [{ icon: AnimatedMessageSquareReply, label: "Follow up with someone", prompt: "Follow up with " }] : []),
@@ -202,6 +222,50 @@ function focusBoxIn(el: HTMLElement | null) {
   field.focus();
   requestAnimationFrame(() => { const n = field.value.length; field.setSelectionRange(n, n); });
 }
+
+// ---- The morning opener (phase 7a) -----------------------------------------------------------------------------------
+
+/** The opener's icons, as their animated twins (they play while their chip is hovered or focused). */
+const OPENER_ICONS: Record<OpenerIcon, Ask["icon"]> = {
+  inbox: AnimatedInbox, alert: AnimatedCircleAlert, reply: AnimatedMessageSquareReply, message: AnimatedMessageSquare,
+  clipboard: AnimatedClipboardCheck, list: AnimatedListOrdered, users: AnimatedUsers, calendar: AnimatedCalendarCheck,
+};
+
+/**
+ * This browser's mark that the opener was shown on a day (the fallback before 0046, and set alongside the server's).
+ * Per person: two people signing in on one browser the same day each get their own (review, 8 October 2026).
+ */
+const openerKey = (slug: string, who: string, localDate: string) => `brenda-opener:${slug}:${who}:${localDate}`;
+/**
+ * Whether this browser had shown the day's opener before this visit, read once per visit (so the mark this visit sets
+ * does not take the opener away while it is on screen); forgotten when her home goes, so the next visit reads it again.
+ */
+const shownBefore = new Map<string, boolean>();
+function openerShownBefore(key: string): boolean {
+  if (!shownBefore.has(key)) {
+    let v = false;
+    try { v = localStorage.getItem(key) !== null; } catch { /* blocked storage: shown */ }
+    shownBefore.set(key, v);
+  }
+  return shownBefore.get(key) ?? false;
+}
+const noSubscribe = () => () => {};
+/** The opener marks already sent from this page (one per day, whatever remounts). */
+const markedOpeners = new Set<string>();
+
+/** Marks the day's opener seen: in this browser, and on the server (which refuses it while someone is signed in as the person, 403, and before 0046, 503). */
+function markOpenerSeen(slug: string, who: string, localDate: string) {
+  const key = openerKey(slug, who, localDate);
+  if (markedOpeners.has(key)) return;
+  markedOpeners.add(key);
+  shownBefore.set(key, false); // it stays on screen for the rest of this visit
+  try { localStorage.setItem(key, "1"); } catch { /* private mode: the server's mark still counts */ }
+  // Not a thing to retry loudly: at worst the opener shows once more on the next visit.
+  api(`/api/orgs/${slug}/brenda/opener/seen`, { method: "POST", retries: 1 }).catch(() => {});
+}
+
+/** A path inside the workspace: the opener's links are `/app/{slug}/…`, or relative to the workspace (`/home/assistants`). */
+const inWorkspace = (slug: string, href: string) => (href.startsWith("/app/") ? href : `/app/${slug}${href.startsWith("/") ? href : `/${href}`}`);
 
 export function BrendaHome({ data }: { data: HomeData }) {
   const { role } = data;
@@ -303,6 +367,15 @@ export function BrendaHome({ data }: { data: HomeData }) {
 
   const more = <MoreMenu role={role} followUps={data.followUpsReady} talk={data.itemsReady} onPick={(p) => fill(p, true)} />;
 
+  // The morning opener (phase 7a): the server's word on the first visit, or (before 0046) this browser's own key. The
+  // server's render cannot read that key: it draws the chips, as most visits of a day are later ones, and the browser
+  // brings the opener in on the first.
+  const opener = data.aiEnabled ? data.opener ?? null : null;
+  const openerMark = opener ? openerKey(data.orgSlug, data.memberId, opener.localDate) : "";
+  const shownHere = useSyncExternalStore(noSubscribe, () => (opener?.firstVisit === null ? openerShownBefore(openerMark) : false), () => opener?.firstVisit === null);
+  useEffect(() => () => { shownBefore.delete(openerMark); }, [openerMark]);
+  const showOpener = !!opener && opener.firstVisit !== false && !shownHere;
+
   if (chatting) {
     return (
       <ChatView data={data} chat={chat} box={box} onBack={back} onNewChat={newChat} sheet={sheet} onSheet={setSheet} more={more} onAsk={(p) => fill(p)}
@@ -395,14 +468,19 @@ export function BrendaHome({ data }: { data: HomeData }) {
           ) : null}
           {data.aiEnabled ? (
             <>
-              <div role="group" aria-label="Quick asks" className="mb-3 flex flex-wrap gap-2">
-                {QUICK[kind].map((a) => (
-                  <button key={a.label} type="button" onClick={() => fill(a.prompt)}
-                    className={cn(pill, "bg-[color:var(--brenda-fill)] [&_svg]:size-3.5")}>
-                    {a.label}<a.icon aria-hidden />
-                  </button>
-                ))}
-              </div>
+              {/* The first visit of the day: what stands and what to do about it (phase 7a); otherwise her quick asks. */}
+              {showOpener && opener ? (
+                <MorningOpener opener={opener} orgSlug={data.orgSlug} who={data.memberId} chip={cn(pill, "bg-[color:var(--brenda-fill)] [&_svg]:size-3.5")} onAsk={(p) => fill(p)} />
+              ) : (
+                <div role="group" aria-label="Quick asks" className="mb-3 flex flex-wrap gap-2">
+                  {QUICK[kind].map((a) => (
+                    <button key={a.label} type="button" onClick={() => fill(a.prompt)}
+                      className={cn(pill, "bg-[color:var(--brenda-fill)] [&_svg]:size-3.5")}>
+                      {a.label}<a.icon aria-hidden />
+                    </button>
+                  ))}
+                </div>
+              )}
               <div ref={box}>
                 <BrendaComposer chat={chat} onSend={sendFromStart} leading={more} variant="hero" placeholder={`Ask ${name} anything…`} />
               </div>
@@ -425,6 +503,95 @@ export function BrendaHome({ data }: { data: HomeData }) {
       </section>
     </div>
   );
+}
+
+/**
+ * The morning opener (owner decision, 8 October 2026: phase 7a): "Here's where things stand", the day's counts as a list
+ * of compact links (the number large and tabular, then its words; only counts above 0, and "not available" rows in
+ * grey), or the calm line when nothing is waiting; then the actions as chips in the quick asks' own look (`chip`): a
+ * link opens its page, an ask fills the box (never sends). Wraps at 400px. Seen once it has been on screen for a second.
+ */
+function MorningOpener({ opener, orgSlug, who, chip, onAsk }: { opener: Opener; orgSlug: string; who: string; chip: string; onAsk: (prompt: string) => void }) {
+  const id = useId();
+  const block = useRef<HTMLElement>(null);
+  const { localDate } = opener;
+  useEffect(() => {
+    const el = block.current;
+    if (!el || typeof IntersectionObserver === "undefined") return;
+    // Seen after a full second in view and not covered (review, 8 October 2026): a modal over the page ("Meet your
+    // assistant" on someone's first day), an inert or hidden page, or a hidden tab holds the count, which starts again
+    // once the opener can really be seen.
+    let onScreen = false;
+    let since = 0;
+    const io = new IntersectionObserver((entries) => { onScreen = entries.some((e) => e.isIntersecting); }, { threshold: 0.5 });
+    io.observe(el);
+    const tick = setInterval(() => {
+      if (!onScreen || !openerUncovered(el)) { since = 0; return; }
+      if (!since) { since = Date.now(); return; }
+      if (Date.now() - since < 1000) return;
+      clearInterval(tick);
+      io.disconnect();
+      markOpenerSeen(orgSlug, who, localDate);
+    }, 250);
+    return () => { io.disconnect(); clearInterval(tick); };
+  }, [orgSlug, who, localDate]);
+  const shown = opener.counts.filter((c) => c.value === null || c.value > 0);
+  return (
+    <section ref={block} aria-labelledby={`${id}-title`} className="mb-3">
+      <h2 id={`${id}-title`} className="mb-2 text-meta font-medium text-secondary">{OPENER_WORDS.heading}</h2>
+      {shown.length ? (
+        <ul className="mb-3 flex flex-wrap gap-2">
+          {shown.map((c) => <OpenerCountRow key={c.key} count={c} href={inWorkspace(orgSlug, c.href)} />)}
+        </ul>
+      ) : null}
+      {opener.calm ? <p className="mb-3 text-sm font-normal text-secondary">{opener.calm}</p> : null}
+      {opener.actions.length ? (
+        <div role="group" aria-label="Next steps" className="flex flex-wrap gap-2">
+          {opener.actions.map((a) => <OpenerChip key={a.id} action={a} orgSlug={orgSlug} chip={chip} onAsk={onAsk} />)}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+/** Whether the opener can be seen: the tab is showing, nothing modal covers it and its part of the page is not inert. */
+function openerUncovered(el: HTMLElement): boolean {
+  if (document.visibilityState !== "visible") return false;
+  if (el.closest("[inert], [aria-hidden='true']")) return false;
+  for (const d of Array.from(document.querySelectorAll<HTMLElement>("dialog[open], [aria-modal='true']"))) {
+    if (d.contains(el)) continue;
+    let modal = d.getAttribute("aria-modal") === "true";
+    if (!modal) { try { modal = d.matches(":modal"); } catch { modal = true; /* an older browser: any open dialog counts */ } }
+    if (modal) return false;
+  }
+  return true;
+}
+
+/** One count: "2 requests waiting" as a compact link row, the number large. One that could not be read says so, in grey. */
+function OpenerCountRow({ count, href }: { count: OpenerCount; href: string }) {
+  const n = count.value;
+  // The label carries the number ("2 requests waiting"); the row shows it large, then the words.
+  const words = n !== null && count.label.startsWith(`${n} `) ? count.label.slice(String(n).length + 1) : null;
+  return (
+    <li className="flex min-w-0 max-w-full">
+      <Link href={href} className="flex min-h-10 min-w-0 max-w-full items-center gap-2 rounded-xl border border-border bg-[color:var(--brenda-fill)] py-1.5 pl-3 pr-3.5 text-sm transition-colors duration-75 hover:border-border-input-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ring)]">
+        {n === null ? <span className="min-w-0 font-normal text-secondary">{count.label}</span>
+          : words !== null ? <>
+            <span aria-hidden className="text-lg font-semibold leading-6 tabular-nums text-foreground">{n}</span>
+            <span aria-hidden className="min-w-0 font-medium text-foreground">{words}</span>
+            <span className="sr-only">{count.label}</span>
+          </>
+            : <span className="min-w-0 font-medium text-foreground">{count.label}</span>}
+      </Link>
+    </li>
+  );
+}
+
+/** One of the opener's actions, in the quick asks' chip: a link opens its page; an ask fills the box, never sends. */
+function OpenerChip({ action, orgSlug, chip, onAsk }: { action: OpenerAction; orgSlug: string; chip: string; onAsk: (prompt: string) => void }) {
+  const Icon = OPENER_ICONS[action.icon] ?? AnimatedInbox;
+  if (action.kind === "link" && action.href) return <Link href={inWorkspace(orgSlug, action.href)} className={chip}>{action.label}<Icon aria-hidden /></Link>;
+  return <button type="button" onClick={() => onAsk(action.prompt ?? action.label)} className={chip}>{action.label}<Icon aria-hidden /></button>;
 }
 
 /**

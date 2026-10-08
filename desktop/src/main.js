@@ -121,6 +121,33 @@
 // reply."). Each answer's `tainted` is kept on it and sent back with the conversation, so Boredroom knows other people's
 // words are earlier in this chat; past chats keep `tainted`, `auto`, `undone` and `why`, never an Undo token (as never a
 // Confirm token).
+//
+// Brenda keeps the loops closed (owner decision, 8 October 2026: phase 7a). Four things up here, all read from the desktop
+// state and the chat's answers; nothing new is decided on this computer.
+// - The morning opener (`opener`, an Opener from src/lib/opener.ts, which this page cannot import). The day's first card,
+//   once per day per computer (the briefing's own localStorage key), opens with the counts behind the person's day
+//   (requests waiting, overdue tasks, answers to their follow-ups, messages from other assistants, reviews for leads) as a
+//   list, label left and number right ("not available" in grey, never 0), or the calm line on a quiet day, and up to
+//   three one-tap actions made for those counts: a link opens that Boredroom page, an ask puts its words in the ask box
+//   and never sends them (owner decision, 5 October 2026). The first is the card's one orange button. An older server (no
+//   `opener`) gets the briefing card as before. It never opens during quiet hours; once they end, or on a new day while
+//   the notch keeps running, it opens on the next poll once the pointer has moved in the last two minutes, so it is not
+//   spent on an empty desk.
+// - Routines (`routineRuns`, DesktopRoutineRun). `brenda.routine` opens the routine card: her face, the routine's name and
+//   lead, up to five lines (each with Open when it has a Boredroom page), Open for the run and Done; `brenda.routine_bundle`
+//   the runs held over quiet hours, together; `brenda.routine_failed` why one couldn't run. The pill says Routine. Every
+//   word goes through esc(), never Markdown, and only Boredroom paths open. Without `routineRuns` (an older server, or
+//   before migration 0046) the plain notification card.
+// - Quiet hours (`quiet`, a QuietState from src/lib/routines.ts, worked out by Boredroom in the person's time zone). While
+//   they are on nothing opens on its own, no sound plays at all (Sound.setQuiet), she reads nothing aloud on her own (a
+//   reply to the talk keys shows, with Listen), and the compact bar says "Quiet until 07:00" when it has nothing else to
+//   say; the unread count still shows, and opening her, Listen and every button still work. A missing or unready `quiet`
+//   (an older server, before 0046) is never quiet.
+// - The Confirm readback (`proposals[].readback`, a Readback from src/lib/confirm-readback.ts). Each Confirm names who gets
+//   what: "Goes to" over its lines (people, a channel with its member count, an assistant; at most six, then "and 2 more")
+//   and "What they get: …", under the summary and its why; Confirm is described by them for screen readers, and past
+//   chats keep them. The consent rule holds here as everywhere: an answer or agreement that arrives through another
+//   person's assistant never confirms anything; only the person's own press of Confirm (or Y) does.
 
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
@@ -168,6 +195,12 @@ const reduceMotion = window.matchMedia ? window.matchMedia("(prefers-reduced-mot
 const TUCK = { w: 96, h: 5 };
 const TALK_MEMORY_MS = 3 * 60_000;
 const REPLY_CLOSE_MS = 16_000;
+// The morning opener (phase 7a, 8 October 2026): opened from a poll only while the pointer has moved this recently (the
+// person is at the computer), and at most once per day on this run even when storage is blocked.
+const PRESENT_MS = 2 * 60_000;
+let lastMoveAt = Date.now();  // launching the notch counts as being there
+let briefedOn = "";
+let quietTimer = null, wasQuiet = false;
 
 // ---- helpers -------------------------------------------------------------------------------------------------
 
@@ -265,6 +298,16 @@ const ICONS = {
   // Acting without asking (8 October 2026): the mode's amber mark (lucide Zap) and Undo (lucide Undo2), as on the web.
   zap: `<path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/>`,
   undo: `<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11"/>`,
+  // The morning opener's actions (phase 7a, 8 October 2026), the web's lucide icons for its OpenerIcon names: Inbox,
+  // CircleAlert, Reply, MessageSquare, ClipboardCheck, List, Users, Calendar.
+  inbox: `<polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>`,
+  alert: `<circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/>`,
+  reply: `<polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/>`,
+  message: `<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>`,
+  clipboard: `<rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="m9 14 2 2 4-4"/>`,
+  list: `<path d="M3 12h.01"/><path d="M3 18h.01"/><path d="M3 6h.01"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M8 6h13"/>`,
+  users: `<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>`,
+  calendar: `<path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/>`,
 };
 /** An icon; its class (`ic-<name>`) picks the small move it makes when its button is hovered or focused (style.css). */
 const icon = (name) => `<svg class="ic ic-${name}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name]}</svg>`;
@@ -322,8 +365,14 @@ function moodOf() {
     if (t === "brenda.mention_private") return {};
     // Someone's assistant answered the person's tag in Messages (phase 6): a reply, as above.
     if (t === "assistant.thread_reply") return { mood: "happy", tone: "ok" };
+    // A routine that couldn't run, or was paused (phase 7a): sad, with the amber glow of something that needs them.
+    if (t === "brenda.routine_failed") return { mood: "sad", tone: "warn" };
     return { mood: "alert", tone: "accent" };
   }
+  // Routines (phase 7a, 8 October 2026): a delivery is an arrival; a routine that couldn't run, as above.
+  if (card.kind === "routine") return card.n?.type === "brenda.routine_failed" ? { mood: "sad", tone: "warn" } : { mood: "alert", tone: "accent" };
+  // The morning opener: a calm day pleases her; otherwise she shows the day as it is, as the briefing does.
+  if (card.kind === "opener") return card.o && !shownCounts(card.o).length ? { mood: "happy" } : {};
   // Assistants talk to each other (owner decision, 8 October 2026: phase 6): a message or a request waits on the person
   // (alert, the accent glow) until it is answered; a reply sent or a request done pleases her (happy, green); a request
   // that couldn't be done is sad (red); declined, closed elsewhere and the rest stay neutral. An update pleases her only
@@ -452,7 +501,8 @@ function compactView() {
   const b = data?.briefing;
   const unread = (data?.notifications ?? []).filter((n) => !shown.has(n.id)).length;
   const dot = data?.me?.presence ?? "active";
-  let text = "All clear";
+  // During quiet hours (phase 7a) the bar says until when, when it has nothing else to say.
+  let text = quietNow() ? esc(quietWords()) : "All clear";
   if (t) text = `<span class="clock ${t.state === "running" ? "live" : ""}" id="tclock">${hms(elapsed())}</span>&ensp;${esc(t.taskTitle)}`;
   else if (b && (b.overdue.length || b.dueToday.length)) text = [b.dueToday.length ? `${b.dueToday.length} due today` : "", b.overdue.length ? `${b.overdue.length} overdue` : ""].filter(Boolean).join(", ");
   else if (data?.clock?.status === "not_in" && data.clock.workingDay) text = "Not clocked in yet";
@@ -485,7 +535,8 @@ function cardView() {
     // Badges as on the web: neutral on fill-1, green for clocked in, amber for a review, and the orange "New" badge only
     // for a task that has just arrived.
     // Phase 6's (8 October 2026), when the desktop state cannot open their own cards: neutral words.
-    const pill = n.type === "brenda.reminder" ? `<span class="pill">Reminder</span>` : n.type === "brenda.clock_in" ? `<span class="pill ok"><span class="d"></span>In</span>` : n.type === "brenda.daily_report" ? `<span class="pill">Daily report</span>` : n.type === "task.assigned" ? `<span class="pill acc">New task</span>` : n.type.startsWith("review") ? `<span class="pill warn">Review</span>` : Object.hasOwn(ITEM_PILLS, n.type) ? `<span class="pill">${ITEM_PILLS[n.type]}</span>` : "";
+    // Routines' (phase 7a) when the desktop state has no `routineRuns`: Routine, Routines, and amber for one that failed.
+    const pill = n.type === "brenda.reminder" ? `<span class="pill">Reminder</span>` : n.type === "brenda.clock_in" ? `<span class="pill ok"><span class="d"></span>In</span>` : n.type === "brenda.daily_report" ? `<span class="pill">Daily report</span>` : n.type === "task.assigned" ? `<span class="pill acc">New task</span>` : n.type.startsWith("review") ? `<span class="pill warn">Review</span>` : Object.hasOwn(ITEM_PILLS, n.type) ? `<span class="pill">${ITEM_PILLS[n.type]}</span>` : routinePill(n.type);
     // The end-of-day report is sent by the workspace, so its card shows the workspace's assistant (owner decision,
     // 7 October 2026: personal assistants); everything else comes from the person's own.
     const from = n.type === "brenda.daily_report" ? ws() : me();
@@ -502,6 +553,7 @@ function cardView() {
     const first = items[0]?.t;
     const greet = new Date().getHours() < 12 ? "Good morning" : new Date().getHours() < 17 ? "Good afternoon" : "Good evening";
     return `<div class="row fade">${face({ ...moodOf(), dot: data.me.presence })}<div class="grow"><p class="title">${greet}${config.displayName ? `, ${esc(config.displayName.split(" ")[0])}` : ""}. ${b.openTasks} open task${b.openTasks === 1 ? "" : "s"}.</p><p class="sub">${extra || (first ? `First up: ${esc(first.title)}` : "Nothing is waiting on you.")}</p></div></div>
+      ${quietNow() ? `<p class="cap fade">${esc(quietWords())}: no pop-ups or sounds.</p>` : ""}
       ${items.length ? `<ul class="list fade">${items.map((i) => `<li><span class="t">${esc(i.t.title)}</span><span class="k ${i.bad ? "bad" : ""}">${esc(i.k)}</span></li>`).join("")}</ul>` : ""}
       ${waitingView()}
       ${teamView()}
@@ -531,6 +583,8 @@ function cardView() {
   if (card.kind === "followup_answer") return followUpAnswerView();
   if (card.kind === "item") return itemView();
   if (card.kind === "item_update") return itemUpdateView();
+  if (card.kind === "opener") return openerView();
+  if (card.kind === "routine") return routineView();
   if (card.kind === "error") return `<div class="row fade">${face(moodOf())}<div class="grow"><p class="title">Can't reach Boredroom</p><p class="sub">${esc(card.message)}</p></div></div><div class="actions"><button class="btn" data-act="close">OK</button></div>`;
   return "";
 }
@@ -555,6 +609,10 @@ el.addEventListener("click", async (e) => {
     if (act === "link-cancel") { link = null; clearTimeout(linkTimer); return render(); }
     if (act === "link-open") return invoke("open_in_browser", { path: link.verifyUrl });
     if (act === "open-href") { if (!removedPage(target.dataset.href)) await invoke("open_in_browser", { path: target.dataset.href }); return closeCard(); }
+    // A line's own page on a routine card (phase 7a, 8 October 2026): opened, and the card stays for the next line.
+    if (act === "open-keep") { const path = boredroomPath(target.dataset.href); if (path) await invoke("open_in_browser", { path }); return; }
+    // An ask on the morning opener: its words go in the ask box, focused, and are never sent from here.
+    if (act === "opener-ask") return fillAsk(card?.kind === "opener" ? card.o?.actions?.[Number(target.dataset.i)]?.prompt : null);
     if (act === "open-chat") return openChat();
     if (act === "listen") return aloud() ? hush() : sayAloud(card?.spokenText);
     if (act === "offer") return takeOffer(Number(target.dataset.i));
@@ -635,26 +693,42 @@ async function signedOut() {
   config = await invoke("sign_out"); // which also stops her; its `spoken` ends her talking face
   data = null; card = null; link = null; talk = []; chat = newChat(); cached = null;
   talkWaiting = false; clearTimeout(talkWaitTimer);
+  applyQuiet(); // no one's quiet hours while signed out
   render();
 }
 
 // ---- data --------------------------------------------------------------------------------------------------------
 
+/** Whether today's first card has been shown on this computer (then the server need not build the morning opener). */
+function briefedToday() {
+  const key = briefingKey();
+  if (briefedOn === key) return true;
+  try { return !!localStorage.getItem(key); } catch { return false; }
+}
+const briefingKey = () => `brenda-briefing:${config?.workspaceSlug}:${new Date().toDateString()}`;
+
 async function refresh() {
   try {
-    data = await call("GET", org("/brenda/desktop"));
+    // The opener is the day's first card only: once it is shown, the polls ask the server not to build it (review,
+    // 8 October 2026: it is a score of reads, every 20 seconds).
+    data = await call("GET", org(`/brenda/desktop${briefedToday() ? "?opener=0" : ""}`));
     offsetMs = Date.parse(data.serverNow) - Date.now();
     keepCached();
+    applyQuiet();
     if (!card) render();
     else { followUpClosedElsewhere(); itemClosedElsewhere(); }
   } catch (err) {
-    if (err?.status && err.status !== 401 && !card) openCard({ kind: "error", message: err.message });
+    // During quiet hours (phase 7a) not even this opens on its own.
+    if (err?.status && err.status !== 401 && !card && !quietNow()) openCard({ kind: "error", message: err.message });
   }
 }
 
-/** One Brenda notification at a time, newest first, only once per run. */
+/**
+ * One Brenda notification at a time, newest first, only once per run. During the person's quiet hours (phase 7a) none
+ * opens on its own: they wait, counted in the compact bar, and open one by one once quiet hours end.
+ */
 function nextNotification() {
-  if (card || !data) return;
+  if (card || !data || quietNow()) return;
   const n = (data.notifications ?? []).find((x) => !shown.has(x.id));
   if (!n) return;
   shown.add(n.id);
@@ -663,18 +737,32 @@ function nextNotification() {
   // server, the plain notification card. What waits for an answer (an ask, a request) calls for attention.
   const fu = followUpCard(n) ?? itemCard(n);
   if (fu) { openCard(fu); return Sound.play(fu.kind === "followup_ask" || (fu.kind === "item" && fu.w.kind === "request") ? "attention" : "reply"); }
+  // What a routine sent (phase 7a): its own card when the desktop state carries the run, read as long as a reply.
+  const routine = routineCard(n);
+  if (routine) { openCard(routine); return Sound.play("notify"); }
   // Mentions in Messages (phase 5): a reply, a Confirm or a private answer has more to read, so it stays as long as a reply.
   const mention = mentionCard(n.type);
   openCard({ kind: "notification", n, ...(mention?.long ? { closeAfter: REPLY_CLOSE_MS } : {}) });
   Sound.play(n.type === "brenda.clock_in" ? "success" : mention?.sound ?? "notify");
 }
 
-/** The morning briefing, once per day per computer. */
-function maybeBriefing() {
-  const key = `brenda-briefing:${config.workspaceSlug}:${new Date().toDateString()}`;
-  try { if (localStorage.getItem(key)) return false; localStorage.setItem(key, "1"); } catch { /* storage blocked */ }
-  if (!data?.briefing) return false;
-  openCard({ kind: "briefing" });
+/**
+ * The day's first card, once per day per computer: the morning opener when the server sends one (phase 7a, 8 October
+ * 2026), else the briefing, as before. Never over another card and never during quiet hours: it waits and opens on a
+ * later poll (`poll`), and then only once the pointer has moved in the last two minutes, so a new day that starts while
+ * the notch runs, or quiet hours that end at 07:00, do not spend it on an empty desk.
+ */
+function maybeBriefing(o = {}) {
+  if (!config?.signedIn || !data || card) return false;
+  const opener = openerOf();
+  if (!opener && !data.briefing) return false;
+  if (quietNow()) return false;
+  if (o.poll && Date.now() - lastMoveAt > PRESENT_MS) return false;
+  const key = briefingKey();
+  if (briefedOn === key) return false;
+  briefedOn = key;
+  try { if (localStorage.getItem(key)) return false; localStorage.setItem(key, "1"); } catch { /* storage blocked: once per run */ }
+  openCard(opener ? { kind: "opener", o: opener, closeAfter: REPLY_CLOSE_MS } : { kind: "briefing" });
   return true;
 }
 
@@ -692,7 +780,8 @@ async function start() {
   await presence();
   await refresh();
   if (!maybeBriefing()) nextNotification();
-  clearInterval(pollTimer); pollTimer = setInterval(async () => { await refresh(); nextNotification(); }, POLL_MS);
+  // Each poll may bring the day's first card too (phase 7a: after quiet hours, or on a new day), before what is unread.
+  clearInterval(pollTimer); pollTimer = setInterval(async () => { await refresh(); if (!maybeBriefing({ poll: true })) nextNotification(); }, POLL_MS);
   clearInterval(presenceTimer); presenceTimer = setInterval(presence, PRESENCE_MS);
 }
 
@@ -772,8 +861,11 @@ const plain = (s) => String(s ?? "").replace(/\[([^\]]+)\]\([^)]+\)/g, "$1").rep
 const speakPref = () => { const s = data?.assistant?.speak; return s === "always" || s === "never" ? s : "voice"; };
 /** Whether she is speaking or about to. */
 const aloud = () => talking || talkWaiting;
-/** Whether this answer is read aloud on its own: always, or when it answers something said with the talk keys. */
-const speaksFor = (spoken) => speakPref() === "always" || (speakPref() === "voice" && !!spoken);
+/**
+ * Whether this answer is read aloud on its own: always, or when it answers something said with the talk keys; never during
+ * the person's quiet hours (phase 7a, 8 October 2026), when only Listen reads it.
+ */
+const speaksFor = (spoken) => !quietNow() && (speakPref() === "always" || (speakPref() === "voice" && !!spoken));
 
 /** Asks Rust to read `text` aloud (it renders first, so the first sound comes a moment later). */
 function sayAloud(text) {
@@ -988,7 +1080,7 @@ function voiceView() {
     return `<div class="row fade top">${face(moodOf())}<div class="grow">${pill ? `<div class="said-row">${said}${pill}</div>` : said}<div class="reply">${md(c.reply)}</div>${note}</div></div>
       ${c.actions?.length ? `<ul class="list fade">${shownLines(c.actions, confirms.length ? 2 : 4).map(({ a, i }) => doneLine(a, i)).join("")}</ul>` : ""}
       ${offers.length ? `<ul class="list fade">${offers.map(({ p, i }) => `<li><span class="t">${offerLabel(p)}</span>${p.done ? `<span class="k ok end">${esc(p.done)}</span>` : `<button class="btn" data-act="offer" data-i="${i}" ${busy ? "disabled" : ""}>${icon(OFFER[p.kind].icon)}${OFFER[p.kind].label}</button>`}</li>`).join("")}</ul>` : ""}
-      ${confirms.map((p, i) => `<div class="confirm fade"><p class="sub">${icon("shield")}<span>${esc(p.summary)}${whyOf(p) ? `<span class="why">${esc(whyOf(p))}</span>` : ""}</span></p>${p.detail ? `<div class="detail" tabindex="0" aria-label="The full message">${esc(p.detail)}</div>` : ""}<div class="actions">${i === 0 ? listenButton() : ""}<button class="btn ghost" data-act="not-now" data-token="${esc(p.token)}">Not now${i === 0 ? " <kbd>N</kbd>" : ""}</button><button class="btn primary" data-act="confirm" data-token="${esc(p.token)}" ${busy ? "disabled" : ""}>${icon("check")}Confirm${i === 0 ? " <kbd>Y</kbd>" : ""}</button></div></div>`).join("")}
+      ${confirms.map((p, i) => `<div class="confirm fade"><p class="sub">${icon("shield")}<span>${esc(p.summary)}${whyOf(p) ? `<span class="why">${esc(whyOf(p))}</span>` : ""}</span></p>${readbackView(p, `rb${i}`)}${p.detail ? `<div class="detail" tabindex="0" aria-label="${p.tool === "create_routine" || p.tool === "update_routine" ? "The preview and what it does each time" : "The full message"}">${esc(p.detail)}</div>` : ""}<div class="actions">${i === 0 ? listenButton() : ""}<button class="btn ghost" data-act="not-now" data-token="${esc(p.token)}">Not now${i === 0 ? " <kbd>N</kbd>" : ""}</button><button class="btn primary" data-act="confirm" data-token="${esc(p.token)}" ${readbackOf(p) ? `aria-describedby="rb${i}"` : ""} ${busy ? "disabled" : ""}>${icon("check")}Confirm${i === 0 ? " <kbd>Y</kbd>" : ""}</button></div></div>`).join("")}
       ${!confirms.length ? askBox("Ask a follow-up…") : ""}
       ${!confirms.length ? `<div class="actions">${listenButton()}${opens.map((p) => `<button class="btn" data-act="open-href" data-href="${esc(p.href)}">${esc(p.label)}${icon("open")}</button>`).join("")}<button class="btn ghost" data-act="open-chat" title="Carry on with this chat on ${esc(`${me().name}'s`)} page in Boredroom">Open chat</button><button class="btn ghost" data-act="close">Done</button></div>` : ""}`;
   }
@@ -1321,7 +1413,8 @@ function forSaving(messages) {
     role: m.role,
     content: clip(String(m.content ?? ""), KEEP.content),
     ...(m.actions?.length ? { actions: m.actions.map(keptAction) } : {}),
-    ...(m.proposals?.length ? { proposals: m.proposals.map((p) => (p.kind === "confirm" ? { kind: p.kind, summary: p.summary, tool: p.tool, ...(p.detail ? { detail: p.detail } : {}), ...(p.done ? { done: p.done } : {}), ...(whyOf(p) ? { why: whyOf(p) } : {}) } : p)) } : {}),
+    // A Confirm keeps who it went to and what they got (phase 7a: the readback), as the web's past chats do.
+    ...(m.proposals?.length ? { proposals: m.proposals.map((p) => (p.kind === "confirm" ? { kind: p.kind, summary: p.summary, tool: p.tool, ...(p.detail ? { detail: p.detail } : {}), ...(p.done ? { done: p.done } : {}), ...(whyOf(p) ? { why: whyOf(p) } : {}), ...keptReadback(p) } : p)) } : {}),
     ...(m.engine ? { engine: m.engine } : {}),
     ...(m.note ? { note: m.note } : {}),
     // False included (review, 8 October 2026): a reply with no flag counts as having read other people's words.
@@ -2345,6 +2438,200 @@ async function ackUpdate() {
   closeCard();
 }
 
+// ---- quiet hours ---------------------------------------------------------------------------------------------------
+// Owner decision, 8 October 2026 (phase 7a, "quiet means quiet"; the header says what changes). The desktop state's
+// `quiet` is { ready, active, until, nextStart } (QuietState), worked out by Boredroom in the person's own time zone, so
+// this page only follows it. Between two polls it follows the times it was given as well: quiet ends at `until` and
+// starts at `nextStart`, so a reply that lands a moment after quiet hours begin is not read aloud.
+
+/** The person's quiet hours are on now. A missing or unready `quiet` (an older server, before 0046) is never quiet. */
+function quietNow() {
+  const q = data?.quiet;
+  if (!q || typeof q !== "object" || q.ready !== true) return false;
+  const now = serverNow();
+  const at = (iso) => (typeof iso === "string" ? Date.parse(iso) : NaN);
+  if (q.active === true) return !(at(q.until) <= now);
+  return at(q.nextStart) <= now;
+}
+/**
+ * "Quiet until 07:00" (within the next day; "Quiet until Sat 07:00" beyond it), short enough for the compact bar, or
+ * "Quiet hours" when the end is not known yet.
+ */
+function quietWords() {
+  const q = data?.quiet;
+  const end = q?.active === true && typeof q.until === "string" ? new Date(q.until) : null;
+  if (!end || Number.isNaN(end.getTime())) return "Quiet hours";
+  const soon = end.getTime() - serverNow() < 24 * 3600_000;
+  return `Quiet until ${soon ? hhmm(end) : `${end.toLocaleDateString("en-GB", { weekday: "short" })} ${hhmm(end)}`}`;
+}
+/** Sounds follow the quiet hours, the compact bar says so, and the next change (their end, or their start) is timed. */
+function applyQuiet() {
+  const on = quietNow();
+  Sound.setQuiet(on);
+  if (on !== wasQuiet) { wasQuiet = on; if (config?.signedIn && !card) render(); }
+  clearTimeout(quietTimer);
+  const q = data?.quiet;
+  if (!q || typeof q !== "object" || q.ready !== true) return;
+  const next = Date.parse(on ? q.until : q.nextStart);
+  if (!Number.isFinite(next) || next <= serverNow()) return;
+  quietTimer = setTimeout(applyQuiet, Math.min(2 ** 31 - 1, next - serverNow() + 50));
+}
+
+// ---- the morning opener ------------------------------------------------------------------------------------------------
+// Owner decision, 8 October 2026 (phase 7a; the header says when it opens). The desktop state's `opener` is the web's
+// Opener (src/lib/opener.ts): { v: 1, localDate, counts: [{ key, value, label, href }], actions: [{ id, kind, label,
+// href?, prompt?, icon }], calm, firstVisit }, or null when the server could not make one. Nothing from it is drawn
+// unchecked: a count needs words and a number (or null: "not available"), an action words and either a Boredroom path
+// (a link) or a prompt (an ask, only where she can be asked), and an icon is one of its eight names.
+
+const OPENER_ICONS = ["inbox", "alert", "reply", "message", "clipboard", "list", "users", "calendar"];
+const OPENER_ACTIONS = 3;   // the notch's share of the web's 3 to 6
+const NOT_AVAILABLE = "not available";
+
+/** The opener as the notch may draw it, or null (an older server, a server that could not make one, anything unexpected). */
+function openerOf() {
+  const o = data?.opener;
+  if (!o || typeof o !== "object" || o.v !== 1) return null;
+  const counts = (Array.isArray(o.counts) ? o.counts : []).filter((c) => !!c && typeof c === "object" && typeof c.label === "string" && !!c.label.trim()
+    && (c.value === null || (typeof c.value === "number" && Number.isFinite(c.value))));
+  const asks = !!data.brendaEnabled; // without her in the plan there is no ask box to fill
+  const actions = (Array.isArray(o.actions) ? o.actions : []).filter((a) => !!a && typeof a === "object" && typeof a.label === "string" && !!a.label.trim()
+    && (a.kind === "link" ? !!mdHref(a.href) : a.kind === "ask" && asks && typeof a.prompt === "string" && !!a.prompt.trim())).slice(0, OPENER_ACTIONS);
+  return { counts, actions, calm: typeof o.calm === "string" && o.calm.trim() ? o.calm.trim() : null };
+}
+/** The counts worth a row: above 0, or not available (as the web shows them). */
+const shownCounts = (o) => o.counts.filter((c) => c.value === null || c.value > 0);
+
+/**
+ * One count as a row that opens its page: its words on the left ("Requests waiting", the server's label without its
+ * number), the number on the right in Geist Mono, or "not available" in grey (never 0).
+ */
+function countRow(c) {
+  const label = c.label.trim();
+  let words = label;
+  if (c.value === null) words = label.replace(/:\s*not available\.?$/i, "");
+  else if (label.startsWith(`${c.value} `)) words = label.slice(String(c.value).length + 1);
+  const figure = c.value === null ? `<span class="k">${NOT_AVAILABLE}</span>` : `<span class="k n">${esc(String(c.value))}</span>`;
+  const inner = `<span class="t">${esc(cap(words.trim()) || label)}</span>${figure}`;
+  const href = mdHref(c.href);
+  return `<li>${href ? `<button type="button" class="rowlink" data-act="open-href" data-href="${esc(href)}">${inner}</button>` : inner}</li>`;
+}
+
+function openerView() {
+  const o = card.o;
+  const counts = shownCounts(o);
+  const first = firstName(data?.me?.displayName ?? config?.displayName);
+  const h = new Date().getHours();
+  const greet = h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening";
+  const calm = counts.length ? null : o.calm ?? "Nothing is waiting on you.";
+  // The first action is the card's one standout (accent rules); the rest are outline buttons; Later is ghost.
+  const actions = o.actions.map((a, i) => `<button type="button" class="btn${i === 0 ? " primary accent" : ""}" ${a.kind === "link" ? `data-act="open-href" data-href="${esc(mdHref(a.href))}"` : `data-act="opener-ask" data-i="${i}" title="Puts it in the box below for you to send"`}>${icon(OPENER_ICONS.includes(a.icon) ? a.icon : "chevron")}${esc(a.label)}</button>`);
+  return `<div class="row fade">${face({ ...moodOf(), dot: data?.me?.presence })}<div class="grow"><p class="title" id="otitle">${greet}${first ? `, ${esc(first)}` : ""}.</p><p class="sub">${calm ? esc(calm) : "Here's where things stand."}</p></div></div>
+    ${counts.length ? `<ul class="list counts fade" aria-labelledby="otitle">${counts.map(countRow).join("")}</ul>` : ""}
+    ${actions.length ? `<div class="starts fade" role="group" aria-label="Start with">${actions.join("")}</div>` : ""}
+    ${askBox()}
+    <div class="actions">${talkButton()}<button class="btn ghost" data-act="close">Later</button></div>`;
+}
+
+/** An ask's words in the ask box, focused with the caret at the end, for the person to send or change (never sent here). */
+function fillAsk(prompt) {
+  const box = document.getElementById("ask");
+  if (!box || typeof prompt !== "string" || !prompt.trim()) return;
+  box.value = prompt.trim().slice(0, 4000);
+  box.focus();
+  try { box.setSelectionRange(box.value.length, box.value.length); } catch { /* not a text field any more */ }
+  box.dispatchEvent(new Event("input", { bubbles: true })); // she stops talking and reads along, as when typed
+}
+
+// ---- routines --------------------------------------------------------------------------------------------------------
+// Owner decision, 8 October 2026 (phase 7a; the header says what the cards show). The desktop state's `routineRuns` is
+// { ready, recent: [{ id, notificationId, title, lead, lines: [{ text, href }], href, at }] } (DesktopRoutineRun): the
+// runs delivered to the person in the last day, at most five. A routine's words are built from data (task titles, other
+// people's names), so they go through esc() only, never md(), and only Boredroom paths open.
+
+const ROUTINE_PILLS = { "brenda.routine": `<span class="pill">Routine</span>`, "brenda.routine_bundle": `<span class="pill">Routines</span>`, "brenda.routine_failed": `<span class="pill warn">Routine</span>` };
+const ROUTINE_LINES = 5;
+/** A routine notification's badge, or "" (own keys only: a type is never looked up on the prototype). */
+const routinePill = (type) => (typeof type === "string" && Object.hasOwn(ROUTINE_PILLS, type) ? ROUTINE_PILLS[type] : "");
+const isRun = (r) => !!r && typeof r === "object" && typeof r.id === "string" && typeof r.title === "string";
+/** The runs the desktop state carries, or null: an older server, or before migration 0046 (`ready: false`). */
+const routineRuns = () => { const r = data?.routineRuns; return r && typeof r === "object" && r.ready === true && Array.isArray(r.recent) ? r.recent.filter(isRun) : null; };
+const runLines = (r) => (Array.isArray(r.lines) ? r.lines : []).filter((l) => !!l && typeof l === "object" && typeof l.text === "string" && !!l.text.trim()).slice(0, ROUTINE_LINES);
+
+/** The card a routine notification opens, or null for the plain notification card (an older server, or a run not known). */
+function routineCard(n) {
+  if (!routinePill(n?.type)) return null;
+  const runs = routineRuns();
+  if (!runs) return null;
+  const base = { kind: "routine", n, closeAfter: REPLY_CLOSE_MS };
+  if (n.type === "brenda.routine") {
+    const r = runs.find((x) => x.notificationId === n.id) ?? runs.find((x) => x.id === n.resource_id);
+    return r ? { ...base, runs: [r] } : null;
+  }
+  if (n.type === "brenda.routine_bundle") {
+    // The runs held over quiet hours, sent together: those that name this notification, else those delivered with it.
+    const named = runs.filter((x) => x.notificationId === n.id);
+    const sent = Date.parse(n.created_at);
+    const near = runs.filter((x) => Math.abs(Date.parse(x.at) - sent) <= 2 * 60_000);
+    return { ...base, runs: (named.length ? named : near).slice(0, ROUTINE_LINES) };
+  }
+  return { ...base, runs: [] };
+}
+
+/** A line with its own page: plain text that may run to two lines, and Open, which keeps the card. */
+function routineRow(text, more, href) {
+  const path = href ? mdHref(href) : null;
+  return `<li class="wrap"><span class="t" title="${esc(text)}${more ? `: ${esc(more)}` : ""}">${esc(text)}${more ? `<span class="s">: ${esc(more)}</span>` : ""}</span>${path ? `<button class="btn" data-act="open-keep" data-href="${esc(path)}" aria-label="${esc(`Open: ${text}`)}">Open</button>` : ""}</li>`;
+}
+
+/**
+ * A routine's card. One run: the routine's name, its lead, up to five lines. Several held over quiet hours: one row per
+ * routine with its lead. One that couldn't run (or was paused): why, in the server's words. Open goes to the run (or the
+ * routines page, or Settings), Done marks the notification read.
+ */
+function routineView() {
+  const c = card, n = c.n, m = moodOf();
+  const one = n.type === "brenda.routine" ? c.runs[0] : null;
+  const at = n.created_at ? atWhen(n.created_at) : "";
+  const title = one ? str(one.title).trim() || str(n.title) : str(n.title);
+  const under = one ? str(one.lead).trim() || at : n.type === "brenda.routine_failed" || !c.runs.length ? str(n.body).trim() || at : at;
+  // A run with nothing to report carries its calm line as both its lead and its one line: it shows once.
+  const rows = one ? runLines(one).filter((l) => l.text.trim() !== under).map((l) => routineRow(l.text.trim(), "", l.href)) : c.runs.map((r) => routineRow(r.title.trim(), str(r.lead).trim(), r.href));
+  const open = (one && mdHref(one.href)) || boredroomPath(n.href);
+  return `<div class="row top fade">${face(m)}<div class="grow"><p class="title wrap">${esc(title)}</p>${under ? `<p class="sub">${esc(under)}</p>` : ""}</div>${routinePill(n.type)}</div>
+    ${rows.length ? `<ul class="list lines fade" aria-label="${one ? "What it found" : "What ran"}">${rows.join("")}</ul>` : ""}
+    <div class="actions">${open ? `<button class="btn" data-act="open-href" data-href="${esc(open)}">Open${icon("open")}</button>` : ""}<button class="btn primary" data-act="read" data-id="${esc(n.id)}">Done</button></div>`;
+}
+
+// ---- the Confirm readback --------------------------------------------------------------------------------------------
+// Owner decision, 8 October 2026 (phase 7a; the header says what shows). Each Confirm from the chat may carry `readback`
+// ({ to: string[], what?: string }, src/lib/confirm-readback.ts): the server's lines naming who receives it (people, a
+// channel and its member count, an assistant, "Only you") and what they get. Drawn through esc() under the summary.
+
+const READBACK_MAX = 6;
+/** A Confirm's readback as the notch may draw it, or null (an older server, or nothing in it). */
+function readbackOf(p) {
+  const r = p?.readback;
+  if (!r || typeof r !== "object" || !Array.isArray(r.to)) return null;
+  const to = r.to.filter((l) => typeof l === "string" && !!l.trim()).map((l) => l.trim());
+  const what = typeof r.what === "string" ? r.what.trim() : "";
+  return to.length || what ? { to, what } : null;
+}
+/** What a kept Confirm carries of its readback (past chats; at most 50 lines of 300 characters, as Boredroom keeps it), or nothing. */
+const keptReadback = (p) => {
+  const r = readbackOf(p);
+  return r ? { readback: { to: r.to.slice(0, 50).map((l) => clip(l, 300)), ...(r.what ? { what: clip(r.what, 1000) } : {}) } } : {};
+};
+
+/** "Goes to" over the lines (at most six, then "and 2 more"), then "What they get: …"; `id` describes the Confirm button. */
+function readbackView(p, id) {
+  const r = readbackOf(p);
+  if (!r) return "";
+  const more = r.to.length - READBACK_MAX;
+  const lines = r.to.slice(0, READBACK_MAX).map((l) => `<li><span class="t">${esc(l)}</span></li>`).join("");
+  return `<div class="readback" id="${esc(id)}">${r.to.length ? `<p class="lbl" id="${esc(id)}l">Goes to</p><ul class="list" aria-labelledby="${esc(id)}l">${lines}${more > 0 ? `<li class="more"><span class="t">and ${more} more</span></li>` : ""}</ul>` : ""}${r.what ? `<p class="what">What they get: ${esc(r.what)}</p>` : ""}</div>`;
+}
+
 // ---- poking and admiring Brenda -----------------------------------------------------------------------------------
 // A click on her face in an open card squashes her and she looks cross for a moment; three in under 1.7 seconds make
 // her dizzy for three; resting the pointer on her for 1.9 seconds gives her heart eyes (Coucou's rules).
@@ -2436,6 +2723,7 @@ function blink(twice) {
 
 listen("brenda://cursor", ({ payload }) => {
   cursor = payload;
+  lastMoveAt = Date.now(); // the person is at the computer (the morning opener waits for that, phase 7a)
   const r = island.getBoundingClientRect();
   // Tucked away, the menu bar around the notch wakes it (anywhere in its height); otherwise the island itself.
   setHover(tucked
@@ -2456,7 +2744,7 @@ setInterval(() => {
   const e = document.getElementById("testimate"), share = estimateShare(); if (e && share !== null) e.style.transform = `scaleX(${share.toFixed(3)})`;
 }, 1000);
 
-listen("brenda://signed-out", () => { config = { ...config, signedIn: false }; data = null; card = null; talk = []; chat = newChat(); cached = null; talkWaiting = false; clearTimeout(talkWaitTimer); render(); });
+listen("brenda://signed-out", () => { config = { ...config, signedIn: false }; data = null; card = null; talk = []; chat = newChat(); cached = null; talkWaiting = false; clearTimeout(talkWaitTimer); applyQuiet(); render(); });
 
 (async () => {
   config = await invoke("get_config");

@@ -2,11 +2,16 @@
 // no audio files and nothing borrowed: short, soft sine and triangle notes with quick envelopes, played quietly. The
 // way the engine is run comes from Coucou's SoundEngine (Louis Raillé, MIT): one shared context and master gain, a low
 // default volume, and the context suspended a moment after the last sound so an idle notch costs no CPU.
+//
+// Quiet hours (owner decision, 8 October 2026: phase 7a, "quiet means quiet"): while the person's quiet hours are on,
+// main.js sets `setQuiet(true)` and nothing plays at all, whatever made the sound (an arrival, the island opening, a
+// button's tick); the tray's sound switch is kept as it is and applies again once quiet hours end.
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars -- a global for main.js, the next classic script on the page
 const Sound = (() => {
   let ctx = null, master = null, idleTimer = null;
   let enabled = true;
+  let quiet = false;
   const VOLUME = 0.16;
 
   function audio() {
@@ -88,9 +93,11 @@ const Sound = (() => {
   };
 
   return {
-    play(name) { if (enabled && sounds[name]) try { sounds[name](); } catch { /* sound never breaks the notch */ } },
+    play(name) { if (enabled && !quiet && sounds[name]) try { sounds[name](); } catch { /* sound never breaks the notch */ } },
     setEnabled(on) { enabled = !!on; },
+    /** The person's quiet hours (phase 7a): no sound of any kind while on. */
+    setQuiet(on) { quiet = !!on; },
     /** Web views start audio suspended until the person interacts; any click wakes it. */
-    unlock() { if (enabled) audio(); },
+    unlock() { if (enabled && !quiet) audio(); },
   };
 })();

@@ -20,6 +20,7 @@ import type { AssistantConnection } from "@/server/services/assistant";
 import { recordUsage } from "@/server/services/ai-usage";
 import { clamp, fullStamp, neutralise, oneLine, quoted } from "@/server/services/copilot-excerpt";
 import { REPLY_LABELS, durationLabel, factLines, factsOrNull, statusWords, whenLabel, type FollowUpFacts, type ReplyChoice, type TaskStatusWord } from "@/lib/follow-ups";
+import type { EvidenceRef } from "@/lib/evidence-links";
 
 export type ComposeInput = {
   question: string; kind: "task" | "person";
@@ -164,6 +165,31 @@ export function composeTemplate(input: ComposeInput): string {
     if (f.timeVisible && f.time && f.time.todaySeconds > 0) out.push(`Logged today: ${durationLabel(f.time.todaySeconds)}.`);
   }
   return fitAnswer(out.join(" "));
+}
+
+// ---- Where the answer comes from (owner decision, 8 October 2026: phase 7a, evidence links) ------------------------------
+
+/** The most sources an answer lists. */
+export const ANSWER_SOURCES_MAX = 5;
+
+/**
+ * The follow-up itself, then its task, then the open tasks and the work finished today that were shared with the asker,
+ * each once, at most 5. `taskId`: the follow-up's own task when the facts are not shared (yet). The answer's text
+ * (composeTemplate) is unchanged: it is plain text in many places; the views and the reply lines carry these as links.
+ */
+export function answerSources(facts: FollowUpFacts | null | undefined, followUpId: string, taskId?: string | null): EvidenceRef[] {
+  const out: EvidenceRef[] = [{ kind: "follow_up", id: followUpId }];
+  const seen = new Set<string>();
+  const add = (id: string | null | undefined) => {
+    if (!id || seen.has(id) || out.length >= ANSWER_SOURCES_MAX) return;
+    seen.add(id);
+    out.push({ kind: "task", id });
+  };
+  const f = factsOrNull(facts);
+  add(f?.task?.id ?? taskId ?? null);
+  for (const t of f?.openTasks ?? []) add(t.id);
+  for (const t of f?.completedToday ?? []) add(t.id);
+  return out;
 }
 
 // ---- The model --------------------------------------------------------------------------------------------------------

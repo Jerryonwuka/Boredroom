@@ -5,6 +5,7 @@ import { localDate, localTimeOn, weekdayOf } from "../src/server/lib/time";
 import { schema0039Ready } from "../src/server/lib/schema-0039";
 import { schema0041Ready } from "../src/server/lib/schema-0041";
 import { schema0043Ready } from "../src/server/lib/schema-0043";
+import { schema0046Ready } from "../src/server/lib/schema-0046";
 import { NOTE_SETTLE_GRACE_MINUTES } from "../src/server/services/assistant-items";
 
 /**
@@ -153,6 +154,46 @@ export async function scheduleAssistantItemSweep(now: Date = new Date()) {
 }
 
 /**
+ * Routines (owner decision, 8 October 2026: phase 7a): one `routine.run` job per routine whose next run is due within
+ * the minute, at its due time, deduplicated by routine and due time. A routine has one next run, so after any downtime
+ * each gets at most one job (claimRun records a run missed by more than two hours as missed and moves on, never a
+ * flood). Returns at once before migration 0046. `now` for the tests.
+ */
+export async function scheduleRoutines(now: Date = new Date()) {
+  if (!(await withWorker((db) => schema0046Ready(db)))) return { queued: 0 };
+  const { dueRoutines } = await import("../src/server/services/routines");
+  const due = await dueRoutines({ now, limit: 200 });
+  if (!due.length) return { queued: 0 };
+  return withWorker(async (db) => {
+    let queued = 0;
+    for (const r of due) {
+      const at = new Date(r.dueAt ?? r.next_run_at);
+      if (Number.isNaN(at.getTime())) continue;
+      const dueAt = at.toISOString();
+      await enqueueJob(db, "routine.run", { routineId: r.id, dueAt }, { dedupKey: `routine.run:${r.id}:${dueAt}`, runAt: at });
+      queued++;
+    }
+    return { queued };
+  });
+}
+
+/**
+ * Deliveries held for someone's quiet hours whose hold has ended (phase 7a): one `routine.release` job per person,
+ * deduplicated on the minute; the job delivers them together (two or more as one notification), or holds them again when
+ * the person is still quiet. Nothing before migration 0046.
+ */
+export async function scheduleRoutineReleases(now: Date = new Date()) {
+  const { heldReleasesDue } = await import("../src/server/services/routines");
+  const due = await heldReleasesDue(now);
+  if (!due.length) return { queued: 0 };
+  const minute = Math.floor(now.getTime() / 60_000);
+  return withWorker(async (db) => {
+    for (const r of due) await enqueueJob(db, "routine.release", { membershipId: r.membershipId }, { dedupKey: `routine.release:${r.membershipId}:${minute}` });
+    return { queued: due.length };
+  });
+}
+
+/**
  * Follow-up jobs another worker killed because it does not know them yet (correctness review, 8 October 2026): while a
  * worker deployed before phase 4 still runs against the same database, it claims about half of the new jobs and marks
  * each 'dead' at once ("no handler for job type …"). A dead followup.collect would keep its per-day key and that
@@ -160,13 +201,14 @@ export async function scheduleAssistantItemSweep(now: Date = new Date()) {
  * reset) for a worker that knows them; a job the old worker claims again comes back on the next run. Harmless once
  * every worker runs phase 4: then nothing matches. The proper fix is deploying the worker before (or with) this one.
  * The mentions' jobs too (owner decision, 8 October 2026: personal assistants, phase 5), for a worker without phase 5,
- * and the assistant items sweep (phase 6), for a worker without phase 6.
+ * and the assistant items sweep (phase 6), for a worker without phase 6, and the routines' jobs (phase 7a), for a worker
+ * without phase 7a.
  */
 export async function rearmFollowUpJobs() {
   return withWorker(async (db) => {
     const r = await db.query<{ id: string }>(
       `UPDATE jobs SET state = 'pending', attempts = 0, last_error = NULL, finished_at = NULL, locked_at = NULL, locked_by = NULL, next_run_at = now()
-       WHERE state = 'dead' AND type IN ('followup.collect', 'followup.process', 'followup.sweep', 'mention.sweep', 'mention.process', 'assistant_item.sweep')
+       WHERE state = 'dead' AND type IN ('followup.collect', 'followup.process', 'followup.sweep', 'mention.sweep', 'mention.process', 'assistant_item.sweep', 'routine.run', 'routine.release')
          AND last_error LIKE 'no handler for job type %' AND created_at > now() - interval '1 day'
        RETURNING id`);
     return { rearmed: r.length };
@@ -187,7 +229,10 @@ export async function scheduleMaintenance() {
   await scheduleMentionSweep().catch((err) => console.error("[worker] mention sweep schedule", (err as Error).message));
   // Assistants talking to each other (phase 6): requests past their time, interrupted accepts, report notes.
   await scheduleAssistantItemSweep().catch((err) => console.error("[worker] assistant item sweep schedule", (err as Error).message));
-  await rearmFollowUpJobs().then((r) => { if (r.rearmed) console.warn(`[worker] ${r.rearmed} follow-up, mention or assistant item job(s) killed by an older worker put back in the queue: deploy the worker everywhere`); }, (err) => console.error("[worker] follow-up job re-arm", (err as Error).message));
+  // Routines (phase 7a): runs that are due, and deliveries held for quiet hours that may go now.
+  await scheduleRoutines().catch((err) => console.error("[worker] routine schedule", (err as Error).message));
+  await scheduleRoutineReleases().catch((err) => console.error("[worker] routine release schedule", (err as Error).message));
+  await rearmFollowUpJobs().then((r) => { if (r.rearmed) console.warn(`[worker] ${r.rearmed} follow-up, mention, assistant item or routine job(s) killed by an older worker put back in the queue: deploy the worker everywhere`); }, (err) => console.error("[worker] follow-up job re-arm", (err as Error).message));
   await withWorker(async (db) => {
     const expiring = await db.query<{ id: string }>(`SELECT id FROM recordings WHERE deleted_at IS NULL AND upload_state <> 'deleted' AND expires_at <= now()`);
     for (const r of expiring) await enqueueJob(db, "recording.retention_delete", { recordingId: r.id, reason: "retention" }, { dedupKey: `recording.delete:${r.id}` });

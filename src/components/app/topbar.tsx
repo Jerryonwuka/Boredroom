@@ -21,6 +21,11 @@
  * Between assistants (owner decision, 8 October 2026: personal assistants, phase 6): a notification another person's
  * assistant brought says what kind it is after its time ("2 min ago, Request to accept"), as the Notifications page does,
  * so a request to accept reads differently from a passed-on message at a glance; each opens its card.
+ *
+ * Routines (owner decision, 8 October 2026: phase 7a): what a routine of the person's sent ("Routine"), the bundle of
+ * those held during quiet hours ("Routines") and a routine that couldn't run or was paused ("Routine") say so after their
+ * time the same way; each opens its run page or Settings. During quiet hours they still collect here (only the notch
+ * and the sounds keep quiet).
  */
 import { useState } from "react";
 import Link from "next/link";
@@ -42,6 +47,7 @@ import { SidebarToggle } from "@/components/app/sidebar";
 import { SEARCH_DIALOG_ID, SearchTrigger, WorkspaceSearch } from "@/components/app/workspace-search";
 import { PRESENCE, PRESENCES, type Presence } from "@/lib/presence";
 import { api } from "@/lib/api-client";
+import { ROUTINE_WORDS } from "@/lib/routines";
 import { relativeTime, cn } from "@/lib/utils";
 import type { RecentNotification } from "@/server/services/workspace";
 
@@ -90,10 +96,11 @@ function MarkRead({ orgSlug, id }: { orgSlug: string; id: string }) {
   );
 }
 
-/** The kind of a phase 6 notification in words (the Notifications page uses the same). */
+/** The kind of a phase 6 notification (and, phase 7a, a routine's) in words (the Notifications page uses the same). */
 const ASSISTANT_KINDS: Record<string, string> = {
   "assistant.message": "Passed-on message", "assistant.request": "Request to accept", "assistant.reply": "Reply", "assistant.outcome": "Request update",
   "assistant.tagged": "Your assistant in Messages", "assistant.thread_reply": "Reply in Messages",
+  ...ROUTINE_WORDS.notifications.kinds,
 };
 
 function Notifications({ orgSlug, unread, recent }: { orgSlug: string; unread: number; recent: RecentNotification[] }) {

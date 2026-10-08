@@ -17,6 +17,7 @@ const olu: PersonDay = {
   tasksCompleted: 1, completedTitles: ["Pricing page"], submittedForReview: 0, submittedTitles: [],
   openTasks: 1, blockedTasks: 0, overdueOpen: 0, overdueTitles: [], daysClockedIn: 1, daysLate: 0,
   inProgress: [], blocked: [], attendance: { clockedInAt: null, lateMinutes: 0, missing: false },
+  taskRefs: { completed: [{ id: "11111111-1111-4111-8111-111111111111", title: "Pricing page" }], submitted: [], overdue: [], inProgress: [], blocked: [] },
 };
 
 function report(o: Partial<DailyReport> = {}): DailyReport {
@@ -24,7 +25,8 @@ function report(o: Partial<DailyReport> = {}): DailyReport {
     localDate: "2026-10-08", title: "Team report, Thursday 8 October", scope: "team", people: [olu],
     totals: { people: 1, trackedHours: 2, tasksCompleted: 1, submittedForReview: 0, overdueOpen: 0, blockedTasks: 0, daysLate: 0 },
     headline: "Your team logged 2 confirmed hours today and finished 1 task.", attention: [], waitingForYourReview: 0, empty: false,
-    updates: [], updatesAt: null, notes: [], ...o,
+    updates: [], updatesAt: null, notes: [],
+    decisions: { reviews: [], corrections: [], requests: [], blocked: [] }, changes: null, snapshot: null, ...o,
   };
 }
 const write = (r: DailyReport) => reportMarkdown(ctx, r, { writtenAt: new Date("2026-10-08T17:00:00Z"), endOfDay: true, reportTime: "18:00", author: "Brenda", workspaceName: "Brenda" });
@@ -46,6 +48,18 @@ describe("Notes from the team", () => {
       "- **Olu Adeyemi** via Max, 16:05: “The client moved the deadline to Friday.”",
       "- **Ben Okafor** via Brenda, 17:30: “Ben covered support.”",
     ].join("\n"));
+  });
+
+  it("links each note to the note, and each update to the follow-up behind it (phase 7a: every line has a source)", () => {
+    const noteId = "22222222-2222-4222-8222-222222222222", followUpId = "33333333-3333-4333-8333-333333333333";
+    const md = write(report({
+      updates: [{ membershipId: "m-olu", name: "Olu Adeyemi", line: "Olu finished the pricing page.", id: followUpId }], updatesAt: "2026-10-08T16:00:00Z",
+      notes: [note("The client moved the deadline to Friday.", { id: noteId })],
+    }));
+    expect(md).toContain(`- **Olu Adeyemi**: Olu finished the pricing page. ([follow-up](/app/acme/home/follow-ups/${followUpId}))`);
+    expect(md).toContain(`- **Olu Adeyemi** via Max, 16:05: “The client moved the deadline to Friday.” ([note](/app/acme/home/assistants/items/${noteId}))`);
+    // An id that is not one gives no link (lib/evidence-links builds paths from UUIDs only).
+    expect(write(report({ notes: [note("Plain.", { id: "not-an-id" })] }))).toContain("16:05: “Plain.”\n");
   });
 
   it("has no section when there are no notes", () => {

@@ -45,6 +45,7 @@ import { AppError, conflict, forbidden, invalid, notFound } from "@/server/lib/e
 import { resolveEntitlements } from "@/server/lib/entitlements";
 import { forget0039, isMissingSchema, retryWithout0039, schema0039Ready } from "@/server/lib/schema-0039";
 import { schema0043Ready } from "@/server/lib/schema-0043";
+import { schema0046Ready } from "@/server/lib/schema-0046";
 import { memberContext } from "@/server/lib/member-context";
 import { addWorkingTime } from "@/server/lib/working-time";
 import { localMidnight, localTimeOn, todayLocal } from "@/server/lib/time";
@@ -54,7 +55,7 @@ import { matchPerson, resolveAssistant } from "@/server/services/assistant";
 import { aiAllowance } from "@/server/services/ai-usage";
 import { readWorkspaceAssistant } from "@/server/services/assistant-profile";
 import { gatherFacts, orgClock, type FactsScope } from "@/server/services/follow-up-facts";
-import { composeFollowUpAnswer, composeTemplate, type ComposeInput, type ComposeModel } from "@/server/services/follow-up-compose";
+import { answerSources, composeFollowUpAnswer, composeTemplate, type ComposeInput, type ComposeModel } from "@/server/services/follow-up-compose";
 import { followUpIntent } from "@/server/services/follow-up-intent";
 import type { DesktopAssistant } from "@/server/services/desktop";
 import { PALETTE, toProfile, type AssistantProfile } from "@/lib/assistant-look";
@@ -485,14 +486,65 @@ function askTitle(n: Names, taskTitle: string | null): string {
   return taskTitle ? `${who} wants an update on ${tq(taskTitle)}` : `${who} wants to know what you're working on`;
 }
 
+/**
+ * The routine run that asked this follow-up (a chase, phase 7a), or null: an ordinary follow-up, one the chase found
+ * already open (`reused`), or before 0046. Read from the run's actions, written before the worker hands the run's
+ * follow-ups to processing. Such a follow-up never calls the model (review, 8 October 2026: the lead's allowance is not
+ * spent by a schedule), and its answer is not told one by one: once all of that run's follow-ups have closed, one
+ * notification says so (the answers stay on the run's page and the follow-ups page). Never throws.
+ */
+type RoutineAsk = { runId: string; name: string; followUpIds: string[] };
+async function routineAskOf(r: Pick<ProcRow, "id" | "organisation_id" | "requester_membership_id" | "batch_kind" | "thread_mode">): Promise<RoutineAsk | null> {
+  if (r.batch_kind !== "person" || !r.requester_membership_id || r.thread_mode) return null;
+  try {
+    return await withWorker(async (db) => {
+      if (!(await schema0046Ready(db))) return null;
+      const run = await db.maybeOne<{ id: string; name: string; actions: { followUpId?: string | null; done?: boolean; reused?: boolean }[] }>(
+        `SELECT rr.id, ro.name, rr.actions
+         FROM routine_runs rr JOIN routines ro ON ro.id = rr.routine_id, follow_ups f
+         WHERE f.id = $3 AND rr.organisation_id = $1 AND rr.membership_id = $2
+           AND rr.started_at BETWEEN f.created_at - interval '1 day' AND f.created_at
+           AND rr.actions @> jsonb_build_array(jsonb_build_object('followUpId', $3::text, 'done', true))
+         ORDER BY rr.started_at DESC LIMIT 1`, [r.organisation_id, r.requester_membership_id, r.id]);
+      if (!run || !Array.isArray(run.actions)) return null;
+      const made = run.actions.filter((a) => a && a.done && !a.reused && typeof a.followUpId === "string").map((a) => a.followUpId as string);
+      return made.includes(r.id) ? { runId: run.id, name: run.name, followUpIds: made } : null;
+    });
+  } catch (err) {
+    if (!isMissingSchema(err)) warn("finding the routine that asked")(err);
+    return null;
+  }
+}
+
+/** Once every follow-up a routine run asked has closed: one notification to the person, with how they went. Never throws. */
+async function routineAnswersIn(ask: RoutineAsk, r: Pick<ProcRow, "organisation_id" | "requester_membership_id" | "slug">): Promise<void> {
+  if (!r.requester_membership_id || !ask.followUpIds.length) return;
+  await withWorker(async (db) => {
+    const c = await db.one<FollowUpBatchView["counts"]>(
+      `SELECT count(*)::int AS total, count(*) FILTER (WHERE status IN ${OPEN_SQL})::int AS open,
+              count(*) FILTER (WHERE status = 'answered' AND answered_from IS DISTINCT FROM 'person')::int AS answered,
+              count(*) FILTER (WHERE status = 'answered' AND answered_from = 'person')::int AS replied,
+              count(*) FILTER (WHERE status = 'expired')::int AS "noReply", count(*) FILTER (WHERE status = 'declined')::int AS declined,
+              count(*) FILTER (WHERE status = 'cancelled')::int AS cancelled, count(*) FILTER (WHERE status = 'failed')::int AS failed
+       FROM follow_ups WHERE id = ANY($1::uuid[])`, [ask.followUpIds]);
+    if (c.open > 0 || c.total === 0) return;
+    await notify(db, {
+      organisationId: r.organisation_id, recipientMembershipId: r.requester_membership_id!, type: "brenda.followup_batch",
+      title: clip(`Answers are in for “${ask.name}”`, 200), body: batchSummary(c), resourceType: "routine_run", resourceId: ask.runId,
+      href: `/app/${r.slug}/home/routines/${ask.runId}`, dedupKey: `routine.answers:${ask.runId}`,
+    });
+  }).catch(warn("telling the routine's answers"));
+}
+
 /** T7: failed, with nothing shared. Notifies a one-person ask's requester; closes the batch when it can. */
 async function fail(r: ProcRow, failure: FollowUpFailure): Promise<FollowUpStatus | null> {
+  const routine = await routineAskOf(r);
   const moved = await withWorker(async (db) => {
     const ok = await db.maybeOne(`UPDATE follow_ups SET status = 'failed', failure = $2, lease_until = NULL WHERE id = $1 AND status IN ${OPEN_SQL} RETURNING id`, [r.id, failure]);
     if (!ok) return false;
     await audit(db, { organisationId: r.organisation_id, action: "followup.failed", subjectType: "follow_up", subjectId: r.id, subjectMembershipId: r.subject_membership_id, metadata: { followUpId: r.id, reason: failure } });
-    // Asked in a thread (phase 6): the thread says so, not a notification.
-    if (r.batch_kind === "person" && r.requester_membership_id && !r.thread_mode) {
+    // Asked in a thread (phase 6): the thread says so, not a notification. Asked by a routine: told with the run's others.
+    if (r.batch_kind === "person" && r.requester_membership_id && !r.thread_mode && !routine) {
       const n = namesOf(r);
       await notify(db, {
         organisationId: r.organisation_id, recipientMembershipId: r.requester_membership_id, type: "brenda.followup_answer",
@@ -505,6 +557,7 @@ async function fail(r: ProcRow, failure: FollowUpFailure): Promise<FollowUpStatu
   if (!moved) return statusNow(r.id);
   if (r.asked_at) await closeAsk(r.subject_profile_id, r.subject_membership_id, r.id, "Closed. Nothing more is needed from you.");
   await closeBatch(r.batch_id).catch(warn("closing a batch"));
+  if (routine) await routineAnswersIn(routine, r);
   syncThread(r);
   return "failed";
 }
@@ -614,6 +667,9 @@ async function compose(r: ProcRow, now: Date, opts: { useModel?: boolean }, pre?
   if (!facts) return fail(r, "error");
   const n = namesOf(r);
   const answeredFrom = r.answered_from ?? "facts";
+  // Asked by a routine (a chase): never the model, whoever replies (review, 8 October 2026), and not told one by one.
+  const routine = await routineAskOf(r);
+  if (routine) opts = { ...opts, useModel: false };
   const input: ComposeInput = {
     question: r.question, kind: r.task_id ? "task" : "person", answeredFrom, facts, capped: !!r.capped,
     reply: r.reply_choice ? { choice: r.reply_choice, note: r.reply_note, at: isoOrNull(r.replied_at) ?? now.toISOString() } : null,
@@ -643,7 +699,8 @@ async function compose(r: ProcRow, now: Date, opts: { useModel?: boolean }, pre?
     if (!done) return null;
     await audit(db, { organisationId: r.organisation_id, action: "followup.answered", subjectType: "follow_up", subjectId: r.id, subjectMembershipId: r.subject_membership_id, metadata: { followUpId: r.id, status: done.status, answeredFrom, engine: out.engine } });
     // Asked in a thread (phase 6): the thread reply notifies the asker, and the owner's activity is written with it.
-    if (r.batch_kind === "person" && r.requester_membership_id && !r.thread_mode) {
+    // Asked by a routine: one notification once all of its run's follow-ups are in (routineAnswersIn).
+    if (r.batch_kind === "person" && r.requester_membership_id && !r.thread_mode && !routine) {
       await notify(db, {
         organisationId: r.organisation_id, recipientMembershipId: r.requester_membership_id, type: "brenda.followup_answer",
         title: answerTitle(done.status, n, r.task_title), body: clip(answer, 300), resourceType: "follow_up", resourceId: r.id,
@@ -666,6 +723,7 @@ async function compose(r: ProcRow, now: Date, opts: { useModel?: boolean }, pre?
       : to ? `Closed: the time to reply has passed. ${n.RA?.name ?? to} got what your work shows.` : "Closed: the time to reply has passed. Today's team report got what your work shows.");
   }
   await closeBatch(r.batch_id).catch(warn("closing a batch"));
+  if (routine) await routineAnswersIn(routine, r);
   syncThread(r);
   return status;
 }
@@ -832,6 +890,7 @@ function toView(r: ViewRow, ctx: OrgContext, workspace: AssistantProfile | null)
   const shared = SHARED_STATUSES.includes(r.status);
   const replyShared = viewer === "subject" || r.status === "answered" || r.status === "declined";
   const person = (id: string, name: string | null, p: Look): PersonRef => ({ membershipId: id, name: name ?? "Someone", firstName: firstName(name ?? "Someone"), assistant: toProfile(p) });
+  const facts = viewer === "subject" || shared ? factsOrNull(r.facts) : null;
   return {
     id: r.id, batchId: r.batch_id, status: r.status, answeredFrom: viewer === "subject" || shared ? r.answered_from : null,
     question: r.question,
@@ -839,7 +898,7 @@ function toView(r: ViewRow, ctx: OrgContext, workspace: AssistantProfile | null)
     requester: r.requester_membership_id ? person(r.requester_membership_id, r.requester_name, look(r, "ra")) : null,
     workspaceAssistant: r.requester_membership_id ? null : workspace,
     subject: person(r.subject_membership_id, r.subject_name, look(r, "sa")),
-    facts: viewer === "subject" || shared ? factsOrNull(r.facts) : null,
+    facts,
     reply: r.reply_choice && replyShared ? { choice: r.reply_choice, note: r.reply_note, at: r.replied_at ?? r.created_at } : null,
     answer: r.answer, answerEngine: r.answer_engine, capped: !!r.capped,
     askedAt: r.asked_at, deadlineAt: r.deadline_at, repliedAt: replyShared ? r.replied_at : null, answeredAt: r.answered_at, createdAt: r.created_at,
@@ -851,6 +910,9 @@ function toView(r: ViewRow, ctx: OrgContext, workspace: AssistantProfile | null)
     canReply: viewer === "subject" && r.status === "asking",
     canCancel: viewer === "requester" && (r.status === "pending" || r.status === "asking"),
     href: followUpHref(ctx.org.slug, r.id),
+    // Evidence links (owner decision, 8 October 2026: phase 7a): the follow-up, its task, and the tasks the shared facts
+    // name, only once the viewer may read those facts.
+    sources: answerSources(facts, r.id, r.task_id),
   };
 }
 
@@ -1327,8 +1389,9 @@ export async function collectWorkspaceUpdates(p: { organisationId: string; local
 
 // ---- The report's Updates section (read as the recipient) ---------------------------------------------------------------
 
+/** `id`: the follow-up, so the report's Updates lines link to it (owner decision, 8 October 2026: phase 7a, evidence links). */
 export type WorkspaceUpdate = {
-  membershipId: string; name: string; status: FollowUpStatus; answeredFrom: "facts" | "person" | "deadline" | null; answer: string | null;
+  id?: string; membershipId: string; name: string; status: FollowUpStatus; answeredFrom: "facts" | "person" | "deadline" | null; answer: string | null;
   reply: { choice: ReplyChoice; note: string | null } | null; facts: FollowUpFacts | null; deadlineAt: string | null;
 };
 
@@ -1347,14 +1410,14 @@ export async function workspaceUpdatesFor(ctx: OrgContext, localDate: string, me
     });
     if (!batch) return none;
     await settle(ctx, "f.batch_id = $2 AND f.subject_membership_id = ANY($3::uuid[])", [batch.id, ids]);
-    const rows = await withUser(ctx.user.profileId, (db) => db.query<{ subject_membership_id: string; name: string; status: FollowUpStatus; answered_from: WorkspaceUpdate["answeredFrom"]; answer: string | null; reply_choice: ReplyChoice | null; reply_note: string | null; facts: unknown; deadline_at: string | null }>(
-      `SELECT f.subject_membership_id, p.display_name AS name, f.status, f.answered_from, f.answer, f.reply_choice, f.reply_note, f.facts, f.deadline_at
+    const rows = await withUser(ctx.user.profileId, (db) => db.query<{ id: string; subject_membership_id: string; name: string; status: FollowUpStatus; answered_from: WorkspaceUpdate["answeredFrom"]; answer: string | null; reply_choice: ReplyChoice | null; reply_note: string | null; facts: unknown; deadline_at: string | null }>(
+      `SELECT f.id, f.subject_membership_id, p.display_name AS name, f.status, f.answered_from, f.answer, f.reply_choice, f.reply_note, f.facts, f.deadline_at
        FROM follow_ups f JOIN memberships m ON m.id = f.subject_membership_id JOIN profiles p ON p.id = m.user_id
        WHERE f.batch_id = $1 AND f.subject_membership_id = ANY($2::uuid[]) ORDER BY p.display_name, f.id`, [batch.id, ids]));
     return {
       collectedAt: batch.created_at,
       updates: rows.map((r) => ({
-        membershipId: r.subject_membership_id, name: r.name, status: r.status, answeredFrom: r.answered_from, answer: r.answer,
+        id: r.id, membershipId: r.subject_membership_id, name: r.name, status: r.status, answeredFrom: r.answered_from, answer: r.answer,
         reply: r.reply_choice && (r.status === "answered" || r.status === "declined") ? { choice: r.reply_choice, note: r.reply_note } : null,
         facts: factsOrNull(r.facts), deadlineAt: r.deadline_at,
       })),

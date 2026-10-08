@@ -3,8 +3,8 @@
  * with a name, a sphere colour from this curated palette, a visor and eyes; the workspace has one of its own that signs
  * what the workspace sends on its own (the end-of-day team report). The default is Brenda as she was: white, the bean
  * visor, pill eyes. This module is the one source for the palette, the presets, the defaults and the name rule, shared by
- * the server, the canvas engine, the CSS faces and the glyph. It imports nothing but a type from lib/act-mode (itself
- * import-free), so client code can use it. The notch cannot import it: the desktop state carries the resolved colours
+ * the server, the canvas engine, the CSS faces and the glyph. It imports nothing but types from lib/act-mode (itself
+ * import-free) and lib/routines (client-safe), so client code can use it. The notch cannot import it: the desktop state carries the resolved colours
  * instead.
  *
  * Every combination stays readable: the visor is always near-black and the eyes always white, and every sphere colour is
@@ -17,6 +17,7 @@
  */
 
 import type { ActState } from "@/lib/act-mode";
+import type { QuietState } from "@/lib/routines";
 
 export const ASSISTANT_COLOURS = ["white", "grey", "yellow", "orange", "coral", "pink", "purple", "blue", "teal", "green"] as const;
 export const ASSISTANT_VISORS = ["bean", "band", "screen"] as const;
@@ -37,7 +38,14 @@ export type AssistantProfile = AssistantLook & { name: string };
  * `ai` (review, 8 October 2026): whether the workspace has an AI connection, read only for someone who chose Act without
  * asking (absent otherwise). False: the built-in helper answers, and it always asks first.
  */
-export type AssistantProfiles = { personal: AssistantProfile; workspace: AssistantProfile; setupDone: boolean; canEditWorkspace: boolean; speak: AssistantSpeak; act?: ActState; ai?: boolean };
+/**
+ * `quiet` (owner decision, 8 October 2026: phase 7a, quiet hours): whether the person is in their quiet hours now, when
+ * they end and when the next begin (lib/routines `QuietState`), as the server read it with the profiles. While active,
+ * replies are not read aloud on their own and her sounds do not play (Listen still works); the web re-evaluates it at
+ * `until` and `nextStart`. Present only for someone with quiet hours on (so every existing literal still compiles and
+ * the shape is unchanged for everyone else); absent or `ready: false` is never quiet.
+ */
+export type AssistantProfiles = { personal: AssistantProfile; workspace: AssistantProfile; setupDone: boolean; canEditWorkspace: boolean; speak: AssistantSpeak; act?: ActState; ai?: boolean; quiet?: QuietState };
 
 /** The drawn sphere's four stops (lib/brenda-character/engine), from the lit upper left to the rim. */
 export type SphereShades = { light: string; mid: string; shade: string; rim: string };

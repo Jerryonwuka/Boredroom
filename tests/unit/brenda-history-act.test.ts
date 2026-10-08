@@ -69,6 +69,20 @@ describe("saving a chat with Act without asking", () => {
     expect(createConversationSchema.safeParse({ messages: [{ role: "assistant", content: "x", actions: [{ kind: "todo", summary: "s", auto: 1 }] }] }).success).toBe(false);
   });
 
+  it("keeps a Confirm's readback (phase 7a: who it would have gone to), shortened to fit, never its token", () => {
+    const readback = { to: ["#Design, a team channel of 6 people"], what: "Your message, marked as sent by Max" };
+    const out = json(saved([{ role: "assistant", content: "x", proposals: [{ kind: "confirm", token: CONFIRM_TOKEN, summary: "Message #Design (team channel):", tool: "send_message", readback, done: "Not done" }] }]));
+    expect(out).toEqual([{ role: "assistant", content: "x", proposals: [{ kind: "confirm", summary: "Message #Design (team channel):", tool: "send_message", readback, done: "Not done" }] }]);
+    expect(JSON.stringify(out)).not.toContain(CONFIRM_TOKEN);
+    const [long] = saved([{ role: "assistant", content: "x", proposals: [{ kind: "confirm", summary: "s", tool: "follow_up", readback: { to: ["x".repeat(400)], what: "y".repeat(1200) } }] }]);
+    const rb = (long.proposals?.[0] as { readback?: { to: string[]; what?: string } }).readback;
+    expect(rb?.to[0].length).toBe(300);
+    expect(rb?.what?.length).toBe(1000);
+    // An empty one is not kept; a card from before it has none.
+    expect(json(saved([{ role: "assistant", content: "x", proposals: [{ kind: "confirm", summary: "s", tool: "mark_read", readback: { to: [] } }] }]))[0].proposals[0].readback).toBeUndefined();
+    expect(createConversationSchema.safeParse({ messages: [{ role: "assistant", content: "x", proposals: [{ kind: "confirm", summary: "s", tool: "t", readback: { to: "Ben" } }] }] }).success).toBe(false);
+  });
+
   it("an update keeps the same things as a create", () => {
     const parsed = updateConversationSchema.parse({ messages: [{ role: "assistant", content: "x", tainted: true, actions: [{ kind: "todo", summary: "s", auto: true, undo: UNDO }] }] });
     expect(json(stripTokens(parsed.messages))).toEqual([{ role: "assistant", content: "x", tainted: true, actions: [{ kind: "todo", summary: "s", auto: true }] }]);

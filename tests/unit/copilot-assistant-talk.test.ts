@@ -102,7 +102,9 @@ describe("her tools for other people's assistants", () => {
 
   it("has the five tools after the others, with their required fields", () => {
     const names = TOOLS.map((x) => x.name);
-    expect(names.slice(-5)).toEqual(["pass_message", "hand_over_request", "add_report_note", "assistant_inbox", "respond_to_item"]);
+    // Phase 7a (owner decision, 8 October 2026): the three routine tools come after them.
+    expect(names.slice(-8, -3)).toEqual(["pass_message", "hand_over_request", "add_report_note", "assistant_inbox", "respond_to_item"]);
+    expect(names.slice(-3)).toEqual(["list_routines", "create_routine", "update_routine"]);
     expect(tool("pass_message")?.input_schema.required).toEqual(["to", "body"]);
     expect(tool("hand_over_request")?.input_schema.required).toEqual(["to", "kind"]);
     expect(tool("add_report_note")?.input_schema.required).toEqual(["body"]);

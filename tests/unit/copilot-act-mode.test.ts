@@ -75,6 +75,7 @@ import { conflict } from "@/server/lib/errors";
 import { DEFAULT_ASSISTANT } from "@/lib/assistant-look";
 import type { AssistantItemView } from "@/lib/assistant-items";
 import type { OrgContext } from "@/server/lib/api";
+import { ROUTINES_NOT_READY } from "@/lib/routines";
 
 const ORG = "00000000-0000-4000-8000-0000000000a1";
 const OLU = "00000000-0000-4000-8000-0000000000b1";
@@ -116,7 +117,12 @@ beforeEach(() => {
 
 describe("the cached prefix and the chat schema", () => {
   it("RULES and TOOLS carry no act-mode words: the mode is only in the uncached situation", () => {
-    const prefix = RULES + JSON.stringify(TOOLS);
+    // Owner decision, 8 October 2026 (phase 7a, contract I.2): update_routine's definition says, the same for everyone, that
+    // pausing does not wait for Confirm in that mode. That one sentence is static (it never changes per person or turn), so
+    // the prefix stays one cached prefix; nothing else may name the mode.
+    const PAUSE_LINE = "Waits for confirmation, except pausing when the person chose to act without asking.";
+    expect(TOOLS.find((x) => x.name === "update_routine")?.description).toContain(PAUSE_LINE);
+    const prefix = (RULES + JSON.stringify(TOOLS)).replace(PAUSE_LINE, "");
     for (const w of [/without asking/i, /\bundo\b/i, /stillAsking/, /withoutAsking/, /act_mode|act mode/i, /\bauto\b/i]) expect(prefix, String(w)).not.toMatch(w);
     expect(prefix).not.toContain(actSituation(actOf()) as string);
   });
@@ -147,6 +153,8 @@ describe("why a Confirm card still asks (B.1)", () => {
     workspace_off: "Still asking: your workspace has turned off acting without asking.",
     impersonated: "Still asking: someone else is signed in as this person.",
     always_asks: "Still asking: Max always asks before this.",
+    // Phase 7a (owner decision, 8 October 2026): setting up or turning on a routine is the person's Enable.
+    routine_consent: "Still asking: turning on a routine is your standing yes for what it does each time.",
   };
 
   it.each([...ASK_REASONS])("%s", (reason) => {
@@ -309,6 +317,16 @@ describe("the built-in helper", () => {
     const a = await ask("Tell Ben's assistant the client moved the deadline to Friday.");
     expect(confirms(a.proposals)[0].why).toBeUndefined();
     expect(a.act).toEqual(ASK);
+  });
+
+  it("routines (phase 7a): before the database update it says so; a timer is never mistaken for one", async () => {
+    // The fake database refuses every read, as a database without migration 0046 has no routines to read.
+    const r = await ask("Every Friday at 4pm, send me what's still owed");
+    expect(r.reply).toBe(ROUTINES_NOT_READY);
+    expect(r.proposals).toEqual([]);
+    expect(r.actions).toEqual([]);
+    const timer = await ask("stop my timer");
+    expect(timer.reply).not.toBe(ROUTINES_NOT_READY);
   });
 
   it("says when its answer holds other people's words (the inbox)", async () => {

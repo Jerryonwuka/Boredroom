@@ -38,7 +38,14 @@
    amber pill with the Zap mark and its words (`.pill.warn.mode`; caution, never orange, and never colour alone); a done
    line may run to two lines so "(without asking)" stays readable, and carries a ghost Undo while it can be undone; undone,
    its arrow and words go grey and it ends "Undone"; a Confirm that still asks has its reason under the summary, in the
-   secondary grey (`.why`). No new orange. */
+   secondary grey (`.why`). No new orange.
+   Brenda keeps the loops closed (owner decision, 8 October 2026: phase 7a). The morning opener: the counts as the
+   near-black list, each row a quiet button that opens its page (words left, the number right in Geist Mono in the text
+   colour, "not available" in the secondary grey), and its one-tap actions as outline pills with their icons, the first
+   the card's one orange button (`.starts`). A routine's card: its lines in the list, each running to two lines with a
+   small Open (`.lines`). A Confirm's readback: "Goes to" as the small label over a compact list of who receives it, and
+   "What they get" in the secondary grey, aligned with the summary's words (`.readback`). Quiet hours add no styles: the
+   compact bar's words say it. No new orange beyond the opener's one standout. */
 
 /* Inter and Geist Mono, from @fontsource-variable (SIL Open Font License, fonts/OFL.txt). Nothing loads remotely. */
 @font-face { font-family: "Inter Variable"; font-style: normal; font-display: swap; font-weight: 100 900; src: url(fonts/inter-latin-ext-wght-normal.woff2) format("woff2");
@@ -591,3 +598,35 @@ kbd { display: inline-flex; align-items: center; justify-content: center; box-si
    only, so "They may have seen it already" never showed). */
 .list li.undone .tw { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .list li.undone .u { color: var(--secondary); font-size: 12px; line-height: 16px; font-weight: 400; overflow-wrap: anywhere; }
+
+/* Brenda keeps the loops closed (owner decision, 8 October 2026: phase 7a). The morning opener's counts: each row is a
+   button the size of the row that opens its page; the number is Geist Mono in the text colour (a figure, not orange),
+   "not available" stays in the secondary grey. */
+.list li:has(> .rowlink) { padding: 0; }
+.list li > .rowlink { all: unset; box-sizing: border-box; flex: 1; min-width: 0; min-height: 32px; display: flex; align-items: center; gap: 8px; padding: 0 8px; border-radius: var(--radius-btn-xs); cursor: pointer;
+  transition: background-color var(--fast) var(--ease); }
+.list li > .rowlink:hover { background: var(--fill-1); }
+.list li > .rowlink:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
+.list li .k.n { font-family: var(--font-mono); font-size: 14px; line-height: 20px; font-weight: 500; color: var(--foreground); }
+/* Its one-tap actions: outline pills that wrap within the card (never sideways), each with its icon; the first is the
+   card's one orange button. */
+.starts { display: flex; flex-wrap: wrap; gap: 6px; }
+.starts .btn { max-width: 100%; }
+/* A routine's lines: plain text that may run to two lines (the whole line is its tooltip), each with a small Open. */
+.list li.wrap { padding-top: 6px; padding-bottom: 6px; }
+.list li.wrap .t { white-space: normal; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; font-weight: 400; }
+.list li.wrap .btn { flex: none; align-self: center; }
+/* A Confirm's readback, aligned with the summary's words (past the shield): "Goes to" as the small label, who receives it
+   as a compact list (13/19.5, one per line, wrapping), and what they get in the secondary grey. */
+.confirm .readback { display: grid; gap: 6px; margin-left: 26px; min-width: 0; }
+.readback .list { padding: 2px 4px; }
+.readback .list li { min-height: 24px; padding: 2px 8px; font-size: 13px; line-height: 19.5px; font-weight: 400; }
+.readback .list li .t { white-space: normal; overflow-wrap: anywhere; }
+.readback .list li.more .t { color: var(--secondary); }
+.readback .what { font-size: 13px; line-height: 19.5px; font-weight: 400; color: var(--secondary); overflow-wrap: anywhere; }
+/* The opener's icons move like the others on hover and keyboard focus: the inbox and the list nudge, the alert and the
+   message tip, the reply nudges back, the clipboard and the calendar press, the people nudge. */
+:is(.btn, .link):is(:hover, :focus-visible) > :is(.ic-inbox, .ic-list, .ic-users) { animation-name: ic-nudge; }
+:is(.btn, .link):is(:hover, :focus-visible) > :is(.ic-alert, .ic-message) { animation-name: ic-tip; transform-origin: 50% 90%; }
+:is(.btn, .link):is(:hover, :focus-visible) > .ic-reply { animation-name: ic-back; }
+:is(.btn, .link):is(:hover, :focus-visible) > :is(.ic-clipboard, .ic-calendar) { animation-name: ic-press; }

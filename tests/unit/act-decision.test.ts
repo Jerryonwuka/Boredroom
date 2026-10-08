@@ -59,6 +59,13 @@ const TABLE: [string, ActFacts, true | string][] = [
   ["update_doc", { someoneElsesDoc: true }, "someone_elses_doc"],
   ["update_doc", { someoneElsesDoc: true, share: "organisation" }, "broadcast_everyone"],
   ["update_doc", {}, "always_asks"],
+  // Phase 7a (owner decision, 8 October 2026: routines): the card is the person's Enable; only a pause acts.
+  ["create_routine", {}, "routine_consent"],
+  ["update_routine", { routine: "pause" }, true],
+  ["update_routine", { routine: "turn_on" }, "routine_consent"],
+  ["update_routine", { routine: "change" }, "routine_consent"],
+  ["update_routine", { routine: "delete" }, "cant_undo"],
+  ["update_routine", {}, "routine_consent"],
 ];
 
 describe("the table (B.3): her own chat, Claude, 'auto' in force, nothing read", () => {
@@ -101,10 +108,19 @@ describe("the table (B.3): her own chat, Claude, 'auto' in force, nothing read",
 
   it("acts only for the tools the owner accepted, and never for the irreversible", () => {
     const acting = Object.keys(AUTO_RULES).filter((tool) => TABLE.some(([t, , want]) => t === tool && want === true)).sort();
-    expect(acting).toEqual(["add_report_note", "assign_task", "create_todos", "follow_up", "hand_over_request", "mark_read", "pass_message", "send_message", "update_task"]);
-    for (const tool of ["submit_for_review", "create_team", "invite_person", "respond_to_item", "update_doc"]) {
-      for (const facts of [{}, { respond: "cancel" as const }, { someoneElsesDoc: true }, { share: "organisation" as const }]) expect(decide(tool, facts).act, tool).toBe(false);
+    expect(acting).toEqual(["add_report_note", "assign_task", "create_todos", "follow_up", "hand_over_request", "mark_read", "pass_message", "send_message", "update_routine", "update_task"]);
+    for (const tool of ["submit_for_review", "create_team", "invite_person", "respond_to_item", "update_doc", "create_routine"]) {
+      for (const facts of [{}, { respond: "cancel" as const }, { someoneElsesDoc: true }, { share: "organisation" as const }, { routine: "pause" as const }]) expect(decide(tool, facts).act, tool).toBe(false);
     }
+  });
+
+  it("a routine acts only to pause (phase 7a): setting one up, turning it on or changing it is the person's Enable", () => {
+    expect(decide("update_routine", { routine: "pause" })).toEqual(acts);
+    for (const routine of ["turn_on", "change"] as const) expect(decide("update_routine", { routine })).toEqual(asks("routine_consent"));
+    expect(decide("update_routine", { routine: "delete" })).toEqual(asks("cant_undo"));
+    expect(decide("create_routine", { routine: "pause" })).toEqual(asks("routine_consent"));
+    // The floors come first: after other people's words even a pause asks.
+    expect(decide("update_routine", { routine: "pause" }, { tainted: true })).toEqual(asks("tainted"));
   });
 });
 

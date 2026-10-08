@@ -38,11 +38,18 @@
  * the thread the assistant was tagged in, followed by the tagger's request (`mentionRequest`), and add the pure handling
  * of what she writes back: the `[private]` marker, plain text for a bubble (`plainReply`) and the short public reply
  * (`shortReply`). Bubbles never render Markdown or links, so what she writes is shown exactly as text.
+ *
+ * Evidence links (owner decision, 8 October 2026: phase 7a, "every line has a source"): with the workspace's slug, each
+ * message line in a block ends with "(link: /app/<slug>/messages?c=…#m-…)" and each follow-up line with its own link and
+ * its task's, so her catch-up and follow-up answers can link every line to where it came from. The links are made by the
+ * server from ids alone (lib/evidence-links checks them), never from anything someone wrote. The built-in helper's lines
+ * end with the same links as Markdown ("([message](…))").
  */
 import type { CatchUpConversation, CatchUpDigest, CatchUpMessage, ConversationRead, MessageHit } from "@/server/services/catch-up";
 import type { FollowUpBatchView, FollowUpView } from "@/lib/follow-ups";
 import type { AssistantItemView } from "@/lib/assistant-items";
 import { MENTION_LIMITS } from "@/lib/mentions";
+import { evidenceHref, sourcesSuffix, type EvidenceRef } from "@/lib/evidence-links";
 import { localDate } from "@/server/lib/time";
 
 export const EXCERPT_TAGS = ["conversation_excerpt", "message_search_results"] as const;
@@ -148,13 +155,23 @@ function authorPart(m: CatchUpMessage): string {
   return who;
 }
 
+/**
+ * " (link: /app/acme/messages?c=…#m-…)" for a line in a block (phase 7a), made from ids only; "" when there is no slug or
+ * an id is not one (lib/evidence-links checks both).
+ */
+const linkPart = (slug: string | null | undefined, ...refs: (EvidenceRef & { label?: string })[]): string => {
+  if (!slug) return "";
+  const parts = refs.map((r) => { const href = evidenceHref(slug, r); return href ? `${r.label ? `${r.label}: ` : ""}${href}` : null; }).filter((x): x is string => !!x);
+  return parts.length ? ` (link: ${parts.join("; ")})` : "";
+};
+
 /** One message: a numbered line, then any further lines of its text indented four spaces. */
-function messageChunk(m: CatchUpMessage, n: number, timeZone: string, now: Date, prefix = ""): string {
+function messageChunk(m: CatchUpMessage, n: number, timeZone: string, now: Date, prefix = "", link = ""): string {
   const reply = m.replyTo ? ` (replying to ${colleague(m.replyTo.author)}${m.replyTo.body ? `: "${quoted(m.replyTo.body)}"` : "'s withdrawn message"})` : "";
   const task = m.task ? ` [about the task "${quoted(m.task.title, 200)}"]` : "";
   const edited = m.edited ? " [edited]" : "";
   const [first, ...rest] = neutralise(m.body).split("\n");
-  const head = `[${n}] ${prefix}${stamp(m.at, timeZone, now)}, ${authorPart(m)}${reply}: ${first}${task}${edited}`;
+  const head = `[${n}] ${prefix}${stamp(m.at, timeZone, now)}, ${authorPart(m)}${reply}: ${first}${task}${edited}${link}`;
   return [head, ...rest.map((l) => `    ${l}`)].join("\n");
 }
 
@@ -175,7 +192,8 @@ function fit(tag: string, header: (shown: number, dropped: number) => string, ch
 }
 
 type ExcerptInput = Pick<ConversationRead, "conversation" | "messages" | "omittedOlder" | "window" | "mode" | "nothingNew">;
-type ExcerptOpts = { timeZone: string; now?: Date; maxChars?: number };
+/** `slug` (phase 7a): each message line ends with its link; left out in a thread's prompt (a bubble shows no links). */
+type ExcerptOpts = { timeZone: string; now?: Date; maxChars?: number; slug?: string | null };
 
 /** The block and what it holds: how many messages are shown and how many older ones were left out (the read's and the cap's). */
 export function renderExcerpt(read: ExcerptInput, opts: ExcerptOpts): { text: string; shown: number; omittedOlder: number } {
@@ -187,7 +205,7 @@ export function renderExcerpt(read: ExcerptInput, opts: ExcerptOpts): { text: st
     ["from", read.window.from ? fullStamp(read.window.from, tz) : null], ["to", fullStamp(read.window.to, tz)],
     ...(read.nothingNew ? [["nothing_new", "true"] as [string, string]] : []),
   ]);
-  const chunks = read.messages.map((m) => (n: number) => messageChunk(m, n, tz, now));
+  const chunks = read.messages.map((m) => (n: number) => messageChunk(m, n, tz, now, "", linkPart(opts.slug, { kind: "message", id: m.id, conversationId: read.conversation.id })));
   const r = fit(EXCERPT_TAGS[0], header, chunks, opts.maxChars ?? EXCERPT_MAX_CHARS);
   return { text: r.text, shown: r.shown, omittedOlder: read.omittedOlder + r.dropped };
 }
@@ -196,7 +214,7 @@ export function excerptBlock(read: ExcerptInput, opts: ExcerptOpts): string {
   return renderExcerpt(read, opts).text;
 }
 
-type SearchOpts = { timeZone: string; query: { q?: string; from?: string; conversation?: string }; /** Left out of a thread reply. */ total?: number; now?: Date; maxChars?: number };
+type SearchOpts = { timeZone: string; query: { q?: string; from?: string; conversation?: string }; /** Left out of a thread reply. */ total?: number; now?: Date; maxChars?: number; slug?: string | null };
 
 /** Search hits come newest first, so the cap leaves out the last (oldest) lines; `shown` says how many are in the block. */
 export function renderSearch(hits: MessageHit[], opts: SearchOpts): { text: string; shown: number } {
@@ -207,7 +225,7 @@ export function renderSearch(hits: MessageHit[], opts: SearchOpts): { text: stri
   let drop = 0;
   const build = (d: number) => {
     const kept = ordered.slice(d).reverse();
-    return [`<${EXCERPT_TAGS[1]} ${header(kept.length)}>`, ...kept.map((h, i) => messageChunk(h, i + 1, opts.timeZone, now, `${nameOf(h.conversation.name)}, `)), `</${EXCERPT_TAGS[1]}>`].join("\n");
+    return [`<${EXCERPT_TAGS[1]} ${header(kept.length)}>`, ...kept.map((h, i) => messageChunk(h, i + 1, opts.timeZone, now, `${nameOf(h.conversation.name)}, `, linkPart(opts.slug, { kind: "message", id: h.id, conversationId: h.conversation.id }))), `</${EXCERPT_TAGS[1]}>`].join("\n");
   };
   let text = build(drop);
   const max = opts.maxChars ?? EXCERPT_MAX_CHARS;
@@ -229,7 +247,17 @@ const said = (s: string) => mdText(clamp(oneLine(s), 140));
 
 export type OpenLink = { kind: "open"; href: string; label: string };
 export type BuiltinReply = { reply: string; proposals: OpenLink[] };
-type BuiltinOpts = { timeZone: string; base: string; now?: Date };
+/**
+ * `slug` (phase 7a): each line ends with its message's link; when it is not given it is read from `base` ("/app/acme"),
+ * and a line whose ids are not real ones gets none.
+ */
+type BuiltinOpts = { timeZone: string; base: string; now?: Date; slug?: string | null };
+const slugOf = (o: Pick<BuiltinOpts, "base" | "slug">) => o.slug ?? /^\/app\/([a-z0-9-]{1,64})$/.exec(o.base)?.[1] ?? null;
+/** " ([message](/app/acme/messages?c=…#m-…))" after a built-in line, or "". */
+const messageLink = (o: Pick<BuiltinOpts, "base" | "slug">, id: string, conversationId: string) => {
+  const slug = slugOf(o);
+  return slug ? sourcesSuffix(slug, [{ kind: "message", id, conversationId }]) : "";
+};
 
 const READ_NOTE = "Reading here does not mark anything as read.";
 const messagesLink = (base: string): OpenLink => ({ kind: "open", href: `${base}/messages`, label: "Messages" });
@@ -250,7 +278,7 @@ function whoSaid(m: CatchUpMessage, bold = true): string {
   const who = b(m.author.isYou ? "You" : mdText(m.author.name));
   return m.authorKind === "via_assistant" && assistant ? `${who} via ${assistant}` : who;
 }
-const line = (m: CatchUpMessage, o: BuiltinOpts) => `- ${whoSaid(m)}, ${stamp(m.at, o.timeZone, o.now)}: ${said(m.body)}`;
+const line = (m: CatchUpMessage, o: BuiltinOpts, conversationId: string) => `- ${whoSaid(m)}, ${stamp(m.at, o.timeZone, o.now)}: ${said(m.body)}${messageLink(o, m.id, conversationId)}`;
 /** "**#Design**", or "your messages with **Ben Okafor**" for a direct thread. */
 const where = (c: Pick<CatchUpConversation, "kind" | "name">) => c.kind === "direct" ? `your messages with **${mdText(c.name)}**` : `**${mdText(c.name)}**`;
 
@@ -263,7 +291,7 @@ export function builtinCatchUpDigest(d: CatchUpDigest, o: BuiltinOpts): BuiltinR
     : `You have ${plural(d.totalUnread, "unread message")}. These are the ${plural(d.conversations.length, "busiest conversation")}.`;
   const groups = d.conversations.map((c) => {
     const label = `**${mdText(c.name)}**, ${c.latest.length ? `${c.unread} new` : c.markedUnread ? "marked unread" : `${c.unread} new`}`;
-    return c.latest.length ? `${label}\n${c.latest.map((m) => line(m, o)).join("\n")}` : label;
+    return c.latest.length ? `${label}\n${c.latest.map((m) => line(m, o, c.id)).join("\n")}` : label;
   });
   return { reply: [lead, ...groups, `Open a conversation below to read the rest. ${READ_NOTE}`].join("\n\n"), proposals: linksFor(d.conversations, o.base) };
 }
@@ -275,11 +303,11 @@ export function builtinCatchUpConversation(r: Pick<ConversationRead, "conversati
   const links = [openLink(c), messagesLink(o.base)];
   if (r.nothingNew || !latest.length) {
     if (!latest.length) return { reply: `Nothing new in ${where(c)}, and nothing has been written there yet.`, proposals: links };
-    return { reply: `Nothing new in ${where(c)}. The last few messages:\n\n${latest.map((m) => line(m, o)).join("\n")}`, proposals: links };
+    return { reply: `Nothing new in ${where(c)}. The last few messages:\n\n${latest.map((m) => line(m, o, c.id)).join("\n")}`, proposals: links };
   }
   const count = Math.max(r.unreadBefore, r.messages.length);
   const more = count > latest.length ? ` The latest ${latest.length}:` : "";
-  return { reply: `${plural(count, "new message")} in ${where(c)}.${more}\n\n${latest.map((m) => line(m, o)).join("\n")}\n\n${count > latest.length ? "Open it to read the rest. " : ""}${READ_NOTE}`, proposals: links };
+  return { reply: `${plural(count, "new message")} in ${where(c)}.${more}\n\n${latest.map((m) => line(m, o, c.id)).join("\n")}\n\n${count > latest.length ? "Open it to read the rest. " : ""}${READ_NOTE}`, proposals: links };
 }
 
 /**
@@ -291,7 +319,7 @@ function hitLine(h: MessageHit, o: BuiltinOpts): string {
   const where = `**${mdText(h.conversation.name)}**${direct ? " (direct)" : ""}`;
   const theirs = direct && !h.author.isYou && h.authorKind !== "assistant" && oneLine(h.author.name) === oneLine(h.conversation.name);
   const who = !theirs ? `, ${whoSaid(h, false)}` : h.authorKind === "via_assistant" && h.assistantName ? `, via ${mdText(h.assistantName)}` : "";
-  return `- ${where}, ${stamp(h.at, o.timeZone, o.now)}${who}: ${said(h.body)}`;
+  return `- ${where}, ${stamp(h.at, o.timeZone, o.now)}${who}: ${said(h.body)}${messageLink(o, h.id, h.conversation.id)}`;
 }
 
 /**
@@ -427,11 +455,13 @@ function followUpState(v: FollowUpView): string {
  *   [1] Thu 8 Oct 15:40, to Ben Okafor's assistant, about "Landing page": status answered (from Ben's work): <answer>
  * The answer and the reply were written by other people or their assistants: neutralised, never a line of their own.
  */
-function followUpChunk(v: FollowUpView, n: number, timeZone: string): string {
+function followUpChunk(v: FollowUpView, n: number, timeZone: string, slug?: string | null): string {
+  // Phase 7a: the follow-up's own link and its task's, at the end of the head line (as a message line's).
+  const link = linkPart(slug, { kind: "follow_up", id: v.id }, ...(v.task ? [{ kind: "task" as const, id: v.task.id, label: "task" }] : []));
   const about = v.task ? `about "${quoted(v.task.title, 200)}"` : `about what ${nameOf(v.subject.firstName || v.subject.name)} is working on`;
   const reply = v.reply && !v.answer ? `; ${nameOf(v.subject.firstName || v.subject.name)}'s reply: ${REPLY_WORDS[v.reply.choice] ?? v.reply.choice}${v.reply.note ? `, "${quoted(v.reply.note, 280)}"` : ""}` : "";
   const [first, ...rest] = v.answer ? neutralise(v.answer).split("\n") : [""];
-  const head = `[${n}] ${fullStamp(v.createdAt, timeZone)}, to ${nameOf(v.subject.name)}'s assistant, ${about}: status ${followUpState(v)}${reply}${v.answer ? `: ${first}` : ""}`;
+  const head = `[${n}] ${fullStamp(v.createdAt, timeZone)}, to ${nameOf(v.subject.name)}'s assistant, ${about}: status ${followUpState(v)}${reply}${v.answer ? `: ${first}` : ""}${link}`;
   return [head, ...rest.map((l) => `    ${l}`)].join("\n");
 }
 
@@ -445,14 +475,14 @@ function followUpChunk(v: FollowUpView, n: number, timeZone: string): string {
  *
  * Under 8,000 characters: the oldest lines are left out first (omitted_older says how many).
  */
-export function renderFollowUpAnswers(batches: FollowUpBatchView[], o: { timeZone: string; now?: Date; maxChars?: number }): string {
+export function renderFollowUpAnswers(batches: FollowUpBatchView[], o: { timeZone: string; now?: Date; maxChars?: number; slug?: string | null }): string {
   const items = batches.flatMap((b) => b.items);
   const tag = FOLLOW_UP_TAGS[3];
   const max = o.maxChars ?? FOLLOW_UP_ANSWERS_MAX_CHARS;
   const build = (keep: number) => {
     const kept = items.slice(0, keep);
     const header = attrs([["count", kept.length], ...(items.length > keep ? [["omitted_older", items.length - keep] as [string, number]] : [])]);
-    return [`<${tag} ${header}>`, ...kept.map((v, i) => followUpChunk(v, i + 1, o.timeZone)), `</${tag}>`].join("\n");
+    return [`<${tag} ${header}>`, ...kept.map((v, i) => followUpChunk(v, i + 1, o.timeZone, o.slug)), `</${tag}>`].join("\n");
   };
   let keep = items.length;
   let text = build(keep);

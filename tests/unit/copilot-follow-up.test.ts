@@ -1,5 +1,34 @@
-import { describe, it, expect } from "vitest";
-import { TOOLS, RULES, taintRefusal, IMMEDIATE_TOOLS } from "@/server/services/copilot";
+import { describe, it, expect, vi } from "vitest";
+
+// Phase 7a (owner decision, 8 October 2026): the follow-up card's readback and the helper's evidence links. The database
+// answers only the assistants' names; the follow-ups service answers as the contract says.
+vi.mock("@/server/db", () => {
+  const db = {
+    query: async (sql: string, p: unknown[]) => {
+      if (/FROM assistant_profiles WHERE membership_id = ANY/.test(sql)) return (p[0] as string[]).includes("00000000-0000-4000-8000-0000000000b2") ? [{ membership_id: "00000000-0000-4000-8000-0000000000b2", name: "Bee" }] : [];
+      throw new Error("no database in unit tests");
+    },
+    maybeOne: async () => { throw new Error("no database in unit tests"); },
+    one: async () => { throw new Error("no database in unit tests"); },
+  };
+  const refuse = async () => { throw new Error("no database in unit tests"); };
+  return { withUser: async (_id: string, fn: (d: typeof db) => Promise<unknown>) => fn(db), withSystem: refuse, withWorker: refuse };
+});
+const fu = vi.hoisted(() => ({ list: null as unknown }));
+vi.mock("@/server/services/follow-ups", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/server/services/follow-ups")>()),
+  planFollowUps: async () => ({
+    ok: true, kind: "group", team: null, task: { id: "00000000-0000-4000-8000-0000000000e1", title: "Landing page" }, question: "Where are you on “Landing page”?", skipped: [],
+    subjects: [
+      { membershipId: "00000000-0000-4000-8000-0000000000b3", name: "Ada Obi", firstName: "Ada" },
+      { membershipId: "00000000-0000-4000-8000-0000000000b2", name: "Ben Okafor", firstName: "Ben" },
+    ],
+  }),
+  listMyFollowUps: async () => fu.list,
+}));
+
+import { TOOLS, RULES, taintRefusal, IMMEDIATE_TOOLS, runBrendaTool, chatBuiltin, type Proposal } from "@/server/services/copilot";
+import type { OrgContext } from "@/server/lib/api";
 import { FOLLOW_UP_NOTE, FOLLOW_UP_TAGS, neutralise, renderFollowUpAnswers } from "@/server/services/copilot-excerpt";
 import { PRIVATE_TOOLS, attemptOf, problemSummary, rowSummary } from "@/server/services/assistant-activity";
 import { DEFAULT_ASSISTANT } from "@/lib/assistant-look";
@@ -124,5 +153,30 @@ describe("her follow-ups in the activity log", () => {
     expect(problemSummary("follow_up", "refused", "You can follow up only on people in teams you lead … Ifeoma isn't one of them.")).toBe("Didn't follow up with someone");
     expect(rowSummary({ tool: "follow_up", summary: "Asked a colleague's assistant for an update", outcome: "confirmed", personalSummary: "Asked Ben's assistant about “Landing page”" }, true)).toBe("Asked Ben's assistant about “Landing page”");
     expect(rowSummary({ tool: "follow_up", summary: "Asked a colleague's assistant for an update", outcome: "confirmed", personalSummary: "Asked Ben's assistant about “Landing page”" }, false)).toBe("Asked a colleague's assistant for an update");
+  });
+});
+
+describe("phase 7a: who a follow-up reaches, and where each answer comes from", () => {
+  const ctx = {
+    user: { profileId: "p", authUserId: "a", email: "olu@example.test", displayName: "Olu Adeyemi", emailVerified: true, sessionId: "s" },
+    org: { id: "00000000-0000-4000-8000-0000000000a1", slug: "acme", name: "Acme", timezone: TZ, current_policy_id: null, status: "active" },
+    membership: { id: "00000000-0000-4000-8000-0000000000b1", role: "manager", employee_code: "E1" }, plan: { features: { AI_ASSISTANT: true } },
+  } as unknown as OrgContext;
+
+  it("the card names each person's assistant, sorted as the names are, and the question as it goes", async () => {
+    const r = await runBrendaTool(ctx, "follow_up", { people: ["Ben Okafor", "Ada Obi"], taskId: "00000000-0000-4000-8000-0000000000e1" }, "chat");
+    const [card] = r.proposals.filter((p): p is Extract<Proposal, { kind: "confirm" }> => p.kind === "confirm");
+    expect(card.readback).toEqual({
+      to: ["Ada's Brenda, about Ada's work", "Ben's Bee, about Ben's work"],
+      what: "The question: “Where are you on ‘Landing page’?” Each assistant answers from that person's work or asks them once.",
+    });
+  });
+
+  it("the helper's list of follow-ups links each line to its follow-up and its task", async () => {
+    const F = "00000000-0000-4000-8000-0000000000f1";
+    const T = "00000000-0000-4000-8000-0000000000e1";
+    fu.list = { ready: true, nextBefore: null, batches: [batch([view({ id: F, task: { id: T, title: "Landing page", href: `/app/acme/tasks/${T}` }, sources: [{ kind: "follow_up", id: F }, { kind: "task", id: T }] })])] };
+    const r = await chatBuiltin(ctx, [{ role: "user", content: "Any answers on my follow-ups?" }]);
+    expect(r.reply).toContain(`**Ben Okafor**, Landing page: answered. “Landing page” is in progress, 60% done. ([follow-up](/app/acme/home/follow-ups/${F}), [task](/app/acme/tasks/${T}))`);
   });
 });

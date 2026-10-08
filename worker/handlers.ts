@@ -106,6 +106,52 @@ const assistantItemSweep: Handler = async () => {
   if (r.expired || r.interrupted || r.notesSettled) console.log(`[worker] assistant items: ${r.expired} expired, ${r.interrupted} interrupted, ${r.notesSettled} report note(s) settled`);
 };
 
+// ---- Routines (owner decision, 8 October 2026: phase 7a) ----------------------------------------------------------------
+// A person's own assistant on a schedule. One short job per run: claim it (once per routine and due time; stale, missed,
+// gone, no rights or changed since the person enabled it are recorded as skipped), run the template as the person (no
+// model; routine-templates.ts), finish it (deliver now, hold for quiet hours, or stay silent), then hand the follow-ups a
+// chase made to followup.process as the workspace's collection does. Nothing is retried after the claim: a retry would
+// find the run recorded and skip, so a run happens at most once. Each returns at once before migration 0046.
+
+/** One routine run (`routineId`, `dueAt`). Never throws once the run is claimed. */
+const routineRun: Handler = async (payload) => {
+  const routineId = String(payload.routineId ?? "");
+  const dueAt = String(payload.dueAt ?? "");
+  if (!UUID.test(routineId) || Number.isNaN(Date.parse(dueAt))) return;
+  const { claimRun, completeRun, failRun } = await import("../src/server/services/routines");
+  const c = await claimRun({ routineId, dueAt, now: new Date() });
+  if ("skip" in c) return;
+  try {
+    const { runTemplate } = await import("../src/server/services/routine-templates");
+    let result: Awaited<ReturnType<typeof runTemplate>>;
+    try { result = await runTemplate(c.ctx, c.routine, { mode: "run", runId: c.runId, now: new Date(), since: c.previousRunAt, timeZone: c.timeZone }); }
+    catch (err) { await failRun(c.runId, "error", (err as Error)?.message ?? String(err)); return; }
+    await completeRun(c.runId, result, { now: new Date() });
+    // Follow-ups a chase asked are processed like the workspace's collection: in chunks of 10, no model.
+    const ids = [...new Set(result.actions.filter((a) => a.done && a.followUpId && UUID.test(a.followUpId)).map((a) => a.followUpId as string))];
+    if (ids.length) {
+      await withWorker(async (db) => {
+        for (let i = 0; i * FOLLOW_UP_PROCESS_CHUNK < ids.length; i++) {
+          await enqueueJob(db, "followup.process", { ids: ids.slice(i * FOLLOW_UP_PROCESS_CHUNK, (i + 1) * FOLLOW_UP_PROCESS_CHUNK) }, { dedupKey: `followup.process:routine:${c.runId}:${i}` });
+        }
+      });
+    }
+  } catch (err) {
+    // The run is recorded as failed (the person is told privately); the job itself never fails, so it is never re-run.
+    console.error(`[worker] routine run ${c.runId}: ${(err as Error)?.message ?? String(err)}`);
+    await failRun(c.runId, "error").catch(() => undefined);
+  }
+};
+
+/** What was held for one person's quiet hours, delivered together now (or held again while they are still quiet). */
+const routineRelease: Handler = async (payload) => {
+  const membershipId = String(payload.membershipId ?? "");
+  if (!UUID.test(membershipId)) return;
+  const { releaseHeldRuns } = await import("../src/server/services/routines");
+  const r = await releaseHeldRuns(membershipId, new Date());
+  if (r.released) console.log(`[worker] routines: ${r.released} held run(s) delivered${r.bundled ? " together" : ""}`);
+};
+
 const retentionDelete: Handler = async (payload) => {
   const { deleteRecording } = await import("../src/server/services/recording");
   await deleteRecording(payload.recordingId as string, (payload.reason as "retention" | "incident" | "offboarding") ?? "retention");
@@ -129,6 +175,11 @@ const purgeExpired: Handler = async () => {
     await db.query(`UPDATE auth_sessions SET revoked_at = now() WHERE revoked_at IS NULL AND expires_at < now()`);
     await audit(db, { organisationId: null, action: "worker.purge_expired", subjectType: "system" });
   });
+  // Routines (phase 7a): what a routine reported is kept 30 days (each item once), then goes. No-op before 0046.
+  const { pruneRoutineReportedItems, sweepInterruptedRuns } = await import("../src/server/services/routines");
+  await pruneRoutineReportedItems().catch((err) => console.error("[worker] pruning routine keys", (err as Error).message));
+  // A run a stopped worker left 'running' whose job never came back is recorded as failed (review, 8 October 2026).
+  await sweepInterruptedRuns().catch((err) => console.error("[worker] sweeping interrupted routine runs", (err as Error).message));
 };
 
 import { controlCenterHandlers } from "./control-center";
@@ -142,6 +193,8 @@ export const handlers: Record<string, Handler> = {
   "mention.sweep": mentionSweep,
   "mention.process": mentionProcess,
   "assistant_item.sweep": assistantItemSweep,
+  "routine.run": routineRun,
+  "routine.release": routineRelease,
   "recording.retention_delete": retentionDelete,
   "recording.assemble": assembleRecording,
   "deliverable.scan": scanDeliverable,

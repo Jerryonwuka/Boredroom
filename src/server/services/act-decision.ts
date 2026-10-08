@@ -18,6 +18,10 @@
  * (e) the irreversible: invitations (an email), review submissions, new teams, cancelling or withdrawing what was sent,
  *     rewriting someone else's document.
  * The built-in helper never acts on its own either: it cannot be sure it understood.
+ *
+ * Routines (owner decision, 8 October 2026: phase 7a): setting one up, changing it or turning it on always asks
+ * ('routine_consent'): the Confirm on that card is the person's Enable, their standing yes for exactly what its preview
+ * showed; deleting one asks too ('cant_undo'). Only pausing may act in 'auto' (it stops things; turning it on again asks).
  */
 import { FOLLOW_UP_AUTO_MAX, SMALL_GROUP_MAX, UNDO_WINDOW_MINUTES, type ActState, type AskReason } from "@/lib/act-mode";
 
@@ -38,6 +42,8 @@ export type ActFacts = {
   someoneElsesDoc?: boolean;
   /** respond_to_item: what the person would do to the item. */
   respond?: "accept" | "decline" | "reply" | "seen" | "cancel" | "withdraw";
+  /** update_routine: what the person would do to their routine (phase 7a). */
+  routine?: "change" | "pause" | "turn_on" | "delete";
 };
 
 export type ActDecision = { act: true } | { act: false; reason: AskReason | null };
@@ -57,6 +63,9 @@ export const AUTO_RULES: Readonly<Record<string, (f: ActFacts) => true | AskReas
   follow_up: (f: ActFacts) => f.followUp?.team ? "broadcast_team" : (f.followUp?.people ?? 99) > FOLLOW_UP_AUTO_MAX ? "fan_out" : true,
   respond_to_item: (f: ActFacts) => f.respond === "cancel" || f.respond === "withdraw" ? "cant_undo" : "answers_others",
   update_doc: (f: ActFacts) => f.share === "organisation" ? "broadcast_everyone" : f.someoneElsesDoc ? "someone_elses_doc" : "always_asks",
+  // Phase 7a (owner decision, 8 October 2026: routines): the card is the Enable press; only a pause acts in 'auto'.
+  create_routine: () => "routine_consent",
+  update_routine: (f: ActFacts) => f.routine === "pause" ? true : f.routine === "delete" ? "cant_undo" : "routine_consent",
 } satisfies Record<string, (f: ActFacts) => true | AskReason>);
 
 const ask = (reason: AskReason | null): ActDecision => ({ act: false, reason });

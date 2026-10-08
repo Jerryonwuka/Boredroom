@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { workspacePage } from "@/server/lib/workspace-page";
-import { orgContext } from "@/server/lib/api";
+import { orgContext, type OrgContext } from "@/server/lib/api";
 import { AppShell } from "@/components/app/shell";
 import { BrendaHome, type HomeData } from "@/components/app/brenda-home";
 import { assistantConfigured } from "@/server/services/assistant";
@@ -11,6 +11,9 @@ import { assistantItemsReady, waitingItems } from "@/server/services/assistant-i
 import { schema0039Ready } from "@/server/lib/schema-0039";
 import { withUser } from "@/server/db";
 import { localParts, todayLocal } from "@/server/lib/time";
+import { openerSeen } from "@/server/services/routines";
+import { morningOpener } from "@/server/services/opener";
+import type { Opener } from "@/lib/opener";
 import { formatLongDate } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -47,6 +50,16 @@ type Search = { ask?: string | string[]; tab?: string | string[]; chat?: string 
  * holds the requests other people's assistants handed over (Accept or Decline in place) and the messages and replies
  * they passed on that the person has not seen (`waitingItems`, which settles expired requests as it reads); her top
  * row's pill is now "Between assistants", with the count of both. Before migration 0043 only the follow-up asks show.
+ *
+ * The morning opener (owner decision, 8 October 2026: phase 7a, "Brenda keeps the loops closed"): on the person's first
+ * visit of the day her home opens with what stands (requests waiting, overdue tasks, answers to their follow-ups,
+ * messages from other assistants, reviews for leads) and 3 to 6 one-press actions for those counts, in place of the
+ * quick-ask chips; a quiet day reads one calm line. No model: `morningOpener` reads what her briefing and the inboxes
+ * already read, as the person. "First visit" is the server's (`openerSeen`: whether the person saw it today, in their
+ * own time zone); before migration 0046 the server cannot tell, so the opener comes with `firstVisit: null` and the
+ * browser decides from its own key (BrendaHome). Later visits that day get the usual chips, and the opener is not even
+ * read then. It shows during the person's quiet hours too (it is not a pop-up). A failed read never fails the page: the
+ * chips show instead.
  */
 export default async function HomePage({ params, searchParams }: { params: Promise<{ workspace: string }>; searchParams: Promise<Search> }) {
   const { workspace } = await params;
@@ -60,7 +73,7 @@ export default async function HomePage({ params, searchParams }: { params: Promi
   const { ctx, counts, teams } = await workspacePage(workspace, `/app/${workspace}/home`);
   const role = ctx.membership.role;
   const aiEnabled = ctx.plan.features.AI_ASSISTANT === true;
-  const [history, chat, connected, followUpsReady, waiting, itemsReady, items] = await Promise.all([
+  const [history, chat, connected, followUpsReady, waiting, itemsReady, items, opener] = await Promise.all([
     // Past chats are only shown while the plan includes Brenda (carrying one on needs her).
     aiEnabled ? listConversations(ctx) : Promise.resolve([]),
     aiEnabled && chatId ? getConversation(ctx, chatId) : Promise.resolve(null),
@@ -72,6 +85,8 @@ export default async function HomePage({ params, searchParams }: { params: Promi
     // Phase 6 items are not plan-gated either: accepting, declining or replying never needs the AI. [] before 0043.
     assistantItemsReady(ctx),
     waitingItems(ctx),
+    // The morning opener (phase 7a) stands in for the quick asks, which show only while the plan includes the assistant.
+    aiEnabled ? openerFor(ctx) : Promise.resolve(null),
   ]);
   const now = new Date();
   const hour = localParts(now, ctx.org.timezone).hour;
@@ -79,6 +94,7 @@ export default async function HomePage({ params, searchParams }: { params: Promi
     orgSlug: ctx.org.slug,
     firstName: ctx.user.displayName.split(" ")[0],
     role,
+    memberId: ctx.membership.id,
     greeting: hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening",
     dateLabel: formatLongDate(todayLocal(ctx.org.timezone, now)),
     aiEnabled,
@@ -95,10 +111,30 @@ export default async function HomePage({ params, searchParams }: { params: Promi
     waiting: followUpsReady ? waiting : [],
     itemsReady,
     items: itemsReady ? items : [],
+    opener,
   };
   return (
     <AppShell ctx={ctx} counts={counts} teams={teams}>
       <BrendaHome data={data} />
     </AppShell>
   );
+}
+
+/**
+ * The morning opener for this visit (phase 7a), or null when the person already saw it today. Only what the page shows
+ * goes to the browser (not the lists behind the counts, which the morning brief routine uses). Never throws: a read that
+ * fails leaves the usual quick asks.
+ */
+async function openerFor(ctx: OrgContext): Promise<Opener | null> {
+  try {
+    const seen = await openerSeen(ctx);
+    if (seen.seenToday === true) return null;
+    // Known first visit, or (before 0046) for the browser to tell from its own key.
+    const firstVisit = seen.seenToday === false ? true : null;
+    const o = await morningOpener(ctx, { since: seen.seenAt ?? null, firstVisit, timeZone: seen.timeZone });
+    return { v: o.v, localDate: o.localDate, counts: o.counts, actions: o.actions, calm: o.calm, firstVisit };
+  } catch (err) {
+    console.warn(`[home] the morning opener could not be read, so the quick asks show: ${(err as Error)?.message ?? String(err)}`);
+    return null;
+  }
 }

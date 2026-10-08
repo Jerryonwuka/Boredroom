@@ -48,20 +48,39 @@ async function run(client: PoolClient, text: string, params?: unknown[]) {
   }
 }
 
-function wrap(client: PoolClient): Db {
+/**
+ * One transaction's queries, one after another. Callers may start several at once (`Promise.all` of reads in one
+ * transaction); a connection runs them in turn anyway, but pg 8 warns when a query is started while another is running
+ * ("Calling client.query() when the client is already executing a query is deprecated", an error in pg 9). Queuing them
+ * here keeps the order and the timing as they were and silences that (review, 8 October 2026).
+ */
+const SETTLED = Symbol("settled");
+type Wrapped = Db & { [SETTLED]: () => Promise<unknown> };
+
+function wrap(client: PoolClient): Wrapped {
+  let tail: Promise<unknown> = Promise.resolve();
+  let running = 0;
+  const send = (text: string, params?: unknown[]) => {
+    // Nothing running: sent at once, exactly as before. Otherwise after the ones before it, in order.
+    const next = running === 0 ? run(client, text, params) : tail.then(() => run(client, text, params));
+    running++;
+    tail = next.then(() => undefined, () => undefined).finally(() => { running--; });
+    return next;
+  };
   return {
+    [SETTLED]: () => tail,
     client,
     async query(text, params) {
-      const res = await run(client, text, params);
+      const res = await send(text, params);
       return res.rows as never;
     },
     async one(text, params) {
-      const res = await run(client, text, params);
+      const res = await send(text, params);
       if (res.rows.length !== 1) throw new Error(`expected exactly one row, got ${res.rows.length}`);
       return res.rows[0] as never;
     },
     async maybeOne(text, params) {
-      const res = await run(client, text, params);
+      const res = await send(text, params);
       return (res.rows[0] as never) ?? null;
     },
   };
@@ -86,7 +105,10 @@ export async function withCtx<T>(ctx: Ctx, fn: (db: Db) => Promise<T>): Promise<
   const client = await getPool().connect();
   try {
     await client.query(setup);
-    const result = await fn(wrap(client));
+    const db = wrap(client);
+    const result = await fn(db);
+    // A query `fn` started and did not wait for still runs inside the transaction, before COMMIT (as pg's own queue did).
+    await db[SETTLED]();
     const done = await client.query("COMMIT");
     // Postgres answers COMMIT with ROLLBACK when a statement failed earlier and its error was caught and ignored:
     // every write in the transaction is gone, yet nothing threw. Say so loudly (this hid the lost new workspaces).

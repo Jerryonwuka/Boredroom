@@ -59,6 +59,7 @@ import { AppError } from "@/server/lib/errors";
 import { withUser } from "@/server/db";
 import { MENTION_LIMITS, otherAssistantLabels, publicFacts, type MentionNoteCode, type MentionStatus } from "@/lib/mentions";
 import { NO_TASK_LIKE, OPEN_STATUSES, REPLY_LABELS, clip, deadlineLabel, factsOrNull, firstName, whenLabel, type FollowUpFacts } from "@/lib/follow-ups";
+import { READBACK } from "@/lib/confirm-readback";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** How many waiting mentions of the same conversation one run drains after its own (the rest wait for the next run). */
@@ -338,9 +339,11 @@ async function handOver(job: MentionJob, owner: Owner, thread: MentionThreadRead
   if (!plan.ok) return keepFor(job, plan.error);
   const first = plan.recipient.firstName || owner.firstName;
   const what = rq.kind === "add_todo" ? "to-dos" : rq.kind === "set_reminder" ? "reminders" : "task";
+  // The card says who receives what (owner decision, 8 October 2026: phase 7a, Confirm readback), as her own chat's does.
   const proposal = prepareConfirm(job.ctx, "hand_over_request",
     { recipientMembershipId: owner.membershipId, payload: plan.payload, note: null, origin: { conversationId: job.conversationId, mentionId: job.id } },
-    `Ask ${first} to accept: ${plan.summary}? Nothing changes until ${first} accepts.`, plan.lines.join("\n") || undefined, { thread: true });
+    `Ask ${first} to accept: ${plan.summary}? Nothing changes until ${first} accepts.`, plan.lines.join("\n") || undefined,
+    { thread: true, readback: { to: [READBACK.requestTo(first, plan.recipient.assistant.name)], what: READBACK.requestWhat(plan.summary, first) } });
   if ("error" in proposal) return keepFor(job, proposal.error);
   return completeMentionPrivate(job.id, {
     text: `That changes ${first}'s ${what}, so ${first} has to accept it. Confirm and I'll ask ${first}.`,

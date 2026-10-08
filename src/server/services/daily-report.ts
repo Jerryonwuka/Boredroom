@@ -29,13 +29,28 @@
  * records read it: their team leads, the owner and HR). A day with notes is sent even when nothing else happened. The
  * note is quoted as typed (its Markdown shown, its addresses as code). Never fails the report: anything wrong leaves the
  * section out; before migration 0043 there is none.
+ *
+ * Brenda keeps the loops closed (owner decision, 8 October 2026: phase 7a, the team report):
+ * - "Decisions for you" comes first, right under the headline: what waits on the reader (reviews they decide, requests
+ *   and follow-up asks waiting for them, time corrections for team leads, blocked tasks whose reason names them), read
+ *   as the reader. A list whose read failed says "not available", never nothing. A day whose only content is decisions
+ *   is sent.
+ * - "Changed since yesterday" follows: newly blocked, unblocked, deadlines moved later, newly late and finished, compared
+ *   with the structured snapshot the previous report was written from (brenda_report_log.snapshot, migration 0046);
+ *   unchanged tasks are left out. Without an earlier report it says so; before 0046 the section is left out and no
+ *   snapshot is written (server/lib/schema-0046).
+ * - Every line links its source when there is one: tasks, the Reviews page, attendance, the follow-up behind an update,
+ *   the note behind a note (lib/evidence-links). A figure the report could not read says "not available", never 0.
  */
 import { withUser, withWorker, type Db } from "@/server/db";
 import type { OrgContext } from "@/server/lib/api";
 import { resolveEntitlements } from "@/server/lib/entitlements";
 import { mail, mailConfigProblem } from "@/server/lib/mail";
 import { renderEmail } from "@/server/lib/emails";
-import { localParts, todayLocal } from "@/server/lib/time";
+import { addDays, localMidnight, localParts, todayLocal } from "@/server/lib/time";
+import { forget0046, isMissingSchema, retryWithout0046, schema0046Ready } from "@/server/lib/schema-0046";
+import { NOT_AVAILABLE, evidenceHref, evidenceLink, sourcesSuffix, type EvidenceRef } from "@/lib/evidence-links";
+import { reviewQueue } from "@/server/services/views";
 import { audit, notify } from "@/server/services/common";
 import { brendaSettings, logAction, type BrendaSettings } from "@/server/services/brenda";
 import { resolveAssistant } from "@/server/services/assistant";
@@ -44,7 +59,7 @@ import { DOC_BODY_MAX } from "@/server/services/docs";
 import { workSummary, type PersonWork, type WorkSummary } from "@/server/services/work-summary";
 import { readPersonalAssistant, readWorkspaceAssistant } from "@/server/services/assistant-profile";
 import { DEFAULT_ASSISTANT_NAME, type AssistantProfile } from "@/lib/assistant-look";
-import { workspaceUpdatesFor, type WorkspaceUpdate } from "@/server/services/follow-ups";
+import { waitingForMe, workspaceUpdatesFor, type WorkspaceUpdate } from "@/server/services/follow-ups";
 import { composeTemplate, type ComposeInput } from "@/server/services/follow-up-compose";
 import { clamp, oneLine } from "@/server/services/copilot-excerpt";
 import { factsOrNull, firstName, whenLabel } from "@/lib/follow-ups";
@@ -78,23 +93,61 @@ async function refusalFor(ctx: OrgContext): Promise<string | null> {
 
 // ---- Building it ------------------------------------------------------------------------------------------
 
+/** A task a report line links to (phase 7a: every line links its source). */
+export type TaskRef = { id: string; title: string };
+
 export type PersonDay = PersonWork & {
   inProgress: { title: string; progress: number }[];
   blocked: { title: string; reason: string | null }[];
   /** clockedInAt is null when they did not clock in; missing only on a working day the organisation clocks at all. */
   attendance: { clockedInAt: string | null; lateMinutes: number; missing: boolean };
+  /**
+   * The same tasks with their ids, for the links (phase 7a), read in the report's own statement in the order
+   * work_summary lists the titles (work-summary.ts is not changed); the title lists stay for the headline.
+   */
+  taskRefs: {
+    completed: TaskRef[]; submitted: TaskRef[]; overdue: TaskRef[];
+    inProgress: (TaskRef & { progress: number })[]; blocked: (TaskRef & { reason: string | null })[];
+  };
 };
+
+/**
+ * One thing waiting on the reader (phase 7a, "Decisions for you"): plain text, its source, and the words in the text the
+ * source's link goes on (`link`, a quoted title); without them the link follows the line, as "([item](…))".
+ */
+export type DecisionItem = { text: string; source: EvidenceRef | null; link?: string | null };
+/** One task in "Changed since yesterday": who holds it, and a word on the change ("due Thu 8 Oct → Mon 12 Oct"). */
+export type ChangeItem = { taskId: string; title: string; person: string; detail: string | null };
+export type ReportChanges = {
+  /** The local date of the report compared with, and how the heading names it: "yesterday", "Friday", "Thursday 1 October". */
+  since: string; sinceLabel: string;
+  newlyBlocked: ChangeItem[]; unblocked: ChangeItem[]; slipped: ChangeItem[]; newlyLate: ChangeItem[]; finished: ChangeItem[];
+  /** One of the two snapshots was cut at its limit: some changes may not be listed. */
+  truncated: boolean;
+};
+export type SnapshotStatus = "todo" | "in_progress" | "blocked" | "in_review" | "completed";
+export type SnapshotTask = { a: string /* assignee membership id */; t: string /* title, ≤200 */; s: SnapshotStatus; due: string | null; late: boolean; reason: string | null };
+/**
+ * The structured state a report was written from (brenda_report_log.snapshot, migration 0046): every task, as the
+ * recipient sees it, assigned to the people in the report, open (to do, in progress, blocked, in review) or finished that
+ * day; at most SNAPSHOT_MAX_TASKS, oldest due first, `truncated` beyond. The next report compares with it.
+ */
+export type ReportSnapshot = { v: 1; at: string; localDate: string; truncated: boolean; tasks: Record<string, SnapshotTask> };
 
 export type DailyReport = {
   localDate: string; title: string; scope: WorkSummary["scope"]; people: PersonDay[]; totals: WorkSummary["totals"];
   headline: string; attention: string[]; waitingForYourReview: number;
-  /** Nothing happened in the scope and nothing needs a word (attendance, overdue or blocked work, reviews): nothing is sent. */
+  /**
+   * Nothing happened in the scope and nothing needs a word (attendance, overdue or blocked work, reviews, decisions waiting
+   * on the reader): nothing is sent.
+   */
   empty: boolean;
   /**
    * What each person's assistant said when the workspace's own assistant collected today's updates (phase 4), one line
-   * per person, plain text; empty when the collection is off, has not run, or before migration 0039.
+   * per person, plain text; empty when the collection is off, has not run, or before migration 0039. `id`: the follow-up
+   * behind the line, for its link (phase 7a).
    */
-  updates: { membershipId: string; name: string; line: string }[];
+  updates: { membershipId: string; name: string; line: string; id?: string | null }[];
   /** When the collection was made. */
   updatesAt: string | null;
   /**
@@ -102,12 +155,26 @@ export type DailyReport = {
    * empty before migration 0043 or when there are none.
    */
   notes: { id?: string; membershipId: string; name: string; assistantName: string; body: string; at: string }[];
+  /**
+   * What waits on the reader (phase 7a), read as them. A list is null when its read failed ("not available"); an empty
+   * list is nothing waiting.
+   */
+  decisions: { reviews: DecisionItem[] | null; corrections: DecisionItem[] | null; requests: DecisionItem[] | null; blocked: DecisionItem[] | null };
+  /**
+   * What changed since the previous report (phase 7a); "not_available" without an earlier report to compare with (or
+   * when it could not be read); null before migration 0046 (the section is left out).
+   */
+  changes: ReportChanges | "not_available" | null;
+  /** The state this report is written from, saved with it for the next one; null before migration 0046 or on a failure. */
+  snapshot: ReportSnapshot | null;
 };
 
+type Ref = { membershipId: string; id: string; title: string };
 type Extra = {
-  tasks: { membershipId: string; title: string; status: "in_progress" | "blocked"; progress: number; reason: string | null }[];
+  tasks: { id: string; membershipId: string; title: string; status: "in_progress" | "blocked"; progress: number; reason: string | null }[];
   attendance: { membershipId: string; clockInAt: string; lateSeconds: number }[];
   clocking: boolean; waitingForYou: number;
+  completed: Ref[]; submitted: Ref[]; overdue: Ref[];
 };
 
 /** "Monday 5 October" for a local date. */
@@ -150,44 +217,255 @@ const sentence = (s: string) => s ? `${s[0].toUpperCase()}${s.slice(1)}` : s;
 export async function buildDailyReport(ctx: OrgContext, opts: { useAssistant?: boolean; usage?: "person" | "workspace"; requestId?: string } = {}): Promise<DailyReport> {
   const summary = await workSummary(ctx, { period: "today" });
   const localDate = summary.from;
+  const tz = ctx.org.timezone;
   const ids = summary.people.map((p) => p.membershipId);
   // One statement for everything work_summary does not hold: in-progress and blocked work, today's clock-ins, whether
-  // the organisation clocks at all today, and what is waiting for the reader's own review.
+  // the organisation clocks at all today, what is waiting for the reader's own review, and (phase 7a) the ids of the
+  // tasks work_summary lists by title, in its order and limits, for the links.
   const extra = await withUser(ctx.user.profileId, (db) => db.one<Extra>(
     `SELECT
        (SELECT COALESCE(json_agg(x ORDER BY x.updated_at DESC), '[]'::json) FROM (
-          SELECT t.assignee_membership_id AS "membershipId", t.title, t.status, t.progress_percent::int AS progress, t.blocked_reason AS reason, t.updated_at
+          SELECT t.id, t.assignee_membership_id AS "membershipId", t.title, t.status, t.progress_percent::int AS progress, t.blocked_reason AS reason, t.updated_at
           FROM tasks t WHERE t.organisation_id = $1 AND t.assignee_membership_id = ANY($2::uuid[]) AND t.archived_at IS NULL AND t.status IN ('in_progress', 'blocked')) x) AS tasks,
        (SELECT COALESCE(json_agg(json_build_object('membershipId', a.membership_id, 'clockInAt', a.clock_in_at, 'lateSeconds', a.late_seconds)), '[]'::json)
           FROM attendance_days a WHERE a.membership_id = ANY($2::uuid[]) AND a.local_date = $3::date) AS attendance,
        app_anyone_clocked_in($1, $3::date) AS clocking,
-       (SELECT count(*)::int FROM tasks t WHERE t.organisation_id = $1 AND t.status = 'in_review' AND t.reviewer_membership_id = $4 AND t.archived_at IS NULL) AS "waitingForYou"`,
-    [ctx.org.id, ids, localDate, ctx.membership.id]));
+       (SELECT count(*)::int FROM tasks t WHERE t.organisation_id = $1 AND t.status = 'in_review' AND t.reviewer_membership_id = $4 AND t.archived_at IS NULL) AS "waitingForYou",
+       (SELECT COALESCE(json_agg(json_build_object('membershipId', x.m, 'id', x.id, 'title', x.title) ORDER BY x.m, x.n), '[]'::json) FROM (
+          SELECT t.assignee_membership_id AS m, t.id, t.title, row_number() OVER (PARTITION BY t.assignee_membership_id ORDER BY t.completed_at DESC, t.id) AS n
+          FROM tasks t WHERE t.organisation_id = $1 AND t.assignee_membership_id = ANY($2::uuid[]) AND t.status = 'completed' AND t.completed_at >= $5::timestamptz AND t.completed_at < $6::timestamptz) x WHERE x.n <= 10) AS completed,
+       (SELECT COALESCE(json_agg(json_build_object('membershipId', x.m, 'id', x.id, 'title', x.title) ORDER BY x.m, x.n), '[]'::json) FROM (
+          SELECT s.m, t.id, t.title, row_number() OVER (PARTITION BY s.m ORDER BY t.updated_at DESC, t.id) AS n
+          FROM (SELECT DISTINCT ts.task_id, ts.submitted_by AS m FROM task_submissions ts
+                WHERE ts.organisation_id = $1 AND ts.submitted_by = ANY($2::uuid[]) AND ts.submitted_at >= $5::timestamptz AND ts.submitted_at < $6::timestamptz) s
+          JOIN tasks t ON t.id = s.task_id WHERE t.organisation_id = $1) x WHERE x.n <= 10) AS submitted,
+       (SELECT COALESCE(json_agg(json_build_object('membershipId', x.m, 'id', x.id, 'title', x.title) ORDER BY x.m, x.n), '[]'::json) FROM (
+          SELECT t.assignee_membership_id AS m, t.id, t.title, row_number() OVER (PARTITION BY t.assignee_membership_id ORDER BY t.due_at, t.id) AS n
+          FROM tasks t WHERE t.organisation_id = $1 AND t.assignee_membership_id = ANY($2::uuid[]) AND t.archived_at IS NULL AND t.status IN ('todo', 'in_progress', 'blocked') AND t.due_at < now()) x WHERE x.n <= 5) AS overdue`,
+    [ctx.org.id, ids, localDate, ctx.membership.id, localMidnight(localDate, tz).toISOString(), localMidnight(addDays(localDate, 1), tz).toISOString()]));
   // work_summary counts today's working day when today is one; "did not clock in" is said only then, and only when
   // somebody in the organisation clocked in today (a workspace that does not use the clock is not flagged every day).
   const flagMissing = summary.workingDays > 0 && extra.clocking;
+  const refsOf = (list: Ref[], id: string): TaskRef[] => list.filter((r) => r.membershipId === id).map((r) => ({ id: r.id, title: r.title }));
   const people: PersonDay[] = summary.people.map((p) => {
     const mine = extra.tasks.filter((t) => t.membershipId === p.membershipId);
     const att = extra.attendance.find((a) => a.membershipId === p.membershipId);
+    const inProgress = mine.filter((t) => t.status === "in_progress").map((t) => ({ id: t.id, title: t.title, progress: t.progress }));
+    const blocked = mine.filter((t) => t.status === "blocked").map((t) => ({ id: t.id, title: t.title, reason: t.reason?.trim() || null }));
     return {
       ...p,
-      inProgress: mine.filter((t) => t.status === "in_progress").map((t) => ({ title: t.title, progress: t.progress })),
-      blocked: mine.filter((t) => t.status === "blocked").map((t) => ({ title: t.title, reason: t.reason?.trim() || null })),
+      inProgress: inProgress.map(({ title, progress }) => ({ title, progress })),
+      blocked: blocked.map(({ title, reason }) => ({ title, reason })),
       attendance: { clockedInAt: att?.clockInAt ?? null, lateMinutes: att && att.lateSeconds > 0 ? Math.max(1, Math.round(att.lateSeconds / 60)) : 0, missing: !att && flagMissing },
+      taskRefs: { completed: refsOf(extra.completed, p.membershipId), submitted: refsOf(extra.submitted, p.membershipId), overdue: refsOf(extra.overdue, p.membershipId), inProgress, blocked },
     };
   });
+  // What waits on the reader, and what changed since their previous report (phase 7a), read as them side by side.
+  const [decisions, compared] = await Promise.all([decisionsFor(ctx, people), changesFor(ctx, localDate, people)]);
   // A report goes out when something happened or something needs the reader; a scope with neither sends nothing.
-  // Overdue or blocked work and reviews waiting for the reader count as needing them, even on a quiet day.
+  // Overdue or blocked work, reviews waiting for the reader and (phase 7a) any decision waiting on them count as needing
+  // them, even on a quiet day.
   const active = people.some((p) => p.trackedSeconds > 0 || p.tasksCompleted > 0 || p.submittedForReview > 0);
   const issues = extra.waitingForYou > 0 || people.some((p) => p.attendance.lateMinutes > 0 || p.attendance.missing || p.overdueOpen > 0 || p.blocked.length > 0);
-  const empty = !active && !issues;
-  const attention = attentionList(people, extra.waitingForYou);
+  const waiting = decisionCount(decisions);
+  const empty = !active && !issues && waiting === 0;
+  // The model reads the plain list; the document's list links its tasks.
+  const attention = attentionList(people, extra.waitingForYou, ctx.org.slug);
   const plain = plainHeadline(ctx, summary, people);
-  const headline = opts.useAssistant === false || empty ? plain : (await assistantHeadline(ctx, summary, people, attention, opts.usage ?? "person", opts.requestId)) ?? plain;
+  const headline = opts.useAssistant === false || empty ? plain
+    : (await assistantHeadline(ctx, summary, people, attentionList(people, extra.waitingForYou, null), waiting, opts.usage ?? "person", opts.requestId)) ?? plain;
   return {
     localDate, title: `Team report, ${dayLabel(localDate)}`, scope: summary.scope, people, totals: summary.totals,
     headline, attention, waitingForYourReview: extra.waitingForYou, empty, updates: [], updatesAt: null, notes: [],
+    decisions, changes: compared.changes, snapshot: compared.snapshot,
   };
+}
+
+// ---- Decisions for you (owner decision, 8 October 2026: phase 7a, the team report) ------------------------------------
+
+const DECISION_TEXT_MAX = 160;
+const decisionCount = (d: DailyReport["decisions"]) => [d.reviews, d.requests, d.corrections, d.blocked].reduce((n, l) => n + (l?.length ?? 0), 0);
+const quote = (s: string, max = DECISION_TEXT_MAX) => clamp(oneLine(s), max);
+
+/**
+ * What waits on the reader, read as them (their own pages show the same): submissions they review (organisation accounts
+ * only those naming them as the reviewer; team leads also their people's), time corrections (team leads: organisation
+ * accounts do not decide them), requests to accept and follow-up asks waiting for their reply, and blocked tasks in the
+ * report whose reason names them. A read that fails makes its list null ("not available"); it never fails the report.
+ */
+async function decisionsFor(ctx: OrgContext, people: PersonDay[], now: Date = new Date()): Promise<DailyReport["decisions"]> {
+  const tz = ctx.org.timezone;
+  const role = ctx.membership.role;
+  const failed = (what: string) => (err: unknown) => { console.warn(`[daily report] ${what} not available: ${(err as Error)?.message ?? err}`); return null; };
+  const queue = reviewQueue(ctx).then((q) => ({
+    reviews: q.submissions.filter((s) => s.reviewer_is_me || role === "manager").map((s): DecisionItem => {
+      const title = `“${s.title}”`;
+      return { text: `Review ${title} from ${s.assignee_name}, sent ${whenLabel(s.submitted_at, tz, now)}`, source: { kind: "task", id: s.task_id }, link: title };
+    }),
+    corrections: role !== "manager" ? [] : q.adjustments.map((a): DecisionItem => ({ text: `Time correction from ${a.display_name} on “${a.task_title}”`, source: { kind: "time_correction", id: a.id } })),
+  }), failed("reviews"));
+  const requests = (async (): Promise<DecisionItem[]> => {
+    const { waitingItems } = await import("@/server/services/assistant-items");
+    const [items, asks] = await Promise.all([waitingItems(ctx), waitingForMe(ctx)]);
+    return [
+      ...items.filter((i) => i.kind === "request" && i.viewer === "recipient" && i.request).map((i): DecisionItem => ({ text: `${i.sender.name} asks you to accept: ${quote(i.request!.summary, 200)}`, source: { kind: "assistant_item", id: i.id } })),
+      ...asks.map((f): DecisionItem => {
+        const who = f.requester ? `${f.requester.name}'s ${f.requester.assistant.name}` : (f.workspaceAssistant?.name ?? DEFAULT_ASSISTANT_NAME);
+        return { text: `${who} asks: “${quote(f.question)}”`, source: { kind: "follow_up", id: f.id } };
+      }),
+    ];
+  })().catch(failed("requests"));
+  const blocked = (async (): Promise<DecisionItem[]> => {
+    const named = people.flatMap((p) => p.membershipId === ctx.membership.id ? [] : p.taskRefs.blocked.filter((b) => b.reason).map((b) => ({ p, b })));
+    if (!named.length) return [];
+    // The same rule as the afternoon check's "blocked on you" (routine-templates.ts): the full name, or the first name
+    // when it is at least 3 letters, as a whole word.
+    const { namesPerson } = await import("@/server/services/routine-templates");
+    return named.filter(({ b }) => namesPerson(b.reason!, ctx.user.displayName)).map(({ p, b }): DecisionItem => {
+      const title = `“${b.title}”`;
+      return { text: `${title} (${p.name}) is blocked: ${quote(b.reason!)}`, source: { kind: "task", id: b.id }, link: title };
+    });
+  })().catch(failed("blocked tasks"));
+  const [q, r, b] = await Promise.all([queue, requests, blocked]);
+  return { reviews: q?.reviews ?? null, corrections: q?.corrections ?? null, requests: r, blocked: b };
+}
+
+// ---- Changed since yesterday (owner decision, 8 October 2026: phase 7a, the team report) ------------------------------
+
+/** A snapshot holds at most this many tasks (oldest due first) and stays well inside the column's 256 KB check. */
+export const SNAPSHOT_MAX_TASKS = 500;
+const SNAPSHOT_MAX_BYTES = 200_000;
+/** A previous report older than this is not compared with ("not available"). */
+export const CHANGES_MAX_DAYS = 7;
+const SNAPSHOT_STATUSES: readonly SnapshotStatus[] = ["todo", "in_progress", "blocked", "in_review", "completed"];
+const OPEN: readonly SnapshotStatus[] = ["todo", "in_progress", "blocked", "in_review"];
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const isoOrNull = (v: unknown): string | null => (typeof v === "string" && !Number.isNaN(Date.parse(v)) ? new Date(v).toISOString() : null);
+
+/** A stored snapshot, checked field by field; null when it is not one (an entry that is not a task is dropped). */
+export function snapshotOf(raw: unknown): ReportSnapshot | null {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as Record<string, unknown>;
+  const at = isoOrNull(r.at);
+  if (r.v !== 1 || !at || typeof r.localDate !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(r.localDate) || !r.tasks || typeof r.tasks !== "object") return null;
+  const tasks: Record<string, SnapshotTask> = {};
+  for (const [id, v] of Object.entries(r.tasks as Record<string, unknown>)) {
+    const x = v as Record<string, unknown> | null;
+    if (!UUID.test(id) || !x || typeof x !== "object" || typeof x.a !== "string" || typeof x.t !== "string" || !SNAPSHOT_STATUSES.includes(x.s as SnapshotStatus)) continue;
+    tasks[id] = { a: x.a, t: x.t, s: x.s as SnapshotStatus, due: isoOrNull(x.due), late: x.late === true, reason: typeof x.reason === "string" ? x.reason : null };
+  }
+  return { v: 1, at, localDate: r.localDate, truncated: r.truncated === true, tasks };
+}
+
+/** Drops the latest-due tasks until the snapshot fits its byte budget (titles may be long and not ASCII). */
+function fitSnapshot(s: ReportSnapshot): ReportSnapshot {
+  const entries = Object.entries(s.tasks);
+  let size = Buffer.byteLength(JSON.stringify(s));
+  if (size <= SNAPSHOT_MAX_BYTES) return s;
+  while (entries.length && size > SNAPSHOT_MAX_BYTES) {
+    const [id, t] = entries.pop()!;
+    size -= Buffer.byteLength(JSON.stringify({ [id]: t })) - 1;
+  }
+  return { ...s, truncated: true, tasks: Object.fromEntries(entries) };
+}
+
+const SHORT_DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const SHORT_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+/** "Thu 8 Oct" in the time zone; with the time ("Thu 8 Oct 17:00") when asked. */
+function dayShort(iso: string, tz: string, withTime = false): string {
+  const p = localParts(new Date(iso), tz);
+  const day = `${SHORT_DAYS[new Date(Date.UTC(p.year, p.month - 1, p.day)).getUTCDay()]} ${p.day} ${SHORT_MONTHS[p.month - 1]}`;
+  return withTime ? `${day} ${String(p.hour).padStart(2, "0")}:${String(p.minute).padStart(2, "0")}` : day;
+}
+/** "due Thu 8 Oct → Mon 12 Oct"; the times too when the deadline moved within one day. */
+function dueMoved(before: string, after: string, tz: string): string {
+  const sameDay = dayShort(before, tz) === dayShort(after, tz);
+  return `due ${dayShort(before, tz, sameDay)} → ${dayShort(after, tz, sameDay)}`;
+}
+const weekdayName = (localDate: string) => new Date(`${localDate}T12:00:00Z`).toLocaleDateString("en-GB", { weekday: "long", timeZone: "UTC" });
+const daysBetween = (from: string, to: string) => Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000);
+
+/**
+ * What changed between the previous report's snapshot and now (pure; owner decision, 8 October 2026: phase 7a). Only the
+ * tasks in `now` (those the reader sees now) are compared; a task can be in more than one group; unchanged tasks are left
+ * out. "not_available" without a previous snapshot, or one from today or more than CHANGES_MAX_DAYS before.
+ * - newly blocked: blocked now and not before (or new);
+ * - unblocked: blocked before, now to do, in progress or in review (finished counts as finished);
+ * - slipped: open now with a deadline later than before;
+ * - newly late: open and past its deadline now, not before (or new);
+ * - finished: done now and not before (or new: everything done in `now` was done after the previous report).
+ * A task missing from a previous snapshot that was cut at its limit is not taken as new (it may have been cut off).
+ */
+export function changesSince(prev: ReportSnapshot | null, now: ReportSnapshot, o: { names?: Record<string, string>; timeZone?: string } = {}): ReportChanges | "not_available" {
+  if (!prev) return "not_available";
+  const gap = daysBetween(prev.localDate, now.localDate);
+  if (!(gap >= 1 && gap <= CHANGES_MAX_DAYS)) return "not_available";
+  const tz = o.timeZone ?? "UTC";
+  const out: ReportChanges = {
+    since: prev.localDate, sinceLabel: gap === 1 ? "yesterday" : gap <= 6 ? weekdayName(prev.localDate) : dayLabel(prev.localDate),
+    newlyBlocked: [], unblocked: [], slipped: [], newlyLate: [], finished: [], truncated: prev.truncated || now.truncated,
+  };
+  for (const [taskId, n] of Object.entries(now.tasks)) {
+    const p = prev.tasks[taskId] ?? null;
+    if (!p && prev.truncated && n.s !== "completed") continue;
+    const item = (detail: string | null = null): ChangeItem => ({ taskId, title: n.t, person: o.names?.[n.a] ?? "Someone", detail });
+    const open = OPEN.includes(n.s);
+    if (n.s === "blocked" && p?.s !== "blocked") out.newlyBlocked.push(item());
+    if (p?.s === "blocked" && open && n.s !== "blocked") out.unblocked.push(item());
+    if (open && p?.due && n.due && Date.parse(n.due) > Date.parse(p.due)) out.slipped.push(item(dueMoved(p.due, n.due, tz)));
+    if (open && n.late && !p?.late) out.newlyLate.push(item(n.due ? `due ${dayShort(n.due, tz)}` : null));
+    if (n.s === "completed" && p?.s !== "completed") out.finished.push(item());
+  }
+  return out;
+}
+
+type SnapRow = { id: string; a: string; t: string; s: SnapshotStatus; due: string | null; late: boolean; reason: string | null };
+
+/**
+ * Today's snapshot and the comparison with the previous report's, read as the reader in one transaction: the previous
+ * snapshot (their own log row), then every task the report covers and, of the previous snapshot's tasks, those finished
+ * since it was written but not today (finished last night, or over a weekend). Null and null before migration 0046; a
+ * failure leaves "not available" and no snapshot (it never fails the report).
+ */
+async function changesFor(ctx: OrgContext, localDate: string, people: PersonDay[]): Promise<Pick<DailyReport, "changes" | "snapshot">> {
+  const ids = people.map((p) => p.membershipId);
+  const names = Object.fromEntries(people.map((p) => [p.membershipId, p.name]));
+  try {
+    return await retryWithout0046(() => withUser(ctx.user.profileId, async (db) => {
+      if (!(await schema0046Ready(db))) return { changes: null, snapshot: null };
+      const row = await db.maybeOne<{ local_date: string; snapshot: unknown }>(
+        `SELECT local_date::text AS local_date, snapshot FROM brenda_report_log
+         WHERE membership_id = $1 AND local_date < $2::date AND snapshot IS NOT NULL ORDER BY local_date DESC LIMIT 1`, [ctx.membership.id, localDate]);
+      const stored = row ? snapshotOf(row.snapshot) : null;
+      // One more than a week old is not compared with (changesSince says "not available"): nothing of it is read.
+      const prev = stored && daysBetween(row!.local_date, localDate) <= CHANGES_MAX_DAYS ? { ...stored, localDate: row!.local_date } : null;
+      const read = await db.one<{ tasks: SnapRow[]; finished: Omit<SnapRow, "s" | "due" | "late" | "reason">[]; at: string }>(
+        `SELECT
+           (SELECT COALESCE(json_agg(json_build_object('id', x.id, 'a', x.a, 't', x.t, 's', x.s, 'due', x.due, 'late', x.late, 'reason', x.reason) ORDER BY x.due NULLS LAST, x.c, x.id), '[]'::json) FROM (
+              SELECT t.id, t.assignee_membership_id AS a, left(t.title, 200) AS t, t.status AS s, t.due_at AS due, t.created_at AS c,
+                     (t.status IN ('todo', 'in_progress', 'blocked') AND t.due_at < now()) AS late,
+                     CASE WHEN t.status = 'blocked' THEN left(NULLIF(btrim(t.blocked_reason), ''), 120) END AS reason
+              FROM tasks t WHERE t.organisation_id = $1 AND t.assignee_membership_id = ANY($2::uuid[]) AND t.archived_at IS NULL
+                AND (t.status IN ('todo', 'in_progress', 'blocked', 'in_review') OR (t.status = 'completed' AND t.completed_at >= $3::timestamptz))
+              ORDER BY t.due_at NULLS LAST, t.created_at, t.id LIMIT ${SNAPSHOT_MAX_TASKS + 1}) x) AS tasks,
+           (SELECT COALESCE(json_agg(json_build_object('id', t.id, 'a', t.assignee_membership_id, 't', left(t.title, 200))), '[]'::json)
+              FROM tasks t WHERE $5::timestamptz IS NOT NULL AND t.organisation_id = $1 AND t.id = ANY($4::uuid[]) AND t.assignee_membership_id = ANY($2::uuid[])
+                AND t.archived_at IS NULL AND t.status = 'completed' AND t.completed_at > $5::timestamptz AND t.completed_at < $3::timestamptz) AS finished,
+           now() AS at`,
+        [ctx.org.id, ids, localMidnight(localDate, ctx.org.timezone).toISOString(), prev ? Object.keys(prev.tasks) : [], prev?.at ?? null]);
+      const tasks: Record<string, SnapshotTask> = {};
+      for (const t of read.tasks.slice(0, SNAPSHOT_MAX_TASKS)) tasks[t.id] = { a: t.a, t: t.t, s: t.s, due: isoOrNull(t.due), late: !!t.late, reason: t.reason ?? null };
+      const snapshot = fitSnapshot({ v: 1, at: new Date(read.at).toISOString(), localDate, truncated: read.tasks.length > SNAPSHOT_MAX_TASKS, tasks });
+      // Finished since the previous report but not today: compared as finished, not kept (the snapshot is today's).
+      const compare: ReportSnapshot = { ...snapshot, tasks: { ...snapshot.tasks } };
+      for (const f of read.finished) if (!compare.tasks[f.id]) compare.tasks[f.id] = { a: f.a, t: f.t, s: "completed", due: null, late: false, reason: null };
+      return { changes: changesSince(prev, compare, { names, timeZone: ctx.org.timezone }), snapshot };
+    }));
+  } catch (err) {
+    if (isMissingSchema(err)) { forget0046(); return { changes: null, snapshot: null }; }
+    console.warn(`[daily report] changes not available: ${(err as Error)?.message ?? err}`);
+    return { changes: "not_available", snapshot: null };
+  }
 }
 
 // ---- Notes from the team (owner decision, 8 October 2026: personal assistants, phase 6) -------------------------------
@@ -251,28 +529,46 @@ async function reportUpdates(ctx: OrgContext, r: DailyReport): Promise<Pick<Dail
   try {
     const u = await workspaceUpdatesFor(ctx, r.localDate, r.people.map((p) => p.membershipId));
     const now = new Date();
-    return { updatesAt: u.collectedAt, updates: u.updates.map((x) => ({ membershipId: x.membershipId, name: x.name, line: updateLine(x, ctx.org.timezone, now) })) };
+    // The follow-up behind each line, for its link (phase 7a).
+    return { updatesAt: u.collectedAt, updates: u.updates.map((x) => ({ membershipId: x.membershipId, name: x.name, line: updateLine(x, ctx.org.timezone, now), id: x.id ?? null })) };
   } catch (err) {
     console.warn(`[daily report] updates left out: ${(err as Error)?.message ?? err}`);
     return { updates: [], updatesAt: null };
   }
 }
 
-function attentionList(people: PersonDay[], waitingForYou: number): string[] {
+/**
+ * What needs the reader's attention, as markdown lines. With the workspace's slug (the document) the tasks link to their
+ * pages and the review and attendance lines to theirs (phase 7a); without it (the model's facts) it is text only.
+ */
+function attentionList(people: PersonDay[], waitingForYou: number, slug: string | null): string[] {
   const out: string[] = [];
+  const refsOr = (refs: TaskRef[] | undefined, titles: string[]) => (slug && refs?.length ? refs : titles.map((title) => ({ id: "", title })));
   for (const p of people) {
     if (p.overdueOpen) {
-      const more = p.overdueOpen - p.overdueTitles.length;
-      out.push(`${md(p.name)}: ${listOf(p.overdueTitles.map((t) => `“${md(t)}”`))}${more > 0 ? ` and ${plural(more, "more task")}` : ""} ${p.overdueOpen === 1 ? "is" : "are"} overdue`);
+      const shown = refsOr(p.taskRefs?.overdue, p.overdueTitles);
+      const more = p.overdueOpen - shown.length;
+      out.push(`${md(p.name)}: ${listOf(shown.map((t) => taskMd(slug, t)))}${more > 0 ? ` and ${plural(more, "more task")}` : ""} ${p.overdueOpen === 1 ? "is" : "are"} overdue`);
     }
-    for (const b of p.blocked) out.push(`${md(p.name)}: “${md(b.title)}” is blocked${b.reason ? ` (${md(b.reason.slice(0, 160))})` : ""}`);
+    const blocked = slug && p.taskRefs?.blocked.length ? p.taskRefs.blocked : p.blocked.map((b) => ({ ...b, id: "" }));
+    for (const b of blocked) out.push(`${md(p.name)}: ${taskMd(slug, b)} is blocked${b.reason ? ` (${mdQuoted(clamp(oneLine(b.reason), 160))})` : ""}`);
   }
-  if (waitingForYou) out.push(`${plural(waitingForYou, "task")} ${waitingForYou === 1 ? "is" : "are"} waiting for your review`);
+  if (waitingForYou) out.push(`${plural(waitingForYou, "task")} ${waitingForYou === 1 ? "is" : "are"} waiting for your review${slug ? sourcesSuffix(slug, [{ kind: "review" }]) : ""}`);
+  const attendance = slug ? sourcesSuffix(slug, [{ kind: "attendance" }]) : "";
   const missing = people.filter((p) => p.attendance.missing).map((p) => md(p.name));
-  if (missing.length) out.push(`Did not clock in: ${listOf(missing)}`);
+  if (missing.length) out.push(`Did not clock in: ${listOf(missing)}${attendance}`);
   const late = people.filter((p) => p.attendance.lateMinutes > 0).map((p) => `${md(p.name)} (${plural(p.attendance.lateMinutes, "minute")})`);
-  if (late.length) out.push(`Late: ${listOf(late)}`);
+  if (late.length) out.push(`Late: ${listOf(late)}${attendance}`);
   return out;
+}
+
+/**
+ * A task in the document: its title in quotes, linked to its page when there is one (lib/evidence-links escapes the
+ * label); the quoted, escaped title alone otherwise (no slug, no id).
+ */
+function taskMd(slug: string | null, t: { id: string; title: string }): string {
+  const label = `“${t.title}”`;
+  return slug && t.id && evidenceHref(slug, { kind: "task", id: t.id }) ? evidenceLink(slug, { kind: "task", id: t.id }, label) : `“${md(t.title)}”`;
 }
 
 function plainHeadline(ctx: OrgContext, s: WorkSummary, people: PersonDay[]): string {
@@ -297,7 +593,7 @@ function plainHeadline(ctx: OrgContext, s: WorkSummary, people: PersonDay[]): st
  * keeps it quick; a model that does not take an effort setting (the organisation picks the model) is asked again
  * without one rather than losing the headline.
  */
-async function assistantHeadline(ctx: OrgContext, s: WorkSummary, people: PersonDay[], attention: string[], usage: "person" | "workspace", requestId?: string): Promise<string | null> {
+async function assistantHeadline(ctx: OrgContext, s: WorkSummary, people: PersonDay[], attention: string[], waitingOnReader: number, usage: "person" | "workspace", requestId?: string): Promise<string | null> {
   try {
     const conn = await resolveAssistant(ctx.org.id);
     if (!conn) return null;
@@ -308,6 +604,8 @@ async function assistantHeadline(ctx: OrgContext, s: WorkSummary, people: Person
       totals: s.totals,
       people: people.map((p) => ({ name: p.name, confirmedHours: p.trackedHours, finished: p.tasksCompleted, sentForReview: p.submittedForReview, inProgress: p.inProgress.length, overdue: p.overdueOpen, blocked: p.blockedTasks, lateMinutes: p.attendance.lateMinutes || undefined, didNotClockIn: p.attendance.missing || undefined })),
       needsAttention: attention,
+      // Decisions waiting on the reader (phase 7a): reviews, requests, time corrections, blocked tasks naming them.
+      ...(waitingOnReader ? { decisionsWaitingForTheReader: waitingOnReader } : {}),
     };
     const ask = (effort: boolean) => client.messages.create({
       model: conn.model,
@@ -328,6 +626,66 @@ async function assistantHeadline(ctx: OrgContext, s: WorkSummary, people: Person
   }
 }
 
+/** " ([note](…))": a source under a word of the line's own; "" when it has no page. */
+function linkSuffix(slug: string, ref: EvidenceRef, label: string): string {
+  return evidenceHref(slug, ref) ? ` (${evidenceLink(slug, ref, label)})` : "";
+}
+
+/** One decision as a markdown line's text: its quoted title linked in place, or the link after it. */
+function decisionMd(slug: string, d: DecisionItem): string {
+  const at = d.link && d.source && evidenceHref(slug, d.source) ? d.text.indexOf(d.link) : -1;
+  if (at >= 0) return `${mdQuoted(d.text.slice(0, at))}${evidenceLink(slug, d.source!, d.link!)}${mdQuoted(d.text.slice(at + d.link!.length))}`;
+  return `${mdQuoted(d.text)}${d.source ? sourcesSuffix(slug, [d.source]) : ""}`;
+}
+
+/** Items shown per kind in "Decisions for you", then "And 3 more reviews". */
+export const DECISIONS_SHOWN = 10;
+
+/**
+ * "## Decisions for you" (owner decision, 8 October 2026: phase 7a): reviews, requests, time corrections, blocked tasks
+ * naming the reader, each linked to its source; a list that could not be read says so; nothing reads "Nothing is
+ * waiting on you."
+ */
+export function decisionsMarkdown(slug: string, d: DailyReport["decisions"]): string[] {
+  const lines = ["## Decisions for you", ""];
+  const groups: { label: string; one: string; many: string; items: DecisionItem[] | null; page: EvidenceRef | null }[] = [
+    { label: "Reviews", one: "review", many: "reviews", items: d.reviews, page: { kind: "review" } },
+    { label: "Requests", one: "request", many: "requests", items: d.requests, page: null },
+    { label: "Time corrections", one: "time correction", many: "time corrections", items: d.corrections, page: { kind: "time_correction" } },
+    { label: "Blocked tasks", one: "blocked task", many: "blocked tasks", items: d.blocked, page: null },
+  ];
+  for (const g of groups) {
+    if (g.items === null) { lines.push(`- ${g.label}: ${NOT_AVAILABLE}`); continue; }
+    const shown = g.items.slice(0, DECISIONS_SHOWN);
+    lines.push(...shown.map((x) => `- ${decisionMd(slug, x)}`));
+    const more = g.items.length - shown.length;
+    if (more > 0) lines.push(`- And ${plural(more, `more ${g.one}`, `more ${g.many}`)}${g.page ? sourcesSuffix(slug, [g.page]) : ""}`);
+  }
+  if (lines.length === 2) lines.push("Nothing is waiting on you.");
+  return lines;
+}
+
+/** Links shown per group in "Changed since yesterday", then "and 3 more". */
+export const CHANGES_SHOWN = 8;
+
+/**
+ * "## Changed since yesterday" (owner decision, 8 October 2026: phase 7a): one line per kind of change, its tasks linked
+ * with who holds them; kinds with nothing are left out.
+ */
+export function changesMarkdown(slug: string, c: ReportChanges | "not_available"): string[] {
+  if (c === "not_available") return ["## Changed since yesterday", "", `${sentence(NOT_AVAILABLE)}: there is no earlier report to compare with.`];
+  const lines = [`## Changed since ${c.sinceLabel}`, ""];
+  const groups: [string, ChangeItem[]][] = [["Newly blocked", c.newlyBlocked], ["Unblocked", c.unblocked], ["Deadline moved later", c.slipped], ["Newly late", c.newlyLate], ["Finished", c.finished]];
+  for (const [label, items] of groups) {
+    if (!items.length) continue;
+    const shown = items.slice(0, CHANGES_SHOWN).map((i) => `${taskMd(slug, { id: i.taskId, title: i.title })} (${md(i.person)}${i.detail ? `, ${md(i.detail)}` : ""})`);
+    lines.push(`- **${label}**: ${shown.join(", ")}${items.length > CHANGES_SHOWN ? ` and ${items.length - CHANGES_SHOWN} more` : ""}`);
+  }
+  if (lines.length === 2) lines.push(`Nothing changed since ${c.sinceLabel}.`);
+  if (c.truncated) lines.push("", "_Some changes may not be listed._");
+  return lines;
+}
+
 /**
  * The document: the author's line, the headline, a section per person, then what needs attention. The author is the
  * assistant who wrote it (owner decision, 7 October 2026: personal assistants): the workspace's own assistant for the
@@ -335,36 +693,55 @@ async function assistantHeadline(ctx: OrgContext, s: WorkSummary, people: Person
  */
 export function reportMarkdown(ctx: OrgContext, r: DailyReport, opts: { writtenAt: Date; endOfDay: boolean; reportTime: string; author?: string; workspaceName?: string }): string {
   const tz = ctx.org.timezone;
+  const slug = ctx.org.slug;
   const author = opts.author ?? DEFAULT_ASSISTANT_NAME;
   const by = opts.endOfDay
     ? `_${author} wrote this end-of-day report for you at ${hhmm(opts.writtenAt, tz)} on ${dayLabel(r.localDate)}, from what was recorded in Boredroom. Only you can read it._`
     : `_${author} wrote this for you at ${hhmm(opts.writtenAt, tz)} on ${dayLabel(r.localDate)}, when you asked, from what was recorded in Boredroom so far. The end-of-day report at ${opts.reportTime} brings it up to date. Only you can read it._`;
   const lines = [by, "", `**${md(r.headline)}**`, ""];
+  // Phase 7a: what waits on the reader first, then what changed since their previous report, then the people.
+  if (r.decisions) lines.push(...decisionsMarkdown(slug, r.decisions), "");
+  if (r.changes) lines.push(...changesMarkdown(slug, r.changes), "");
+  // Attendance links to its page for those who may read everyone's (team leads and organisation accounts).
+  const role = ctx.membership.role;
+  const attendance = role === "manager" || role === "owner" || role === "hr" ? sourcesSuffix(slug, [{ kind: "attendance" }]) : "";
   const quiet: string[] = [];
   for (const p of r.people) {
     const notes: string[] = [];
-    if (p.completedTitles.length) notes.push(`- Finished: ${p.completedTitles.map(md).join(", ")}${p.tasksCompleted > p.completedTitles.length ? ` and ${plural(p.tasksCompleted - p.completedTitles.length, "more")}` : ""}`);
-    if (p.submittedTitles.length) notes.push(`- Sent for review: ${p.submittedTitles.map(md).join(", ")}`);
-    if (p.inProgress.length) notes.push(`- In progress: ${p.inProgress.slice(0, 8).map((t) => `${md(t.title)} (${t.progress}%)`).join(", ")}${p.inProgress.length > 8 ? ` and ${plural(p.inProgress.length - 8, "more")}` : ""}`);
-    if (p.overdueOpen) notes.push(`- Overdue: ${p.overdueTitles.map(md).join(", ")}${p.overdueOpen > p.overdueTitles.length ? ` and ${plural(p.overdueOpen - p.overdueTitles.length, "more")}` : ""}`);
-    if (p.blocked.length) notes.push(`- Blocked: ${p.blocked.slice(0, 5).map((b) => `${md(b.title)}${b.reason ? ` (${md(b.reason.slice(0, 160))})` : ""}`).join(", ")}`);
+    // Each title links its task (phase 7a); a title without its id (read a moment apart) is shown as text.
+    const refs = p.taskRefs;
+    const tasks = (shown: TaskRef[] | undefined, titles: string[]) => (shown?.length ? shown : titles.map((title) => ({ id: "", title }))).map((t) => taskMd(slug, t));
+    const completed = tasks(refs?.completed, p.completedTitles);
+    if (completed.length) notes.push(`- Finished: ${completed.join(", ")}${p.tasksCompleted > completed.length ? ` and ${plural(p.tasksCompleted - completed.length, "more")}` : ""}`);
+    const submitted = tasks(refs?.submitted, p.submittedTitles);
+    if (submitted.length) notes.push(`- Sent for review: ${submitted.join(", ")}`);
+    const inProgress = refs?.inProgress.length ? refs.inProgress : p.inProgress.map((t) => ({ ...t, id: "" }));
+    if (inProgress.length) notes.push(`- In progress: ${inProgress.slice(0, 8).map((t) => `${taskMd(slug, t)} (${t.progress}%)`).join(", ")}${inProgress.length > 8 ? ` and ${plural(inProgress.length - 8, "more")}` : ""}`);
+    if (p.overdueOpen) {
+      const overdue = tasks(refs?.overdue, p.overdueTitles);
+      notes.push(`- Overdue: ${overdue.join(", ")}${p.overdueOpen > overdue.length ? ` and ${plural(p.overdueOpen - overdue.length, "more")}` : ""}`);
+    }
+    const blocked = refs?.blocked.length ? refs.blocked : p.blocked.map((b) => ({ ...b, id: "" }));
+    if (blocked.length) notes.push(`- Blocked: ${blocked.slice(0, 5).map((b) => `${taskMd(slug, b)}${b.reason ? ` (${mdQuoted(clamp(oneLine(b.reason), 160))})` : ""}`).join(", ")}${blocked.length > 5 ? ` and ${plural(blocked.length - 5, "more")}` : ""}`);
     const a = p.attendance;
-    if (a.clockedInAt) notes.push(`- Attendance: clocked in at ${hhmm(a.clockedInAt, tz)}${a.lateMinutes ? `, ${plural(a.lateMinutes, "minute")} late` : ""}`);
-    else if (a.missing) notes.push("- Attendance: did not clock in");
+    if (a.clockedInAt) notes.push(`- Attendance: clocked in at ${hhmm(a.clockedInAt, tz)}${a.lateMinutes ? `, ${plural(a.lateMinutes, "minute")} late` : ""}${attendance}`);
+    else if (a.missing) notes.push(`- Attendance: did not clock in${attendance}`);
     if (!notes.length && !p.trackedSeconds) { quiet.push(md(p.name)); continue; }
     lines.push(`## ${md(p.name)}`, "", `${p.teams.length ? `${p.teams.map(md).join(", ")}. ` : ""}${sentence(hours(p.trackedHours))}.`, "", ...notes, "");
   }
   if (quiet.length) lines.push(`Nothing recorded today for ${listOf(quiet)}.`, "");
-  // What each person's assistant said when the workspace's own assistant collected today's updates (phase 4).
+  // What each person's assistant said when the workspace's own assistant collected today's updates (phase 4), each
+  // linked to the follow-up it came from (phase 7a).
   if (r.updates?.length) {
     const asker = opts.workspaceName ?? DEFAULT_ASSISTANT_NAME;
     lines.push("## Updates", "", `_${md(asker)} asked everyone's assistant for today's update${r.updatesAt ? ` at ${hhmm(r.updatesAt, tz)}` : ""}._`, "",
-      ...r.updates.map((u) => `- **${md(u.name)}**: ${mdQuoted(clamp(oneLine(u.line), UPDATE_LINE_MAX))}`), "");
+      ...r.updates.map((u) => `- **${md(u.name)}**: ${mdQuoted(clamp(oneLine(u.line), UPDATE_LINE_MAX))}${u.id ? sourcesSuffix(slug, [{ kind: "follow_up", id: u.id }]) : ""}`), "");
   }
-  // What people asked their assistant to put in today's report (phase 6), in their own words, quoted as typed.
+  // What people asked their assistant to put in today's report (phase 6), in their own words, quoted as typed, each
+  // linked to the note (phase 7a).
   if (r.notes?.length) {
     lines.push("## Notes from the team", "",
-      ...r.notes.map((x) => `- **${md(x.name)}** via ${md(x.assistantName)}, ${hhmm(x.at, tz)}: “${mdQuoted(clamp(oneLine(x.body), NOTE_MAX))}”`), "");
+      ...r.notes.map((x) => `- **${md(x.name)}** via ${md(x.assistantName)}, ${hhmm(x.at, tz)}: “${mdQuoted(clamp(oneLine(x.body), NOTE_MAX))}”${linkSuffix(slug, { kind: "assistant_item", id: x.id ?? null }, "note")}`), "");
   }
   lines.push("## Needs your attention", "");
   const shown = r.attention.slice(0, 10);
@@ -424,6 +801,20 @@ async function deliver(ctx: OrgContext, mode: "end_of_day" | "asked", opts: { us
       [ctx.org.id, ctx.membership.id, report.title, body, REPORT_FOLDER])).id;
     if (!refreshed) await audit(db, { organisationId: ctx.org.id, actorMembershipId: ctx.membership.id, action: "document.created", subjectType: "document", subjectId: docId, subjectMembershipId: ctx.membership.id, metadata: { title: report.title, visibility: "private", teamId: null, by: "brenda", kind: "daily_report" } });
     await db.query(`UPDATE brenda_report_log SET doc_id = $2, written_at = (SELECT updated_at FROM documents WHERE id = $2), sent_at = CASE WHEN $3 THEN now() ELSE sent_at END WHERE id = $1`, [row.id, docId, mode === "end_of_day"]);
+    // The state this report was written from, for tomorrow's "Changed since yesterday" (phase 7a): a report asked for
+    // during the day refreshes it, the end-of-day send writes the last one. Under a savepoint: a snapshot that cannot be
+    // saved is logged and left as it was, never failing the report.
+    if (report.snapshot && (await schema0046Ready(db))) {
+      await db.query("SAVEPOINT report_snapshot");
+      try {
+        await db.query(`UPDATE brenda_report_log SET snapshot = $2::jsonb WHERE id = $1`, [row.id, JSON.stringify(report.snapshot)]);
+        await db.query("RELEASE SAVEPOINT report_snapshot");
+      } catch (err) {
+        await db.query("ROLLBACK TO SAVEPOINT report_snapshot");
+        if (isMissingSchema(err)) forget0046();
+        console.warn(`[daily report] snapshot not saved: ${(err as Error)?.message ?? err}`);
+      }
+    }
     if (mode === "end_of_day") {
       await notify(db, { organisationId: ctx.org.id, recipientMembershipId: ctx.membership.id, type: "brenda.daily_report", title: `Your team report for ${dayLabel(report.localDate)} is ready`, body: report.headline.slice(0, 300), resourceType: "document", resourceId: docId, href: href(docId), dedupKey: `brenda.daily_report:${report.localDate}` });
     }

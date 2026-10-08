@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { ComponentType } from "react";
-import { AtSign, Bell, CalendarClock, CircleAlert, CircleCheck, ClipboardCheck, CreditCard, FileText, MessageSquare, MessageSquareQuote, MessageSquareReply, ShieldCheck, SquareCheckBig, Video } from "lucide-react";
+import { AtSign, Bell, CalendarClock, CircleAlert, CircleCheck, ClipboardCheck, CreditCard, FileText, MessageSquare, MessageSquareQuote, MessageSquareReply, Repeat, ShieldCheck, SquareCheckBig, Video } from "lucide-react";
 import { workspacePage } from "@/server/lib/workspace-page";
 import { AppShell } from "@/components/app/shell";
 import { PageHeader } from "@/components/ui/card";
@@ -12,6 +12,7 @@ import { AssistantScope } from "@/components/app/assistant-context";
 import { PageNote, PageNotes } from "@/components/ui/page-notes";
 import { notificationsView } from "@/server/services/views";
 import { assistantProfiles } from "@/server/services/assistant-profile";
+import { ROUTINE_WORDS } from "@/lib/routines";
 import { formatDateTime, cn } from "@/lib/utils";
 import { MarkRead, MarkAllRead } from "./mark-read";
 
@@ -40,6 +41,13 @@ export const metadata = { title: "Notifications" };
  * expired); and in Messages, "Your assistant in Messages" when someone tagged their assistant (`assistant.tagged`) and
  * "Reply in Messages" when someone's assistant answered their tag (`assistant.thread_reply`). They sit in the assistant
  * tab with the follow-ups and mentions.
+ *
+ * Routines (owner decision, 8 October 2026: phase 7a, "Brenda keeps the loops closed"): what one of the person's
+ * routines sent them ("Routine", `brenda.routine`, opening the run's page with what it found and its links), the
+ * routines that ran during their quiet hours, delivered together when those ended ("Routines", `brenda.routine_bundle`,
+ * opening /home/routines), and a routine that couldn't run or was paused ("Routine", `brenda.routine_failed`, opening
+ * Settings → Your assistant → Routines). A repeat icon (a warning circle for the failed one). They sit in the assistant
+ * tab, and quiet hours never keep them out of this list: only pop-ups and sounds wait.
  */
 function kindsFor(personal: string, workspace: string): Record<string, string> {
   return {
@@ -49,6 +57,7 @@ function kindsFor(personal: string, workspace: string): Record<string, string> {
     "brenda.mention_private": `From ${personal}`, "capture.exception": "Recording problem", "adjustment.requested": "Time correction requested",
     "assistant.message": "Passed-on message", "assistant.request": "Request to accept", "assistant.reply": "Reply", "assistant.outcome": "Request update",
     "assistant.tagged": "Your assistant in Messages", "assistant.thread_reply": "Reply in Messages",
+    ...ROUTINE_WORDS.notifications.kinds,
   };
 }
 
@@ -75,6 +84,9 @@ function iconOf(type: string): Icon {
   if (type === "assistant.reply") return MessageSquareReply;
   if (type === "assistant.outcome") return CircleCheck;
   if (type === "assistant.tagged" || type === "assistant.thread_reply") return AtSign;
+  // Routines (phase 7a): what ran on a schedule; one that couldn't run is a warning.
+  if (type === "brenda.routine_failed") return CircleAlert;
+  if (type === "brenda.routine" || type === "brenda.routine_bundle") return Repeat;
   if (type.startsWith("brenda.")) return BrendaGlyph as Icon;
   if (type === "message.reported") return CircleAlert;
   if (type.includes("mention")) return AtSign;
@@ -95,7 +107,7 @@ function emptyFor(personal: string): Record<Filter, { title: string; description
     unread: { title: "You are all caught up", description: "Nothing unread. New notifications show here first." },
     tasks: { title: "No task notifications", description: "Assignments, comments, blockers and review requests on your tasks show here." },
     messages: { title: "No message notifications", description: "Direct messages and mentions show here." },
-    brenda: { title: `Nothing from ${personal} yet`, description: "Reminders, nudges, follow-ups, daily reports and what other people's assistants bring you show here." },
+    brenda: { title: `Nothing from ${personal} yet`, description: "Reminders, nudges, follow-ups, daily reports, your routines and what other people's assistants bring you show here." },
   };
 }
 

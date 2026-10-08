@@ -27,6 +27,11 @@
  * thread (the page draws them, with "asked by Olu"); while the mention is 'asked' nothing more shows under the tagging
  * message. In a message's text a tag of someone else's assistant is marked like any assistant tag, titled "Ben's
  * assistant", in the orange tint for Ben (it wants his attention).
+ *
+ * Brenda keeps the loops closed (owner decision, 8 October 2026: phase 7a, Confirm readback): each Confirm card here says
+ * exactly who receives what, under its summary, as in her chat (`ConfirmReadback` from brenda-chat, from the proposal's
+ * `readback`), and its Confirm points at it. Only the tagger's own press confirms: an answer or agreement that arrives
+ * through another person's assistant (a reply in the thread, someone else's assistant) never does.
  */
 import { Fragment, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
@@ -34,6 +39,7 @@ import Link from "next/link";
 import { Check, EyeOff, Loader2, ShieldCheck } from "lucide-react";
 import { AssistantAvatar } from "@/components/app/assistant-chip";
 import { useAssistant } from "@/components/app/assistant-context";
+import { ConfirmReadback } from "@/components/app/brenda-chat";
 import { focusComposer } from "@/components/app/messages";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -257,11 +263,15 @@ export function PrivateAnswerCard({ orgSlug, mention, conversationKind, onDismis
  */
 export function ProposalCard({ orgSlug, mentionId, proposal, assistantName }: { orgSlug: string; mentionId: string; proposal: MentionProposalView; assistantName: string }) {
   const router = useRouter();
+  const readbackId = useId();
   const [busy, setBusy] = useState<"confirm" | "decline" | null>(null);
   const [error, setError] = useState<string | null>(null);
   // The answer to a press shows at once; the page's own copy takes over once the refresh brings it.
   const [result, setResult] = useState<MentionProposalView | null>(null);
   const p = proposal.state === "open" && result ? result : proposal;
+  // Who receives what (phase 7a); the server's lines, carried on the proposal.
+  const readback = p.readback ?? proposal.readback ?? null;
+  const rb = readback && (readback.to.length || readback.what) ? readbackId : undefined;
   const decide = async (decision: "confirm" | "decline") => {
     if (busy) return;
     setBusy(decision); setError(null);
@@ -280,13 +290,14 @@ export function ProposalCard({ orgSlug, mentionId, proposal, assistantName }: { 
   return (
     <div className="rounded-xl border border-border-input bg-background p-3 text-sm">
       <p className="flex items-start gap-2.5 font-medium text-foreground"><ShieldCheck className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden /><span className="min-w-0 break-words">{p.summary}</span></p>
+      {rb && readback ? <ConfirmReadback id={rb} readback={readback} /> : null}
       {/* Every word of what it will do or send (review, 8 October 2026); a long one scrolls. */}
       {p.detail ? <div role="region" tabIndex={0} aria-label="The full details" className="ml-[26px] mt-2 max-h-48 overflow-y-auto whitespace-pre-wrap break-words rounded-lg bg-fill-0 px-3 py-2 font-normal text-foreground outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ring)]">{p.detail}</div> : null}
       {error ? <p role="alert" className="ml-[26px] mt-2 text-meta font-medium text-danger">{error}</p> : null}
       <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
         {decided ?? <>
           <Button size="sm" variant="ghost" {...busyProps(busy !== null, busy === "decline")} onClick={() => void decide("decline")}><Spin on={busy === "decline"} />Not now</Button>
-          <Button size="sm" variant="primary" {...busyProps(busy !== null, busy === "confirm")} onClick={() => void decide("confirm")}>{busy === "confirm" ? <Spin on /> : <Check aria-hidden />}Confirm</Button>
+          <Button size="sm" variant="primary" {...busyProps(busy !== null, busy === "confirm")} aria-describedby={rb} onClick={() => void decide("confirm")}>{busy === "confirm" ? <Spin on /> : <Check aria-hidden />}Confirm</Button>
         </>}
       </div>
     </div>

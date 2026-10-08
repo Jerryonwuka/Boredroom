@@ -19,6 +19,7 @@
  */
 import type { AssistantProfile } from "@/lib/assistant-look";
 import type { FollowUpFacts } from "@/lib/follow-ups";
+import type { Readback } from "@/lib/confirm-readback";
 
 // ---- Statuses ----------------------------------------------------------------------------------------------------------
 
@@ -251,6 +252,11 @@ export type MentionProposalView = {
   state: "open" | "done" | "declined" | "expired" | "failed";
   /** done: what ran ("Added to-do: Call Ben"); failed: why. */
   result: string | null;
+  /**
+   * Who receives what (owner decision, 8 October 2026: phase 7a, Confirm readback): the card's "Goes to" list and "What
+   * they get" line; null for a proposal stored before it.
+   */
+  readback: Readback | null;
 };
 export type MentionPrivateView = {
   kind: "answer" | "full_answer" | "note";

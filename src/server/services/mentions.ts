@@ -52,6 +52,7 @@ import type { Action, Proposal } from "@/server/services/copilot";
 import type { ConversationKind } from "@/server/services/messaging";
 import { toProfile, type AssistantProfile } from "@/lib/assistant-look";
 import { clip, firstName } from "@/lib/follow-ups";
+import { cleanReadback, type Readback } from "@/lib/confirm-readback";
 import {
   MENTION_LIMITS, MENTIONS_NOT_READY_SHORT, assistantLabels, findLabel, isMentionNoteCode, mentionNote,
   type MentionNoteCode, type MentionPrivateView, type MentionProposalView, type MentionStatus, type MentionToken, type MentionView,
@@ -80,10 +81,13 @@ export type MentionJob = {
   followUpId: string | null;
 };
 
-/** A proposal as stored in assistant_mention_private.proposals (the token never leaves the server). */
+/**
+ * A proposal as stored in assistant_mention_private.proposals (the token never leaves the server). `readback` (owner
+ * decision, 8 October 2026: phase 7a): who receives what, as the card shows it; absent on a proposal stored before it.
+ */
 type StoredProposal = {
   index: number; tool: string; summary: string; detail: string | null; token: string; expiresAt: string;
-  state: MentionProposalView["state"]; result: string | null;
+  state: MentionProposalView["state"]; result: string | null; readback?: Readback | null;
 };
 
 // ---- Small helpers ----------------------------------------------------------------------------------------------------
@@ -518,7 +522,7 @@ function storeProposals(proposals: ConfirmProposal[], now = Date.now()): StoredP
     const exp = tokenExpiry(p.token);
     return {
       index, tool: String(p.tool ?? ""), summary: clip(String(p.summary ?? ""), 300), detail: p.detail ? clip(String(p.detail), 4000) : null,
-      token: p.token, expiresAt: new Date(Math.min(cap, exp ?? cap)).toISOString(), state: "open", result: null,
+      token: p.token, expiresAt: new Date(Math.min(cap, exp ?? cap)).toISOString(), state: "open", result: null, readback: cleanReadback(p.readback),
     };
   });
 }
@@ -660,7 +664,7 @@ function proposalsOf(v: unknown): StoredProposal[] {
 /** A stored proposal as the card reads it: no token, and past its time it reads expired. */
 function proposalView(p: StoredProposal, now: number): MentionProposalView {
   const state = p.state === "open" && Date.parse(p.expiresAt) <= now ? "expired" : p.state;
-  return { index: p.index, tool: p.tool, summary: p.summary, detail: p.detail ?? null, state, result: p.result ?? null };
+  return { index: p.index, tool: p.tool, summary: p.summary, detail: p.detail ?? null, state, result: p.result ?? null, readback: cleanReadback(p.readback) };
 }
 
 function toView(r: ViewRow, me: string, now: number): MentionView {
