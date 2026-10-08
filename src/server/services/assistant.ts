@@ -7,12 +7,18 @@
  *  - Claude (Anthropic API) when ANTHROPIC_API_KEY is configured: model-based extraction with a strict output schema.
  *  - Built-in parser otherwise: sentence splitting plus simple date, estimate and name matching. Weaker, but
  *    works offline and costs nothing. The response says which engine produced the proposals.
+ *
+ * Usage (owner decision, 8 October 2026: personal assistants, phase 3): every model call here is recorded in the usage
+ * ledger (purpose "plan", or "test" for the connection test in Settings), and a planner call counts as one of the
+ * person's daily requests; past the limit the built-in parser reads the note and says so.
  */
 import { z } from "zod";
 import type { OrgContext } from "@/server/lib/api";
 import { withSystem } from "@/server/db";
 import { decryptSecret } from "@/server/lib/crypto";
 import { assignableMembers } from "@/server/services/tasks";
+import { aiAllowance, recordUsage, type ModelUsage } from "@/server/services/ai-usage";
+import { assistantProfiles } from "@/server/services/assistant-profile";
 import { todayLocal, localTimeOn, addDays, weekdayOf } from "@/server/lib/time";
 
 export const DEFAULT_ASSISTANT_MODEL = "claude-opus-5-5";
@@ -28,11 +34,15 @@ export async function resolveAssistant(orgId: string): Promise<AssistantConnecti
   return null;
 }
 
-/** Makes one tiny request with a candidate key so Settings can say "connected" only when it really works. */
-export async function testAssistantKey(apiKey: string, model: string): Promise<{ model: string; reply: string }> {
+/**
+ * Makes one tiny request with a candidate key so Settings can say "connected" only when it really works. With `ctx` (the
+ * owner connecting the key) the call is recorded in the usage ledger as a connection test.
+ */
+export async function testAssistantKey(apiKey: string, model: string, ctx?: OrgContext): Promise<{ model: string; reply: string }> {
   const { default: Anthropic } = await import("@anthropic-ai/sdk");
   const client = new Anthropic({ apiKey, maxRetries: 1, timeout: 30_000 });
   const res = await client.messages.create({ model, max_tokens: 40, messages: [{ role: "user", content: "Reply with one short friendly sentence confirming you are connected to Boredroom." }] });
+  if (ctx) await recordUsage(ctx, { purpose: "test", model: res.model ?? model, usage: res.usage });
   const text = res.content.map((b) => (b.type === "text" ? b.text : "")).join("").trim();
   return { model: res.model, reply: text || "Connected." };
 }
@@ -57,8 +67,16 @@ export async function planFromText(ctx: OrgContext, input: z.infer<typeof planRe
   const today = todayLocal(ctx.org.timezone);
   const conn = await resolveAssistant(ctx.org.id);
   if (conn) {
+    // A planner call is one of the person's daily requests (owner decision, 8 October 2026: personal assistants, phase 3),
+    // checked before the model is called; past the limit the built-in parser reads the note. A failed count lets it through.
+    const a = await aiAllowance(ctx).catch(() => null);
+    if (a?.ready && a.remaining <= 0) {
+      const name = (await assistantProfiles(ctx)).personal.name;
+      return { items: planBuiltin(input.text, { people, today, timezone: ctx.org.timezone }), engine: "builtin", reply: null, note: `You've used today's ${a.limit} requests to ${name}, so the built-in parser read this one.`, people };
+    }
     try {
-      const r = await planWithClaude(conn, input.text, { people, today, timezone: ctx.org.timezone, leadName: ctx.user.displayName, isLead: people.length > 0 });
+      const record = (model: string, usage: ModelUsage) => recordUsage(ctx, { purpose: "plan", model, usage });
+      const r = await planWithClaude(conn, input.text, { people, today, timezone: ctx.org.timezone, leadName: ctx.user.displayName, isLead: people.length > 0, record });
       return { items: r.items, engine: "claude", reply: r.reply, note: null, people };
     } catch (err) {
       const items = planBuiltin(input.text, { people, today, timezone: ctx.org.timezone });
@@ -90,7 +108,7 @@ const ClaudeOutput = z.object({
   })),
 });
 
-async function planWithClaude(conn: AssistantConnection, text: string, opts: { people: Person[]; today: string; timezone: string; leadName: string; isLead: boolean }): Promise<{ items: ProposedTodo[]; reply: string }> {
+async function planWithClaude(conn: AssistantConnection, text: string, opts: { people: Person[]; today: string; timezone: string; leadName: string; isLead: boolean; record?: (model: string, usage: ModelUsage) => Promise<void> }): Promise<{ items: ProposedTodo[]; reply: string }> {
   const { default: Anthropic } = await import("@anthropic-ai/sdk");
   const { zodOutputFormat } = await import("@anthropic-ai/sdk/helpers/zod");
   const client = new Anthropic({ apiKey: conn.apiKey, maxRetries: 2, timeout: 60_000 });
@@ -106,16 +124,23 @@ async function planWithClaude(conn: AssistantConnection, text: string, opts: { p
       : `The note is from ${opts.leadName}, a staff member. Every item is for them; set assignee to null. If the note asks someone else to do something, keep the item as a reminder for them (e.g. "Ask Ada to…").`,
     "In reply, speak directly to the person in one or two warm, plain sentences: what you set up and any assumption you made (dates, assignees). If the note contains no work at all, return an empty items list and explain in reply.",
   ].join("\n");
-  const res = await client.messages.parse({
+  const format = zodOutputFormat(ClaudeOutput);
+  // create, then parse here, rather than messages.parse: parse throws on output that does not parse (a reply cut off at
+  // max_tokens, say) before the usage could be read, and such a call would be billed but never recorded or counted
+  // (review, 8 October 2026). Recorded whatever came back: the call used the tokens even when the answer is not usable.
+  const res = await client.messages.create({
     model: conn.model,
     max_tokens: 4000,
     thinking: { type: "adaptive" },
     system,
     messages: [{ role: "user", content: text }],
-    output_config: { format: zodOutputFormat(ClaudeOutput) },
+    output_config: { format },
   });
-  const parsed = res.parsed_output;
-  if (!parsed) throw new Error("the model returned no usable items");
+  await opts.record?.(res.model ?? conn.model, res.usage);
+  const out = res.content.find((b) => b.type === "text");
+  let parsed: z.infer<typeof ClaudeOutput> | null = null;
+  try { parsed = out && out.type === "text" ? format.parse(out.text) : null; } catch { parsed = null; }
+  if (!parsed) throw new Error(res.stop_reason === "max_tokens" ? "the answer was too long to read; try a shorter note" : "the model returned no usable items");
   const items = parsed.items.slice(0, 25).map((it) => {
     const person = it.assignee ? matchPerson(it.assignee, opts.people) : null;
     const due = it.due && !Number.isNaN(Date.parse(it.due)) ? new Date(it.due).toISOString() : null;

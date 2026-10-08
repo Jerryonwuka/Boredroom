@@ -10,16 +10,22 @@
  * v4: the one tooltip system in the app; the toast surface, r8, px8 py4, 12/16 medium (globals.css `.tip`).
  * A label that changes while it shows (a Listen button pressed from the keyboard becomes Stop, or turns back when the
  * reply ends) is read again at once, not only on the next hover or focus (review, 7 October 2026).
+ * Personal assistants, phase 3 (owner decision, 8 October 2026): a focusable element with `data-tip` that is not a
+ * control (`[data-tip][tabindex]`, the "via Max" chip on a message her assistant sent for someone) gets its tooltip on
+ * hover and keyboard focus too: still the one tooltip system, with nothing new to wire. Its sentence is longer than a
+ * control's label, so a label too long for one line wraps onto a second instead of being cut, and one near the edge of
+ * the window (the chip under your own message) slides in to stay whole on screen (review, 8 October 2026).
  */
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { liftToTopLayer, popoverHost } from "@/components/ui/top-layer";
 import { cn } from "@/lib/utils";
 
-const TARGET = "button, a, summary, [role='button'], [role='menuitem'], [role='tab']";
+const TARGET = "button, a, summary, [role='button'], [role='menuitem'], [role='tab'], [data-tip][tabindex]";
 const OPEN_DELAY = 320;   // long enough that skimming the mouse over a row never flashes labels
 const WARM_WINDOW = 400;  // moving from one icon to the next shows the label at once
 const STAY = 3000;        // a label leaves on its own after three seconds (owner decision, 26 September 2026)
+const EDGE = 8;           // the least room kept between a label and the side of the window
 
 function labelFor(node: Element | null): { el: HTMLElement; text: string } | null {
   const el = node?.closest?.(TARGET) as HTMLElement | null;
@@ -37,6 +43,15 @@ type Tip = { text: string; top: number; left: number; side: "below" | "above" | 
 
 export function TooltipLayer() {
   const [tip, setTip] = useState<Tip | null>(null);
+  const box = useRef<HTMLDivElement | null>(null);
+  const mount = useCallback((node: HTMLDivElement | null) => { box.current = node; liftToTopLayer(node); }, []);
+  // A label under or over its control is centred on it; near a side of the window it slides in to stay whole.
+  useLayoutEffect(() => {
+    const el = box.current;
+    if (!el || !tip || tip.side === "right") return;
+    const half = el.offsetWidth / 2;
+    el.style.left = `${Math.max(half + EDGE, Math.min(tip.left, window.innerWidth - half - EDGE))}px`;
+  }, [tip]);
 
   useEffect(() => {
     let timer: number | null = null;
@@ -102,7 +117,7 @@ export function TooltipLayer() {
 
   if (!tip || typeof document === "undefined") return null;
   return createPortal(
-    <div ref={liftToTopLayer} role="tooltip" className={cn("top-pop tip", tip.side === "above" && "tip-up", tip.side === "right" && "tip-right")} style={{ top: tip.side === "above" ? undefined : tip.top, bottom: tip.side === "above" ? window.innerHeight - tip.top : undefined, left: tip.left }}>
+    <div ref={mount} role="tooltip" className={cn("top-pop tip", tip.side === "above" && "tip-up", tip.side === "right" && "tip-right")} style={{ top: tip.side === "above" ? undefined : tip.top, bottom: tip.side === "above" ? window.innerHeight - tip.top : undefined, left: tip.left, width: "max-content", whiteSpace: "normal", textWrap: "balance" }}>
       {tip.text}
     </div>,
     tip.host,

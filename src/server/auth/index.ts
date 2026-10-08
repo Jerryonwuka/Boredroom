@@ -37,13 +37,13 @@ export type CurrentUser = {
 
 function appOrigin() { return process.env.APP_ORIGIN ?? "http://localhost:3000"; }
 
-async function rateLimit(db: Db, bucket: string, limit: number, windowSeconds: number) {
+async function rateLimit(db: Db, bucket: string, limit: number, windowSeconds: number, message?: string) {
   const row = await db.one<{ hits: number }>(
     `INSERT INTO auth_rate_limits(bucket, window_start, hits)
      VALUES ($1, to_timestamp(floor(extract(epoch from now()) / $2) * $2), 1)
      ON CONFLICT (bucket, window_start) DO UPDATE SET hits = auth_rate_limits.hits + 1
      RETURNING hits`, [bucket, windowSeconds]);
-  if (row.hits > limit) throw rateLimited();
+  if (row.hits > limit) throw rateLimited(message);
 }
 
 export async function signUp(input: { email: string; password: string; displayName: string; ip?: string }) {
@@ -203,8 +203,12 @@ async function bearerToken(): Promise<string | undefined> {
   return m?.[1];
 }
 
-/** Rate limits for unauthenticated endpoints outside this module (the desktop link). */
-export async function rateLimitIn(db: Db, bucket: string, limit: number, windowSeconds: number) { return rateLimit(db, bucket, limit, windowSeconds); }
+/**
+ * Rate limits outside this module: unauthenticated endpoints (the desktop link) and bursts of requests to the person's
+ * assistant (`ai.burst:<membership>`, server/services/ai-usage). `message` is what the 429 says; the default is unchanged
+ * (owner decision, 8 October 2026: personal assistants, phase 3).
+ */
+export async function rateLimitIn(db: Db, bucket: string, limit: number, windowSeconds: number, message?: string) { return rateLimit(db, bucket, limit, windowSeconds, message); }
 
 export async function userFromSessionToken(token: string | undefined): Promise<CurrentUser | null> {
   if (!token) return null;

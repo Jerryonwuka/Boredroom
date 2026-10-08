@@ -14,7 +14,7 @@ import { speakable } from "@/lib/assistant-speech/speakable";
 export const POST = route<{ org: string }>(async (req, { params }) => {
   const ctx = await orgContext(params.org);
   requireFeature(ctx, "AI_ASSISTANT");
-  const body = await parseBody(req, z.object({ token: z.string().min(10).max(8000) }));
+  const body = await parseBody(req, z.object({ token: z.string().min(10).max(40_000) }));
   const result = await confirmAction(ctx, body.token);
   const said = result.error ?? (result.actions.map((a) => a.summary).join(". ") || "Done.");
   return ok({ ...result, spoken: speakable(said) });

@@ -26,6 +26,7 @@ import { localParts, todayLocal } from "@/server/lib/time";
 import { audit, notify } from "@/server/services/common";
 import { brendaSettings, logAction, type BrendaSettings } from "@/server/services/brenda";
 import { resolveAssistant } from "@/server/services/assistant";
+import { aiAllowance, recordUsage, recordWorkspaceUsage, type UsageEntry } from "@/server/services/ai-usage";
 import { DOC_BODY_MAX } from "@/server/services/docs";
 import { workSummary, type PersonWork, type WorkSummary } from "@/server/services/work-summary";
 import { readPersonalAssistant, readWorkspaceAssistant } from "@/server/services/assistant-profile";
@@ -99,8 +100,10 @@ const sentence = (s: string) => s ? `${s[0].toUpperCase()}${s.slice(1)}` : s;
  * Today's report for the person, as of now, in the organisation's time zone. Reads as them: the people are exactly
  * those work_summary shows them (a team lead's teams and themself; everyone who holds work for the owner and HR).
  * `useAssistant` false keeps Claude out of it (the smoke script); otherwise Claude writes the headline when connected.
+ * `usage` says whose the model call is in the usage ledger (owner decision, 8 October 2026: personal assistants, phase 3):
+ * the person's, for a report they asked for (the default), or the workspace's own, for the end-of-day send.
  */
-export async function buildDailyReport(ctx: OrgContext, opts: { useAssistant?: boolean } = {}): Promise<DailyReport> {
+export async function buildDailyReport(ctx: OrgContext, opts: { useAssistant?: boolean; usage?: "person" | "workspace"; requestId?: string } = {}): Promise<DailyReport> {
   const summary = await workSummary(ctx, { period: "today" });
   const localDate = summary.from;
   const ids = summary.people.map((p) => p.membershipId);
@@ -136,7 +139,7 @@ export async function buildDailyReport(ctx: OrgContext, opts: { useAssistant?: b
   const empty = !active && !issues;
   const attention = attentionList(people, extra.waitingForYou);
   const plain = plainHeadline(ctx, summary, people);
-  const headline = opts.useAssistant === false || empty ? plain : (await assistantHeadline(ctx, summary, people, attention)) ?? plain;
+  const headline = opts.useAssistant === false || empty ? plain : (await assistantHeadline(ctx, summary, people, attention, opts.usage ?? "person", opts.requestId)) ?? plain;
   return {
     localDate, title: `Team report, ${dayLabel(localDate)}`, scope: summary.scope, people, totals: summary.totals,
     headline, attention, waitingForYourReview: extra.waitingForYou, empty,
@@ -182,7 +185,7 @@ function plainHeadline(ctx: OrgContext, s: WorkSummary, people: PersonDay[]): st
  * keeps it quick; a model that does not take an effort setting (the organisation picks the model) is asked again
  * without one rather than losing the headline.
  */
-async function assistantHeadline(ctx: OrgContext, s: WorkSummary, people: PersonDay[], attention: string[]): Promise<string | null> {
+async function assistantHeadline(ctx: OrgContext, s: WorkSummary, people: PersonDay[], attention: string[], usage: "person" | "workspace", requestId?: string): Promise<string | null> {
   try {
     const conn = await resolveAssistant(ctx.org.id);
     if (!conn) return null;
@@ -202,6 +205,9 @@ async function assistantHeadline(ctx: OrgContext, s: WorkSummary, people: Person
       messages: [{ role: "user", content: JSON.stringify(facts) }],
     });
     const res = await ask(true).catch((err: unknown) => { if (err instanceof Anthropic.BadRequestError) return ask(false); throw err; });
+    // Only the response that came back is recorded (a refused first try returned none); never throws.
+    const entry: UsageEntry = { purpose: "report", model: res.model ?? conn.model, usage: res.usage, ...(requestId ? { requestId } : {}) };
+    await (usage === "workspace" ? recordWorkspaceUsage(ctx.org.id, entry) : recordUsage(ctx, entry));
     if (res.stop_reason !== "end_turn") return null;
     const text = res.content.map((b) => (b.type === "text" ? b.text : "")).join("").replace(/\s+/g, " ").trim();
     return text && text.length <= 420 && !/[#*`]/.test(text) ? text : null;
@@ -258,7 +264,7 @@ const headlineOf = (body: string) => /^\*\*(.+)\*\*$/m.exec(body)?.[1]?.replace(
  * notification. Otherwise the person asked: today's sent report is returned as it is, or the report so far is
  * written (or refreshed, if they have not edited it since) and lands only on them.
  */
-async function deliver(ctx: OrgContext, mode: "end_of_day" | "asked", opts: { useAssistant?: boolean; reportTime: string; author: string }): Promise<Outcome> {
+async function deliver(ctx: OrgContext, mode: "end_of_day" | "asked", opts: { useAssistant?: boolean; reportTime: string; author: string; requestId?: string }): Promise<Outcome> {
   const today = todayLocal(ctx.org.timezone);
   const href = (id: string) => `/app/${ctx.org.slug}/docs/${id}`;
   type Row = { id: string; doc_id: string | null; sent_at: string | null; title: string | null; body: string | null; readable: boolean };
@@ -269,7 +275,8 @@ async function deliver(ctx: OrgContext, mode: "end_of_day" | "asked", opts: { us
   const before = await withUser(ctx.user.profileId, (db) => db.maybeOne<Row>(rowSql, [ctx.membership.id, today]));
   if (before?.sent_at && (mode === "end_of_day" || before.readable)) return mode === "end_of_day" ? { status: "already_sent" } : existing(before);
 
-  const report = await buildDailyReport(ctx, { useAssistant: opts.useAssistant });
+  // The end-of-day send is the workspace's own job in the usage ledger; a report asked for is the person's.
+  const report = await buildDailyReport(ctx, { useAssistant: opts.useAssistant, usage: mode === "end_of_day" ? "workspace" : "person", requestId: opts.requestId });
   if (report.empty) return { status: "nothing" };
   // Asked for after the end-of-day report went out (and was archived since): it is written as the day's report, not "so far".
   const body = reportMarkdown(ctx, report, { writtenAt: new Date(), endOfDay: mode === "end_of_day" || !!before?.sent_at, reportTime: opts.reportTime, author: opts.author });
@@ -307,12 +314,18 @@ export type TeamReportNow =
  * owner and HR; anyone else is refused. It lands only on the person asking (no notification, no email), so it needs no
  * confirmation. Once today's end-of-day report has gone out, that is the one returned.
  */
-export async function teamReportNow(ctx: OrgContext, opts: { useAssistant?: boolean } = {}): Promise<TeamReportNow> {
+export async function teamReportNow(ctx: OrgContext, opts: { useAssistant?: boolean; requestId?: string } = {}): Promise<TeamReportNow> {
   const refusal = await refusalFor(ctx);
   if (refusal) return { status: "refused", message: refusal };
+  // An asked-for report is one of the person's daily requests (review, 8 October 2026). Inside a chat turn (requestId) it
+  // is that turn's, already allowed; asked for on its own (Settings) and past the limit, the plain headline is used.
+  if (opts.useAssistant !== false && !opts.requestId) {
+    const a = await aiAllowance(ctx).catch(() => null);
+    if (a?.ready && a.remaining <= 0) opts = { ...opts, useAssistant: false };
+  }
   // A report the person asked for is signed by their own assistant (owner decision, 7 October 2026: personal assistants).
   const { settings, personal } = await withUser(ctx.user.profileId, async (db) => ({ settings: await brendaSettings(db, ctx.org.id), personal: await readPersonalAssistant(db, ctx.membership.id) }));
-  const r = await deliver(ctx, "asked", { useAssistant: opts.useAssistant, reportTime: settings.dailyReportTime, author: personal.name });
+  const r = await deliver(ctx, "asked", { useAssistant: opts.useAssistant, reportTime: settings.dailyReportTime, author: personal.name, requestId: opts.requestId });
   if (r.status === "nothing" || !("saved" in r) || !r.saved) return { status: "nothing", message: "Nothing has happened on your teams today yet and nothing needs you (no confirmed time, nothing finished or sent for review, nothing overdue or blocked, no late or missing clock-ins), so there is no report to write." };
   return { status: r.status === "existing" ? "existing" : "saved", endOfDay: r.status === "existing", ...r.saved };
 }

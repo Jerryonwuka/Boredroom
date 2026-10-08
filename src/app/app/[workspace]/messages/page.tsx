@@ -15,7 +15,9 @@ import { PRESENCE } from "@/lib/presence";
 import { Composer, NewConversation, ScrollToLatest, MessageMenu, ConversationMenu, ConversationRowMenu, ConversationDetails, ReplyProvider, RowPending } from "@/components/app/messages";
 import { MessageBubble } from "@/components/ui/chat-messages";
 import { VoiceNote } from "@/components/app/voice-note";
-import { inbox, thread, openDirect, peopleToMessage, visibleTask, type ConversationSummary, type MessageRow, type Thread } from "@/server/services/messaging";
+import { AssistantAvatar, AssistantChip } from "@/components/app/assistant-chip";
+import { DEFAULT_ASSISTANT_NAME, toProfile } from "@/lib/assistant-look";
+import { inbox, thread, openDirect, peopleToMessage, visibleTask, type AuthorKind, type ConversationSummary, type MessageRow, type Thread } from "@/server/services/messaging";
 import { navCounts } from "@/server/services/workspace";
 import { formatDateTime, formatLongDate, relativeTime, cn } from "@/lib/utils";
 
@@ -35,6 +37,12 @@ function timeOnly(iso: string, timeZone: string) {
 function kindLabel(c: ConversationSummary) {
   return c.kind === "team" ? "Team channel" : c.kind === "channel" ? (c.archived_at ? "Archived channel" : "Channel") : c.kind === "organisation" ? "Everyone in the organisation" : "Direct message";
 }
+
+/** "Olu" from "Olu Adeyemi". Kept here: a function exported from a client module cannot be called on the server. */
+const firstName = (name: string) => name.trim().split(/\s+/)[0] || name;
+
+/** Who wrote a message; anything unknown (or a row read before migration 0037) is the person's own. */
+const authorOf = (m: Pick<MessageRow, "author_kind">): AuthorKind => (m.author_kind === "via_assistant" || m.author_kind === "assistant" ? m.author_kind : "person");
 
 /** The time and the unread count at a row's right edge step aside while the row's "…" menu shows over them. */
 const UNDER_ROW_MENU = "transition-opacity duration-75 group-hover:opacity-0 group-has-[[aria-haspopup=menu]:focus]:opacity-0 group-has-[[aria-expanded=true]]:opacity-0";
@@ -80,7 +88,16 @@ export default async function MessagesPage({ params, searchParams }: { params: P
   const isRoom = (k: string) => k === "team" || k === "channel";
   const shownTitle = (c: ConversationSummary) => (c.kind === "organisation" ? c.title : isRoom(c.kind) ? `# ${c.title}` : c.title);
 
-  const preview = (c: ConversationSummary) => (c.last_body === null ? (c.subtitle ?? "") : c.last_body === "" ? "Message withdrawn" : `${c.last_sender_name === ctx.user.displayName ? "You" : (c.last_sender_name ?? "").split(" ")[0]}: ${c.last_body}`);
+  // The last line said, after who said it: "You: …", "Olu: …"; one her assistant sent for someone "You via Max: …" or
+  // "Olu via Max: …"; an assistant's own "Max: …" (personal assistants, phase 3, owner decision, 8 October 2026).
+  const preview = (c: ConversationSummary) => {
+    if (c.last_body === null) return c.subtitle ?? "";
+    if (c.last_body === "") return "Message withdrawn";
+    const assistantName = c.last_assistant_name ?? DEFAULT_ASSISTANT_NAME;
+    if (c.last_author_kind === "assistant") return `${assistantName}: ${c.last_body}`;
+    const who = c.last_sender_name === ctx.user.displayName ? "You" : firstName(c.last_sender_name ?? "");
+    return c.last_author_kind === "via_assistant" ? `${who} via ${assistantName}: ${c.last_body}` : `${who}: ${c.last_body}`;
+  };
 
   // A conversation in the list: a sub-navigation row (r8, fill-0 on hover, fill-1 and the orange marker when open; an
   // unread count is an orange pill, accent rules 6 October 2026). The leading 32px is the
@@ -123,7 +140,7 @@ export default async function MessagesPage({ params, searchParams }: { params: P
     <AppShell ctx={ctx} counts={counts} teams={teams} bleed>
       <div className={cn("flex min-h-0 flex-1 md:grid md:grid-cols-[18rem_minmax(0,1fr)]", selected && "xl:grid-cols-[18rem_minmax(0,1fr)_18rem]")}>
         {/* The conversations. */}
-        <aside aria-label="Conversations" className={cn("min-h-0 flex-col md:flex md:border-r md:border-border", selected ? "hidden" : "flex flex-1")}>
+        <aside aria-label="Conversations" className={cn("min-h-0 min-w-0 flex-col md:flex md:border-r md:border-border", selected ? "hidden" : "flex flex-1")}>
           <div className="flex shrink-0 items-center justify-between gap-3 px-4 pb-3 pt-5">
             <h1 className="type-page-title">Messages</h1>
             <NewConversation orgSlug={ctx.org.slug} people={people} />
@@ -181,11 +198,14 @@ export default async function MessagesPage({ params, searchParams }: { params: P
                       {selected.messages.map((m, i) => {
                         const prev = selected.messages[i - 1];
                         const newDay = !prev || dayKey(prev.created_at, ctx.org.timezone) !== dayKey(m.created_at, ctx.org.timezone);
-                        const grouped = !newDay && !!prev && prev.sender_membership_id === m.sender_membership_id && new Date(m.created_at).getTime() - new Date(prev.created_at).getTime() < 5 * 60_000;
+                        // A run is one author: an assistant's own message never joins its person's run, and each message their
+                        // assistant sent for them keeps its own name row, so its "via Max" chip always shows (review, 8 October 2026).
+                        const grouped = !newDay && !!prev && prev.sender_membership_id === m.sender_membership_id && authorOf(prev) === authorOf(m) && authorOf(m) !== "via_assistant"
+                          && new Date(m.created_at).getTime() - new Date(prev.created_at).getTime() < 5 * 60_000;
                         return (
                           <li key={m.id} id={`m-${m.id}`} className="target-flash scroll-mt-4 rounded-xl">
                             {newDay ? <p className="mb-2 mt-6 flex items-center gap-3 text-xs font-medium text-subtle before:h-px before:flex-1 before:bg-border after:h-px after:flex-1 after:bg-border">{formatLongDate(dayKey(m.created_at, ctx.org.timezone))}</p> : null}
-                            <Message m={m} grouped={grouped} orgSlug={ctx.org.slug} timeZone={ctx.org.timezone} canReply={!selected.conversation.archived_at} />
+                            <Message m={m} me={ctx.membership.id} grouped={grouped} orgSlug={ctx.org.slug} timeZone={ctx.org.timezone} canReply={!selected.conversation.archived_at} />
                           </li>
                         );
                       })}
@@ -251,24 +271,41 @@ function Details({ t, me, base, showTheirDay }: { t: Thread; me: string; base: s
   );
 }
 
-function Message({ m, grouped, orgSlug, timeZone, canReply }: { m: MessageRow; grouped: boolean; orgSlug: string; timeZone: string; canReply: boolean }) {
+/**
+ * One message. Personal assistants, phase 3 (owner decision, 8 October 2026): one the person's own assistant sent for
+ * them after they confirmed it keeps the person as its author, with the "via Max" chip beside their name (beside the
+ * time under your own); an assistant's own message has the assistant's face and name and an "Olu's assistant" tag, sits
+ * on the left even when it is your assistant's, and its menu offers Reply and Copy (and Report, for someone else's).
+ */
+function Message({ m, me, grouped, orgSlug, timeZone, canReply }: { m: MessageRow; me: string; grouped: boolean; orgSlug: string; timeZone: string; canReply: boolean }) {
+  const author = authorOf(m);
+  const assistant = author === "person" ? null : toProfile(m.assistant);
+  const byAssistant = author === "assistant" && assistant ? assistant : null;
+  const isOwnAssistant = !!byAssistant && m.sender_membership_id === me;
+  const name = byAssistant ? byAssistant.name : m.sender_name;
+  // The chip stays when the person edits or withdraws the message: who sent it does not change (contract B.1).
+  const via = author === "via_assistant" && assistant ? <AssistantChip assistant={assistant} personName={m.sender_name} isYou={m.mine} /> : null;
   const time = <><time dateTime={m.created_at} title={formatDateTime(m.created_at, timeZone)}>{timeOnly(m.created_at, timeZone)}</time>{m.edited_at && !m.deleted_at ? <span className="ml-1 text-faint" title={`Edited ${formatDateTime(m.edited_at, timeZone)}`}>edited</span> : null}</>;
-  // The quoted message a reply points at: the sender's name and a line of it, jumping to the original on click.
+  // The quoted message a reply points at: the sender's name (an assistant's own message: the assistant's) and a line of
+  // it, jumping to the original on click.
+  const quoted = m.reply_author_kind === "assistant" ? (m.reply_assistant_name ?? DEFAULT_ASSISTANT_NAME) : m.reply_mine ? "You" : m.reply_sender_name;
   const quote = m.reply_to_id && !m.deleted_at ? (
     <a href={`#m-${m.reply_to_id}`} className="mb-2 flex max-w-full items-stretch gap-2 rounded-lg border border-border bg-fill-1 px-2.5 py-1.5 no-underline transition-colors duration-75 hover:bg-fill-150">
       <span className="w-0.5 shrink-0 self-stretch rounded-full bg-secondary" aria-hidden />
-      <span className="min-w-0 text-meta"><span className="block truncate font-semibold text-foreground">{m.reply_mine ? "You" : m.reply_sender_name}</span><span className={cn("block truncate font-normal text-secondary", m.reply_body === "" && "italic")}>{m.reply_body === "" ? "Message withdrawn" : m.reply_body}</span></span>
+      <span className="min-w-0 text-meta"><span className="block truncate font-semibold text-foreground">{quoted}</span><span className={cn("block truncate font-normal text-secondary", m.reply_body === "" && "italic")}>{m.reply_body === "" ? "Message withdrawn" : m.reply_body}</span></span>
     </a>
   ) : null;
   return (
-    <MessageBubble mine={m.mine} grouped={grouped} withdrawn={!!m.deleted_at} name={m.sender_name} time={time} quote={quote}
-      avatar={<Avatar profileId={m.sender_profile_id} name={m.sender_name} avatarKey={m.sender_avatar_key} size={32} />}
+    <MessageBubble mine={m.mine} grouped={grouped} withdrawn={!!m.deleted_at} name={name} time={time} quote={quote}
+      nameAdornment={byAssistant ? <Badge size="sm">{isOwnAssistant ? "Your assistant" : `${firstName(m.sender_name)}'s assistant`}</Badge> : m.mine ? null : via}
+      timeAdornment={m.mine ? via : null}
+      avatar={byAssistant ? <AssistantAvatar assistant={byAssistant} /> : <Avatar profileId={m.sender_profile_id} name={m.sender_name} avatarKey={m.sender_avatar_key} size={32} />}
       footer={m.task_id && !m.deleted_at ? (
         <Link href={`/app/${orgSlug}/tasks/${m.task_id}`} className="inline-flex h-8 max-w-full items-center gap-2 rounded-lg border border-border-input bg-background px-2.5 text-meta font-medium text-foreground transition-colors duration-75 hover:border-border-input-hover hover:bg-fill-0">
           <SquareCheckBig className="size-3.5 shrink-0 text-secondary" aria-hidden /><span className="truncate">{m.task_title}</span>{m.task_status ? <Badge tone={TASK_STATUS_TONE[m.task_status] ?? "neutral"}>{taskStatusLabel(m.task_status)}</Badge> : null}
         </Link>
       ) : null}
-      actions={!m.deleted_at ? <MessageMenu orgSlug={orgSlug} id={m.id} mine={m.mine} body={m.body} isVoice={!!m.voice_key} senderName={m.sender_name} canReply={canReply} /> : null}>
+      actions={!m.deleted_at ? <MessageMenu orgSlug={orgSlug} id={m.id} mine={m.mine} body={m.body} isVoice={!!m.voice_key} senderName={name} canReply={canReply} canReport={!m.mine && !isOwnAssistant} /> : null}>
       {m.deleted_at ? "Message withdrawn" : m.voice_key && m.voice_seconds ? <VoiceNote src={`/api/orgs/${orgSlug}/messages/${m.id}/voice`} seconds={m.voice_seconds} mine={m.mine} /> : <span className="whitespace-pre-wrap break-words">{m.body}</span>}
     </MessageBubble>
   );

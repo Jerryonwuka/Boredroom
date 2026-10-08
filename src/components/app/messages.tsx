@@ -295,8 +295,12 @@ function TextDialog({ open, onClose, title, description, label, initial = "", su
   );
 }
 
-/** The reply arrow and the "…" beside a bubble: 28px ghost buttons (40px on touch). */
-export function MessageMenu({ orgSlug, id, mine, body, isVoice, senderName, canReply = true }: { orgSlug: string; id: string; mine: boolean; body: string; isVoice: boolean; senderName: string; canReply?: boolean }) {
+/**
+ * The reply arrow and the "…" beside a bubble: 28px ghost buttons (40px on touch). `canReport` is false for your own
+ * assistant's own message, which is neither yours to edit nor someone else's to report (personal assistants, phase 3,
+ * owner decision, 8 October 2026); `senderName` is then the assistant's name, so a reply says "Replying to Max".
+ */
+export function MessageMenu({ orgSlug, id, mine, body, isVoice, senderName, canReply = true, canReport = !mine }: { orgSlug: string; id: string; mine: boolean; body: string; isVoice: boolean; senderName: string; canReply?: boolean; canReport?: boolean }) {
   const router = useRouter();
   const { setReply } = useReply();
   const [sheet, setSheet] = useState<"edit" | "report" | "withdraw" | null>(null);
@@ -317,7 +321,7 @@ export function MessageMenu({ orgSlug, id, mine, body, isVoice, senderName, canR
         {canReply ? <MenuItem icon={<Reply aria-hidden />} onSelect={startReply}>Reply</MenuItem> : null}
         {!isVoice ? <MenuItem icon={<Copy aria-hidden />} onSelect={() => void copy()}>Copy text</MenuItem> : null}
         {mine && !isVoice ? <MenuItem icon={<Pencil aria-hidden />} onSelect={() => open("edit")}>Edit</MenuItem> : null}
-        {!mine ? <MenuItem icon={<Flag aria-hidden />} onSelect={() => open("report")}>Report</MenuItem> : null}
+        {!mine && canReport ? <MenuItem icon={<Flag aria-hidden />} onSelect={() => open("report")}>Report</MenuItem> : null}
         {mine ? <><MenuSeparator /><MenuItem tone="danger" icon={<Trash2 aria-hidden />} onSelect={() => open("withdraw")}>Withdraw</MenuItem></> : null}
       </Menu>
       {opened.edit ? <TextDialog key={`edit-${opened.edit}`} open={sheet === "edit"} onClose={() => setSheet(null)} title="Edit message" label="Message" initial={body} submitLabel="Save" pendingLabel="Saving…" onSubmit={async (text) => { await api(`/api/orgs/${orgSlug}/messages/${id}`, { method: "PATCH", body: { body: text }, retries: 0 }); router.refresh(); }} /> : null}

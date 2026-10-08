@@ -24,6 +24,10 @@ import { AssistantScope } from "@/components/app/assistant-context";
 import { MyAssistantSettings, WorkspaceAssistantSettings } from "@/components/app/assistant-settings";
 import { MyVoiceSettings } from "@/components/app/assistant-voice-settings";
 import { assistantProfiles } from "@/server/services/assistant-profile";
+import { AssistantActivityCard } from "@/components/app/assistant-activity";
+import { listActivity } from "@/server/services/assistant-activity";
+import { BrendaUsageCard } from "@/components/app/brenda-usage";
+import { usageSummary } from "@/server/services/ai-usage";
 import type { AssistantProfiles } from "@/lib/assistant-look";
 import { cn } from "@/lib/utils";
 
@@ -58,6 +62,11 @@ const MODE_LABEL: Record<string, string> = { disabled: "Off", optional: "On, eac
  *
  * Her voice (owner decision, 7 October 2026: phase 2): "Your assistant" also holds Voice (when the assistant reads
  * replies aloud, saved to the account; which voice and how fast, kept in this browser).
+ *
+ * Personal assistants, phase 3 (owner decision, 8 October 2026): "Your assistant" ends with "What Max did", the latest
+ * five things the person's assistant did or read for them and a link to the whole list (/home/activity). The Brenda
+ * section gains "Usage this month" for owners and HR (requests and tokens by purpose and the people with the most
+ * requests; no prices), after the daily report and before the AI connection.
  */
 export default async function SettingsPage({ params, searchParams }: { params: Promise<{ workspace: string }>; searchParams: Promise<{ section?: string; setup?: string; billing?: string; plan?: string }> }) {
   const { workspace } = await params;
@@ -77,15 +86,26 @@ export default async function SettingsPage({ params, searchParams }: { params: P
   // The open section's explanatory notes, shown at the bottom of the page after "Every change is audited."
   let notes: ReactNode = null;
   if (section === "assistant") {
-    assistants = await assistantProfiles(ctx);
+    const [a, activity] = await Promise.all([assistantProfiles(ctx), listActivity(ctx, { limit: 5 })]);
+    assistants = a;
+    const { name } = a.personal;
+    const now = new Date(); // the server's clock, so "Today" in the activity rows reads the same on both sides
     // Her voice (owner decision, 7 October 2026: phase 2): a second card under the name and look, saved as it changes.
+    // Then what the assistant did or read for the person (phase 3), always their own whatever the role.
     body = (
       <>
-        <MyAssistantSettings orgSlug={ctx.org.slug} initial={assistants.personal} impersonated={!!ctx.user.impersonation} />
-        <MyVoiceSettings orgSlug={ctx.org.slug} name={assistants.personal.name} speak={assistants.speak} impersonated={!!ctx.user.impersonation} />
+        <MyAssistantSettings orgSlug={ctx.org.slug} initial={a.personal} impersonated={!!ctx.user.impersonation} />
+        <MyVoiceSettings orgSlug={ctx.org.slug} name={name} speak={a.speak} impersonated={!!ctx.user.impersonation} />
+        <AssistantActivityCard orgSlug={ctx.org.slug} timeZone={ctx.org.timezone} name={name} items={activity.items} now={now.getTime()} />
       </>
     );
-    notes = <PageNote section="Your assistant">The name and look change how your assistant appears to you and in the desktop app. What it can do for you stays the same. Voices come from this computer; your choice of voice and speed is kept in this browser.</PageNote>;
+    notes = (
+      <>
+        <PageNote section="Your assistant">The name and look change how your assistant appears to you and in the desktop app. What it can do for you stays the same. Voices come from this computer; your choice of voice and speed is kept in this browser.</PageNote>
+        <PageNote section={`What ${name} did`}>{name} reads your conversations only when you ask it to catch you up, and only conversations you are in. Reading never marks them as read.</PageNote>
+        {activity.readsHidden ? <PageNote section={`What ${name} did`}>What {name} read is hidden while someone else is signed in as this person.</PageNote> : null}
+      </>
+    );
   } else if (section === "general" || section === "hours" || section === "recording") {
     const [view, a] = await Promise.all([settingsView(ctx), assistantProfiles(ctx)]);
     const { policy, schedule, grants, members, teams, counts: c } = view;
@@ -185,7 +205,7 @@ export default async function SettingsPage({ params, searchParams }: { params: P
       );
     }
   } else if (section === "brenda") {
-    const [ai, brenda, a] = await Promise.all([assistantStatus(ctx), brendaOverview(ctx), assistantProfiles(ctx)]);
+    const [ai, brenda, a, usage] = await Promise.all([assistantStatus(ctx), brendaOverview(ctx), assistantProfiles(ctx), usageSummary(ctx)]);
     assistants = a;
     body = (
       <>
@@ -197,6 +217,8 @@ export default async function SettingsPage({ params, searchParams }: { params: P
         </SettingsSection>
         {/* The Reports page is gone; Brenda sends supervisors the day's team report instead (owner decision, 5 October 2026). */}
         <BrendaReportSettings orgSlug={ctx.org.slug} initial={brenda.settings} timezone={ctx.org.timezone} inPlan={ctx.plan.features.AI_ASSISTANT === true} />
+        {/* This month's requests and tokens (owner decision, 8 October 2026: personal assistants, phase 3). */}
+        <BrendaUsageCard usage={usage} />
         <SettingsSection id="ai" title="AI connection" description="Brenda runs on Claude. Connect an Anthropic API key so she can act; without one a simple built-in helper answers and only suggests, and says so.">
           {isOwner ? <AssistantConnectionForm orgSlug={ctx.org.slug} status={ai} /> : <Alert tone="info">Only owners can connect Brenda to Claude.</Alert>}
         </SettingsSection>
@@ -206,10 +228,12 @@ export default async function SettingsPage({ params, searchParams }: { params: P
       <>
         <PageNote section="Workspace assistant">Each person still has their own assistant; this one only signs what the workspace sends by itself.</PageNote>
         <PageNote section="Brenda">She reads what each person is allowed to see, does their own work for them, and asks before anything that lands on someone else.</PageNote>
+        <PageNote section="Usage this month">Usage counts requests from this month only and resets on the 1st.</PageNote>
         {isOwner ? (
           <>
             <PageNote section="AI connection">The key is tested with one request, then stored encrypted and never shown again.</PageNote>
             <PageNote section="AI connection">Each request Brenda makes to Anthropic is billed to the key. What is sent: the request and what she needed to read for it, and only what the person asking is allowed to see.</PageNote>
+            <PageNote section="AI connection">When someone asks to catch up on messages, the messages read for them are sent to Anthropic too, only from conversations they are in.</PageNote>
           </>
         ) : null}
       </>

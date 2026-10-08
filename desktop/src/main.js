@@ -467,7 +467,7 @@ el.addEventListener("click", async (e) => {
     if (act === "confirm") return confirmProposal(target.dataset.token);
     if (act === "drop-send") return sendDrop();
     if (act === "drop-task") { card.taskId = target.value; return; }
-    if (act === "not-now") return declineConfirms();
+    if (act === "not-now") return declineConfirms(target.dataset.token);
     if (act === "read") { await call("PATCH", org(`/notifications/${target.dataset.id}`)); data.notifications = data.notifications.filter((n) => n.id !== target.dataset.id); return closeCard(); }
     busy = true; render();
     const t = data?.timer;
@@ -603,7 +603,7 @@ window.addEventListener("keydown", (e) => {
   const confirm = (card.proposals ?? []).find((p) => p.kind === "confirm");
   if (!confirm) return;
   if (e.key === "y" || e.key === "Y") confirmProposal(confirm.token);
-  if (e.key === "n" || e.key === "N") declineConfirms();
+  if (e.key === "n" || e.key === "N") declineConfirms(confirm.token);
 });
 
 function talkButton() {
@@ -842,10 +842,12 @@ function voiceView() {
     // What the built-in helper offers as one press (a to-do, clocking in or out, a timer), as on the web; not while
     // something waits for a yes, so the card keeps its height.
     const offers = confirms.length ? [] : proposals.map((p, i) => ({ p, i })).filter(({ p }) => OFFER[p.kind]).slice(0, 3);
-    return `<div class="row fade top">${face(moodOf())}<div class="grow"><p class="said">“${esc(c.heard)}”</p><div class="reply">${md(c.reply)}</div></div></div>
+    // The note under her answer (past the daily limit, or Claude could not be reached), as the web shows it.
+    const note = c.msg?.note ? `<p class="cap note">${esc(c.msg.note)}</p>` : "";
+    return `<div class="row fade top">${face(moodOf())}<div class="grow"><p class="said">“${esc(c.heard)}”</p><div class="reply">${md(c.reply)}</div>${note}</div></div>
       ${c.actions?.length ? `<ul class="list fade">${c.actions.slice(0, confirms.length ? 2 : 4).map((a) => `<li class="done"><span class="k ok">${icon("check")}</span><span class="t">${esc(a.summary)}</span></li>`).join("")}</ul>` : ""}
       ${offers.length ? `<ul class="list fade">${offers.map(({ p, i }) => `<li><span class="t">${offerLabel(p)}</span>${p.done ? `<span class="k ok end">${esc(p.done)}</span>` : `<button class="btn" data-act="offer" data-i="${i}" ${busy ? "disabled" : ""}>${icon(OFFER[p.kind].icon)}${OFFER[p.kind].label}</button>`}</li>`).join("")}</ul>` : ""}
-      ${confirms.map((p, i) => `<div class="confirm fade"><p class="sub">${icon("shield")}<span>${esc(p.summary)}</span></p><div class="actions">${i === 0 ? listenButton() : ""}<button class="btn ghost" data-act="not-now">Not now <kbd>N</kbd></button><button class="btn primary" data-act="confirm" data-token="${esc(p.token)}" ${busy ? "disabled" : ""}>${icon("check")}Confirm <kbd>Y</kbd></button></div></div>`).join("")}
+      ${confirms.map((p, i) => `<div class="confirm fade"><p class="sub">${icon("shield")}<span>${esc(p.summary)}</span></p>${p.detail ? `<div class="detail" tabindex="0" aria-label="The full message">${esc(p.detail)}</div>` : ""}<div class="actions">${i === 0 ? listenButton() : ""}<button class="btn ghost" data-act="not-now" data-token="${esc(p.token)}">Not now${i === 0 ? " <kbd>N</kbd>" : ""}</button><button class="btn primary" data-act="confirm" data-token="${esc(p.token)}" ${busy ? "disabled" : ""}>${icon("check")}Confirm${i === 0 ? " <kbd>Y</kbd>" : ""}</button></div></div>`).join("")}
       ${!confirms.length ? askBox("Ask a follow-up…") : ""}
       ${!confirms.length ? `<div class="actions">${listenButton()}${opens.map((p) => `<button class="btn" data-act="open-href" data-href="${esc(p.href)}">${esc(p.label)}${icon("open")}</button>`).join("")}<button class="btn ghost" data-act="open-chat" title="Carry on with this chat on ${esc(`${me().name}'s`)} page in Boredroom">Open chat</button><button class="btn ghost" data-act="close">Done</button></div>` : ""}`;
   }
@@ -929,21 +931,31 @@ async function confirmProposal(token) {
   refresh();
   Sound.play(r.error ? "error" : "success");
   if (!card || card.msg !== msg) return render(); // the card moved on meanwhile
-  card = { ...card, proposals: (card.proposals ?? []).filter((p) => p.kind !== "confirm"), sticky: false, reply: said, actions: r.error ? [] : r.actions,
+  // Only the Confirm that was pressed leaves the card: another one (a second message in the same answer) still waits for
+  // its own yes or no, and the card stays open until it has one (review, 8 October 2026).
+  const rest = (card.proposals ?? []).filter((p) => !(p.kind === "confirm" && p.token === token));
+  const waiting = rest.some((p) => p.kind === "confirm");
+  card = { ...card, proposals: rest, sticky: waiting, reply: said, actions: r.error ? [] : r.actions,
     // The server's speakable words (never a URL, an id or a `say` command from a typed title); an older server's plain().
     spokenText: typeof r.spoken === "string" ? r.spoken : plain(said) };
-  render(); scheduleClose();
+  render(); if (!waiting) scheduleClose();
   // What the Confirm did is read aloud under the same rule as the answer; otherwise she stops reading the question.
   if (speaksFor(card.spoken)) sayAloud(card.spokenText);
   else hush();
 }
 
-/** Not now: nothing runs, and the kept conversation says it was declined. */
-function declineConfirms() {
+/**
+ * Not now: nothing runs, and the kept conversation says it was declined. With a token, only that Confirm is declined and
+ * any other one stays on the card waiting for its answer; without one, all of them.
+ */
+function declineConfirms(token) {
   if (!card) return;
-  markDone(card.msg, (card.proposals ?? []).filter((p) => p.kind === "confirm").map((p) => p.at), "Not done");
-  card = { ...card, proposals: (card.proposals ?? []).filter((p) => p.kind !== "confirm"), sticky: false };
-  render(); scheduleClose();
+  const declined = (p) => p.kind === "confirm" && (!token || p.token === token);
+  markDone(card.msg, (card.proposals ?? []).filter(declined).map((p) => p.at), "Not done");
+  const rest = (card.proposals ?? []).filter((p) => !declined(p));
+  const waiting = rest.some((p) => p.kind === "confirm");
+  card = { ...card, proposals: rest, sticky: waiting };
+  render(); if (!waiting) scheduleClose();
   saveChat();
 }
 
@@ -1002,7 +1014,7 @@ function forSaving(messages) {
     role: m.role,
     content: clip(String(m.content ?? ""), KEEP.content),
     ...(m.actions?.length ? { actions: m.actions } : {}),
-    ...(m.proposals?.length ? { proposals: m.proposals.map((p) => (p.kind === "confirm" ? { kind: p.kind, summary: p.summary, tool: p.tool, ...(p.done ? { done: p.done } : {}) } : p)) } : {}),
+    ...(m.proposals?.length ? { proposals: m.proposals.map((p) => (p.kind === "confirm" ? { kind: p.kind, summary: p.summary, tool: p.tool, ...(p.detail ? { detail: p.detail } : {}), ...(p.done ? { done: p.done } : {}) } : p)) } : {}),
     ...(m.engine ? { engine: m.engine } : {}),
     ...(m.note ? { note: m.note } : {}),
   }));

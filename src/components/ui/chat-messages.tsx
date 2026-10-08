@@ -34,6 +34,9 @@ export function TypingIndicator({ className }: { className?: string }) {
  * 2026). `grouped` bubbles (same sender within a few minutes) drop the name, keep the full radius and sit 4px apart.
  * `quote` is the message this one replies to, shown inside the bubble above the text. The reply and menu buttons show
  * on hover and keyboard focus, and while their menu is open; a touch screen has no hover, so there they always show.
+ * `nameAdornment` sits after the name and the time (so a narrow column wraps the chip, not the time), in the name row of other people's messages; `timeAdornment`
+ * before the time under your own (personal assistants, phase 3, owner decision, 8 October 2026: the "via Max" chip and
+ * an assistant's "Olu's assistant" tag). Both rows wrap at narrow widths rather than push the bubble wider.
  *
  * Motion answers an action: a bubble fades up 6px only when it arrives on its own (a new message, yours or theirs). A
  * thread that opens, or a page that loads with its conversation, shows its bubbles at rest: bubbles that mount in the
@@ -53,7 +56,7 @@ function queueEntrance(el: HTMLElement, mine: boolean) {
   });
 }
 
-export function MessageBubble({ mine, avatar, name, time, grouped = false, withdrawn = false, children, footer, actions, quote, className }: { mine: boolean; avatar?: ReactNode; name?: string; time?: ReactNode; grouped?: boolean; withdrawn?: boolean; children: ReactNode; footer?: ReactNode; actions?: ReactNode; quote?: ReactNode; className?: string }) {
+export function MessageBubble({ mine, avatar, name, time, grouped = false, withdrawn = false, children, footer, actions, quote, nameAdornment, timeAdornment, className }: { mine: boolean; avatar?: ReactNode; name?: string; time?: ReactNode; grouped?: boolean; withdrawn?: boolean; children: ReactNode; footer?: ReactNode; actions?: ReactNode; quote?: ReactNode; nameAdornment?: ReactNode; timeAdornment?: ReactNode; className?: string }) {
   const reduced = useReducedMotion();
   const ref = useRef<HTMLDivElement>(null);
   // Once, on mount: whether it moves is decided by what else mounted with it (see queueEntrance).
@@ -64,7 +67,7 @@ export function MessageBubble({ mine, avatar, name, time, grouped = false, withd
       <div className={cn("flex max-w-[min(80%,40rem)] items-end gap-2", mine && "flex-row-reverse")}>
         {avatar ? <div className="w-8 shrink-0">{grouped ? null : avatar}</div> : null}
         <div className="min-w-0">
-          {!grouped && !mine && name ? <p className="mb-1 flex items-baseline gap-2 pl-1"><span className="text-meta font-semibold text-foreground">{name}</span><span className="text-xs font-medium text-subtle">{time}</span></p> : null}
+          {!grouped && !mine && name ? <p className="mb-1 flex flex-wrap items-baseline gap-x-2 gap-y-0.5 pl-1"><span className="text-meta font-semibold text-foreground">{name}</span><span className="text-xs font-medium text-subtle">{time}</span>{nameAdornment ? <span className="flex min-w-0 self-center">{nameAdornment}</span> : null}</p> : null}
           <div className={cn("relative break-words rounded-2xl px-3.5 py-2 text-sm font-normal",
             withdrawn ? "border border-dashed border-border-input bg-transparent italic text-subtle"
               : mine ? cn("bg-grey-100 text-foreground", !grouped && "rounded-tr-md")
@@ -73,7 +76,9 @@ export function MessageBubble({ mine, avatar, name, time, grouped = false, withd
             {children}
           </div>
           {footer ? <div className={cn("mt-1.5", mine ? "text-right" : "pl-1")}>{footer}</div> : null}
-          {mine && !grouped && time ? <p className="mt-1 pr-1 text-right text-xs font-medium text-subtle">{time}</p> : null}
+          {mine && !grouped && time ? (timeAdornment
+            ? <p className="mt-1 flex flex-wrap items-center justify-end gap-x-2 gap-y-0.5 pr-1 text-xs font-medium text-subtle">{timeAdornment}<span>{time}</span></p>
+            : <p className="mt-1 pr-1 text-right text-xs font-medium text-subtle">{time}</p>) : null}
         </div>
         {actions ? <div className="self-center opacity-0 transition-opacity duration-75 focus-within:opacity-100 group-hover:opacity-100 has-[[aria-expanded=true]]:opacity-100 pointer-coarse:opacity-100">{actions}</div> : null}
       </div>

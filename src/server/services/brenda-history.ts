@@ -22,6 +22,8 @@ import { z } from "zod";
 import { withSystem, withUser } from "@/server/db";
 import { parseBody, type OrgContext } from "@/server/lib/api";
 import { conflict, forbidden, invalid, notFound } from "@/server/lib/errors";
+/** The longest Confirm token (copilot.ts); a literal here so this module does not load the copilot. */
+const CONFIRM_TOKEN_MAX = 40_000;
 
 /** The idempotency route name of a new conversation's save (api/orgs/[org]/brenda/conversations, POST). */
 export const CREATE_ROUTE = "brenda.conversations.create";
@@ -58,8 +60,9 @@ const proposalSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("clock_out"), done }),
   z.object({ kind: z.literal("start_timer"), taskId: z.string().uuid(), taskTitle: text(500), done }),
   z.object({ kind: z.literal("open"), href, label: text(200), done }),
-  // The token is accepted so a client may send the conversation as it holds it; it is never stored.
-  z.object({ kind: z.literal("confirm"), token: text(8000).optional(), summary: told(2000), tool: text(80), done }),
+  // The token is accepted so a client may send the conversation as it holds it; it is never stored. `detail` is the whole
+  // message a Confirm would send (up to 4,000 characters).
+  z.object({ kind: z.literal("confirm"), token: text(CONFIRM_TOKEN_MAX).optional(), summary: told(2000), tool: text(80), detail: told(4000).optional(), done }),
 ]);
 
 const messageSchema = z.object({
@@ -84,7 +87,7 @@ export const updateConversationSchema = createConversationSchema.extend({
 });
 
 type ParsedMessage = z.infer<typeof messageSchema>;
-type StoredProposal = Exclude<NonNullable<ParsedMessage["proposals"]>[number], { kind: "confirm" }> | { kind: "confirm"; summary: string; tool: string; done?: string };
+type StoredProposal = Exclude<NonNullable<ParsedMessage["proposals"]>[number], { kind: "confirm" }> | { kind: "confirm"; summary: string; tool: string; detail?: string; done?: string };
 /** A message as stored and returned: a confirm proposal keeps its summary and done label, never its token. */
 export type StoredMessage = Omit<ParsedMessage, "proposals"> & { proposals?: StoredProposal[] };
 
@@ -115,7 +118,7 @@ export async function parseConversationBody<T>(req: Request, schema: z.ZodType<T
 export function stripTokens(messages: ParsedMessage[]): StoredMessage[] {
   return messages.map((m) => (m.proposals ? {
     ...m,
-    proposals: m.proposals.map((p): StoredProposal => (p.kind === "confirm" ? { kind: "confirm", summary: p.summary, tool: p.tool, ...(p.done ? { done: p.done } : {}) } : p)),
+    proposals: m.proposals.map((p): StoredProposal => (p.kind === "confirm" ? { kind: "confirm", summary: p.summary, tool: p.tool, ...(p.detail ? { detail: p.detail } : {}), ...(p.done ? { done: p.done } : {}) } : p)),
   } : m));
 }
 

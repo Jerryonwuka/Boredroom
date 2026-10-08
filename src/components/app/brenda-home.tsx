@@ -41,16 +41,21 @@
  * Her voice (owner decision, 7 October 2026: phase 2): the chat reads replies aloud as the person chose, with Listen on
  * each reply (brenda-chat). Back to her home screen and New chat stop her; leaving the page does too (the chat goes
  * away). While she speaks her drawn character and every face of hers talk (brenda-character, brenda-face).
+ *
+ * Catching up (owner decision, 8 October 2026: personal assistants, phase 3): "What did I miss?" is the first quick ask
+ * for everyone and "Catch me up on messages" is in "More asks"; like every ask they only fill the box. "What Max did"
+ * (/home/activity: everything the person's assistant did or read for them) is a pill in the home screen's top row,
+ * between Past chats and Brenda settings, and an icon link in the chat's header right after Past chats, at every width.
  */
 import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import {
-  AnimatedAlarmClock, AnimatedArrowLeft, AnimatedCalendarCheck, AnimatedCircleAlert, AnimatedClipboardCheck, AnimatedClock, AnimatedFileText,
-  AnimatedHistory, AnimatedListOrdered, AnimatedListPlus, AnimatedMessageSquareReply, AnimatedMessagesSquare, AnimatedPlay, AnimatedPlus, AnimatedSend,
+  AnimatedActivity, AnimatedAlarmClock, AnimatedArrowLeft, AnimatedCalendarCheck, AnimatedCircleAlert, AnimatedClipboardCheck, AnimatedClock, AnimatedFileText,
+  AnimatedHistory, AnimatedInbox, AnimatedListOrdered, AnimatedListPlus, AnimatedMessageSquareReply, AnimatedMessagesSquare, AnimatedPlay, AnimatedPlus, AnimatedSend,
   AnimatedSettings, AnimatedTimer, AnimatedUserPlus, AnimatedUsers,
 } from "@/components/ui/animated-icons";
 import { buttonVariants } from "@/components/ui/button";
-import { IconButton } from "@/components/ui/icon-button";
+import { IconButton, ICON_BUTTON } from "@/components/ui/icon-button";
 import { PromptTextAction } from "@/components/ui/ai-prompt-box";
 import { Menu, MenuItem, MenuLabel } from "@/components/ui/menu";
 import { ToolTile, ToolTileRow } from "@/components/ui/tool-tile";
@@ -104,14 +109,19 @@ const ASKS: Record<"worker" | "lead", Ask[]> = {
   ],
 };
 
-/** Her quick asks on her home screen: chips above the box (the label, then a small icon). Each fills the box, never sends. */
+/** The catch-up ask, first among the quick asks for everyone (owner decision, 8 October 2026: personal assistants, phase 3). */
+const CATCH_UP: Ask = { icon: AnimatedInbox, label: "What did I miss?", prompt: "What did I miss in Messages? Catch me up." };
+
+/** Her quick asks on her home screen: chips above the box (the label, then a small icon). Each fills the box, never sends. Four wrap at 400px. */
 const QUICK: Record<"worker" | "lead", Ask[]> = {
   worker: [
+    CATCH_UP,
     { icon: AnimatedCalendarCheck, label: "What's due today?", prompt: "What's waiting for me today?" },
     { icon: AnimatedAlarmClock, label: "Set a reminder", prompt: "Remind me to " },
     { icon: AnimatedTimer, label: "Start a timer", prompt: "Start the timer on " },
   ],
   lead: [
+    CATCH_UP,
     { icon: AnimatedUsers, label: "Who's working?", prompt: "Who is working right now, and on what?" },
     { icon: AnimatedCircleAlert, label: "Who's late?", prompt: "Who is late or hasn't clocked in today?" },
     { icon: AnimatedUserPlus, label: "Assign a task", prompt: "Assign a task to " },
@@ -143,6 +153,7 @@ function moreAsks(role: HomeData["role"]): Ask[] {
     ...(worker ? [{ icon: AnimatedClock, label: "Clock me in", prompt: "Clock me in." }, { icon: AnimatedPlay, label: "Start my timer", prompt: "Start the timer on " }] : []),
     { icon: AnimatedAlarmClock, label: "Set a reminder", prompt: "Remind me to " },
     { icon: AnimatedSend, label: "Send a message", prompt: "Send a message to " },
+    { icon: AnimatedInbox, label: "Catch me up on messages", prompt: "Catch me up on my messages." },
     { icon: AnimatedFileText, label: "Write a document", prompt: "Help me write a document about " },
   ];
 }
@@ -309,6 +320,11 @@ export function BrendaHome({ data }: { data: HomeData }) {
                 <span className="max-sm:sr-only">Past chats</span>{history.length ? <CountPill count={history.length} className="max-sm:hidden" /> : null}<AnimatedHistory aria-hidden />
               </button>
             ) : null}
+            {/* What the person's own assistant did or read for them (phase 3). Not gated by the plan: a record of what
+                happened stays readable, as past chats' are. */}
+            <Link href={`${base}/home/activity`} className={cn(pill, iconOnPhones)}>
+              <span className="max-sm:sr-only">What {name} did</span><AnimatedActivity aria-hidden />
+            </Link>
             {isOrg ? (
               <Link href={`${base}/settings?section=brenda`} className={cn(pill, iconOnPhones)}>
                 <span className="max-sm:sr-only">Brenda settings</span><AnimatedSettings aria-hidden />
@@ -497,13 +513,16 @@ function ChatView({ data, chat, box, onBack, onNewChat, history, sheet, onSheet,
         <div className="ml-1 min-w-0 flex-1">
           <h1 className="truncate font-sans text-sm font-semibold tracking-normal text-foreground">{name}</h1>
           <p role="status" className="flex items-center gap-1.5 truncate text-xs font-normal text-secondary">
-            <StatusDot tone={dot} size={6} />{status}
+            <StatusDot tone={dot} size={6} /><span className="min-w-0 truncate">{status}</span>
           </p>
         </div>
         <IconButton ref={sheetButton} className="lg:hidden" aria-label="Past chats" aria-expanded={sheet} aria-controls="brenda-past-chats" onClick={() => (sheet ? onSheet(false) : openSheet())}>
           <AnimatedHistory aria-hidden />
         </IconButton>
-        <button type="button" onClick={onNewChat} className={buttonVariants({ variant: "secondary", size: "sm" })}><AnimatedPlus aria-hidden />New chat</button>
+        {/* Everything the person's assistant did or read for them (phase 3), at every width; the tooltip reads its name. */}
+        <Link href={`/app/${data.orgSlug}/home/activity`} className={ICON_BUTTON} aria-label={`What ${name} did`}><AnimatedActivity aria-hidden /></Link>
+        {/* Icon only on phones, as the home pills are, so her name and status keep their room at ~400px. */}
+        <button type="button" onClick={onNewChat} className={cn(buttonVariants({ variant: "secondary", size: "sm" }), "max-sm:w-8 max-sm:px-0 max-sm:pointer-coarse:w-10")}><AnimatedPlus aria-hidden /><span className="max-sm:sr-only">New chat</span></button>
       </header>
 
       <div className="relative flex min-h-0 flex-1">

@@ -21,6 +21,7 @@ import { reviewQueue } from "@/server/services/views";
 import { invalid, notFound, forbidden } from "@/server/lib/errors";
 import { localDate, weekdayOf } from "@/server/lib/time";
 import { assistantSchemaReady, readPersonalAssistant } from "@/server/services/assistant-profile";
+import { rowSummary } from "@/server/services/assistant-activity";
 
 // ---- What is allowed --------------------------------------------------------------------------------
 
@@ -89,7 +90,11 @@ export async function setBrendaPrefs(ctx: OrgContext, input: z.infer<typeof sett
   });
 }
 
-/** Everything the settings and profile pages show about Brenda for this person. */
+/**
+ * Everything the settings and profile pages show about Brenda for this person. The log is about her actions: what she
+ * read for someone to catch them up (source 'read') is theirs alone and lives on their Activity page (owner decision,
+ * 8 October 2026: personal assistants, phase 3; row-level security hides it from owners and HR as well).
+ */
 export async function brendaOverview(ctx: OrgContext) {
   return withUser(ctx.user.profileId, async (db) => {
     const isOrg = ctx.membership.role === "owner" || ctx.membership.role === "hr";
@@ -99,15 +104,20 @@ export async function brendaOverview(ctx: OrgContext) {
       db.query<{ id: string; tool: string; summary: string; outcome: string; source: string; created_at: string; display_name: string }>(
         `SELECT a.id, a.tool, a.summary, a.outcome, a.source, a.created_at, pr.display_name
          FROM brenda_actions a JOIN memberships m ON m.id = a.membership_id JOIN profiles pr ON pr.id = m.user_id
-         WHERE a.organisation_id = $1 ${isOrg ? "" : "AND a.membership_id = $2"} ORDER BY a.created_at DESC LIMIT 30`, isOrg ? [ctx.org.id] : [ctx.org.id, ctx.membership.id]),
+         WHERE a.organisation_id = $1 AND a.source <> 'read' ${isOrg ? "" : "AND a.membership_id = $2"} ORDER BY a.created_at DESC LIMIT 30`, isOrg ? [ctx.org.id] : [ctx.org.id, ctx.membership.id]),
     ]);
-    return { settings, prefs, actions };
+    // The row's own summary, never the person's fuller words; a row that did not go through says what she tried.
+    return { settings, prefs, actions: actions.map((a) => ({ ...a, summary: rowSummary(a, false) })) };
   });
 }
 
 // ---- The action log -----------------------------------------------------------------------------------
 
-export type ActionEntry = { tool: string; summary: string; outcome: "done" | "confirmed" | "refused" | "failed"; source?: "chat" | "confirm" | "automatic"; detail?: Record<string, unknown> };
+/**
+ * One line of her log. `source` 'read' (migration 0037) is a catch-up read: what she read for the person, written by
+ * server/services/catch-up only once 0037 is applied (owner decision, 8 October 2026: personal assistants, phase 3).
+ */
+export type ActionEntry = { tool: string; summary: string; outcome: "done" | "confirmed" | "refused" | "failed"; source?: "chat" | "confirm" | "automatic" | "read"; detail?: Record<string, unknown> };
 
 export async function logAction(db: Db, ctx: OrgContext, e: ActionEntry) {
   await db.query(`INSERT INTO brenda_actions(organisation_id, membership_id, tool, summary, outcome, source, detail) VALUES ($1, $2, $3, $4, $5, $6, $7)`,

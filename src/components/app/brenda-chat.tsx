@@ -67,9 +67,11 @@ import type { Conversation, ConversationSummary, StoredMessage } from "@/server/
 
 export type BrendaMsg = { role: "user" | "assistant"; content: string; actions?: Action[]; proposals?: (Proposal & { done?: string })[]; engine?: ChatResult["engine"]; note?: string | null };
 
+// The drawer's starters, listed one under another. Catching up on Messages is second for everyone (owner decision,
+// 8 October 2026: personal assistants, phase 3).
 export const STARTERS: Record<"org" | "worker", string[]> = {
-  org: ["What's waiting for me today?", "Who is working right now?", "Which assignments has nobody picked up?", "Summarise what the team got done this week"],
-  worker: ["What's waiting for me today?", "Arrange my tasks for today", "Start the timer on my highest-priority task", "Remind me to call Josh at 7"],
+  org: ["What's waiting for me today?", "What did I miss in Messages?", "Who is working right now?", "Which assignments has nobody picked up?", "Summarise what the team got done this week"],
+  worker: ["What's waiting for me today?", "What did I miss in Messages?", "Arrange my tasks for today", "Start the timer on my highest-priority task", "Remind me to call Josh at 7"],
 };
 
 // What the history keeps (CONVERSATION_LIMITS in server/services/brenda-history.ts): the newest 200 messages, each up
@@ -151,7 +153,7 @@ function forSaving(messages: BrendaMsg[]) {
   return messages.slice(-KEEP.messages).map((m) => ({
     ...m,
     content: clip(m.content, KEEP.content),
-    proposals: m.proposals?.map((p) => (p.kind === "confirm" ? { kind: p.kind, summary: p.summary, tool: p.tool, done: p.done } : p)),
+    proposals: m.proposals?.map((p) => (p.kind === "confirm" ? { kind: p.kind, summary: p.summary, tool: p.tool, ...(p.detail ? { detail: p.detail } : {}), done: p.done } : p)),
   }));
 }
 
@@ -639,6 +641,8 @@ export function BrendaMessages({ chat, onLeave, size = "md" }: { chat: BrendaCha
                   return p.kind === "confirm" ? (
                     <li key={pi} className="rounded-xl border border-border-input p-3 text-sm">
                       <p className="flex items-start gap-2.5 font-medium text-foreground"><ShieldCheck className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden /><span className="min-w-0">{p.summary}</span></p>
+                      {/* The whole message it will send, every word (review, 8 October 2026); a long one scrolls. */}
+                      {p.detail ? <div role="region" tabIndex={0} aria-label="The full message" className="ml-[26px] mt-2 max-h-48 overflow-y-auto whitespace-pre-wrap break-words rounded-lg bg-fill-0 px-3 py-2 font-normal text-foreground outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ring)]">{p.detail}</div> : null}
                       <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
                         {p.done ? <span className="text-xs font-medium text-secondary">{p.done}</span> : !p.token ? <span className="text-xs font-normal text-subtle">Expired. Ask {name} again.</span> : <>
                           <button type="button" className={btn("ghost", "sm")} aria-keyshortcuts={keys ? "N" : undefined} onClick={() => decline(mi, pi)}>Not now{keys ? <KeyHint>N</KeyHint> : null}</button>
