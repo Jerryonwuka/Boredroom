@@ -229,6 +229,20 @@
 //   Enter presses a card's main action only once the person has touched that card; the notch tucks away when nothing new
 //   is waiting (what was already shown may stay unread), as before.
 // Without notify-cards.js (it failed to load, or a template throws) the cards as they were draw instead.
+//
+// Her natural voice (owner decision, 9 October 2026: natural voice (ElevenLabs), "use your recommendations"; contract G).
+// When the person chose one of the curated ElevenLabs voices in Boredroom (Settings › Your assistant › Voice), each answer
+// she may read aloud carries a `speech` offer ({ path, token, text }: a short-lived token Boredroom signed for exactly those
+// words, for this person): the chat's answer, a Confirm's result and an Undo's summary. sayAloud() then asks the speech
+// route for the audio as base64 through Rust's `api` command (`as: "base64"`; the webview holds no token and its CSP allows
+// no media URL), and natural-voice.js plays it with Web Audio while her faces follow the measured level of what plays.
+// Anything that goes wrong (an audio context that will not run, a refusal such as a daily cap or the allowance running
+// low, ElevenLabs failing, no answer within 15 s, audio that will not decode) speaks with the computer voice at once, as
+// before: the notch never goes silent, and an answer that comes late is dropped. Voice off and quiet hours decide whether
+// she speaks, as before; the offer only decides how. Stop, typing to her, a new question, closing the card, the talk keys
+// and signing out stop the natural voice as they stop Rust's. The card keeps its offer (`card.speech`), so Listen says it
+// in the same voice while the token lasts (30 minutes); after that, or without an offer, Listen uses the computer voice.
+// desktop/README.md writes down the Rust change for later (a native player, if WKWebView ever refuses Web Audio).
 
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
@@ -293,6 +307,31 @@ const pokes = [];
 // last level, put back on her faces after a render.
 let talking = false, talkSynthetic = null;
 let talkWaiting = false, talkWaitTimer = null, talkLast = 0;
+// Her natural voice (owner decision, 9 October 2026: natural voice (ElevenLabs), contract G.2): the utterance's number
+// (`gen`: every new utterance and every hush moves it on, so an answer that comes late is dropped), whether its audio is
+// being fetched, the natural player's stop() while it plays, and whether it is heard now. `micAt`: when Rust last said
+// `listening` (the talk keys are down), 0 once they came up; she never speaks over an open microphone.
+const natural = { gen: 0, pending: false, stop: null, on: false };
+let micAt = 0;
+// 15 s (review, 9 October 2026: the natural voice's latency on a slow link): over a phone's hotspot the speech route
+// took more than 8 s to answer, so the notch gave up on audio that was coming. Rust's `api` waits 20 s; her face shows
+// she is getting ready meanwhile, and Stop still ends it at once (the answer is kept for Listen again, never played).
+const NATURAL_WAIT_MS = 15_000;
+// Listen again (review, 9 October 2026): the last few utterances' audio, by their offer's token, in this webview's memory
+// only, so a second Listen on the same card plays it from here and does not spend the workspace's characters again.
+// Emptied when the person signs out (forgetNatural), and `naturalRun` moves on then, so audio still on its way for the
+// last person is never kept for the next (fix review, 9 October 2026).
+const naturalKept = new Map();
+const NATURAL_KEEP = 3;
+let naturalRun = 0;
+function keepNatural(token, audio, run = naturalRun) {
+  if (run !== naturalRun || typeof audio !== "string" || !audio) return;
+  naturalKept.delete(token);
+  naturalKept.set(token, audio);
+  while (naturalKept.size > NATURAL_KEEP) naturalKept.delete(naturalKept.keys().next().value);
+}
+// What the speech route answers when the computer voice should speak (contract E.1, D.1): not worth the app's log.
+const ORDINARY_REFUSALS = ["VOICE_UNAVAILABLE", "SPEECH_TOKEN"];
 const reduceMotion = window.matchMedia ? window.matchMedia("(prefers-reduced-motion: reduce)") : null;
 const TUCK = { w: 96, h: 5 };
 const TALK_MEMORY_MS = 3 * 60_000;
@@ -1610,7 +1649,7 @@ el.addEventListener("click", async (e) => {
     // An ask on the morning opener: its words go in the ask box, focused, and are never sent from here.
     if (act === "opener-ask") return fillAsk(card?.kind === "opener" ? card.o?.actions?.[Number(target.dataset.i)]?.prompt : null);
     if (act === "open-chat") return openChat();
-    if (act === "listen") return aloud() ? hush() : sayAloud(card?.spokenText);
+    if (act === "listen") return aloud() ? hush() : sayAloud(card?.spokenText, card?.speech);
     if (act === "offer") return takeOffer(Number(target.dataset.i));
     if (act === "voice-on") { voice = await invoke("set_voice", { enabled: true }); return openCard({ kind: "voice", phase: voice.modelReady ? "ready" : "downloading", progress: 0, sticky: !voice.modelReady }); }
     if (act === "voice-setup") return openCard({ kind: "voice", phase: voice.enabled ? (voice.modelReady ? "ready" : "downloading") : "off", progress: 0 });
@@ -1708,12 +1747,19 @@ async function pollLink() {
 
 async function signedOut() {
   clearInterval(pollTimer); clearInterval(presenceTimer);
+  stopNatural(); // her natural voice too (contract G.2): Rust's sign_out stops only its own
+  forgetNatural(); // and nothing of the last person's spoken replies stays
   config = await invoke("sign_out"); // which also stops her; its `spoken` ends her talking face
   data = null; card = null; link = null; talk = []; chat = newChat(); cached = null;
-  talkWaiting = false; clearTimeout(talkWaitTimer);
+  talkWaiting = false; clearTimeout(talkWaitTimer); clearTimeout(closeTimer);
   forgetNotices();
   applyQuiet(); // no one's quiet hours while signed out
   render();
+}
+/** Signed out: none of the last person's natural-voice audio stays, nor any still on its way (fix review, 9 October 2026). */
+function forgetNatural() {
+  naturalRun++;
+  naturalKept.clear();
 }
 /** Signed out: nothing of the last person's notifications stays (owner decision, 9 October 2026). */
 function forgetNotices() {
@@ -1923,24 +1969,158 @@ const voiceOff = () => data?.assistant?.voice === false || offHere("voice");
 /** One of the person's abilities is switched off, for the workspace or by them (the desktop state's `abilities.off`). */
 const offHere = (key) => { const off = data?.abilities?.off; return Array.isArray(off) && off.includes(key); };
 
-/** Asks Rust to read `text` aloud (it renders first, so the first sound comes a moment later). */
-function sayAloud(text) {
+/**
+ * Reads `text` aloud. With the reply's `speech` offer (natural voice, owner decision 9 October 2026, contract G.2), in the
+ * voice the person chose from ElevenLabs; without one, or when that fails in any way, Rust says it with the computer's
+ * own voice (it renders first, so the first sound comes a moment later), as before.
+ */
+function sayAloud(text, offer) {
   if (!text || voiceOff()) return;
+  stopNatural(); // a new answer replaces the last (Rust's speak stops its own)
   talkWaiting = true;
-  clearTimeout(talkWaitTimer);
-  // She never started (nothing to say, or the microphone opened meanwhile): the button goes back to Listen.
-  talkWaitTimer = setTimeout(() => { talkWaiting = false; showTalking(); }, 12_000);
-  invoke("speak", { text }).catch(() => { talkWaiting = false; showTalking(); });
+  waitToTalk();
   showTalking();
+  const o = naturalOffer(offer, text);
+  if (o) return void sayNaturally(text, o, natural.gen);
+  invoke("speak", { text }).catch(() => { talkWaiting = false; showTalking(); });
+}
+/**
+ * She never started (nothing to say, or the microphone opened meanwhile): the button goes back to Listen after 12 s, or
+ * `ms` (the natural voice's wait for its audio, and a moment more).
+ */
+function waitToTalk(ms = 12_000) {
+  clearTimeout(talkWaitTimer);
+  talkWaitTimer = setTimeout(() => { talkWaiting = false; showTalking(); }, ms);
 }
 
-/** Stops her, and anything about to be said. Rust answers with `spoken` if she was heard. */
+/** Stops her, and anything about to be said. Rust answers with `spoken` if she was heard; the natural voice ends here. */
 function hush() {
   clearTimeout(talkWaitTimer);
+  stopNatural();
   if (!aloud()) return;
   talkWaiting = false;
   invoke("stop_speaking").catch(() => {});
   showTalking();
+}
+
+/** She started talking: Rust's first `speaking`, or the natural voice's first sound. The reply card stays while she talks. */
+function talkStarted() {
+  if (talking) return;
+  talking = true; talkWaiting = false; clearTimeout(talkWaitTimer);
+  if (card?.kind === "voice" && card.phase === "reply") { card.sticky = true; clearTimeout(closeTimer); restartCountdown(0); }
+  showTalking();
+}
+/** She stopped: Rust's `spoken`, or the natural voice's end. The reply card may fold away again. */
+function talkEnded() {
+  talking = false; stopPulse();
+  showTalking();
+  if (card?.kind === "voice" && card.phase === "reply") {
+    card.sticky = (card.proposals ?? []).some((p) => p.kind === "confirm") || document.activeElement?.id === "ask";
+    scheduleClose();
+  }
+}
+
+// ---- her natural voice ---------------------------------------------------------------------------------------------
+// Owner decision, 9 October 2026: natural voice (ElevenLabs), contract G (the header says what she does). The words go to
+// Boredroom's speech route with the reply's signed token, through Rust's `api` (the webview holds no token and its CSP
+// allows no media URL), and come back whole as base64; natural-voice.js (`NaturalVoice`) plays them with Web Audio and
+// measures them for her faces. Every failure speaks with the computer voice at once: the notch never goes silent.
+
+/** The talk keys are down, or the listening card is open: the microphone is (about to be) open. */
+const micOpen = () => (micAt > 0 && Date.now() - micAt < 1_500) || (card?.kind === "voice" && (card.phase === "listening" || card.phase === "transcribing"));
+/**
+ * The same words, as the server cleans them for speech (src/lib/natural-voices.ts `speechText`: control, zero-width and
+ * direction characters removed, whitespace collapsed, trimmed).
+ */
+const SPEECH_CONTROL = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F\u200B-\u200F\u202A-\u202E\u2060-\u2064\uFEFF]/g;
+const sameWords = (a, b) => { const n = (s) => String(s ?? "").replace(SPEECH_CONTROL, "").replace(/\s+/g, " ").trim(); return n(a) === n(b); };
+/**
+ * A reply's `speech` (contract D: { path, token, text }) as the notch may use it, or null: the speech route of this
+ * workspace only, a token, and words. Kept on the card (`card.speech`) beside `spokenText`, so Listen says it the same way.
+ */
+function offerOf(r) {
+  const s = r?.speech;
+  if (!s || typeof s !== "object" || !config?.workspaceSlug) return null;
+  if (s.path !== org("/assistant/speech") || typeof s.token !== "string" || !s.token || typeof s.text !== "string" || !s.text.trim()) return null;
+  return { path: s.path, token: s.token, text: s.text };
+}
+/** The offer for saying exactly `text` in the natural voice, or null (no offer, other words, or no Web Audio here). */
+function naturalOffer(offer, text) {
+  if (typeof NaturalVoice !== "object" || !NaturalVoice?.supported) return null;
+  const o = offerOf({ speech: offer });
+  return o && sameWords(o.text, text) ? o : null;
+}
+
+/** Stops the natural voice and drops any answer still coming for it. Her face ends a moment later, as Rust's `spoken` ends it. */
+function stopNatural() {
+  natural.gen++;
+  const waiting = natural.pending;
+  natural.pending = false;
+  const stop = natural.stop;
+  natural.stop = null;
+  if (stop) stop();
+  // Hushed while the audio was on its way: nothing plays, so the warmed context goes back to sleep (review, 9 October 2026).
+  else if (waiting) NaturalVoice.release();
+  if (natural.on) { natural.on = false; queueMicrotask(talkEnded); }
+}
+
+/**
+ * Asks Boredroom for `offer`'s audio and plays it (contract G.2). Before asking, the audio context must be running (so a
+ * webview that will not play never spends the workspace's characters); no answer within 15 s, a refusal (VOICE_UNAVAILABLE:
+ * a daily cap, the allowance running low, ElevenLabs failing; nothing else is told apart up here), audio that will not
+ * decode or a context that will not run: the computer voice says `text` at once. A context that is only slow to wake
+ * (a Bluetooth output) costs that one utterance; one that truly will not run turns the natural voice off for the rest of
+ * the run (NaturalVoice decides, contract G.3; review, 9 October 2026). Whatever stops it before it plays lets the context
+ * sleep again (`NaturalVoice.release`). Audio heard once is kept for Listen again (`naturalKept`).
+ */
+async function sayNaturally(text, offer, gen) {
+  natural.pending = true;
+  // She stays "getting ready" (Stop on the button) for as long as the audio may still come.
+  waitToTalk(NATURAL_WAIT_MS + 2_000);
+  // Whatever Rust was saying gives way; its `spoken` is not read while this is fetched, so her face ends here.
+  if (talking) talkEnded();
+  invoke("stop_speaking").catch(() => {});
+  const fallback = (why) => {
+    if (gen !== natural.gen) return; // hushed, or something newer is being said
+    natural.pending = false; natural.stop = null;
+    // Why, in the app's log (never the words or the token); a refusal by Boredroom is ordinary and not reported.
+    if (why) report(`natural voice: the computer voice spoke instead (${why})`);
+    NaturalVoice.release();
+    waitToTalk();
+    invoke("speak", { text }).catch(() => { talkWaiting = false; showTalking(); });
+  };
+  if (!(await NaturalVoice.warm())) return fallback("suspended");
+  if (gen !== natural.gen) return;
+  let r = null, timer = null;
+  const kept = naturalKept.get(offer.token);
+  const run = naturalRun;
+  if (kept) r = { audio: kept };
+  else try {
+    // Kept whenever it comes, even after the 15 s gave way to the computer voice: Boredroom has counted (and ElevenLabs
+    // billed) it by then, so Listen plays it from here instead of paying for the same words again (fix review, 9 October
+    // 2026). Nothing can cancel the request itself (Rust's bridge), so its answer is never just dropped.
+    const asked = call("POST", offer.path, { token: offer.token, text: offer.text, as: "base64" });
+    asked.then((late) => keepNatural(offer.token, late?.audio, run), () => {});
+    r = await Promise.race([
+      asked,
+      new Promise((_, reject) => { timer = setTimeout(() => reject({ timeout: true }), NATURAL_WAIT_MS); }),
+    ]);
+  } catch (err) {
+    // A token past its 30 minutes (Listen long after the reply): the card's offer goes, so the next Listen asks nothing.
+    if (err?.code === "SPEECH_TOKEN" && card?.speech?.token === offer.token) card.speech = null;
+    return fallback(err?.timeout ? "no answer in 15 s" : ORDINARY_REFUSALS.includes(err?.code) ? null : `status ${Number(err?.status) || 0}`);
+  } finally { clearTimeout(timer); }
+  if (gen !== natural.gen) return;
+  if (typeof r?.audio !== "string" || !r.audio) return fallback("no audio");
+  // The talk keys went down meanwhile: nothing is said (Rust's speak would answer `unspoken` too).
+  if (micOpen()) { natural.pending = false; talkWaiting = false; clearTimeout(talkWaitTimer); NaturalVoice.release(); return showTalking(); }
+  natural.stop = NaturalVoice.play({
+    audioBase64: r.audio,
+    onStart: () => { if (gen !== natural.gen) return; natural.pending = false; natural.on = true; talkStarted(); },
+    onLevel: (level) => { if (gen === natural.gen && natural.on) talkLevel(level); },
+    onEnd: () => { if (gen !== natural.gen) return; natural.stop = null; natural.on = false; talkEnded(); },
+    onFail: fallback,
+  });
 }
 
 /**
@@ -2209,9 +2389,12 @@ async function ask(text, { spoken = true } = {}) {
     const spokenText = typeof r.spoken === "string" ? r.spoken.trim() : plain(r.reply);
     // A line with Undo keeps the card open longer (review, 8 October 2026: it folded away with its Undo in about 16 s).
     const closeAfter = (r.actions ?? []).some(undoable) ? UNDO_CLOSE_MS : REPLY_CLOSE_MS;
-    openCard({ kind: "voice", phase: "reply", heard: text, spoken, spokenText, reply: r.reply, actions: r.actions, proposals: msg.proposals.map((p, at) => ({ ...p, at })), msg, sticky: needsYes, closeAfter });
+    // Her natural voice (contract G.2): the answer's `speech` offer rides on the card beside the words it says, never in
+    // the kept answer (Past chats keep no token).
+    const speech = offerOf(r);
+    openCard({ kind: "voice", phase: "reply", heard: text, spoken, spokenText, speech, reply: r.reply, actions: r.actions, proposals: msg.proposals.map((p, at) => ({ ...p, at })), msg, sticky: needsYes, closeAfter });
     Sound.play(needsYes ? "attention" : r.actions?.length ? "success" : "reply");
-    if (speaksFor(spoken)) sayAloud(spokenText);
+    if (speaksFor(spoken)) sayAloud(spokenText, speech);
     if (!spoken) document.getElementById("ask")?.focus(); // typed: carry straight on with a follow-up
     if (r.actions?.length) refresh();
     saveChat();
@@ -2266,10 +2449,11 @@ async function confirmProposal(token) {
   card = { ...card, proposals: rest, sticky: waiting, reply: said, actions: [...(card.actions ?? []), ...added],
     ...(added.some(undoable) || (card.actions ?? []).some(undoable) ? { closeAfter: UNDO_CLOSE_MS } : {}),
     // The server's speakable words (never a URL, an id or a `say` command from a typed title); an older server's plain().
-    spokenText: typeof r.spoken === "string" ? r.spoken : plain(said) };
+    // Their natural voice offer goes with them (contract G.2), so Listen says what the card says now.
+    spokenText: typeof r.spoken === "string" ? r.spoken : plain(said), speech: offerOf(r) };
   render(); if (!waiting) scheduleClose();
   // What the Confirm did is read aloud under the same rule as the answer; otherwise she stops reading the question.
-  if (speaksFor(card.spoken)) sayAloud(card.spokenText);
+  if (speaksFor(card.spoken)) sayAloud(card.spokenText, card.speech);
   else hush();
 }
 
@@ -2447,7 +2631,7 @@ async function undoDone(token) {
   if (!quietly) {
     Sound.play("tick");
     // What the Undo did is read aloud under the same rule as a Confirm's result; otherwise she stops reading the answer.
-    if (said && card?.kind === "voice" && speaksFor(card.spoken)) sayAloud(typeof r.spoken === "string" ? r.spoken : plain(said));
+    if (said && card?.kind === "voice" && speaksFor(card.spoken)) sayAloud(typeof r.spoken === "string" ? r.spoken : plain(said), offerOf(r));
     else hush();
   }
   if (card && !card.sticky) scheduleClose();
@@ -2714,12 +2898,15 @@ listen("brenda://voice", ({ payload: e }) => {
   // Her voice (owner decision, 7 October 2026): `speaking` starts her talking face (with the level of what is playing,
   // or `synthetic` when there is none to send) and keeps the reply card open; `spoken` ends it, once per utterance, and
   // the card may fold away again. Handled even when signed out, so a face never keeps talking.
+  // Her natural voice (contract G.2): the talk keys stop it at once (Rust stops only its own `say`), and while it is
+  // fetched or heard, what Rust says about its own speech belongs to an utterance already stopped.
+  if (e.phase === "listening") {
+    micAt = Date.now();
+    if (natural.pending || natural.on) { stopNatural(); talkWaiting = false; clearTimeout(talkWaitTimer); showTalking(); }
+  } else if (MIC_CLOSED.includes(e.phase)) micAt = 0;
+  if ((natural.pending || natural.on) && SPEECH_PHASES.includes(e.phase)) return;
   if (e.phase === "speaking") {
-    if (!talking) {
-      talking = true; talkWaiting = false; clearTimeout(talkWaitTimer);
-      if (card?.kind === "voice" && card.phase === "reply") { card.sticky = true; clearTimeout(closeTimer); restartCountdown(0); }
-      showTalking();
-    }
+    talkStarted();
     if (e.synthetic) startPulse();
     else if (!talkSynthetic) talkLevel(e.level ?? 0);
     return;
@@ -2731,15 +2918,7 @@ listen("brenda://voice", ({ payload: e }) => {
     if (!talking && talkWaiting) { talkWaiting = false; clearTimeout(talkWaitTimer); showTalking(); }
     if (e.phase === "unspoken") return;
   }
-  if (e.phase === "spoken") {
-    talking = false; stopPulse();
-    showTalking();
-    if (card?.kind === "voice" && card.phase === "reply") {
-      card.sticky = (card.proposals ?? []).some((p) => p.kind === "confirm") || document.activeElement?.id === "ask";
-      scheduleClose();
-    }
-    return;
-  }
+  if (e.phase === "spoken") return talkEnded();
   if (e.phase === "downloading" || e.phase === "ready") {
     voice = { ...voice, downloading: e.phase === "downloading", modelReady: e.phase === "ready" };
     if (card?.kind === "voice" && (card.phase === "downloading" || card.phase === "ready" || card.phase === "off")) {
@@ -2785,6 +2964,10 @@ listen("brenda://voice", ({ payload: e }) => {
 
 /** What the talk keys send while they are held and after (Rust's `brenda://voice` phases other than her own speaking). */
 const TALK_PHASES = ["listening", "transcribing", "heard", "too-short", "limit", "off", "needs-model", "error"];
+/** The talk keys came up, or the microphone never opened (natural voice, contract G.2: `micAt` goes back to 0). */
+const MIC_CLOSED = ["transcribing", "heard", "too-short", "limit", "off", "needs-model", "error"];
+/** Rust's own speech (phase 2), which the natural voice leaves unread while it is fetched or heard. */
+const SPEECH_PHASES = ["speaking", "spoken", "unspoken"];
 /** This press of the talk keys has been told voice is off already (the level events of the same hold say nothing more). */
 let voiceOffHeld = false;
 /**
@@ -4508,7 +4691,7 @@ setInterval(() => {
   const e = document.getElementById("testimate"), share = estimateShare(); if (e && share !== null) e.style.transform = `scaleX(${share.toFixed(3)})`;
 }, 1000);
 
-listen("brenda://signed-out", () => { config = { ...config, signedIn: false }; data = null; card = null; talk = []; chat = newChat(); cached = null; talkWaiting = false; clearTimeout(talkWaitTimer); forgetNotices(); applyQuiet(); render(); });
+listen("brenda://signed-out", () => { stopNatural(); forgetNatural(); config = { ...config, signedIn: false }; data = null; card = null; talk = []; chat = newChat(); cached = null; talkWaiting = false; clearTimeout(talkWaitTimer); forgetNotices(); applyQuiet(); render(); });
 
 (async () => {
   config = await invoke("get_config");

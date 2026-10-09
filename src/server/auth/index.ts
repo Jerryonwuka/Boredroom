@@ -162,21 +162,21 @@ export async function signOut(token: string | undefined) {
   await withSystem((db) => db.query(`UPDATE auth_sessions SET revoked_at = now() WHERE token_hash = $1 AND revoked_at IS NULL`, [sha256(token)]));
 }
 
-/** The session row for a token, inside a caller-provided system transaction. Touches last_seen_at at most every five minutes, in the same statement, to save a round trip. */
-export async function userFromSessionTokenIn(db: Db, token: string | undefined): Promise<CurrentUser | null> {
-  if (!token) return null;
-  const row = await db.maybeOne<{ session_id: string; auth_user_id: string; profile_id: string; email: string; display_name: string; email_verified_at: string | null; avatar_key: string | null; title: string | null; status_text: string | null; presence: Presence; impersonation_id: string | null; admin_email: string | null }>(
-    `WITH s AS (
+/** The session's columns (`SessionRow`), as CTEs `s`, `touched` and `u` over `$1` = sha256(token), for one statement. */
+export const SESSION_CTES = `s AS (
        SELECT s.id, s.user_id, s.impersonation_id FROM auth_sessions s WHERE s.token_hash = $1 AND s.revoked_at IS NULL AND s.expires_at > now()
      ), touched AS (
        UPDATE auth_sessions a SET last_seen_at = now() FROM s WHERE a.id = s.id AND a.last_seen_at < now() - interval '5 minutes'
-     )
-     SELECT s.id AS session_id, u.id AS auth_user_id, p.id AS profile_id, u.email, p.display_name, u.email_verified_at, p.avatar_key, p.title, p.status_text, p.presence,
-            i.id AS impersonation_id, au.email AS admin_email
-     FROM s JOIN auth_users u ON u.id = s.user_id JOIN profiles p ON p.auth_user_id = u.id
-     LEFT JOIN admin_impersonations i ON i.id = s.impersonation_id AND i.ended_at IS NULL LEFT JOIN auth_users au ON au.id = i.admin_user_id
-     WHERE u.status = 'active'`, [sha256(token)]);
-  if (!row) return null;
+     ), u AS (
+       SELECT s.id AS session_id, u.id AS auth_user_id, p.id AS profile_id, u.email, p.display_name, u.email_verified_at, p.avatar_key, p.title, p.status_text, p.presence,
+              i.id AS impersonation_id, au.email AS admin_email
+       FROM s JOIN auth_users u ON u.id = s.user_id JOIN profiles p ON p.auth_user_id = u.id
+       LEFT JOIN admin_impersonations i ON i.id = s.impersonation_id AND i.ended_at IS NULL LEFT JOIN auth_users au ON au.id = i.admin_user_id
+       WHERE u.status = 'active'
+     )`;
+export type SessionRow = { session_id: string; auth_user_id: string; profile_id: string; email: string; display_name: string; email_verified_at: string | null; avatar_key: string | null; title: string | null; status_text: string | null; presence: Presence; impersonation_id: string | null; admin_email: string | null };
+
+export function currentUserOf(row: SessionRow): CurrentUser {
   return {
     profileId: row.profile_id, authUserId: row.auth_user_id, email: row.email, displayName: row.display_name,
     emailVerified: !!row.email_verified_at, sessionId: row.session_id,
@@ -185,16 +185,26 @@ export async function userFromSessionTokenIn(db: Db, token: string | undefined):
   };
 }
 
+/** The session row for a token, inside a caller-provided system transaction. Touches last_seen_at at most every five minutes, in the same statement, to save a round trip. */
+export async function userFromSessionTokenIn(db: Db, token: string | undefined): Promise<CurrentUser | null> {
+  if (!token) return null;
+  const row = await db.maybeOne<SessionRow>(`WITH ${SESSION_CTES} SELECT * FROM u`, [sha256(token)]);
+  return row ? currentUserOf(row) : null;
+}
+
 /**
- * The current user from the request cookie, inside a caller-provided system transaction. Without a cookie, an
- * `Authorization: Bearer` token is accepted: the Brenda desktop app holds a desktop session token this way (owner
- * decision, 3 October 2026). Browsers never attach that header on their own, so it does not widen what a page can do.
+ * The request's session token: the cookie, else an `Authorization: Bearer` token (the Brenda desktop app holds a desktop
+ * session token this way, owner decision, 3 October 2026). Browsers never attach that header on their own, so it does
+ * not widen what a page can do. A cookie, valid or not, is never passed over for the header.
  */
-export async function currentUserIn(db: Db): Promise<CurrentUser | null> {
+export async function requestSessionToken(): Promise<string | undefined> {
   const jar = await cookies();
-  const cookie = jar.get(SESSION_COOKIE)?.value;
-  if (cookie) return userFromSessionTokenIn(db, cookie);
-  return userFromSessionTokenIn(db, await bearerToken());
+  return jar.get(SESSION_COOKIE)?.value || (await bearerToken());
+}
+
+/** The current user from the request cookie (or the desktop app's bearer token), inside a caller-provided system transaction. */
+export async function currentUserIn(db: Db): Promise<CurrentUser | null> {
+  return userFromSessionTokenIn(db, await requestSessionToken());
 }
 
 async function bearerToken(): Promise<string | undefined> {

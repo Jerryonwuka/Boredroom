@@ -97,7 +97,20 @@
      is null; no timer, so the pointer, sent onto the bar 1.5 s in, opens the day card, whose team row used to throw:
      the island stayed open and empty behind "All clear"), ?bug=empty (the mock answers /brenda/desktop 3 s late and the
      pointer reaches the bar at 0.5 s, before any data: it used to open an empty 420px island). After the fix neither shows
-     an empty island. -->
+     an empty island.
+     Her natural voice (owner decision, 9 October 2026: natural voice (ElevenLabs), contract G.3): &natural gives every
+     chat, Confirm and Undo answer a `speech` offer ({ path, token: "preview", text }), as Boredroom does once the person
+     chose a natural voice, and the mock speech route answers `{ audio, mime, characters }` with a 2-second WAV made in this
+     page (a hum of a few hundred Hz with syllables and one short pause; no network, never ElevenLabs), so Listen, and any
+     answer read aloud (&speak=always), plays through Web Audio and her faces follow the measured level.
+     ?card=speaking&natural presses Listen on a reply for you: she talks with the WAV, Stop (or Esc, typing, a new
+     question) stops it at once. &natural=fail answers 502 VOICE_UNAVAILABLE, so the mock computer voice speaks instead
+     (the console logs `speak`); &natural=slow answers after 16 s, so the computer voice takes over at 15 s and the late
+     audio is kept, so a second Listen plays it without asking again; &natural=suspended keeps the audio context from running, so the computer voice speaks at once and
+     the natural voice is left alone for the rest of the run (no request is made: a context that will not run never spends
+     characters); &natural=decode answers with bytes that are not audio; &natural=listen holds the talk keys 1.5 s into
+     the audio, which stops it at once (the listening card opens). A browser that wants a press before playing sound shows
+     "Press anywhere to start" first (the notch's WKWebView needs none: Tauri creates it with autoplay on). -->
 <html lang="en"><head><meta charset="utf-8"><title>Brenda notch preview</title><link rel="stylesheet" href="src/style.css">
 <style>html,body{background:#3b3b3b!important;height:100%;overflow:hidden!important} body::before{content:"";position:fixed;inset:0 0 auto;height:40px;background:rgb(0 0 0 / .28);box-shadow:inset 0 -1px 0 rgb(255 255 255 / .075)} #stage{position:relative;width:480px;height:440px;margin:0 auto;outline:1px dashed rgb(255 255 255 / .1)}</style></head>
 <body><div id="stage"><div id="island" class="island"><i id="wash" class="wash" aria-hidden="true"></i><main id="notch" class="notch compact"></main><i id="countdown" class="countdown"></i></div></div>
@@ -456,6 +469,38 @@ if (bug === "throw") sample.team = [...(sample.team ?? []), { id: "m9", name: nu
 // The answer to a press on an item card, as the routes give it ({ item }: the AssistantItemView, only what the card reads).
 const itemAnswer = (id, status, extra = {}) => ({ item: { id, kind: id === REQ ? "request" : "message", status, request: id === REQ ? { kind: req.payload.kind, payload: req.payload, summary: req.summary, lines: req.lines, expiresAt: hours(72) } : null, result: null, ...extra } });
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+// Her natural voice (9 October 2026, contract G.3): &natural, and how the mock speech route answers (&natural=fail|slow|
+// suspended|decode|listen). The audio is a WAV made here: 2 s of a hum (180 Hz with its harmonics) shaped into about five
+// syllables a second, with a short pause, at 22.05 kHz, 16-bit mono.
+const naturalMode = q.has("natural") ? q.get("natural") || "on" : null;
+const naturalWav = (() => {
+  if (!naturalMode) return "";
+  const rate = 22050, n = rate * 2, bytes = new Uint8Array(44 + n * 2), v = new DataView(bytes.buffer);
+  const text = (at, w) => [...w].forEach((c, i) => v.setUint8(at + i, c.charCodeAt(0)));
+  text(0, "RIFF"); v.setUint32(4, 36 + n * 2, true); text(8, "WAVE"); text(12, "fmt "); v.setUint32(16, 16, true);
+  v.setUint16(20, 1, true); v.setUint16(22, 1, true); v.setUint32(24, rate, true); v.setUint32(28, rate * 2, true);
+  v.setUint16(32, 2, true); v.setUint16(34, 16, true); text(36, "data"); v.setUint32(40, n * 2, true);
+  for (let i = 0; i < n; i++) {
+    const t = i / rate;
+    const syllable = Math.pow(Math.max(0, Math.sin(2 * Math.PI * 2.6 * t)), 0.6);
+    const pause = t > 0.92 && t < 1.18 ? 0.04 : 1;
+    const fade = Math.min(1, t / 0.02, (2 - t) / 0.05);
+    const hum = Math.sin(2 * Math.PI * 180 * t) + 0.5 * Math.sin(2 * Math.PI * 360 * t) + 0.25 * Math.sin(2 * Math.PI * 540 * t);
+    v.setInt16(44 + i * 2, Math.round(Math.max(-1, Math.min(1, 0.22 * hum * syllable * pause * fade)) * 32767), true);
+  }
+  let bin = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
+})();
+/** An answer as Boredroom sends it once a natural voice is chosen: its `speech` offer for the words it says. */
+const withSpeech = (r, path) => (naturalMode && typeof r.spoken === "string" && r.spoken.trim()
+  ? { ...r, speech: { path: path.replace(/\/(?:assistant\/chat|brenda\/confirm|brenda\/undo)$/, "/assistant/speech"), token: "preview", text: r.spoken.replace(/\s+/g, " ").trim() } }
+  : r);
+// &natural=suspended: an audio context that never runs (a webview that wants a press first), before anything makes one.
+if (naturalMode === "suspended" && window.AudioContext) {
+  const Real = window.AudioContext;
+  window.AudioContext = class extends Real { get state() { return "suspended"; } resume() { return new Promise(() => {}); } };
+}
 /** As the server does once an item is answered: no longer waiting, and its notification read. */
 const answered = (id) => {
   if (sample.assistantItems) sample.assistantItems.waiting = sample.assistantItems.waiting.filter((w) => w.id !== id);
@@ -494,15 +539,25 @@ window.__TAURI__ = {
       console.log("chat sent", JSON.stringify(args.body?.messages));
       const said = args.body?.messages?.at(-1)?.content ?? "";
       const r = state === "readback" ? replies.readback : state === "still-asking" ? replies.still : /give|assign/i.test(said) ? replies.confirm : autoStates.includes(state) ? replies.auto() : /add|start/i.test(said) ? replies.offer : replies.reply;
-      return { ...r, ...(act ? { act } : {}) };
+      return withSpeech({ ...r, ...(act ? { act } : {}) }, path);
     }
     if (cmd === "api" && path.endsWith("/brenda/confirm")) {
       await new Promise((r) => setTimeout(r, 500));
       if (q.get("confirm") === "already") throw { status: 409, code: "ALREADY_CONFIRMED", message: "That was already done. Ask again if you need it once more." };
-      if (args.body?.token === "preview-token-456") return { actions: [{ kind: "message", summary: "Sent Ada Obi a message" }], error: null };
-      if (args.body?.token === "preview-token-789") return { actions: [{ kind: "message", summary: "Sent a message to #Design" }], error: null };
-      if (args.body?.token === "preview-token-790") return { actions: [{ kind: "follow_up", summary: "Asked 8 people's assistants about “Landing page”" }], error: null };
-      return { actions: [{ kind: "todo", summary: "Created “Review the brand deck” for Ada" }], error: null };
+      const done = (actions) => (naturalMode ? withSpeech({ actions, error: null, spoken: actions.map((x) => x.summary).join(". ") }, path) : { actions, error: null });
+      if (args.body?.token === "preview-token-456") return done([{ kind: "message", summary: "Sent Ada Obi a message" }]);
+      if (args.body?.token === "preview-token-789") return done([{ kind: "message", summary: "Sent a message to #Design" }]);
+      if (args.body?.token === "preview-token-790") return done([{ kind: "follow_up", summary: "Asked 8 people's assistants about “Landing page”" }]);
+      return done([{ kind: "todo", summary: "Created “Review the brand deck” for Ada" }]);
+    }
+    // Her natural voice (contract E.1, `as: "base64"`, the notch's form): the WAV above, or what &natural= asks for.
+    if (cmd === "api" && path.endsWith("/assistant/speech")) {
+      console.log("speech asked", { as: args.body?.as, characters: String(args.body?.text ?? "").length });
+      await wait(naturalMode === "slow" ? 16000 : 350);
+      if (naturalMode === "fail") throw { status: 502, code: "VOICE_UNAVAILABLE", message: "ElevenLabs didn't answer, so the computer voice is used." };
+      if (naturalMode === "decode") return { audio: btoa("this is not audio at all"), mime: "audio/mpeg", characters: 12 };
+      console.log("speech answered", naturalMode === "slow" ? "(late: the notch has moved on)" : "");
+      return { audio: naturalWav, mime: "audio/wav", characters: String(args.body?.text ?? "").length };
     }
     // Acting without asking (8 October 2026): Undo on a done line, as POST /brenda/undo answers.
     if (cmd === "api" && path.endsWith("/brenda/undo")) {
@@ -514,7 +569,7 @@ window.__TAURI__ = {
       if (u === "already") throw { status: 409, code: "ALREADY_UNDONE", message: "That was already undone." };
       if (u === "error") throw { status: 503, code: "UNAVAILABLE", message: "Boredroom can't be reached right now. Try again in a moment." };
       const summary = UNDONE[args.body?.token] ?? "Undone";
-      return { undone: true, summary, spoken: summary };
+      return withSpeech({ undone: true, summary, spoken: summary }, path);
     }
     if (cmd === "api" && /\/follow-ups\/[^/]+\/reply$/.test(path)) {
       await new Promise((r) => setTimeout(r, 700));
@@ -570,6 +625,7 @@ try { if (nState) localStorage.setItem(`brenda-briefing:khronocorp:${new Date().
 <script src="src/sound.js"></script>
 <script src="src/notify-cards.js"></script>
 <script src="src/notify.js"></script>
+<script src="src/natural-voice.js"></script>
 <script src="src/main.js"></script>
 <script>
 // Preview only: feed the cursor the way Rust does, in stage coordinates, and open the card named by ?card=.
@@ -602,7 +658,21 @@ const speakingFeed = (() => {
     say(text) { stop(true); pending = setTimeout(() => speakFor(Math.min(8000, 600 + String(text ?? "").length * 55), q.has("synthetic")), 700); },
   };
 })();
-const talkFor = (ms) => { voiceEvent({ phase: "listening", level: 0 }); const every = setInterval(() => voiceEvent({ phase: "listening", level: speech() }), 70); if (ms) setTimeout(() => { clearInterval(every); voiceEvent({ phase: "transcribing" }); }, ms); };
+let talkEvery = null;
+const talkFor = (ms) => { voiceEvent({ phase: "listening", level: 0 }); const every = talkEvery = setInterval(() => voiceEvent({ phase: "listening", level: speech() }), 70); if (ms) setTimeout(() => { clearInterval(every); voiceEvent({ phase: "transcribing" }); }, ms); };
+// A browser that wants a press before it plays sound (Chrome, Safari; the notch's WKWebView does not): "Press anywhere to
+// start" until it has one, then `run`. The natural voice's own check (NaturalVoice.warm) is the test.
+function whenSoundAllowed(run) {
+  NaturalVoice.warm().then((ok) => {
+    if (ok) return run();
+    const note = document.createElement("p");
+    note.className = "sub";
+    note.textContent = "Press anywhere to start: this browser wants a press before it plays sound (the notch needs none).";
+    note.style.cssText = "position:fixed;left:0;right:0;bottom:16px;text-align:center";
+    document.body.append(note);
+    addEventListener("pointerdown", () => { note.remove(); NaturalVoice.warm().then(run); }, { once: true });
+  });
+}
 // The item cards (phase 6): their own ?card= steps, once the card has opened (after the first polls).
 const itemCardState = ["item-message", "item-request"].includes(state);
 if (itemCardState) setTimeout(() => {
@@ -619,7 +689,21 @@ setTimeout(() => {
   if (c === "working") talkFor(2000);
   if (c === "thinking") openCard({ kind: "voice", phase: "thinking", heard: "What is Ben working on?", sticky: true });
   if (c === "reply" && !itemCardState) ask("What is Ben working on?", { spoken: false });
-  if (c === "speaking") ask("What is Ben working on?", { spoken: false }).then(() => speakingFeed.speakFor(4000, q.has("synthetic")));
+  if (c === "speaking" && !naturalMode) ask("What is Ben working on?", { spoken: false }).then(() => speakingFeed.speakFor(4000, q.has("synthetic")));
+  // Her natural voice (contract G.3): Listen pressed on the reply, as a person would; &natural=listen then holds the talk
+  // keys 1.5 s into the audio (Rust's `listening` events), which stops it at once, and lets go too soon (`too-short`).
+  if (c === "speaking" && naturalMode) {
+    const run = () => ask("What is Ben working on?", { spoken: false }).then(() => {
+      pressNotch('[data-act="listen"]');
+      if (naturalMode !== "listen") return;
+      const heard = setInterval(() => {
+        if (!natural.on) return;
+        clearInterval(heard);
+        setTimeout(() => { talkFor(0); setTimeout(() => { clearInterval(talkEvery); voiceEvent({ phase: "too-short" }); }, 1200); }, 1500);
+      }, 50);
+    });
+    if (naturalMode === "suspended") run(); else whenSoundAllowed(run);
+  }
   if (c === "confirm") ask("Give Ada the brand deck review for tomorrow at 3", { spoken: false });
   if (c === "offer") ask("Add calling Josh and start my top task", { spoken: false });
   if (c === "error") voiceEvent({ phase: "error", message: "The microphone is blocked. Allow it in System Settings, Privacy, Microphone." });

@@ -17,6 +17,14 @@ export const FEATURE_KEYS = ["VIDEO_RECORDING", "HEARTBEAT_TRACKING", "ADVANCED_
 type Cache = { at: number; values: Record<string, unknown> };
 let cache: Cache | null = null;
 const TTL = 15_000;
+/**
+ * One load at a time: callers that miss the cache together share it, instead of each opening its own connection (two
+ * at once inside every page's context, before entitlements read the settings themselves: review, 9 October 2026, the
+ * natural voice's latency on a slow link). `generation` moves on with every save, so a load that started before one
+ * never puts the old values back.
+ */
+let flight: Promise<Record<string, unknown>> | null = null;
+let generation = 0;
 
 async function loadAll(db: Db) {
   const rows = await db.query<{ key: string; value: unknown }>(`SELECT key, value FROM platform_settings`);
@@ -27,9 +35,15 @@ async function loadAll(db: Db) {
 
 export async function allSettings(fresh = false): Promise<Record<string, unknown>> {
   if (!fresh && cache && Date.now() - cache.at < TTL) return cache.values;
-  const values = await withSystem(loadAll);
-  cache = { at: Date.now(), values };
-  return values;
+  if (!flight) {
+    const gen = generation;
+    const p: Promise<Record<string, unknown>> = withSystem(loadAll).then((values) => {
+      if (gen === generation) cache = { at: Date.now(), values };
+      return values;
+    }).finally(() => { if (flight === p) flight = null; });
+    flight = p;
+  }
+  return flight;
 }
 
 export async function getSetting<T>(key: string, fallback: T, fresh = false): Promise<T> {
@@ -55,6 +69,8 @@ export async function setSetting(admin: Admin, key: string, value: unknown, reas
     await db.query(`INSERT INTO platform_settings(key, value, updated_at, updated_by) VALUES ($1, $2, now(), $3) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now(), updated_by = EXCLUDED.updated_by`, [key, JSON.stringify(value), admin.user.authUserId]);
     await adminAudit(db, admin, { action: `settings.${key}.updated`, targetType: "settings", targetId: key, before: before?.value ?? null, after: value, reason });
   });
+  generation++;
+  flight = null;
   cache = null;
 }
 

@@ -34,10 +34,14 @@ const column = (table: string, name: string) =>
  * calls first (the post check and the label party check). Cached true for the process.
  */
 export async function schema0050Ready(db: Db): Promise<boolean> {
-  if (ready) return true;
-  if (Date.now() < notReadyUntil) return false;
-  const r = await db.one<{ ok: boolean }>(
-    `SELECT to_regclass('public.team_standups') IS NOT NULL
+  const known = schema0050Known();
+  if (known !== null) return known;
+  const r = await db.one<{ ok: boolean }>(`SELECT ${SCHEMA_0050_CHECK} AS ok`);
+  return noteSchema0050(r.ok);
+}
+
+/** The check itself, a boolean SQL expression, so one query can ask it together with others (SCHEMA_0053_CHECK). */
+export const SCHEMA_0050_CHECK = `(to_regclass('public.team_standups') IS NOT NULL
         AND to_regclass('public.standup_rollups') IS NOT NULL
         AND to_regclass('public.standup_rollup_recipients') IS NOT NULL
         AND to_regclass('public.standup_entries') IS NOT NULL
@@ -45,8 +49,18 @@ export async function schema0050Ready(db: Db): Promise<boolean> {
         AND ${column("brenda_settings", "abilities_off")}
         AND ${column("assistant_private", "abilities_off")}
         AND to_regprocedure('public.app_standup_post_check(uuid)') IS NOT NULL
-        AND to_regprocedure('public.app_label_party(uuid)') IS NOT NULL AS ok`);
-  ready = r.ok;
+        AND to_regprocedure('public.app_label_party(uuid)') IS NOT NULL)`;
+
+/** The cached answer without asking: true, false (a "not yet" under 30 seconds old), or null (ask). */
+export function schema0050Known(): boolean | null {
+  if (ready) return true;
+  if (Date.now() < notReadyUntil) return false;
+  return null;
+}
+
+/** Keeps the answer to SCHEMA_0050_CHECK, asked by someone else's query, as schema0050Ready would. */
+export function noteSchema0050(ok: boolean): boolean {
+  ready = ok;
   if (!ready) {
     notReadyUntil = Date.now() + NOT_READY_TTL_MS;
     warnOnce();

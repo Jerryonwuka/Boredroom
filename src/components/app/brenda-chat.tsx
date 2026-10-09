@@ -76,6 +76,14 @@
  * read aloud (the server already reads "When she speaks" as never). A Confirm for what her assistant should remember or
  * forget about the person (`remember_preference`, `forget_preference`: always asked, even when acting without asking)
  * is pressed as **Remember** or **Forget** instead of Confirm, as in the notch; still white, never orange.
+ *
+ * Natural voice (owner decision, 9 October 2026: natural voice (ElevenLabs), contract F.1). A reply comes with an offer
+ * to say its words in the natural voice the person chose (`speech`: our own route, a short-lived token for these words
+ * and this person, and the words), kept on the reply in memory only: never saved with the conversation, so a past chat
+ * opened again reads aloud in the computer voice. Auto-speak and Listen hand it to the one voice on the page, which plays
+ * it or, when it can't, says the same reply in the computer voice at once. Listen shows on a reply with an offer even in
+ * a browser with no voice of its own. Voice off and quiet hours decide whether she speaks, as before; the offer only
+ * decides how.
  */
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -106,6 +114,7 @@ import { speakable } from "@/lib/assistant-speech/speakable";
 import { api, isApiFailure, type ApiFailure } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import { attention, READ_BLUR_HOLD_MS, type BrendaState, type ReadCue } from "@/lib/brenda-character/engine";
+import type { SpeechOffer } from "@/lib/natural-voices";
 import type { Action, ChatResult, Proposal } from "@/server/services/copilot";
 import type { Conversation, ConversationSummary, StoredMessage } from "@/server/services/brenda-history";
 
@@ -120,10 +129,16 @@ export type ChatAction = Omit<Action, "auto" | "undo"> & { followUpBatchId?: str
 const liveCard = (a: ChatAction) => !!a.followUpBatchId || !!a.assistantItemId;
 /** A prepared action as the chat keeps it: marked once answered (`done`); a Confirm that still asks in auto mode says why. */
 export type ChatProposal = Proposal & { done?: string; why?: string };
-/** `tainted`: the reply read other people's words; sent back with the conversation so the server keeps asking. */
-export type BrendaMsg = { role: "user" | "assistant"; content: string; actions?: ChatAction[]; proposals?: ChatProposal[]; engine?: ChatResult["engine"]; note?: string | null; tainted?: boolean };
-/** Her reply as the chat route answers it, with what act without asking adds (copilot's ChatResult gains the same). */
-type ChatReply = ChatResult & { tainted?: boolean; act?: ActState };
+/**
+ * `tainted`: the reply read other people's words; sent back with the conversation so the server keeps asking.
+ * `speech`: the offer to say it in the person's natural voice (9 October 2026), in memory only (never saved).
+ */
+export type BrendaMsg = { role: "user" | "assistant"; content: string; actions?: ChatAction[]; proposals?: ChatProposal[]; engine?: ChatResult["engine"]; note?: string | null; tainted?: boolean; speech?: SpeechOffer | null };
+/**
+ * Her reply as the chat route answers it, with what act without asking adds (copilot's ChatResult gains the same) and
+ * the natural voice's offer (contract D.3; null when the person has none, or it is unavailable).
+ */
+type ChatReply = ChatResult & { tainted?: boolean; act?: ActState; speech?: SpeechOffer | null };
 /** The answer to an Undo (POST /brenda/undo). */
 type UndoResult = { undone: true; summary: string; spoken?: string };
 /**
@@ -135,6 +150,13 @@ const UNDO_GONE = new Set([400, 403, 404, 409]);
 function withoutUndo(a: ChatAction): ChatAction {
   const copy = { ...a };
   delete copy.undo;
+  return copy;
+}
+/** A message without its natural voice offer (never saved). */
+function withoutSpeech(m: BrendaMsg): BrendaMsg {
+  if (!("speech" in m)) return m;
+  const copy = { ...m };
+  delete copy.speech;
   return copy;
 }
 
@@ -240,10 +262,10 @@ function titleOf(messages: BrendaMsg[]) {
  * The conversation as it is saved: the newest messages, each within the length kept, no Confirm tokens and no Undo
  * tokens (an Undo belongs to the window it was offered in). What a reply read (`tainted`), what ran without asking
  * (`auto`), what was undone and why a Confirm still asked are kept; so is who it went to (`readback`, phase 7a), which
- * server/services/brenda-history keeps too.
+ * server/services/brenda-history keeps too. Never the natural voice's offer (9 October 2026: its token is for this page).
  */
 function forSaving(messages: BrendaMsg[]) {
-  return messages.slice(-KEEP.messages).map((m) => ({
+  return messages.slice(-KEEP.messages).map(withoutSpeech).map((m) => ({
     ...m,
     content: clip(m.content, KEEP.content),
     actions: m.actions?.map(withoutUndo),
@@ -493,8 +515,8 @@ export function useBrendaChat({ orgSlug, keysActive = true, visible = true, onLe
     const id = speechId(m);
     const now = speech.getSnapshot();
     if (now.speaking && now.id === id) { speech.stop(); return; }
-    speech.prime();
-    speech.speak(m.content, { id });
+    speech.prime({ natural: !!m.speech });
+    speech.speak(m.content, { id, natural: m.speech });
   };
   /** Stops what this chat is reading aloud, and only that (the drawer, as it closes). */
   const quiet = useCallback(() => speech.stop(`${me}:`), [me]);
@@ -569,13 +591,14 @@ export function useBrendaChat({ orgSlug, keysActive = true, visible = true, onLe
         // The mode the server used: the pill follows it, unless the person switched since the message left.
         if (r.act) actMode.seed(r.act, since);
         if (epoch.current !== mine) { if (r.actions?.length) router.refresh(); return; }
-        const reply: BrendaMsg = { role: "assistant", content: r.reply, actions: r.actions, proposals: r.proposals, engine: r.engine, note: r.note, tainted: !!r.tainted };
+        const reply: BrendaMsg = { role: "assistant", content: r.reply, actions: r.actions, proposals: r.proposals, engine: r.engine, note: r.note, tainted: !!r.tainted, speech: r.speech ?? null };
         setMessages((cur) => [...cur, reply]);
         // Read aloud as the person chose: every reply, or the reply to what they said. Only her words: never a
         // Confirm's result, an error or the built-in helper's note. Never on her own during quiet hours (phase 7a):
         // Listen still reads it.
         const { prefer: choice, visible: shown, alive, hushed: quietNow } = voice.current;
-        if (alive && shown && !quietNow && (choice === "always" || (choice === "voice" && spoken))) speech.speak(reply.content, { id: speechId(reply) });
+        // In the person's natural voice when the reply offers it (9 October 2026), else (or if it fails) the computer's.
+        if (alive && shown && !quietNow && (choice === "always" || (choice === "voice" && spoken))) speech.speak(reply.content, { id: speechId(reply), natural: reply.speech });
         const asks = r.proposals?.some((p) => p.kind === "confirm");
         chime(asks ? "attention" : r.actions?.length ? "success" : "reply");
         // Waiting for a yes is her alert look; otherwise a reply pleases her and something done is a celebration.
@@ -803,8 +826,8 @@ const btn = (variant: "primary" | "secondary" | "ghost", size: "xs" | "sm") => b
  * opens (or when a past chat is loaded) shows at once: nothing animates on the way into the chat (owner decision,
  * 5 October 2026).
  *
- * Each reply of hers has Listen at the end of its first row, when this device has a voice of its own (owner decision,
- * 7 October 2026: her voice): a toggle whose name stays "Listen to this reply" while aria-pressed carries whether it is
+ * Each reply of hers has Listen at the end of its first row, when this device has a voice of its own or the reply offers
+ * the person's natural voice (owner decisions, 7 and 9 October 2026: her voice, natural voice): a toggle whose name stays "Listen to this reply" while aria-pressed carries whether it is
  * playing; the tooltip says what a press does, and while it plays its icon is the orange stop square (live and now, the
  * accent rules). Not on the working line, errors or notes. Nothing is announced: a screen reader already reads the text.
  */
@@ -867,7 +890,7 @@ export function BrendaMessages({ chat, onLeave, size = "md" }: { chat: BrendaCha
               <div className={cn("flex items-start", lg ? "gap-3" : "gap-2.5")}>
                 <BrendaFace size={lg ? "md" : "sm"} className={lg ? "mt-px" : "mt-0.5"} mood={mi === lastIndex ? look.mood : null} />
                 <Markdown variant="chat" source={m.content} base={`/app/${chat.orgSlug}`} onNavigate={open} className="flex-1 font-normal text-foreground" />
-                {voice.supported === true && voiceOn ? <ListenButton content={m.content} playing={voice.speaking && voice.id === chat.speechId(m)} small={!lg} onPress={() => chat.listen(m)} /> : null}
+                {(voice.supported === true || !!m.speech) && voiceOn ? <ListenButton content={m.content} playing={voice.speaking && voice.id === chat.speechId(m)} small={!lg} onPress={() => chat.listen(m)} /> : null}
               </div>
               {voice.blocked !== null && voice.blocked === chat.speechId(m) ? (
                 <p role="status" className={cn("text-xs font-normal text-subtle", indent)}>{name} couldn&apos;t speak in this browser.</p>

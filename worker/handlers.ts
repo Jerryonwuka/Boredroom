@@ -360,6 +360,16 @@ const purgeExpired: Handler = async () => {
   await sweepInterruptedRuns().catch((err) => console.error("[worker] sweeping interrupted routine runs", (err as Error).message));
 };
 
+/**
+ * Natural voice (fix review, 9 October 2026): one utterance to delete from the key's ElevenLabs History by ElevenLabs'
+ * own ids for it, queued by the speech route with ids only (never the words) and run here when the web process's own
+ * quick tries did not do it (a restart, ElevenLabs failing, a key without History access). Free requests; never TTS.
+ */
+const voiceHistoryForget: Handler = async (payload) => {
+  const { runHistoryForgetJob } = await import("../src/server/services/natural-voice");
+  await runHistoryForgetJob(payload);
+};
+
 import { controlCenterHandlers } from "./control-center";
 
 export const handlers: Record<string, Handler> = {
@@ -385,4 +395,5 @@ export const handlers: Record<string, Handler> = {
   "recording.assemble": assembleRecording,
   "deliverable.scan": scanDeliverable,
   "system.purge_expired": purgeExpired,
+  "voice.history_forget": voiceHistoryForget,
 };

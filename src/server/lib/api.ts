@@ -5,10 +5,10 @@ import { AppError, invalid, unauthenticated, forbidden, notFound, tooLarge } fro
 import { getCurrentUser, type CurrentUser } from "@/server/auth";
 import { cache } from "react";
 import { withSystem, type Db } from "@/server/db";
-import { currentUserIn } from "@/server/auth";
+import { SESSION_CTES, currentUserOf, requestSessionToken, type SessionRow } from "@/server/auth";
 import { sha256 } from "@/server/lib/crypto";
 import { explainInfraError } from "@/server/lib/health";
-import { resolveEntitlements, requireFeature as requireFeatureOf, type Entitlements } from "@/server/lib/entitlements";
+import { entitlementsOf, entitlementsSql, requireFeature as requireFeatureOf, type EntitlementColumns, type Entitlements } from "@/server/lib/entitlements";
 
 export type OrgContext = {
   user: CurrentUser;
@@ -128,37 +128,76 @@ export async function requireAuth(): Promise<CurrentUser> {
   return user;
 }
 
-type OrgRow = { org_id: string; slug: string; name: string; timezone: string; current_policy_id: string | null; status: string; membership_id: string; role: OrgContext["membership"]["role"]; employee_code: string };
-const ORG_SQL = `SELECT o.id AS org_id, o.slug, o.name, o.timezone, o.current_policy_id, o.status,
-            m.id AS membership_id, m.role, m.employee_code
-     FROM organisations o JOIN memberships m ON m.organisation_id = o.id
-     WHERE (o.slug = $1 OR o.id::text = $1) AND m.user_id = $2 AND m.status = 'active'`;
+type ContextRow = SessionRow & EntitlementColumns & {
+  org_id: string | null; slug: string; org_name: string; timezone: string; current_policy_id: string | null; org_status: string;
+  membership_id: string; role: OrgContext["membership"]["role"]; employee_code: string;
+};
+
+/**
+ * The session, the caller's active membership of the workspace (by slug or id) with the organisation, and its
+ * entitlements, in ONE statement: `$1` = sha256(the session token), `$2` = the slug. No row: no valid session. A row
+ * without `org_id`: not a member (RLS-equivalent: the membership is bound to the session's own user id, so the system
+ * role sees exactly what row security would show this user). Before (review, 9 October 2026: the natural voice's
+ * latency on a slow link) this was seven round trips (BEGIN, the session, the membership, three plan queries, COMMIT)
+ * plus two transactions of their own for the platform settings; now three (BEGIN, this, COMMIT), on every route and page.
+ */
+const CONTEXT_SQL = `WITH ${SESSION_CTES}, m AS (
+       SELECT o.id AS org_id, o.slug, o.name AS org_name, o.timezone, o.current_policy_id, o.status AS org_status,
+              m.id AS membership_id, m.role, m.employee_code
+         FROM u JOIN memberships m ON m.user_id = u.profile_id JOIN organisations o ON o.id = m.organisation_id
+        WHERE (o.slug = $2 OR o.id::text = $2) AND m.status = 'active'
+        LIMIT 1
+     )
+     SELECT u.*, m.*, e.* FROM u LEFT JOIN m ON true LEFT JOIN LATERAL (${entitlementsSql("m.org_id")}) e ON m.org_id IS NOT NULL`;
+
+async function contextRowIn(db: Db, orgSlug: string, token: string): Promise<ContextRow | null> {
+  return db.maybeOne<ContextRow>(CONTEXT_SQL, [sha256(token), orgSlug]);
+}
+
+/** The context from that row, or the error the caller gets (401, 404, 403), as orgContext always answered. */
+function contextOf(row: ContextRow | null): OrgContext | AppError {
+  if (!row) return unauthenticated();
+  if (!row.org_id) return notFound("Workspace not found.");
+  if (row.org_status !== "active") return forbidden("This workspace is not active.");
+  return {
+    user: currentUserOf(row),
+    org: { id: row.org_id, slug: row.slug, name: row.org_name, timezone: row.timezone, current_policy_id: row.current_policy_id, status: row.org_status },
+    membership: { id: row.membership_id, role: row.role, employee_code: row.employee_code },
+    plan: entitlementsOf(row),
+  };
+}
 
 /**
  * Resolves the organisation from its slug through the caller's active membership (RLS hides other orgs).
- * The session lookup and the membership lookup run in one transaction: on a distant database each transaction is
- * several round trips, and this pair runs before every page. Deduplicated per request with React's cache.
+ * The session, the membership and the plan are one statement in one transaction (CONTEXT_SQL): on a distant database
+ * each round trip is a large share of a page load, and this runs before every page. Deduplicated per request with
+ * React's cache. No session token: 401 without asking the database.
  */
 export const orgContext = cache(async function orgContext(orgSlug: string): Promise<OrgContext> {
-  const found = await withSystem(async (db) => {
-    const user = await currentUserIn(db);
-    if (!user) return { user: null, row: null, plan: null };
-    // The membership query binds the user id itself, so the system role sees exactly what RLS would show this user.
-    const row = await db.maybeOne<OrgRow>(ORG_SQL, [orgSlug, user.profileId]);
-    const plan = row ? await resolveEntitlements(db, row.org_id) : null;
-    return { user, row, plan };
-  });
-  const { user, row, plan } = found;
-  if (!user) throw unauthenticated();
-  if (!row || !plan) throw notFound("Workspace not found.");
-  if (row.status !== "active") throw forbidden("This workspace is not active.");
-  return {
-    user,
-    org: { id: row.org_id, slug: row.slug, name: row.name, timezone: row.timezone, current_policy_id: row.current_policy_id, status: row.status },
-    membership: { id: row.membership_id, role: row.role, employee_code: row.employee_code },
-    plan,
-  };
+  const token = await requestSessionToken();
+  if (!token) throw unauthenticated();
+  const ctx = contextOf(await withSystem((db) => contextRowIn(db, orgSlug, token)));
+  if (ctx instanceof AppError) throw ctx;
+  return ctx;
 });
+
+/**
+ * orgContext, then `fn` in the SAME transaction (the speech route: review, 9 October 2026, the natural voice's latency
+ * on a slow link): one BEGIN and one COMMIT for both, instead of a transaction each. The same checks, in the same order:
+ * no session 401, not a member 404, an inactive workspace 403 (answered after the COMMIT, so the session's touch stays,
+ * as with orgContext). What `fn` throws rolls everything back, `fn`'s writes included.
+ */
+export async function orgContextTx<T>(orgSlug: string, fn: (ctx: OrgContext, db: Db) => Promise<T>): Promise<T> {
+  const token = await requestSessionToken();
+  if (!token) throw unauthenticated();
+  const out = await withSystem(async (db): Promise<{ err: AppError } | { ok: T }> => {
+    const ctx = contextOf(await contextRowIn(db, orgSlug, token));
+    if (ctx instanceof AppError) return { err: ctx };
+    return { ok: await fn(ctx, db) };
+  });
+  if ("err" in out) throw out.err;
+  return out.ok;
+}
 
 /** Refuses when the workspace's plan does not include a module. */
 export function requireFeature(ctx: OrgContext, key: string) { requireFeatureOf(ctx.plan, key); }

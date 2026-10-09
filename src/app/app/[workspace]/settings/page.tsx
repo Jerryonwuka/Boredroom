@@ -56,6 +56,10 @@ import { abilitiesView } from "@/server/services/abilities";
 import { listPreferences } from "@/server/services/preferences";
 import { ABILITY_WORDS, type AbilitiesView } from "@/lib/abilities";
 import { PREFERENCE_WORDS, type PreferenceList } from "@/lib/preferences";
+import { VoiceConnectionSettings } from "@/components/app/voice-connection-settings";
+import { naturalVoiceView, voiceConnectionStatus } from "@/server/services/natural-voice";
+import { NATURAL_WORDS } from "@/lib/assistant-speech/natural-words";
+import type { NaturalVoiceView, VoiceConnectionStatus } from "@/lib/natural-voices";
 import { cn } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -71,6 +75,11 @@ const SECTIONS: { key: SectionKey; label: string; icon: ReactNode }[] = [
   { key: "billing", label: "Billing", icon: <CreditCard aria-hidden /> },
   { key: "desktop", label: "Desktop", icon: <Laptop aria-hidden /> },
 ];
+/** Settings → Brenda → Natural voice when its status could not be read: shown as not ready (nothing to change). */
+const VOICE_UNREADABLE: VoiceConnectionStatus = {
+  ready: false, source: "none", hint: null, connectedAt: null, month: null, monthError: null, low: false, workspaceMonth: 0,
+  today: { used: 0, share: 0 }, sharedFull: false, historyBlocked: false, historyLeft: 0, personDailyLimit: 0,
+};
 const MODE_LABEL: Record<string, string> = { disabled: "Off", optional: "On, each person's choice", required_on_designated_tasks: "On, required on marked tasks" };
 
 /**
@@ -142,6 +151,14 @@ const MODE_LABEL: Record<string, string> = { disabled: "Off", optional: "On, eac
  * assistant) and "How I like things done" after it: the person's own list of how they like things done, in their words,
  * which only they ever see. Both read with the page (`abilitiesView`, `listPreferences`; a failed read: the card reads
  * it itself) and show disabled under an info alert until migration 0050 is applied.
+ *
+ * Natural voice (owner decision, 9 October 2026: natural voice (ElevenLabs), contract F.2 and F.3): "Your assistant" →
+ * Voice starts with the person's choice of voice, Computer voice (the default) or one of the curated natural voices
+ * with a sample each, read here (`naturalVoiceView`; a failed read: the card reads it itself) and saved to the account;
+ * the privacy line sits beside it. The Brenda section gains "Natural voice" right after "AI connection", for owners and
+ * HR (both manage it): the workspace's own ElevenLabs key (tested with one free request, stored encrypted, removable;
+ * without one Boredroom's key is used within a daily share) and this month's usage (`voiceConnectionStatus`; a failed
+ * read shows the card as not ready). Both show disabled under an info alert until migration 0053 is applied.
  */
 export default async function SettingsPage({ params, searchParams }: { params: Promise<{ workspace: string }>; searchParams: Promise<{ section?: string; setup?: string; billing?: string; plan?: string }> }) {
   const { workspace } = await params;
@@ -161,11 +178,13 @@ export default async function SettingsPage({ params, searchParams }: { params: P
   // The open section's explanatory notes, shown at the bottom of the page after "Every change is audited."
   let notes: ReactNode = null;
   if (section === "assistant") {
-    const [a, activity, followUps, talk, mutes, ai, routines, quiet, abilities, preferences] = await Promise.all([assistantProfiles(ctx), listActivity(ctx, { limit: 5 }), followUpPreference(ctx), assistantTalkPreferences(ctx), listMutes(ctx), aiConnected(ctx.org.id),
+    const [a, activity, followUps, talk, mutes, ai, routines, quiet, abilities, preferences, natural] = await Promise.all([assistantProfiles(ctx), listActivity(ctx, { limit: 5 }), followUpPreference(ctx), assistantTalkPreferences(ctx), listMutes(ctx), aiConnected(ctx.org.id),
       // Phase 7a: the person's routines and quiet hours (ready: false before 0046). A failed read: the card reads it itself.
       listRoutines(ctx).catch(() => null), quietHoursFor(ctx).catch(() => null),
       // Phase 7c: the abilities and the person's preferences (ready: false before 0050). A failed read: the card reads it itself.
-      abilitiesView(ctx).catch((): AbilitiesView | null => null), listPreferences(ctx).catch((): PreferenceList | null => null)]);
+      abilitiesView(ctx).catch((): AbilitiesView | null => null), listPreferences(ctx).catch((): PreferenceList | null => null),
+      // Natural voice (9 October 2026): the person's choice (ready: false before 0053). A failed read: the card reads it itself.
+      naturalVoiceView(ctx).catch((): NaturalVoiceView | null => null)]);
     assistants = a;
     const { name } = a.personal;
     const now = new Date(); // the server's clock, so "Today" in the activity rows reads the same on both sides
@@ -175,7 +194,7 @@ export default async function SettingsPage({ params, searchParams }: { params: P
     body = (
       <>
         <MyAssistantSettings orgSlug={ctx.org.slug} initial={a.personal} impersonated={!!ctx.user.impersonation} />
-        <MyVoiceSettings orgSlug={ctx.org.slug} name={name} speak={a.speak} impersonated={!!ctx.user.impersonation} />
+        <MyVoiceSettings orgSlug={ctx.org.slug} name={name} speak={a.speak} natural={natural} impersonated={!!ctx.user.impersonation} />
         {/* Whether the assistant asks before acting (owner decision, 8 October 2026: act without asking). */}
         {/* Review, 8 October 2026: says when acting without asking waits for the AI, and links owners and HR to the switch. */}
         <MyActModeSettings orgSlug={ctx.org.slug} name={name} initial={actStateOf(a)} ai={ai} workspaceHref={admin ? `${base}/settings?section=brenda#act-mode` : undefined} />
@@ -193,7 +212,7 @@ export default async function SettingsPage({ params, searchParams }: { params: P
     );
     notes = (
       <>
-        <PageNote section="Your assistant">The name and look change how your assistant appears to you and in the desktop app. What it can do for you stays the same. Voices come from this computer; your choice of voice and speed is kept in this browser.</PageNote>
+        <PageNote section="Your assistant">The name and look change how your assistant appears to you and in the desktop app. What it can do for you stays the same. {NATURAL_WORDS.pageNote}</PageNote>
         <PageNote section="Permissions">{ACT_WORDS.settings.pageNote(name)}</PageNote>
         <PageNote section="Abilities">{ABILITY_WORDS.notes.personalPage(name)}</PageNote>
         <PageNote section={PREFERENCE_WORDS.section}>{PREFERENCE_WORDS.pageNote(name)}</PageNote>
@@ -304,14 +323,16 @@ export default async function SettingsPage({ params, searchParams }: { params: P
       );
     }
   } else if (section === "brenda") {
-    const [ai, brenda, a, usage, collection, mentions, notesSetting, actSetting, routinesSetting, commitmentsSetting, abilities] = await Promise.all([assistantStatus(ctx), brendaOverview(ctx), assistantProfiles(ctx), usageSummary(ctx),
+    const [ai, brenda, a, usage, collection, mentions, notesSetting, actSetting, routinesSetting, commitmentsSetting, abilities, voiceKey] = await Promise.all([assistantStatus(ctx), brendaOverview(ctx), assistantProfiles(ctx), usageSummary(ctx),
       withUser(ctx.user.profileId, (db) => followUpSettings(db, ctx.org.id)), withUser(ctx.user.profileId, (db) => mentionSettings(db, ctx.org.id)),
       withUser(ctx.user.profileId, (db) => reportNoteSettings(db, ctx.org.id)), withUser(ctx.user.profileId, (db) => workspaceActSetting(db, ctx.org.id)),
       routineSettingsFor(ctx),
       // Phase 7b: the commitments switches (ready: false before 0048). A failed read shows the card disabled.
       withUser(ctx.user.profileId, (db) => commitmentSettings(db, ctx.org.id)).catch((): CommitmentSettings => ({ ready: false, track: false, threadFollowUps: false, since: null })),
       // Phase 7c: the abilities catalogue (ready: false before 0050). A failed read: the card reads it itself.
-      abilitiesView(ctx).catch((): AbilitiesView | null => null)]);
+      abilitiesView(ctx).catch((): AbilitiesView | null => null),
+      // Natural voice (9 October 2026): the key and this month's usage (ready: false before 0053). A failed read: not ready.
+      voiceConnectionStatus(ctx).catch((): VoiceConnectionStatus => VOICE_UNREADABLE)]);
     assistants = a;
     body = (
       <>
@@ -343,6 +364,10 @@ export default async function SettingsPage({ params, searchParams }: { params: P
         <SettingsSection id="ai" title="AI connection" description="Brenda runs on Claude. Connect an Anthropic API key so she can act; without one a simple built-in helper answers and only suggests, and says so.">
           {isOwner ? <AssistantConnectionForm orgSlug={ctx.org.slug} status={ai} /> : <Alert tone="info">Only owners can connect Brenda to Claude.</Alert>}
         </SettingsSection>
+        {/* Natural voices for everyone's assistant, for owners and HR (owner decision, 9 October 2026: natural voice). */}
+        <SettingsSection id="natural-voice" title={NATURAL_WORDS.connection.title} description={NATURAL_WORDS.connection.description}>
+          <VoiceConnectionSettings orgSlug={ctx.org.slug} status={voiceKey} timeZone={ctx.org.timezone} />
+        </SettingsSection>
       </>
     );
     notes = (
@@ -366,6 +391,9 @@ export default async function SettingsPage({ params, searchParams }: { params: P
             <PageNote section="AI connection">When someone tags their assistant in Messages, the conversation&apos;s recent messages are sent to Anthropic too.</PageNote>
           </>
         ) : null}
+        {/* Owners and HR both manage the ElevenLabs key (owner decision, 9 October 2026). */}
+        <PageNote section={NATURAL_WORDS.connection.title}>{NATURAL_WORDS.connection.keyNote}</PageNote>
+        <PageNote section={NATURAL_WORDS.connection.title}>{NATURAL_WORDS.connection.privacyNote}</PageNote>
       </>
     );
   } else if (section === "billing") {

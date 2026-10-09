@@ -16,6 +16,12 @@
  * - "Play a sample" says "Hi, I'm Max." in the chosen voice and speed; while it plays it reads "Stop". Leaving the
  *   page stops it.
  * No orange of its own: the chosen radio's ring and the segmented dot are the primitives' (accent rules).
+ *
+ * Natural voice (owner decision, 9 October 2026: natural voice (ElevenLabs), contract F.2): the first row after When is
+ * now the voice itself (assistant-natural-voice: Computer voice, the default, or one of the curated natural voices, each
+ * with its sample; saved to the account; the privacy line under it; why the computer voice speaks instead when it does).
+ * This browser's voice select becomes "Computer voice" (what speaks when the natural voice can't), and Speed applies to
+ * both. The footer's sample stays the computer voice's.
  */
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -31,6 +37,9 @@ import { SPEEDS, type VoiceSpeed } from "@/lib/assistant-speech/prefs";
 import type { LocalVoice } from "@/lib/assistant-speech/voices";
 import { api, isApiFailure } from "@/lib/api-client";
 import type { AssistantSpeak } from "@/lib/assistant-look";
+import type { NaturalVoiceView } from "@/lib/natural-voices";
+import { NATURAL_WORDS } from "@/lib/assistant-speech/natural-words";
+import { NaturalVoicePicker, useNaturalVoiceChoice } from "@/components/app/assistant-natural-voice";
 import { cn } from "@/lib/utils";
 
 const OFFLINE = "Could not save. Check your connection and try again.";
@@ -52,13 +61,23 @@ const baseOf = (lang: string) => lang.replace(/_/g, "-").split("-")[0].toLowerCa
 /** A voice of another language, with its language: Chrome's names already end in one ("Eddy (French (France))"). */
 const withLang = (v: LocalVoice) => (!v.lang || /\)\s*$/.test(v.name) ? v.name : `${v.name} (${v.lang})`);
 
-export function MyVoiceSettings({ orgSlug, name, speak, impersonated = false }: { orgSlug: string; name: string; speak: AssistantSpeak; impersonated?: boolean }) {
+export function MyVoiceSettings({ orgSlug, name, speak, natural = null, impersonated = false }: {
+  orgSlug: string; name: string; speak: AssistantSpeak;
+  /** The person's natural voice, read with the page (null: the card reads it itself). */
+  natural?: NaturalVoiceView | null;
+  impersonated?: boolean;
+}) {
   const router = useRouter();
   const id = useId();
   const whenHint = `${id}-when-hint`;
   const voice = useSpeech();
   const prefs = useVoicePrefs();
   const auto = useAutoVoice();
+  // The card has one footer for both saves: each clears the other's "Saved" when it starts (fix review, 9 October 2026).
+  const [status, setStatus] = useState<string | null>(null);
+  const choice = useNaturalVoiceChoice(orgSlug, natural, impersonated, () => setStatus(null));
+  // A natural voice is chosen: the computer voice is what speaks when it can't.
+  const naturalChosen = choice.chosen !== null;
 
   // When she speaks: what the server last confirmed (the page's value takes over when it brings a new one) and the
   // choice on its way, shown at once.
@@ -67,7 +86,6 @@ export function MyVoiceSettings({ orgSlug, name, speak, impersonated = false }: 
   const [target, setTarget] = useState<AssistantSpeak | null>(null);
   if (seen !== speak) { setSeen(speak); setSaved(speak); setTarget(null); }
   const [busy, setBusy] = useState(false);
-  const [status, setStatus] = useState<string | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
   const chosen = target ?? saved;
   // One save at a time, in the order chosen; a choice overtaken before its turn is not sent.
@@ -78,6 +96,7 @@ export function MyVoiceSettings({ orgSlug, name, speak, impersonated = false }: 
     if (impersonated || v === chosen) return;
     wanted.current = v;
     setTarget(v); setBusy(true); setStatus(null); setFailure(null);
+    choice.clearStatus();
     queue.current = queue.current.then(async () => {
       if (wanted.current !== v) return;
       try {
@@ -114,7 +133,7 @@ export function MyVoiceSettings({ orgSlug, name, speak, impersonated = false }: 
   ];
 
   return (
-    <SettingsSection id="voice" title="Voice" description={`Hear ${name}'s replies out loud. Only voices built into this computer are used, so the words stay on it.`}>
+    <SettingsSection id="voice" title="Voice" description={NATURAL_WORDS.section(name)}>
       <div className={cn(SETTINGS_GROUP, "@container")}>
         {/* A settings row as a fieldset: the legend names the group for screen readers, the same words stand in the
             label column for the eye (as the assistant editor's groups). */}
@@ -134,20 +153,36 @@ export function MyVoiceSettings({ orgSlug, name, speak, impersonated = false }: 
           </div>
         </fieldset>
 
+        {/* Which voice (owner decision, 9 October 2026: natural voice): Computer voice or a natural one, saved to the account. */}
+        <NaturalVoicePicker orgSlug={orgSlug} name={name} choice={choice} />
+
         {voice.supported === false ? (
-          <SettingsRow label="Voice" align="text" sideBySideAt="container">
-            <span className="text-secondary">This browser has no voices of its own, so {name} can&apos;t speak here. Only voices built into your computer are used, so your words never go to a speech service. Try Safari, or Chrome or Edge with your computer&apos;s voices.</span>
-          </SettingsRow>
+          <>
+            <SettingsRow label={NATURAL_WORDS.computer.label} align="text" sideBySideAt="container">
+              <span className="text-secondary">
+                {naturalChosen
+                  ? <>This browser has no voices of its own, so when the natural voice isn&apos;t available {name} can&apos;t speak here. Try Safari, or Chrome or Edge with your computer&apos;s voices.</>
+                  : <>This browser has no voices of its own, so {name} can&apos;t speak here in the computer voice. Choose a natural voice, or try Safari, or Chrome or Edge with your computer&apos;s voices.</>}
+              </span>
+            </SettingsRow>
+            {/* The natural voice's speed (sent with each reply), where there is no computer voice to set it for. */}
+            {naturalChosen ? (
+              <SettingsRow label="Speed" labelId="assistant-voice-speed-label" sideBySideAt="container">
+                <Segmented aria-label="Speed" name="assistant-voice-speed" value={prefs.speed} onChange={(v) => prefs.setSpeed(v as VoiceSpeed)}
+                  options={(Object.keys(SPEEDS) as VoiceSpeed[]).map((s) => ({ value: s, label: SPEEDS[s].label }))} />
+              </SettingsRow>
+            ) : null}
+          </>
         ) : (
           <>
-            <SettingsRow label="Voice" hint="From this computer. Kept in this browser only." htmlFor="assistant-voice" sideBySideAt="container">
+            <SettingsRow label={NATURAL_WORDS.computer.label} hint={naturalChosen ? NATURAL_WORDS.computer.hintFallback : NATURAL_WORDS.computer.hint} htmlFor="assistant-voice" sideBySideAt="container">
               {voice.supported === null ? (
                 <Select id="assistant-voice" disabled value="" onChange={() => undefined} className="sm:max-w-72"><option value="">Checking this computer&apos;s voices…</option></Select>
               ) : (
                 <VoiceSelect voices={voice.voices} value={prefs.voiceURI} auto={auto} onChange={prefs.setVoiceURI} />
               )}
             </SettingsRow>
-            {voice.supported ? (
+            {voice.supported || naturalChosen ? (
               <SettingsRow label="Speed" labelId="assistant-voice-speed-label" sideBySideAt="container">
                 <Segmented aria-label="Speed" name="assistant-voice-speed" value={prefs.speed} onChange={(v) => prefs.setSpeed(v as VoiceSpeed)}
                   options={(Object.keys(SPEEDS) as VoiceSpeed[]).map((s) => ({ value: s, label: SPEEDS[s].label }))} />
@@ -157,13 +192,16 @@ export function MyVoiceSettings({ orgSlug, name, speak, impersonated = false }: 
         )}
 
         {failure ? <SettingsAlert>{failure}</SettingsAlert> : null}
+        {choice.failure ? <SettingsAlert>{choice.failure}</SettingsAlert> : null}
         {/* The browser took the sample but never started it (it can refuse speech without a recent press): said, not
             left as a Stop that quietly turns back (review, 7 October 2026). */}
         {voice.blocked === SAMPLE_ID && !playing ? <SettingsAlert tone="warning">{name} couldn&apos;t speak in this browser. Try again, or choose another voice.</SettingsAlert> : null}
-        <SettingsFooter status={status ?? undefined} busy={busy ? "Saving…" : undefined}>
+        {/* Never "Saved" beside a failed save: the alerts above say what failed. */}
+        <SettingsFooter status={failure || choice.failure ? undefined : choice.status ?? status ?? undefined} busy={busy || choice.busy ? "Saving…" : undefined}>
           {voice.supported ? (
             // The label says what a press does; it changes, so it is not also a pressed toggle (a toggle keeps its name).
-            <Button variant="secondary" size="md" onClick={sample}>
+            // Its name says whose sample it is, beside the natural voices' own (9 October 2026).
+            <Button variant="secondary" size="md" onClick={sample} aria-label={playing ? "Stop the sample of the computer voice" : NATURAL_WORDS.computer.sample}>
               {playing ? <><Square className="fill-current" aria-hidden />Stop</> : <><Volume2 aria-hidden />Play a sample</>}
             </Button>
           ) : null}

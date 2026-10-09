@@ -50,6 +50,8 @@ which signs the app out at once. The tray menu also has **Sign out of this compu
   quiet minutes). As on the web, a Confirm is kept without its token.
 - What Brenda's built-in helper offers as one press (a to-do, clocking in or out, starting a timer) goes through
   `POST /api/orgs/:org/todos`, `/clock/in`, `/clock/out` and `/sessions/start`.
+- Her natural voice (when the person chose one, see "Her natural voice" below):
+  `POST /api/orgs/:org/assistant/speech` with the reply's signed token and words, `as: "base64"`.
 - On the computer, it only opens Boredroom links in the browser. No files, keyboard, other apps or screen.
 
 ## Talking to Brenda (hold to talk)
@@ -65,8 +67,9 @@ Off until the person turns it on (the mic button on a card, or **Turn voice on**
    person's own permissions and logs every action. Anything that needs a yes shows **Confirm**, which calls
    `POST /api/orgs/:org/brenda/confirm`; an answer of `ALREADY_CONFIRMED` (pressed twice, or confirmed in Boredroom
    meanwhile) counts as done. Errors from Boredroom reach the page with their `code` for this.
-4. The reply is shown and, by default, spoken with the system voice (`say` on macOS, System.Speech on Windows); see
-   "Her voice" below. Pressing the shortcut again cuts her off.
+4. The reply is shown and, by default, spoken with the system voice (`say` on macOS, System.Speech on Windows), or with
+   the natural voice the person chose in Boredroom; see "Her voice" and "Her natural voice" below. Pressing the shortcut
+   again cuts her off.
 
 The bundled app asks for microphone access the first time (`Info.plist`). "Hey Brenda" (Porcupine) comes next and only
 replaces the trigger in step 1.
@@ -84,8 +87,10 @@ kept only for the speech model's download.
 ## Her voice
 
 Owner decision, 7 October 2026 (personal assistants, phase 2). She reads her replies aloud with the computer's own
-voice, never a speech service: on a Mac, the system voice (System Settings › Accessibility › Spoken Content › System
-voice; the notch has no voice picker of its own).
+voice: on a Mac, the system voice (System Settings › Accessibility › Spoken Content › System voice; the notch has no
+voice picker of its own). Since 9 October 2026 she can also speak with a natural voice from ElevenLabs, when the person
+chose one in Boredroom (see "Her natural voice" below); the computer's voice is still the default and always the
+fallback.
 
 - **When:** as the person chose in Boredroom (Settings › Your assistant › Voice), carried by the desktop state as
   `assistant.speak`: `voice` (the default) reads the answer to something said with the talk keys, `always` every
@@ -102,6 +107,57 @@ voice; the notch has no voice picker of its own).
 - **One voice at a time:** a new answer replaces the last. She stops on Stop, typing in the ask box, asking something
   new, closing the card (Done, Esc), opening a link or the chat, the talk keys and signing out, and never speaks while
   the microphone is open. The card stays open while she talks.
+
+## Her natural voice
+
+Owner decision, 9 October 2026 (natural voice (ElevenLabs), "use your recommendations"). Each person can pick one of
+eight curated ElevenLabs voices for their assistant in Boredroom (Settings › Your assistant › Voice); "Computer voice"
+stays the default. The choice is saved to their account, so the notch uses it too. Nothing new is chosen up here.
+
+- **How it gets here:** when a natural voice is chosen, Boredroom adds a `speech` offer to each answer she may read
+  aloud (`POST /assistant/chat`, `/brenda/confirm`, `/brenda/undo`): `{ path, token, text }`, a token signed for exactly
+  those words, for this person, for 30 minutes. `sayAloud` sends it to `POST /api/orgs/:org/assistant/speech` with
+  `as: "base64"` through Rust's `api` command (the webview has no bearer token, and the CSP allows no media URL), and
+  `src/natural-voice.js` (`NaturalVoice`) decodes the MP3 with Web Audio (`decodeAudioData`, no URL involved), plays it
+  through an `AnalyserNode` and sends the level of what plays every animation frame, so her talking face follows the
+  real audio, with the same maths as the web (`src/lib/assistant-speech/level.ts`). Speed is always normal up here.
+- **When it is not used, the computer voice speaks at once:** the audio context will not run within 300 ms (checked
+  before asking, so no characters are spent; a context that is only slow to wake, such as AirPods, costs that one reply,
+  and only one that refuses or is still not running after 2 s leaves the natural voice alone for the rest of the run;
+  review, 9 October 2026), Boredroom
+  refuses (`VOICE_UNAVAILABLE`: a daily cap, the month's allowance running low, ElevenLabs failing, no key), no answer
+  within 15 s (a late answer is not played, only kept for Listen again), audio that will not decode, or an expired token (Listen more than 30 minutes
+  later). The notch never goes silent. A failure after she started ends that reply (it is not said again from the top).
+- **Unchanged:** Voice off and quiet hours decide whether she speaks; the offer only decides how. Stop, typing to her,
+  a new question, closing the card, the talk keys (at once, even while the audio is still being fetched) and signing out
+  stop the natural voice too, and she never starts it over an open microphone. Listen on a reply card reuses the card's
+  offer, and plays audio already heard from memory (the last three replies), so it is not paid for twice. Past chats
+  keep no token. The audio context sleeps 1.8 s after the last sound, and after a refusal or a hush too, so an idle
+  notch costs no CPU.
+- **Privacy:** the words she says aloud in a natural voice go to Boredroom, which sends them to ElevenLabs; nothing is
+  stored on this computer, and the audio lives only in memory (while it plays, and for Listen again). ElevenLabs keeps
+  each one in the History of the key's account; Boredroom deletes it from there once it has been said. Only reasons (never words or tokens) are
+  written to the app's log when the computer voice had to step in.
+
+### For later: playing it in Rust (not done; `src-tauri` unchanged)
+
+Tauri 2.12 / wry 0.57 create the WKWebView with autoplay on (`mediaTypesRequiringUserActionForPlayback = None`), so Web
+Audio should start without a press, as `src/sound.js` already does. If the real notch shows otherwise (the app's log
+says "natural voice: the computer voice spoke instead (suspended)" and, after the first 2 s without sound, she always
+uses the computer voice), or to stream
+instead of waiting for the whole base64 answer, the change is in Rust:
+
+1. A command `speak_natural { path, token, text }` in `lib.rs`/`voice.rs` that POSTs to the speech route with the bearer
+   token (`as: "stream"`, or a `format: "pcm"` variant of the route), writes the audio to a temporary file (removed after,
+   as `speak_rendered` does), plays it with `afplay`, measures it for the `speaking` level events as `speak_rendered`
+   measures `say`'s render, then sends `spoken`.
+2. It honours `halt()` (the talk keys, Stop, sign out, quit), never plays over an open microphone (`unspoken`), and falls
+   back to `speak()` (the computer voice) on any failure.
+3. `main.js` then calls `invoke("speak_natural", offer)` in place of the `api` call and `NaturalVoice.play`, and the
+   `brenda://voice` events drive her face as for `say`.
+4. Optionally, `media-src 'self' blob:` in the CSP (`tauri.conf.json`), if the page ever plays a URL itself.
+
+Rebuilding `src-tauri` restarts the notch, so this waits for the owner's go-ahead.
 
 ## Look
 
@@ -151,8 +207,18 @@ seconds and then writes the words out, to show the bars turning into the travell
 into the ask box letter by letter, to show her eyes reading along. `card=speaking` opens a reply and feeds her talking
 face a speech-like level every 30 ms for four seconds, as Rust does while she reads it aloud (`&synthetic` sends the
 fallback's start instead, and the page pulses her eyes itself); Listen and Stop work on any reply, and
-`&speak=always|never` sets when she speaks. Serve this folder with any static server and open it; it is not part of
-the app.
+`&speak=always|never` sets when she speaks. Her natural voice: `&natural` gives every answer a `speech` offer and the mock
+speech route a 2-second WAV made in the page (a hum with syllables; no network, never ElevenLabs), so Listen and anything
+read aloud plays through Web Audio and her face follows the measured level; `?card=speaking&natural` presses Listen for
+you. `&natural=fail` (502 `VOICE_UNAVAILABLE`), `slow` (answers after 16 s: the computer voice takes over at 15 s and the
+late audio is dropped), `suspended` (the audio context never runs: the computer voice at once, no request, and after
+2 s the natural voice is off for the run),
+`decode` (bytes that are not audio) and `listen` (the talk keys go down while it plays: it stops at once) show each
+fallback; the mock computer voice logs `speak` in the console. Serve this folder with any static server and open it
+(for example `python3 -m http.server 4517` in `desktop/`, then `http://127.0.0.1:4517/preview.html?card=speaking&natural`);
+it is not part of the app. A browser that wants a press before it plays sound shows "Press anywhere to start" first. To
+see it in WebKit, as the notch does, open the same address in Safari by hand (Develop › Show JavaScript Console for the
+logs); Safari also wants a press first, which the notch does not.
 
 ## Build installers
 
