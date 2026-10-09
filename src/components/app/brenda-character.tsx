@@ -55,7 +55,9 @@ export const BrendaCharacter = forwardRef<BrendaCharacterHandle, {
   look?: AssistantLook;
   /** Never talks, even while she speaks (a preview of someone else's assistant). */
   quiet?: boolean;
-}>(function BrendaCharacter({ state = "idle", size = 120, interactive = false, className, label, stream = null, level, look, quiet = false }, ref) {
+  /** "own": her resting light is her own colour, not her moods' (her home, owner request 9 October 2026). */
+  glow?: "mood" | "own";
+}>(function BrendaCharacter({ state = "idle", size = 120, interactive = false, className, label, stream = null, level, look, quiet = false, glow = "mood" }, ref) {
   const scoped = useScopedAssistant();
   const { colour, visor, eyes } = look ?? scoped;
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -155,6 +157,7 @@ export const BrendaCharacter = forwardRef<BrendaCharacterHandle, {
   }, [size]);
 
   useEffect(() => { engine.current?.setState(state); still.current?.(); }, [state]);
+  useEffect(() => { engine.current?.setGlowMode(glow); still.current?.(); }, [glow]);
   // A character told to keep quiet (or no longer) while she speaks: the loop reads it next frame; a still one redraws.
   useEffect(() => { quietRef.current = quiet; hush.current(); }, [quiet]);
   // A new look (the editor's preview, a saved profile): drawn from the next frame, or at once when she is still.

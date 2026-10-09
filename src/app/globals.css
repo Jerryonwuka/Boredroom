@@ -597,45 +597,70 @@ html[data-brenda-chat] #main, html:has([data-brenda-chat-view]) #main { padding:
    as --shell-banners. The chat is that much shorter than the screen, and so is the sidebar beside it. */
 html[data-brenda-chat] #workspace-sidebar, html:has([data-brenda-chat-view]) #workspace-sidebar { height: calc(100dvh - var(--shell-banners, 0px)); }
 
-/* Her face (owner decision, 4 October 2026; her look, 7 October 2026): the same character as the desktop notch, a white
-   sphere with a black visor and white pill eyes behind it. The visor and eyes follow the pointer together (--lx/--ly, set
-   by brenda-face.tsx), she blinks and breathes. Her glow, if any, is the accent. Personal assistants (owner decision,
-   7 October 2026): the sphere takes the assistant's colour from --sphere-hi/mid/edge (set by brenda-face.tsx from
-   lib/assistant-look; the fallbacks are Brenda's white), and data-visor / data-eyes pick the visor and eyes below. */
+/* Her face (owner decision, 4 October 2026; her look, 7 October 2026; her coat, 8 October 2026): the same character as
+   the desktop notch, a fluffy ball (a tufted silhouette, short tufts on top and longer below, as her drawn coat) with a
+   black visor and white pill eyes behind it. The visor and eyes follow the pointer together (--lx/--ly, set by
+   brenda-face.tsx), she blinks and breathes. Her outline and glow are drop shadows, so they follow the tufts; the faint
+   outline keeps a pale coat visible on the white light canvas. Her glow, if any, is the accent.
+   Personal assistants (owner decision, 7 October 2026): every assistant wears the coat, in its own colour. The coat is
+   two layers masked to the tufted silhouette (--brenda-coat-under, a soft blurred fringe, and --brenda-coat, the coat
+   itself), so they can take the assistant's colour from --sphere-hi/mid/edge (set by brenda-face.tsx from
+   lib/assistant-look) as --coat-1..4 and --coat-fringe; white (or no colour) keeps the owner's exact stops. data-visor and
+   data-eyes pick the visor and eyes below. */
+:root { --brenda-visor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='-80 -42 160 86' preserveAspectRatio='none'%3E%3Cpath d='M-80 -2C-80 -37.8 -64 -42 -40 -42C-22.4 -42 -12.8 -28 0 -28C12.8 -28 22.4 -42 40 -42C64 -42 80 -37.8 80 -2C80 35.2 49.6 44 0 44C-49.6 44 -80 35.2 -80 -2Z'/%3E%3C/svg%3E"); --brenda-coat-under: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cdefs%3E%3Cfilter id='b' x='-10%25' y='-10%25' width='120%25' height='120%25'%3E%3CfeGaussianBlur stdDeviation='1.4'/%3E%3C/filter%3E%3C/defs%3E%3Cpath d='M58.0 6.0Q62.7 3.8 65.1 9.3Q71.5 2.9 70.9 11.7Q77.4 8.3 76.8 15.7Q84.4 12.2 81.4 20.3Q88.6 18.8 86.8 24.7Q92.7 25.6 90.4 31.1Q97.3 32.7 92.0 38.6Q99.2 41.7 93.7 47.0Q100.3 50.2 93.8 53.4Q103.3 59.4 92.7 61.9Q98.7 66.9 91.3 67.2Q95.7 72.5 88.4 72.0Q92.4 78.4 85.0 77.0Q89.7 85.8 80.5 82.0Q85.0 92.6 75.1 85.5Q77.3 95.8 69.1 88.7Q70.3 99.4 64.2 92.4Q63.7 102.2 58.4 93.2Q56.3 104.8 51.6 93.6Q48.3 102.7 45.5 93.8Q40.7 103.1 39.4 92.1Q32.4 103.5 32.9 91.4Q25.9 100.1 28.8 88.3Q19.8 95.4 22.2 85.1Q14.2 89.2 17.8 80.5Q6.2 85.3 13.9 74.6Q0.7 77.5 10.6 67.5Q-1.0 67.2 7.9 59.9Q-2.9 57.2 5.7 51.7Q-0.9 47.9 5.7 44.6Q-2.0 40.1 6.6 38.6Q0.5 31.7 10.2 30.7Q4.4 22.5 15.2 24.4Q11.0 17.6 17.9 19.9Q14.3 11.8 22.4 16.2Q20.8 6.6 28.8 11.2Q29.6 6.5 33.6 8.4Q36.0 3.1 41.1 7.5Q44.3 -0.7 49.2 5.7Q54.0 1.4 58.0 6.0Z' opacity='.7' filter='url%28%23b%29'/%3E%3C/svg%3E"); --brenda-coat: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M55.5 8.0Q61.4 4.5 65.0 10.5Q72.1 7.1 74.0 14.0Q81.5 11.6 79.6 20.3Q88.1 19.7 86.5 27.2Q97.3 29.0 90.4 38.6Q101.9 43.4 92.5 51.0Q98.8 57.2 91.7 61.4Q98.4 71.1 86.7 72.7Q89.6 83.5 77.7 81.6Q80.4 92.6 71.5 87.6Q71.6 97.2 64.1 90.0Q61.8 100.9 55.0 92.5Q51.2 102.1 47.1 92.4Q40.1 103.0 37.6 90.0Q25.2 99.7 25.5 84.0Q14.3 88.1 17.7 76.6Q4.9 80.5 12.7 70.3Q1.3 67.9 8.3 58.7Q-2.2 55.4 6.8 50.0Q-0.7 42.5 9.3 37.7Q2.8 30.4 13.1 30.1Q10.0 20.0 20.3 19.8Q20.1 11.9 27.5 13.8Q29.0 8.4 34.4 10.7Q38.9 2.8 46.5 8.1Q51.1 1.7 55.5 8.0Z'/%3E%3C/svg%3E"); }
 .brenda-face { --lx: 0; --ly: 0; --glow: transparent; position: relative; display: inline-block; flex: none; border-radius: 50%; overflow: hidden;
-  background: radial-gradient(circle at 32% 26%, var(--sphere-hi, #fff) 0 30%, var(--sphere-mid, #ececf0) 72%, var(--sphere-edge, #c9cad1) 100%); box-shadow: 0 0 0 1px var(--border-input), var(--elev-natural-xs), 0 0 12px -2px var(--glow); /* the ring and the lift keep her white face visible on the white light canvas */
-  transition: transform 250ms var(--ease-out), rotate 250ms var(--ease-out), translate 160ms var(--ease-out), box-shadow 400ms var(--ease-out); animation: brenda-breathe 3.6s ease-in-out infinite; }
-.brenda-face .eyes { position: absolute; left: 10%; width: 80%; top: 16%; height: 37%; display: flex; align-items: center; justify-content: center;
-  background: #0b0b0e; border-radius: 46% 46% 50% 50% / 46% 46% 62% 62%;
-  -webkit-mask: radial-gradient(ellipse 17% 16% at 50% 0, #0000 94%, #000); mask: radial-gradient(ellipse 17% 16% at 50% 0, #0000 94%, #000); /* the soft dip between the eyes */ transform: translate(calc(var(--lx) * var(--reach-x)), calc(var(--ly) * var(--reach-y))); }
+  --coat-1: var(--sphere-hi, #fff); --coat-2: color-mix(in srgb, var(--sphere-hi, #fff) 50%, var(--sphere-mid, #ececf0)); --coat-3: color-mix(in srgb, var(--sphere-mid, #ececf0) 80%, var(--sphere-edge, #c9cad1)); --coat-4: var(--sphere-edge, #c9cad1); --coat-fringe: var(--sphere-mid, #ececf0);
+  filter: drop-shadow(0 0 .5px rgb(20 24 40 / .45)) drop-shadow(0 1px 1px rgb(0 0 0 / .1)) drop-shadow(0 0 5px var(--glow));
+  transition: transform 250ms var(--ease-out), rotate 250ms var(--ease-out), translate 160ms var(--ease-out), filter 400ms var(--ease-out); animation: brenda-breathe 3.6s ease-in-out infinite; }
+.brenda-face:not([data-colour]), .brenda-face[data-colour="white"] { --coat-1: #fff; --coat-2: #f6f6f8; --coat-3: #e4e4e9; --coat-4: #cbccd3; --coat-fringe: #e9e9ee; }
+.brenda-face::before, .brenda-face::after { content: ""; position: absolute; inset: 0; pointer-events: none; }
+.brenda-face::before { background: var(--coat-fringe); -webkit-mask: var(--brenda-coat-under) center / 100% 100% no-repeat; mask: var(--brenda-coat-under) center / 100% 100% no-repeat; }
+.brenda-face::after { background: radial-gradient(78% 78% at 36% 30%, var(--coat-1) 0, var(--coat-2) 45%, var(--coat-3) 80%, var(--coat-4) 100%);
+  -webkit-mask: var(--brenda-coat) center / 100% 100% no-repeat; mask: var(--brenda-coat) center / 100% 100% no-repeat; }
+/* The visor is her exact bean outline (--brenda-visor, engine.ts visorPath) as a mask, placed as the drawn character
+   places it (R = 0.42 of the face: 1.6 R wide, 0.86 R tall, its centre 0.19 R above the middle), so it keeps its shape
+   at every size; the eyes sit 0.84 R apart, a little above the visor's middle, sized per face size. Over the coat. */
+.brenda-face .eyes { position: absolute; z-index: 1; left: 16.4%; width: 67.2%; top: 24.4%; height: 36.1%; box-sizing: border-box; padding-bottom: 4.3%; display: flex; align-items: center; justify-content: center;
+  background: #0b0b0e; -webkit-mask: var(--brenda-visor) center / 100% 100% no-repeat; mask: var(--brenda-visor) center / 100% 100% no-repeat;
+  transform: translate(calc(var(--lx) * var(--reach-x)), calc(var(--ly) * var(--reach-y))); }
 
-.brenda-face .eyes > span { background: #fff; border-radius: 2px; box-shadow: 0 0 2px rgb(255 255 255 / .6); transition: transform 70ms ease, height 200ms var(--ease-out), scale 150ms var(--ease-out); }
-.brenda-face-sm { width: 18px; height: 18px; --reach-x: 1.5px; --reach-y: 1.2px; }
-.brenda-face-sm .eyes { gap: 4.5px; } .brenda-face-sm .eyes > span { width: 1.6px; height: 3.2px; }
-.brenda-face-md { width: 26px; height: 26px; --reach-x: 2.5px; --reach-y: 1.8px; }
-.brenda-face-md .eyes { gap: 6.5px; } .brenda-face-md .eyes > span { width: 2.4px; height: 4.6px; }
-.brenda-face-lg { width: 34px; height: 34px; --reach-x: 3px; --reach-y: 2.2px; }
-.brenda-face-lg .eyes { gap: 8.5px; } .brenda-face-lg .eyes > span { width: 3px; height: 6px; }
+.brenda-face .eyes > span { background: #fff; border-radius: 999px; box-shadow: 0 0 1px rgb(255 255 255 / .55); transition: transform 70ms ease, height 200ms var(--ease-out), scale 150ms var(--ease-out); }
+.brenda-face-sm { width: 18px; height: 18px; --reach-x: 1px; --reach-y: .8px; }
+.brenda-face-sm .eyes { gap: 4.8px; } .brenda-face-sm .eyes > span { width: 1.5px; height: 3px; box-shadow: none; } /* no glow at 18px: it blurs the pills into rings */
+.brenda-face-md { width: 26px; height: 26px; --reach-x: 1.6px; --reach-y: 1.2px; }
+.brenda-face-md .eyes { gap: 7.2px; } .brenda-face-md .eyes > span { width: 2px; height: 3.6px; }
+.brenda-face-lg { width: 34px; height: 34px; --reach-x: 2px; --reach-y: 1.5px; }
+.brenda-face-lg .eyes { gap: 9.5px; } .brenda-face-lg .eyes > span { width: 2.5px; height: 4.5px; }
 /* The other visors and eyes (personal assistants, 7 October 2026); bean and pill, or no attribute, are hers above. Every
-   visor stays near-black and every eye white whatever the sphere's colour, and every eye style fits every visor. These
-   come before her moods and reactions on purpose: an expression (happy, sad, listening, a squash, dizzy, love, a blink)
-   wins over the eye style, as it does in her drawn character. The band and the screen clip the eyes to their own shape,
-   as the bean's mask does, so a tall expression (listening, alert) never shows white past the slim band's edge; the
-   notch's `.face` does the same (integration, 7 October 2026). */
-.brenda-face[data-visor="band"] .eyes { left: 8%; width: 84%; top: 25%; height: 25%; border-radius: 999px; -webkit-mask: none; mask: none; overflow: hidden; }
-.brenda-face[data-visor="screen"] .eyes { left: 18%; width: 64%; top: 13%; height: 40%; border-radius: 30% / 34%; -webkit-mask: none; mask: none; overflow: hidden; }
-.brenda-face-sm[data-eyes="round"] .eyes > span { width: 2.4px; height: 2.4px; border-radius: 50%; }
-.brenda-face-md[data-eyes="round"] .eyes > span { width: 3.6px; height: 3.6px; border-radius: 50%; }
-.brenda-face-lg[data-eyes="round"] .eyes > span { width: 4.6px; height: 4.6px; border-radius: 50%; }
-.brenda-face-sm[data-eyes="square"] .eyes > span { width: 2.4px; height: 2.4px; border-radius: 0.5px; }
-.brenda-face-md[data-eyes="square"] .eyes > span { width: 3.4px; height: 3.4px; border-radius: 0.8px; }
-.brenda-face-lg[data-eyes="square"] .eyes > span { width: 4.2px; height: 4.2px; border-radius: 1px; }
+   visor stays near-black and every eye white whatever the coat's colour, and every eye style fits every visor. Each
+   visor is placed in the drawn character's proportions (engine.ts VISOR_BOXES, R = 0.42 of the face, the visor's origin
+   0.19 R above the middle, the eyes 0.04 R above it), as the bean is; every eye style keeps the eyes' centres 0.84 R
+   apart. These come before her moods and reactions on purpose: an expression (happy, sad, listening, a squash, dizzy,
+   love, a blink) wins over the eye style, as it does in her drawn character. The band and the screen clip the eyes to
+   their own shape, as the bean's mask does, so a tall expression (listening, alert) never shows white past the slim
+   band's edge; the notch's `.face` does the same (integration, 7 October 2026). */
+.brenda-face[data-visor="band"] .eyes { left: 13.9%; width: 72.2%; top: 29.4%; height: 25.2%; padding-bottom: 4.6%; border-radius: 999px; -webkit-mask: none; mask: none; overflow: hidden; }
+.brenda-face[data-visor="screen"] .eyes { left: 22.3%; width: 55.4%; top: 23.5%; height: 35.3%; padding-bottom: 3%; border-radius: 18.2% / 28.6%; -webkit-mask: none; mask: none; overflow: hidden; }
+.brenda-face-sm[data-eyes="round"] .eyes { gap: 4.1px; } .brenda-face-sm[data-eyes="round"] .eyes > span { width: 2.2px; height: 2.2px; border-radius: 50%; }
+.brenda-face-md[data-eyes="round"] .eyes { gap: 6px; } .brenda-face-md[data-eyes="round"] .eyes > span { width: 3.2px; height: 3.2px; border-radius: 50%; }
+.brenda-face-lg[data-eyes="round"] .eyes { gap: 7.8px; } .brenda-face-lg[data-eyes="round"] .eyes > span { width: 4.2px; height: 4.2px; border-radius: 50%; }
+.brenda-face-sm[data-eyes="square"] .eyes { gap: 4.3px; } .brenda-face-sm[data-eyes="square"] .eyes > span { width: 2px; height: 2px; border-radius: 0.5px; }
+.brenda-face-md[data-eyes="square"] .eyes { gap: 6.2px; } .brenda-face-md[data-eyes="square"] .eyes > span { width: 3px; height: 3px; border-radius: 0.7px; }
+.brenda-face-lg[data-eyes="square"] .eyes { gap: 8.2px; } .brenda-face-lg[data-eyes="square"] .eyes > span { width: 3.8px; height: 3.8px; border-radius: 0.9px; }
 .brenda-face.blink .eyes > span { transform: scaleY(.12); }
 .brenda-face[data-tone="accent"] { --glow: var(--accent); } .brenda-face[data-tone="ok"] { --glow: var(--success); }
 .brenda-face[data-tone="warn"] { --glow: var(--warning); } .brenda-face[data-tone="bad"] { --glow: var(--danger); }
 .brenda-face[data-tone="blue"], .brenda-face[data-tone="violet"] { --glow: transparent; }
 .brenda-face.happy .eyes > span { height: 3px; width: 6px; background: transparent; box-shadow: none; border: 2px solid #fff; border-bottom: 0; border-radius: 6px 6px 0 0; }
-.brenda-face-sm.happy .eyes > span { width: 4px; height: 2px; border-width: 1.5px; }
+/* Happy arcs: border-box and fixed (they never flex), centred where the pill eyes sit, whole-pixel strokes, inside the bean;
+   never over a passing reaction (dizzy, love) on a happy face. */
+.brenda-face.happy .eyes > span { box-sizing: border-box; flex: none; }
+.brenda-face.brenda-face-sm.happy:not(.dizzy):not(.love) .eyes { gap: 3.5px; } .brenda-face.brenda-face-sm.happy:not(.dizzy):not(.love) .eyes > span { width: 3px; height: 2px; border-width: 1px; }
+.brenda-face.brenda-face-md.happy:not(.dizzy):not(.love) .eyes { gap: 4.5px; } .brenda-face.brenda-face-md.happy:not(.dizzy):not(.love) .eyes > span { width: 4.5px; height: 3px; border-width: 1px; }
+.brenda-face.brenda-face-lg.happy:not(.dizzy):not(.love) .eyes { gap: 6px; } .brenda-face.brenda-face-lg.happy:not(.dizzy):not(.love) .eyes > span { width: 6px; height: 3px; border-width: 2px; }
+.brenda-face.brenda-face-sm.dizzy .eyes > span { width: 3.5px; height: 3.5px; border-width: 1px; } .brenda-face.brenda-face-sm.dizzy .eyes { gap: 2.5px; } .brenda-face.brenda-face-lg.dizzy .eyes { gap: 6px; } .brenda-face.brenda-face-lg.love .eyes { gap: 4px; }
+.brenda-face.brenda-face-sm.love .eyes { gap: 2.5px; } .brenda-face.brenda-face-sm.love .eyes > span { width: 4.5px; height: 4.5px; clip-path: path("M2.25 4.18 L.51 2.38 A1.09 1.09 0 0 1 2.25 .9 A1.09 1.09 0 0 1 3.99 2.38 Z"); }
+.brenda-face.brenda-face-md.love .eyes { gap: 3px; } .brenda-face.brenda-face-md.dizzy .eyes { gap: 4.5px; }
 .brenda-face.sad .eyes > span { height: 2px; border-radius: 1px; }
 .brenda-face.alert { animation: brenda-hop 600ms var(--ease-out) 1, brenda-breathe 3.6s ease-in-out 600ms infinite; }
 .brenda-face.think .eyes { transform: translate(calc(var(--reach-x) * .8), calc(var(--reach-y) * -1)); }
@@ -652,19 +677,20 @@ html[data-brenda-chat] #workspace-sidebar, html:has([data-brenda-chat-view]) #wo
 .brenda-face.dizzy { animation: brenda-wobble 450ms ease-in-out infinite alternate; }
 .brenda-face.dizzy .eyes > span { width: 5px; height: 5px; border-radius: 50%; background: transparent; box-shadow: none; border: 1.5px solid #fff; border-right-color: transparent; animation: brenda-spin 550ms linear infinite; }
 .brenda-face.love { --glow: var(--accent); }
-.brenda-face.love .eyes > span { width: 7px; height: 7px; box-shadow: none; border-radius: 0; background: var(--accent); clip-path: path("M3.5 6.5 L0.8 3.7 A1.7 1.7 0 0 1 3.5 1.4 A1.7 1.7 0 0 1 6.2 3.7 Z"); animation: brenda-thump 700ms ease-in-out infinite; }
+.brenda-face.love .eyes > span { width: 7px; height: 7px; box-shadow: none; border: 0; border-radius: 0; background: var(--accent); clip-path: path("M3.5 6.5 L0.8 3.7 A1.7 1.7 0 0 1 3.5 1.4 A1.7 1.7 0 0 1 6.2 3.7 Z"); animation: brenda-thump 700ms ease-in-out infinite; }
 /* Talking (owner decision, 7 October 2026: her voice): she has no mouth, so her eyes squash and open with each syllable,
-   she bobs a little and her glow brightens with the level, in her own sphere colour. brenda-face.tsx sets data-talking on
+   she bobs a little and her glow brightens with the level, in her own coat colour. brenda-face.tsx sets data-talking on
    every face of hers while she speaks and --talk (0 to 1) each frame; under reduced motion it is a still pose. After her
    moods and reactions on purpose, so talking wins over a nod or a startle; expressions that animate `scale` (love's
-   thump) still win, as animations do. Listening never coincides with it: she never speaks while the microphone is open. */
+   thump) still win, as animations do. Listening never coincides with it: she never speaks while the microphone is open.
+   Her glow is a drop shadow (her coat, 8 October 2026), so it follows the tufts; the outline stays as at rest. */
 .brenda-face[data-talking] { --talk: 0; --talk-glow: var(--sphere-mid, #ececf0); translate: 0 calc(var(--talk) * -1.2px);
-  box-shadow: 0 0 0 1px var(--border-input), var(--elev-natural-xs), 0 0 calc(8px + var(--talk) * 12px) calc(-2px + var(--talk) * 3px) color-mix(in srgb, var(--talk-glow) calc(40% + var(--talk) * 60%), transparent);
-  transition: transform 250ms var(--ease-out), rotate 250ms var(--ease-out), translate 60ms linear, box-shadow 60ms linear; }
+  filter: drop-shadow(0 0 .5px rgb(20 24 40 / .45)) drop-shadow(0 1px 1px rgb(0 0 0 / .1)) drop-shadow(0 0 calc(4px + var(--talk) * 6px) color-mix(in srgb, var(--talk-glow) calc(40% + var(--talk) * 60%), transparent));
+  transition: transform 250ms var(--ease-out), rotate 250ms var(--ease-out), translate 60ms linear, filter 60ms linear; }
 .brenda-face[data-talking] .eyes > span { scale: calc(1.04 - var(--talk) * .05) calc(.72 + var(--talk) * .45);
   transition: transform 70ms ease, height 200ms var(--ease-out), scale 60ms linear; }
-/* On the light canvas a pale sphere colour's glow vanishes into the white (review, 7 October 2026): the glow takes the
-   sphere's darker edge there, and white and grey, whose edges are still pale, a share of the ink as well. */
+/* On the light canvas a pale coat colour's glow vanishes into the white (review, 7 October 2026): the glow takes the
+   coat's darker edge there, and white and grey, whose edges are still pale, a share of the ink as well. */
 [data-theme="light"] .brenda-face[data-talking] { --talk-glow: var(--sphere-edge, #c9cad1); }
 [data-theme="light"] .brenda-face[data-talking]:is([data-colour="white"], [data-colour="grey"]) { --talk-glow: color-mix(in srgb, var(--sphere-edge, #c9cad1) 55%, var(--foreground)); }
 @keyframes brenda-breathe { 0%, 100% { scale: 1; } 50% { scale: 1.035; } }
@@ -689,7 +715,7 @@ html[data-brenda-chat] #workspace-sidebar, html:has([data-brenda-chat-view]) #wo
 @media (prefers-reduced-motion: reduce) {
   .brenda-face, .brenda-face *, .brenda-shimmer { animation: none !important; transition: none !important; }
   /* Talking, still: eyes a little wider and a steady soft glow in her colour while she speaks (her voice, 7 October 2026). */
-  .brenda-face[data-talking] { translate: none; box-shadow: 0 0 0 1px var(--border-input), var(--elev-natural-xs), 0 0 12px -1px color-mix(in srgb, var(--talk-glow) 70%, transparent); }
+  .brenda-face[data-talking] { translate: none; filter: drop-shadow(0 0 .5px rgb(20 24 40 / .45)) drop-shadow(0 1px 1px rgb(0 0 0 / .1)) drop-shadow(0 0 6px color-mix(in srgb, var(--talk-glow) 70%, transparent)); }
   .brenda-face[data-talking] .eyes > span { scale: 1.04 1.1; }
   .brenda-shimmer { -webkit-text-fill-color: currentColor; }
   .rec-dot, .presence-live { animation: none; }
@@ -706,13 +732,6 @@ html[data-brenda-chat] #workspace-sidebar, html:has([data-brenda-chat-view]) #wo
   --brenda-glow-hot: rgb(255 61 0 / 0.16);
   --brenda-glow: rgb(255 108 2 / 0.13);
   --brenda-glow-wide: rgb(255 108 2 / 0.05);
-  --brenda-orb-light: rgb(255 214 178 / 0.4);
-  --brenda-orb-core: #c2500c;
-  --brenda-orb-mid: #6a2405;
-  --brenda-orb-edge: #2a0e04;
-  --brenda-orb-rim: rgb(255 154 77 / 0.45);
-  --brenda-orb-halo: rgb(255 108 2 / 0.3);
-  --brenda-orb-halo-wide: rgb(255 61 0 / 0.14);
   --brenda-box-ring: rgb(255 108 2 / 0.32);
   --brenda-box-glow: rgb(255 108 2 / 0.07);
 }
@@ -721,13 +740,6 @@ html[data-brenda-chat] #workspace-sidebar, html:has([data-brenda-chat-view]) #wo
   --brenda-glow-hot: rgb(255 110 30 / 0.12);
   --brenda-glow: rgb(255 140 60 / 0.14);
   --brenda-glow-wide: rgb(255 170 110 / 0.1);
-  --brenda-orb-light: rgb(255 255 255 / 0.75);
-  --brenda-orb-core: #ffa766;
-  --brenda-orb-mid: #ffc99f;
-  --brenda-orb-edge: #ffe4cf;
-  --brenda-orb-rim: rgb(242 95 0 / 0.3);
-  --brenda-orb-halo: rgb(255 120 40 / 0.24);
-  --brenda-orb-halo-wide: rgb(255 140 60 / 0.12);
   --brenda-box-ring: rgb(242 95 0 / 0.3);
   --brenda-box-glow: rgb(242 95 0 / 0.05);
 }
@@ -736,7 +748,16 @@ html[data-brenda-chat] #workspace-sidebar, html:has([data-brenda-chat-view]) #wo
   --brenda-fill: color-mix(in srgb, var(--background) 62%, transparent);
 }
 @layer components {
-.brenda-panel { position: relative; overflow: clip; border: 1px solid var(--border); border-radius: 22px;
+/* Her panel's glow is the person's own assistant's colour (owner request, 9 October 2026): brenda-home.tsx sets
+   --brenda-tint-dark / --brenda-tint-light from their sphere's shade and rim; without them it is the orange it was. The
+   glow, the wash and her box's resting ring all mix from it; the box's focus ring stays the accent (the accent rules). */
+.brenda-panel { --brenda-tint: var(--brenda-tint-dark, rgb(255 108 2));
+  --brenda-glow-hot: color-mix(in srgb, var(--brenda-tint) 18%, transparent);
+  --brenda-glow: color-mix(in srgb, var(--brenda-tint) 14%, transparent);
+  --brenda-glow-wide: color-mix(in srgb, var(--brenda-tint) 6%, transparent);
+  --brenda-box-ring: color-mix(in srgb, var(--brenda-tint) 34%, transparent);
+  --brenda-box-glow: color-mix(in srgb, var(--brenda-tint) 7%, transparent);
+  position: relative; overflow: clip; border: 1px solid var(--border); border-radius: 22px;
   background:
     radial-gradient(55% 42% at 60% 4%, var(--brenda-glow-hot), transparent 70%),
     radial-gradient(75% 58% at 50% 20%, var(--brenda-glow), transparent 72%),
@@ -744,19 +765,19 @@ html[data-brenda-chat] #workspace-sidebar, html:has([data-brenda-chat-view]) #wo
     var(--brenda-panel-base);
   /* Unrepeated: a repeat would draw the glow's hot top edge again under the translucent bottom hairline. */
   background-repeat: no-repeat; }
-.brenda-orb { position: relative; isolation: isolate; display: grid; place-items: center; width: 120px; height: 120px; border-radius: 9999px;
-  background:
-    radial-gradient(56% 34% at 50% 15%, var(--brenda-orb-light), transparent 100%),
-    radial-gradient(circle 72px at 50% 60%, var(--brenda-orb-core) 0%, var(--brenda-orb-mid) 55%, var(--brenda-orb-edge) 100%);
-  box-shadow: inset 0 0 0 1px var(--brenda-orb-rim), inset 0 -14px 30px -6px var(--brenda-orb-halo); }
-.brenda-orb::before { content: ""; position: absolute; inset: 0; z-index: -1; border-radius: inherit; pointer-events: none;
-  box-shadow: 0 0 44px 6px var(--brenda-orb-halo), 0 0 120px 28px var(--brenda-orb-halo-wide);
-  animation: brenda-orb 6s ease-in-out infinite; }
-/* Her canvas is a rectangle smaller than the orb and her mood light runs past its bottom edge, so unmasked it draws a
-   straight line across the sphere; the mask fades the canvas out before its edges (her face stays whole). */
-.brenda-orb > canvas { mix-blend-mode: luminosity; mask-image: radial-gradient(closest-side, #000 62%, transparent); }
-/* Listening (a live microphone): her orb's light is brighter. */
-.brenda-orb[data-live] { --brenda-orb-halo: color-mix(in srgb, var(--accent) 48%, transparent); }
+[data-theme="light"] .brenda-panel { --brenda-tint: var(--brenda-tint-light, rgb(242 95 0));
+  --brenda-glow-hot: color-mix(in srgb, var(--brenda-tint) 13%, transparent);
+  --brenda-glow: color-mix(in srgb, var(--brenda-tint) 15%, transparent);
+  --brenda-glow-wide: color-mix(in srgb, var(--brenda-tint) 10%, transparent);
+  --brenda-box-ring: color-mix(in srgb, var(--brenda-tint) 30%, transparent);
+  --brenda-box-glow: color-mix(in srgb, var(--brenda-tint) 5%, transparent); }
+/* Listening (a live microphone): her glow is brighter. */
+.brenda-panel[data-live] { --brenda-glow: color-mix(in srgb, var(--brenda-tint) 24%, transparent); }
+/* She floats on her own (owner request, 9 October 2026: "remove the orange circle that it's in and let only Brenda's
+   character be floating"). Her canvas is a rectangle and her mood light runs past its edges, so the mask fades it out
+   before them (her fur stays whole). */
+.brenda-float { position: relative; display: grid; place-items: center; border-radius: 9999px; }
+.brenda-float > canvas { mask-image: radial-gradient(closest-side, #000 80%, transparent); }
 .prompt-hero { position: relative; width: 100%; border-radius: 16px; background: var(--brenda-fill);
   box-shadow: inset 0 0 0 1px var(--brenda-box-ring), inset 0 0 28px var(--brenda-box-glow), var(--elev-natural-xs);
   transition: box-shadow var(--duration) var(--ease-out); }
@@ -775,18 +796,11 @@ html[data-brenda-chat] #workspace-sidebar, html:has([data-brenda-chat-view]) #wo
 :root[data-theme="light"] .brenda-glass-pill { background: rgb(255 255 255 / 0.5); border-color: rgb(0 0 0 / 0.08); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.7); }
 :root[data-theme="light"] .brenda-glass-pill:is(a, button):hover { background: rgb(255 255 255 / 0.72); border-color: rgb(0 0 0 / 0.14); }
 }
-/* Her canvas takes the keyboard (a poke). Its mask would hide a ring drawn on the canvas, and an orange ring would vanish
-   into the orange orb (about 1.7:1), so the orb itself carries the ring, round, in the foreground: white on the dark
-   panel, near-black on the light one, over 4.5:1 either way. Outside any layer, so it beats the page-wide ring. */
-.brenda-orb > canvas:focus-visible { outline: none; }
-.brenda-orb:has(> canvas:focus-visible) { outline: 2px solid var(--foreground); outline-offset: 3px; }
-/* A personal colour shows as chosen (owner decision, 7 October 2026: personal assistants); only Brenda's white takes
-   the orb's light. Outside any layer, so it beats the `grayscale` utility on the canvas. */
-.brenda-orb > canvas[data-sphere]:not([data-sphere="white"]) { mix-blend-mode: normal; filter: none; }
-@keyframes brenda-orb { 0%, 100% { opacity: 0.75; scale: 1; } 50% { opacity: 1; scale: 1.05; } }
-@media (prefers-reduced-motion: reduce) {
-  .brenda-orb::before { animation: none; opacity: 1; }
-}
+/* Her canvas takes the keyboard (a poke). Its mask would hide a ring drawn on the canvas, so the holder carries the ring,
+   round, in the foreground: white on the dark panel, near-black on the light one. Outside any layer, so it beats the
+   page-wide ring. */
+.brenda-float > canvas:focus-visible { outline: none; }
+.brenda-float:has(> canvas:focus-visible) { outline: 2px solid var(--foreground); outline-offset: 3px; }
 
 /* ---------------------------------------------------------------------------------------------------------------
    6. Landing page (`.lp`: src/app/page.tsx, src/components/landing), v4 for marketing (owner request, 6 October 2026).

@@ -18,7 +18,7 @@
  * in a browser with no voices); "Say a sentence" speaks with this device's own voice. Every face and character on the
  * page talks at once, as on any page: she is one person.
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { notFound } from "next/navigation";
 import { BrendaCharacter, type BrendaCharacterHandle } from "@/components/app/brenda-character";
 import { BrendaFace, type BrendaMood, type BrendaTone } from "@/components/app/brenda-face";
@@ -264,10 +264,10 @@ function PersonalLooks() {
           <AssistantScope profile={profile}>
             <span data-icon-trigger className="flex items-center gap-3 text-secondary"><BrendaGlyph size={18} aria-hidden /><BrendaGlyph size={24} aria-hidden /></span>
           </AssistantScope>
-          {/* Her home's orb (the home-panel exception, shown here only to check it): white blends into the orb's light,
-              a chosen colour shows as chosen. */}
-          <div className="brenda-orb" data-live={state === "listening" || undefined}>
-            <BrendaCharacter state={state} size={72} look={look} label="In her home's orb" className={cn(state !== "listening" && "grayscale")} />
+          {/* Her home (the home-panel exception, shown here only to check it): she floats on her own over a glow in her
+              colour (owner request, 9 October 2026). */}
+          <div className="brenda-panel w-full p-4" style={{ "--brenda-tint-dark": PALETTE[look.colour].sphere.shade, "--brenda-tint-light": PALETTE[look.colour].sphere.rim } as CSSProperties} data-live={state === "listening" || undefined}>
+            <div className="brenda-float mx-auto"><BrendaCharacter state={state} size={128} look={look} label="In her home" glow="own" /></div>
           </div>
         </div>
         <div className="min-w-0 space-y-4">

@@ -101,9 +101,9 @@
      inner highlights, which would draw along the top edge). */
   --elev-island: 0 0 0 .5px rgb(0 0 0 / .44), 0 2px 6px -2px rgb(0 0 0 / .13), 0 18px 40px -10px rgb(0 0 0 / .35);
   --radius-chip: 6px; --radius-btn-xs: 8px; --radius-control: 10px; --radius-card-sm: 12px;
-  /* Brenda's face, the same as `.brenda-face` on the web: a white sphere, a black visor, white eyes. A person's own
-     assistant takes another sphere colour (`--sphere-*` on each face, below); the visor and eyes stay these on every one. */
-  --face: #fff; --ink: #fff; --visor: #0b0b0e;
+  /* Brenda's face, the same as `.brenda-face` on the web: a fluffy ball, a black visor, white eyes. A person's own
+     assistant's coat takes another colour (`--sphere-*` on each face, below); the visor and eyes stay these on every one. */
+  --ink: #fff; --visor: #0b0b0e;
   /* Each teammate's own colour, for their small face (they are told apart by it, as by an avatar). */
   --mate-0: #f472b6; --mate-1: #34d399; --mate-2: #fb923c; --mate-3: #60a5fa; --mate-4: #e879f9; --mate-5: #facc15; --mate-6: #2dd4bf; --mate-7: #a78bfa;
   --font-sans: "Inter Variable", "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -159,71 +159,87 @@ svg.ic { width: 14px; height: 14px; flex: none; }
 .grow { flex: 1; min-width: 0; }
 
 /* Brenda's face: the web's `.brenda-face` (src/app/globals.css), the same moods and reactions. Her look (owner design,
-   7 October 2026): a white sphere, a black visor with a soft dip in its top, white pill eyes behind it; the visor and eyes
-   follow the pointer together. Her glow follows what is happening (accent, ok, warn, bad); a running timer (blue) and
-   thinking (violet) draw none. Teammates' small faces (`.mini`, below) keep their own flat shape.
-   Personal assistants (owner decision, 7 October 2026: phase 1): the face is the person's own assistant. main.js writes
-   its sphere's three stops (`--sphere-hi`, `--sphere-mid`, `--sphere-edge`, from the desktop state) and `data-visor` /
-   `data-eyes`, as on the web's `.brenda-face`; without them she is Brenda, white with the bean visor and pill eyes. The
-   visor stays near-black and the eyes white on every colour, and the ring stays for every colour. */
-.face { --lx: 0; --ly: 0; --glow: transparent; width: 28px; height: 28px; flex: none; border-radius: 50%; display: block; position: relative;
-  background: radial-gradient(circle at 32% 26%, var(--sphere-hi, #fff) 0 30%, var(--sphere-mid, #ececf0) 72%, var(--sphere-edge, #c9cad1) 100%);
-  box-shadow: 0 0 0 1px var(--border), 0 0 12px -2px var(--glow);
-  transition: transform .25s var(--spring), box-shadow .4s var(--ease); animation: face-breathe 3.6s ease-in-out infinite; }
+   7 October 2026; her coat, 8 October 2026): a fluffy ball (the web's tufted silhouette), a black visor with a soft dip
+   in its top, white pill eyes behind it; the visor and eyes follow the pointer together. Her outline and glow are drop
+   shadows, so they follow the tufts. Her glow follows what is happening (accent, ok, warn, bad); a running timer (blue)
+   and thinking (violet) draw none. Teammates' small faces (`.mini`, below) keep their own flat shape.
+   Personal assistants (owner decision, 7 October 2026: phase 1): the face is the person's own assistant, and every
+   assistant wears the coat in its own colour. main.js writes its three stops (`--sphere-hi`, `--sphere-mid`,
+   `--sphere-edge`, from the desktop state) and `data-sphere` / `data-visor` / `data-eyes`, as on the web's `.brenda-face`;
+   the coat is the web's two layers (a blurred fringe under the coat, each masked to the silhouette) coloured from them,
+   and white (or no colour) keeps the owner's exact stops. The visor stays near-black and the eyes white on every colour. */
+.face { --lx: 0; --ly: 0; --glow: transparent; --visor-shape: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='-80 -42 160 86' preserveAspectRatio='none'%3E%3Cpath d='M-80 -2C-80 -37.8 -64 -42 -40 -42C-22.4 -42 -12.8 -28 0 -28C12.8 -28 22.4 -42 40 -42C64 -42 80 -37.8 80 -2C80 35.2 49.6 44 0 44C-49.6 44 -80 35.2 -80 -2Z'/%3E%3C/svg%3E"); --coat-under: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cdefs%3E%3Cfilter id='b' x='-10%25' y='-10%25' width='120%25' height='120%25'%3E%3CfeGaussianBlur stdDeviation='1.4'/%3E%3C/filter%3E%3C/defs%3E%3Cpath d='M58.0 6.0Q62.7 3.8 65.1 9.3Q71.5 2.9 70.9 11.7Q77.4 8.3 76.8 15.7Q84.4 12.2 81.4 20.3Q88.6 18.8 86.8 24.7Q92.7 25.6 90.4 31.1Q97.3 32.7 92.0 38.6Q99.2 41.7 93.7 47.0Q100.3 50.2 93.8 53.4Q103.3 59.4 92.7 61.9Q98.7 66.9 91.3 67.2Q95.7 72.5 88.4 72.0Q92.4 78.4 85.0 77.0Q89.7 85.8 80.5 82.0Q85.0 92.6 75.1 85.5Q77.3 95.8 69.1 88.7Q70.3 99.4 64.2 92.4Q63.7 102.2 58.4 93.2Q56.3 104.8 51.6 93.6Q48.3 102.7 45.5 93.8Q40.7 103.1 39.4 92.1Q32.4 103.5 32.9 91.4Q25.9 100.1 28.8 88.3Q19.8 95.4 22.2 85.1Q14.2 89.2 17.8 80.5Q6.2 85.3 13.9 74.6Q0.7 77.5 10.6 67.5Q-1.0 67.2 7.9 59.9Q-2.9 57.2 5.7 51.7Q-0.9 47.9 5.7 44.6Q-2.0 40.1 6.6 38.6Q0.5 31.7 10.2 30.7Q4.4 22.5 15.2 24.4Q11.0 17.6 17.9 19.9Q14.3 11.8 22.4 16.2Q20.8 6.6 28.8 11.2Q29.6 6.5 33.6 8.4Q36.0 3.1 41.1 7.5Q44.3 -0.7 49.2 5.7Q54.0 1.4 58.0 6.0Z' opacity='.7' filter='url%28%23b%29'/%3E%3C/svg%3E"); --coat: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M55.5 8.0Q61.4 4.5 65.0 10.5Q72.1 7.1 74.0 14.0Q81.5 11.6 79.6 20.3Q88.1 19.7 86.5 27.2Q97.3 29.0 90.4 38.6Q101.9 43.4 92.5 51.0Q98.8 57.2 91.7 61.4Q98.4 71.1 86.7 72.7Q89.6 83.5 77.7 81.6Q80.4 92.6 71.5 87.6Q71.6 97.2 64.1 90.0Q61.8 100.9 55.0 92.5Q51.2 102.1 47.1 92.4Q40.1 103.0 37.6 90.0Q25.2 99.7 25.5 84.0Q14.3 88.1 17.7 76.6Q4.9 80.5 12.7 70.3Q1.3 67.9 8.3 58.7Q-2.2 55.4 6.8 50.0Q-0.7 42.5 9.3 37.7Q2.8 30.4 13.1 30.1Q10.0 20.0 20.3 19.8Q20.1 11.9 27.5 13.8Q29.0 8.4 34.4 10.7Q38.9 2.8 46.5 8.1Q51.1 1.7 55.5 8.0Z'/%3E%3C/svg%3E");
+  --coat-1: var(--sphere-hi, #fff); --coat-2: color-mix(in srgb, var(--sphere-hi, #fff) 50%, var(--sphere-mid, #ececf0)); --coat-3: color-mix(in srgb, var(--sphere-mid, #ececf0) 80%, var(--sphere-edge, #c9cad1)); --coat-4: var(--sphere-edge, #c9cad1); --coat-fringe: var(--sphere-mid, #ececf0);
+  width: 28px; height: 28px; flex: none; border-radius: 50%; display: block; position: relative;
+  filter: drop-shadow(0 0 .5px rgb(255 255 255 / .25)) drop-shadow(0 0 5px var(--glow));
+  transition: transform .25s var(--spring), filter .4s var(--ease); animation: face-breathe 3.6s ease-in-out infinite; }
+.face:not([data-sphere]), .face[data-sphere="white"] { --coat-1: #fff; --coat-2: #f6f6f8; --coat-3: #e4e4e9; --coat-4: #cbccd3; --coat-fringe: #e9e9ee; }
+.face::before, .face::after { content: ""; position: absolute; inset: 0; border-radius: 50%; pointer-events: none; }
+.face::before { background: var(--coat-fringe); -webkit-mask: var(--coat-under) center / 100% 100% no-repeat; mask: var(--coat-under) center / 100% 100% no-repeat; }
+.face::after { background: radial-gradient(78% 78% at 36% 30%, var(--coat-1) 0, var(--coat-2) 45%, var(--coat-3) 80%, var(--coat-4) 100%);
+  -webkit-mask: var(--coat) center / 100% 100% no-repeat; mask: var(--coat) center / 100% 100% no-repeat; }
 .face[data-tone="accent"] { --glow: var(--accent); }
 .face[data-tone="ok"] { --glow: var(--success); }
 .face[data-tone="warn"] { --glow: var(--warning); }
 .face[data-tone="bad"] { --glow: var(--danger); }
-.face .eyes { position: absolute; left: 10%; width: 80%; top: 16%; height: 37%; display: flex; align-items: center; justify-content: center; gap: 7px;
-  background: var(--visor); border-radius: 46% 46% 50% 50% / 46% 46% 62% 62%;
-  -webkit-mask: radial-gradient(ellipse 17% 16% at 50% 0, #0000 94%, #000); mask: radial-gradient(ellipse 17% 16% at 50% 0, #0000 94%, #000); /* the soft dip between the eyes */ transform: translate(calc(var(--lx) * 2.5px), calc(var(--ly) * 1.8px)); }
+/* The visor is her exact bean outline (--visor-shape) as a mask, placed as the web face places it, so it keeps its
+   shape at every size. */
+.face .eyes { position: absolute; z-index: 1; left: 16.4%; width: 67.2%; top: 24.4%; height: 36.1%; box-sizing: border-box; padding-bottom: 4.3%; display: flex; align-items: center; justify-content: center; gap: 7.7px;
+  background: var(--visor); -webkit-mask: var(--visor-shape) center / 100% 100% no-repeat; mask: var(--visor-shape) center / 100% 100% no-repeat;
+  transform: translate(calc(var(--lx) * 1.7px), calc(var(--ly) * 1.3px)); }
 
-.face .eyes span { width: 2.6px; height: 5px; border-radius: 2px; background: var(--ink); box-shadow: 0 0 2px rgb(255 255 255 / .6); transition: transform 70ms ease, height .2s var(--ease), border-radius .2s var(--ease); }
+.face .eyes span { width: 2.2px; height: 4px; border-radius: 999px; background: var(--ink); box-shadow: 0 0 1px rgb(255 255 255 / .55); transition: transform 70ms ease, height .2s var(--ease), border-radius .2s var(--ease); }
 .face.small { width: 22px; height: 22px; }
-.face.small .eyes { gap: 5.5px; transform: translate(calc(var(--lx) * 2px), calc(var(--ly) * 1.5px)); }
-.face.small .eyes span { width: 2px; height: 3.8px; }
-/* The visors and eye styles a person can choose (owner decision, 7 October 2026: personal assistants), the web's sizes
-   (docs/design-system.md, "Personal assistants"). Bean and pill (or no attribute) are the rules above. They sit here,
-   before the moods and reactions, and no stronger than them (`:where`), so every expression still wins on every eye
-   style. Teammates' `.mini` faces carry no attributes and are left alone. The eyes sit behind the visor's glass: the
-   bean's mask keeps them inside it, and the band and screen clip them to their own shape, so a tall expression (listening,
-   alert) never shows white past the visor's edge on the slim band. */
-.face[data-visor="band"]:where(:not(.mini)) .eyes { left: 8%; width: 84%; top: 25%; height: 25%; border-radius: 999px; -webkit-mask: none; mask: none; overflow: hidden; }
-.face[data-visor="screen"]:where(:not(.mini)) .eyes { left: 18%; width: 64%; top: 13%; height: 40%; border-radius: 30% / 34%; -webkit-mask: none; mask: none; overflow: hidden; }
-.face[data-eyes="round"]:where(:not(.mini)) .eyes span { width: 4px; height: 4px; border-radius: 50%; }
-.face[data-eyes="square"]:where(:not(.mini)) .eyes span { width: 3.8px; height: 3.8px; border-radius: 1px; }
-.face.small:where([data-eyes="round"]) .eyes span { width: 3px; height: 3px; }
-.face.small:where([data-eyes="square"]) .eyes span { width: 3px; height: 3px; border-radius: .8px; }
+.face.small .eyes { gap: 6px; transform: translate(calc(var(--lx) * 1.3px), calc(var(--ly) * 1px)); }
+.face.small .eyes span { width: 1.8px; height: 3.2px; box-shadow: none; }
+/* The visors and eye styles a person can choose (owner decision, 7 October 2026: personal assistants), placed as the web
+   face places them (docs/design-system.md, "Personal assistants": the drawn character's proportions, the eyes' centres
+   0.84 R apart in every style). Bean and pill (or no attribute) are the rules above. They sit here, before the moods and
+   reactions, and no stronger than them (`:where`), so every expression still wins on every eye style. Teammates' `.mini`
+   faces carry no attributes and are left alone. The eyes sit behind the visor's glass: the bean's mask keeps them inside
+   it, and the band and screen clip them to their own shape, so a tall expression (listening, alert) never shows white
+   past the visor's edge on the slim band. */
+.face[data-visor="band"]:where(:not(.mini)) .eyes { left: 13.9%; width: 72.2%; top: 29.4%; height: 25.2%; padding-bottom: 4.6%; border-radius: 999px; -webkit-mask: none; mask: none; overflow: hidden; }
+.face[data-visor="screen"]:where(:not(.mini)) .eyes { left: 22.3%; width: 55.4%; top: 23.5%; height: 35.3%; padding-bottom: 3%; border-radius: 18.2% / 28.6%; -webkit-mask: none; mask: none; overflow: hidden; }
+.face[data-eyes="round"]:where(:not(.mini)) .eyes { gap: 6.5px; } .face[data-eyes="round"]:where(:not(.mini)) .eyes span { width: 3.4px; height: 3.4px; border-radius: 50%; }
+.face[data-eyes="square"]:where(:not(.mini)) .eyes { gap: 6.7px; } .face[data-eyes="square"]:where(:not(.mini)) .eyes span { width: 3.2px; height: 3.2px; border-radius: .8px; }
+.face.small:where([data-eyes="round"]) .eyes { gap: 5.2px; } .face.small:where([data-eyes="round"]) .eyes span { width: 2.6px; height: 2.6px; }
+.face.small:where([data-eyes="square"]) .eyes { gap: 5.3px; } .face.small:where([data-eyes="square"]) .eyes span { width: 2.5px; height: 2.5px; border-radius: .6px; }
 .face.blink .eyes span { transform: scaleY(.12); }
 /* Moods */
 .face.happy .eyes span { height: 3px; width: 6px; background: transparent; border: 2px solid var(--ink); border-bottom: 0; border-radius: 6px 6px 0 0; }
-.face.small.happy .eyes span { width: 4px; height: 2px; border-width: 1.5px; }
+/* Happy arcs: border-box and fixed (they never flex), centred where the pill eyes sit, inside the bean. */
+.face.happy .eyes span { box-sizing: border-box; flex: none; }
+.face.happy:not(.small):not(.dizzy):not(.love) .eyes { gap: 4.9px; } .face.happy:not(.small):not(.dizzy):not(.love) .eyes span { width: 5px; }
+.face.small.happy:not(.dizzy):not(.love) .eyes { gap: 3.8px; } .face.small.happy:not(.dizzy):not(.love) .eyes span { width: 4px; height: 2px; border-width: 1px; }
+.face.dizzy .eyes { gap: 4.5px; } .face.small.dizzy .eyes { gap: 3px; } .face.dizzy .eyes span { box-sizing: border-box; } .face.love:not(.small) .eyes { gap: 3.5px; }
+.face.small.dizzy .eyes span { width: 4px; height: 4px; border-width: 1px; } .face.small.love .eyes { gap: 2px; }
 .face.sad .eyes span { height: 2px; border-radius: 1px; }
 .face.alert { animation: hop .6s var(--spring) 1, face-breathe 3.6s ease-in-out .6s infinite; }
-.face.alert .eyes span { height: 6px; }
+.face.alert .eyes span { height: 4.8px; }
 /* Listening (owner decision, 7 October 2026: "when you're sending a voice note she'll do like she's listening"): her eyes
    widen and swell with the voice, and her glow with them; main.js sets --lvl (0 to 1) from the microphone level. */
-.face.listen { --lvl: 0; box-shadow: 0 0 0 1px var(--border), 0 0 calc(10px + var(--lvl) * 14px) calc(-2px + var(--lvl) * 3px) var(--glow); transition: transform .25s var(--spring), box-shadow 90ms linear; }
-.face.listen .eyes span { height: 6px; width: 3.4px; border-radius: 2px; scale: 1 calc(1 + var(--lvl) * .45);
+.face.listen { --lvl: 0; filter: drop-shadow(0 0 .5px rgb(255 255 255 / .25)) drop-shadow(0 0 calc(4px + var(--lvl) * 8px) var(--glow)); transition: transform .25s var(--spring), filter 90ms linear; }
+.face.listen .eyes span { height: 4.8px; width: 2.8px; border-radius: 999px; scale: 1 calc(1 + var(--lvl) * .45);
   transition: transform 70ms ease, scale 90ms linear, height .2s var(--ease), border-radius .2s var(--ease); }
 /* Talking (owner decision, 7 October 2026: her voice): as the web's `.brenda-face[data-talking]`. main.js sets `talk` on her
    own faces while she speaks and --talk (0 to 1) from the real level of what `say` rendered (or a pulse). She has no
    mouth, so her eyes squash between syllables and open on each one, she bobs a little, and her glow brightens in her own
    sphere colour. Listening never coincides with it: she never speaks while the microphone is open. */
 .face.talk { --talk: 0; translate: 0 calc(var(--talk) * -1.2px);
-  box-shadow: 0 0 0 1px var(--border), 0 0 calc(8px + var(--talk) * 12px) calc(-2px + var(--talk) * 3px) color-mix(in srgb, var(--sphere-mid, #ececf0) calc(40% + var(--talk) * 60%), transparent);
-  transition: transform .25s var(--spring), translate 60ms linear, box-shadow 60ms linear; }
+  filter: drop-shadow(0 0 .5px rgb(255 255 255 / .25)) drop-shadow(0 0 calc(4px + var(--talk) * 6px) color-mix(in srgb, var(--sphere-mid, #ececf0) calc(40% + var(--talk) * 60%), transparent));
+  transition: transform .25s var(--spring), translate 60ms linear, filter 60ms linear; }
 .face.talk .eyes span { scale: calc(1.04 - var(--talk) * .05) calc(.72 + var(--talk) * .45); transition: transform 70ms ease, scale 60ms linear, height .2s var(--ease), border-radius .2s var(--ease); }
 /* An answer pleases her: happy eyes (the mood above) and one small hop as it arrives. */
 .face.pleased { animation: hop .6s var(--spring) 1, face-breathe 3.6s ease-in-out .6s infinite; }
 .face.think .eyes { transform: translate(1.5px, -1.2px); }
 .face.think .eyes span { animation: scan 1.8s ease-in-out infinite; }
-.face.gulp .eyes span { width: 4px; height: 4.5px; border-radius: 50%; }
+.face.gulp .eyes span { width: 3.2px; height: 3.6px; border-radius: 50%; }
 @keyframes face-breathe { 0%, 100% { scale: 1; } 50% { scale: 1.035; } }
 @keyframes hop { 0% { translate: 0 0; } 35% { translate: 0 -4px; } 70% { translate: 0 1px; } 100% { translate: 0 0; } }
 @keyframes scan { 0%, 100% { translate: 0 0; } 50% { translate: -2px 0; } }
 /* Her presence: a small status dot on her corner. */
-.face .dot { position: absolute; top: -3px; left: -3px; width: 8px; height: 8px; border-radius: 50%; border: 2px solid var(--island); background: var(--success); }
+.face .dot { position: absolute; z-index: 2; top: -3px; left: -3px; width: 8px; height: 8px; border-radius: 50%; border: 2px solid var(--island); background: var(--success); }
 .face .dot.away { background: var(--warning); } .face .dot.busy { background: var(--danger); } .face .dot.offline { background: var(--subtle); }
 
 /* Type: Inter for words (14/20 medium for titles, 13/19.5 regular in secondary for what goes under them), Geist Mono for
@@ -514,9 +530,10 @@ kbd { display: inline-flex; align-items: center; justify-content: center; box-si
 
 /* Teammates' small faces (team leads and organisation accounts), flat in each person's colour, with a dot for their
    timer: orange running (live, accent rules), amber paused, red interrupted. The dot stays still at this size. */
-.face.mini { width: 16px; height: 12px; border-radius: 30%; background: color-mix(in srgb, var(--c) 72%, #fff); display: grid; place-content: center; animation: none; box-shadow: none !important; }
+.face.mini { width: 16px; height: 12px; border-radius: 30%; background: color-mix(in srgb, var(--c) 72%, #fff); display: grid; place-content: center; animation: none; box-shadow: none !important; filter: none !important; }
+.face.mini::before, .face.mini::after { content: none; }   /* teammates keep their own flat look: no coat */
 .face.mini .eyes { position: static; width: auto; height: auto; background: none; border-radius: 0; gap: 3px; transform: translate(calc(var(--lx) * 1px), calc(var(--ly) * .8px)); }
-.face.mini .eyes { -webkit-mask: none; mask: none; }
+.face.mini .eyes { -webkit-mask: none; mask: none; padding: 0; }
 .face.mini .eyes span { width: 2px; height: 3px; border-radius: 1px; background: #111; box-shadow: none; }
 .face.mini .st { position: absolute; top: -3px; right: -3px; width: 6px; height: 6px; border-radius: 50%; border: 1.5px solid var(--island); background: var(--accent); }
 .face.mini .st.paused { background: var(--warning); }
@@ -547,7 +564,7 @@ kbd { display: inline-flex; align-items: center; justify-content: center; box-si
 .face.dizzy { animation: wobble .45s ease-in-out infinite alternate; }
 .face.dizzy .eyes span { width: 5px; height: 5px; border-radius: 50%; background: transparent; border: 1.5px solid var(--ink); border-right-color: transparent; animation: spin .55s linear infinite; }
 .face.love { --glow: var(--accent); }
-.face.love .eyes span { width: 6px; height: 6px; border-radius: 0; background: var(--accent); clip-path: path("M3 5.6 L0.7 3.2 A1.45 1.45 0 0 1 3 1.2 A1.45 1.45 0 0 1 5.3 3.2 Z"); animation: thump .7s ease-in-out infinite; }
+.face.love .eyes span { width: 6px; height: 6px; border: 0; border-radius: 0; background: var(--accent); clip-path: path("M3 5.6 L0.7 3.2 A1.45 1.45 0 0 1 3 1.2 A1.45 1.45 0 0 1 5.3 3.2 Z"); animation: thump .7s ease-in-out infinite; }
 @keyframes squash { 0% { transform: scale(1); } 30% { transform: scale(1.2, .76); } 62% { transform: scale(.92, 1.1); } 100% { transform: scale(1); } }
 @keyframes wobble { from { rotate: -9deg; } to { rotate: 9deg; } }
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -596,7 +613,7 @@ kbd { display: inline-flex; align-items: center; justify-content: center; box-si
   *, *::before, *::after { animation: none !important; transition: none !important; }
   .shimmer { -webkit-text-fill-color: currentColor; }
   .face.listen .eyes span { scale: none; }
-  .face.talk { translate: none; box-shadow: 0 0 0 1px var(--border), 0 0 12px -1px color-mix(in srgb, var(--sphere-mid, #ececf0) 70%, transparent); }
+  .face.talk { translate: none; filter: drop-shadow(0 0 .5px rgb(255 255 255 / .25)) drop-shadow(0 0 6px color-mix(in srgb, var(--sphere-mid, #ececf0) 70%, transparent)); }
   .face.talk .eyes span { scale: 1.04 1.1; }
   .btn .ic-check path { stroke-dasharray: none; }
   .orb.think i { opacity: .8; }

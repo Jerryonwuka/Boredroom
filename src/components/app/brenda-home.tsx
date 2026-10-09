@@ -10,7 +10,8 @@
  * large rounded panel filling the screen under the top bar, near-black at its edges warming to orange towards the upper
  * middle (white with a peach glow in light; the one owner-approved gradient, globals.css "Her home"). Inside it: a row of
  * small pills (her status and which engine answers on the left; Back to our conversation, Past chats and, for the
- * organisation, Brenda settings on the right); her live character floating in a glowing orange orb, the greeting and
+ * organisation, Brenda settings on the right); her live character floating on her own (no orb since 9 October 2026;
+ * the panel's glow takes the person's own assistant's colour), the greeting and
  * the display headline "What do you want to do today?"; then, anchored to the bottom, her quick asks as chips, her hero
  * box (PromptInputBox variant="hero": her glyph, room for a few lines, "More asks" on the left of its bottom row, the
  * microphone and the orange Send on the right) and three action cards. Nothing sits under the panel any more: "Your
@@ -77,7 +78,8 @@
  * row with the headline, where and when, the due date and a menu of its actions (a to-do always asks first, in a sheet),
  * then "See all {n}"; with none, one line and "Look for loose ends". Private to the person. Hidden before migration 0048.
  */
-import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useId, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
+import { PALETTE, type AssistantColour } from "@/lib/assistant-look";
 import Link from "next/link";
 import {
   AnimatedActivity, AnimatedAlarmClock, AnimatedArrowLeft, AnimatedCalendarCheck, AnimatedCircleAlert, AnimatedClipboardCheck, AnimatedClock, AnimatedFileText,
@@ -283,9 +285,19 @@ function markOpenerSeen(slug: string, who: string, localDate: string) {
 /** A path inside the workspace: the opener's links are `/app/{slug}/…`, or relative to the workspace (`/home/assistants`). */
 const inWorkspace = (slug: string, href: string) => (href.startsWith("/app/") ? href : `/app/${slug}${href.startsWith("/") ? href : `/${href}`}`);
 
+/**
+ * Her panel's glow in the person's own assistant's colour (owner request, 9 October 2026: "let the gradient background
+ * be whatever colour the selected Brenda is"). The sphere's shade lights the dark panel and its deeper rim the light one,
+ * so even white reads (a silver glow) on either; globals.css "Her home" mixes it into the panel's layers and her box.
+ */
+function panelTint(colour: AssistantColour): CSSProperties {
+  const { shade, rim } = PALETTE[colour].sphere;
+  return { "--brenda-tint-dark": shade, "--brenda-tint-light": rim } as CSSProperties;
+}
+
 export function BrendaHome({ data }: { data: HomeData }) {
   const { role } = data;
-  const { name } = useAssistant().personal;
+  const { name, colour } = useAssistant().personal;
   const lead = role !== "employee";
   const [history, setHistory] = useState(data.history);
   const openOnList = data.aiEnabled && (data.pastChats || data.chatMissing);
@@ -406,8 +418,7 @@ export function BrendaHome({ data }: { data: HomeData }) {
   const loops = data.loops ?? [];
   const waiting = (data.followUpsReady ? data.waiting.length : 0) + (data.itemsReady ? data.items.length : 0) + loops.length;
   const inbox = data.followUpsReady || data.itemsReady;
-  // Her character is monochrome like the rest of v4 (her light takes the orb's orange); the orb brightens while she
-  // listens (a live microphone).
+  // Her panel's glow is brighter while she listens (a live microphone).
   const listening = chat.state === "listening";
   // Which engine answers her, beside her name: a short word on phones.
   const engine = !data.aiEnabled ? { full: "Not in your plan" } : data.assistantConfigured ? { full: "Connected to Claude", short: "Claude" } : { full: "Built-in helper" };
@@ -422,7 +433,7 @@ export function BrendaHome({ data }: { data: HomeData }) {
     // the negative margin takes 44px of it back, so the panel ends 20px from the bottom of the screen, as at its sides.
     <div className="-mb-11 w-full">
       {/* Her panel fills the screen under the top bar (20px from it and from the bottom, as from the sides). */}
-      <section aria-labelledby="home-ask" className="brenda-panel -mt-1 flex min-h-[calc(100dvh-var(--header-height)-var(--shell-banners,0px)-40px)] flex-col p-3 sm:p-4 lg:p-5">
+      <section aria-labelledby="home-ask" style={panelTint(colour)} data-live={listening || undefined} className="brenda-panel -mt-1 flex min-h-[calc(100dvh-var(--header-height)-var(--shell-banners,0px)-40px)] flex-col p-3 sm:p-4 lg:p-5">
         <div className="flex flex-wrap items-center gap-2">
           <p className="brenda-glass-pill inline-flex h-8 min-w-0 max-w-full items-center gap-2 rounded-full px-3 text-meta font-medium text-foreground">
             <StatusDot tone={dot} size={6} />
@@ -466,9 +477,10 @@ export function BrendaHome({ data }: { data: HomeData }) {
         </div>
 
         <div className="flex flex-1 flex-col items-center justify-center px-1 pb-8 pt-10 text-center">
-          <div className="brenda-orb" data-live={listening || undefined}>
-            {/* While you dictate she listens to the dictation's own microphone (its level widens her eyes and lifts her light). */}
-            <BrendaCharacter ref={character} state={chat.state} size={72} interactive stream={chat.dictation.stream} className={cn(!listening && "grayscale")} />
+          {/* She floats on her own, no orb around her (owner request, 9 October 2026), in her own colour. While you dictate
+              she listens to the dictation's own microphone (its level widens her eyes and lifts her light). */}
+          <div className="brenda-float">
+            <BrendaCharacter ref={character} state={chat.state} size={128} interactive stream={chat.dictation.stream} glow="own" />
           </div>
           <p className="mt-6 text-sm font-medium text-secondary">{data.greeting}, {data.firstName}. It&apos;s {data.dateLabel}.</p>
           <h1 id="home-ask" className="type-headline mt-1 sm:text-[32px] sm:leading-10">What do you want to do today?</h1>

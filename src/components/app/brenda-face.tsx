@@ -57,8 +57,11 @@ function step(snap = false) {
   frame = null;
   const at = reading ?? pointer;
   let moving = false;
-  for (const el of faces) {
-    const r = el.getBoundingClientRect();
+  // Measure every face first, then write: a layout read after a style write forces the browser to recompute style and
+  // layout at once, so alternating them cost a whole recalculation per face on a page of many faces.
+  const boxes: [HTMLElement, DOMRect][] = [];
+  for (const el of faces) boxes.push([el, el.getBoundingClientRect()]);
+  for (const [el, r] of boxes) {
     if (!r.width) continue;
     const tx = at ? Math.tanh((at.x - (r.left + r.width / 2)) / (reading ? 150 : 260)) : 0;
     const ty = at ? Math.tanh((at.y - (r.top + r.height / 2)) / (reading ? 70 : 200)) : 0;

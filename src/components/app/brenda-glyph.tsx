@@ -3,8 +3,9 @@
 /**
  * Brenda's face as a line icon (owner decision, 5 October 2026: no generic AI icons anywhere; where something means
  * Brenda, it shows her face). Drawn on the same 24px grid, stroke and caps as the lucide icons beside it, so it sits in
- * the sidebar, on buttons and in empty states like any other icon. Her look (owner design, 7 October 2026): the round
- * outline of her head and her visor filled in `currentColor`, with her two pill eyes cut out of it.
+ * the sidebar, on buttons and in empty states like any other icon. Her look (owner design, 7 October 2026; her coat,
+ * 8 October 2026): the tufted outline of her fluffy head and her visor filled in `currentColor`, with her two pill eyes
+ * cut out of it.
  *
  * Animated like the other icons (owner request, 7 October 2026; components/ui/animated-icons): while her control is
  * hovered or focused from the keyboard she blinks and glances to one side and the other; when you arrive on her page
@@ -13,7 +14,7 @@
  * straight, the same line as before.
  *
  * Personal assistants (owner decision, 7 October 2026): the glyph is the assistant in context (the person's own, or the
- * nearest `AssistantScope`'s), drawn with its visor's shape (bean, band or screen). Round eyes are dots; pill and square
+ * nearest `AssistantScope`'s), drawn with its visor's shape (bean, band or screen) inside the same tufted head. Round eyes are dots; pill and square
  * eyes keep the short stroke (at this size a square reads as a pill). There is no colour here: the glyph keeps the icon
  * colour rules, so the sidebar's active orange and the greys apply as to any icon.
  */
@@ -64,6 +65,10 @@ const GLANCE: Variants = {
   arrive: { x: 0 },
 };
 
+/** Her fluffy head (her coat, 8 October 2026): ten soft tufts round a 9.5px circle, a little longer below. Every
+ *  assistant wears it, whichever visor it has. */
+const COAT = "M12 3.4Q15.51 1.21 17.05 5.04Q21.31 5.24 20.18 9.34Q23.77 12 20.18 14.66Q21.74 19.07 17.05 18.96Q15.77 23.6 12 20.6Q8.23 23.6 6.95 18.96Q2.26 19.07 3.82 14.66Q.23 12 3.82 9.34Q2.69 5.24 6.95 5.04Q8.49 1.21 12 3.4Z";
+
 /**
  * The visors on the 24px grid. Bean (hers): rounded over each eye with a soft dip between them, a broad curve beneath.
  * Band: a wide, slim capsule across the face. Screen: a rounded rectangle, taller and narrower. The eyes fit each.
@@ -97,7 +102,11 @@ function Visor() {
           )}
         </motion.g>
       </mask>
-      <path d={VISOR[isAssistantVisor(visor) ? visor : "bean"]} fill="currentColor" strokeWidth={1} mask={`url(#${id})`} />
+      {/* Only the visor shrinks (a touch smaller than her drawn one, so it clears the tufted outline, whichever visor);
+          the eye mask stays in the icon's own grid, so the eyes are cut as crisply as before. */}
+      <g mask={`url(#${id})`}>
+        <path d={VISOR[isAssistantVisor(visor) ? visor : "bean"]} fill="currentColor" strokeWidth={1} transform="translate(12 10.6) scale(.88) translate(-12 -10.6)" />
+      </g>
     </>
   );
 }
@@ -107,7 +116,7 @@ export const BrendaGlyph = createAnimatedIcon({
   arrive: "arrive",
   children: (
     <>
-      <circle cx="12" cy="12" r="9.5" />
+      <path d={COAT} />
       <Visor />
     </>
   ),
