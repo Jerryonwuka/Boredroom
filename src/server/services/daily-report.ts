@@ -57,6 +57,13 @@
  * "blocked on you" question already brings it to them. Read as the reader (standup.ts standupForReport: only rollups they
  * receive). Left out before migration 0050 or when anything goes wrong; a standup alone does not make the day worth
  * sending.
+ *
+ * The notch's counts (owner decision, 9 October 2026: notch notifications, "A plus the grafts"): the report's numbers
+ * (hours logged, finished, sent for review, overdue, blocked, waiting for the reader, and who did not clock in or was
+ * late, at most 12 names each) are saved with it as `brenda_report_log.facts` (reportFactsOf, migration 0052), so the
+ * notch's team report card shows them as chips instead of the headline's paragraph. Written next to the snapshot under
+ * its own savepoint; before 0052 nothing is written (the notch reads the snapshot instead), and a failure to save is
+ * logged and never fails the report.
  */
 import { withUser, withWorker, type Db } from "@/server/db";
 import type { OrgContext } from "@/server/lib/api";
@@ -65,6 +72,7 @@ import { mail, mailConfigProblem } from "@/server/lib/mail";
 import { renderEmail } from "@/server/lib/emails";
 import { addDays, localMidnight, localParts, todayLocal } from "@/server/lib/time";
 import { forget0046, isMissingSchema, retryWithout0046, schema0046Ready } from "@/server/lib/schema-0046";
+import { forget0052, schema0052Ready } from "@/server/lib/schema-0052";
 import { NOT_AVAILABLE, evidenceHref, evidenceLink, sourcesSuffix, type EvidenceRef } from "@/lib/evidence-links";
 import { reviewQueue } from "@/server/services/views";
 import { audit, notify } from "@/server/services/common";
@@ -944,6 +952,48 @@ export function reportMarkdown(ctx: OrgContext, r: DailyReport, opts: { writtenA
   return body.length <= DOC_BODY_MAX ? body : `${body.slice(0, DOC_BODY_MAX - 80).replace(/\n[^\n]*$/, "")}\n\n_The rest did not fit in one document._`;
 }
 
+// ---- The notch's counts (owner decision, 9 October 2026: notch notifications, "A plus the grafts") --------------------
+
+/**
+ * The report's numbers as the notch's team report card shows them (brenda_report_log.facts, migration 0052): the people
+ * in it, confirmed seconds logged, finished, sent for review, overdue, blocked, waiting for the reader's review, and who
+ * did not clock in or was late (at most REPORT_FACTS_NAMES names each, with the full counts beside them).
+ */
+export type ReportFacts = {
+  v: 1; localDate: string; scope: "self" | "team" | "organisation"; people: number; trackedSeconds: number;
+  finished: number; sentForReview: number; overdue: number; blocked: number; waitingForYou: number;
+  missing: { membershipId: string; name: string }[]; missingCount: number;
+  late: { membershipId: string; name: string; minutes: number }[]; lateCount: number;
+};
+/** Names kept per list; the counts beside them stay whole. */
+export const REPORT_FACTS_NAMES = 12;
+/** The column's check allows 16 KB; this leaves room. */
+const REPORT_FACTS_MAX_BYTES = 15_000;
+const factName = (s: string) => clamp(oneLine(s.replace(/[\u0000-\u001f\u007f]/g, " ")), 80) || "Someone";
+
+/**
+ * The report's counts, from the report as written (pure): the same people, totals and attendance its sections show.
+ * Names are one line of at most 80 characters, at most 12 per list, and the whole stays under 15 KB (names dropped from
+ * the end of the longer list until it fits; the counts keep their full value).
+ */
+export function reportFactsOf(r: DailyReport): ReportFacts {
+  const missing = r.people.filter((p) => p.attendance.missing);
+  const late = r.people.filter((p) => p.attendance.lateMinutes > 0);
+  const out: ReportFacts = {
+    v: 1, localDate: r.localDate, scope: r.scope, people: r.people.length,
+    trackedSeconds: r.people.reduce((n, p) => n + Math.max(0, Math.round(p.trackedSeconds || 0)), 0),
+    finished: r.totals.tasksCompleted, sentForReview: r.totals.submittedForReview, overdue: r.totals.overdueOpen, blocked: r.totals.blockedTasks,
+    waitingForYou: r.waitingForYourReview,
+    missing: missing.slice(0, REPORT_FACTS_NAMES).map((p) => ({ membershipId: p.membershipId, name: factName(p.name) })), missingCount: missing.length,
+    late: late.slice(0, REPORT_FACTS_NAMES).map((p) => ({ membershipId: p.membershipId, name: factName(p.name), minutes: p.attendance.lateMinutes })), lateCount: late.length,
+  };
+  while (Buffer.byteLength(JSON.stringify(out)) > REPORT_FACTS_MAX_BYTES && (out.missing.length || out.late.length)) {
+    if (out.missing.length >= out.late.length) out.missing.pop();
+    else out.late.pop();
+  }
+  return out;
+}
+
 // ---- Saving and sending -----------------------------------------------------------------------------------
 
 export type Saved = { docId: string; title: string; headline: string; href: string; people: number };
@@ -1006,6 +1056,20 @@ async function deliver(ctx: OrgContext, mode: "end_of_day" | "asked", opts: { us
         await db.query("ROLLBACK TO SAVEPOINT report_snapshot");
         if (isMissingSchema(err)) forget0046();
         console.warn(`[daily report] snapshot not saved: ${(err as Error)?.message ?? err}`);
+      }
+    }
+    // The report's counts for the notch's card (owner decision, 9 October 2026: notch notifications, "A plus the grafts"),
+    // refreshed with every write of the day's report, before the notification that announces it. Under its own savepoint
+    // and only once 0052 is applied: counts that cannot be saved are logged and never fail the report.
+    if (await schema0052Ready(db)) {
+      await db.query("SAVEPOINT report_facts");
+      try {
+        await db.query(`UPDATE brenda_report_log SET facts = $2::jsonb WHERE id = $1`, [row.id, JSON.stringify(reportFactsOf(report))]);
+        await db.query("RELEASE SAVEPOINT report_facts");
+      } catch (err) {
+        await db.query("ROLLBACK TO SAVEPOINT report_facts");
+        if (isMissingSchema(err)) forget0052();
+        console.warn(`[daily report] counts not saved: ${(err as Error)?.message ?? err}`);
       }
     }
     if (mode === "end_of_day") {

@@ -54,6 +54,13 @@
  * `assistant.voice` is false when the workspace switched Voice off (nothing is read aloud; the talk keys say so); the
  * opener is `null` when the morning opener is switched off. Before migration 0050 `standup` is `{ ready: false, entries:
  * [], rollups: [] }`, nothing is off and voice is on; an older notch ignores all three.
+ *
+ * Notifications with their facts (owner decision, 9 October 2026: notch notifications, "A plus the grafts"): the state
+ * holds up to 20 unread notifications (it held 10), newest first, and each carries `facts`, what the notch's card needs
+ * beyond the title and body (who sent a message and its first line, a follow-up answer's result, the team report's
+ * numbers, a request's change, a task's due day; services/notice-facts, read as the person). `facts: null` means the
+ * plain card; a problem reading them leaves every one null and never takes the rest of the notch down. An older notch
+ * ignores the field. `notificationsUnread` is how many are unread in all (review, 9 October 2026), past the 20 sent.
  */
 import { z } from "zod";
 import { withSystem, withUser } from "@/server/db";
@@ -82,6 +89,7 @@ import { standupForDesktop } from "@/server/services/standup";
 import type { DesktopStandup } from "@/lib/standup";
 import { abilitiesFor } from "@/server/services/abilities";
 import { abilitiesOff, abilityOff, type AbilityKey } from "@/lib/abilities";
+import { noticeFacts, type DesktopNotification, type NoticeFacts, type NoticeRow } from "@/server/services/notice-facts";
 
 const CODE_TTL_SECONDS = 10 * 60;
 const DESKTOP_SESSION_DAYS = 90;
@@ -191,6 +199,8 @@ export type { DesktopFollowUps, DesktopAssistantItems, DesktopRoutineRuns, Deskt
 const NO_FOLLOW_UPS: DesktopFollowUps = { ready: false, waiting: [], answered: [] };
 const NO_ITEMS: DesktopAssistantItems = { ready: false, waiting: [], updates: [] };
 const NO_RUNS: DesktopRoutineRuns = { ready: false, recent: [] };
+/** Unread notifications in the state, newest first (owner decision, 9 October 2026: notch notifications; it was 10). */
+export const DESKTOP_NOTIFICATIONS_MAX = 20;
 
 /** The morning opener for the notch, without the lists behind its counts (the card shows counts and actions). Never throws. */
 async function openerForNotch(ctx: OrgContext, brief: Awaited<ReturnType<typeof briefing>>): Promise<Opener | null> {
@@ -245,8 +255,14 @@ export async function desktopState(ctx: OrgContext, o: { opener?: boolean } = {}
     withUser(ctx.user.profileId, async (db) => ({
       settings: await brendaSettings(db, ctx.org.id),
       prefs: await brendaPrefs(db, ctx.membership.id),
-      notifications: await db.query<{ id: string; type: string; title: string; body: string | null; href: string | null; resource_id: string | null; created_at: string }>(
-        `SELECT id, type, title, body, href, resource_id, created_at FROM notifications WHERE recipient_membership_id = $1 AND read_at IS NULL ORDER BY created_at DESC LIMIT 10`, [ctx.membership.id]),
+      // Up to 20, newest first (owner decision, 9 October 2026: notch notifications; it was 10): the notch's summary and
+      // pager count them. The key and resource type are read for the facts only and never sent.
+      notifications: await db.query<NoticeRow>(
+        `SELECT id, type, title, body, href, resource_id, resource_type, deduplication_key, created_at FROM notifications
+         WHERE recipient_membership_id = $1 AND read_at IS NULL ORDER BY created_at DESC LIMIT ${DESKTOP_NOTIFICATIONS_MAX}`, [ctx.membership.id]),
+      // How many are unread in all, so the notch counts past the 20 it is sent (review, 9 October 2026).
+      unread: await db.query<{ n: number }>(
+        `SELECT count(*)::int AS n FROM notifications WHERE recipient_membership_id = $1 AND read_at IS NULL`, [ctx.membership.id]),
       progress: await db.query<{ id: string; title: string; due_at: string | null; progress_percent: number; version: number }>(
         `SELECT id, title, due_at, progress_percent::int AS progress_percent, version FROM tasks WHERE assignee_membership_id = $1 AND status IN ('todo','in_progress','blocked') AND archived_at IS NULL ORDER BY due_at NULLS LAST, created_at DESC`, [ctx.membership.id]),
       assistants: await readAssistantProfiles(db, ctx),
@@ -269,9 +285,13 @@ export async function desktopState(ctx: OrgContext, o: { opener?: boolean } = {}
   const mates = team ? team.rows.filter((r) => r.membership_id !== ctx.membership.id)
     .sort((a, b) => Number(!!b.session_state) - Number(!!a.session_state) || a.display_name.localeCompare(b.display_name))
     .slice(0, 8) : [];
-  // A problem reading their looks never takes the notch down: they show as Brenda.
-  const mateLooks = await teammateAssistants(ctx, mates.map((r) => r.membership_id))
-    .catch((err) => { console.warn(`[desktop] teammates' assistants: ${(err as Error)?.message ?? String(err)}`); return new Map<string, DesktopAssistant>(); });
+  // A problem reading their looks never takes the notch down: they show as Brenda. Nor does one reading the
+  // notifications' facts (owner decision, 9 October 2026: notch notifications): every card is then the plain one.
+  const [mateLooks, facts] = await Promise.all([
+    teammateAssistants(ctx, mates.map((r) => r.membership_id))
+      .catch((err) => { console.warn(`[desktop] teammates' assistants: ${(err as Error)?.message ?? String(err)}`); return new Map<string, DesktopAssistant>(); }),
+    noticeFacts(ctx, extra.notifications).catch(() => new Map<string, NoticeFacts>()),
+  ]);
   // The opener counts from the briefing just read (no second read of it), and only until the notch has shown today's
   // first card.
   // Phase 7c: none while the morning opener is switched off for the person.
@@ -299,7 +319,14 @@ export async function desktopState(ctx: OrgContext, o: { opener?: boolean } = {}
     clock: clock ? { status: clock.status, workingDay: clock.workingDay, startAt: clock.scheduledStartAt, endAt: clock.scheduledEndAt, clockInAt: clock.record?.clock_in_at ?? null, lateSeconds: clock.record?.late_seconds ?? 0 } : null,
     timer: s ? { id: s.id, version: s.version, state: s.state, taskId: s.taskId, taskTitle: s.taskTitle, confirmedSeconds: s.confirmedSeconds, openIntervalStartedAt: s.openIntervalStartedAt, serverNow: s.serverNow, estimateMinutes: s.estimateMinutes, progress: running?.progress_percent ?? 0, taskVersion: running?.version ?? null } : null,
     briefing: brief,
-    notifications: extra.notifications,
+    // Each with its facts for the card, or null for the plain one (owner decision, 9 October 2026: notch notifications).
+    // The row's key and resource type stay here.
+    notifications: extra.notifications.map((n): DesktopNotification => ({
+      id: n.id, type: n.type, title: n.title, body: n.body, href: n.href, resource_id: n.resource_id, created_at: n.created_at, facts: facts.get(n.id) ?? null,
+    })),
+    // All the person's unread notifications, the 20 above and older ones (review, 9 October 2026): the notch's bar and
+    // summary count them, and its Mark all read goes on until the older ones are read too. An older notch ignores it.
+    notificationsUnread: Math.max(extra.unread[0]?.n ?? 0, extra.notifications.length),
     // Asks waiting for the person's reply and answers to their own follow-ups (owner decision, 8 October 2026: phase 4).
     followUps: followUps satisfies DesktopFollowUps,
     // Messages and requests from other people's assistants, and what came back (owner decision, 8 October 2026: phase 6).

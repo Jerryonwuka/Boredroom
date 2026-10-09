@@ -13,10 +13,17 @@
   <!-- The island grows and shrinks inside a fixed, transparent window; the content inside keeps its own width. main.js
        names the notch after the person's assistant on every render (personal assistants, 7 October 2026). -->
   <div id="island" class="island">
+    <!-- Notifications, "A plus the grafts" (owner decision, 9 October 2026): the wash, a light from the top edge in the
+         colour of the open notification's kind (style.css), under the card. -->
+    <i id="wash" class="wash" aria-hidden="true"></i>
     <main id="notch" class="notch compact" aria-live="polite" aria-label="Brenda"></main>
     <i id="countdown" class="countdown" aria-hidden="true"></i>
   </div>
+  <!-- Classic scripts sharing one scope, in this order: the sounds, the notification cards' markup (NotifyCards), the
+       queue's rules (Notify), then the notch itself. -->
   <script src="sound.js"></script>
+  <script src="notify-cards.js"></script>
+  <script src="notify.js"></script>
   <script src="main.js"></script>
 </body>
 </html>

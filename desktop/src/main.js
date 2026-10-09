@@ -195,6 +195,40 @@
 //   Change it in Boredroom Settings." once per press and do nothing else, the talk and Listen controls go, and nothing is
 //   read aloud. Loose ends switched off: the day card leaves out its loose-ends row. Quiet hours hold every new card as
 //   before.
+//
+// Notifications, "A plus the grafts" (owner decision, 9 October 2026: the approved mockup, with the design judge's spec;
+// "build exactly that"). Every notification is one card at a time, drawn by notify-cards.js (`NotifyCards`: a short
+// headline, numbers as chips, the sender's assistant's face in the mood of the news, a wash in the colour of its kind);
+// this page decides when one opens, how long it stays and what the bar says, with the pure rules in notify.js (`Notify`).
+// - Nothing chains any more: closing a card never opens the next one (today's closeCard() → setTimeout(nextNotification,
+//   600) is gone). What arrives is decided once, after each poll (`arrive`): one alone opens its card; two or more together,
+//   or what waited through quiet hours or time away, open the summary ("Hey Jeremiah, you have 8 notifications", the row of
+//   faces, the kind chips, Mark all read and Show them); while a card is open they only join the bar ("+2 waiting" on the
+//   card); while the pager is open they join right behind the current card.
+// - The pager (C's footer: ‹, "3 of 8", Next › that becomes Finish, a dot per card in its kind's colour) is turned by the
+//   person only: ← and →, Enter for the card's main action, Esc folds it and keeps the place; Next reads a notice (never an
+//   ask); Mark all read reads the notices and keeps the asks; acting on a card shows what happened for 600 ms, then moves
+//   on; after the last, "All caught up" for 4 s.
+// - A card that arrived on its own holds 3 s plus 0.3 s a word (6 to 14 s), its countdown hairline in its kind's colour;
+//   an ask holds 15 s and then tucks into the bar ("Ben is waiting on you") until it is answered, read, opened again or
+//   something newer arrives (supersedes "stays until answered"; it still stays while a box is open or a press is in
+//   flight). The pointer on the island, or keyboard focus in it, pauses the clock; leaving gives at least 3 s more (the
+//   3-second linger), and the open pager also stays 3 s after the pointer leaves. An island opened by hovering still folds
+//   at once (the 5 October rule, LEAVE_GRACE_MS). Quiet hours open nothing and the count grows; when they end, or on the
+//   first movement after five minutes away, what waited opens as the summary or its one card.
+// - The bar never says "All clear" beside a count: one or two unread, the newest sender and their line; three or more,
+//   "8 new, 2 need you" with the faces that brought them; the open home card starts with the same row, which opens them.
+// - The empty black island the owner saw (a view that threw halfway through drawing left the island open around the bar's
+//   "All clear"; a view with nothing to draw opened an empty one) cannot happen any more: render() builds the card before
+//   it touches the page and drops a card that cannot be drawn, fit() checks that an open island has content, and the
+//   island measures itself again whenever its content changes size or a transition ends.
+// - Review, 9 October 2026: only a notification newer than anything seen arrives (an older unread one moving into the
+//   state's newest 20 never pops); the bar and the summary count every unread one (`notificationsUnread`) and Mark all
+//   read goes on past the 20; the morning opener still comes before what waited through quiet hours or time away; the
+//   pager takes the keyboard only when the notch already has it (it can never give it back to the person's app), and
+//   Enter presses a card's main action only once the person has touched that card; the notch tucks away when nothing new
+//   is waiting (what was already shown may stay unread), as before.
+// Without notify-cards.js (it failed to load, or a template throws) the cards as they were draw instead.
 
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
@@ -205,6 +239,10 @@ const countdown = document.getElementById("countdown");
 const COMPACT = { w: 220, h: 40 };
 const PEEK = 14;            // the compact bar widens a little under the pointer
 const WIDE = 420;
+// Notifications, "A plus the grafts" (owner decision, 9 October 2026): a notification card, the summary, the pager and the
+// end card are 440 px wide (their root is `.nc`); the bar is 300 px while it names a sender or the mix of what is waiting.
+const WIDE_NOTICE = 440;
+const COMPACT_WIDE = 300;
 const POLL_MS = 20_000;
 const PRESENCE_MS = 10 * 60_000;
 const CLOSE_AFTER_MS = 8_000;
@@ -216,7 +254,24 @@ let data = null;            // the last desktop state from Boredroom
 let offsetMs = 0;           // server clock minus ours, for the timer
 let link = null;            // { deviceCode, userCode, verifyUrl, interval, expiresAt }
 let card = null;            // what is open: { kind, ... } or null for the compact bar
-const shown = new Set();    // notification ids already shown on this run
+// Notifications (owner decision, 9 October 2026: "A plus the grafts"; the header says what they do). `nq` is Notify's
+// arrival state: the ids known (with when each was first seen), held through quiet hours or time away, and shown ("will
+// not pop again on this run", the old `shown`). `readHere`: the ids read from here, left out of the inbox even before the
+// next poll agrees. The pager ({ ids, index, seen }), the place it keeps when it folds, and the notifications it was
+// opened over (a read one stays reachable with ‹). `waitingAsk`: an ask that held its 15 s and tucked into the bar.
+let nq = Notify.initial();
+const readHere = new Set();
+let pager = null, pagerPlace = null;
+const pagerNotes = new Map();
+const pagerRun = new Set();  // every id the pager has shown since the person opened it (All caught up counts the read ones)
+let pagerLeft = false;       // the pointer has left the open pager (its steps then keep the 3 s fold going)
+let pagerSeen = new Set();   // the cards seen in the pager when it folded (their dots stay dimmed when it opens again)
+let waitingAsk = null;
+let barWide = false;        // the compact bar names a sender or the mix (COMPACT_WIDE)
+let stepDir = 0;            // the pager's last step (+1, -1): the next draw slides that way instead of blurring in
+let drawnAt = 0;            // when the current view was first drawn (Enter waits ENTER_GUARD_MS after it)
+// The hold of a card that arrived on its own: when it ends, what is left of it while paused, and its timer.
+const hold = { active: false, paused: false, endAt: 0, left: 0, timer: null };
 let closeTimer = null, pollTimer = null, linkTimer = null, presenceTimer = null;
 let hovering = false, busy = false, error = null, editingServer = false;
 let voice = { enabled: false, modelReady: false, downloading: false, shortcut: "⌥ Space" };
@@ -304,11 +359,19 @@ function keepCached() {
  * and eyes (style.css `--sphere-*`, `data-visor`, `data-eyes`). mood: happy | alert | sad | think | listen; tone: the
  * glow (accent, ok, warn, bad; blue and violet draw none). Her own faces (`data-own`, no `o.who`) talk while she speaks
  * (`talk`, owner decision, 7 October 2026: her voice); the workspace's assistant never does.
+ * Notifications (owner decision, 9 October 2026: "A plus the grafts"): `cls` adds classes (sizes and states such as
+ * "xl still away", lower-case words only), `look` fixes where the eyes look ([x, y], each -1 to 1: the two faces of
+ * Together look at each other, and stepFace leaves them be), and `label` names the face for screen readers.
  */
+const FACE_CLS = /^[a-z -]{0,60}$/;
 const face = (o = {}) => {
   const a = assistantOf(o.who ?? me());
   const own = !o.who;
-  return `<span class="face ${o.small ? "small" : ""} ${o.mood ?? ""}${own && talking ? " talk" : ""}"${own ? " data-own" : ""} data-sphere="${esc(a.colour)}" data-visor="${esc(a.visor)}" data-eyes="${esc(a.eyes)}" style="--sphere-hi:${esc(a.face.hi)};--sphere-mid:${esc(a.face.mid)};--sphere-edge:${esc(a.face.edge)}" ${o.tone ? `data-tone="${esc(o.tone)}"` : ""}><span class="eyes"><span></span><span></span></span>${o.dot ? `<i class="dot ${esc(o.dot)}"></i>` : ""}</span>`;
+  const cls = typeof o.cls === "string" && FACE_CLS.test(o.cls) ? ` ${o.cls.trim()}` : "";
+  const mood = typeof o.mood === "string" && FACE_CLS.test(o.mood) ? o.mood : "";
+  const lk = Array.isArray(o.look) && o.look.length === 2 && o.look.every((v) => typeof v === "number" && Number.isFinite(v)) ? o.look.map((v) => Math.max(-1, Math.min(1, v)).toFixed(3)) : null;
+  const label = typeof o.label === "string" && o.label.trim() ? ` role="img" aria-label="${esc(o.label.trim())}" title="${esc(o.label.trim())}"` : "";
+  return `<span class="face ${o.small ? "small" : ""} ${mood}${cls}${own && talking ? " talk" : ""}"${own ? " data-own" : ""} data-sphere="${esc(a.colour)}" data-visor="${esc(a.visor)}" data-eyes="${esc(a.eyes)}" style="--sphere-hi:${esc(a.face.hi)};--sphere-mid:${esc(a.face.mid)};--sphere-edge:${esc(a.face.edge)}${lk ? `;--lx:${lk[0]};--ly:${lk[1]}` : ""}"${lk ? ` data-look="${lk.join(",")}"` : ""}${label} ${o.tone ? `data-tone="${esc(o.tone)}"` : ""}><span class="eyes"><span></span><span></span></span>${o.dot ? `<i class="dot ${esc(o.dot)}"></i>` : ""}</span>`;
 };
 /** A teammate's small face: their own assistant (owner request, 9 October 2026), in its colour with its visor and eyes (Brenda when the server sends none), with a dot when their timer is running (orange), paused (amber) or interrupted (red). */
 const MATES = 8;
@@ -389,15 +452,32 @@ async function call(method, path, body, o = {}) {
 
 // ---- size and placement ---------------------------------------------------------------------------------------
 
-/** Sizes the island to its content. Opening springs (with a little overshoot), closing eases, like Coucou's island. */
+/**
+ * Sizes the island to its content. Opening springs (with a little overshoot), closing eases, like Coucou's island.
+ * Notifications (owner decision, 9 October 2026: "A plus the grafts"): a notification card is 440 px wide and the bar
+ * 300 px while it names a sender; the spring (`growing`) lasts until the island has finished growing (transitionend), so
+ * measuring again meanwhile (the content settling, fonts arriving) keeps it. The empty black island (same day): an open
+ * island must be an open card with something in it; anything else is reported, the card dropped and the bar drawn.
+ */
+let fitting = false, growTimer = null;
 function fit() {
-  const open = !!card || !config?.signedIn;
+  const signed = !!config?.signedIn;
+  const open = !!card || !signed;
+  if (signed && !fitting && (open === el.classList.contains("compact") || (open && el.childElementCount === 0))) {
+    fitting = true;
+    try { dropCard(`fit: ${card ? `${card.kind} open with ${el.childElementCount ? "the bar's row" : "nothing"} drawn` : "the bar drawn as a card"}`); render(); }
+    finally { fitting = false; }
+    return;
+  }
   island.classList.toggle("open", open);
-  island.classList.toggle("growing", open && !wasOpen);
+  // The spring ends with the transition; without one (reduced motion) a moment later.
+  if (open && !wasOpen) { island.classList.add("growing"); clearTimeout(growTimer); growTimer = setTimeout(() => island.classList.remove("growing"), 700); }
+  else if (!open) island.classList.remove("growing");
   const tuck = tucked && !open;
   island.classList.toggle("tucked", tuck);
-  el.style.width = `${open ? WIDE : COMPACT.w}px`;
-  const w = open ? WIDE : tuck ? TUCK.w : COMPACT.w + (hovering ? PEEK : 0);
+  const wide = open ? (el.firstElementChild?.classList.contains("nc") ? WIDE_NOTICE : WIDE) : barWide ? COMPACT_WIDE : COMPACT.w;
+  el.style.width = `${wide}px`;
+  const w = open ? wide : tuck ? TUCK.w : wide + (hovering ? PEEK : 0);
   const h = open ? Math.ceil(el.offsetHeight) : tuck ? TUCK.h : COMPACT.h;
   if (open !== wasOpen) Sound.play(open ? "open" : "close");
   wasOpen = open;
@@ -405,6 +485,43 @@ function fit() {
   island.style.height = `${h}px`;
   invoke("set_island_rect", { x: (window.innerWidth - w) / 2, y: 0, w, h }).catch(() => {});
 }
+/** Something the notch could not draw: in the app's log (Rust's debug_log) and the page's console, never on screen; the same words at most once a minute. */
+const reported = new Map();
+function report(msg) {
+  const m = String(msg).slice(0, 500);
+  const now = Date.now();
+  if (reported.get(m) > now - 60_000) return;
+  if (reported.size > 50) reported.clear();
+  reported.set(m, now);
+  console.error(`[notch] ${m}`);
+  invoke("debug_log", { msg: `[notch] ${m}` }).catch(() => {});
+}
+/** A card that cannot be drawn goes, so the island never stays open around nothing (owner decision, 9 October 2026). */
+function dropCard(why) {
+  report(why);
+  if (card?.pager) leavePager();
+  card = null;
+  cancelHold();
+  restartCountdown(0);
+  clearTimeout(closeTimer);
+}
+// The island measures itself again whenever its content changes size (a line going when Undo expires, names opened, an
+// error cleared), when a resize transition ends (the rectangle Rust hit-tests with is sent again), and when the page is
+// shown again. The observer watches #notch, whose size fit() only sets to the same width again, so it cannot loop.
+if (typeof ResizeObserver === "function") {
+  let queued = false;
+  new ResizeObserver(() => {
+    if (queued || !config || (!card && config.signedIn)) return;
+    queued = true;
+    requestAnimationFrame(() => { queued = false; if (config && (card || !config.signedIn)) fit(); });
+  }).observe(el);
+}
+island.addEventListener("transitionend", (e) => {
+  if (e.target !== island || (e.propertyName !== "width" && e.propertyName !== "height")) return;
+  island.classList.remove("growing");
+  if (config) fit();
+});
+document.addEventListener("visibilitychange", () => { if (config && !document.hidden) fit(); });
 
 /** The card's glow and Brenda's mood follow what is showing. */
 function moodOf() {
@@ -486,28 +603,53 @@ function moodOf() {
 /** The bar that shows when an open card will fold away; it pauses while the pointer is on the island. */
 function restartCountdown(ms) {
   countdown.classList.remove("run");
+  countdown.style.animationPlayState = "";
   if (!ms) return;
   countdown.style.animationDuration = `${ms}ms`;
   void countdown.offsetWidth;
   countdown.classList.add("run");
 }
 
+/**
+ * The card folds on its own after a while. Brenda's own cards (the day card, the timer, her replies, voice, a drop, an
+ * error) as before: CLOSE_AFTER_MS or their `closeAfter`, never while sticky, held while the pointer is on them. A
+ * notification card (owner decision, 9 October 2026: "A plus the grafts") only when it arrived on its own (`armHold`).
+ */
 function scheduleClose() {
   clearTimeout(closeTimer);
-  if (!card || card.sticky) return;
+  if (!card) return;
+  if (isNotice(card)) return armHold();
+  if (card.sticky) return;
   const ms = card.closeAfter ?? CLOSE_AFTER_MS;
   closeTimer = setTimeout(() => { if (!hovering) closeCard(); else scheduleClose(); }, ms);
   restartCountdown(ms);
 }
 
-function openCard(c) { card = c; restartCountdown(0); render(); scheduleClose(); }
+/**
+ * Opening a card. One that is not the pager's folds the pager away keeping its place (a voice card, the opener, a
+ * hover-open); opening a tucked ask again ends its "waiting on you" (owner decision, 9 October 2026).
+ */
+function openCard(c) {
+  if (!c.pager) leavePager();
+  if (waitingAsk && c.n?.id && c.n.id === waitingAsk.nid) waitingAsk = null;
+  c.openedAt ??= Date.now();
+  clearTimeout(leaveTimer);
+  cancelHold();
+  card = c; restartCountdown(0); render(); scheduleClose();
+}
 // Closing a card (Done, Esc, leaving it, opening a link or the chat in Boredroom) stops her (owner decision, 7 October 2026).
-function closeCard() { hush(); card = null; error = null; restartCountdown(0); render(); setTimeout(nextNotification, 600); }
+// It never opens the next notification any more (owner decision, 9 October 2026: "never auto-chain"; the old
+// setTimeout(nextNotification, 600) is gone): what is unread stays in the bar. The pager keeps its place.
+function closeCard() { hush(); leavePager(); clearTimeout(leaveTimer); cancelHold(); card = null; error = null; restartCountdown(0); render(); }
 
 // Brenda opens the moment the pointer reaches her and folds away as soon as it leaves (owner decision, 5 October 2026;
 // a click in the menu bar strip does not reach her anyway). A card that is waiting on the person stays open: something
 // to confirm, a question being typed, the mic listening, a file being attached. The short grace on leaving only
 // stops her flickering when the pointer grazes her edge while she is still growing.
+// Notifications (owner decision, 9 October 2026: "A plus the grafts"): that rule stays for what the pointer opened. A card
+// that arrived on its own pauses its clock while the pointer is on it and stays what is left of it, at least 3 s, after
+// the pointer leaves; the pager and a card opened by a press stay 3 s (Notify.leaveFold). Before the first poll has
+// answered there is no day to show, so the bar only peeks (the empty island, same day).
 const LEAVE_GRACE_MS = 120;
 let leaveTimer = null;
 function setHover(on) {
@@ -515,19 +657,50 @@ function setHover(on) {
   hovering = on;
   island.classList.toggle("hover", on);
   clearTimeout(leaveTimer);
-  if (on && !card && config?.signedIn) { tucked = false; openCard({ kind: "home" }); }
-  // A commitment or block card that opened on its own counts as seen once the pointer rests on it (phase 7b).
-  else if (on && card?.kind === "loop") loopSeen(card);
-  // So does a standup draft or a rollup (phase 7c).
-  else if (on && (card?.kind === "standup" || card?.kind === "standup_rollup")) standupSeen(card);
-  else if (!on && card && !card.sticky) leaveTimer = setTimeout(() => { if (!hovering && card && !card.sticky) closeCard(); }, LEAVE_GRACE_MS);
+  pagerLeft = !on && !!card?.pager;
+  if (on && !card && config?.signedIn && data) { tucked = false; openCard({ kind: "home", origin: "hover" }); }
+  else if (on && card) {
+    card.touched = true; // Enter may press its main action from now on (review, 9 October 2026)
+    pauseHold();
+    // A commitment or block card that opened on its own counts as seen once the pointer rests on it (phase 7b).
+    if (card.kind === "loop") loopSeen(card);
+    // So does a standup draft or a rollup (phase 7c).
+    else if (card.kind === "standup" || card.kind === "standup_rollup") standupSeen(card);
+  }
+  else if (!on && card) leaveIsland();
   else if (!card) fit();
   updateTuck();
 }
 
-/** Nothing needs the person (no card, no timer, nothing unread): tuck the notch away after a moment. */
+/** Where a card came from: "hover", "auto", "user" or "pager" (Brenda's own cards count as opened by the pointer). */
+const originOf = (c) => (c?.origin ? c.origin : isNotice(c) ? "user" : "hover");
+/** Keyboard focus is in the open card (the notch window has it, and it is on something in #notch). */
+// #notch itself counts only while the pager holds the keys (review, 9 October 2026: once the pager folded, a focused
+// #notch kept every later card paused).
+const focusInside = () => { const a = document.activeElement; return document.hasFocus() && !!a && el.contains(a) && (a !== el || (!!pager && !!card?.pager)); };
+
+/** The pointer (or the keyboard's focus) has left the island: what the card's origin says (Notify.leaveFold). */
+function leaveIsland() {
+  const c = card;
+  if (!c || hovering) return;
+  const origin = originOf(c);
+  if (origin === "auto" && focusInside()) return; // the keyboard holds its clock as the pointer does
+  const d = Notify.leaveFold({ origin, sticky: stickyNow(), left: hold.active ? hold.left : 0, grace: LEAVE_GRACE_MS });
+  if (d.mode === "stay") return;
+  if (origin === "auto") return hold.active ? resumeHold(d.ms) : startHold(d.ms);
+  clearTimeout(leaveTimer);
+  const go = () => { if (card !== c || hovering || stickyNow()) return; if (c.pager) foldPager(); else closeCard(); };
+  if (d.mode === "now") return go();
+  leaveTimer = setTimeout(go, d.ms);
+}
+
+/**
+ * Nothing needs the person (no card, no timer, no ask tucked in the bar, nothing new waiting to open): tuck the notch away
+ * after a moment. What has already been shown may stay unread (as before 9 October 2026; review, same day: needing the
+ * inbox empty kept the notch out for anyone with an old unread notification).
+ */
 function idle() {
-  return !!config?.signedIn && !card && !alwaysVisible && !data?.timer && !(data?.notifications ?? []).some((n) => !shown.has(n.id));
+  return !!config?.signedIn && !card && !alwaysVisible && !data?.timer && !waitingAsk && !inbox().some((n) => nq.held.has(n.id) || !nq.known.has(n.id));
 }
 function updateTuck() {
   clearTimeout(tuckTimer);
@@ -536,27 +709,57 @@ function updateTuck() {
 }
 island.addEventListener("pointerenter", () => setHover(true));
 island.addEventListener("pointerleave", () => setHover(false));
-island.addEventListener("pointerdown", () => Sound.unlock());
+island.addEventListener("pointerdown", () => { Sound.unlock(); if (card) card.touched = true; });
 
 // ---- rendering ---------------------------------------------------------------------------------------------------
 
+/**
+ * Draws what is showing. Atomic (owner decision, 9 October 2026: the empty black island): the markup is built first, and
+ * only then does the page change; a card whose view throws or has nothing to draw is reported and dropped, and the bar
+ * is drawn instead, so the island is never left open around the bar's row or around nothing.
+ */
 function render() {
-  el.classList.toggle("compact", !!config?.signedIn && !card);
-  const key = !config?.signedIn ? `link:${!!link}:${editingServer}` : card ? `${card.kind}:${card.phase ?? ""}:${card.n?.id ?? card.w?.id ?? card.u?.id ?? ""}` : "compact";
+  const signed = !!config?.signedIn;
+  let html = "";
+  if (!signed) html = linkView();
+  else if (card) {
+    try {
+      html = `${cardView()}${error ? `<p class="err">${esc(error)}</p>` : ""}`;
+      if (!/<[a-z]/i.test(html)) throw new Error("nothing to draw");
+    } catch (err) {
+      dropCard(`render: ${card?.kind ?? "card"}${card?.phase ? ` (${card.phase})` : ""}: ${err?.message ?? err}`);
+      html = "";
+    }
+  }
+  if (signed && !card) {
+    try { html = compactView(); }
+    catch (err) { report(`render: the bar: ${err?.message ?? err}`); barWide = false; html = `<div class="row" data-act="home" aria-label="Open ${esc(me().name)}">${face({ small: true })}<span class="tiny grow">${esc(me().name)}</span></div>`; }
+  }
+  el.classList.toggle("compact", signed && !card);
+  const key = !signed ? `link:${!!link}:${editingServer}` : card ? `${card.kind}:${card.phase ?? ""}:${card.n?.id ?? card.w?.id ?? card.u?.id ?? ""}` : "compact";
   // A follow-up's note keeps its words (they live on the card), its focus and its caret when the card is drawn again.
   const noting = document.activeElement?.id === "fnote" ? { from: document.activeElement.selectionStart, to: document.activeElement.selectionEnd } : null;
-  if (!config?.signedIn) el.innerHTML = linkView();
-  else if (!card) el.innerHTML = compactView();
-  else el.innerHTML = `${cardView()}${error ? `<p class="err">${esc(error)}</p>` : ""}`;
+  // The pager keeps the keyboard on the island across its steps (← → Enter Esc; owner decision, 9 October 2026).
+  const keepKeys = !!card?.pager && document.activeElement === el;
+  el.innerHTML = html;
   if (noting) { const n = document.getElementById("fnote"); if (n && !n.disabled) { n.focus(); try { n.setSelectionRange(noting.from, noting.to); } catch { /* not a text field any more */ } } }
+  if (keepKeys) el.focus({ preventScroll: true });
   el.setAttribute("aria-label", me().name); // the notch is named after the person's assistant (Brenda while signed out)
   const m = moodOf();
   island.dataset.tone = m.tone ?? "";
+  paintWash();
   if (key !== viewKey) {
     viewKey = key;
-    el.classList.remove("enter", "steady"); void el.offsetWidth; el.classList.add("enter");
-  } else el.classList.add("steady"); // the same view drawn again (busy, a poll, a sent reply): no second blur-in (review, 8 October 2026)
+    drawnAt = Date.now();
+    el.classList.remove("enter", "steady", "step"); island.classList.remove("step"); void el.offsetWidth;
+    // A pager step slides the way the person went and its wash fades again (owner decision, 9 October 2026); anything
+    // else blurs in as before.
+    if (stepDir && card?.pager) { el.style.setProperty("--dx", `${stepDir > 0 ? 8 : -8}px`); el.classList.add("step"); island.classList.add("step"); }
+    else el.classList.add("enter");
+  } else { el.classList.remove("step"); el.classList.add("enter", "steady"); } // the same view drawn again (busy, a poll, a sent reply): no second blur-in (review, 8 October 2026)
+  stepDir = 0;
   if (gaze && !TYPING.has(document.activeElement?.id)) gaze = null; // the box she was reading has gone
+  syncHold();
   fit();
   applyFx();
   if (talking) talkLevel(talkLast); // the faces were drawn again: the level she is at, at once
@@ -565,25 +768,80 @@ function render() {
   armUndoClock();
 }
 
-/** Team leads and organisation accounts: who is working right now, each with their own small face. */
-function teamView() {
-  const team = data?.team ?? [];
-  if (!team.length) return "";
-  return `<div class="team">${team.slice(0, 6).map((p) => `<button class="mate" style="--c:${hue(p.id)}" data-act="open-href" data-href="/app/${esc(config.workspaceSlug)}/workroom" title="${who(p)}">${mini(p)}<span class="nm">${esc(p.name.split(" ")[0])}</span><span class="tk">${p.task ? esc(p.task) : p.state ? esc(cap(p.state)) : "Not working"}</span></button>`).join("")}</div>`;
+/**
+ * The island's wash and countdown colour follow the open notification's kind (owner decision, 9 October 2026: "A plus
+ * the grafts"; style.css draws them from `data-family` and, for the summary, `--mix`). Brenda's own cards and the bar
+ * carry none.
+ */
+function paintWash() {
+  const family = isNotice(card) ? familyOf(card) : null;
+  if (family) island.dataset.family = family; else delete island.dataset.family;
+  let mix = "";
+  if (card?.kind === "summary" && cardsReady()) {
+    const counts = { needs: 0, talk: 0, plain: 0, good: 0 };
+    for (const x of noticesNow()) if (Object.hasOwn(counts, x.family)) counts[x.family]++;
+    try { mix = String(NotifyCards.mix(counts) ?? ""); } catch (err) { report(`mix: ${err?.message ?? err}`); }
+  }
+  if (mix) island.style.setProperty("--mix", mix); else island.style.removeProperty("--mix");
 }
 
+/** Team leads and organisation accounts: who is working right now, each with their own small face. */
+function teamView() {
+  // A teammate without a name (the empty black island, 9 October 2026: `p.name.split` threw) shows without one.
+  const team = (Array.isArray(data?.team) ? data.team : []).filter((p) => !!p && typeof p === "object");
+  if (!team.length) return "";
+  return `<div class="team">${team.slice(0, 6).map((p) => `<button class="mate" style="--c:${hue(p.id)}" data-act="open-href" data-href="/app/${esc(config.workspaceSlug)}/workroom" title="${who(p)}">${mini(p)}<span class="nm">${esc(firstName(p.name))}</span><span class="tk">${p.task ? esc(p.task) : p.state ? esc(cap(String(p.state))) : "Not working"}</span></button>`).join("")}</div>`;
+}
+
+/**
+ * The compact bar. Notifications (owner decision, 9 October 2026: "A plus the grafts"): it never says "All clear" beside
+ * a count. With a timer, the timer and the count; an ask that tucked away, "Ben is waiting on you" (her own face thinks);
+ * one or two unread, the newest sender and their line; three or more, "8 new, 2 need you" with the faces that brought
+ * them (NotifyCards.barModel and bar). Then, as before, what is due, "Not clocked in yet", quiet hours or "All clear".
+ * While anything is unread a click on it opens what is waiting (`nc-inbox`) instead of the day card.
+ */
 function compactView() {
   const t = data?.timer;
   const b = data?.briefing;
-  const unread = (data?.notifications ?? []).filter((n) => !shown.has(n.id)).length;
+  const list = noticesNow();
+  const count = list.length;
   const dot = data?.me?.presence ?? "active";
-  // During quiet hours (phase 7a) the bar says until when, when it has nothing else to say.
-  let text = quietNow() ? esc(quietWords()) : "All clear";
+  if (waitingAsk && !list.some((x) => x.id === waitingAsk.nid)) waitingAsk = null; // answered, read or gone
+  const total = unreadTotal();
+  let lead = "", text = "", trail = "", wide = false, label = "";
   if (t) text = `<span class="clock ${t.state === "running" ? "live" : ""}" id="tclock">${hms(elapsed())}</span>&ensp;${esc(t.taskTitle)}`;
-  else if (b && (b.overdue.length || b.dueToday.length)) text = [b.dueToday.length ? `${b.dueToday.length} due today` : "", b.overdue.length ? `${b.overdue.length} overdue` : ""].filter(Boolean).join(", ");
-  else if (data?.clock?.status === "not_in" && data.clock.workingDay) text = "Not clocked in yet";
-  const working = (data?.team ?? []).filter((p) => p.state === "running" || p.state === "paused").slice(0, 3);
-  return `<div class="row" data-act="home" aria-label="Open ${esc(me().name)}">${face({ small: true, ...moodOf(), dot })}<span class="tiny grow">${text}</span>${working.length ? `<span class="minis">${working.map(mini).join("")}</span>` : ""}${unread ? `<span class="count">${unread}</span>` : ""}</div>`;
+  else if ((count || waitingAsk) && cardsReady()) {
+    try {
+      const env = noticeEnv();
+      const parts = NotifyCards.bar(barModelNow(list, env), env) ?? {};
+      lead = String(parts.lead ?? ""); text = String(parts.text ?? ""); trail = String(parts.trail ?? ""); wide = !!parts.wide; label = typeof parts.label === "string" ? parts.label : "";
+    } catch (err) { report(`bar: ${err?.message ?? err}`); lead = trail = label = ""; text = ""; wide = false; }
+  }
+  // Before the first poll has answered nothing is known yet: her name, never "All clear" (review, 9 October 2026).
+  if (!text && !data) text = esc(me().name);
+  if (!text) {
+    const due = b ? [Array.isArray(b.dueToday) && b.dueToday.length ? `${b.dueToday.length} due today` : "", Array.isArray(b.overdue) && b.overdue.length ? `${b.overdue.length} overdue` : ""].filter(Boolean).join(", ") : "";
+    // Without notify-cards.js the newest one's words still beat "All clear".
+    if (count) text = total === 1 ? esc(list[0].line || "1 new") : `${total} new`;
+    else if (due) text = due;
+    else if (data?.clock?.status === "not_in" && data.clock.workingDay) text = "Not clocked in yet";
+    // During quiet hours (phase 7a) the bar says until when, when it has nothing else to say.
+    else text = quietNow() ? esc(quietWords()) : "All clear";
+  }
+  barWide = wide;
+  const counted = /class="count"/.test(trail);
+  const badge = count && !counted && !/nc-stack/.test(trail) ? `<span class="count">${total}</span>` : "";
+  const working = wide ? [] : (Array.isArray(data?.team) ? data.team : []).filter((p) => p && (p.state === "running" || p.state === "paused")).slice(0, 3);
+  const mood = waitingAsk && !t ? { mood: "think" } : moodOf();
+  const act = count || waitingAsk ? "nc-inbox" : "home";
+  const said = `${label.trim() || plainOf(`${lead} ${text}`)}${badge ? `, ${total} unread` : ""}`;
+  return `<div class="row" data-act="${act}" aria-label="${esc(`Open ${me().name}${said ? `: ${said}` : ""}`)}">${face({ small: true, ...mood, dot })}${lead}<span class="tiny grow">${text}</span>${working.length ? `<span class="minis">${working.map(mini).join("")}</span>` : ""}${trail}${badge}</div>`;
+}
+/** The words of some markup, for a label (parsed by the page, never run). */
+function plainOf(html) {
+  const t = document.createElement("template");
+  t.innerHTML = String(html ?? "");
+  return t.content.textContent.replace(/\s+/g, " ").trim();
 }
 
 function linkView() {
@@ -605,6 +863,15 @@ function linkView() {
 
 function cardView() {
   const b = data?.briefing;
+  // Notifications, the summary, the pager and the end card (owner decision, 9 October 2026: "A plus the grafts") are
+  // drawn by notify-cards.js; if it is missing or a template throws, the cards as they were below.
+  if (isNotice(card) && cardsReady()) {
+    try { return noticeView(); }
+    catch (err) {
+      report(`card ${card.kind}${card.n?.type ? ` (${card.n.type})` : ""}: ${err?.message ?? err}`);
+      if (card.kind === "summary" || card.kind === "caught_up") throw err;
+    }
+  }
   if (card.kind === "notification") {
     const n = card.n;
     if (mentionCard(n.type)) return mentionView(n);
@@ -624,23 +891,30 @@ function cardView() {
     return `<div class="row fade">${face({ ...moodOf(), who: from })}<div class="grow"><p class="title${loop ? " wrap" : ""}">${esc(n.title)}</p>${n.body ? `<p class="sub">${esc(n.body)}</p>` : `<p class="sub">${esc(when(n.created_at))}</p>`}</div>${pill}</div>
       <div class="actions">${n.href && !removedPage(n.href) ? `<button class="btn" data-act="open-href" data-href="${esc(n.href)}">Open${icon("open")}</button>` : ""}<button class="btn primary" data-act="read" data-id="${esc(n.id)}">${n.type === "brenda.reminder" ? "Done" : "OK"}</button></div>`;
   }
+  // The day card starts with what is waiting, as the bar says it (owner decision, 9 October 2026: "A plus the grafts"):
+  // one row that opens it. Lists the state leaves out read as empty (the empty black island, same day).
   if (card.kind === "briefing" && b) {
+    const arr = (x) => (Array.isArray(x) ? x.filter((t) => !!t && typeof t === "object") : []);
     const items = [
-      ...b.overdue.map((t) => ({ t, k: "overdue", bad: true })),
-      ...b.dueToday.map((t) => ({ t, k: `due ${when(t.due)}` })),
-      ...b.dueTomorrow.map((t) => ({ t, k: "due tomorrow" })),
+      ...arr(b.overdue).map((t) => ({ t, k: "overdue", bad: true })),
+      ...arr(b.dueToday).map((t) => ({ t, k: `due ${when(t.due)}` })),
+      ...arr(b.dueTomorrow).map((t) => ({ t, k: "due tomorrow" })),
     ].slice(0, 3);
-    const extra = [b.waitingForYourReview.length ? `${b.waitingForYourReview.length} waiting for your review` : "", b.assignmentsNotPickedUp.length ? `${b.assignmentsNotPickedUp.length} not picked up` : ""].filter(Boolean).join(", ");
+    const extra = [arr(b.waitingForYourReview).length ? `${arr(b.waitingForYourReview).length} waiting for your review` : "", arr(b.assignmentsNotPickedUp).length ? `${arr(b.assignmentsNotPickedUp).length} not picked up` : ""].filter(Boolean).join(", ");
     const first = items[0]?.t;
     const greet = new Date().getHours() < 12 ? "Good morning" : new Date().getHours() < 17 ? "Good afternoon" : "Good evening";
-    return `<div class="row fade">${face({ ...moodOf(), dot: data.me.presence })}<div class="grow"><p class="title">${greet}${config.displayName ? `, ${esc(config.displayName.split(" ")[0])}` : ""}. ${b.openTasks} open task${b.openTasks === 1 ? "" : "s"}.</p><p class="sub">${extra || (first ? `First up: ${esc(first.title)}` : "Nothing is waiting on you.")}</p></div></div>
+    const firstTitle = String(first?.title ?? "");
+    return `${inboxStrip()}<div class="row fade">${face({ ...moodOf(), dot: data.me?.presence })}<div class="grow"><p class="title">${greet}${config.displayName ? `, ${esc(firstName(config.displayName))}` : ""}. ${Number(b.openTasks) || 0} open task${b.openTasks === 1 ? "" : "s"}.</p><p class="sub">${extra || (first ? `First up: ${esc(first.title)}` : asksWaiting() ? esc(`${asksWaiting()} ${asksWaiting() === 1 ? "thing waits" : "things wait"} on you.`) : "Nothing is waiting on you.")}</p></div></div>
       ${quietNow() ? `<p class="cap fade">${esc(quietWords())}: no pop-ups or sounds.</p>` : ""}
       ${items.length ? `<ul class="list fade">${items.map((i) => `<li><span class="t">${esc(i.t.title)}</span><span class="k ${i.bad ? "bad" : ""}">${esc(i.k)}</span></li>`).join("")}</ul>` : ""}
       ${waitingView()}
       ${teamView()}
       ${askBox()}
-      <div class="actions">${talkButton()}<button class="btn ghost" data-act="close">Later</button><button class="btn" data-act="open-href" data-href="/app/${esc(config.workspaceSlug)}/tasks">Tasks</button>${first && !data.timer && data.clock ? `<button class="btn primary accent" data-act="start" data-id="${esc(first.id)}" ${busy ? "disabled" : ""}>Start ${esc(first.title.length > 22 ? `${first.title.slice(0, 21)}…` : first.title)}</button>` : ""}</div>`;
+      <div class="actions">${talkButton()}<button class="btn ghost" data-act="close">Later</button><button class="btn" data-act="open-href" data-href="/app/${esc(config.workspaceSlug)}/tasks">Tasks</button>${first && !data.timer && data.clock ? `<button class="btn primary accent" data-act="start" data-id="${esc(first.id)}" ${busy ? "disabled" : ""}>Start ${esc(firstTitle.length > 22 ? `${firstTitle.slice(0, 21)}…` : firstTitle)}</button>` : ""}</div>`;
   }
+  // Before the first poll has answered, or when the state carries no briefing: a small day card, never an empty island
+  // (owner decision, 9 October 2026).
+  if (card.kind === "briefing") return dayCardView();
   if (card.kind === "home") {
     const t = data?.timer;
     if (t) {
@@ -650,12 +924,12 @@ function cardView() {
       const live = t.state === "running";
       const state = live ? "On the clock" : t.state === "paused" ? "Paused" : "Connection interrupted";
       const share = estimateShare();
-      return `<div class="row fade">${face({ ...moodOf(), dot: data.me.presence })}<div class="grow"><p class="title">${esc(t.taskTitle)}</p><p class="sub"><span class="status"><span class="d ${esc(t.state)}"></span>${state}</span>${t.estimateMinutes ? `, estimated ${dur(t.estimateMinutes)}` : ""}</p></div><span class="big ${live ? "live" : "dim"}" id="tclock" role="timer">${hms(elapsed())}</span>${t.taskVersion ? `<button class="ring-btn" data-act="progress" title="Add 10% progress" aria-label="Add 10% progress">${ring(t.progress)}</button>` : ""}</div>
+      return `${inboxStrip()}<div class="row fade">${face({ ...moodOf(), dot: data.me?.presence })}<div class="grow"><p class="title">${esc(t.taskTitle)}</p><p class="sub"><span class="status"><span class="d ${esc(t.state)}"></span>${state}</span>${t.estimateMinutes ? `, estimated ${dur(t.estimateMinutes)}` : ""}</p></div><span class="big ${live ? "live" : "dim"}" id="tclock" role="timer">${hms(elapsed())}</span>${t.taskVersion ? `<button class="ring-btn" data-act="progress" title="Add 10% progress" aria-label="Add 10% progress">${ring(t.progress)}</button>` : ""}</div>
         ${share !== null ? `<div class="est fade" aria-hidden="true"><i id="testimate" style="transform:scaleX(${share.toFixed(3)})"></i></div>` : ""}
         ${askBox()}
         <div class="actions">${talkButton()}<button class="btn ghost" data-act="briefing">Today</button>${live ? `<button class="btn" data-act="pause" ${busy ? "disabled" : ""}>${icon("pause")}Pause</button>` : `<button class="btn primary accent" data-act="resume" ${busy ? "disabled" : ""}>${icon("play")}Resume</button>`}<button class="btn danger" data-act="stop" ${busy ? "disabled" : ""}>${icon("stop")}Stop</button></div>`;
     }
-    card = { kind: "briefing" };
+    card = { kind: "briefing", origin: card.origin, openedAt: card.openedAt };
     return cardView();
   }
   if (card.kind === "voice") return voiceView();
@@ -670,21 +944,651 @@ function cardView() {
   if (card.kind === "standup") return standupView();
   if (card.kind === "standup_rollup") return rollupView();
   if (card.kind === "error") return `<div class="row fade">${face(moodOf())}<div class="grow"><p class="title">Can't reach Boredroom</p><p class="sub">${esc(card.message)}</p></div></div><div class="actions"><button class="btn" data-act="close">OK</button></div>`;
-  return "";
+  // Never nothing (owner decision, 9 October 2026: the empty black island): a kind this page does not know draws its
+  // notification as the plain card, or render() drops it.
+  if (card.n && typeof card.n.type === "string" && card.kind !== "notification") { card = { kind: "notification", n: card.n, origin: card.origin, pager: card.pager, openedAt: card.openedAt }; return cardView(); }
+  throw new Error(`no view for ${card.kind}`);
+}
+
+/** The day card when there is no briefing to show (before the first poll, or a state without one): her face, a greeting, the ask box and Later. */
+function dayCardView() {
+  const h = new Date().getHours();
+  const greet = h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening";
+  const first = firstName(data?.me?.displayName ?? config?.displayName);
+  return `${inboxStrip()}<div class="row fade">${face({ ...moodOf(), dot: data?.me?.presence })}<div class="grow"><p class="title">${greet}${first ? `, ${esc(first)}` : ""}.</p>${data ? "" : `<p class="sub">Getting your day from Boredroom…</p>`}</div></div>
+    ${askBox()}
+    <div class="actions">${talkButton()}<button class="btn ghost" data-act="close">Later</button></div>`;
+}
+
+// ---- notifications: one at a time, the summary and the pager -----------------------------------------------------
+// Owner decision, 9 October 2026 (notch notifications, "A plus the grafts"; the header says what the person sees). The
+// rules are notify.js's (`Notify`: arrival, order, holds, the pager's steps, leaving); the markup is notify-cards.js's
+// (`NotifyCards`: every card from its template, the summary, the pager's footer, the end card and the bar's words). This
+// part keeps the state, the timers and the calls to Boredroom, and hands the templates what only this page knows: the
+// note boxes, the quick replies, the buttons while a box is open, what a press did (`result`), the footer (`nav`), how
+// many wait behind a card (`more`) and the 600 ms "done" state in the pager (`done`).
+
+/** The cards that are notifications (they hold, linger and page by Notify's rules); the rest are Brenda's own. */
+const NOTICE_KINDS = new Set(["notification", "followup_answer", "followup_ask", "item", "item_update", "loop", "standup", "standup_rollup", "routine", "summary", "caught_up"]);
+const isNotice = (c) => !!c && NOTICE_KINDS.has(c.kind);
+/** notify-cards.js loaded (without it the cards as they were draw, and two or more open the newest instead of a summary). */
+const cardsReady = () => typeof NotifyCards === "object" && !!NotifyCards && typeof NotifyCards.card === "function";
+
+/** What every NotifyCards call is given (contract A.2), built once per draw. */
+function noticeEnv() {
+  return {
+    esc, face, me: me(), ws: ws(), assistantOf, firstName,
+    displayName: data?.me?.displayName ?? config?.displayName ?? "",
+    workspaceName: data?.workspace?.name ?? config?.workspaceName ?? "",
+    now: serverNow(), boredroomPath, state: data, busy, canStart: !data?.timer && !!data?.clock, unreadTotal: unreadTotal(),
+  };
+}
+
+/**
+ * How many are unread in all (review, 9 October 2026): the server's count past the 20 it sends, less what was read here
+ * since (markRead lowers it), never fewer than the inbox.
+ */
+const unreadTotal = () => { const t = data?.notificationsUnread; return Math.max(inbox().length, Number.isInteger(t) && t >= 0 ? t : 0); };
+/** How many of the unread wait on the person (asks), for the day card's line. */
+const asksWaiting = () => (inbox().length ? noticesNow().filter((x) => x.waits).length : 0);
+/** What is unread: the desktop state's notifications (newest first, at most 20) less those read from here meanwhile. */
+const inbox = () => (Array.isArray(data?.notifications) ? data.notifications : []).filter((n) => !!n && typeof n.id === "string" && typeof n.type === "string" && !readHere.has(n.id));
+
+// Without notify-cards.js, a notification's place in the pager and whether it waits on the person, from its type alone
+// (the contract's table, A.4).
+const LOCAL_ASK = new Set(["brenda.followup_ask", "assistant.request", "brenda.commitment", "brenda.open_ask", "brenda.blocked_on", "brenda.standup", "brenda.mention_confirm", "brenda.replan", "review.requested", "adjustment.requested", "capture.exception"]);
+const LOCAL_TIME = new Set(["brenda.reminder", "task.assigned", "brenda.commitment_due", "brenda.nudge", "brenda.commitment_stalled", "task.blocked", "review.changes_requested"]);
+const LOCAL_GOOD = new Set(["review.approved", "brenda.commitment_accepted", "brenda.block_answered", "brenda.clock_in"]);
+const LOCAL_PEOPLE = /^(?:message\.|task\.comment$|assistant\.|brenda\.mention_|brenda\.followup_(?:answer|batch)$|review\.question$|brenda\.commitment_declined$|brenda\.block_not_me$)/;
+function localNotice(n) {
+  const t = n.type;
+  const group = LOCAL_ASK.has(t) ? "ask" : LOCAL_TIME.has(t) ? "time" : LOCAL_GOOD.has(t) ? "good" : LOCAL_PEOPLE.test(t) ? "people" : "report";
+  const family = group === "ask" || group === "time" ? "needs" : group === "people" ? "talk" : group === "good" ? "good" : "plain";
+  return { id: n.id, type: t, template: "plain", family, group, waits: group === "ask", word: "update", at: Date.parse(n.created_at) || 0,
+    sender: { key: "me", label: "You", who: null, mood: "" }, line: String(n.title ?? ""), facts: n.facts ?? null };
+}
+/** A notification as the queue, the bar and the summary see it (NotifyCards.notice), or the local reading of its type. */
+function noticeOf(n, env) {
+  if (cardsReady()) {
+    try { const x = NotifyCards.notice(n, env ?? noticeEnv()); if (x && typeof x.id === "string" && typeof x.group === "string") return x; }
+    catch (err) { report(`notice ${n?.type}: ${err?.message ?? err}`); }
+  }
+  return localNotice(n);
+}
+/** The inbox as notices, newest first. */
+function noticesNow(env) { const e = env ?? noticeEnv(); return inbox().map((n) => noticeOf(n, e)); }
+/** The inbox as notices in the pager's order (what waits on you first; Notify.order). */
+function orderedNotices(env) {
+  const list = noticesNow(env);
+  const by = new Map(list.map((x) => [x.id, x]));
+  return Notify.order(list.map((x) => ({ id: x.id, group: x.group, at: x.at }))).map((id) => by.get(id)).filter(Boolean);
+}
+
+/** What NotifyCards makes of an open card ({ template, family, group, waits, words }), or null. */
+function infoOf(c) {
+  if (!cardsReady() || !c) return null;
+  try { const i = NotifyCards.cardInfo(c, noticeEnv()); return i && typeof i === "object" ? i : null; }
+  catch (err) { report(`cardInfo ${c.kind}: ${err?.message ?? err}`); return null; }
+}
+/** Whether a card waits on the person (an ask): it holds 15 s and then tucks into the bar. */
+function waitsOf(c) {
+  const i = infoOf(c);
+  if (i && typeof i.waits === "boolean") return i.waits;
+  if (c.kind === "followup_ask") return c.phase === "ask";
+  if (c.kind === "item") return c.w?.kind === "request" && c.phase === "open";
+  if (c.kind === "loop" || c.kind === "standup") return c.phase === "open";
+  return c.kind === "notification" && LOCAL_ASK.has(c.n?.type);
+}
+/** The wash's and the countdown's colour: the card's family, "mix" for the summary, "good" for All caught up. */
+function familyOf(c) {
+  if (c.kind === "summary") return "mix";
+  if (c.kind === "caught_up") return c.left ? "needs" : "good";
+  const f = infoOf(c)?.family;
+  if (typeof f === "string" && /^[a-z]{1,16}$/.test(f)) return f;
+  return c.n ? localNotice(c.n).family : c.kind === "followup_ask" || c.kind === "loop" || c.kind === "standup" || (c.kind === "item" && c.w?.kind === "request") ? "needs" : "talk";
+}
+
+/**
+ * Something is being typed, pressed or said on the card, so it stays wherever the pointer goes (owner decision, 9 October
+ * 2026: an ask is no longer sticky on its own; it is once a box opens, a quick reply is chosen, words are typed or said,
+ * a press is in flight or a Confirm waits).
+ */
+const engaged = (c) => !!c && ((c.kind === "followup_ask" && c.phase === "ask" && (!!c.choice || !!String(c.note ?? "").trim() || !!c.dictating))
+  || ((c.kind === "item" || c.kind === "loop") && c.phase === "open" && !!(c.replying || c.declining)));
+const stickyNow = () => !!card && (!!card.sticky || busy || engaged(card) || !!card.dictating || (card.proposals ?? []).some((p) => p?.kind === "confirm"));
+
+// The hold of a card that arrived on its own (Notify.holdMs): the countdown hairline runs for it in the card's colour, it
+// pauses while the pointer is on the island or the keyboard is in it, and leaving gives what is left of it, at least
+// 3 s (resumeHold). An ask then tucks into the bar; anything else folds. Cards opened by the pointer, by a press or in
+// the pager have no countdown.
+function armHold() {
+  cancelHold();
+  const c = card;
+  if (!c || originOf(c) !== "auto" || stickyNow()) return;
+  startHold(holdFor(c));
+  if (hovering || focusInside()) pauseHold();
+}
+function holdFor(c) {
+  if (c.kind === "summary") return Notify.holdMs({ summary: true });
+  if (c.kind === "caught_up") return Notify.holdMs({ done: true });
+  const i = infoOf(c);
+  const words = Number.isFinite(i?.words) ? i.words : Notify.countWords(el.innerText ?? "");
+  return Notify.holdMs({ words, waits: waitsOf(c) });
+}
+function startHold(ms) {
+  clearTimeout(hold.timer);
+  Object.assign(hold, { active: true, paused: false, endAt: Date.now() + ms, left: ms });
+  island.classList.remove("paused");
+  hold.timer = setTimeout(holdEnded, ms);
+  restartCountdown(ms);
+}
+function pauseHold() {
+  if (!hold.active || hold.paused) return;
+  clearTimeout(hold.timer); hold.timer = null;
+  hold.left = Math.max(0, hold.endAt - Date.now());
+  hold.paused = true;
+  island.classList.add("paused");
+  countdown.style.animationPlayState = "paused";
+}
+/** The clock runs again for `ms`; when that is more than was left (the 3 s linger), the hairline starts again at it. */
+function resumeHold(ms) {
+  if (!hold.active) return startHold(ms);
+  const longer = ms > hold.left + 50;
+  Object.assign(hold, { paused: false, endAt: Date.now() + ms, left: ms });
+  island.classList.remove("paused");
+  clearTimeout(hold.timer); hold.timer = setTimeout(holdEnded, ms);
+  if (longer) restartCountdown(ms); else countdown.style.animationPlayState = "";
+}
+function cancelHold() {
+  clearTimeout(hold.timer);
+  const was = hold.active;
+  Object.assign(hold, { active: false, paused: false, timer: null, left: 0 });
+  island.classList.remove("paused");
+  if (was) restartCountdown(0);
+}
+/** A box opened, a press went out or a Confirm waits: the hold is off (render() asks after every draw). */
+function syncHold() { if (hold.active && stickyNow()) cancelHold(); }
+function holdEnded() {
+  hold.timer = null;
+  const c = card;
+  if (!c || !hold.active) return;
+  if (stickyNow()) return cancelHold();
+  if (hovering || focusInside()) { Object.assign(hold, { paused: false, endAt: Date.now() }); return pauseHold(); }
+  hold.active = false;
+  if (c.kind !== "summary" && c.kind !== "caught_up" && waitsOf(c)) return tuckAsk(c);
+  closeCard();
+}
+
+/**
+ * An ask that held its 15 s folds into the bar: "Ben is waiting on you", Ben's assistant's face beside hers, until it is
+ * answered, read, opened again or something newer arrives (owner decision, 9 October 2026, B's "waiting" bar).
+ */
+function tuckAsk(c) {
+  const a = askerFor(c);
+  waitingAsk = c.n?.id ? { nid: c.n.id, who: a.who, label: a.label } : null;
+  closeCard();
+}
+/** Whose assistant waits, and the name the bar says: the person's first name, else the assistant's own. */
+function askerFor(c) {
+  const w = c.w;
+  const named = (who, name) => ({ who, label: firstName(name) || assistantOf(who).name });
+  if (c.kind === "followup_ask" && w) return named(askerOf(w), w.asker?.name);
+  if (c.kind === "item" && w?.sender) return named(w.sender.assistant ?? null, w.sender.name);
+  if (c.kind === "loop" && w) {
+    if (c.lk === "block") return named(blockFace(w), w.from?.name);
+    const who = w.from?.assistant && typeof w.from.assistant === "object" ? w.from.assistant : ws();
+    return named(who, w.kind === "open_ask" ? w.from?.name : "");
+  }
+  if (c.n) {
+    const s = noticeOf(c.n).sender;
+    if (s?.key === "ws") return { who: ws(), label: ws().name };
+    if (s && s.key !== "me" && s.who) return named(s.who, s.label);
+  }
+  return { who: me(), label: me().name };
+}
+/** The bar's model: the tucked ask while there is one, else NotifyCards' one or many (contract A.7). */
+const barModelNow = (list, env) => (waitingAsk ? { kind: "waiting", who: waitingAsk.who, label: waitingAsk.label, count: Math.max(list.length, unreadTotal()) } : NotifyCards.barModel(list, env));
+
+/** The row at the top of the day card that says what is waiting and opens it (contract C.6), or "". */
+function inboxStrip() {
+  if (!cardsReady() || !data) return "";
+  const env = noticeEnv();
+  const list = noticesNow(env);
+  if (waitingAsk && !list.some((x) => x.id === waitingAsk.nid)) waitingAsk = null;
+  if (!list.length) return "";
+  try { return String(NotifyCards.strip(barModelNow(list, env), env) ?? ""); }
+  catch (err) { report(`strip: ${err?.message ?? err}`); return ""; }
+}
+/** The day card's row again, in place (the ask box keeps its words). */
+function refreshStrip() {
+  if (card?.kind !== "home" && card?.kind !== "briefing") return;
+  const html = inboxStrip();
+  const old = el.querySelector(":scope > .nc-strip");
+  if (old) { if (html) old.outerHTML = html; else old.remove(); }
+  else if (html) el.insertAdjacentHTML("afterbegin", html);
+}
+
+/** How many arrived after this card opened ("+2 waiting" where its time was). */
+const moreWaiting = (c) => (c?.openedAt ? inbox().filter((n) => (nq.known.get(n.id) ?? 0) > c.openedAt).length : 0);
+
+/** The card a notification opens: its own when the desktop state knows it (phases 4 to 7c), else the notification card. */
+function cardFor(n) {
+  try { return followUpCard(n) ?? itemCard(n) ?? loopCard(n) ?? standupCard(n) ?? routineCard(n) ?? { kind: "notification", n }; }
+  catch (err) { report(`card for ${n?.type}: ${err?.message ?? err}`); return { kind: "notification", n }; }
+}
+/**
+ * Each arrival's sound, as before: what waits for an answer calls for attention; a standup draft or a rollup is the
+ * ordinary sound (never a chase); a reply, an answer or an update the reply sound; a routine and the rest the ordinary
+ * one; clocked in, success.
+ */
+function soundFor(c, n) {
+  if (c.kind === "followup_ask" || c.kind === "loop" || (c.kind === "item" && c.w?.kind === "request")) return "attention";
+  if (c.kind === "standup" || c.kind === "standup_rollup" || c.kind === "routine") return "notify";
+  if (c.kind !== "notification") return "reply";
+  return n.type === "brenda.clock_in" ? "success" : mentionCard(n.type)?.sound ?? "notify";
+}
+/** A notification's card, opened on its own (`auto`: it holds and lingers), by a press (`user`) or in the pager. */
+function openNotice(n, origin) {
+  const c = cardFor(n);
+  c.origin = origin;
+  if (origin !== "auto") markShown(n.id);
+  openCard(c);
+  if (origin !== "auto") { if (c.kind === "loop") loopSeen(c); else if (c.kind === "standup" || c.kind === "standup_rollup") standupSeen(c); }
+  return c;
+}
+
+/**
+ * Seen by the person (opened from the bar, by a press, in the pager): it never opens again on its own (review, 9 October
+ * 2026: an ask paged past in quiet hours opened again when they ended).
+ */
+function markShown(id) {
+  if (typeof id !== "string" || !id) return;
+  const shown = new Set(nq.shown); shown.add(id);
+  const known = new Map(nq.known); if (!known.has(id)) known.set(id, Date.now());
+  const held = new Set(nq.held); held.delete(id);
+  nq = { ...nq, known, shown, held };
+}
+
+/**
+ * After each poll (where nextNotification() was, still after the morning opener), when quiet hours end and on the first
+ * movement after time away: what arrived is decided once (Notify.arrival). Two or more open the summary, one opens its
+ * card, while a card is open they only join the bar ("+2 waiting"), while the pager is open they join behind the
+ * current card, and in quiet hours or while away they wait. Nothing else opens a notification on its own.
+ */
+function arrive() {
+  if (!config?.signedIn || !data) return;
+  const list = inbox();
+  const now = Date.now();
+  const r = Notify.arrival(nq, { list: list.map((n) => ({ id: n.id, at: Date.parse(n.created_at) })), now, cardOpen: !!card, pagerOpen: !!(pager && card?.pager), quiet: quietNow(), away: Notify.away(lastMoveAt, now) });
+  nq = r.s;
+  if (r.fresh.length && waitingAsk) { waitingAsk = null; if (!card) render(); } // something newer than the tucked ask
+  if (r.action === "summary") return openSummary({ origin: "auto" });
+  if (r.action === "single") {
+    const n = list.find((x) => x.id === r.ids[0]);
+    if (!n) return;
+    const c = openNotice(n, "auto");
+    return Sound.play(soundFor(c, n));
+  }
+  if (r.action === "pager-insert") return pagerArrived(r.ids, list);
+  if (r.action === "bar") return barArrived();
+}
+/** Arrivals while a card is open: its "+N waiting", the summary's count, or the day card's row; nothing else moves. */
+function barArrived() {
+  if (!card) return render();
+  if (card.kind === "summary" || (isNotice(card) && !card.pager && card.kind !== "caught_up")) return render();
+  refreshStrip();
+}
+
+/** The summary (contract A.6): opened on its own for two or more, with one sound; Show them and the kind chips open the pager. */
+function openSummary(o = {}) {
+  const env = noticeEnv();
+  const list = orderedNotices(env);
+  if (!list.length) return;
+  if (!cardsReady()) { const n = inbox().find((x) => x.id === list[0].id); if (n) { const c = openNotice(n, o.origin ?? "auto"); Sound.play(soundFor(c, n)); } return; }
+  waitingAsk = null;
+  openCard({ kind: "summary", origin: o.origin ?? "auto" });
+  if ((o.origin ?? "auto") === "auto") Sound.play("notify");
+}
+
+/**
+ * The pager over what is unread, in Notify's order, at `o.at` (an id), `o.index`, or the place it kept when it last folded
+ * (contract C.5). When the notch already has the keyboard (the person is using it there) the island takes it (← → Enter
+ * Esc): Enter is the card's main action and Tab reaches the buttons. Opened with the pointer it never takes the keyboard
+ * from the person's app (review, 9 October 2026: focus_notch made the notch the active app, nothing could give the keys
+ * back, and a stray Enter later pressed Accept or Post on a card that opened on its own).
+ */
+function openPager(o = {}) {
+  if (!config?.signedIn || !data) return;
+  const env = noticeEnv();
+  const list = inbox();
+  const ordered = orderedNotices(env);
+  if (!ordered.length) return card ? closeCard() : render();
+  if (!cardsReady()) { const n = list.find((x) => x.id === (o.at ?? ordered[0].id)) ?? list.find((x) => x.id === ordered[0].id); return void openNotice(n, "user"); }
+  pagerNotes.clear();
+  for (const n of list) pagerNotes.set(n.id, n);
+  const ids = ordered.map((x) => x.id);
+  if (!o.keep) pagerRun.clear();
+  for (const id of ids) pagerRun.add(id);
+  const at = Number.isInteger(o.index) ? ids[Math.max(0, Math.min(ids.length - 1, o.index))] : o.at ?? pagerPlace;
+  // Opened again where it folded, the cards seen then keep their dimmed dots (review, 9 October 2026).
+  pager = Notify.pagerStart(ids, at, at && at === pagerPlace ? pagerSeen : null);
+  waitingAsk = null;
+  if (!o.keep) pagerLeft = false;
+  showPagerCard(0);
+  if (o.keys !== false && document.hasFocus()) el.focus({ preventScroll: true });
+}
+/** The pager's current card, from the same constructors as a single (origin "pager"); seen, since the person opened it. */
+function showPagerCard(dir) {
+  if (!pager) return;
+  const id = pager.ids[pager.index];
+  const n = pagerNotes.get(id) ?? inbox().find((x) => x.id === id);
+  if (!n) {
+    const next = Notify.pagerRemove(pager, id);
+    if (next.finished) return showCaughtUp();
+    pager = next; return showPagerCard(dir);
+  }
+  pagerPlace = id;
+  markShown(id);
+  // Mark all read in the footer only while it would read something (the asks are kept).
+  pager = { ...pager, readable: unreadTotal() > inbox().length || inbox().some((x) => noticeOf(x).group !== "ask") };
+  const c = cardFor(n);
+  Object.assign(c, { origin: "pager", pager: true });
+  stepDir = dir;
+  el.tabIndex = -1;
+  el.style.outline = "none"; // the island holds the keys; its buttons keep their own focus rings
+  openCard(c);
+  if (c.kind === "loop") loopSeen(c); else if (c.kind === "standup" || c.kind === "standup_rollup") standupSeen(c);
+  // A step taken after the pointer left (a press's 600 ms) keeps the 3 s fold going for the new card; a pager turned from
+  // the keyboard alone, the pointer never on it, stays until Esc.
+  if (pagerLeft && !hovering) leaveIsland();
+}
+/** The notices of the pager's cards, in its order (read ones included), for its dots. */
+function pagerNoticeList(env) {
+  const e = env ?? noticeEnv();
+  return (pager?.ids ?? []).map((id) => pagerNotes.get(id) ?? inbox().find((x) => x.id === id)).filter(Boolean).map((n) => noticeOf(n, e));
+}
+/** A notice the pager stepped past is read; an ask never is, only by its own buttons. */
+function readPaged(id) {
+  const n = inbox().find((x) => x.id === id);
+  if (n && noticeOf(n).group !== "ask") { markRead(id); seenAlong(n); }
+}
+/**
+ * Reading an assistant's message or reply without its card's own button does what Seen and Done do (review, 9 October
+ * 2026): the item is marked seen too, so the day card stops listing it as waiting and the sender's side sees it seen.
+ */
+function seenAlong(n) {
+  if ((n?.type !== "assistant.message" && n?.type !== "assistant.reply") || typeof n.resource_id !== "string") return;
+  const w = itemWaiting().find((x) => x.id === n.resource_id && (x.kind === "message" || x.kind === "reply"));
+  if (!w) return;
+  call("POST", org(`/assistant-items/${encodeURIComponent(w.id)}/seen`), {}).catch(() => {});
+  forgetItem(w.id, false);
+}
+/** ← and →, ‹ and Next. Past the last: All caught up. */
+function pagerGo(dir) {
+  if (!pager || !card?.pager || busy) return;
+  if (dir > 0) readPaged(pager.ids[pager.index]);
+  const next = Notify.pagerStep(pager, dir);
+  if (next.finished) return showCaughtUp();
+  if (next === pager) return;
+  pager = next;
+  showPagerCard(dir);
+}
+/** Esc, leaving it, Open: the pager folds and keeps its place; nothing reopens on its own. */
+function foldPager() { if (card?.pager) closeCard(); }
+/** The pager is replaced or folds: its place is kept, the island gives the keys back. */
+function leavePager() {
+  if (!pager) return;
+  const id = pager.ids[pager.index];
+  if (id) pagerPlace = id;
+  pagerSeen = new Set(pager.seen);
+  pager = null;
+  if (document.activeElement === el) el.blur(); // the keys go back with it (review, 9 October 2026)
+  el.removeAttribute("tabindex");
+  el.style.outline = "";
+}
+/** "All caught up" (contract A.6): how many were read, then it folds after 4 s and the bar says what is true. */
+function showCaughtUp(count) {
+  const left = new Set(inbox().map((n) => n.id));
+  const read = Number.isInteger(count) ? count : [...pagerRun].filter((id) => !left.has(id)).length;
+  // Asks paged past are still unread: the end card says they still need the person, not "All caught up" (review,
+  // 9 October 2026).
+  const asks = noticesNow().filter((x) => x.group === "ask").length;
+  pagerRun.clear();
+  leavePager();
+  pagerPlace = null; pagerSeen = new Set();
+  openCard({ kind: "caught_up", count: read, left: asks, origin: "auto" });
+}
+/** New arrivals join right behind the current card; only the footer is drawn again. */
+function pagerArrived(ids, list) {
+  if (!pager) return;
+  const env = noticeEnv();
+  for (const n of list) if (ids.includes(n.id)) { pagerNotes.set(n.id, n); pagerRun.add(n.id); }
+  const items = ids.map((id) => pagerNotes.get(id)).filter(Boolean).map((n) => noticeOf(n, env));
+  pager = Notify.pagerInsert(pager, Notify.order(items.map((x) => ({ id: x.id, group: x.group, at: x.at }))));
+  redrawNav();
+}
+/** After a poll: what was read elsewhere leaves the pager (never the card being read). */
+function prunePager() {
+  if (!pager || !card?.pager || !data) return;
+  const present = new Set((Array.isArray(data.notifications) ? data.notifications : []).map((n) => n?.id));
+  const current = pager.ids[pager.index];
+  let p = pager, changed = false;
+  for (const id of pager.ids) {
+    if (id === current || present.has(id) || readHere.has(id)) continue;
+    const next = Notify.pagerRemove(p, id);
+    if (next.finished) break;
+    p = next; changed = true;
+  }
+  if (changed) { pager = p; redrawNav(); }
+}
+/** The footer drawn again in place (the card, and anything typed in it, stays). */
+function redrawNav() {
+  const nav = el.querySelector(".nc-nav");
+  if (!nav || !pager || !cardsReady()) return;
+  const hadFocus = nav.contains(document.activeElement);
+  try { nav.outerHTML = String(NotifyCards.nav(pager, pagerNoticeList(), noticeEnv()) ?? ""); }
+  catch (err) { report(`nav: ${err?.message ?? err}`); return render(); }
+  if (hadFocus) el.focus({ preventScroll: true });
+  fit();
+}
+
+/**
+ * Mark all read (on the summary and in the pager's footer): every notice is read (in parallel; one that fails stays), the
+ * asks are kept (Notify.markAllRead). The summary then shows what is left, the pager pages the asks from the first, and
+ * with nothing left, All caught up.
+ */
+async function markAllReadNow() {
+  if (busy || !data) return;
+  const inPager = !!card?.pager;
+  busy = true; error = null; render();
+  // The state carries the newest 20; past them, the read ones make room for older ones, read in turn (review, 9 October
+  // 2026: it read only the 20 it could see). A few rounds at most, each one poll's worth.
+  const done = [];
+  for (let round = 0; round < 5 && config?.signedIn && data; round++) {
+    const env = noticeEnv();
+    const r = Notify.markAllRead(inbox().map((n) => { const x = noticeOf(n, env); return { id: x.id, group: x.group }; }));
+    if (!r.read.length) break;
+    const byId = new Map(inbox().map((n) => [n.id, n]));
+    const res = await Promise.allSettled(r.read.map((id) => call("PATCH", org(`/notifications/${encodeURIComponent(id)}`))));
+    const ok = r.read.filter((_, i) => res[i].status === "fulfilled");
+    for (const id of ok) { readHere.add(id); seenAlong(byId.get(id)); }
+    if (data) {
+      data.notifications = (data.notifications ?? []).filter((n) => !ok.includes(n?.id));
+      if (Number.isInteger(data.notificationsUnread)) data.notificationsUnread = Math.max(0, data.notificationsUnread - ok.length);
+    }
+    done.push(...ok);
+    if (ok.length < r.read.length || !(data && unreadTotal() > inbox().length)) break;
+    try {
+      const fresh = await call("GET", org("/brenda/desktop?opener=0"));
+      if (fresh && Array.isArray(fresh.notifications)) { data = { ...data, notifications: fresh.notifications, notificationsUnread: fresh.notificationsUnread }; }
+    } catch { break; }
+  }
+  busy = false;
+  if (!config?.signedIn) return;
+  if (done.length) Sound.play("tick");
+  if (!inbox().length) return showCaughtUp(inPager ? undefined : done.length);
+  if (inPager) return openPager({ index: 0, keep: true, keys: document.activeElement === el });
+  render();
+}
+
+/**
+ * A press on a notification card is done. In the pager its card says so for 600 ms ("Done", "Read"; contract A.3's
+ * `done`) and the pager moves on; anywhere else it folds, as before.
+ */
+function finishNotice(word) {
+  const c = card;
+  if (!c) return;
+  if (!(c.pager && pager)) return closeCard();
+  c.doneWord = word;
+  render();
+  clearTimeout(closeTimer);
+  closeTimer = setTimeout(() => { if (card === c) pagerGo(1); }, Notify.T.ACT_MS);
+}
+/** One notification read from here, without waiting (a failure lets the next poll bring it back). */
+function markRead(id) {
+  if (typeof id !== "string" || !id) return;
+  if (!readHere.has(id) && Number.isInteger(data?.notificationsUnread) && data.notificationsUnread > 0) data.notificationsUnread -= 1;
+  readHere.add(id);
+  if (data) data.notifications = (Array.isArray(data.notifications) ? data.notifications : []).filter((n) => n?.id !== id);
+  call("PATCH", org(`/notifications/${encodeURIComponent(id)}`)).catch(() => { readHere.delete(id); });
+}
+
+/** The bar (or the day card's row) pressed: the tucked ask again, the one notification, or the pager at its place. */
+function openInbox() {
+  if (!config?.signedIn || !data) return;
+  if (waitingAsk) {
+    const n = inbox().find((x) => x.id === waitingAsk.nid);
+    waitingAsk = null;
+    if (n) return void openNotice(n, "user");
+  }
+  const ordered = orderedNotices();
+  if (!ordered.length) return openCard({ kind: "home", origin: "hover" });
+  if (ordered.length === 1 || !cardsReady()) { const n = inbox().find((x) => x.id === ordered[0].id); return void openNotice(n, "user"); }
+  openPager({});
+}
+/** A kind chip on the summary: the pager at that kind's first card. */
+function openKind(family) {
+  const first = orderedNotices().find((x) => x.family === family);
+  openPager(first ? { at: first.id } : {});
+}
+
+/** A chip with names (the report's "2 didn't clock in"): open it, one at a time, in place. */
+function toggleNames(chip) {
+  const root = chip.closest(".nc") ?? el;
+  const open = chip.getAttribute("aria-expanded") !== "true";
+  for (const b of root.querySelectorAll('[data-act="nc-names"]')) b.setAttribute("aria-expanded", "false");
+  for (const box of root.querySelectorAll(".nc-names[data-for]")) box.hidden = true;
+  if (open) {
+    chip.setAttribute("aria-expanded", "true");
+    const box = [...root.querySelectorAll(".nc-names[data-for]")].find((x) => x.dataset.for === chip.dataset.names);
+    if (box) box.hidden = false;
+  }
+  fit();
+}
+
+/**
+ * Snooze 10 min on a reminder: the same reminder again in ten minutes (POST /brenda/reminders), on the same task when the
+ * facts carry it (integration, 9 October 2026: the server sends the reminder's whole text and its task id), this one read.
+ */
+async function snoozeReminder() {
+  const c = card, n = c?.n;
+  if (!n || busy) return;
+  const f = n.facts && typeof n.facts === "object" && n.facts.kind === "reminder" ? n.facts : null;
+  const text = [...(str(f?.text).trim() || str(n.title).replace(/^Reminder:\s*/i, "").trim())].slice(0, 500).join("");
+  if (!text) return;
+  busy = true; error = null; render();
+  const taskId = typeof f?.taskId === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(f.taskId) ? f.taskId : null;
+  try { await call("POST", org("/brenda/reminders"), { body: text, remindAt: new Date(serverNow() + 10 * 60_000).toISOString(), ...(taskId ? { taskId } : {}) }); }
+  catch (err) { busy = false; error = err?.message ?? String(err); Sound.play("error"); return render(); }
+  busy = false;
+  markRead(n.id);
+  Sound.play("tick");
+  if (card === c) finishNotice("Snoozed"); else render();
+}
+/** Mark done on a commitment that is due (the committer's own press, as Boredroom's button: POST /commitments/:id/done). */
+async function commitmentDone(id) {
+  const c = card;
+  if (!c || busy || typeof id !== "string" || !id) return;
+  busy = true; error = null; render();
+  try { await call("POST", org(`/commitments/${encodeURIComponent(id)}/done`), {}, { idempotencyKey: loopKey(c, "done") }); }
+  catch (err) {
+    busy = false;
+    if (err?.status && err.code !== "IN_PROGRESS") delete c.keys.done; // the server answered: a new press is a new key
+    error = err?.message ?? String(err); Sound.play("error"); return card === c ? render() : undefined;
+  }
+  busy = false;
+  if (c.n) markRead(c.n.id);
+  Sound.play("success");
+  if (card === c) finishNotice("Done"); else render();
+}
+
+/** The notification card's markup (NotifyCards.card), the summary or the end card, with what only this page knows. */
+function noticeView() {
+  const c = card, env = noticeEnv();
+  if (c.kind === "summary") return String(NotifyCards.summary(orderedNotices(env), env) ?? "");
+  if (c.kind === "caught_up") return String(NotifyCards.done(Number(c.count) || 0, env, { left: Number(c.left) || 0 }) ?? "");
+  return String(NotifyCards.card(c, env, noticeOpts(c, env)) ?? "");
+}
+const okButton = (c) => (c.n ? `<button class="btn primary" data-act="read" data-id="${esc(c.n.id)}" data-main>OK</button>` : `<button class="btn primary" data-act="close" data-main>OK</button>`);
+const closeOk = `<button class="btn primary" data-act="close" data-main>OK</button>`;
+/** The options this page passes NotifyCards.card (contract A.3): slot, actions, result, nav, more, done. */
+function noticeOpts(c, env) {
+  const o = {};
+  const off = busy ? "disabled" : "";
+  if (c.kind === "followup_ask") {
+    if (c.phase === "ask") { const a = askParts(c); o.slot = a.slot; o.actions = a.actions; }
+    else if (c.phase === "sent") { const r = askSent(c); o.result = { title: r.title, sub: r.sub, tone: c.sent === "not_now" ? "" : "ok", actions: closeOk }; }
+    else if (c.phase === "gone") o.result = { title: c.w.title, sub: c.message, tone: "", actions: okButton(c) };
+  } else if (c.kind === "item") {
+    const w = c.w, from = assistantOf(w.sender?.assistant), first = firstName(w.sender?.name);
+    if (c.phase === "sent") o.result = { title: `Sent. ${from.name} passes it to ${first || "them"}.`, sub: `Your reply: “${c.sentNote}”`, tone: "ok", actions: closeOk };
+    else if (c.phase === "gone") o.result = { title: itemTitle(w), sub: c.message, tone: "", actions: okButton(c) };
+    else if (c.phase === "result") o.result = { title: itemResult(c), sub: `${from.name} lets ${first || "them"} know.`, tone: c.item?.status === "done" ? "ok" : c.item?.status === "failed" ? "bad" : "", actions: closeOk };
+    else if (c.replying) { o.slot = itemNoteBox("Reply in one line"); o.actions = `<button class="btn ghost" data-act="ai-back" ${off}>Back</button><button class="btn primary accent" data-act="ai-send" data-main ${busy || !cleanNote(c.note) ? "disabled" : ""}>Send</button>`; }
+    else if (c.declining) { o.slot = itemNoteBox("Say why, if you like"); o.actions = `<button class="btn ghost" data-act="ai-back" ${off}>Back</button><button class="btn primary" data-act="ai-decline" data-main ${off}>Decline</button>`; }
+    else if (w.kind === "message" && w.canReply === false) o.actions = `<button class="btn primary" data-act="ai-seen" data-main ${off}>Seen</button>`;
+  } else if (c.kind === "loop") {
+    if (c.phase === "result") o.result = { title: c.result, sub: c.resultSub, tone: c.decided === "accept" ? "ok" : "", actions: closeOk };
+    else if (c.phase === "gone") o.result = { title: c.w.title, sub: c.message, tone: "", actions: okButton(c) };
+    else if (c.declining) { o.slot = itemNoteBox(LOOP_INBOX.declinePlaceholder, "data-loop"); o.actions = `<button class="btn ghost" data-act="lp-back" ${off}>Back</button><button class="btn primary" data-act="lp-decline" data-main ${off}>${LOOP_INBOX.decline}</button>`; }
+  } else if (c.kind === "standup") {
+    const e = c.w, to = postToOf(e);
+    if (c.phase === "posted") o.result = { title: STANDUP_SAY.posted(to, c.at), tone: "ok", actions: `${c.href ? `<button class="btn" data-act="open-href" data-href="${esc(c.href)}">Open${icon("open")}</button>` : ""}${closeOk}` };
+    else if (c.phase === "skipped") o.result = { title: STANDUP_SAY.skipped, sub: STANDUP_SAY.skippedSub, tone: "", actions: `${c.canUnskip ? `<button class="btn ghost" data-act="su-unskip" ${off}>${icon("undo")}Undo</button>` : ""}<button class="btn primary" data-act="close" data-main ${off}>OK</button>` };
+    else if (c.phase === "result") o.result = { title: c.result, sub: c.resultSub, tone: "", actions: closeOk };
+    else if (c.phase === "gone") o.result = { title: STANDUP_SAY.title(e.team.name.trim()), sub: c.message, tone: "", actions: okButton(c) };
+  }
+  if (c.pager && pager) o.nav = String(NotifyCards.nav(pager, pagerNoticeList(env), env) ?? "");
+  else { const more = moreWaiting(c); if (more > 0) o.more = more; }
+  if (c.doneWord) o.done = c.doneWord;
+  return o;
 }
 
 // ---- actions -----------------------------------------------------------------------------------------------------
 
 el.addEventListener("click", async (e) => {
   const f = e.target.closest(".face");
-  if (f && card && !f.classList.contains("mini")) return poke();
+  // A face on a button (the day card's row of who is waiting, 9 October 2026) is the button's.
+  if (f && card && !f.classList.contains("mini") && !f.closest("button, [data-act]")) return poke();
   const target = e.target.closest("[data-act]");
   if (!target) return;
   const act = target.dataset.act;
   error = null;
   try {
-    if (act === "home") return openCard({ kind: "home" });
-    if (act === "close") return closeCard();
+    if (act === "home") return openCard({ kind: "home", origin: "hover" });
+    // In the pager (owner decision, 9 October 2026), OK under what a press did moves on; anywhere else it folds.
+    if (act === "close") return card?.pager && pager ? pagerGo(1) : closeCard();
+    // Notifications, "A plus the grafts" (owner decision, 9 October 2026): the pager's footer, the summary's buttons and
+    // kind chips, the bar or the day card's row, the names behind a chip, Snooze on a reminder, Mark done on a commitment.
+    if (act === "pg-next") return pagerGo(1);
+    if (act === "pg-prev") return pagerGo(-1);
+    if (act === "pg-all") return markAllReadNow();
+    if (act === "pg-show") return openPager({});
+    if (act === "pg-kind") return openKind(target.dataset.family);
+    if (act === "nc-inbox") return openInbox();
+    if (act === "nc-names") return toggleNames(target);
+    if (act === "nc-snooze") return snoozeReminder();
+    if (act === "nc-commit-done") return commitmentDone(target.dataset.id || card?.n?.facts?.id || card?.n?.resource_id);
     if (act === "briefing") return openCard({ kind: "briefing" });
     if (act === "server") { editingServer = true; return render(); }
     if (act === "server-cancel") { editingServer = false; return render(); }
@@ -692,7 +1596,15 @@ el.addEventListener("click", async (e) => {
     if (act === "link-start") return startLink();
     if (act === "link-cancel") { link = null; clearTimeout(linkTimer); return render(); }
     if (act === "link-open") return invoke("open_in_browser", { path: link.verifyUrl });
-    if (act === "open-href") { if (!removedPage(target.dataset.href)) await invoke("open_in_browser", { path: target.dataset.href }); return closeCard(); }
+    // Open, as before; `data-read-id` (9 October 2026) also reads the notification. In the pager it folds keeping its place
+    // (the next card's, once this one is read).
+    if (act === "open-href") {
+      if (!removedPage(target.dataset.href)) await invoke("open_in_browser", { path: target.dataset.href });
+      const readId = target.dataset.readId;
+      if (readId) markRead(readId);
+      if (card?.pager && pager) { if (readId && pager.ids[pager.index] === readId && pager.index + 1 < pager.ids.length) pager = { ...pager, index: pager.index + 1 }; return foldPager(); }
+      return closeCard();
+    }
     // A line's own page on a routine card (phase 7a, 8 October 2026): opened, and the card stays for the next line.
     if (act === "open-keep") { const path = boredroomPath(target.dataset.href); if (path) await invoke("open_in_browser", { path }); return; }
     // An ask on the morning opener: its words go in the ask box, focused, and are never sent from here.
@@ -740,10 +1652,18 @@ el.addEventListener("click", async (e) => {
     if (act === "su-post") return decideStandup("post");
     if (act === "su-skip") return decideStandup("skip");
     if (act === "su-unskip") return unskipStandup();
-    if (act === "read") { await call("PATCH", org(`/notifications/${target.dataset.id}`)); data.notifications = data.notifications.filter((n) => n.id !== target.dataset.id); return closeCard(); }
+    if (act === "read") {
+      const id = target.dataset.id;
+      await call("PATCH", org(`/notifications/${encodeURIComponent(id)}`));
+      readHere.add(id);
+      if (data) data.notifications = (data.notifications ?? []).filter((n) => n.id !== id);
+      return finishNotice(target.textContent.trim() === "Done" ? "Done" : "Read");
+    }
     busy = true; render();
     const t = data?.timer;
-    if (act === "start") await call("POST", org("/sessions/start"), { taskId: target.dataset.id, captureMode: "none" });
+    // Start timer on a new task's card (9 October 2026) also reads its notification.
+    if (act === "start" && isNotice(card) && card.n) { await call("POST", org("/sessions/start"), { taskId: target.dataset.id, captureMode: "none" }); markRead(card.n.id); }
+    else if (act === "start") await call("POST", org("/sessions/start"), { taskId: target.dataset.id, captureMode: "none" });
     if (act === "pause" && t) await call("POST", org(`/sessions/${t.id}/pause`), { expectedVersion: t.version });
     if (act === "resume" && t) await call("POST", org(`/sessions/${t.id}/resume`), { expectedVersion: t.version });
     if (act === "stop" && t) await call("POST", org(`/sessions/${t.id}/stop`), { expectedVersion: t.version, note: "", outcome: "continue_later" });
@@ -751,7 +1671,7 @@ el.addEventListener("click", async (e) => {
     busy = false;
     Sound.play(act === "start" || act === "stop" ? "success" : "tick");
     await refresh();
-    openCard({ kind: act === "stop" ? "briefing" : "home" });
+    openCard({ kind: act === "stop" ? "briefing" : "home", origin: "hover" });
   } catch (err) {
     busy = false;
     error = err?.message ?? String(err);
@@ -791,8 +1711,13 @@ async function signedOut() {
   config = await invoke("sign_out"); // which also stops her; its `spoken` ends her talking face
   data = null; card = null; link = null; talk = []; chat = newChat(); cached = null;
   talkWaiting = false; clearTimeout(talkWaitTimer);
+  forgetNotices();
   applyQuiet(); // no one's quiet hours while signed out
   render();
+}
+/** Signed out: nothing of the last person's notifications stays (owner decision, 9 October 2026). */
+function forgetNotices() {
+  nq = Notify.initial(); readHere.clear(); leavePager(); pagerPlace = null; pagerSeen = new Set(); pagerNotes.clear(); pagerRun.clear(); waitingAsk = null; cancelHold();
 }
 
 // ---- data --------------------------------------------------------------------------------------------------------
@@ -806,48 +1731,36 @@ function briefedToday() {
 const briefingKey = () => `brenda-briefing:${config?.workspaceSlug}:${new Date().toDateString()}`;
 
 async function refresh() {
+  const first = !data;
   try {
     // The opener is the day's first card only: once it is shown, the polls ask the server not to build it (review,
     // 8 October 2026: it is a score of reads, every 20 seconds).
     data = await call("GET", org(`/brenda/desktop${briefedToday() ? "?opener=0" : ""}`));
     offsetMs = Date.parse(data.serverNow) - Date.now();
+    // What was read here and the server no longer sends is forgotten (review, 9 October 2026: the set grew for as long as
+    // the notch ran); one still sent stays hidden until its read lands.
+    if (readHere.size) { const sent = new Set((Array.isArray(data.notifications) ? data.notifications : []).map((n) => n?.id)); for (const id of [...readHere]) if (!sent.has(id)) readHere.delete(id); }
     keepCached();
     applyQuiet();
-    if (!card) render();
-    else { followUpClosedElsewhere(); itemClosedElsewhere(); loopClosedElsewhere(); standupClosedElsewhere(); }
+    // The pointer reached the bar before there was a day to show (the empty island, 9 October 2026): it opens now.
+    if (first && hovering && !card && config?.signedIn) { tucked = false; openCard({ kind: "home", origin: "hover" }); }
+    else if (!card) render();
+    else {
+      followUpClosedElsewhere(); itemClosedElsewhere(); loopClosedElsewhere(); standupClosedElsewhere();
+      // Notifications (9 October 2026): what was read elsewhere leaves the pager and the summary (an empty summary folds).
+      if (card?.pager) prunePager();
+      else if (card?.kind === "summary") { if (inbox().length) render(); else closeCard(); }
+    }
   } catch (err) {
     // During quiet hours (phase 7a) not even this opens on its own.
     if (err?.status && err.status !== 401 && !card && !quietNow()) openCard({ kind: "error", message: err.message });
   }
 }
 
-/**
- * One Brenda notification at a time, newest first, only once per run. During the person's quiet hours (phase 7a) none
- * opens on its own: they wait, counted in the compact bar, and open one by one once quiet hours end.
- */
-function nextNotification() {
-  if (card || !data || quietNow()) return;
-  const n = (data.notifications ?? []).find((x) => !shown.has(x.id));
-  if (!n) return;
-  shown.add(n.id);
-  // A follow-up's ask or answer gets its own card when the desktop state knows it (phase 4), and so does a message, a
-  // request, a reply or a request's outcome brought by someone's assistant (phase 6); otherwise, and always with an older
-  // server, the plain notification card. What waits for an answer (an ask, a request) calls for attention.
-  // A noted commitment, an open ask or a block on the person waits for an answer too (phase 7b). A standup draft waits
-  // for the person's press and a rollup is news (phase 7c): both arrive with the ordinary sound, never the call for
-  // attention (a standup is never a chase).
-  const fu = followUpCard(n) ?? itemCard(n) ?? loopCard(n) ?? standupCard(n);
-  if (fu) { openCard(fu); return Sound.play(fu.kind === "followup_ask" || fu.kind === "loop" || (fu.kind === "item" && fu.w.kind === "request") ? "attention" : fu.kind === "standup" || fu.kind === "standup_rollup" ? "notify" : "reply"); }
-  // What a routine sent (phase 7a): its own card when the desktop state carries the run, read as long as a reply.
-  const routine = routineCard(n);
-  if (routine) { openCard(routine); return Sound.play("notify"); }
-  // Mentions in Messages (phase 5): a reply, a Confirm or a private answer has more to read, so it stays as long as a reply.
-  // So does a commitment's or a block's (phase 7b): its title may run to two lines, with a line under it; and a standup's
-  // (phase 7c).
-  const mention = mentionCard(n.type);
-  openCard({ kind: "notification", n, ...(mention?.long || loopPill(n.type) || standupPill(n.type) ? { closeAfter: REPLY_CLOSE_MS } : {}) });
-  Sound.play(n.type === "brenda.clock_in" ? "success" : mention?.sound ?? "notify");
-}
+// nextNotification() is gone (owner decision, 9 October 2026: notch notifications, "A plus the grafts"): it opened the
+// newest unread one after every poll and, through closeCard(), 600 ms after every card closed, so they kept popping one
+// after another. arrive() above decides once, on arrival; each card's own constructor and sound are kept (cardFor,
+// soundFor), and so is quiet hours' rule that nothing opens on its own.
 
 /**
  * The day's first card, once per day per computer: the morning opener when the server sends one (phase 7a, 8 October
@@ -882,9 +1795,11 @@ async function start() {
   if (!data) return;
   await presence();
   await refresh();
-  if (!maybeBriefing()) nextNotification();
-  // Each poll may bring the day's first card too (phase 7a: after quiet hours, or on a new day), before what is unread.
-  clearInterval(pollTimer); pollTimer = setInterval(async () => { await refresh(); if (!maybeBriefing({ poll: true })) nextNotification(); }, POLL_MS);
+  maybeBriefing();
+  arrive();
+  // Each poll may bring the day's first card too (phase 7a: after quiet hours, or on a new day), before what is unread;
+  // then what arrived (owner decision, 9 October 2026: arrive() in place of nextNotification()).
+  clearInterval(pollTimer); pollTimer = setInterval(async () => { await refresh(); maybeBriefing({ poll: true }); arrive(); }, POLL_MS);
   clearInterval(presenceTimer); presenceTimer = setInterval(presence, PRESENCE_MS);
 }
 
@@ -915,20 +1830,45 @@ el.addEventListener("submit", (e) => {
 // While the person is typing, the card stays open even if the pointer leaves it. (A follow-up's ask is sticky anyway; its
 // note only needs the notch to take the keyboard.)
 el.addEventListener("focusin", (e) => {
+  // Keyboard focus in a notification card pauses its clock and holds it open, as the pointer does (owner decision,
+  // 9 October 2026); focus leaving for another app is a leave (below).
+  if (isNotice(card)) { pauseHold(); clearTimeout(leaveTimer); }
+  if (card && e.target !== el) card.touched = true;
   if (e.target.id === "fnote") return void invoke("focus_notch").catch(() => {});
   if (e.target.id === "ask" && card) { card.sticky = true; clearTimeout(closeTimer); invoke("focus_notch").catch(() => {}); }
 });
 el.addEventListener("focusout", (e) => { if (e.target.id === "ask" && card && !e.target.value.trim() && !(card.proposals ?? []).some((p) => p.kind === "confirm")) { card.sticky = false; scheduleClose(); } });
+// Focus gone from the card (to another app, or nowhere once a press drew it again and nothing took it back): what leaving
+// does (owner decision, 9 October 2026). Asked a moment later, so a card drawn again can take the focus back first.
+el.addEventListener("focusout", () => { if (isNotice(card)) setTimeout(() => { if (card && !hovering && !focusInside()) leaveIsland(); }, 0); });
+window.addEventListener("blur", () => { if (isNotice(card)) setTimeout(() => { if (card && !hovering && !focusInside()) leaveIsland(); }, 0); });
 el.addEventListener("pointerdown", (e) => { if (TYPING.has(e.target.id)) invoke("focus_notch").catch(() => {}); });
 // Typing to her cuts her off (owner decision, 7 October 2026: her voice), as on the web; so does typing a follow-up's note,
 // which is kept on the card as it is typed.
 el.addEventListener("input", (e) => {
   if (TYPING.has(e.target.id) && aloud()) hush();
-  if (e.target.id === "fnote" && noteCard()) { card.note = e.target.value; showCount(); if (card.kind === "item") showSend(); }
+  if (e.target.id === "fnote" && noteCard()) { card.note = e.target.value; showCount(); if (card.kind === "item") showSend(); syncHold(); }
 });
 // Keys while the notch has focus: Esc folds the card away; on a Confirm, Y confirms and N declines (not while typing).
+// Notifications (owner decision, 9 October 2026: "A plus the grafts"): Esc folds the pager and keeps its place; ← and →
+// turn it (not in a text field); Enter presses the card's main action (`data-main`) when the focus is not on a button, a
+// link or a field, and not in the first 600 ms after a card is drawn, so an Enter meant for the last page never accepts
+// the next one's request. Tab moves through the buttons as ever.
+const isField = (t) => !!t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || !!t.isContentEditable);
 window.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && card) { if (TYPING.has(e.target.id)) e.target.blur(); return closeCard(); }
+  if (e.key === "Escape" && card) { if (TYPING.has(e.target.id)) e.target.blur(); return card.pager && pager ? foldPager() : closeCard(); }
+  const field = isField(e.target);
+  if ((e.key === "ArrowRight" || e.key === "ArrowLeft") && card?.pager && pager && !field && !busy && !e.metaKey && !e.altKey && !e.ctrlKey) {
+    e.preventDefault();
+    return pagerGo(e.key === "ArrowRight" ? 1 : -1);
+  }
+  // Only on a card the person opened or has touched (pointer, click, keyboard in it): never on one that opened on its own
+  // while they were typing elsewhere (review, 9 October 2026).
+  if (e.key === "Enter" && card && !field && !busy && !e.repeat && (card.touched || hovering || originOf(card) !== "auto") && !(typeof e.target?.closest === "function" && e.target.closest("button, a, select, [contenteditable]"))) {
+    const main = Date.now() - drawnAt >= Notify.T.ENTER_GUARD_MS ? el.querySelector("[data-main]:not([disabled])") : null;
+    if (main) { e.preventDefault(); main.click(); }
+    return;
+  }
   if (TYPING.has(e.target.id) || !card || busy) return;
   const confirm = (card.proposals ?? []).find((p) => p.kind === "confirm");
   if (!confirm) return;
@@ -1862,7 +2802,8 @@ function voiceRefused(e) {
   const words = `Voice is switched off for ${me().name}. Change it in Boredroom Settings.`;
   if (noteCard()) { Object.assign(card, { dictating: null, dictMessage: words }); return showDictation(); }
   if (card?.kind === "voice" && card.phase === "disabled") return;
-  if (card?.sticky) { error = words; return showError(); }
+  // An ask is no longer sticky on its own (9 October 2026): one that waits on the person keeps its card too.
+  if (card && (stickyNow() || (isNotice(card) && waitsOf(card)))) { error = words; return showError(); }
   openCard({ kind: "voice", phase: "disabled" });
 }
 
@@ -2012,32 +2953,37 @@ function followUpCard(n) {
   if (n.type === "brenda.followup_batch") return { kind: "followup_answer", n, a: null, closeAfter: REPLY_CLOSE_MS };
   return null;
 }
-const askCard = (w, n) => ({ kind: "followup_ask", phase: "ask", w, n: n ?? null, choice: null, note: "", factsOpen: false, dictating: null, dictMessage: null, sticky: true });
+// Not sticky on its own any more (owner decision, 9 October 2026: an ask holds 15 s, then tucks into the bar; it stays
+// once a quick reply is chosen or a line is typed or said, `engaged`).
+const askCard = (w, n) => ({ kind: "followup_ask", phase: "ask", w, n: n ?? null, choice: null, note: "", factsOpen: false, dictating: null, dictMessage: null, sticky: false });
 
 /** Asked in a conversation (phase 6): the reply is posted there for everyone; null for an ordinary follow-up or an older server. */
 const threadOf = (w) => (w.thread && typeof w.thread === "object" && typeof w.thread.where === "string" && w.thread.where.trim() ? w.thread : null);
 /** The asker's assistant: theirs, or the workspace's for its own collection before the team report; in a thread the person's own. */
 const askerOf = (w) => (threadOf(w) ? me() : w.asker ? assistantOf(w.asker.assistant) : ws());
 
-function followUpAskView() {
-  const c = card, w = c.w, from = askerOf(w), ra = from.name;
-  const m = moodOf();
+/** What a sent reply says, in plain words (the card and the notification template both escape them). */
+function askSent(c) {
+  const w = c.w, ra = askerOf(w).name, thread = threadOf(w);
+  const everyone = thread && !thread.direct ? " for everyone there" : "";
+  const notNow = c.sent === "not_now";
+  const label = FU_CHOICES.find(([k]) => k === c.sent)?.[1] ?? "";
+  const title = thread
+    ? notNow ? `Done. ${ra} says in ${thread.where} that you can't answer right now.` : `Sent. Your reply is posted in ${thread.where}${everyone}.`
+    : notNow ? `Told ${ra} you can't answer right now.` : `Sent. ${ra} gets your answer.`;
+  const sub = notNow ? (thread ? "" : `${ra} gets what your work shows instead.`) : `Your answer: ${label}${c.sentNote ? `, “${c.sentNote}”` : ""}`;
+  return { title, sub };
+}
+
+/**
+ * An open ask's parts under the question: when to reply by (the template's note line), the four quick replies, the note
+ * (typed or said), what their assistant will share, and Not now and Send. The notification template places them
+ * (owner decision, 9 October 2026: "A plus the grafts"); the card as it was places them too.
+ */
+function askParts(c) {
+  const w = c.w, ra = askerOf(w).name;
   const thread = threadOf(w);
   const everyone = thread && !thread.direct ? " for everyone there" : "";
-  if (c.phase === "sent") {
-    const notNow = c.sent === "not_now";
-    const label = FU_CHOICES.find(([k]) => k === c.sent)?.[1] ?? "";
-    const title = thread
-      ? notNow ? `Done. ${esc(ra)} says in ${esc(thread.where)} that you can't answer right now.` : `Sent. Your reply is posted in ${esc(thread.where)}${everyone}.`
-      : notNow ? `Told ${esc(ra)} you can't answer right now.` : `Sent. ${esc(ra)} gets your answer.`;
-    const sub = notNow ? (thread ? "" : `${esc(ra)} gets what your work shows instead.`) : `Your answer: ${esc(label)}${c.sentNote ? `, “${esc(c.sentNote)}”` : ""}`;
-    return `<div class="row fade">${face({ ...m, who: from })}<div class="grow"><p class="title wrap">${title}</p>${sub ? `<p class="sub">${sub}</p>` : ""}</div></div>
-      <div class="actions"><button class="btn primary" data-act="close">OK</button></div>`;
-  }
-  if (c.phase === "gone") {
-    return `<div class="row fade">${face({ ...m, who: from })}<div class="grow"><p class="title wrap">${esc(w.title)}</p><p class="sub">${esc(c.message)}</p></div></div>
-      <div class="actions">${c.n ? `<button class="btn primary" data-act="read" data-id="${esc(c.n.id)}">OK</button>` : `<button class="btn primary" data-act="close">OK</button>`}</div>`;
-  }
   const by = w.deadlineAt ? byWhen(w.deadlineAt) : "";
   const due = thread
     ? `${by ? `Reply by ${by}. ` : ""}Your reply is posted in ${thread.where}${everyone}. If you don't reply, ${ra} says so there.`
@@ -2047,13 +2993,34 @@ function followUpAskView() {
   const facts = thread ? [] : (Array.isArray(w.facts) ? w.facts : []).filter((l) => typeof l === "string" && l.trim()).slice(0, 12);
   const task = boredroomPath(w.taskHref);
   const off = busy ? "disabled" : "";
-  return `<div class="row top fade">${face({ ...m, who: from })}<div class="grow"><p class="title wrap">${esc(w.title)}</p><p class="sub">${esc(due)}</p></div></div>
+  const choices = `<div class="choices fade" role="group" aria-label="Your answer">${FU_CHOICES.map(([k, label]) => `<button type="button" class="btn choice" data-act="fu-choice" data-choice="${k}" aria-pressed="${c.choice === k}" ${off}>${label}</button>`).join("")}</div>`;
+  const note = `<form class="fu-note fade" data-fu><div class="fu-field"><input class="field" id="fnote" name="note" maxlength="${FU_NOTE_MAX}" value="${esc(c.note)}" placeholder="Add a line, if you like" aria-label="Add a line, if you like" aria-describedby="fhold fdict" autocomplete="off" spellcheck="true" ${off}>${talkKeys()}</div><div class="fu-meta"><div class="grow" id="fdict">${dictView()}</div><span class="cap num" id="fcount">${countText(c.note)}</span></div></form>`;
+  const foot = facts.length || task ? `<div class="fu-foot fade">${facts.length ? `<button type="button" class="link toggle" data-act="fu-facts" aria-expanded="${!!c.factsOpen}" aria-controls="ffacts">${icon("chevron")}What your assistant will share</button>` : ""}${task ? `<button type="button" class="link" data-act="fu-task" data-href="${esc(task)}">Open task${icon("open")}</button>` : ""}</div>` : "";
+  const list = facts.length ? `<ul class="facts fade" id="ffacts" ${c.factsOpen ? "" : "hidden"}>${facts.map((l) => `<li>${esc(l)}</li>`).join("")}</ul>` : "";
+  const actions = `<span class="cap lead">${w.taskTitle ? "This doesn't change the task." : "This doesn't change any of your tasks."}</span><button class="btn ghost" data-act="fu-send" data-choice="not_now" ${off}>Not now</button><button class="btn primary accent" data-act="fu-send" data-main ${busy || !c.choice ? "disabled" : ""}>Send</button>`;
+  return { due, choices, note, foot, list, actions, slot: `<p class="nc-note">${esc(due)}</p>${choices}${note}${foot}${list}` };
+}
+
+function followUpAskView() {
+  const c = card, w = c.w, from = askerOf(w);
+  const m = moodOf();
+  if (c.phase === "sent") {
+    const r = askSent(c);
+    return `<div class="row fade">${face({ ...m, who: from })}<div class="grow"><p class="title wrap">${esc(r.title)}</p>${r.sub ? `<p class="sub">${esc(r.sub)}</p>` : ""}</div></div>
+      <div class="actions"><button class="btn primary" data-act="close">OK</button></div>`;
+  }
+  if (c.phase === "gone") {
+    return `<div class="row fade">${face({ ...m, who: from })}<div class="grow"><p class="title wrap">${esc(w.title)}</p><p class="sub">${esc(c.message)}</p></div></div>
+      <div class="actions">${c.n ? `<button class="btn primary" data-act="read" data-id="${esc(c.n.id)}">OK</button>` : `<button class="btn primary" data-act="close">OK</button>`}</div>`;
+  }
+  const a = askParts(c);
+  return `<div class="row top fade">${face({ ...m, who: from })}<div class="grow"><p class="title wrap">${esc(w.title)}</p><p class="sub">${esc(a.due)}</p></div></div>
     ${w.question ? `<p class="quote fade">“${esc(w.question)}”</p>` : ""}
-    <div class="choices fade" role="group" aria-label="Your answer">${FU_CHOICES.map(([k, label]) => `<button type="button" class="btn choice" data-act="fu-choice" data-choice="${k}" aria-pressed="${c.choice === k}" ${off}>${label}</button>`).join("")}</div>
-    <form class="fu-note fade" data-fu><div class="fu-field"><input class="field" id="fnote" name="note" maxlength="${FU_NOTE_MAX}" value="${esc(c.note)}" placeholder="Add a line, if you like" aria-label="Add a line, if you like" aria-describedby="fhold fdict" autocomplete="off" spellcheck="true" ${off}>${talkKeys()}</div><div class="fu-meta"><div class="grow" id="fdict">${dictView()}</div><span class="cap num" id="fcount">${countText(c.note)}</span></div></form>
-    ${facts.length || task ? `<div class="fu-foot fade">${facts.length ? `<button type="button" class="link toggle" data-act="fu-facts" aria-expanded="${!!c.factsOpen}" aria-controls="ffacts">${icon("chevron")}What your assistant will share</button>` : ""}${task ? `<button type="button" class="link" data-act="fu-task" data-href="${esc(task)}">Open task${icon("open")}</button>` : ""}</div>` : ""}
-    ${facts.length ? `<ul class="facts fade" id="ffacts" ${c.factsOpen ? "" : "hidden"}>${facts.map((l) => `<li>${esc(l)}</li>`).join("")}</ul>` : ""}
-    <div class="actions"><span class="cap lead">${w.taskTitle ? "This doesn't change the task." : "This doesn't change any of your tasks."}</span><button class="btn ghost" data-act="fu-send" data-choice="not_now" ${off}>Not now</button><button class="btn primary accent" data-act="fu-send" ${busy || !c.choice ? "disabled" : ""}>Send</button></div>`;
+    ${a.choices}
+    ${a.note}
+    ${a.foot}
+    ${a.list}
+    <div class="actions">${a.actions}</div>`;
 }
 
 /**
@@ -2096,6 +3063,7 @@ function chooseReply(choice) {
   if (send) send.disabled = false;
   el.querySelector(".err")?.remove();
   Sound.play("tick");
+  syncHold(); // choosing a reply cancels the ask's hold (owner decision, 9 October 2026)
   fit();
 }
 
@@ -2156,6 +3124,15 @@ async function sendFollowUpReply(choice) {
 function holdThenClose(ms) {
   const held = card;
   clearTimeout(closeTimer);
+  cancelHold();
+  // In the pager (owner decision, 9 October 2026) what a press did shows for 600 ms and the pager moves on; a card that is
+  // gone, or a request that couldn't be done, waits for the person's OK.
+  if (held?.pager && pager) {
+    restartCountdown(0);
+    if (held.phase === "gone" || held.item?.status === "failed") return;
+    closeTimer = setTimeout(() => { if (card === held) pagerGo(1); }, Notify.T.ACT_MS);
+    return;
+  }
   restartCountdown(ms);
   const tick = () => { if (card !== held) return; if (hovering) closeTimer = setTimeout(tick, 1000); else closeCard(); };
   closeTimer = setTimeout(tick, ms);
@@ -2165,7 +3142,7 @@ function holdThenClose(ms) {
 function forgetAsk(c, answered) {
   const ids = new Set((data?.notifications ?? []).filter((n) => n.type === "brenda.followup_ask" && n.resource_id === c.w.id).map((n) => n.id));
   if (c.n) ids.add(c.n.id);
-  if (answered) for (const id of ids) call("PATCH", org(`/notifications/${encodeURIComponent(id)}`)).catch(() => {});
+  if (answered) for (const id of ids) { readHere.add(id); call("PATCH", org(`/notifications/${encodeURIComponent(id)}`)).catch(() => {}); }
   if (data) {
     if (answered) data.notifications = (data.notifications ?? []).filter((n) => !ids.has(n.id));
     if (followUps()) data.followUps = { ...data.followUps, waiting: waitingList().filter((x) => x.id !== c.w.id) };
@@ -2177,8 +3154,8 @@ function openWaiting(id) {
   const w = waitingList().find((x) => x.id === id);
   if (!w) return;
   const n = (data?.notifications ?? []).find((x) => x.type === "brenda.followup_ask" && x.resource_id === id) ?? null;
-  if (n) shown.add(n.id);
-  openCard(askCard(w, n));
+  if (n) nq.shown.add(n.id);
+  openCard({ ...askCard(w, n), origin: "user" });
 }
 
 /**
@@ -2225,6 +3202,7 @@ function dictate(e) {
     if (c.dictating === "listening") { Wave.level(e.level ?? 0); return true; }
     hush(); Sound.play("listen");
     Object.assign(c, { dictating: "listening", dictMessage: null, startedAt: Date.now(), endedAt: null });
+    syncHold(); // saying a line keeps the card (9 October 2026)
     showDictation(); Wave.start(e.level ?? 0);
     return true;
   }
@@ -2376,15 +3354,16 @@ function updateOf(id) {
 }
 const itemCardOf = (w, n) => (w.kind === "reply"
   ? { kind: "item_update", n: n ?? null, u: updateOf(w.id), closeAfter: REPLY_CLOSE_MS }
-  : { kind: "item", phase: "open", w, n: n ?? null, note: "", replying: false, declining: false, dictating: null, dictMessage: null, sticky: true });
+  // Not sticky on its own (owner decision, 9 October 2026): it stays while a box is open or a press is in flight.
+  : { kind: "item", phase: "open", w, n: n ?? null, note: "", replying: false, declining: false, dictating: null, dictMessage: null, sticky: false });
 
 /** A waiting item opened from the day card (its notification may have been shown and folded away already). */
 function openItem(id) {
   const w = itemWaiting().find((x) => x.id === id);
   if (!w) return;
   const n = (data?.notifications ?? []).find((x) => ITEM_NOTES.includes(x.type) && x.resource_id === id) ?? null;
-  if (n) shown.add(n.id);
-  openCard(itemCardOf(w, n));
+  if (n) nq.shown.add(n.id);
+  openCard({ ...itemCardOf(w, n), origin: "user" });
 }
 
 /**
@@ -2489,7 +3468,7 @@ function showSend() {
 function forgetItem(id, answered, n = null) {
   const ids = new Set((data?.notifications ?? []).filter((x) => ITEM_NOTES.includes(x.type) && x.resource_id === id).map((x) => x.id));
   if (n) ids.add(n.id);
-  if (answered) for (const nid of ids) call("PATCH", org(`/notifications/${encodeURIComponent(nid)}`)).catch(() => {});
+  if (answered) for (const nid of ids) { readHere.add(nid); call("PATCH", org(`/notifications/${encodeURIComponent(nid)}`)).catch(() => {}); }
   if (!data) return;
   if (answered) data.notifications = (data.notifications ?? []).filter((x) => !ids.has(x.id));
   const a = assistantItems();
@@ -2522,7 +3501,7 @@ async function markItemSeen() {
   busy = false;
   forgetItem(c.w.id, true, c.n);
   Sound.play("tick");
-  if (sameItem(c)) closeCard();
+  if (sameItem(c)) finishNotice("Seen");
   refresh();
 }
 
@@ -2626,8 +3605,9 @@ async function ackUpdate() {
     try { await call("PATCH", org(`/notifications/${encodeURIComponent(c.n.id)}`)); }
     catch (err) { error = err?.message ?? String(err); Sound.play("error"); return render(); }
     if (data) data.notifications = (data.notifications ?? []).filter((x) => x.id !== c.n.id);
+    readHere.add(c.n.id);
   }
-  closeCard();
+  if (card === c) finishNotice("Done");
 }
 
 // ---- quiet hours ---------------------------------------------------------------------------------------------------
@@ -2660,7 +3640,9 @@ function quietWords() {
 function applyQuiet() {
   const on = quietNow();
   Sound.setQuiet(on);
-  if (on !== wasQuiet) { wasQuiet = on; if (config?.signedIn && !card) render(); }
+  // When quiet hours end, what waited through them opens: the summary, or its one card (owner decision, 9 October 2026).
+  // The morning opener still comes first when it is due (review, same day): then what waited stays held for a later poll.
+  if (on !== wasQuiet) { wasQuiet = on; if (config?.signedIn && !card) render(); if (!on && !maybeBriefing({ poll: true })) arrive(); }
   clearTimeout(quietTimer);
   const q = data?.quiet;
   if (!q || typeof q !== "object" || q.ready !== true) return;
@@ -2887,7 +3869,9 @@ function looseEndsRow() {
   return `<li><button type="button" class="rowlink" data-act="open-href" data-href="${esc(path)}" title="Promises and asks from your conversations that never became a to-do. Only you see them."><span class="t">${le.open === 1 ? "1 loose end" : `${le.open} loose ends`}</span><span class="k">${icon("open")}</span></button></li>`;
 }
 
-const loopCardOf = (lk, w, n) => ({ kind: "loop", lk, phase: "open", w, n: n ?? null, note: "", declining: false, dictating: null, dictMessage: null, sticky: true, seen: false, keys: {} });
+// Not sticky on its own (owner decision, 9 October 2026): an ask holds 15 s and tucks into the bar; it stays while the
+// reason box is open or a press is in flight.
+const loopCardOf = (lk, w, n) => ({ kind: "loop", lk, phase: "open", w, n: n ?? null, note: "", declining: false, dictating: null, dictMessage: null, sticky: false, seen: false, keys: {} });
 
 /** The card a commitment's, an open ask's or a block's notification opens, or null for the plain notification card. */
 function loopCard(n) {
@@ -2904,8 +3888,8 @@ function openLoop(lk, id) {
   const w = loopList(lk).find((x) => x.id === id);
   if (!w) return;
   const n = (data?.notifications ?? []).find((x) => LOOP_NOTES[lk].includes(x.type) && x.resource_id === id) ?? null;
-  if (n) shown.add(n.id);
-  const c = loopCardOf(lk, w, n);
+  if (n) nq.shown.add(n.id);
+  const c = { ...loopCardOf(lk, w, n), origin: "user" };
   openCard(c);
   loopSeen(c);
 }
@@ -3001,7 +3985,7 @@ function forgetLoop(c, answered) {
   const types = LOOP_NOTES[c.lk];
   const ids = new Set((data?.notifications ?? []).filter((x) => types.includes(x.type) && x.resource_id === c.w.id).map((x) => x.id));
   if (c.n) ids.add(c.n.id);
-  if (answered) for (const id of ids) call("PATCH", org(`/notifications/${encodeURIComponent(id)}`)).catch(() => {});
+  if (answered) for (const id of ids) { readHere.add(id); call("PATCH", org(`/notifications/${encodeURIComponent(id)}`)).catch(() => {}); }
   if (!data) return;
   if (answered) data.notifications = (data.notifications ?? []).filter((x) => !ids.has(x.id));
   const l = loops();
@@ -3162,7 +4146,9 @@ function rollupTitle(r) {
   return STANDUP_SAY.rollup(r.team.name.trim(), n(counts.posted), n(counts.members));
 }
 
-const standupCardOf = (e, n) => ({ kind: "standup", phase: "open", w: e, n: n ?? null, sticky: true, seen: e.seen === true, keys: {} });
+// Not sticky on its own (owner decision, 9 October 2026): the draft holds 15 s and tucks into the bar ("Max is waiting on
+// you"); a press in flight keeps it. Post is still only ever the person's press.
+const standupCardOf = (e, n) => ({ kind: "standup", phase: "open", w: e, n: n ?? null, sticky: false, seen: e.seen === true, keys: {} });
 const rollupCardOf = (r, n) => ({ kind: "standup_rollup", w: r, n: n ?? null, seen: false, closeAfter: REPLY_CLOSE_MS });
 
 /** The card a standup's or a rollup's notification opens, or null for the plain notification card. */
@@ -3181,8 +4167,8 @@ function openStandup(sk, id) {
   if (!w) return;
   const type = entry ? STANDUP_NOTES.entry : STANDUP_NOTES.rollup;
   const n = (data?.notifications ?? []).find((x) => x.type === type && x.resource_id === id) ?? null;
-  if (n) shown.add(n.id);
-  const c = entry ? standupCardOf(w, n) : rollupCardOf(w, n);
+  if (n) nq.shown.add(n.id);
+  const c = { ...(entry ? standupCardOf(w, n) : rollupCardOf(w, n)), origin: "user" };
   openCard(c);
   standupSeen(c);
 }
@@ -3265,7 +4251,7 @@ function standupView() {
 function forgetStandup(c, answered) {
   const ids = new Set((data?.notifications ?? []).filter((x) => x.type === STANDUP_NOTES.entry && x.resource_id === c.w.id).map((x) => x.id));
   if (c.n) ids.add(c.n.id);
-  if (answered) for (const id of ids) call("PATCH", org(`/notifications/${encodeURIComponent(id)}`)).catch(() => {});
+  if (answered) for (const id of ids) { readHere.add(id); call("PATCH", org(`/notifications/${encodeURIComponent(id)}`)).catch(() => {}); }
   if (!data) return;
   if (answered) data.notifications = (data.notifications ?? []).filter((x) => !ids.has(x.id));
   const s = standupState();
@@ -3343,7 +4329,7 @@ async function unskipStandup() {
   Sound.play("tick");
   if (sameStandup(c)) {
     // Back on the card with fresh keys: a skip after this is a new press, never the old one replayed.
-    if (isStandupThing(r) && r.id === c.w.id && r.status === "ready") { card = { ...standupCardOf(r, null), seen: true }; render(); }
+    if (isStandupThing(r) && r.id === c.w.id && r.status === "ready") { card = { ...standupCardOf(r, null), seen: true, origin: card.origin, pager: card.pager, openedAt: card.openedAt }; render(); }
     else { card = { ...card, phase: "result", result: STANDUP_SAY.undone, resultSub: STANDUP_SAY.undoneSub(me().name), sticky: true }; render(); holdThenClose(CLOSE_AFTER_MS); }
   }
   refresh();
@@ -3480,7 +4466,8 @@ function stepFace() {
     const ty = Math.tanh((at.y - (r.top + r.height / 2)) / (gaze ? 70 : 200));
     look.x += (tx - look.x) * 0.2;
     look.y += (ty - look.y) * 0.2;
-    for (const f of faces) { f.style.setProperty("--lx", look.x.toFixed(3)); f.style.setProperty("--ly", look.y.toFixed(3)); }
+    // Faces with a fixed look (Together: the two look at each other; 9 October 2026) keep it.
+    for (const f of faces) { if (f.dataset.look) continue; f.style.setProperty("--lx", look.x.toFixed(3)); f.style.setProperty("--ly", look.y.toFixed(3)); }
     if (Math.abs(tx - look.x) > 0.003 || Math.abs(ty - look.y) > 0.003) stepFace();
   });
 }
@@ -3495,8 +4482,12 @@ function blink(twice) {
 (function blinkLoop() { setTimeout(() => { blink(Math.random() < 0.22); blinkLoop(); }, 2200 + Math.random() * 3200); })();
 
 listen("brenda://cursor", ({ payload }) => {
+  // Back after five minutes away (owner decision, 9 October 2026): what arrived meanwhile opens on this first movement.
+  const back = Notify.away(lastMoveAt, Date.now()) && nq.held.size > 0;
   cursor = payload;
   lastMoveAt = Date.now(); // the person is at the computer (the morning opener waits for that, phase 7a)
+  // The morning opener first when it is due (review, 9 October 2026): what waited then opens at a later poll.
+  if (back && !maybeBriefing()) arrive();
   const r = island.getBoundingClientRect();
   // Tucked away, the menu bar around the notch wakes it (anywhere in its height); otherwise the island itself.
   setHover(tucked
@@ -3517,7 +4508,7 @@ setInterval(() => {
   const e = document.getElementById("testimate"), share = estimateShare(); if (e && share !== null) e.style.transform = `scaleX(${share.toFixed(3)})`;
 }, 1000);
 
-listen("brenda://signed-out", () => { config = { ...config, signedIn: false }; data = null; card = null; talk = []; chat = newChat(); cached = null; talkWaiting = false; clearTimeout(talkWaitTimer); applyQuiet(); render(); });
+listen("brenda://signed-out", () => { config = { ...config, signedIn: false }; data = null; card = null; talk = []; chat = newChat(); cached = null; talkWaiting = false; clearTimeout(talkWaitTimer); forgetNotices(); applyQuiet(); render(); });
 
 (async () => {
   config = await invoke("get_config");

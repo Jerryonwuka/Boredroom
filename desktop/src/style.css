@@ -62,7 +62,18 @@
    as one plain line of names in the secondary grey (`.names`: a list read as one; never amber or red, never an icon). A
    preference's Confirm: the summary in the quoted bubble with why it still asks under it (`.pref-q`), "Only you" as its
    readback, and Remember / Forget the card's one orange button. No other new orange; badges keep their words (amber only
-   for a draft that couldn't be made). */
+   for a draft that couldn't be made).
+   Notifications, "A plus the grafts" (owner decision, 9 October 2026: the approved mockup, direction A "Glance" with B's
+   and C's grafts; the section at the end, "Notifications"). Every notification, the summary, the pager and the end card
+   are drawn by desktop/src/notify-cards.js in classes of their own (`nc-`): a 440px island lit from its top edge by one
+   wash in the colour of the news (violet talk, orange what waits on you, green good news, a white haze for reports; the
+   summary every kind side by side), a byline with the bringer's face in the mood of the news, a 20/24 Inter 650 headline
+   of 30 characters or fewer, numbers as 26px chips in Geist Mono, someone's words beside a 2px bar in their assistant's
+   coat colour, the figure box, Together (two 44px faces, one hop, two stars), the summary's 64px count and row of faces,
+   C's pager footer, and the bar's "8 new, 2 need you". Orange there: the attention chips and "need you" (attention
+   counts), one standout button per card (Accept, Post, Start timer, Take it on or Add to my to-dos, Show them), and the
+   needs wash, which is the news's colour, not a button. Status colours keep their meaning (a late figure red, an early one
+   green); the countdown hairline runs in the kind's colour. */
 
 /* Inter and Geist Mono, from @fontsource-variable (SIL Open Font License, fonts/OFL.txt). Nothing loads remotely. */
 @font-face { font-family: "Inter Variable"; font-style: normal; font-display: swap; font-weight: 100 900; src: url(fonts/inter-latin-ext-wght-normal.woff2) format("woff2");
@@ -624,6 +635,11 @@ kbd { display: inline-flex; align-items: center; justify-content: center; box-si
   .face.talk .eyes span { scale: 1.04 1.1; }
   .btn .ic-check path { stroke-dasharray: none; }
   .orb.think i { opacity: .8; }
+  /* Notifications (owner decision, 9 October 2026, "A plus the grafts"): a 120 ms cross-fade as a card arrives or the
+     pager turns, and nothing else: no growing, hop, stars, slide, blur or countdown; the wash is there at once and the
+     faces are still. A redraw of the same card (`steady`) does not fade again. */
+  .notch.enter:not(.steady) > *, .notch.step:not(.steady) > * { animation: nc-fade .12s linear both !important; }
+  .nc-tg-stars, .countdown { display: none; }
 }
 
 /* Undone: the server's words under the line, in secondary grey (review, 8 October 2026: they were for screen readers
@@ -697,3 +713,285 @@ kbd { display: inline-flex; align-items: center; justify-content: center; box-si
 .confirm .pref-q .why { margin-top: 0; }
 .confirm.pref .readback { margin-left: 0; }
 .confirm.pref .quote { background: color-mix(in srgb, var(--foreground) 5%, transparent); }
+
+/* ---- Notifications ---------------------------------------------------------------------------------------------------
+   Owner decision, 9 October 2026 (notch notifications, "A plus the grafts"; the header says what shows). The markup is
+   desktop/src/notify-cards.js's, every class `nc-`: the notch's own `.quote`, `.facts`, `.names`, `.big`, `.mate`,
+   `.count`, `.lbl` and `.answer` keep their looks for the cards that still use them. What came from where:
+   - The approved mockup, direction A ("Glance"): the four washes and their strengths, the type scale (headline Inter 650
+     20/24, supporting line 13/18, byline 12/16, the summary's 64px count, the reminder's 40px time, the answer's 28px
+     result), the chips, the move row, the standup's rows, the summary's sentence and kind chips, the bar's states and the
+     end card.
+   - From B ("Duo"): Together (two 44px faces cheek to cheek, one shared hop, two stars in their coat colours), the row of
+     faces in the summary, the moods, the 2px bar in the sender's colour beside their words, "Ben is waiting on you".
+   - From C ("Stack"): the pager's footer (dots in each kind's colour, "3 of 8", ‹ and a labelled Next ›) and the figure
+     box; Inter and Geist Mono only.
+   `--talk` here is a colour triplet on :root; `.face.talk` sets its own `--talk` (the voice level) on the faces, which is
+   all that reads it there, so the two never meet. */
+:root {
+  --talk: 130 136 255;     /* messages, mentions, answers */
+  --needs: 255 108 2;      /* what waits on you */
+  --good: 67 194 120;      /* approved, accepted */
+  --plain: 255 255 255;    /* reports, roundups, notes */
+  --talk-dot: #8f95ff; --needs-dot: #ff7a1a; --good-dot: #43c278; --plain-dot: #b5b5b5;
+  --chip: rgb(255 255 255 / .065);
+  --faint: rgb(255 255 255 / .32);
+  --display: var(--font-sans);   /* headlines are Inter 650; no Geist sans in the notch */
+  --mono: var(--font-mono);
+}
+
+/* The island at notice size (main.js: 440px wide when the card is an `.nc`), the card's own padding. */
+.notch:has(> .nc) { padding: 14px 18px 18px; }
+.nc { position: relative; min-width: 0; }
+.nc > :first-child { margin-top: 0; }
+/* What main.js puts in a card (contract A.3's `slot`): the follow-up's quick replies, a note or reason box, what will be
+   shared. They keep their own looks and take the card's 10px rhythm (12px above the quick replies). */
+.nc > :is(.fu-note, .fu-foot, .facts, .change, .list, .confirm) { margin-top: 10px; }
+.nc > .choices { margin-top: 12px; }
+/* The browser's own margins off, at no specificity, so the card's rhythm (.nc-hl 10px, .nc-rows 12px) still applies
+   (review, 9 October 2026: `.nc h3` outranked `.nc-hl` and the headline sat flush under the byline). */
+:where(.nc) :where(h3, dl, dd) { margin: 0; }
+
+/* The wash: light falling from the top edge in the colour of the news, about 120px down. The compact bar is never
+   tinted; the notch's words sit above it. */
+.wash { position: absolute; inset: 0 0 auto 0; height: min(150px, 100%); border-radius: inherit; pointer-events: none; opacity: 0; transition: opacity .3s var(--ease);
+  background: radial-gradient(125% 128px at 50% -30px, rgb(var(--w, 255 255 255) / var(--wa, 0)), rgb(var(--w, 255 255 255) / 0) 100%); }
+.island[data-family="talk"] { --w: var(--talk); --wa: .32; }
+.island[data-family="needs"] { --w: var(--needs); --wa: .27; }
+.island[data-family="good"] { --w: var(--good); --wa: .3; }
+.island[data-family="plain"] { --w: var(--plain); --wa: .1; }
+.island.open:is([data-family="talk"], [data-family="needs"], [data-family="good"], [data-family="plain"], [data-family="mix"]) .wash { opacity: 1; }
+/* The summary: every kind that is waiting, side by side in proportion (main.js sets --mix from NotifyCards.mix()). */
+.island[data-family="mix"] .wash { height: min(140px, 100%); background: var(--mix, none);
+  -webkit-mask: linear-gradient(to bottom, #000 0, rgb(0 0 0 / .45) 64px, transparent 136px); mask: linear-gradient(to bottom, #000 0, rgb(0 0 0 / .45) 64px, transparent 136px); }
+.island .notch { z-index: 1; }
+.island > .countdown { z-index: 2; }
+/* Arriving, the wash rises over 600 ms; turning the pager, it fades in again before the words (the colour changes first). */
+.island.growing .wash { transition: opacity .6s var(--ease) .1s; }
+.island.step .wash, .island:has(> .notch.step:not(.steady)) .wash { animation: wash-in .3s var(--ease) both; }
+/* The countdown hairline runs in the kind's colour, and waits while the pointer or the keyboard is on the island. */
+.island[data-family="talk"] .countdown { background: var(--talk-dot); }
+.island[data-family="needs"] .countdown { background: var(--needs-dot); }
+.island[data-family="good"] .countdown { background: var(--good-dot); }
+.island[data-family="plain"] .countdown { background: var(--plain-dot); }
+.island.paused .countdown.run { animation-play-state: paused; }
+
+/* Byline: who brought it (their face, in the mood of the news), from where, when. */
+.nc-by { display: flex; align-items: center; gap: 9px; min-width: 0; min-height: 28px; font-size: 12px; line-height: 16px; font-weight: 500; color: var(--secondary); white-space: nowrap; }
+.nc-by .ctx { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.nc-by .ctx b { color: var(--foreground); font-weight: 500; }
+.nc-by .when { margin-left: auto; flex: none; font: 500 11.5px/16px var(--mono); color: var(--secondary); font-variant-numeric: tabular-nums; }
+.nc-more { margin-left: auto; flex: none; display: inline-flex; align-items: center; gap: 6px; height: 20px; padding: 0 8px; border-radius: 9999px; background: var(--fill-150); color: var(--foreground); font-size: 11.5px; line-height: 16px; font-weight: 500; }
+.nc-more .n { font-family: var(--mono); font-weight: 600; }
+.nc-pair { display: inline-flex; flex: none; }
+.nc-pair .face + .face { margin-left: -8px; outline: 2px solid var(--island); }
+
+/* The headline: one line written to fit (30 characters); the thing itself (a task, a commitment, a title) may run to two. */
+.nc-hl { margin-top: 10px; font: 650 20px/24px var(--display); letter-spacing: -.4px; color: var(--foreground); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nc-hl.wrap { white-space: normal; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
+/* What a press did (main.js's result) is read whole, never cut (review, 8 October 2026). */
+.nc-hl.full { display: block; -webkit-line-clamp: none; line-clamp: none; }
+.nc-hl > .ic { width: 18px; height: 18px; margin-right: 7px; vertical-align: -2px; stroke-width: 2.4; }
+.nc-hl.ok > .ic { color: #5ee08f; }
+.nc-hl.bad > .ic { color: #ff8a8a; }
+.nc-lede { margin-top: 4px; font-size: 13px; line-height: 18px; font-weight: 400; color: var(--secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nc-lede.two { white-space: normal; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
+.nc-note { margin-top: 10px; font-size: 12px; line-height: 16px; font-weight: 400; color: var(--subtle); overflow-wrap: anywhere; }
+/* Someone's own words (B): a 2px bar in their assistant's coat colour (--q, its middle tone), two lines at most. */
+.nc-quote { margin-top: 10px; padding-left: 10px; border-left: 2px solid var(--q, var(--border-input-hover)); font-size: 14px; line-height: 20px; font-weight: 400; color: rgb(255 255 255 / .9);
+  overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; -webkit-user-select: text; user-select: text; }
+.nc-quote .at { font-weight: 600; color: #c5c8ff; }
+/* A follow-up's answer: the question small, the result big, in its status colour. */
+.nc-q { margin-top: 10px; font-size: 13px; line-height: 18px; font-weight: 400; color: var(--secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nc-result { margin-top: 2px; font: 650 28px/32px var(--display); letter-spacing: -.6px; overflow-wrap: anywhere; }
+.nc-result.r-ok { color: var(--success); }
+.nc-result.r-blocked { color: var(--danger); }
+.nc-result.r-notstarted { color: var(--warning); }
+.nc-result.r-none { color: var(--secondary); }
+
+/* Facts: counted, not written. Neutral chips; a count of problems orange (the unread badge's colours, attention); one
+   item's status keeps its status colour; zeros fade to grey. A chip with a caret is a button that shows who. */
+.nc-facts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 12px; }
+.nc-fact { all: unset; box-sizing: border-box; display: inline-flex; align-items: center; gap: 6px; max-width: 100%; height: 26px; padding: 0 9px 0 7px; border-radius: 8px; background: var(--chip);
+  font-size: 12px; line-height: 16px; font-weight: 500; color: var(--secondary); white-space: nowrap; }
+.nc-fact .ic { width: 13px; height: 13px; color: var(--subtle); }
+.nc-fact .n { font: 600 12.5px/16px var(--mono); color: var(--foreground); font-variant-numeric: tabular-nums; letter-spacing: -.2px; }
+.nc-fact .w { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.nc-fact.zero .n { color: var(--subtle); }
+.nc-fact.attn { background: var(--accent-soft); color: var(--accent-text); }
+.nc-fact.attn .n, .nc-fact.attn .ic { color: var(--accent-text); }
+.nc-fact.bad { background: color-mix(in srgb, var(--danger) 14%, transparent); color: #ff8a8a; }
+.nc-fact.bad .n, .nc-fact.bad .ic { color: #ff8a8a; }
+.nc-fact.ok { background: color-mix(in srgb, var(--success) 13%, transparent); color: #5ee08f; }
+.nc-fact.ok .n, .nc-fact.ok .ic { color: #5ee08f; }
+button.nc-fact { height: 28px; cursor: pointer; transition: box-shadow var(--fast) var(--ease); }
+button.nc-fact::after { content: ""; width: 10px; height: 10px; margin-left: -1px; flex: none; background: currentColor; opacity: .75; transition: rotate .15s var(--ease);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") center / contain no-repeat; }
+button.nc-fact[aria-expanded="true"]::after { rotate: 180deg; }
+button.nc-fact:hover { box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 35%, transparent); }
+button.nc-fact:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+/* Names on demand, under the chips. */
+.nc-names { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; margin-top: 10px; padding: 8px 10px; border-radius: var(--radius-control); background: var(--fill-1); font-size: 13px; line-height: 18px; font-weight: 500; color: var(--foreground); }
+.nc-names[hidden] { display: none; }
+.nc-names .lbl { font-size: 13px; line-height: 18px; font-weight: 400; letter-spacing: 0; color: var(--secondary); }
+.nc-names .nm { display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; }
+.nc-names .nm .t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nc-names .nm.more { color: var(--secondary); font-weight: 400; }
+
+/* A change, drawn as the change: the thing, the old value struck through in grey, an arrow, the new one in white. */
+.nc-move { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; min-width: 0; margin-top: 12px; font-size: 13px; line-height: 18px; font-weight: 500; color: var(--secondary); }
+.nc-move .task { box-sizing: border-box; display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; height: 26px; padding: 0 9px 0 7px; border-radius: 8px; background: var(--chip); color: var(--foreground); }
+.nc-move .task .t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nc-move .task .ic { width: 13px; height: 13px; color: var(--subtle); }
+.nc-move .from { font: 500 13px/18px var(--mono); color: var(--subtle); white-space: nowrap; text-decoration: line-through; text-decoration-color: rgb(255 255 255 / .4); }
+.nc-move .to { font: 600 15px/18px var(--mono); color: var(--foreground); white-space: nowrap; letter-spacing: -.3px; }
+.nc-move > .ic { width: 14px; height: 14px; color: var(--subtle); }
+/* The plain list of lines, when there are no facts (a request's "what would change", a routine's first lines). */
+.nc-lines { margin: 12px 0 0; padding: 8px 12px 8px 28px; background: var(--background); border: 1px solid var(--border); border-radius: var(--radius-card-sm); font-size: 13px; line-height: 19.5px; font-weight: 400; color: var(--foreground); }
+.nc-lines li { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nc-lines li + li { margin-top: 2px; }
+.nc-lines li::marker { color: var(--subtle); }
+
+/* A reminder: the time is the biggest thing on the card, a hairline, then what to do. */
+.nc-remind { display: flex; align-items: center; gap: 16px; min-width: 0; margin-top: 10px; }
+.nc-remind .time { flex: none; font: 650 40px/40px var(--display); letter-spacing: -1px; font-variant-numeric: tabular-nums; color: var(--foreground); }
+.nc-remind .rule-v { flex: none; width: 1px; align-self: stretch; background: var(--border-input); }
+.nc-remind-t { flex: 1; min-width: 0; }
+.nc-remind .nc-hl, .nc-remind .nc-lede { margin-top: 0; }
+/* The standup draft: each section's first line beside its label, "and 2 more" in grey. */
+.nc-rows { display: grid; grid-template-columns: minmax(74px, auto) minmax(0, 1fr); gap: 5px 10px; margin-top: 12px; padding: 10px 12px; border-radius: var(--radius-control); background: var(--fill-1); font-size: 13px; line-height: 18px; font-weight: 400; }
+.nc-rows dt { color: var(--secondary); white-space: nowrap; }
+.nc-rows dd { min-width: 0; color: var(--foreground); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nc-rows dd .more { color: var(--secondary); }
+.nc-rows dd.none { color: var(--subtle); }
+
+/* The figure box (C's `.key`): one figure in Geist Mono 22/26 in a small dark box right of the headline; red when late. */
+.nc-head-k { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 12px; margin-top: 10px; }
+.nc-head-t { min-width: 0; }
+.nc-head-k .nc-hl { margin-top: 2px; }
+.nc-key { box-sizing: border-box; display: grid; justify-items: center; min-width: 54px; padding: 7px 10px 6px; border-radius: var(--radius-card-sm); background: rgb(0 0 0 / .38); box-shadow: inset 0 0 0 1px var(--border-input); text-align: center; }
+.nc-key .fig { font: 600 22px/26px var(--mono); letter-spacing: -.03em; font-variant-numeric: tabular-nums; color: var(--foreground); white-space: nowrap; }
+.nc-key .kc { font-size: 12px; line-height: 16px; font-weight: 500; color: var(--secondary); white-space: nowrap; }
+.nc-key.bad .fig { color: color-mix(in srgb, var(--danger) 78%, #fff); }
+
+/* Together (B): good news is the two assistants cheek to cheek at 44px, both happy, two small stars in their colours. */
+.nc-tg-stage { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 12px; min-height: 56px; margin-top: -2px; }
+.nc-tg-pair { position: relative; display: flex; align-items: center; padding-right: 2px; }
+.nc-tg-who { display: grid; place-items: center; width: 44px; height: 44px; }
+.nc-tg-pair .nc-tg-who + .nc-tg-who { margin-left: -11px; }
+.nc-tg-stars { position: absolute; inset: -6px -4px auto auto; width: 100%; height: 0; pointer-events: none; }
+.nc-tg-stars svg { position: absolute; width: 9px; height: 9px; }
+.nc-tg-stars svg:nth-child(1) { left: 34px; top: -2px; }
+.nc-tg-stars svg:nth-child(2) { left: 44px; top: 9px; width: 6px; height: 6px; }
+.nc-tg-stage .nc-by { min-width: 0; }
+.nc-tg-stage + .nc-hl { margin-top: 8px; }
+
+/* Faces at the notification sizes, and the moods' quiet forms. */
+.face.lg { zoom: 1.2857; }     /* 36px: the end card */
+.face.xl { zoom: 1.5714; }     /* 44px: Together */
+.face.f-lg { zoom: 1.0714; }   /* 30px: the summary's row */
+.face.still, .face.still .eyes span { animation: none; }
+.face.away { opacity: .42; filter: grayscale(.6); }   /* no reply */
+.nc-stack { display: inline-flex; align-items: center; flex: none; }
+.nc-stack .face + .face { margin-left: -6px; outline: 2px solid var(--island); }
+
+/* The summary: a sentence that starts small and lands on the number, who sent them, the kinds. */
+.nc-sum-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 28px; }
+.nc-hey { font-size: 15px; line-height: 20px; font-weight: 500; color: var(--secondary); overflow-wrap: anywhere; }
+.nc-hey b { color: var(--foreground); font-weight: 500; }
+.nc-big { display: flex; align-items: baseline; gap: 10px; margin-top: 2px; }
+.nc-big .n { font: 700 64px/60px var(--display); letter-spacing: -3px; font-variant-numeric: tabular-nums; }
+.nc-big .w { font: 650 22px/26px var(--display); letter-spacing: -.5px; }
+/* B's row of faces: up to six senders at 30px with a first name and a word, then +N. */
+.nc-lineup { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; margin-top: 12px; padding: 4px 0 2px; }
+.nc-mate { position: relative; display: flex; flex-direction: column; align-items: center; gap: 3px; min-width: 0; text-align: center; }
+.nc-mate .face { margin-bottom: 3px; }
+.nc-mate b { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; line-height: 15px; font-weight: 600; }
+.nc-mate > span:last-child { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; line-height: 14px; font-weight: 400; color: var(--secondary); }
+.nc-mate .count { position: absolute; top: -4px; left: calc(50% + 9px); box-shadow: 0 0 0 2px var(--island); }
+.nc-more-n { display: grid; place-items: center; width: 30px; height: 30px; margin-bottom: 3px; border-radius: 50%; background: color-mix(in srgb, #fff 12%, var(--island)); font: 600 12px/1 var(--mono); color: var(--secondary); }
+.nc-kinds { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 14px; }
+.nc-kind { all: unset; box-sizing: border-box; display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 9px 0 8px; border-radius: 9999px; background: var(--chip); cursor: pointer;
+  font-size: 12px; line-height: 16px; font-weight: 500; color: var(--secondary); transition: background-color var(--fast) var(--ease), color var(--fast) var(--ease); }
+.nc-kind:hover { background: var(--fill-150); color: var(--foreground); }
+.nc-kind:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+.nc-kind .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--plain-dot); }
+.nc-kind .n { font: 600 12.5px/16px var(--mono); color: var(--foreground); }
+.nc-kind[data-family="talk"] .dot { background: var(--talk-dot); }
+.nc-kind[data-family="needs"] .dot { background: var(--needs-dot); }
+.nc-kind[data-family="good"] .dot { background: var(--good-dot); }
+
+/* The buttons: the notch's own pills, 18px under the card. On a card that can grow taller than the stage (a reply or
+   reason box, the follow-up's quick replies, names opened) they stay in view at the bottom of the island, on its black;
+   a short card keeps them on the wash. */
+.nc > .actions { margin-top: 18px; }
+.nc:has(.fu-note, .choices, .nc-names:not([hidden])) > .actions:last-child { position: sticky; bottom: -18px; z-index: 1; margin: 10px -18px -18px; padding: 8px 18px 18px; background: var(--island); border-radius: 0 0 26px 26px; }
+.nc-done { display: inline-flex; align-items: center; gap: 6px; height: 28px; font-size: 13px; line-height: 20px; font-weight: 500; color: #5ee08f; }
+.nc-done .ic { width: 14px; height: 14px; }
+/* Acted on in the pager: the card dims, "Accepted" shows for 600 ms, then the next one. */
+.nc.acted > :not(.nc-nav):not(.actions) { opacity: .45; transition: opacity .2s var(--ease); }
+/* The end card: her face alone, centred. */
+.nc.center { text-align: center; padding-top: 4px; }
+.nc.center > .actions { justify-content: center; }
+.nc-duo { display: inline-flex; margin: 0 auto; }
+.nc.center .nc-hl { margin-top: 12px; }
+
+/* The pager's footer (C's deck row): the dots in each card's kind colour (the current one long, the read ones dim), the
+   position in Geist Mono, Mark all read, ‹ and a labelled Next › that says Finish on the last card. It stays at the
+   bottom of the island when a card is taller than the stage. */
+.nc-nav { position: sticky; bottom: -18px; z-index: 1; display: flex; align-items: center; gap: 8px; margin: 16px -18px -18px; padding: 10px 14px 14px 18px; border-top: 1px solid var(--border); border-radius: 0 0 26px 26px; background: var(--island); }
+.nc-dots { display: inline-flex; align-items: center; gap: 4px; flex: none; }
+.nc-dots i { display: block; width: 6px; height: 6px; border-radius: 3px; background: color-mix(in srgb, var(--kind, var(--plain-dot)) 72%, #000); transition: width .24s var(--ease), opacity .24s var(--ease); }
+.nc-dots i.on { width: 16px; background: var(--kind, var(--plain-dot)); }
+.nc-dots i.past { opacity: .28; }
+.nc-pos { font: 500 12px/16px var(--mono); color: var(--secondary); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.nc-pos b { color: var(--foreground); font-weight: 500; }
+.nc-sp { flex: 1; min-width: 0; }
+.nc-nav .btn.icon { margin-right: 0; }
+.nc-nav .btn.icon .ic { width: 14px; height: 14px; }
+/* Twelve dots leave the footer no room for Mark all read's words beside them: the pills tighten a little. */
+.nc-nav:has(.nc-dots i:nth-child(10)) { gap: 6px; }
+.nc-nav:has(.nc-dots i:nth-child(10)) .nc-dots { gap: 3px; }
+.nc-nav:has(.nc-dots i:nth-child(10)) .btn.ghost { padding: 0 8px; }
+
+/* The compact bar's parts: the kind's dot, the sender in white, "8 new" in the headline face, "2 need you" orange
+   (attention), up to three faces; and the same words as one row at the top of the home card. */
+.nc-kdot { width: 6px; height: 6px; flex: none; border-radius: 50%; }
+.nc-big-n { font: 650 13.5px/16px var(--display); letter-spacing: -.1px; color: var(--foreground); }
+.nc-acc { color: var(--accent-text); }
+.notch.compact b { color: var(--foreground); font-weight: 500; }
+.notch.compact .nc-stack .face, .nc-strip .nc-stack .face { zoom: .82; }
+.notch.compact .nc-stack .face + .face, .nc-strip .nc-stack .face + .face { margin-left: -5px; }
+.nc-strip { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 9px; width: 100%; min-width: 0; height: 32px; padding: 0 8px 0 10px; border-radius: var(--radius-control); cursor: pointer;
+  box-shadow: inset 0 0 0 1px var(--border); font-size: 13px; line-height: 16px; font-weight: 500; color: var(--secondary); transition: background-color var(--fast) var(--ease); }
+.nc-strip:hover { background: var(--fill-1); }
+.nc-strip:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+.nc-strip-t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nc-strip b { color: var(--foreground); font-weight: 500; }
+.nc-strip > .ic { color: var(--subtle); }
+
+/* Their icons move like the others on hover and keyboard focus (once, never a loop, nothing under reduced motion). */
+:is(.btn, .link):is(:hover, :focus-visible) > .ic-right { animation-name: ic-nudge; }
+:is(.btn, .link):is(:hover, :focus-visible) > .ic-left { animation-name: ic-back; }
+:is(.btn, .link):is(:hover, :focus-visible) > .ic-snooze { animation-name: ic-ring; transform-origin: 50% 55%; }
+:is(.btn, .link):is(:hover, :focus-visible) > .ic-pencil { animation-name: ic-tip; transform-origin: 20% 80%; }
+:is(.btn, .link):is(:hover, :focus-visible) > .ic-checks { animation-name: ic-press; }
+.nc-strip:is(:hover, :focus-visible) > .ic-right { animation: ic-nudge .42s var(--ease) 1; }
+
+/* Motion. Arrival keeps the island's spring and the words' blur-in (`.notch.enter`), the wash rising after. Together: both
+   faces hop once, at the same moment, and the stars open just after. The pager: the next card slides 8px the way the
+   person went (--dx from main.js) in 220 ms while the footer stays put and its dot grows. Nothing loops but the faces'
+   breathing. */
+.notch.enter .nc-tg-pair .face { animation: hop .6s var(--spring) .38s 1 both, face-breathe 3.6s ease-in-out 1s infinite; }
+.notch.enter .nc-tg-stars svg { animation: star .42s var(--spring) .5s both; }
+.notch.steady .nc-tg-pair .face { animation: face-breathe 3.6s ease-in-out infinite; }
+.notch.steady .nc-tg-stars svg { animation: none; }
+.notch.step > :not(.nc), .notch.step > .nc > :not(.nc-nav) { animation: nc-slide .22s var(--ease) both; }
+.notch.step .nc-dots i.on { animation: nc-dot .24s var(--ease) both; }
+.notch.step.steady > :not(.nc), .notch.step.steady > .nc > :not(.nc-nav), .notch.step.steady .nc-dots i.on { animation-name: none; }
+@keyframes star { from { opacity: 0; transform: scale(.2) rotate(-40deg); } }
+@keyframes nc-slide { from { opacity: 0; translate: var(--dx, 8px) 0; } }
+@keyframes wash-in { from { opacity: 0; } }
+@keyframes nc-fade { from { opacity: 0; } }
+@keyframes nc-dot { from { width: 6px; } }
