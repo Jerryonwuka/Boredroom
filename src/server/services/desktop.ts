@@ -60,7 +60,7 @@ import { teamStatus } from "@/server/services/views";
 import { aiConnected, readAssistantProfiles } from "@/server/services/assistant-profile";
 import { followUpsForDesktop, type DesktopFollowUps } from "@/server/services/follow-ups";
 import { assistantItemsForDesktop, type DesktopAssistantItems } from "@/server/services/assistant-items";
-import { PALETTE, type AssistantEyes, type AssistantProfile, type AssistantSpeak, type AssistantVisor, type FaceShades } from "@/lib/assistant-look";
+import { DEFAULT_ASSISTANT, PALETTE, isAssistantColour, isAssistantEyes, isAssistantVisor, type AssistantEyes, type AssistantProfile, type AssistantSpeak, type AssistantVisor, type FaceShades } from "@/lib/assistant-look";
 import { actStateOf, type ActState } from "@/lib/act-mode";
 import { morningOpener } from "@/server/services/opener";
 import type { Opener } from "@/lib/opener";
@@ -196,6 +196,28 @@ async function openerForNotch(ctx: OrgContext, brief: Awaited<ReturnType<typeof 
  * workspace's. Polled every 20 seconds. `opener: false` (the notch has shown today's first card): the morning opener is
  * not built (`opener: null`), as it costs a score of reads and the notch shows it once a day (review, 8 October 2026).
  */
+/**
+ * Teammates' own assistants, for their faces in the notch (owner request, 9 October 2026: "other team's bots still show
+ * like this instead of their Brenda"): each person's chosen name, colour, visor and eyes, read under the viewer's own
+ * access (profiles are readable by everyone in the workspace, 0035). Anyone without a saved profile is Brenda.
+ */
+async function teammateAssistants(ctx: OrgContext, ids: string[]): Promise<Map<string, DesktopAssistant>> {
+  const out = new Map<string, DesktopAssistant>();
+  if (!ids.length) return out;
+  const rows = await withUser(ctx.user.profileId, (db) => db.query<{ membership_id: string; name: string; colour: string; visor: string; eyes: string }>(
+    `SELECT membership_id, name, colour, visor, eyes FROM assistant_profiles WHERE organisation_id = $1 AND membership_id = ANY($2::uuid[])`,
+    [ctx.org.id, ids]));
+  for (const r of rows) {
+    out.set(r.membership_id, forNotch({
+      name: r.name || DEFAULT_ASSISTANT.name,
+      colour: isAssistantColour(r.colour) ? r.colour : DEFAULT_ASSISTANT.colour,
+      visor: isAssistantVisor(r.visor) ? r.visor : DEFAULT_ASSISTANT.visor,
+      eyes: isAssistantEyes(r.eyes) ? r.eyes : DEFAULT_ASSISTANT.eyes,
+    }));
+  }
+  return out;
+}
+
 export async function desktopState(ctx: OrgContext, o: { opener?: boolean } = {}) {
   const wantOpener = o.opener !== false;
   const worker = ctx.membership.role === "employee" || ctx.membership.role === "manager";
@@ -226,6 +248,12 @@ export async function desktopState(ctx: OrgContext, o: { opener?: boolean } = {}
     // Nor does a problem with commitments, blocks or loose ends (owner decisions, 8 October 2026: phase 7b).
     loopsForDesktop(ctx).catch((err) => { console.warn(`[desktop] loops: ${(err as Error)?.message ?? String(err)}`); return noLoops; }),
   ]);
+  const mates = team ? team.rows.filter((r) => r.membership_id !== ctx.membership.id)
+    .sort((a, b) => Number(!!b.session_state) - Number(!!a.session_state) || a.display_name.localeCompare(b.display_name))
+    .slice(0, 8) : [];
+  // A problem reading their looks never takes the notch down: they show as Brenda.
+  const mateLooks = await teammateAssistants(ctx, mates.map((r) => r.membership_id))
+    .catch((err) => { console.warn(`[desktop] teammates' assistants: ${(err as Error)?.message ?? String(err)}`); return new Map<string, DesktopAssistant>(); });
   // The opener counts from the briefing just read (no second read of it), and only until the notch has shown today's
   // first card.
   const opener = wantOpener ? await openerForNotch(ctx, brief) : null;
@@ -265,8 +293,8 @@ export async function desktopState(ctx: OrgContext, o: { opener?: boolean } = {}
     // The person's own open tasks, soonest due first: where a dropped file can go.
     myTasks: worker ? extra.progress.slice(0, 8).map((t) => ({ id: t.id, title: t.title, due: t.due_at })) : [],
     // Team leads and organisation accounts: who is working right now, for the small faces in the notch.
-    team: team ? team.rows.filter((r) => r.membership_id !== ctx.membership.id)
-      .sort((a, b) => Number(!!b.session_state) - Number(!!a.session_state) || a.display_name.localeCompare(b.display_name))
-      .slice(0, 8).map((r) => ({ id: r.membership_id, name: r.display_name, state: r.session_state ?? null, task: r.task_title ?? null })) : [],
+    // Each teammate's face is their own assistant (owner request, 9 October 2026), Brenda where they have none.
+    team: mates.map((r) => ({ id: r.membership_id, name: r.display_name, state: r.session_state ?? null, task: r.task_title ?? null,
+      assistant: mateLooks.get(r.membership_id) ?? forNotch(DEFAULT_ASSISTANT) })),
   };
 }

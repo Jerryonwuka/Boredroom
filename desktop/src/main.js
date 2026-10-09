@@ -284,11 +284,14 @@ const face = (o = {}) => {
   const own = !o.who;
   return `<span class="face ${o.small ? "small" : ""} ${o.mood ?? ""}${own && talking ? " talk" : ""}"${own ? " data-own" : ""} data-sphere="${esc(a.colour)}" data-visor="${esc(a.visor)}" data-eyes="${esc(a.eyes)}" style="--sphere-hi:${esc(a.face.hi)};--sphere-mid:${esc(a.face.mid)};--sphere-edge:${esc(a.face.edge)}" ${o.tone ? `data-tone="${esc(o.tone)}"` : ""}><span class="eyes"><span></span><span></span></span>${o.dot ? `<i class="dot ${esc(o.dot)}"></i>` : ""}</span>`;
 };
-/** A teammate's small face, in a colour of their own (style.css `--mate-*`), with a dot when their timer is running (orange), paused (amber) or interrupted (red). */
+/** A teammate's small face: their own assistant (owner request, 9 October 2026), in its colour with its visor and eyes (Brenda when the server sends none), with a dot when their timer is running (orange), paused (amber) or interrupted (red). */
 const MATES = 8;
 const hue = (id) => `var(--mate-${[...String(id)].reduce((a, c) => a + c.charCodeAt(0), 0) % MATES})`;
 const who = (p) => `${esc(p.name)}${p.task ? `, ${esc(p.task)}` : ""}`;
-const mini = (p) => `<span class="face mini" style="--c:${hue(p.id)}" title="${who(p)}"><span class="eyes"><span></span><span></span></span>${p.state ? `<i class="st ${esc(p.state)}"></i>` : ""}</span>`;
+const mini = (p) => {
+  const a = assistantOf(p.assistant);
+  return `<span class="face small mini" data-sphere="${esc(a.colour)}" data-visor="${esc(a.visor)}" data-eyes="${esc(a.eyes)}" style="--sphere-hi:${esc(a.face.hi)};--sphere-mid:${esc(a.face.mid)};--sphere-edge:${esc(a.face.edge)}" title="${who(p)}"><span class="eyes"><span></span><span></span></span>${p.state ? `<i class="st ${esc(p.state)}"></i>` : ""}</span>`;
+};
 const pad = (n) => String(n).padStart(2, "0");
 const hms = (s) => `${pad(Math.floor(s / 3600))}:${pad(Math.floor(s / 60) % 60)}:${pad(s % 60)}`;
 /** A length of time the way the web writes it: "3h 00m", "45m". */

@@ -162,7 +162,7 @@ svg.ic { width: 14px; height: 14px; flex: none; }
    7 October 2026; her coat, 8 October 2026): a fluffy ball (the web's tufted silhouette), a black visor with a soft dip
    in its top, white pill eyes behind it; the visor and eyes follow the pointer together. Her outline and glow are drop
    shadows, so they follow the tufts. Her glow follows what is happening (accent, ok, warn, bad); a running timer (blue)
-   and thinking (violet) draw none. Teammates' small faces (`.mini`, below) keep their own flat shape.
+   and thinking (violet) draw none. Teammates' small faces (`.mini`, below) are their own assistants (9 October 2026).
    Personal assistants (owner decision, 7 October 2026: phase 1): the face is the person's own assistant, and every
    assistant wears the coat in its own colour. main.js writes its three stops (`--sphere-hi`, `--sphere-mid`,
    `--sphere-edge`, from the desktop state) and `data-sphere` / `data-visor` / `data-eyes`, as on the web's `.brenda-face`;
@@ -195,14 +195,14 @@ svg.ic { width: 14px; height: 14px; flex: none; }
 /* The visors and eye styles a person can choose (owner decision, 7 October 2026: personal assistants), placed as the web
    face places them (docs/design-system.md, "Personal assistants": the drawn character's proportions, the eyes' centres
    0.84 R apart in every style). Bean and pill (or no attribute) are the rules above. They sit here, before the moods and
-   reactions, and no stronger than them (`:where`), so every expression still wins on every eye style. Teammates' `.mini`
-   faces carry no attributes and are left alone. The eyes sit behind the visor's glass: the bean's mask keeps them inside
+   reactions, and no stronger than them, so every expression still wins on every eye style. Teammates' `.mini` faces
+   use them too (their own assistants since 9 October 2026). The eyes sit behind the visor's glass: the bean's mask keeps them inside
    it, and the band and screen clip them to their own shape, so a tall expression (listening, alert) never shows white
    past the visor's edge on the slim band. */
-.face[data-visor="band"]:where(:not(.mini)) .eyes { left: 13.9%; width: 72.2%; top: 29.4%; height: 25.2%; padding-bottom: 4.6%; border-radius: 999px; -webkit-mask: none; mask: none; overflow: hidden; }
-.face[data-visor="screen"]:where(:not(.mini)) .eyes { left: 22.3%; width: 55.4%; top: 23.5%; height: 35.3%; padding-bottom: 3%; border-radius: 18.2% / 28.6%; -webkit-mask: none; mask: none; overflow: hidden; }
-.face[data-eyes="round"]:where(:not(.mini)) .eyes { gap: 6.5px; } .face[data-eyes="round"]:where(:not(.mini)) .eyes span { width: 3.4px; height: 3.4px; border-radius: 50%; }
-.face[data-eyes="square"]:where(:not(.mini)) .eyes { gap: 6.7px; } .face[data-eyes="square"]:where(:not(.mini)) .eyes span { width: 3.2px; height: 3.2px; border-radius: .8px; }
+.face[data-visor="band"] .eyes { left: 13.9%; width: 72.2%; top: 29.4%; height: 25.2%; padding-bottom: 4.6%; border-radius: 999px; -webkit-mask: none; mask: none; overflow: hidden; }
+.face[data-visor="screen"] .eyes { left: 22.3%; width: 55.4%; top: 23.5%; height: 35.3%; padding-bottom: 3%; border-radius: 18.2% / 28.6%; -webkit-mask: none; mask: none; overflow: hidden; }
+.face[data-eyes="round"] .eyes { gap: 6.5px; } .face[data-eyes="round"] .eyes span { width: 3.4px; height: 3.4px; border-radius: 50%; }
+.face[data-eyes="square"] .eyes { gap: 6.7px; } .face[data-eyes="square"] .eyes span { width: 3.2px; height: 3.2px; border-radius: .8px; }
 .face.small:where([data-eyes="round"]) .eyes { gap: 5.2px; } .face.small:where([data-eyes="round"]) .eyes span { width: 2.6px; height: 2.6px; }
 .face.small:where([data-eyes="square"]) .eyes { gap: 5.3px; } .face.small:where([data-eyes="square"]) .eyes span { width: 2.5px; height: 2.5px; border-radius: .6px; }
 .face.blink .eyes span { transform: scaleY(.12); }
@@ -528,18 +528,16 @@ kbd { display: inline-flex; align-items: center; justify-content: center; box-si
 .island.tucked { border-radius: 0 0 6px 6px; box-shadow: none; }
 .island.tucked .notch, .island.tucked::before, .island.tucked::after, .island.tucked .countdown { opacity: 0; pointer-events: none; }
 
-/* Teammates' small faces (team leads and organisation accounts), flat in each person's colour, with a dot for their
-   timer: orange running (live, accent rules), amber paused, red interrupted. The dot stays still at this size. */
-.face.mini { width: 16px; height: 12px; border-radius: 30%; background: color-mix(in srgb, var(--c) 72%, #fff); display: grid; place-content: center; animation: none; box-shadow: none !important; filter: none !important; }
-.face.mini::before, .face.mini::after { content: none; }   /* teammates keep their own flat look: no coat */
-.face.mini .eyes { position: static; width: auto; height: auto; background: none; border-radius: 0; gap: 3px; transform: translate(calc(var(--lx) * 1px), calc(var(--ly) * .8px)); }
-.face.mini .eyes { -webkit-mask: none; mask: none; padding: 0; }
-.face.mini .eyes span { width: 2px; height: 3px; border-radius: 1px; background: #111; box-shadow: none; }
+/* Teammates' small faces (team leads and organisation accounts) are their own assistants (owner request, 9 October
+   2026: "other teams' bots still show like this instead of their Brenda"): the fur in their colour with their visor and
+   eyes, at the small size (main.js gives them `small` and their look), still and quiet (no breathing, no glow, not
+   pokeable), with a dot for their timer: orange running (live, accent rules), amber paused, red interrupted. */
+.face.mini { animation: none; box-shadow: none !important; cursor: default; }
 .face.mini .st { position: absolute; top: -3px; right: -3px; width: 6px; height: 6px; border-radius: 50%; border: 1.5px solid var(--island); background: var(--accent); }
 .face.mini .st.paused { background: var(--warning); }
 .face.mini .st.interrupted { background: var(--danger); }
 .minis { display: inline-flex; padding-left: 2px; }
-.minis .face.mini { margin-left: 2px; }
+.minis .face.mini { margin-left: 2px; zoom: .82; }   /* beside her own face in the bar: a touch smaller */
 /* In the day card, one outline chip per teammate (32px, r10): their face, first name, and what they are on. */
 .team { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .mate { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 8px; min-width: 0; height: 32px; padding: 0 10px 0 8px; border-radius: var(--radius-control); cursor: pointer;
