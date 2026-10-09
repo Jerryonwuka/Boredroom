@@ -28,6 +28,7 @@ import {
   AnimatedFileText, AnimatedFolderKanban, AnimatedHistory, AnimatedKanban, AnimatedLayoutDashboard, AnimatedListChecks, AnimatedListTodo,
   AnimatedMessageSquare, AnimatedPanelLeft, AnimatedPlus, AnimatedSettings, AnimatedShieldCheck, AnimatedUsersRound, AnimatedVideo, AnimatedX,
 } from "@/components/ui/animated-icons";
+import { Handshake } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Avatar } from "@/components/ui/avatar";
 import { CountPill } from "@/components/ui/badge";
@@ -49,6 +50,8 @@ const ICONS = {
   reviews: AnimatedClipboardCheck, timesheets: AnimatedHistory, people: AnimatedUsersRound, settings: AnimatedSettings, audit: AnimatedShieldCheck,
   notifications: AnimatedBell, recordings: AnimatedVideo, messages: AnimatedMessageSquare, tasks: AnimatedListChecks, clock: AnimatedAlarmClock,
   attendance: AnimatedClipboardList, docs: AnimatedFileText, todos: AnimatedListTodo,
+  // Commitments (owner decision, 8 October 2026: phase 7b): lucide's Handshake, still (it has no animated twin yet).
+  commitments: Handshake,
 } satisfies Record<string, NavIcon>;
 
 export const SIDEBAR_KEY = "boredroom-sidebar";

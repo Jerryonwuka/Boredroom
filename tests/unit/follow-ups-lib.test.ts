@@ -173,7 +173,8 @@ describe("migration 0039", () => {
     expect(listed(/follow_ups_reply_choice_check CHECK \(reply_choice IN \(([^)]*)\)\)/)).toEqual([...REPLY_CHOICES]);
     expect(listed(/assistant_profiles_followups_check CHECK \(followups IN \(([^)]*)\)\)/)).toEqual([...FOLLOW_UP_PREFERENCES]);
     // Phase 5 (owner decision, 8 October 2026): 0041 adds 'mention' after 0039's list (checked in mentions-lib.test.ts).
-    expect(listed(/ai_usage_purpose_check CHECK \(purpose IN \(([^)]*)\)\)/)).toEqual(USAGE_PURPOSES.filter((p) => p !== "mention"));
+    // Phase 7b (owner decision, 8 October 2026): 0048 adds 'loose_ends' and 'commitments' (loops-migration.test.ts).
+    expect(listed(/ai_usage_purpose_check CHECK \(purpose IN \(([^)]*)\)\)/)).toEqual(USAGE_PURPOSES.filter((p) => p !== "mention" && p !== "loose_ends" && p !== "commitments"));
     expect(LIMITED_PURPOSES).toContain("followup");
     expect(code).toMatch(new RegExp(`char_length\\(question\\) BETWEEN 1 AND ${FOLLOW_UP_LIMITS.questionMax}`));
     expect(code).toMatch(new RegExp(`char_length\\(reply_note\\) BETWEEN 1 AND ${FOLLOW_UP_LIMITS.noteMax}`));

@@ -37,6 +37,9 @@ export function TypingIndicator({ className }: { className?: string }) {
  * `nameAdornment` sits after the name and the time (so a narrow column wraps the chip, not the time), in the name row of other people's messages; `timeAdornment`
  * before the time under your own (personal assistants, phase 3, owner decision, 8 October 2026: the "via Max" chip and
  * an assistant's "Olu's assistant" tag). Both rows wrap at narrow widths rather than push the bubble wider.
+ * `label` is a small mark about the message itself, always just under its bubble (phase 7b, owner decision, 8 October
+ * 2026: the "Noted" label on a commitment): first in the time row under your own message, otherwise on a small row of
+ * its own on the bubble's side, so it shows on a grouped bubble too (one with no name or time row).
  *
  * Motion answers an action: a bubble fades up 6px only when it arrives on its own (a new message, yours or theirs). A
  * thread that opens, or a page that loads with its conversation, shows its bubbles at rest: bubbles that mount in the
@@ -56,8 +59,10 @@ function queueEntrance(el: HTMLElement, mine: boolean) {
   });
 }
 
-export function MessageBubble({ mine, avatar, name, time, grouped = false, withdrawn = false, children, footer, actions, quote, nameAdornment, timeAdornment, className }: { mine: boolean; avatar?: ReactNode; name?: string; time?: ReactNode; grouped?: boolean; withdrawn?: boolean; children: ReactNode; footer?: ReactNode; actions?: ReactNode; quote?: ReactNode; nameAdornment?: ReactNode; timeAdornment?: ReactNode; className?: string }) {
+export function MessageBubble({ mine, avatar, name, time, grouped = false, withdrawn = false, children, footer, actions, quote, nameAdornment, timeAdornment, label, className }: { mine: boolean; avatar?: ReactNode; name?: string; time?: ReactNode; grouped?: boolean; withdrawn?: boolean; children: ReactNode; footer?: ReactNode; actions?: ReactNode; quote?: ReactNode; nameAdornment?: ReactNode; timeAdornment?: ReactNode; label?: ReactNode; className?: string }) {
   const reduced = useReducedMotion();
+  // Under your own first bubble the label joins the time row; anywhere else it has a row of its own.
+  const timeRow = mine && !grouped && !!time;
   const ref = useRef<HTMLDivElement>(null);
   // Once, on mount: whether it moves is decided by what else mounted with it (see queueEntrance).
   const entrance = useRef({ mine, reduced });
@@ -75,9 +80,10 @@ export function MessageBubble({ mine, avatar, name, time, grouped = false, withd
             {quote}
             {children}
           </div>
+          {label && !timeRow ? <div className={cn("mt-1 flex", mine ? "justify-end pr-1" : "pl-1")}>{label}</div> : null}
           {footer ? <div className={cn("mt-1.5", mine ? "text-right" : "pl-1")}>{footer}</div> : null}
-          {mine && !grouped && time ? (timeAdornment
-            ? <p className="mt-1 flex flex-wrap items-center justify-end gap-x-2 gap-y-0.5 pr-1 text-xs font-medium text-subtle">{timeAdornment}<span>{time}</span></p>
+          {timeRow ? (timeAdornment || label
+            ? <p className="mt-1 flex flex-wrap items-center justify-end gap-x-2 gap-y-0.5 pr-1 text-xs font-medium text-subtle">{label}{timeAdornment}<span>{time}</span></p>
             : <p className="mt-1 pr-1 text-right text-xs font-medium text-subtle">{time}</p>) : null}
         </div>
         {actions ? <div className="self-center opacity-0 transition-opacity duration-75 focus-within:opacity-100 group-hover:opacity-100 has-[[aria-expanded=true]]:opacity-100 pointer-coarse:opacity-100">{actions}</div> : null}

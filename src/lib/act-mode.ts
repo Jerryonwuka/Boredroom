@@ -53,7 +53,9 @@ export const undoOpen = (u: UndoOffer | null | undefined, now = Date.now()): u i
 
 export const ASK_REASONS = ["tainted", "tainted_earlier", "broadcast_everyone", "broadcast_team", "broadcast_group", "fan_out",
   "irreversible_email", "irreversible_review", "irreversible_team", "answers_others", "cant_undo", "someone_elses_doc",
-  "builtin", "workspace_off", "impersonated", "always_asks", "routine_consent"] as const;
+  "builtin", "workspace_off", "impersonated", "always_asks", "routine_consent",
+  // Phase 7b (owner decisions, 8 October 2026): a to-do from someone else's words always asks, whatever the mode.
+  "others_words_todo"] as const;
 export type AskReason = (typeof ASK_REASONS)[number];
 export const isAskReason = (v: unknown): v is AskReason => (ASK_REASONS as readonly unknown[]).includes(v);
 
@@ -85,6 +87,9 @@ export function whyStillAsking(reason: AskReason, o: { name: string; people?: nu
     // Owner decision, 8 October 2026 (phase 7a, routines): turning a routine on is the person's standing consent for what
     // it does at every run, so it is always their own press, whatever the mode.
     case "routine_consent": return "Still asking: turning on a routine is your standing yes for what it does each time.";
+    // Owner decision, 8 October 2026 (phase 7b): a to-do made from someone else's words (a loose end, a noted commitment,
+    // an open ask) is always the person's own yes, even when they chose Act without asking.
+    case "others_words_todo": return "Still asking: this to-do comes from words in a conversation, so you confirm it first.";
   }
 }
 

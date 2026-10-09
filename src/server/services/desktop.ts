@@ -37,6 +37,14 @@
  * active the notch opens nothing on its own, plays no sound and speaks nothing on its own); `routineRuns` holds the
  * routine runs delivered in the last 24 hours with their lines, for the routine card. Before migration 0046 `quiet` is
  * `{ ready: false, … }` (never quiet) and `routineRuns` `{ ready: false, recent: [] }`; an older notch ignores all three.
+ *
+ * Loose ends and commitments (owner decisions, 8 October 2026: phase 7b): the state's `loops` (lib/commitments
+ * `DesktopLoops`) holds the commitments noted for the person and the open asks they were told of (the notch's commitment
+ * and open-ask cards, at most 5, oldest first), the blocks waiting on them (the blocked-on card), and how many loose
+ * ends are open (the day card's link). Notifications of type `brenda.commitment`, `brenda.open_ask` and
+ * `brenda.blocked_on` carry the commitment's or block's id as `resource_id`, so an unread one opens its card. Before
+ * migration 0048, or when it cannot be read, `loops` is `{ ready: false, commitments: [], blocks: [], looseEnds: { open: 0, … } }`;
+ * an older notch ignores it.
  */
 import { z } from "zod";
 import { withSystem, withUser } from "@/server/db";
@@ -59,6 +67,8 @@ import type { Opener } from "@/lib/opener";
 import { routineRunsForDesktop, type DesktopRoutineRuns } from "@/server/services/routines";
 import { schema0046Ready } from "@/server/lib/schema-0046";
 import { NO_QUIET, type QuietState } from "@/lib/routines";
+import { loopsForDesktop } from "@/server/services/commitments";
+import type { DesktopLoops } from "@/lib/commitments";
 
 const CODE_TTL_SECONDS = 10 * 60;
 const DESKTOP_SESSION_DAYS = 90;
@@ -164,7 +174,7 @@ export async function revokeDevice(user: CurrentUser, sessionId: string) {
 export type DesktopAssistant = { name: string; colour: string; visor: AssistantVisor; eyes: AssistantEyes; face: FaceShades };
 const forNotch = (p: AssistantProfile): DesktopAssistant => ({ name: p.name, colour: p.colour, visor: p.visor, eyes: p.eyes, face: PALETTE[p.colour].face });
 
-export type { DesktopFollowUps, DesktopAssistantItems, DesktopRoutineRuns };
+export type { DesktopFollowUps, DesktopAssistantItems, DesktopRoutineRuns, DesktopLoops };
 const NO_FOLLOW_UPS: DesktopFollowUps = { ready: false, waiting: [], answered: [] };
 const NO_ITEMS: DesktopAssistantItems = { ready: false, waiting: [], updates: [] };
 const NO_RUNS: DesktopRoutineRuns = { ready: false, recent: [] };
@@ -190,7 +200,8 @@ export async function desktopState(ctx: OrgContext, o: { opener?: boolean } = {}
   const wantOpener = o.opener !== false;
   const worker = ctx.membership.role === "employee" || ctx.membership.role === "manager";
   const lead = ctx.membership.role !== "employee";
-  const [brief, session, clock, team, extra, followUps, assistantItems, routineRuns] = await Promise.all([
+  const noLoops: DesktopLoops = { ready: false, commitments: [], blocks: [], looseEnds: { open: 0, href: `/app/${ctx.org.slug}/home/loose-ends` } };
+  const [brief, session, clock, team, extra, followUps, assistantItems, routineRuns, loops] = await Promise.all([
     briefing(ctx),
     worker ? currentSession(ctx) : Promise.resolve(null),
     worker ? myClock(ctx) : Promise.resolve(null),
@@ -212,6 +223,8 @@ export async function desktopState(ctx: OrgContext, o: { opener?: boolean } = {}
     assistantItemsForDesktop(ctx).catch((err) => { console.warn(`[desktop] assistant items: ${(err as Error)?.message ?? String(err)}`); return NO_ITEMS; }),
     // Nor does a problem with the routine runs (owner decision, 8 October 2026: phase 7a).
     routineRunsForDesktop(ctx).catch((err) => { console.warn(`[desktop] routine runs: ${(err as Error)?.message ?? String(err)}`); return NO_RUNS; }),
+    // Nor does a problem with commitments, blocks or loose ends (owner decisions, 8 October 2026: phase 7b).
+    loopsForDesktop(ctx).catch((err) => { console.warn(`[desktop] loops: ${(err as Error)?.message ?? String(err)}`); return noLoops; }),
   ]);
   // The opener counts from the briefing just read (no second read of it), and only until the notch has shown today's
   // first card.
@@ -247,6 +260,8 @@ export async function desktopState(ctx: OrgContext, o: { opener?: boolean } = {}
     opener,
     quiet,
     routineRuns: routineRuns satisfies DesktopRoutineRuns,
+    // Commitments and open asks waiting for the person, blocks waiting on them, and open loose ends (phase 7b).
+    loops: loops satisfies DesktopLoops,
     // The person's own open tasks, soonest due first: where a dropped file can go.
     myTasks: worker ? extra.progress.slice(0, 8).map((t) => ({ id: t.id, title: t.title, due: t.due_at })) : [],
     // Team leads and organisation accounts: who is working right now, for the small faces in the notch.

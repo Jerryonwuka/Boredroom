@@ -39,8 +39,13 @@ export const AI_BURST_MESSAGE = "That's a lot of requests in one minute. Wait a 
  * is the person's own assistant answering them in a conversation they tagged it in ("@Max …"): every model call of one
  * mention shares the mention's id as its request id, so one mention counts once, against the person who asked. Before
  * 0041 nothing is processed, so nothing is recorded.
+ *
+ * 'loose_ends' and 'commitments' (owner decisions, 8 October 2026: phase 7b; migration 0048 widens the CHECK the same way):
+ * the person's own loose-ends scan, one request per scan against their 150 a day; and the workspace's own scan of tracked
+ * group conversations for commitments, recorded with no person (it never spends anyone's allowance) and capped per
+ * organisation per day (LOOP_LIMITS.modelCallsPerOrgPerDay). Before 0048 neither runs, so neither is recorded.
  */
-export const USAGE_PURPOSES = ["chat", "plan", "report", "summary", "test", "other", "followup", "mention"] as const;
+export const USAGE_PURPOSES = ["chat", "plan", "report", "summary", "test", "other", "followup", "mention", "loose_ends", "commitments"] as const;
 export type UsagePurpose = (typeof USAGE_PURPOSES)[number];
 /**
  * Purposes that count towards the person's daily limit. A team report the person asked for counts too (review,
@@ -51,7 +56,9 @@ export type UsagePurpose = (typeof USAGE_PURPOSES)[number];
  * personal assistants, phase 4). A mention in Messages counts too, once per mention (owner decision, 8 October 2026:
  * personal assistants, phase 5: it comes out of the same 150 a day).
  */
-export const LIMITED_PURPOSES: readonly UsagePurpose[] = ["chat", "plan", "report", "followup", "mention"];
+// A loose-ends scan counts too, once per scan (owner decisions, 8 October 2026: phase 7b); the workspace's commitments scan
+// never does (it has no person).
+export const LIMITED_PURPOSES: readonly UsagePurpose[] = ["chat", "plan", "report", "followup", "mention", "loose_ends"];
 
 /** The API's usage block (Anthropic Messages API `res.usage`), as it comes. */
 export type ModelUsage = { input_tokens?: number | null; output_tokens?: number | null; cache_read_input_tokens?: number | null; cache_creation_input_tokens?: number | null } | null | undefined;

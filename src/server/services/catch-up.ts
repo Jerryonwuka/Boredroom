@@ -16,6 +16,10 @@
  * The message text returned here is other people's words. The copilot hands it to the model as quoted data
  * (copilot-excerpt), never as instructions.
  *
+ * The workspace's own assistant (owner decisions, 8 October 2026: phase 7b): a gentle follow-up it posts in a thread
+ * (author kind 'workspace', written only by the worker, on the committer's row) reads as that assistant, by the
+ * workspace's name for it, never as the person, and is never "from" that person in a search.
+ *
  * @mentions (owner decision, 8 October 2026: personal assistants, phase 5): `readMentionThread` is the window a person's
  * assistant reads when they tag it in a conversation (the newest 40 messages and about 8,000 characters up to the
  * tagging message, plus the message it replies to, and who reads the conversation), read as the tagger like every read
@@ -199,14 +203,16 @@ type MessageSqlRow = {
  * assistant's name); before it every message is the person's. Tasks join under row-level security, so a task the person
  * cannot see reads as none.
  */
+// Phase 7b: a 'workspace' message (the workspace's own assistant's note in a thread) takes the workspace assistant's name
+// (brenda_settings, which every member reads), never the sender's assistant's.
 const messageColumns = (ready: boolean) => `
   m.id, m.created_at AS at, m.conversation_id, ${ready ? "m.author_kind" : "'person'::text AS author_kind"},
   m.sender_membership_id, p.display_name AS sender_name,
-  ${ready ? "CASE WHEN m.author_kind <> 'person' THEN COALESCE(ap.name, 'Brenda') END" : "NULL::text"} AS assistant_name,
+  ${ready ? "CASE WHEN m.author_kind = 'workspace' THEN COALESCE(ws.assistant_name, 'Brenda') WHEN m.author_kind <> 'person' THEN COALESCE(ap.name, 'Brenda') END" : "NULL::text"} AS assistant_name,
   m.body, m.edited_at, m.voice_seconds, t.id AS task_id, t.title AS task_title,
   rm.id AS reply_id, rm.deleted_at AS reply_deleted_at, rm.body AS reply_body, rp.display_name AS reply_sender_name,
   ${ready ? "rm.author_kind" : "CASE WHEN rm.id IS NULL THEN NULL ELSE 'person' END"} AS reply_author_kind,
-  ${ready ? "CASE WHEN rm.author_kind <> 'person' THEN COALESCE(rap.name, 'Brenda') END" : "NULL::text"} AS reply_assistant_name`;
+  ${ready ? "CASE WHEN rm.author_kind = 'workspace' THEN COALESCE(ws.assistant_name, 'Brenda') WHEN rm.author_kind <> 'person' THEN COALESCE(rap.name, 'Brenda') END" : "NULL::text"} AS reply_assistant_name`;
 const messageJoins = (ready: boolean) => `
   JOIN memberships sm ON sm.id = m.sender_membership_id
   LEFT JOIN profiles p ON p.id = sm.user_id
@@ -215,7 +221,8 @@ const messageJoins = (ready: boolean) => `
   LEFT JOIN memberships rsm ON rsm.id = rm.sender_membership_id
   LEFT JOIN profiles rp ON rp.id = rsm.user_id
   ${ready ? `LEFT JOIN assistant_profiles ap ON ap.membership_id = m.sender_membership_id
-  LEFT JOIN assistant_profiles rap ON rap.membership_id = rm.sender_membership_id` : ""}`;
+  LEFT JOIN assistant_profiles rap ON rap.membership_id = rm.sender_membership_id
+  LEFT JOIN brenda_settings ws ON ws.organisation_id = m.organisation_id` : ""}`;
 
 /** Cuts text to `max` characters, ending with "…", without splitting a character made of two code units. */
 function clampText(s: string, max: number): string {
@@ -227,10 +234,14 @@ function clampText(s: string, max: number): string {
 }
 
 function toMessage(r: MessageSqlRow, me: string): CatchUpMessage {
-  const replyAuthor = r.reply_author_kind === "assistant" ? r.reply_assistant_name : r.reply_sender_name;
+  const replyAuthor = r.reply_author_kind === "assistant" || r.reply_author_kind === "workspace" ? r.reply_assistant_name : r.reply_sender_name;
+  // Phase 7b: the workspace's own assistant wrote it, on the committer's row; it is never the person's (nor "You").
+  const workspace = r.author_kind === "workspace";
   return {
     id: r.id, at: r.at, authorKind: r.author_kind,
-    author: { membershipId: r.sender_membership_id, name: r.sender_name ?? "Someone", isYou: r.sender_membership_id === me },
+    author: workspace
+      ? { membershipId: r.sender_membership_id, name: r.assistant_name ?? "Brenda", isYou: false }
+      : { membershipId: r.sender_membership_id, name: r.sender_name ?? "Someone", isYou: r.sender_membership_id === me },
     assistantName: r.author_kind !== "person" ? r.assistant_name ?? "Brenda" : null,
     body: clampText(r.body ?? "", CATCH_UP_LIMITS.bodyChars),
     edited: !!r.edited_at, voiceSeconds: r.voice_seconds ?? null,
@@ -501,7 +512,7 @@ export async function searchMessages(ctx: OrgContext, input: z.input<typeof sear
        ${messageJoins(ready)}
        WHERE m.organisation_id = $1 AND m.deleted_at IS NULL AND m.created_at > now() - make_interval(days => $3::int)
          AND ($4::text IS NULL OR m.body ILIKE '%' || $4 || '%' ESCAPE '\\')
-         AND ($5::uuid IS NULL OR m.sender_membership_id = $5)
+         AND ($5::uuid IS NULL OR (m.sender_membership_id = $5${ready ? " AND m.author_kind <> 'workspace'" : ""}))
          AND ($6::uuid IS NULL OR m.conversation_id = $6)
          AND (tm.id IS NULL OR tm.archived_at IS NULL)
          AND NOT EXISTS (SELECT 1 FROM conversation_hides h WHERE h.conversation_id = c.id AND h.membership_id = $2)

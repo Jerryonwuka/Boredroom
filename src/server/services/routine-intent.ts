@@ -8,6 +8,10 @@
  * A routine needs both what it does and how often: "brief me" alone is a question for today, never a routine, and a note
  * of things to do ("remind me every Friday to …") is not one either. Pausing, turning on or deleting needs a name that
  * reads as a routine's ("my Friday roundup", "the morning brief routine"), so "stop my timer" stays the timer's.
+ *
+ * Phase 7b (owner decisions, 8 October 2026): "Every evening, check for loose ends", "Every weekday at 6pm find my loose
+ * ends" set up the loose_ends template (17:30 when no time is said); without a cadence, "any loose ends?" is the helper's
+ * loop intent (loop-intent.ts), never a routine.
  */
 import type { Cadence, RoutineTemplate } from "@/lib/routines";
 
@@ -16,7 +20,7 @@ export type RoutineIntent =
   | { kind: "list" } | { kind: "pause" | "turn_on" | "delete"; name: string };
 
 /** When a template runs if the words give no time (contract I.4). */
-export const DEFAULT_TIMES: Record<RoutineTemplate, string> = { morning_brief: "09:00", still_owed: "16:00", afternoon_check: "15:00", chase_stalled: "16:00" };
+export const DEFAULT_TIMES: Record<RoutineTemplate, string> = { morning_brief: "09:00", still_owed: "16:00", afternoon_check: "15:00", chase_stalled: "16:00", loose_ends: "17:30" };
 
 const DAY_WORDS: [RegExp, number][] = [
   [/^sun(?:day)?s?$/, 0], [/^mon(?:day)?s?$/, 1], [/^tue(?:s|sday)?s?$/, 2], [/^wed(?:s|nesday)?s?$/, 3],
@@ -85,6 +89,8 @@ function templateOf(t: string): { template: RoutineTemplate; teams: string[] | n
     const who = raw.replace(/^the\s+/, "").replace(/\s+(?:team|channel)$/, "").trim();
     return { template: "chase_stalled", teams: who ? [who] : null };
   }
+  // Phase 7b: "check for loose ends", "find my loose ends", "look for loose ends" (before the roundup: never "still owed").
+  if (/\bloose[\s-]+ends?\b/.test(t)) return { template: "loose_ends", teams: null };
   if (/\bwhat'?s\s+still\s+owed\b|\bwhat\s+is\s+still\s+owed\b|\bstill\s+owed\b|\bround-?\s?up\b/.test(t)) return { template: "still_owed", teams: null };
   if (/\bafternoon\s+check\b|\bcheck\s+(?:on\s+|what'?s\s+|what\s+is\s+)?blocked\s+on\s+me\b/.test(t)) return { template: "afternoon_check", teams: null };
   if (/\bbrief\s+me\b|\bmorning\s+brief(?:ing)?\b|\bwhat'?s\s+waiting\b|\bwhat\s+is\s+waiting\b|\bsend\s+me\s+(?:a|my|the)\s+brief(?:ing)?\b/.test(t)) return { template: "morning_brief", teams: null };
@@ -97,7 +103,7 @@ const NOT_A_ROUTINE = /^(?:timer|clock|session|recording|status|reminders?|notif
  * A name that reads as a routine's: the word itself, a template's words, or when it runs. Not "check-in": "cancel my
  * check-in reminder" is about a reminder, never the afternoon check (review, 8 October 2026).
  */
-const ROUTINE_LIKE = new RegExp(String.raw`\broutines?\b|\bbrief(?:ing)?\b|\bround-?\s?up\b|\bstill\s+owed\b|\bafternoon\s+check\b|\bchase\b|\bstalled\b|\bsummary\b|\bdigest\b|\b(?:morning|weekly|daily|monthly|weekday)\b|\b(?:${DAY})\b`);
+const ROUTINE_LIKE = new RegExp(String.raw`\broutines?\b|\bbrief(?:ing)?\b|\bround-?\s?up\b|\bstill\s+owed\b|\bafternoon\s+check\b|\bchase\b|\bstalled\b|\bsummary\b|\bdigest\b|\bloose[\s-]+ends?\b|\b(?:morning|weekly|daily|monthly|weekday)\b|\b(?:${DAY})\b`);
 export const looksLikeRoutine = (name: string) => !NOT_A_ROUTINE.test(name.trim()) && ROUTINE_LIKE.test(name);
 
 /** The routine's name as the person said it: "Friday roundup" from "my friday roundup routine". */

@@ -22,6 +22,13 @@
  * Routines (owner decision, 8 October 2026: phase 7a): setting one up, changing it or turning it on always asks
  * ('routine_consent'): the Confirm on that card is the person's Enable, their standing yes for exactly what its preview
  * showed; deleting one asks too ('cant_undo'). Only pausing may act in 'auto' (it stops things; turning it on again asks).
+ *
+ * Loose ends, commitments and blocked on whom (owner decisions, 8 October 2026: phase 7b): a to-do made from someone else's
+ * words (a loose end the person's assistant found, a commitment the workspace's assistant noted, an open ask) always asks
+ * ('others_words_todo'), in every mode: Accept is the consent, and copilot prepares that Confirm whatever this says.
+ * Reminding and dismissing act on the person's own list; handing a loose end to someone's assistant and following up
+ * later act as a request and a follow-up do (the other side still accepts or answers); declining a commitment answers
+ * someone else ('answers_others'); naming who a blocked task waits on acts; answering a block always asks.
  */
 import { FOLLOW_UP_AUTO_MAX, SMALL_GROUP_MAX, UNDO_WINDOW_MINUTES, type ActState, type AskReason } from "@/lib/act-mode";
 
@@ -44,6 +51,10 @@ export type ActFacts = {
   respond?: "accept" | "decline" | "reply" | "seen" | "cancel" | "withdraw";
   /** update_routine: what the person would do to their routine (phase 7a). */
   routine?: "change" | "pause" | "turn_on" | "delete";
+  /** loose_end_action: what the person would do with a loose end (phase 7b). */
+  looseEnd?: "todo" | "remind" | "hand_over" | "follow_up" | "dismiss";
+  /** respond_to_commitment: what the person would do with a commitment noted for them (phase 7b). */
+  commitment?: "accept" | "decline" | "dismiss" | "done";
 };
 
 export type ActDecision = { act: true } | { act: false; reason: AskReason | null };
@@ -66,6 +77,12 @@ export const AUTO_RULES: Readonly<Record<string, (f: ActFacts) => true | AskReas
   // Phase 7a (owner decision, 8 October 2026: routines): the card is the Enable press; only a pause acts in 'auto'.
   create_routine: () => "routine_consent",
   update_routine: (f: ActFacts) => f.routine === "pause" ? true : f.routine === "delete" ? "cant_undo" : "routine_consent",
+  // Phase 7b (owner decisions, 8 October 2026): a to-do from someone else's words always asks; the copilot branches
+  // prepare that Confirm whatever decideAct says (the floor holds in every mode).
+  loose_end_action: (f: ActFacts) => f.looseEnd === "todo" ? "others_words_todo" : true,
+  respond_to_commitment: (f: ActFacts) => f.commitment === "accept" ? "others_words_todo" : f.commitment === "decline" ? "answers_others" : true,
+  set_blocked_on: () => true,
+  respond_to_block: () => "answers_others",
 } satisfies Record<string, (f: ActFacts) => true | AskReason>);
 
 const ask = (reason: AskReason | null): ActDecision => ({ act: false, reason });

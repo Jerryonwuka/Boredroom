@@ -58,6 +58,19 @@ vi.mock("@/server/services/routines", () => ({
   reportedKeysLike: async (_id: string, prefix: string) => svc.reported.filter((k) => k.startsWith(prefix)),
 }));
 vi.mock("@/server/services/views", () => ({ reviewQueue: async () => svc.queue }));
+// Phase 7b (owner decisions, 8 October 2026): the loose ends and commitments the roundup and the loose_ends template read.
+const loops = vi.hoisted(() => ({
+  ready: false, looseEnds: [] as unknown[], commitments: [] as unknown[], scans: [] as Record<string, unknown>[], found: [] as unknown[], lists: 0,
+}));
+vi.mock("@/server/services/loose-ends", () => ({
+  listLooseEnds: async () => { loops.lists++; return { ready: loops.ready, items: loops.looseEnds, counts: { open: loops.looseEnds.length }, lastScanAt: null }; },
+}));
+vi.mock("@/server/services/commitments", () => ({
+  listCommitments: async () => ({ ready: loops.ready, scopes: ["mine"], items: loops.commitments, nextBefore: null, counts: null, people: [] }),
+}));
+vi.mock("@/server/services/loose-end-detect", () => ({
+  scanLooseEnds: async (_ctx: unknown, o: Record<string, unknown>) => { loops.scans.push(o); return { ready: loops.ready, scanned: 3, candidates: 1, found: loops.found, engine: "builtin", note: null }; },
+}));
 vi.mock("@/server/services/brenda", () => ({ briefing: async () => { throw new Error("still owed reads no briefing"); } }));
 vi.mock("@/server/services/follow-up-facts", () => ({
   orgClock: async () => ({ schedule: { timezone: "Africa/Lagos", workingDays: [1, 2, 3, 4, 5], start: "09:00", end: "17:00" } }),
@@ -93,6 +106,7 @@ beforeEach(() => {
   svc.items = { waiting: { ready: true, items: [], nextBefore: null }, sent: { ready: true, items: [], nextBefore: null } };
   svc.queue = { submissions: [], adjustments: [], exceptions: [], incidents: [], overdue: [] };
   svc.briefing = { assignmentsNotPickedUp: [] };
+  loops.ready = false; loops.looseEnds = []; loops.commitments = []; loops.scans = []; loops.found = []; loops.lists = 0;
 });
 
 describe("consent lines (C.5): what Enable says yes to", () => {
@@ -101,8 +115,9 @@ describe("consent lines (C.5): what Enable says yes to", () => {
     expect(consentLines({ template: "morning_brief", params: {}, quietWhenEmpty: true }, o)).toEqual(["Send you a brief at the time set: what's waiting on you, with links.", "Nothing goes to anyone else."]);
   });
   it("what's still owed, with its quiet line only when on", () => {
+    // Phase 7b: the roundup also lists the person's loose ends and overdue commitments.
     expect(consentLines({ template: "still_owed", params: {}, quietWhenEmpty: true }, o)).toEqual([
-      "Send you what's still owed: follow-ups, messages between assistants, overdue or blocked tasks and assignments nobody picked up.",
+      "Send you what's still owed: follow-ups, messages between assistants, overdue or blocked tasks, assignments nobody picked up, your loose ends and overdue commitments.",
       "Stay quiet when there's nothing.", "Nothing goes to anyone else.",
     ]);
     expect(consentLines({ template: "still_owed", params: {}, quietWhenEmpty: false }, o)).not.toContain("Stay quiet when there's nothing.");
@@ -124,6 +139,16 @@ describe("consent lines (C.5): what Enable says yes to", () => {
   });
   it("uses lib/routines' template words", () => {
     expect(TEMPLATE_WORDS).toBe(ROUTINE_WORDS.templates);
+  });
+  it("loose ends (phase 7b): what it reads, its one request, its quiet line, and that it is private", () => {
+    expect(consentLines({ template: "loose_ends", params: {}, quietWhenEmpty: true }, o)).toEqual([
+      "Look through the conversations you can read for promises you made, things asked of you and things you asked of others that never became a to-do, reminder, follow-up or commitment.",
+      "Uses at most 1 of your daily assistant requests a run when the AI is on; without it, only the clearest ones.",
+      "Stay quiet when there's nothing new.",
+      "Send you what it found, privately. Nothing goes to anyone else, and nothing is added to your lists until you choose.",
+    ]);
+    expect(consentLines({ template: "loose_ends", params: {}, quietWhenEmpty: false }, o)).not.toContain("Stay quiet when there's nothing new.");
+    expect(TEMPLATE_WORDS.loose_ends).toEqual({ name: "Loose ends", description: "Looks through your conversations for promises, asks of you and asks you made that never became a to-do, reminder, follow-up or commitment.", defaultName: "Loose ends" });
   });
 });
 
@@ -302,5 +327,90 @@ describe("afternoon check", () => {
     const second = await runTemplate(ctx("manager", "David Lead"), row("afternoon_check"), { mode: "run", now: new Date("2026-10-09T15:00:00Z") });
     expect(second.empty).toBe(true);
     expect(second.reportedKeys).toEqual([]);
+  });
+});
+
+// ---- Phase 7b (owner decisions, 8 October 2026) ---------------------------------------------------------------------------
+
+const LE1 = "00000000-0000-4000-8000-0000000001e1";
+const LE2 = "00000000-0000-4000-8000-0000000001e2";
+const MSG = "00000000-0000-4000-8000-0000000002e1";
+const CONV = "00000000-0000-4000-8000-0000000003e1";
+const looseEnd = (id: string, kind: "promise" | "asked_of_me" | "i_asked", headline: string) => ({
+  id, kind, status: "open", title: "Send the deck", dueAt: null, dueWords: null, dueLabel: kind === "promise" ? "Thu 9 Oct, 17:00" : null, counterpart: null,
+  message: { id: MSG, conversationId: CONV, at: "2026-10-08T09:00:00Z", href: "/x", quote: "I'll send the deck", withdrawn: false, where: "#Design" },
+  detectedBy: "builtin", confidence: 0.8, source: "routine", actions: ["todo"], result: null, headline, createdAt: "2026-10-08T09:00:00Z", actedAt: null, href: "/y",
+});
+
+describe("loose ends (phase 7b)", () => {
+  it("a preview lists the loose ends open now: no scan, no model, nothing recorded", async () => {
+    loops.ready = true;
+    loops.looseEnds = [looseEnd(LE1, "promise", "You said you'd “Send the deck” for Ben"), looseEnd(LE2, "asked_of_me", "Ada asked you to “Review the copy”")];
+    const r = await runTemplate(ctx("employee"), row("loose_ends"), { mode: "preview", now: new Date("2026-10-09T16:30:00Z") });
+    expect(loops.scans).toEqual([]);
+    expect(r.reportedKeys).toEqual([]);
+    expect(r.output.lead).toBe("2 loose ends are open.");
+    expect(r.output.sections.map((x) => [x.id, x.label])).toEqual([["promise", "Promises you made"], ["asked_of_me", "Asked of you"]]);
+    expect(r.output.sections[0].items[0]).toEqual({ text: "You said you'd “Send the deck” for Ben", detail: "due Thu 9 Oct, 17:00", sources: [{ kind: "message", id: MSG, conversationId: CONV }, { kind: "loose_end", id: LE1 }] });
+  });
+
+  it("a run scans as the person with at most one model call, over the days since its last run (3 the first time)", async () => {
+    loops.ready = true;
+    loops.found = [looseEnd(LE1, "i_asked", "You asked Ben to “Fix the login bug”")];
+    const first = await runTemplate(ctx("employee"), row("loose_ends"), { mode: "run", now: new Date("2026-10-09T16:30:00Z") });
+    expect(loops.scans[0]).toMatchObject({ days: 3, source: "routine", useModel: true, maxModelCalls: 1 });
+    expect(first.output.lead).toBe("Found 1 loose end.");
+    expect(first.output.sections.map((x) => x.label)).toEqual(["You asked others"]);
+    expect(first.reportedKeys).toEqual([`loose:${LE1}`]);
+    await runTemplate(ctx("employee"), row("loose_ends"), { mode: "run", now: new Date("2026-10-09T16:30:00Z"), since: "2026-10-08T16:00:00Z" });
+    expect(loops.scans[1]).toMatchObject({ days: 2 });
+    await runTemplate(ctx("employee"), row("loose_ends"), { mode: "run", now: new Date("2026-10-09T16:30:00Z"), since: "2026-09-01T16:00:00Z" });
+    expect(loops.scans[2]).toMatchObject({ days: 14 });
+  });
+
+  it("each loose end is reported once; nothing new is the calm line", async () => {
+    loops.ready = true;
+    loops.found = [looseEnd(LE1, "promise", "You said you'd “Send the deck”")];
+    svc.reported = [`loose:${LE1}`];
+    const r = await runTemplate(ctx("employee"), row("loose_ends"), { mode: "run", now: new Date("2026-10-09T16:30:00Z") });
+    expect(r.empty).toBe(true);
+    expect(r.output.lead).toBe("No new loose ends.");
+    expect(r.reportedKeys).toEqual([]);
+  });
+
+  it("the roundup adds open loose ends and overdue commitments once 0048 is there, and leaves them out before", async () => {
+    const before = await runTemplate(ctx("employee"), row("still_owed"), { mode: "run", now: new Date("2026-10-09T15:00:00Z") });
+    expect(before.counts).toEqual({ follow_ups: 0, sent: 0, received: 0, tasks: 0 });
+    expect(before.output.sections.map((x) => x.id)).not.toContain("loose_ends");
+    loops.ready = true;
+    loops.looseEnds = [looseEnd(LE1, "promise", "You said you'd “Send the deck”")];
+    loops.commitments = [{
+      id: LE2, viewer: "committer", display: "overdue", title: "Fix the login bug", asker: { firstName: "Olu" }, dueLabel: "Tue 6 Oct, 17:00",
+      message: { id: MSG, href: "/m" }, where: { conversationId: CONV },
+    }, { id: LE1, viewer: "asker", display: "overdue", title: "Theirs", asker: null, dueLabel: null, message: { id: MSG, href: null }, where: { conversationId: CONV } }];
+    const after = await runTemplate(ctx("employee"), row("still_owed"), { mode: "run", now: new Date("2026-10-09T15:00:00Z") });
+    expect(after.counts).toMatchObject({ loose_ends: 1, commitments: 1 });
+    expect(after.output.sections.find((x) => x.id === "commitments")).toMatchObject({
+      label: "Your overdue commitments",
+      items: [{ text: "“Fix the login bug” for Olu", detail: "was due Tue 6 Oct, 17:00", sources: [{ kind: "commitment", id: LE2 }, { kind: "message", id: MSG, conversationId: CONV }] }],
+    });
+    expect(after.output.sections.find((x) => x.id === "loose_ends")?.label).toBe("Loose ends");
+  });
+});
+
+describe("the chase's second stall (phase 7b): the answer will suggest a new due date", () => {
+  const stalled = (id: string, title: string, last: string | null) => ({ id, title, assignee_membership_id: BEN, assignee_name: "Ben Okafor", assistant_name: null, created_at: "2026-09-01T09:00:00Z", last_signal_at: last });
+  const now = new Date("2026-10-09T15:00:00Z");
+
+  it("a task this routine chased before for another stall is marked replan, in the preview and the run", async () => {
+    db.stalled = [stalled(T1, "Landing page", "2026-10-05T10:00:00Z"), stalled(T2, "Pricing page", null)];
+    svc.reported = [`chase:${T1}:2026-09-20T10:00:00.000Z`];
+    const preview = await runTemplate(ctx(), row("chase_stalled"), { mode: "preview", now });
+    expect(preview.actions.map((a) => [a.taskId, a.replan ?? false])).toEqual([[T1, true], [T2, false]]);
+    expect(preview.actions[0].text).toBe("Would ask Ben's Brenda about “Landing page”");
+    expect(preview.output.sections[0].items[0].detail).toMatch(/; stalled before; the answer will suggest a new due date$/);
+    const run = await runTemplate(ctx(), row("chase_stalled"), { mode: "run", now });
+    expect(run.actions.map((a) => [a.taskId, a.done, a.replan ?? false])).toEqual([[T1, true, true], [T2, true, false]]);
+    expect(run.output.sections.find((x) => x.id === "asked")?.items[0].detail).toBe("stalled before; the answer will suggest a new due date");
   });
 });

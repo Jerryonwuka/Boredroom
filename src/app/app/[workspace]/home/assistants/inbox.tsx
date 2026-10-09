@@ -5,7 +5,10 @@ import { PageNote } from "@/components/ui/page-notes";
 import { assistantProfiles } from "@/server/services/assistant-profile";
 import { waitingForMe } from "@/server/services/follow-ups";
 import { listAssistantItems } from "@/server/services/assistant-items";
+import { waitingCommitments } from "@/server/services/commitments";
+import { waitingBlocks } from "@/server/services/task-blocks";
 import { ASSISTANT_ITEM_LIMITS, ASSISTANT_ITEM_WORDS } from "@/lib/assistant-items";
+import type { LoopInboxItem } from "@/lib/commitments";
 
 /**
  * What every "Between assistants" page shares (owner decision, 8 October 2026: personal assistants, phase 6): the
@@ -27,14 +30,30 @@ export const param = (v: string | string[] | undefined) => [v].flat()[0]?.trim()
  * the items waiting for them (the tab's count; the Waiting page lists them). Both settle anything past its time as
  * they read (follow-ups at their deadline, requests at their expiry), so the count is right with an old worker too.
  * `ready` is migration 0043's; follow-ups (0039) answer [] on their own before theirs.
+ *
+ * Phase 7b (owner decision, 8 October 2026: "Brenda keeps the loops closed"; contract H.3): `loops`, what is waiting on
+ * the person that is not an assistant item: commitments the workspace's assistant noted for them and open asks they
+ * were told about (`waitingCommitments`, which settles expired ones as it reads) and "blocked on you" questions
+ * (`waitingBlocks`). They count in the tab. Both answer [] before migration 0048; a read that fails leaves them out
+ * (the inbox still shows everything else) and says so in the server log.
  */
 export async function loadInbox(ctx: OrgContext) {
-  const [assistants, asks, waiting] = await Promise.all([
+  const [assistants, asks, waiting, loops] = await Promise.all([
     assistantProfiles(ctx),
     waitingForMe(ctx),
     listAssistantItems(ctx, { box: "waiting", status: "open", limit: ASSISTANT_ITEM_LIMITS.listMax }),
+    loadLoops(ctx),
   ]);
-  return { name: assistants.personal.name, asks, items: waiting.items, ready: waiting.ready, count: asks.length + waiting.items.length };
+  return { name: assistants.personal.name, asks, items: waiting.items, loops, ready: waiting.ready, count: asks.length + waiting.items.length + loops.length };
+}
+
+/** Blocks on the person, then noted commitments and open asks (phase 7b). Never throws: [] when they cannot be read. */
+export async function loadLoops(ctx: OrgContext): Promise<LoopInboxItem[]> {
+  const [blocks, commitments] = await Promise.all([
+    waitingBlocks(ctx).catch((err: unknown) => { console.warn(`[inbox] blocks waiting on the person could not be read: ${(err as Error)?.message ?? String(err)}`); return [] as LoopInboxItem[]; }),
+    waitingCommitments(ctx).catch((err: unknown) => { console.warn(`[inbox] commitments waiting on the person could not be read: ${(err as Error)?.message ?? String(err)}`); return [] as LoopInboxItem[]; }),
+  ]);
+  return [...blocks, ...commitments];
 }
 
 export function InboxHeader({ base, name, tab, count }: { base: string; name: string; tab: InboxTab; count: number }) {

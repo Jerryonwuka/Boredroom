@@ -20,6 +20,11 @@
  *
  * Read-only while someone else is signed in as the person (they may look, not change). Plain sentence-case words from
  * lib/routines (`ROUTINE_WORDS`); every field labelled, errors tied to their fields; it fits a 400px phone.
+ *
+ * Phase 7b (owner decision, 8 October 2026: "Brenda keeps the loops closed"; contract D.2 and H.6): "Loose ends" joins
+ * the templates from `ROUTINE_TEMPLATES` (weekdays at 17:30 to start with: "every evening"). Before migration 0048 it is
+ * listed in `RoutineList.unavailable` and shown disabled with "This needs a database update first." (`unavailable`, or,
+ * when the caller does not pass it, read once from GET /brenda/routines as a new routine's sheet opens).
  */
 import { useEffect, useId, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -33,6 +38,7 @@ import { successToast } from "@/components/ui/toast";
 import { RoutinePreviewPanel, useRoutinePreview } from "@/components/app/routine-preview";
 import { RoutineHistory, routineWhen } from "@/components/app/routine-history";
 import { api, isApiFailure } from "@/lib/api-client";
+import { LOOP_WORDS } from "@/lib/commitments";
 import {
   CADENCE_KINDS, DAY_NAMES, DAY_SHORT, ROUTINE_TEMPLATES, ROUTINE_WORDS, TIME_PATTERN, WEEK_ORDER, cadenceWords, isChasing, ordinal,
   type Cadence, type CadenceKind, type RoutineInput, type RoutineList, type RoutinePatch, type RoutineTemplate, type RoutineView,
@@ -47,13 +53,21 @@ export type RoutineStep = "setup" | "preview" | "history";
 /** What the sheet opens on: a new routine's set-up, or a saved routine's step. */
 export type RoutineSheetMode = { step: "setup"; routine: RoutineView | null } | { step: RoutineStep; routine: RoutineView };
 
-/** When a new routine of each template runs unless the person says otherwise (as the chat's helper phrasings). */
-const DEFAULT_SCHEDULE: Record<RoutineTemplate, { kind: CadenceKind; days: number[]; time: string }> = {
+type Schedule = { kind: CadenceKind; days: number[]; time: string };
+/**
+ * When a new routine of each template runs unless the person says otherwise (as the chat's helper phrasings). Keyed by
+ * name, not by the template type, so a template lib/routines adds later (phase 7b's loose_ends) starts from the morning
+ * brief's schedule until it has its own here.
+ */
+const DEFAULT_SCHEDULE: Record<string, Schedule> = {
   morning_brief: { kind: "weekdays", days: [1], time: "09:00" },
   still_owed: { kind: "weekly", days: [5], time: "16:00" },
   afternoon_check: { kind: "weekdays", days: [1], time: "15:00" },
   chase_stalled: { kind: "weekly", days: [5], time: "16:00" },
+  // Phase 7b: "every evening" (contract D.2, DEFAULT_TIMES.loose_ends "17:30").
+  loose_ends: { kind: "weekdays", days: [1], time: "17:30" },
 };
+const scheduleFor = (t: RoutineTemplate): Schedule => DEFAULT_SCHEDULE[t] ?? DEFAULT_SCHEDULE.morning_brief;
 
 const sameSet = (a: readonly string[], b: readonly string[]) => a.length === b.length && a.every((x) => b.includes(x));
 const told = (err: unknown) => (isApiFailure(err) && (err.error.status < 500 || err.error.code === "NOT_READY") ? err.error.message : OFFLINE);
@@ -63,9 +77,12 @@ const told = (err: unknown) => (isApiFailure(err) && (err.error.status < 500 || 
  * follows. `timeZone`: the person's own (for the time's hint); `onTimeZone`: closes the sheet and takes the person to
  * the time zone in Quiet hours.
  */
-export function RoutineSheet({ orgSlug, mode, onClose, onChange, chase, assistantName, timeZone, readOnly, onTimeZone }: {
+export function RoutineSheet({ orgSlug, mode, onClose, onChange, chase, unavailable, assistantName, timeZone, readOnly, onTimeZone }: {
   orgSlug: string; mode: RoutineSheetMode; onClose: () => void; onChange: (v: RoutineView, how: "created" | "updated" | "enabled") => void;
-  chase: RoutineList["chase"]; assistantName: string; timeZone: string; readOnly: boolean; onTimeZone: () => void;
+  chase: RoutineList["chase"];
+  /** Phase 7b: templates the server cannot run yet (`RoutineList.unavailable`; loose_ends before 0048). Read here when not given. */
+  unavailable?: readonly string[];
+  assistantName: string; timeZone: string; readOnly: boolean; onTimeZone: () => void;
 }) {
   const formId = useId();
   const [routine, setRoutine] = useState<RoutineView | null>(mode.routine);
@@ -117,7 +134,7 @@ export function RoutineSheet({ orgSlug, mode, onClose, onChange, chase, assistan
           tabs={[{ label: E.setUp, value: "setup" }, { label: ROUTINE_WORDS.preview.heading, value: "preview" }, { label: ROUTINE_WORDS.history.heading, value: "history" }]} />
       ) : null}
       {step === "setup" ? (
-        <RoutineSetupForm formId={formId} orgSlug={orgSlug} routine={routine} chase={chase} timeZone={timeZone} readOnly={readOnly}
+        <RoutineSetupForm formId={formId} orgSlug={orgSlug} routine={routine} chase={chase} unavailable={unavailable} timeZone={timeZone} readOnly={readOnly}
           onSaving={setSaving} onSaved={saved} onTimeZone={onTimeZone} />
       ) : step === "preview" && routine ? (
         <>
@@ -147,14 +164,24 @@ type Errors = Partial<Record<"form" | "name" | "days" | "time" | "teams", string
  * The "Set up" step's form. Validated here first (a day, a 24-hour time, a team for a chase), then by the server, whose
  * words show at the top of the form and on the field they belong to.
  */
-function RoutineSetupForm({ formId, orgSlug, routine, chase, timeZone, readOnly, onSaving, onSaved, onTimeZone }: {
-  formId: string; orgSlug: string; routine: RoutineView | null; chase: RoutineList["chase"]; timeZone: string; readOnly: boolean;
+function RoutineSetupForm({ formId, orgSlug, routine, chase, unavailable: given, timeZone, readOnly, onSaving, onSaved, onTimeZone }: {
+  formId: string; orgSlug: string; routine: RoutineView | null; chase: RoutineList["chase"]; unavailable?: readonly string[]; timeZone: string; readOnly: boolean;
   onSaving: (busy: boolean) => void; onSaved: (v: RoutineView, created: boolean) => void; onTimeZone: () => void;
 }) {
   const id = useId();
   const editing = !!routine;
   const firstTemplate: RoutineTemplate = routine?.template ?? "morning_brief";
-  const start = DEFAULT_SCHEDULE[firstTemplate];
+  const start = scheduleFor(firstTemplate);
+  // Phase 7b: which templates cannot be chosen yet. The caller's list, or (a new routine, none given) the server's.
+  const [fetched, setFetched] = useState<readonly string[] | null>(null);
+  const unavailable = given ?? fetched ?? [];
+  useEffect(() => {
+    if (given || editing) return;
+    let gone = false;
+    api<RoutineList & { unavailable?: string[] }>(`/api/orgs/${orgSlug}/brenda/routines`)
+      .then((r) => { if (!gone) setFetched(r.unavailable ?? []); }, () => { /* the server refuses it on save, in words */ });
+    return () => { gone = true; };
+  }, [given, editing, orgSlug]);
   const [template, setTemplate] = useState<RoutineTemplate>(firstTemplate);
   const [name, setName] = useState(routine?.name ?? T[firstTemplate].defaultName);
   const [nameTouched, setNameTouched] = useState(editing);
@@ -183,7 +210,7 @@ function RoutineSetupForm({ formId, orgSlug, routine, chase, timeZone, readOnly,
   const pickTemplate = (t: RoutineTemplate) => {
     setTemplate(t);
     if (!nameTouched) setName(T[t].defaultName);
-    if (!scheduleTouched) { const d = DEFAULT_SCHEDULE[t]; setKind(d.kind); setDays(d.days); setTime(d.time); }
+    if (!scheduleTouched) { const d = scheduleFor(t); setKind(d.kind); setDays(d.days); setTime(d.time); }
     setErrors({});
   };
   const touchSchedule = () => setScheduleTouched(true);
@@ -244,10 +271,14 @@ function RoutineSetupForm({ formId, orgSlug, routine, chase, timeZone, readOnly,
           <legend className={label}>{E.whatItDoes}</legend>
           <div className="mt-2.5 space-y-3">
             {ROUTINE_TEMPLATES.map((t) => {
-              const locked = isChasing(t) && !chase.allowed;
+              const cannotChase = isChasing(t) && !chase.allowed;
+              // Phase 7b: a template the server cannot run yet (loose_ends before migration 0048).
+              const notReady = unavailable.includes(t);
+              const locked = cannotChase || notReady;
               return (
                 <Radio key={t} name={`${id}-template`} value={t} checked={template === t} disabled={locked} onChange={() => pickTemplate(t)}
-                  hint={<>{T[t].description}{locked ? <span className="mt-0.5 block text-subtle">{chase.leadsOnly ? E.chaseLeadsOnly : E.pickTeam}</span> : null}</>}>
+                  hint={<>{T[t].description}{notReady ? <span className="mt-0.5 block text-subtle">{LOOP_WORDS.looseEnds.notReady}</span>
+                    : cannotChase ? <span className="mt-0.5 block text-subtle">{chase.leadsOnly ? E.chaseLeadsOnly : E.pickTeam}</span> : null}</>}>
                   {T[t].name}
                 </Radio>
               );

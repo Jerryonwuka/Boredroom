@@ -18,10 +18,12 @@ import { formatLongDate } from "@/lib/utils";
 import type { UsagePurpose, UsageSummary } from "@/server/services/ai-usage";
 
 // "followup": follow-ups between assistants (owner decision, 8 October 2026: personal assistants, phase 4); "mention":
-// assistants tagged in a conversation (owner decision, 8 October 2026: personal assistants, phase 5).
+// assistants tagged in a conversation (owner decision, 8 October 2026: personal assistants, phase 5); "loose_ends": a
+// person's look for loose ends, and "commitments": the workspace assistant noticing commitments in group chats (owner
+// decision, 8 October 2026: phase 7b).
 const PURPOSE_LABEL: Record<UsagePurpose, string> = {
   chat: "Chat", plan: "To-do planner", report: "Team reports", summary: "Summaries", test: "Connection tests", other: "Other", followup: "Follow-ups",
-  mention: "Mentions in Messages",
+  mention: "Mentions in Messages", loose_ends: "Loose ends", commitments: "Commitments in group chats",
 };
 
 const exact = new Intl.NumberFormat("en-GB");

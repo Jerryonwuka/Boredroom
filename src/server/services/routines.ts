@@ -30,6 +30,9 @@
  * Every write checks that nobody is signed in as the person (support), audits (`routine.*`, metadata `{ template }`
  * only) and is logged in Brenda's log with neutral words (`personalSummary` names it for the person's own Activity).
  * Before migration 0046 every change answers 503 NOT_READY and every read says `ready: false` (server/lib/schema-0046).
+ *
+ * Phase 7b (owner decisions, 8 October 2026): the `loose_ends` template needs migration 0048 as well. Before it, the list
+ * names it in `unavailable`, and setting one up, changing, previewing or enabling one answers 503 NOT_READY.
  */
 import { z } from "zod";
 import { withUser, withWorker, type Db } from "@/server/db";
@@ -40,6 +43,8 @@ import { isValidTimeZone, localDate } from "@/server/lib/time";
 import { memberContext } from "@/server/lib/member-context";
 import { forget0046, isMissingSchema, retryWithout0046, schema0046Ready } from "@/server/lib/schema-0046";
 import { forget0047, personalTable, retryWithout0047 } from "@/server/lib/schema-0047";
+import { schema0048Ready } from "@/server/lib/schema-0048";
+import { LOOPS_NOT_READY_SHORT } from "@/lib/commitments";
 import { nextRunAt, personTimeZone, quietState } from "@/server/lib/routine-time";
 import { audit, notify } from "@/server/services/common";
 import { logAction } from "@/server/services/brenda";
@@ -98,6 +103,16 @@ function parse<T>(schema: z.ZodType<T>, raw: unknown): T {
 // ---- Shared pieces ------------------------------------------------------------------------------------------------------
 
 const notReady = () => new AppError(503, "NOT_READY", ROUTINES_NOT_READY);
+/** Templates that need a later migration than routines themselves (phase 7b: loose_ends needs 0048). */
+const NEEDS_0048: readonly RoutineTemplate[] = ["loose_ends"];
+/** 503 NOT_READY for a template whose migration is not applied yet (phase 7b), in the caller's transaction. */
+async function templateReady(db: Db, template: RoutineTemplate): Promise<void> {
+  if (NEEDS_0048.includes(template) && !(await schema0048Ready(db))) throw new AppError(503, "NOT_READY", LOOPS_NOT_READY_SHORT);
+}
+/** The templates that cannot be set up here yet (`RoutineList.unavailable`). */
+async function unavailableTemplates(db: Db): Promise<RoutineTemplate[]> {
+  return (await schema0048Ready(db)) ? [] : [...NEEDS_0048];
+}
 const notYours = () => notFound(W.errors.notYours);
 function notWhileImpersonated(ctx: OrgContext, message: string = W.errors.impersonated) {
   if (ctx.user.impersonation) throw forbidden(message);
@@ -386,6 +401,7 @@ async function chaseTeamsIn(db: Db, ctx: OrgContext): Promise<RoutineList["chase
 
 // ---- Reading routines and runs --------------------------------------------------------------------------------------------
 
+// Before 0046 nothing is available (`ready: false`), so `unavailable` is left out; from 0046 it names what still waits.
 const EMPTY_LIST = (): RoutineList => ({ ready: false, routines: [], limits: { perPerson: ROUTINE_LIMITS.perPerson }, chase: { allowed: false, leadsOnly: true, teams: [] } });
 
 /** The person's routines (not deleted), oldest first, with what a chase may cover. `ready: false` before 0046. */
@@ -398,7 +414,7 @@ export async function listRoutines(ctx: OrgContext): Promise<RoutineList> {
     const live = rows.some((r) => isChasing(r.template)) ? await liveTeams(db, ctx) : null;
     return {
       ready: true, routines: rows.map((r) => viewOf(r, tz, live)), limits: { perPerson: ROUTINE_LIMITS.perPerson },
-      chase: await chaseTeamsIn(db, ctx),
+      chase: await chaseTeamsIn(db, ctx), unavailable: await unavailableTemplates(db),
     };
   });
 }
@@ -481,6 +497,7 @@ export async function createRoutine(ctx: OrgContext, raw: RoutineInput): Promise
   return personTx(ctx, async (db) => {
     // One person's count and insert in order: two tabs can't both add the 20th.
     await db.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [`routines:${ctx.membership.id}`]);
+    await templateReady(db, input.template);
     const { n } = await db.one<{ n: number }>(`SELECT count(*)::int AS n FROM routines WHERE membership_id = $1 AND deleted_at IS NULL`, [ctx.membership.id]);
     if (n >= ROUTINE_LIMITS.perPerson) throw conflict("ROUTINE_LIMIT", W.errors.limit);
     if (isChasing(input.template)) {
@@ -507,6 +524,7 @@ export async function updateRoutine(ctx: OrgContext, id: string, raw: RoutinePat
   return personTx(ctx, async (db) => {
     const r = await loadOwn(db, ctx, id, { lock: true });
     if (!r || r.deleted_at) throw notYours();
+    await templateReady(db, r.template);
     const before = rowOf(r);
     const name = patch.name ?? r.name;
     const cadence = patch.cadence ?? before.cadence;
@@ -611,9 +629,11 @@ export async function previewRoutine(ctx: OrgContext, idOrInput: string | Routin
     if (typeof idOrInput === "string") {
       const r = await loadOwn(db, ctx, idOrInput);
       if (!r || r.deleted_at) throw notYours();
+      await templateReady(db, r.template);
       return prepare(db, ctx, rowOf(r));
     }
     const input = parse(routineInputSchema, idOrInput);
+    await templateReady(db, input.template);
     if (isChasing(input.template) && Array.isArray(input.teamIds) && !input.teamIds.length) throw invalid(W.errors.noTeams, { teamIds: [W.errors.noTeams] });
     return prepare(db, ctx, draftRow(ctx, input));
   });
@@ -647,6 +667,7 @@ export async function enableRoutine(ctx: OrgContext, id: string, p: { consentHas
   return personTx(ctx, async (db) => {
     const r = await loadOwn(db, ctx, id, { lock: true });
     if (!r || r.deleted_at) throw notYours();
+    await templateReady(db, r.template);
     const row = rowOf(r);
     // A chase's hash names the teams and people as they are now: one added since the preview refuses (409).
     const prep = await prepare(db, ctx, row);
@@ -1026,11 +1047,11 @@ export async function completeRun(runId: string, result: TemplateResult, opts: {
         }
       }
       await db.query(
-        `UPDATE routine_runs SET finished_at = $2, status = $3, summary = $4, output = $5, counts = $6, actions = $7, used_model = false,
+        `UPDATE routine_runs SET finished_at = $2, status = $3, summary = $4, output = $5, counts = $6, actions = $7, used_model = $11,
            delivery = $8, held_until = $9, delivered_at = $10
          WHERE id = $1`,
         [run.id, now.toISOString(), status, summary, JSON.stringify(output), JSON.stringify(result.counts ?? {}), JSON.stringify(fitActions(result.actions ?? [])),
-         delivery, heldUntil, delivery === "delivered" ? now.toISOString() : null]);
+         delivery, heldUntil, delivery === "delivered" ? now.toISOString() : null, !!result.usedModel]);
       await db.query(`UPDATE routines SET failures = 0, last_status = $2 WHERE id = $1`, [run.routine_id, status]);
       const keys = [...new Set((result.reportedKeys ?? []).filter((k): k is string => typeof k === "string" && k.length >= 1 && k.length <= 200))];
       if (keys.length) {

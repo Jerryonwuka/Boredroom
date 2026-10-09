@@ -27,6 +27,12 @@ const W = ASSISTANT_ITEM_WORDS.page;
  * Not gated by the plan: answering never needs the AI, and a record stays readable. The page refreshes as items and
  * follow-ups change (the workspace's change stream). Before migration 0043 it says the inbox needs a database update
  * and still shows the follow-up asks (0039).
+ *
+ * Phase 7b (owner decision, 8 October 2026: "Brenda keeps the loops closed"; contract H.3): the page also lists what is
+ * waiting on the person that is not an assistant item, in this order: follow-up asks, "Ben is blocked on you" (Answer
+ * or Not me), requests to accept, commitments the workspace's assistant noted for them and open asks (Add to my to-dos,
+ * Take it on, Decline, Not a commitment), then messages and replies. `?f=` also marks a commitment or a block (their
+ * notifications link here). Before migration 0048 none of them shows and nothing else changes.
  */
 export default async function WaitingForYouPage({ params, searchParams }: { params: Promise<{ workspace: string }>; searchParams: Promise<{ f?: string | string[] }> }) {
   const { workspace } = await params;
@@ -45,7 +51,7 @@ export default async function WaitingForYouPage({ params, searchParams }: { para
       <div className="w-full min-w-0 max-w-3xl space-y-6">
         {!inbox.ready ? <Alert tone="info">{W.notReady}</Alert> : null}
         {/* Always mounted, so a card just answered stays after the refresh drops it; the empty state shows once nothing does. */}
-        <AssistantWaiting orgSlug={ctx.org.slug} asks={inbox.asks} items={inbox.items} timeZone={ctx.org.timezone} now={now.getTime()} title={null} highlight={highlight}
+        <AssistantWaiting orgSlug={ctx.org.slug} asks={inbox.asks} items={inbox.items} loops={inbox.loops} timeZone={ctx.org.timezone} now={now.getTime()} title={null} highlight={highlight}
           empty={inbox.ready ? <EmptyState icon={Inbox} title={W.emptyWaiting.title} description={W.emptyWaiting.body} /> : null} />
       </div>
       <PageNotes>

@@ -20,11 +20,15 @@ describe("migration 0037", () => {
     // Personal assistants, phase 4 (owner decision, 8 October 2026): 0039 widens the same CHECK with 'followup'; its own
     // list is checked against USAGE_PURPOSES in follow-ups-lib.test.ts. Phase 5 (owner decision, 8 October 2026): 0041
     // widens it again with 'mention' (checked in mentions-lib.test.ts).
-    expect(listed(/ai_usage_purpose_check CHECK \(purpose IN \(([^)]*)\)\)/)).toEqual(USAGE_PURPOSES.filter((p) => p !== "followup" && p !== "mention"));
+    // Phase 7b (owner decision, 8 October 2026): 0048 adds 'loose_ends' and 'commitments' (checked in loops-migration.test.ts).
+    const later = new Set(["followup", "mention", "loose_ends", "commitments"]);
+    expect(listed(/ai_usage_purpose_check CHECK \(purpose IN \(([^)]*)\)\)/)).toEqual(USAGE_PURPOSES.filter((p) => !later.has(p)));
   });
 
   it("lets a message be written by exactly the kinds of author the code knows, the person by default", () => {
-    expect(listed(/messages_author_kind_check CHECK \(author_kind IN \(([^)]*)\)\)/)).toEqual([...AUTHOR_KINDS]);
+    // Phase 7b (owner decision, 8 October 2026): 0048 adds 'workspace', the workspace assistant's own note in a thread
+    // (checked in loops-migration.test.ts).
+    expect(listed(/messages_author_kind_check CHECK \(author_kind IN \(([^)]*)\)\)/)).toEqual(AUTHOR_KINDS.filter((k) => k !== "workspace"));
     expect(code).toMatch(/ADD COLUMN IF NOT EXISTS author_kind text NOT NULL DEFAULT 'person'/);
   });
 
@@ -65,7 +69,9 @@ describe("the limits", () => {
     expect(AI_DAILY_REQUEST_LIMIT).toBe(150);
     // Phase 4 (owner decision, 8 October 2026): a follow-up ask counts against the requester's allowance, once per batch.
     // Phase 5 (owner decision, 8 October 2026): so does a mention in Messages, once per mention.
-    expect([...LIMITED_PURPOSES]).toEqual(["chat", "plan", "report", "followup", "mention"]);
+    // Phase 7b (owner decision, 8 October 2026): so does a look for loose ends, once per look. The workspace's own
+    // commitment detection is the workspace's, never a person's.
+    expect([...LIMITED_PURPOSES]).toEqual(["chat", "plan", "report", "followup", "mention", "loose_ends"]);
     expect(AI_BURST).toEqual({ requests: 20, windowSeconds: 60 });
     expect(AI_BURST_MESSAGE).toBe("That's a lot of requests in one minute. Wait a moment, then try again.");
   });

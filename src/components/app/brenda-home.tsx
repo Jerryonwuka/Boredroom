@@ -69,6 +69,13 @@
  * as seen (POST /brenda/opener/seen, and a key in this browser), so later visits that day show the usual chips. Before
  * migration 0046 the server cannot tell a first visit (`firstVisit: null`): this browser's key decides. No orange of its
  * own: the panel keeps its glow, and the box its Send.
+ *
+ * Loose ends and commitments (owner decision, 8 October 2026: phase 7b, "Brenda keeps the loops closed"): "Waiting for
+ * you" also holds "blocked on you" questions, commitments the workspace's assistant noted for the person and open asks
+ * (compact rows with their buttons under the row), counted in the "Between assistants" pill and the chat header's dot.
+ * After it, a "Loose ends" block (loose-ends-list `LooseEndsPanel`): the person's three newest open loose ends, each a
+ * row with the headline, where and when, the due date and a menu of its actions (a to-do always asks first, in a sheet),
+ * then "See all {n}"; with none, one line and "Look for loose ends". Private to the person. Hidden before migration 0048.
  */
 import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
@@ -95,6 +102,9 @@ import { api, isApiFailure } from "@/lib/api-client";
 import type { FollowUpView } from "@/lib/follow-ups";
 import { OPENER_WORDS, type Opener, type OpenerAction, type OpenerCount, type OpenerIcon } from "@/lib/opener";
 import type { AssistantItemView } from "@/lib/assistant-items";
+import type { LooseEndList, LoopInboxItem } from "@/lib/commitments";
+import { LooseEndsPanel } from "@/components/app/loose-ends-list";
+import type { Person } from "@/components/app/loose-end-actions";
 import { cn } from "@/lib/utils";
 import type { Conversation, ConversationSummary } from "@/server/services/brenda-history";
 
@@ -132,6 +142,12 @@ export type HomeData = {
    * when it could not be read). `firstVisit: null`: the server could not tell (before 0046), this browser decides.
    */
   opener?: Opener | null;
+  /** Phase 7b: the person's open loose ends (three at most, with the open count); null before 0048 or when unread. */
+  looseEnds?: LooseEndList | null;
+  /** Phase 7b: blocks on the person, commitments noted for them and open asks ([] before 0048). */
+  loops?: LoopInboxItem[];
+  /** Phase 7b: who a loose end can be handed to (only read when one on screen offers it). */
+  handOverPeople?: Person[];
 };
 
 type Ask = { icon: React.ComponentType<{ "aria-hidden"?: boolean }>; label: string; prompt: string };
@@ -387,7 +403,8 @@ export function BrendaHome({ data }: { data: HomeData }) {
   const kind = lead ? "lead" : "worker";
   const isOrg = role === "owner" || role === "hr";
   // Everything waiting for the person between assistants: follow-up asks (phase 4) and items (phase 6).
-  const waiting = (data.followUpsReady ? data.waiting.length : 0) + (data.itemsReady ? data.items.length : 0);
+  const loops = data.loops ?? [];
+  const waiting = (data.followUpsReady ? data.waiting.length : 0) + (data.itemsReady ? data.items.length : 0) + loops.length;
   const inbox = data.followUpsReady || data.itemsReady;
   // Her character is monochrome like the rest of v4 (her light takes the orb's orange); the orb brightens while she
   // listens (a live microphone).
@@ -463,8 +480,13 @@ export function BrendaHome({ data }: { data: HomeData }) {
               answered stays (as "Sent.", or what it became) after the refresh drops it; with nothing to show it renders
               nothing. */}
           {inbox ? (
-            <AssistantWaiting orgSlug={data.orgSlug} asks={data.followUpsReady ? data.waiting : []} items={data.itemsReady ? data.items : []} timeZone={data.timeZone} now={data.now}
+            <AssistantWaiting orgSlug={data.orgSlug} asks={data.followUpsReady ? data.waiting : []} items={data.itemsReady ? data.items : []} loops={loops} timeZone={data.timeZone} now={data.now}
               max={2} seeAllHref={`${base}/home/assistants`} compact cardClassName="bg-[color:var(--brenda-fill)] shadow-none" className="mb-5" />
+          ) : null}
+          {/* Phase 7b: the person's loose ends, after what is waiting for them; private to them, on every plan. */}
+          {data.looseEnds?.ready ? (
+            <LooseEndsPanel orgSlug={data.orgSlug} list={data.looseEnds} people={data.handOverPeople ?? []} timeZone={data.timeZone} now={data.now}
+              rowClassName="bg-[color:var(--brenda-fill)] shadow-none" className="mb-5" />
           ) : null}
           {data.aiEnabled ? (
             <>
@@ -655,7 +677,7 @@ function ChatView({ data, chat, box, onBack, onNewChat, history, sheet, onSheet,
   // Listening or working is live (orange, breathing); an error, a question waiting and idle keep their status colours.
   const dot = chat.pending || chat.dictation.listening ? "live" : chat.error ? "danger" : chat.waitingAt >= 0 ? "warning" : "success";
   const empty = chat.messages.length === 0 && !chat.pending && !chat.error;
-  const waitingCount = (data.followUpsReady ? data.waiting.length : 0) + (data.itemsReady ? data.items.length : 0);
+  const waitingCount = (data.followUpsReady ? data.waiting.length : 0) + (data.itemsReady ? data.items.length : 0) + (data.loops?.length ?? 0);
   // Past chats open as a sheet over the chat (small screens): a modal one.
   const small = useSyncExternalStore(subscribeSmall, smallNow, smallOnServer);
   const modal = sheet && small;

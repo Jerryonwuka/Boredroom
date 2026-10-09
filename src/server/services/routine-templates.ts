@@ -7,7 +7,15 @@
  * - afternoon_check: speaks only when something is blocked on the person, ready for them, or due today with no progress,
  *   and reports each thing once (routine_reported_items, migration 0046);
  * - chase_stalled: tasks with no progress for 2 working days (the owner's stalled rule) on the teams the person leads,
- *   each asked about once through a follow-up to the assignee's assistant (phase 4), then who was asked.
+ *   each asked about once through a follow-up to the assignee's assistant (phase 4), then who was asked;
+ * - loose_ends (owner decisions, 8 October 2026: phase 7b): the person's loose ends found since its last run (promises
+ *   they made, asks of them, asks they made that never became a to-do, reminder, follow-up or commitment), privately.
+ *   The one template that may use the model, bounded: its scan (loose-end-detect.ts, loaded when needed) makes at most one
+ *   call a run, one of the person's daily requests, and nothing here touches the model or its SDK itself.
+ *
+ * Phase 7b also adds to the Friday roundup (still_owed) the person's open loose ends and their overdue commitments (left
+ * out before migration 0048), and to the chase a stall it already asked about once ("stalled a second time"): its
+ * follow-up's answer then carries a new due date suggested to the lead (follow-ups.ts; a Confirm, never automatic).
  *
  * Every read runs as the person, through the services their own pages use, so a routine never sees more than they do. A
  * read that fails makes its section "not available" (never 0) and the run still completes; a feature that is not there
@@ -15,10 +23,11 @@
  * questions, message text) appear only clipped, in an item's detail, never in its text's first words or in an action.
  *
  * Consent (contract D.2, D.3): the person's Enable press, after the preview, is their standing yes for exactly what
- * consentLines says, and a run does nothing else. The only action any template takes is the chase's follow-ups, made
+ * consentLines says, and a run does nothing else. The only actions any template takes are the chase's follow-ups, made
  * with createFollowUps as the person, within every follow-up permission and limit (refusals are recorded and the run goes
- * on). This file never prepares or presses a Confirm and never calls a model (tests/unit/routine-guard.test.ts).
- * `preview` makes the same reads and writes nothing: no follow-ups, no dedupe keys.
+ * on), and the loose-ends scan's own rows (the person's, private). This file never prepares or presses a Confirm and
+ * never calls a model itself (tests/unit/routine-guard.test.ts). `preview` makes the same reads and writes nothing: no
+ * follow-ups, no scan, no dedupe keys.
  */
 import { withUser } from "@/server/db";
 import type { OrgContext } from "@/server/lib/api";
@@ -35,6 +44,7 @@ import { toProfile } from "@/lib/assistant-look";
 import { ROUTINE_LIMITS, ROUTINE_WORDS, type Cadence, type RoutineActionRecord, type RoutineItem, type RoutineOutput, type RoutineParams, type RoutineSection, type RoutineTemplate } from "@/lib/routines";
 import type { EvidenceRef } from "@/lib/evidence-links";
 import type { AssistantItemView } from "@/lib/assistant-items";
+import type { LooseEndKind, LooseEndView } from "@/lib/commitments";
 
 /**
  * Who a chase covered when the person pressed Enable (review, 8 October 2026): the team ids and the people's membership
@@ -52,6 +62,8 @@ export type TemplateResult = {
   actions: RoutineActionRecord[];
   /** Keys to record as reported (run mode only; [] in a preview). */
   reportedKeys: string[];
+  /** The run spent a model call (the loose-ends scan; review, 9 October 2026): recorded as the run's used_model. */
+  usedModel?: boolean;
 };
 /**
  * `timeZone`: the person's own (routines run on their clock; the worker's claim and the preview pass it), for "today"
@@ -157,11 +169,20 @@ export function consentLines(r: Pick<RoutineRow, "template" | "params" | "quietW
   const alone = "Nothing goes to anyone else.";
   switch (r.template) {
     case "morning_brief": return ["Send you a brief at the time set: what's waiting on you, with links.", alone];
+    // Phase 7b: the roundup also lists the person's loose ends and overdue commitments (the lines are not in the consent
+    // hash, so an enabled routine stays on).
     case "still_owed": return [
-      "Send you what's still owed: follow-ups, messages between assistants, overdue or blocked tasks and assignments nobody picked up.",
+      "Send you what's still owed: follow-ups, messages between assistants, overdue or blocked tasks, assignments nobody picked up, your loose ends and overdue commitments.",
       ...(r.quietWhenEmpty ? ["Stay quiet when there's nothing."] : []), alone,
     ];
     case "afternoon_check": return ["Tell you only when something is blocked on you, ready for you, or due today with no progress, and each thing once.", alone];
+    // Phase 7b (owner decisions, 8 October 2026): the one template that may use the model, at most once a run.
+    case "loose_ends": return [
+      "Look through the conversations you can read for promises you made, things asked of you and things you asked of others that never became a to-do, reminder, follow-up or commitment.",
+      "Uses at most 1 of your daily assistant requests a run when the AI is on; without it, only the clearest ones.",
+      ...(r.quietWhenEmpty ? ["Stay quiet when there's nothing new."] : []),
+      "Send you what it found, privately. Nothing goes to anyone else, and nothing is added to your lists until you choose.",
+    ];
     default: {
       const teams = o.teams.map((t) => `${t.name}${t.people.length ? ` (${peopleWords(t.people)})` : ""}`);
       const who = teams.length ? `people on ${andList(teams)}` : "people on the teams you lead";
@@ -183,6 +204,7 @@ export async function runTemplate(ctx: OrgContext, r: RoutineRow, o: Opts): Prom
     case "still_owed": return stillOwed(ctx, o, now);
     case "afternoon_check": return afternoonCheck(ctx, r, o, now);
     case "chase_stalled": return chaseStalled(ctx, r, o, now);
+    case "loose_ends": return looseEnds(ctx, r, o, now);
     default: throw new AppError(422, "INVALID_INPUT", "That routine's template is not one Boredroom knows.");
   }
 }
@@ -232,11 +254,14 @@ async function stillOwed(ctx: OrgContext, o: Opts, now: Date): Promise<TemplateR
   const items = await import("@/server/services/assistant-items");
   // The tasks and the assignments nobody picked up in one transaction, as the person (review, 8 October 2026: the whole
   // briefing, with its review queue, was read only for the latter; the query is the briefing's own).
-  const [mine, sent, waiting, asks, taskReads] = await Promise.all([
+  const [mine, sent, waiting, asks, loose, owedCommitments, taskReads] = await Promise.all([
     attempt("open follow-ups", () => listMyFollowUps(ctx, { status: "open", limit: 50 })),
     attempt("sent items", () => items.listAssistantItems(ctx, { box: "sent", status: "open", limit: 50 })),
     attempt("items waiting", () => items.listAssistantItems(ctx, { box: "waiting", limit: 50 })),
     attempt("asks waiting", () => waitingForMe(ctx)),
+    // Phase 7b: the person's open loose ends (no scan) and their overdue commitments; both `ready: false` before 0048.
+    attempt("loose ends", async () => (await import("@/server/services/loose-ends")).listLooseEnds(ctx, { status: "open", limit: 50 })),
+    attempt("overdue commitments", async () => (await import("@/server/services/commitments")).listCommitments(ctx, { scope: "mine", status: "overdue", limit: 50 })),
     withUser(ctx.user.profileId, async (db) => ({
       tasks: await db.query<OwedTask>(
         `SELECT t.id, t.title, t.status, t.due_at, t.blocked_reason, p.display_name AS assignee_name, (t.assignee_membership_id = $2) AS mine
@@ -292,6 +317,15 @@ async function stillOwed(ctx: OrgContext, o: Opts, now: Date): Promise<TemplateR
   const notPickedUp = taskReads.unanswered === undefined ? undefined : taskReads.unanswered === null ? null
     : taskReads.unanswered.map((t): RoutineItem => ({ text: `${q(t.title)} for ${t.assignee_name || "someone"}, not started`, sources: task(t.id) }));
 
+  // Phase 7b: left out before 0048 (`ready: false`), "not available" when the read failed.
+  const looseItems = loose === null ? null : !loose.ready ? undefined : loose.items.map(looseEndItem);
+  const commitmentItems = owedCommitments === null ? null : !owedCommitments.ready ? undefined : owedCommitments.items
+    .filter((v) => v.viewer === "committer" && v.display === "overdue")
+    .map((v): RoutineItem => ({
+      text: `${q(v.title)}${v.asker ? ` for ${v.asker.firstName}` : ""}`, detail: v.dueLabel ? `was due ${v.dueLabel}` : null,
+      sources: [{ kind: "commitment", id: v.id }, ...(v.message.href ? [{ kind: "message" as const, id: v.message.id, conversationId: v.where.conversationId }] : [])],
+    }));
+
   const b = build({
     title: "What's still owed", calm: "Nothing is still owed.", now,
     lead: (n) => (n === 1 ? "1 thing is still owed." : `${n} things are still owed.`),
@@ -301,9 +335,19 @@ async function stillOwed(ctx: OrgContext, o: Opts, now: Date): Promise<TemplateR
       { id: "received", label: "Waiting on you", items: received },
       { id: "tasks", label: "Overdue or blocked", items: owed },
       { id: "not_picked_up", label: "Nobody has picked up", items: notPickedUp },
+      { id: "loose_ends", label: "Loose ends", items: looseItems },
+      { id: "commitments", label: "Your overdue commitments", items: commitmentItems },
     ],
   });
   return { ...b, actions: [], reportedKeys: [] };
+}
+
+/** A loose end as a routine's line: its headline, its date, and links to the message and the loose end. */
+function looseEndItem(v: LooseEndView): RoutineItem {
+  return {
+    text: clamp(oneLine(v.headline), 200), detail: v.dueLabel ? `due ${v.dueLabel}` : null,
+    sources: [{ kind: "message", id: v.message.id, conversationId: v.message.conversationId }, { kind: "loose_end", id: v.id }],
+  };
 }
 
 // ---- Afternoon check (C.3) -----------------------------------------------------------------------------------------------
@@ -446,10 +490,13 @@ async function chaseStalled(ctx: OrgContext, r: RoutineRow, o: Opts, now: Date):
   const where = teams.length === 1 ? teams[0].name : "your teams";
   const title = `Stalled tasks on ${where}`;
   const calm = `Nothing has stalled on ${where}.`;
+  // The stalls this routine already asked about (phase 7b: a task among them stalled again is "stalled a second time").
+  let chasedBefore = new Set<string>();
   const stalled = !teams.length ? [] as StalledRow[] : await attempt("stalled tasks", async () => {
     // Stalls already asked about are left out before the limit, not after it (review, 8 October 2026: with 100 older
     // ones chased, newer stalls were never reached). A key holds the signal time to the millisecond.
     const [clock, chased] = await Promise.all([withUser(ctx.user.profileId, (db) => orgClock(db, ctx.org.id, now)), chasedStalls(r.id)]);
+    chasedBefore = new Set(chased.taskIds.map((id) => id.toLowerCase()));
     const since = stalledSince(now, clock.schedule).toISOString();
     return withUser(ctx.user.profileId, (db) => db.query<StalledRow>(
       `WITH people AS (
@@ -488,17 +535,21 @@ async function chaseStalled(ctx: OrgContext, r: RoutineRow, o: Opts, now: Date):
   const take = open.slice(0, ROUTINE_LIMITS.chasePerRun);
   const leftOut = open.slice(ROUTINE_LIMITS.chasePerRun);
   const theirAssistant = (t: StalledRow) => `${firstName(t.assignee_name)}'s ${toProfile({ name: t.assistant_name }).name}`;
-  const since = (t: StalledRow) => `no progress since ${when(t.last_signal_at ?? t.created_at)}`;
+  // Owner decisions, 8 October 2026 (phase 7b): a task this routine already chased for an earlier stall is stalled a
+  // second time (the query leaves out the stall already asked about, so any earlier key of the task is another stall).
+  const again = (t: StalledRow) => chasedBefore.has(t.id.toLowerCase());
+  const REPLAN_DETAIL = "stalled before; the answer will suggest a new due date";
+  const since = (t: StalledRow) => `no progress since ${when(t.last_signal_at ?? t.created_at)}${again(t) ? `; ${REPLAN_DETAIL}` : ""}`;
 
   const actions: RoutineActionRecord[] = [];
   const keys: string[] = [];
   if (preview) {
-    for (const t of take) actions.push({ kind: "follow_up", text: `Would ask ${theirAssistant(t)} about ${q(t.title)}`, done: false, reason: null, followUpId: null, taskId: t.id, subjectMembershipId: t.assignee_membership_id });
+    for (const t of take) actions.push({ kind: "follow_up", text: `Would ask ${theirAssistant(t)} about ${q(t.title)}`, done: false, reason: null, followUpId: null, taskId: t.id, subjectMembershipId: t.assignee_membership_id, ...(again(t) ? { replan: true } : {}) });
   } else {
     for (const t of take) {
       const record = (done: boolean, reason: string | null, followUpId: string | null, reused = false) => {
         // A refusal's words go in `reason`; the output says "Not asked: {text}: {reason}" (lib/routines).
-        actions.push({ kind: "follow_up", text: done ? `Asked ${theirAssistant(t)} about ${q(t.title)}` : `${q(t.title)} (${firstName(t.assignee_name)})`, done, reason, followUpId, taskId: t.id, subjectMembershipId: t.assignee_membership_id, ...(reused ? { reused: true } : {}) });
+        actions.push({ kind: "follow_up", text: done ? `Asked ${theirAssistant(t)} about ${q(t.title)}` : `${q(t.title)} (${firstName(t.assignee_name)})`, done, reason, followUpId, taskId: t.id, subjectMembershipId: t.assignee_membership_id, ...(reused ? { reused: true } : {}), ...(again(t) ? { replan: true } : {}) });
         if (done) keys.push(keyOf(t));
       };
       try {
@@ -527,7 +578,7 @@ async function chaseStalled(ctx: OrgContext, r: RoutineRow, o: Opts, now: Date):
         { id: "left_out", label: `Over this run's limit of ${ROUTINE_LIMITS.chasePerRun}`, items: leftOut.map((t) => ({ text: `${q(t.title)} (${t.assignee_name})`, sources: task(t.id) })) },
       ]
       : [
-        { id: "asked", label: "Asked", items: asked.map((t) => ({ text: `${theirAssistant(t)}, about ${q(t.title)}`, sources: [...task(t.id), ...(byTask.get(t.id)?.followUpId ? [{ kind: "follow_up" as const, id: byTask.get(t.id)!.followUpId }] : [])] })) },
+        { id: "asked", label: "Asked", items: asked.map((t) => ({ text: `${theirAssistant(t)}, about ${q(t.title)}`, ...(again(t) ? { detail: REPLAN_DETAIL } : {}), sources: [...task(t.id), ...(byTask.get(t.id)?.followUpId ? [{ kind: "follow_up" as const, id: byTask.get(t.id)!.followUpId }] : [])] })) },
         { id: "not_asked", label: "Not asked", items: notAsked.map((t) => ({ text: `${q(t.title)} (${firstName(t.assignee_name)}): ${byTask.get(t.id)?.reason ?? "not asked"}`, sources: task(t.id) })) },
         { id: "left_out", label: `Over this run's limit of ${ROUTINE_LIMITS.chasePerRun}`, items: leftOut.map((t) => ({ text: `${q(t.title)} (${t.assignee_name})`, sources: task(t.id) })) },
       ];
@@ -544,4 +595,48 @@ async function chaseStalled(ctx: OrgContext, r: RoutineRow, o: Opts, now: Date):
     ...b, actions, reportedKeys: preview ? [] : keys,
     counts: { ...b.counts, stalled: stalled === null ? null : stalledCount, asked: preview ? 0 : asked.length, not_asked: preview ? 0 : notAsked.length },
   };
+}
+
+// ---- Loose ends (owner decisions, 8 October 2026: phase 7b) --------------------------------------------------------------
+
+const LOOSE_SECTIONS: { kind: LooseEndKind; id: string; label: string }[] = [
+  { kind: "promise", id: "promise", label: "Promises you made" },
+  { kind: "asked_of_me", id: "asked_of_me", label: "Asked of you" },
+  { kind: "i_asked", id: "i_asked", label: "You asked others" },
+];
+
+/**
+ * The person's loose ends (contract D.2). A run looks through the days since its previous run (at least 1, at most 14;
+ * 3 the first time) with loose-end-detect's scan, as the person, at most one model call (one of their daily requests),
+ * and reports what it found that no earlier run reported (`loose:{id}`), by kind. A preview lists the loose ends open now:
+ * no scan, no model, nothing written.
+ */
+async function looseEnds(ctx: OrgContext, r: RoutineRow, o: Opts, now: Date): Promise<TemplateResult> {
+  const preview = o.mode !== "run";
+  const title = TEMPLATE_WORDS.loose_ends.name;
+  let views: LooseEndView[] | null | undefined;
+  let usedModel = false;
+  if (preview) {
+    const list = await attempt("open loose ends", async () => (await import("@/server/services/loose-ends")).listLooseEnds(ctx, { status: "open", limit: 50 }));
+    views = list === null ? null : !list.ready ? undefined : list.items;
+  } else {
+    const since = o.since ? Date.parse(o.since) : NaN;
+    const days = Number.isFinite(since) ? Math.max(1, Math.min(14, Math.ceil((now.getTime() - since) / 86_400_000))) : 3;
+    const { scanLooseEnds } = await import("@/server/services/loose-end-detect");
+    const scan = await attempt("loose ends", () => scanLooseEnds(ctx, { days, source: "routine", useModel: true, maxModelCalls: 1, now }));
+    views = scan === null ? null : !scan.ready ? undefined : scan.found;
+    usedModel = !!scan && scan.engine === "claude";
+  }
+  const keyOf = (v: LooseEndView) => `loose:${v.id}`;
+  const reported = !preview && views ? await alreadyReported(r.id, views.map(keyOf)) : new Set<string>();
+  const fresh = views ? views.filter((v) => v.status === "open" && !reported.has(keyOf(v))) : views;
+  const drafts: Draft[] = LOOSE_SECTIONS.map((s) => ({ id: s.id, label: s.label, items: fresh === undefined ? undefined : fresh === null ? null : fresh.filter((v) => v.kind === s.kind).map(looseEndItem) }));
+  const b = build({
+    title, now, drafts,
+    calm: preview ? "No loose ends are open." : "No new loose ends.",
+    lead: (n) => (preview ? (n === 1 ? "1 loose end is open." : `${n} loose ends are open.`) : (n === 1 ? "Found 1 loose end." : `Found ${n} loose ends.`)),
+  });
+  // Each loose end once: only what this run reports is recorded (and only when it runs for real).
+  const keys = preview || !fresh ? [] : LOOSE_SECTIONS.flatMap((s) => fresh.filter((v) => v.kind === s.kind).slice(0, ROUTINE_LIMITS.sectionItems).map(keyOf));
+  return { ...b, actions: [], reportedKeys: keys, usedModel };
 }

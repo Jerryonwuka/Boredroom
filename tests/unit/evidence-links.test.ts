@@ -65,7 +65,14 @@ describe("sourcesSuffix", () => {
   });
 
   it("names every kind", () => {
-    expect(Object.keys(EVIDENCE_WORDS).sort()).toEqual(["assistant_item", "attendance", "conversation", "doc", "follow_up", "message", "review", "routine_run", "task", "time_correction"]);
+    // Phase 7b (owner decision, 8 October 2026): commitments, loose ends and "blocked on you" items.
+    expect(Object.keys(EVIDENCE_WORDS).sort()).toEqual(["assistant_item", "attendance", "commitment", "conversation", "doc", "follow_up", "loose_end", "message", "review", "routine_run", "task", "task_block", "time_correction"]);
+  });
+
+  it("links a commitment, a loose end and a block to their own pages, by id only", () => {
+    expect(sourcesSuffix("acme", [{ kind: "commitment", id: T }, { kind: "loose_end", id: C }])).toBe(` ([commitment](/app/acme/commitments?c=${T}), [loose end](/app/acme/home/loose-ends?l=${C}))`);
+    expect(sourcesSuffix("acme", [{ kind: "task_block", id: T }])).toBe(` ([item](/app/acme/home/assistants?f=${T}))`);
+    expect(sourcesSuffix("acme", [{ kind: "commitment", id: "x" }, { kind: "loose_end", id: null }, { kind: "task_block" }])).toBe("");
   });
 });
 

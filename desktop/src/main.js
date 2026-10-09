@@ -148,6 +148,27 @@
 //   and "What they get: …", under the summary and its why; Confirm is described by them for screen readers, and past
 //   chats keep them. The consent rule holds here as everywhere: an answer or agreement that arrives through another
 //   person's assistant never confirms anything; only the person's own press of Confirm (or Y) does.
+//
+// Brenda keeps the loops closed, second part (owner decision, 8 October 2026: phase 7b). The desktop state's `loops`
+// (DesktopLoops in src/lib/commitments.ts, which this page cannot import) says what waits for the person; nothing is
+// decided on this computer.
+// - A noted commitment (`brenda.commitment`: the workspace's assistant noted they said they'd do something in a group
+//   chat) opens its card: the workspace assistant's face, the sentence, what it is in a quoted bubble, when it is due,
+//   then Open, Not a commitment and the accept button in the server's words ("Add to my to-dos", or "Accept" for the owner
+//   and HR, who hold no to-dos), the card's one orange button. An open ask (`brenda.open_ask`: someone asked them and
+//   nobody agreed in the thread) opens the same card with Take it on, Decline (with a reason, if they like: the asker is
+//   told, privately) and Open. Accept is the consent (owner decision: a to-do from someone else's words always asks):
+//   nothing is added to their list until they press it here or in Boredroom, whatever their act mode says.
+// - Blocked on you (`brenda.blocked_on`): who is waiting, on which task, and their question quoted; the answer is typed in
+//   Boredroom (Open), and Not me answers here (the person waiting is told it isn't theirs).
+// - The day card lists these with what else is waiting (follow-up asks, blocks, requests, commitments, then messages, as
+//   the web's inbox orders them), and "3 loose ends" when the person has open ones, which opens their Loose ends page.
+// - The other new notifications (due today, overdue, accepted, declined, answered, not theirs, re-plan) are the plain card
+//   with their badge in the contract's words. Every press goes to the same route as Boredroom's own buttons, as the
+//   person, carrying an idempotency key; opening a card (from the day card, or resting the pointer on one that opened on
+//   its own) tells Boredroom it was seen. Other people's words go through esc() only, never Markdown or a link, and only
+//   Boredroom paths open. Quiet hours hold these cards like any other. Before migration 0048 (`ready: false`) and from an
+//   older server (no `loops`) nothing changes: the plain notification cards show.
 
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
@@ -323,8 +344,14 @@ function elapsed() {
   return t.confirmedSeconds + Math.max(0, Math.floor((Date.now() + offsetMs - Date.parse(t.serverNow)) / 1000));
 }
 
-async function call(method, path, body) {
-  try { return await invoke("api", { method, path, body: body ?? null }); }
+/**
+ * One Boredroom API call as the person. `o.idempotencyKey` (phase 7b, 8 October 2026: the commitment and block presses)
+ * rides along to the Rust side as `idempotencyKey`, which sends it as the Idempotency-Key header once its `api` command
+ * takes it; until then Tauri leaves the extra argument unread, and the press runs as before (the server's definer
+ * functions answer a second press with "already answered").
+ */
+async function call(method, path, body, o = {}) {
+  try { return await invoke("api", { method, path, body: body ?? null, ...(o.idempotencyKey ? { idempotencyKey: o.idempotencyKey } : {}) }); }
   catch (e) {
     if (e && e.status === 401) { await signedOut(); throw e; }
     throw e;
@@ -367,8 +394,16 @@ function moodOf() {
     if (t === "assistant.thread_reply") return { mood: "happy", tone: "ok" };
     // A routine that couldn't run, or was paused (phase 7a): sad, with the amber glow of something that needs them.
     if (t === "brenda.routine_failed") return { mood: "sad", tone: "warn" };
+    // Commitments and blocks (phase 7b): one taken on or a block answered pleases her; overdue, and a re-plan waiting for
+    // the lead's Confirm, carry the amber glow; a decline or "not theirs" stays neutral.
+    if (t === "brenda.commitment_accepted" || t === "brenda.block_answered") return { mood: "happy", tone: "ok" };
+    if (t === "brenda.commitment_stalled" || t === "brenda.replan") return { mood: "alert", tone: "warn" };
+    if (t === "brenda.commitment_declined" || t === "brenda.block_not_me") return {};
     return { mood: "alert", tone: "accent" };
   }
+  // A commitment, an open ask or a block waits on the person until it is answered (phase 7b); taking one on pleases her;
+  // the rest of what can come of it stays neutral.
+  if (card.kind === "loop") return card.phase === "result" ? (card.decided === "accept" ? { mood: "happy", tone: "ok" } : {}) : card.phase === "gone" ? {} : { mood: "alert", tone: "accent" };
   // Routines (phase 7a, 8 October 2026): a delivery is an arrival; a routine that couldn't run, as above.
   if (card.kind === "routine") return card.n?.type === "brenda.routine_failed" ? { mood: "sad", tone: "warn" } : { mood: "alert", tone: "accent" };
   // The morning opener: a calm day pleases her; otherwise she shows the day as it is, as the briefing does.
@@ -444,6 +479,8 @@ function setHover(on) {
   island.classList.toggle("hover", on);
   clearTimeout(leaveTimer);
   if (on && !card && config?.signedIn) { tucked = false; openCard({ kind: "home" }); }
+  // A commitment or block card that opened on its own counts as seen once the pointer rests on it (phase 7b).
+  else if (on && card?.kind === "loop") loopSeen(card);
   else if (!on && card && !card.sticky) leaveTimer = setTimeout(() => { if (!hovering && card && !card.sticky) closeCard(); }, LEAVE_GRACE_MS);
   else if (!card) fit();
   updateTuck();
@@ -536,11 +573,14 @@ function cardView() {
     // for a task that has just arrived.
     // Phase 6's (8 October 2026), when the desktop state cannot open their own cards: neutral words.
     // Routines' (phase 7a) when the desktop state has no `routineRuns`: Routine, Routines, and amber for one that failed.
-    const pill = n.type === "brenda.reminder" ? `<span class="pill">Reminder</span>` : n.type === "brenda.clock_in" ? `<span class="pill ok"><span class="d"></span>In</span>` : n.type === "brenda.daily_report" ? `<span class="pill">Daily report</span>` : n.type === "task.assigned" ? `<span class="pill acc">New task</span>` : n.type.startsWith("review") ? `<span class="pill warn">Review</span>` : Object.hasOwn(ITEM_PILLS, n.type) ? `<span class="pill">${ITEM_PILLS[n.type]}</span>` : routinePill(n.type);
+    // Commitments and blocks (phase 7b): the contract's words, green for one taken on or answered, amber for due today and
+    // a re-plan to confirm, red for overdue; their titles name a task or a commitment, so they may run to two lines.
+    const loop = loopPill(n.type);
+    const pill = n.type === "brenda.reminder" ? `<span class="pill">Reminder</span>` : n.type === "brenda.clock_in" ? `<span class="pill ok"><span class="d"></span>In</span>` : n.type === "brenda.daily_report" ? `<span class="pill">Daily report</span>` : n.type === "task.assigned" ? `<span class="pill acc">New task</span>` : n.type.startsWith("review") ? `<span class="pill warn">Review</span>` : Object.hasOwn(ITEM_PILLS, n.type) ? `<span class="pill">${ITEM_PILLS[n.type]}</span>` : loop || routinePill(n.type);
     // The end-of-day report is sent by the workspace, so its card shows the workspace's assistant (owner decision,
     // 7 October 2026: personal assistants); everything else comes from the person's own.
     const from = n.type === "brenda.daily_report" ? ws() : me();
-    return `<div class="row fade">${face({ ...moodOf(), who: from })}<div class="grow"><p class="title">${esc(n.title)}</p>${n.body ? `<p class="sub">${esc(n.body)}</p>` : `<p class="sub">${esc(when(n.created_at))}</p>`}</div>${pill}</div>
+    return `<div class="row fade">${face({ ...moodOf(), who: from })}<div class="grow"><p class="title${loop ? " wrap" : ""}">${esc(n.title)}</p>${n.body ? `<p class="sub">${esc(n.body)}</p>` : `<p class="sub">${esc(when(n.created_at))}</p>`}</div>${pill}</div>
       <div class="actions">${n.href && !removedPage(n.href) ? `<button class="btn" data-act="open-href" data-href="${esc(n.href)}">Open${icon("open")}</button>` : ""}<button class="btn primary" data-act="read" data-id="${esc(n.id)}">${n.type === "brenda.reminder" ? "Done" : "OK"}</button></div>`;
   }
   if (card.kind === "briefing" && b) {
@@ -585,6 +625,7 @@ function cardView() {
   if (card.kind === "item_update") return itemUpdateView();
   if (card.kind === "opener") return openerView();
   if (card.kind === "routine") return routineView();
+  if (card.kind === "loop") return loopView();
   if (card.kind === "error") return `<div class="row fade">${face(moodOf())}<div class="grow"><p class="title">Can't reach Boredroom</p><p class="sub">${esc(card.message)}</p></div></div><div class="actions"><button class="btn" data-act="close">OK</button></div>`;
   return "";
 }
@@ -642,6 +683,14 @@ el.addEventListener("click", async (e) => {
     if (act === "ai-accept") return decideItem("accept");
     if (act === "ai-back") return closeItemNote();
     if (act === "ai-ack") return ackUpdate();
+    // Commitments and blocks (phase 7b, 8 October 2026): open one from the day card; on a commitment, accept it or say it
+    // is not one; on an open ask, Decline (the reason box opens, then Decline again) and Back; on a block, Not me.
+    if (act === "lp-open") return openLoop(target.dataset.lk, target.dataset.id);
+    if (act === "lp-accept") return decideLoop("accept");
+    if (act === "lp-dismiss") return decideLoop("dismiss");
+    if (act === "lp-decline") return card?.declining ? decideLoop("decline") : openLoopNote();
+    if (act === "lp-back") return closeLoopNote();
+    if (act === "lp-notme") return decideLoop("not_me");
     if (act === "read") { await call("PATCH", org(`/notifications/${target.dataset.id}`)); data.notifications = data.notifications.filter((n) => n.id !== target.dataset.id); return closeCard(); }
     busy = true; render();
     const t = data?.timer;
@@ -716,7 +765,7 @@ async function refresh() {
     keepCached();
     applyQuiet();
     if (!card) render();
-    else { followUpClosedElsewhere(); itemClosedElsewhere(); }
+    else { followUpClosedElsewhere(); itemClosedElsewhere(); loopClosedElsewhere(); }
   } catch (err) {
     // During quiet hours (phase 7a) not even this opens on its own.
     if (err?.status && err.status !== 401 && !card && !quietNow()) openCard({ kind: "error", message: err.message });
@@ -735,14 +784,16 @@ function nextNotification() {
   // A follow-up's ask or answer gets its own card when the desktop state knows it (phase 4), and so does a message, a
   // request, a reply or a request's outcome brought by someone's assistant (phase 6); otherwise, and always with an older
   // server, the plain notification card. What waits for an answer (an ask, a request) calls for attention.
-  const fu = followUpCard(n) ?? itemCard(n);
-  if (fu) { openCard(fu); return Sound.play(fu.kind === "followup_ask" || (fu.kind === "item" && fu.w.kind === "request") ? "attention" : "reply"); }
+  // A noted commitment, an open ask or a block on the person waits for an answer too (phase 7b).
+  const fu = followUpCard(n) ?? itemCard(n) ?? loopCard(n);
+  if (fu) { openCard(fu); return Sound.play(fu.kind === "followup_ask" || fu.kind === "loop" || (fu.kind === "item" && fu.w.kind === "request") ? "attention" : "reply"); }
   // What a routine sent (phase 7a): its own card when the desktop state carries the run, read as long as a reply.
   const routine = routineCard(n);
   if (routine) { openCard(routine); return Sound.play("notify"); }
   // Mentions in Messages (phase 5): a reply, a Confirm or a private answer has more to read, so it stays as long as a reply.
+  // So does a commitment's or a block's (phase 7b): its title may run to two lines, with a line under it.
   const mention = mentionCard(n.type);
-  openCard({ kind: "notification", n, ...(mention?.long ? { closeAfter: REPLY_CLOSE_MS } : {}) });
+  openCard({ kind: "notification", n, ...(mention?.long || loopPill(n.type) ? { closeAfter: REPLY_CLOSE_MS } : {}) });
   Sound.play(n.type === "brenda.clock_in" ? "success" : mention?.sound ?? "notify");
 }
 
@@ -801,6 +852,8 @@ el.addEventListener("submit", (e) => {
   // request's reason box it declines (phase 6).
   if (e.target.closest("[data-fu]")) { e.preventDefault(); return sendFollowUpReply(null); }
   if (e.target.closest("[data-item]")) { e.preventDefault(); return card?.declining ? decideItem("decline") : sendItemReply(); }
+  // In an open ask's reason box (phase 7b) it declines.
+  if (e.target.closest("[data-loop]")) { e.preventDefault(); return decideLoop("decline"); }
   const form = e.target.closest("[data-ask]");
   if (!form) return;
   e.preventDefault();
@@ -2006,17 +2059,23 @@ function openWaiting(id) {
 }
 
 /**
- * The day card's "Waiting for you", at most two (the rest wait in Boredroom): follow-up asks first, each with Reply, then
- * what other people's assistants brought (phase 6, 8 October 2026), oldest first: a request with Answer, a message or a
- * reply with Read.
+ * The day card's "Waiting for you", at most two (the rest wait in Boredroom), in the order the web's inbox keeps (phase 7b,
+ * 8 October 2026): follow-up asks with Reply, blocks on the person with Read, requests to accept with Answer, noted
+ * commitments and open asks with Answer, then messages and replies with Read, each kind oldest first. Under them, "3 loose
+ * ends" when the person has open ones: the whole row opens their Loose ends page.
  */
 function waitingView() {
+  const items = itemWaiting().map((w) => ({ id: w.id, title: w.title || itemTitle(w), act: "ai-open", label: w.kind === "request" ? "Answer" : "Read", request: w.kind === "request" }));
   const rows = [
     ...waitingList().map((w) => ({ id: w.id, title: w.title, act: "fu-open", label: "Reply" })),
-    ...itemWaiting().map((w) => ({ id: w.id, title: w.title || itemTitle(w), act: "ai-open", label: w.kind === "request" ? "Answer" : "Read" })),
+    ...loopBlocks().map((b) => ({ id: b.id, title: b.title, act: "lp-open", lk: "block", label: "Read" })),
+    ...items.filter((r) => r.request),
+    ...loopCommitments().map((c) => ({ id: c.id, title: c.title, act: "lp-open", lk: "commitment", label: "Answer" })),
+    ...items.filter((r) => !r.request),
   ].slice(0, 2);
-  if (!rows.length) return "";
-  return `<ul class="list fade" aria-label="Waiting for you">${rows.map((r) => `<li><span class="t">${esc(r.title)}</span><button class="btn" data-act="${r.act}" data-id="${esc(r.id)}">${r.label}</button></li>`).join("")}</ul>`;
+  const loose = looseEndsRow();
+  if (!rows.length && !loose) return "";
+  return `<ul class="list fade" aria-label="Waiting for you">${rows.map((r) => `<li><span class="t">${esc(r.title)}</span><button class="btn" data-act="${r.act}" data-id="${esc(r.id)}"${r.lk ? ` data-lk="${r.lk}"` : ""}>${r.label}</button></li>`).join("")}${loose}</ul>`;
 }
 
 /** After a poll: the ask on the card was answered on the web, ran out of time or was cancelled meanwhile. */
@@ -2157,8 +2216,11 @@ const expiresWhen = (iso) => { const d = new Date(iso); return Number.isNaN(d.ge
 /** Words the server may have quoted already (a notification's body) without their own quote marks, to be quoted once. */
 const unquote = (s) => { const t = String(s ?? "").trim(); return /^“[\s\S]*”$/.test(t) ? t.slice(1, -1).trim() : t; };
 const sameItem = (c) => card?.kind === "item" && card.w.id === c.w.id;
-/** Whether the open card has a one-line box the person is filling: a follow-up's note, a reply, a reason for declining. */
-const noteCard = () => (card?.kind === "followup_ask" && card.phase === "ask") || (card?.kind === "item" && card.phase === "open" && !!(card.replying || card.declining));
+/**
+ * Whether the open card has a one-line box the person is filling: a follow-up's note, a reply, a reason for declining a
+ * request or (phase 7b) an open ask.
+ */
+const noteCard = () => (card?.kind === "followup_ask" && card.phase === "ask") || ((card?.kind === "item" || card?.kind === "loop") && card.phase === "open" && !!(card.replying || card.declining));
 
 /** A waiting item's card title, in the contract's words. */
 function itemTitle(w) {
@@ -2198,8 +2260,11 @@ function openItem(id) {
   openCard(itemCardOf(w, n));
 }
 
-/** The reply box or the reason box, under a message or a request; the card keeps its place (no second blur-in). */
-const itemNoteBox = (placeholder) => `<form class="fu-note fade" data-item><div class="fu-field"><input class="field" id="fnote" name="note" maxlength="${ITEM_NOTE_MAX}" value="${esc(card.note)}" placeholder="${esc(placeholder)}" aria-label="${esc(placeholder)}" aria-describedby="fhold fdict" autocomplete="off" spellcheck="true" ${busy ? "disabled" : ""}>${talkKeys()}</div><div class="fu-meta"><div class="grow" id="fdict">${dictView()}</div><span class="cap num" id="fcount">${countText(card.note)}</span></div></form>`;
+/**
+ * The reply box or the reason box, under a message or a request (or, phase 7b, an open ask: `form` "data-loop"); the card
+ * keeps its place (no second blur-in).
+ */
+const itemNoteBox = (placeholder, form = "data-item") => `<form class="fu-note fade" ${form}><div class="fu-field"><input class="field" id="fnote" name="note" maxlength="${ITEM_NOTE_MAX}" value="${esc(card.note)}" placeholder="${esc(placeholder)}" aria-label="${esc(placeholder)}" aria-describedby="fhold fdict" autocomplete="off" spellcheck="true" ${busy ? "disabled" : ""}>${talkKeys()}</div><div class="fu-meta"><div class="grow" id="fdict">${dictView()}</div><span class="cap num" id="fcount">${countText(card.note)}</span></div></form>`;
 
 function itemView() {
   const c = card, w = c.w, from = assistantOf(w.sender.assistant), m = moodOf();
@@ -2630,6 +2695,280 @@ function readbackView(p, id) {
   const more = r.to.length - READBACK_MAX;
   const lines = r.to.slice(0, READBACK_MAX).map((l) => `<li><span class="t">${esc(l)}</span></li>`).join("");
   return `<div class="readback" id="${esc(id)}">${r.to.length ? `<p class="lbl" id="${esc(id)}l">Goes to</p><ul class="list" aria-labelledby="${esc(id)}l">${lines}${more > 0 ? `<li class="more"><span class="t">and ${more} more</span></li>` : ""}</ul>` : ""}${r.what ? `<p class="what">What they get: ${esc(r.what)}</p>` : ""}</div>`;
+}
+
+// ---- commitments, open asks, blocked on you and loose ends -----------------------------------------------------------
+// Owner decision, 8 October 2026 (phase 7b; the header says what the cards do). The desktop state's `loops` is
+// DesktopLoops (src/lib/commitments.ts): { ready, commitments, blocks, looseEnds }. `commitments` are the noted
+// commitments (`kind` "commitment") and open asks ("open_ask") waiting for this person, oldest first, at most five, each
+// { id, kind, title, what, dueLabel, from, acceptLabel, href }; `blocks` the blocks waiting on them, each { id, title,
+// question, taskTitle, from, href }; `looseEnds` { open, href }. A press goes to /commitments/<id>/accept, decline,
+// dismiss or seen, or /task-blocks/<id>/not-me or seen, as the person, and the notification is then marked read. Accept
+// answers { commitment, note } (`note`: the to-do could not be added). The words are the contract's (LOOP_WORDS.inbox,
+// errors and notifications.kinds), which this page cannot import. Nothing another person wrote (the what, the question,
+// a name) is drawn as Markdown or a link: esc() only, and only Boredroom paths open.
+
+const LOOP_MAX = 5;           // LOOP_LIMITS.desktopMax
+/** The notifications that bring a card of each kind, by `resource_id`. */
+const LOOP_NOTES = { commitment: ["brenda.commitment", "brenda.open_ask"], block: ["brenda.blocked_on"] };
+/** Each phase 7b notification's badge on the plain card: the contract's words, and a status tone with every colour. */
+const LOOP_PILLS = {
+  "brenda.commitment": ["Commitment noted", ""], "brenda.open_ask": ["Asked of you", ""],
+  "brenda.commitment_accepted": ["Commitment accepted", "ok"], "brenda.commitment_declined": ["Commitment declined", ""],
+  "brenda.commitment_due": ["Due today", "warn"], "brenda.commitment_stalled": ["Commitment overdue", "bad"],
+  "brenda.blocked_on": ["Blocked on you", ""], "brenda.block_answered": ["Answer", "ok"], "brenda.block_not_me": ["Blocked on someone else", ""],
+  "brenda.replan": ["Re-plan", "warn"],
+};
+/** A phase 7b notification's badge, or "" (own keys only: a type is never looked up on the prototype). */
+const loopPill = (type) => (typeof type === "string" && Object.hasOwn(LOOP_PILLS, type) ? `<span class="pill ${LOOP_PILLS[type][1]}">${LOOP_PILLS[type][0]}</span>` : "");
+/** The contract's words these cards use (LOOP_WORDS.inbox and .errors in src/lib/commitments.ts), under the same names. */
+const LOOP_INBOX = {
+  commitmentQuestion: "Add it to your to-dos?", commitmentQuestionNoTodos: "Track it as your commitment?", nothingChanges: "Nothing is added until you accept.",
+  openAskQuestion: "Take it on?", askerToldOnDecline: (first) => `${first} is told what you decide.`,
+  accept: "Add to my to-dos", acceptNoTodos: "Accept", takeItOn: "Take it on", decline: "Decline", dismiss: "Not a commitment", declinePlaceholder: "Say why, if you like",
+  accepted: "Added to your to-dos.", acceptedNoTodo: "Tracked as your commitment.", declined: "Declined.", dismissed: "Marked as not a commitment. It won't come back.",
+  blockedOn: (taskTitle) => `On “${taskTitle}”`, notMe: "Not me", notMeDone: (first) => `${first} is told it isn't yours.`,
+};
+const LOOP_ERRORS = { notFound: "That isn't here any more.", closed: "This was already answered.", expired: "This has expired." };
+const DECLINE_MAX = 280;      // LOOP_LIMITS.declineReasonMax (the box and cleanNote keep the same 280)
+
+/** What the desktop state carries of it, or null: an older server, or before migration 0048 (`ready: false`). */
+const loops = () => (data?.loops && typeof data.loops === "object" && data.loops.ready === true ? data.loops : null);
+const isLoopCommitment = (x) => !!x && typeof x === "object" && typeof x.id === "string" && typeof x.title === "string" && !!x.title.trim() && (x.kind === "commitment" || x.kind === "open_ask");
+const isLoopBlock = (x) => !!x && typeof x === "object" && typeof x.id === "string" && typeof x.title === "string" && !!x.title.trim();
+const loopCommitments = () => { const l = loops(); return (Array.isArray(l?.commitments) ? l.commitments : []).filter(isLoopCommitment).slice(0, LOOP_MAX); };
+const loopBlocks = () => { const l = loops(); return (Array.isArray(l?.blocks) ? l.blocks : []).filter(isLoopBlock).slice(0, LOOP_MAX); };
+const loopList = (lk) => (lk === "block" ? loopBlocks() : loopCommitments());
+const sameLoop = (c) => card?.kind === "loop" && card.w.id === c.w.id;
+/** The accept button's words: the server's, else the contract's for the kind. */
+const acceptLabelOf = (w) => { const s = str(w.acceptLabel).replace(/\s+/g, " ").trim(); return s ? shorten(s, 40) : w.kind === "open_ask" ? LOOP_INBOX.takeItOn : LOOP_INBOX.accept; };
+/**
+ * Whose face a block shows: the blocked person's assistant when the state carries it (as the web's card), else the
+ * person's own, who brings it to them.
+ */
+const blockFace = (b) => (b.from && typeof b.from === "object" && b.from.assistant && typeof b.from.assistant === "object" ? assistantOf(b.from.assistant) : me());
+
+/** The day card's row for open loose ends ("3 loose ends", the whole row opens the page), or "". */
+function looseEndsRow() {
+  const le = loops()?.looseEnds;
+  if (!le || typeof le !== "object" || !Number.isInteger(le.open) || le.open <= 0) return "";
+  const path = boredroomPath(le.href) ?? `/app/${encodeURIComponent(config.workspaceSlug)}/home/loose-ends`;
+  return `<li><button type="button" class="rowlink" data-act="open-href" data-href="${esc(path)}" title="Promises and asks from your conversations that never became a to-do. Only you see them."><span class="t">${le.open === 1 ? "1 loose end" : `${le.open} loose ends`}</span><span class="k">${icon("open")}</span></button></li>`;
+}
+
+const loopCardOf = (lk, w, n) => ({ kind: "loop", lk, phase: "open", w, n: n ?? null, note: "", declining: false, dictating: null, dictMessage: null, sticky: true, seen: false, keys: {} });
+
+/** The card a commitment's, an open ask's or a block's notification opens, or null for the plain notification card. */
+function loopCard(n) {
+  if (!loops() || typeof n?.type !== "string") return null;
+  const lk = Object.keys(LOOP_NOTES).find((k) => LOOP_NOTES[k].includes(n.type));
+  if (!lk) return null;
+  const w = loopList(lk).find((x) => x.id === n.resource_id);
+  return w ? loopCardOf(lk, w, n) : null;
+}
+
+/** One opened from the day card (its notification may have been shown and folded away already): seen at once. */
+function openLoop(lk, id) {
+  if (!Object.hasOwn(LOOP_NOTES, lk)) return;
+  const w = loopList(lk).find((x) => x.id === id);
+  if (!w) return;
+  const n = (data?.notifications ?? []).find((x) => LOOP_NOTES[lk].includes(x.type) && x.resource_id === id) ?? null;
+  if (n) shown.add(n.id);
+  const c = loopCardOf(lk, w, n);
+  openCard(c);
+  loopSeen(c);
+}
+
+/** Tells Boredroom the person has seen it (once per card; never an answer, and a failure is let go). */
+function loopSeen(c) {
+  if (!c || c.kind !== "loop" || c.seen) return;
+  c.seen = true;
+  const id = encodeURIComponent(c.w.id);
+  call("POST", org(c.lk === "block" ? `/task-blocks/${id}/seen` : `/commitments/${id}/seen`), {}).catch(() => {});
+}
+
+/**
+ * The press's idempotency key: kept for a retry of the same press after Boredroom could not be reached, and made anew
+ * once the server has answered it (an answer, refusals included, is kept against its key).
+ */
+function loopKey(c, step) {
+  c.keys ??= {};
+  if (!c.keys[step]) {
+    let k = "";
+    try { k = crypto.randomUUID(); } catch { k = [...crypto.getRandomValues(new Uint8Array(16))].map((b) => b.toString(16).padStart(2, "0")).join(""); }
+    c.keys[step] = k;
+  }
+  return c.keys[step];
+}
+
+function loopView() {
+  const c = card, w = c.w, m = moodOf();
+  const block = c.lk === "block";
+  const from = block ? blockFace(w) : ws();
+  const first = firstName(w.from?.name);
+  const off = busy ? "disabled" : "";
+  const head = (title, under, o = {}) => `<div class="row top fade">${face({ ...m, who: from })}<div class="grow"><p class="title ${o.full ? "full" : "wrap"}">${esc(title)}</p>${under}</div></div>`;
+  if (c.phase === "result") {
+    return `${head(c.result, c.resultSub ? `<p class="sub">${esc(c.resultSub)}</p>` : "", { full: true })}
+      <div class="actions"><button class="btn primary" data-act="close">OK</button></div>`;
+  }
+  if (c.phase === "gone") {
+    return `${head(w.title, `<p class="sub">${esc(c.message)}</p>`)}
+      <div class="actions">${c.n ? `<button class="btn primary" data-act="read" data-id="${esc(c.n.id)}">OK</button>` : `<button class="btn primary" data-act="close">OK</button>`}</div>`;
+  }
+  const open = boredroomPath(w.href);
+  if (block) {
+    // The answer is typed in Boredroom, where it becomes the person's comment on the task; Not me is answered here.
+    const task = str(w.taskTitle).trim();
+    const question = str(w.question).trim();
+    const where = `You answer it in Boredroom, where ${first ? `${first} sees` : "they see"} it as your comment on the task.`;
+    return `${head(w.title, task ? `<p class="sub">${esc(LOOP_INBOX.blockedOn(task))}</p>` : "")}
+      ${question ? `<p class="quote fade">“${esc(question)}”</p>` : ""}
+      <p class="cap fade">${esc(where)}</p>
+      <div class="actions stick"><button class="btn ghost" data-act="lp-notme" ${off}>${LOOP_INBOX.notMe}</button>${open ? `<button class="btn primary" data-act="open-href" data-href="${esc(open)}" ${off}>Open${icon("open")}</button>` : ""}</div>`;
+  }
+  const ask = w.kind === "open_ask";
+  const what = shorten(str(w.what).replace(/\s+/g, " ").trim(), 240);
+  const due = str(w.dueLabel).trim();
+  const accept = acceptLabelOf(w);
+  // The what in its own bubble, unless the title already quotes exactly it.
+  const quote = what && !str(w.title).includes(`“${what}”`) ? `<p class="quote fade">“${esc(what)}”</p>` : "";
+  const question = ask
+    ? `${LOOP_INBOX.openAskQuestion}${first ? ` ${LOOP_INBOX.askerToldOnDecline(first)}` : ""}`
+    : `${accept === LOOP_INBOX.acceptNoTodos ? LOOP_INBOX.commitmentQuestionNoTodos : LOOP_INBOX.commitmentQuestion} ${LOOP_INBOX.nothingChanges}`;
+  const openBtn = open ? `<button class="btn" data-act="open-href" data-href="${esc(open)}" ${off}>Open${icon("open")}</button>` : "";
+  return `${head(w.title, due ? `<p class="cap">${esc(`Due ${due}`)}</p>` : "")}
+    ${quote}
+    <p class="sub fade">${esc(question)}</p>
+    ${c.declining ? itemNoteBox(LOOP_INBOX.declinePlaceholder, "data-loop") : ""}
+    <div class="actions stick">${c.declining
+      ? `<button class="btn ghost" data-act="lp-back" ${off}>Back</button><button class="btn primary" data-act="lp-decline" ${off}>${LOOP_INBOX.decline}</button>`
+      : `${openBtn}${ask ? `<button class="btn ghost" data-act="lp-decline" ${off}>${LOOP_INBOX.decline}</button>` : `<button class="btn ghost" data-act="lp-dismiss" ${off}>${LOOP_INBOX.dismiss}</button>`}<button class="btn primary accent" data-act="lp-accept" ${off}>${esc(accept)}</button>`}</div>`;
+}
+
+/** Decline on an open ask opens its reason box under the card, focused; Back closes it. */
+function openLoopNote() {
+  const c = card;
+  if (c?.kind !== "loop" || c.phase !== "open" || c.lk !== "commitment" || c.w.kind !== "open_ask" || busy) return;
+  Object.assign(c, { declining: true, note: "", dictating: null, dictMessage: null });
+  loopSeen(c);
+  error = null; render();
+  document.getElementById("fnote")?.focus();
+}
+function closeLoopNote() {
+  const c = card;
+  if (c?.kind !== "loop" || busy) return;
+  Object.assign(c, { declining: false, note: "", dictating: null, dictMessage: null });
+  error = null; render();
+}
+
+/**
+ * It is no longer waiting: off the day card, and, once it was answered from here, its notifications read (with the one on
+ * the card).
+ */
+function forgetLoop(c, answered) {
+  const types = LOOP_NOTES[c.lk];
+  const ids = new Set((data?.notifications ?? []).filter((x) => types.includes(x.type) && x.resource_id === c.w.id).map((x) => x.id));
+  if (c.n) ids.add(c.n.id);
+  if (answered) for (const id of ids) call("PATCH", org(`/notifications/${encodeURIComponent(id)}`)).catch(() => {});
+  if (!data) return;
+  if (answered) data.notifications = (data.notifications ?? []).filter((x) => !ids.has(x.id));
+  const l = loops();
+  const key = c.lk === "block" ? "blocks" : "commitments";
+  if (l) data.loops = { ...l, [key]: (Array.isArray(l[key]) ? l[key] : []).filter((x) => x?.id !== c.w.id) };
+}
+
+/**
+ * A press refused. Answered, expired or gone meanwhile (404, 409), the card says so in the server's words; anything else
+ * (not ready, someone else signed in as the person, offline, the same press still going through) stays on the card under
+ * it, to try again.
+ */
+function loopRefused(c, err) {
+  Sound.play("error");
+  if (!sameLoop(c)) return;
+  if ((err?.status === 404 || err?.status === 409) && err?.code !== "IN_PROGRESS") {
+    forgetLoop(c, false);
+    card = { ...card, phase: "gone", message: err?.message || (err?.status === 404 ? LOOP_ERRORS.notFound : LOOP_ERRORS.closed), dictating: null, sticky: true };
+    render(); return holdThenClose(CLOSE_AFTER_MS);
+  }
+  error = err?.message ?? String(err);
+  render();
+}
+
+/**
+ * Accept (the to-do is added by Boredroom, as the person), Decline an open ask (with the reason, if one was given; the
+ * asker is told privately), Not a commitment, or Not me on a block. The card then says what happened.
+ */
+async function decideLoop(step) {
+  const c = card;
+  if (c?.kind !== "loop" || c.phase !== "open" || busy) return;
+  const block = c.lk === "block";
+  if (block ? step !== "not_me" : !["accept", "decline", "dismiss"].includes(step)) return;
+  if (step === "decline" && c.w.kind !== "open_ask") return;
+  if (c.declining) c.note = document.getElementById("fnote")?.value ?? c.note;
+  const reason = step === "decline" ? [...cleanNote(c.note)].slice(0, DECLINE_MAX).join("") : "";
+  loopSeen(c);
+  hush();
+  busy = true; error = null; render();
+  if (step === "accept") Sound.play("send");
+  const id = encodeURIComponent(c.w.id);
+  const path = block ? `/task-blocks/${id}/not-me` : `/commitments/${id}/${step}`;
+  let r;
+  try { r = await call("POST", org(path), reason ? { reason } : {}, { idempotencyKey: loopKey(c, step) }); }
+  catch (err) {
+    busy = false;
+    if (err?.status && err.code !== "IN_PROGRESS") delete c.keys[step]; // the server answered: a new press is a new key
+    return loopRefused(c, err);
+  }
+  busy = false;
+  forgetLoop(c, true);
+  const first = firstName(c.w.from?.name);
+  let result = "", sub = "";
+  if (step === "accept") {
+    const v = r?.commitment && typeof r.commitment === "object" ? r.commitment : null;
+    result = str(r?.note).trim() || (v?.acceptMakesTodo === false ? LOOP_INBOX.acceptedNoTodo : LOOP_INBOX.accepted);
+    const what = str(v?.title).trim() || str(c.w.what).trim();
+    const due = str(v?.dueLabel).trim() || str(c.w.dueLabel).trim();
+    sub = what ? `“${what}”${due ? `, due ${due}` : ""}` : "";
+  } else if (step === "decline") { result = LOOP_INBOX.declined; sub = first ? `${first} is told, privately.` : ""; }
+  else if (step === "dismiss") result = LOOP_INBOX.dismissed;
+  else result = first ? LOOP_INBOX.notMeDone(first) : "They're told it isn't yours.";
+  Sound.play(step === "accept" ? "success" : "tick");
+  if (sameLoop(c)) {
+    card = { ...card, phase: "result", decided: step, result, resultSub: sub, declining: false, dictating: null, sticky: true };
+    render(); holdThenClose(CLOSE_AFTER_MS);
+  }
+  refresh();
+}
+
+/**
+ * After a poll: the one on the card is no longer waiting (answered in Boredroom, expired, withdrawn), or an open ask became
+ * a noted commitment because the person agreed in the thread (the card then reads as agreed, unless a reason is being
+ * typed). A commitment missing from the five is looked up first; a block missing from the list is gone.
+ */
+async function loopClosedElsewhere() {
+  const c = card;
+  if (c?.kind !== "loop" || c.phase !== "open" || busy || c.checking || !loops()) return;
+  const fresh = loopList(c.lk).find((x) => x.id === c.w.id);
+  if (fresh) {
+    if (!c.declining && (fresh.kind !== c.w.kind || fresh.title !== c.w.title)) { card = { ...c, w: fresh }; render(); }
+    return;
+  }
+  let message = null;
+  if (c.lk === "block") message = LOOP_ERRORS.notFound;
+  else {
+    c.checking = true;
+    try {
+      const s = (await call("GET", org(`/commitments/${encodeURIComponent(c.w.id)}`)))?.commitment?.status;
+      if (s === "expired") message = LOOP_ERRORS.expired;
+      else if (s === "cancelled") message = LOOP_ERRORS.notFound;
+      else if (typeof s === "string" && s !== "proposed" && s !== "asked") message = LOOP_ERRORS.closed;
+    } catch (err) { if (err?.status === 404) message = LOOP_ERRORS.notFound; }
+    c.checking = false;
+  }
+  if (!message || !sameLoop(c) || card.phase !== "open" || busy) return;
+  card = { ...card, phase: "gone", message, declining: false, dictating: null, sticky: true };
+  render(); holdThenClose(CLOSE_AFTER_MS);
 }
 
 // ---- poking and admiring Brenda -----------------------------------------------------------------------------------

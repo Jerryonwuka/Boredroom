@@ -22,7 +22,9 @@ export type { EvidenceRef };
 
 // ---- Templates -------------------------------------------------------------------------------------------------------
 
-export const ROUTINE_TEMPLATES = ["morning_brief", "still_owed", "afternoon_check", "chase_stalled"] as const;
+// Phase 7b (owner decisions, 8 October 2026): "loose_ends", the person's loose ends found on a schedule (migration 0048;
+// listed in RoutineList.unavailable before it).
+export const ROUTINE_TEMPLATES = ["morning_brief", "still_owed", "afternoon_check", "chase_stalled", "loose_ends"] as const;
 export type RoutineTemplate = (typeof ROUTINE_TEMPLATES)[number];
 export const isRoutineTemplate = (v: unknown): v is RoutineTemplate => (ROUTINE_TEMPLATES as readonly unknown[]).includes(v);
 /** Templates that act on other people (need lead rights while the workspace switch is on). */
@@ -62,8 +64,12 @@ export type RoutinePatch = Partial<Omit<RoutineInput, "template">>;
 
 export type RoutineItem = { text: string; detail?: string | null; sources: EvidenceRef[] };
 export type RoutineSection = { id: string; label: string; items: RoutineItem[]; more: number; missing: boolean };
-/** `reused`: an open follow-up the person had already asked (not one the routine made, so its answer is told as usual). */
-export type RoutineActionRecord = { kind: "follow_up"; text: string; done: boolean; reason?: string | null; followUpId?: string | null; taskId?: string | null; subjectMembershipId?: string | null; reused?: boolean };
+/**
+ * `reused`: an open follow-up the person had already asked (not one the routine made, so its answer is told as usual).
+ * `replan` (phase 7b, owner decisions, 8 October 2026): the chase found this task stalled a second time, so the answer
+ * comes with a new due date suggested to the lead (a Confirm; nothing changes on its own).
+ */
+export type RoutineActionRecord = { kind: "follow_up"; text: string; done: boolean; reason?: string | null; followUpId?: string | null; taskId?: string | null; subjectMembershipId?: string | null; reused?: boolean; replan?: boolean };
 export type RoutineOutput = {
   v: 1; title: string; lead: string; empty: boolean; calm: string | null;
   sections: RoutineSection[]; actions: RoutineActionRecord[]; generatedAt: string;
@@ -78,10 +84,14 @@ export type QuietState = { ready: boolean; active: boolean; until: string | null
 /** Before migration 0046, and wherever nothing was read: never quiet. */
 export const NO_QUIET: QuietState = { ready: false, active: false, until: null, nextStart: null };
 
-/** What the routines list route answers (GET /brenda/routines). */
+/**
+ * What the routines list route answers (GET /brenda/routines). `unavailable` (phase 7b): templates that cannot be set up
+ * yet (`["loose_ends"]` before migration 0048); absent or empty when every template can.
+ */
 export type RoutineList = {
   ready: boolean; routines: RoutineView[]; limits: { perPerson: number };
   chase: { allowed: boolean; leadsOnly: boolean; teams: { id: string; name: string; lead: boolean }[] };
+  unavailable?: RoutineTemplate[];
 };
 /** A preview (POST …/preview): what it would send now, and what Enable consents to. */
 export type RoutinePreview = { output: RoutineOutput; consent: { hash: string; lines: string[] } };
@@ -285,12 +295,14 @@ export function pausedWords(reason: PausedReason | null | undefined): string {
 // ---- Every fixed string the UI shows (contract J) ----------------------------------------------------------------------
 
 export const ROUTINE_WORDS = {
-  /** The four built-in templates: name, one-line description, default routine name (B.1). */
+  /** The built-in templates (four in phase 7a, loose_ends in 7b): name, one-line description, default routine name (B.1). */
   templates: {
     morning_brief: { name: "Morning brief", description: "What's waiting on you: requests, overdue tasks, answers to your follow-ups and reviews.", defaultName: "Morning brief" },
     still_owed: { name: "What's still owed", description: "Open follow-ups, unanswered messages between assistants, overdue or blocked tasks and assignments nobody picked up.", defaultName: "What's still owed" },
     afternoon_check: { name: "Afternoon check", description: "Speaks only when something is blocked on you, ready for you, or due today with no progress.", defaultName: "Afternoon check" },
     chase_stalled: { name: "Chase stalled tasks", description: "Asks your team's assistants about tasks with no progress for 2 working days, then tells you who was asked.", defaultName: "Chase stalled tasks" },
+    // Phase 7b (owner decisions, 8 October 2026).
+    loose_ends: { name: "Loose ends", description: "Looks through your conversations for promises, asks of you and asks you made that never became a to-do, reminder, follow-up or commitment.", defaultName: "Loose ends" },
   } satisfies Record<RoutineTemplate, { name: string; description: string; defaultName: string }>,
   /** The line under a paused routine's name (J.1). member_gone never shows to its owner. */
   pausedReasons: {

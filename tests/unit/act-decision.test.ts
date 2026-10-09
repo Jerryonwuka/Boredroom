@@ -66,6 +66,19 @@ const TABLE: [string, ActFacts, true | string][] = [
   ["update_routine", { routine: "change" }, "routine_consent"],
   ["update_routine", { routine: "delete" }, "cant_undo"],
   ["update_routine", {}, "routine_consent"],
+  // Phase 7b (owner decisions, 8 October 2026): a to-do from someone else's words always asks; reminding, dismissing,
+  // handing over (the other side accepts) and following up later act; declining answers someone else.
+  ["loose_end_action", { looseEnd: "todo" }, "others_words_todo"],
+  ["loose_end_action", { looseEnd: "remind" }, true],
+  ["loose_end_action", { looseEnd: "hand_over" }, true],
+  ["loose_end_action", { looseEnd: "follow_up" }, true],
+  ["loose_end_action", { looseEnd: "dismiss" }, true],
+  ["respond_to_commitment", { commitment: "accept" }, "others_words_todo"],
+  ["respond_to_commitment", { commitment: "decline" }, "answers_others"],
+  ["respond_to_commitment", { commitment: "dismiss" }, true],
+  ["respond_to_commitment", { commitment: "done" }, true],
+  ["set_blocked_on", {}, true],
+  ["respond_to_block", {}, "answers_others"],
 ];
 
 describe("the table (B.3): her own chat, Claude, 'auto' in force, nothing read", () => {
@@ -108,10 +121,24 @@ describe("the table (B.3): her own chat, Claude, 'auto' in force, nothing read",
 
   it("acts only for the tools the owner accepted, and never for the irreversible", () => {
     const acting = Object.keys(AUTO_RULES).filter((tool) => TABLE.some(([t, , want]) => t === tool && want === true)).sort();
-    expect(acting).toEqual(["add_report_note", "assign_task", "create_todos", "follow_up", "hand_over_request", "mark_read", "pass_message", "send_message", "update_routine", "update_task"]);
+    expect(acting).toEqual(["add_report_note", "assign_task", "create_todos", "follow_up", "hand_over_request", "loose_end_action", "mark_read", "pass_message", "respond_to_commitment", "send_message", "set_blocked_on", "update_routine", "update_task"]);
     for (const tool of ["submit_for_review", "create_team", "invite_person", "respond_to_item", "update_doc", "create_routine"]) {
       for (const facts of [{}, { respond: "cancel" as const }, { someoneElsesDoc: true }, { share: "organisation" as const }, { routine: "pause" as const }]) expect(decide(tool, facts).act, tool).toBe(false);
     }
+  });
+
+  it("a to-do from someone else's words never acts on its own (phase 7b): the floor holds in auto, and comes after the others", () => {
+    expect(decide("loose_end_action", { looseEnd: "todo" })).toEqual(asks("others_words_todo"));
+    expect(decide("respond_to_commitment", { commitment: "accept" })).toEqual(asks("others_words_todo"));
+    expect(ASK_REASONS as readonly string[]).toContain("others_words_todo");
+    // The earlier floors still say why first.
+    expect(decide("loose_end_action", { looseEnd: "todo" }, { tainted: true })).toEqual(asks("tainted"));
+    expect(decide("respond_to_commitment", { commitment: "accept" }, { shared: true })).toEqual(asks(null));
+    // Answering a block or declining someone's ask answers another person.
+    expect(decide("respond_to_block")).toEqual(asks("answers_others"));
+    expect(decide("respond_to_commitment", { commitment: "decline" })).toEqual(asks("answers_others"));
+    // In 'ask' it is today's card, with no line.
+    expect(decide("loose_end_action", { looseEnd: "todo" }, { act: actOf(ASK) })).toEqual(asks(null));
   });
 
   it("a routine acts only to pause (phase 7a): setting one up, turning it on or changing it is the person's Enable", () => {

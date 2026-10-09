@@ -21,6 +21,9 @@ import { DetailList, DetailRow } from "@/components/app/detail-list";
 import { DueDate } from "@/components/app/due";
 import { ProgressBar } from "@/components/ui/progress-arc";
 import { PageNote, PageNotes } from "@/components/ui/page-notes";
+import { BlockedOn, type BlockInfo } from "@/components/app/blocked-on";
+import { blockFor } from "@/server/services/task-blocks";
+import type { OrgContext } from "@/server/lib/api";
 
 export const dynamic = "force-dynamic";
 
@@ -47,6 +50,12 @@ const statusLabel = taskStatusLabel;
  * header (owner decision, 5 October 2026), and `?panel=comments` or `?panel=history` opens one on arrival.
  * Accent rules (6 October 2026): the time against the estimate is an orange progress bar, a running session is live
  * (orange), an overdue date is a red dot beside the "Overdue" label, and links in running text underline in orange.
+ *
+ * Blocked on whom (owner decision, 8 October 2026: phase 7b, "Brenda keeps the loops closed"; contract H.5): the Blocked
+ * alert also says who the task waits on and the question ("Waiting on Ada: “…”"), or how that went ("Ada answered: “…”",
+ * "Ada says it isn't theirs. Name someone else?"); the person holding it can change it or stop waiting, or name someone
+ * ("Waiting on someone?") when nobody is named; Mark blocked asks it too (task-forms). Read with `blockFor`, as the
+ * viewer (the database decides who may read a block); hidden before migration 0048 and when the read fails.
  */
 export default async function TaskPage({ params, searchParams }: { params: Promise<{ workspace: string; id: string }>; searchParams: Promise<{ submit?: string; panel?: string }> }) {
   const { workspace, id } = await params;
@@ -55,6 +64,8 @@ export default async function TaskPage({ params, searchParams }: { params: Promi
   const data = await loadTask(workspace, id);
   if (!data) notFound();
   const { task, sessions, submissions, deliverables, reviews, comments, history, members, canManage } = data;
+  // Phase 7b: who the task waits on (the open block, the last answered one, who can be named).
+  const blockInfo = await readBlock(ctx, task.id);
   const tz = ctx.org.timezone;
   const isAssignee = task.assignee_membership_id === ctx.membership.id;
   const isReviewer = task.reviewer_membership_id === ctx.membership.id;
@@ -90,7 +101,8 @@ export default async function TaskPage({ params, searchParams }: { params: Promi
           {!isAssignee ? <Link href={`${base}/messages?to=${task.assignee_membership_id}&task=${task.id}`} className={buttonVariants({ variant: "secondary", size: "sm" })}>Ask {first(task.assignee_name)} for an update</Link>
             : task.reviewer_membership_id ? <Link href={`${base}/messages?to=${task.reviewer_membership_id}&task=${task.id}`} className={buttonVariants({ variant: "secondary", size: "sm" })}>Message {first(task.reviewer_name) ?? "your reviewer"}</Link> : null}
           <TaskActions orgSlug={ctx.org.slug} task={{ id: task.id, version: task.version, status: task.status, archived: !!task.archived_at, blockedReason: task.blocked_reason }} isAssignee={isAssignee} canManage={canManage} members={members}
-            current={{ reviewerId: task.reviewer_membership_id, assigneeId: task.assignee_membership_id, estimateMinutes: task.estimate_minutes, dueAt: task.due_at, priority: task.priority, captureRequirement: task.capture_requirement }} />
+            current={{ reviewerId: task.reviewer_membership_id, assigneeId: task.assignee_membership_id, estimateMinutes: task.estimate_minutes, dueAt: task.due_at, priority: task.priority, captureRequirement: task.capture_requirement }}
+            block={{ ready: blockInfo.ready, people: blockInfo.people }} />
         </>} />
 
       <div className="grid items-start gap-x-8 gap-y-8 lg:grid-cols-[minmax(0,1fr)_320px]">
@@ -123,7 +135,12 @@ export default async function TaskPage({ params, searchParams }: { params: Promi
           <section aria-labelledby="output-heading">
             <SectionTitle id="output-heading" title="Expected output" />
             <p className="max-w-3xl whitespace-pre-wrap text-pretty text-sm font-normal text-secondary">{task.expected_output}</p>
-            {task.blocked_reason ? <Alert tone="danger" title="Blocked" className="mt-4">{task.blocked_reason}</Alert> : null}
+            {task.blocked_reason ? (
+              <Alert tone="danger" title="Blocked" className="mt-4">
+                {task.blocked_reason}
+                {task.status === "blocked" && !task.archived_at ? <BlockedOn orgSlug={ctx.org.slug} taskId={task.id} holder={isAssignee} info={blockInfo} reason={task.blocked_reason} /> : null}
+              </Alert>
+            ) : null}
           </section>
 
           {isAssignee && !task.archived_at && ["todo", "in_progress", "blocked"].includes(task.status) ? (
@@ -188,4 +205,14 @@ export default async function TaskPage({ params, searchParams }: { params: Promi
       </PageNotes>
     </AppShell>
   );
+}
+
+/** The task's block as the viewer may read it; `ready: false` (nothing shown) before migration 0048 or when unreadable. */
+async function readBlock(ctx: OrgContext, taskId: string): Promise<BlockInfo> {
+  try {
+    return await blockFor(ctx, taskId);
+  } catch (err) {
+    console.warn(`[task] who the task waits on could not be read: ${(err as Error)?.message ?? String(err)}`);
+    return { ready: false, block: null, last: null, people: [] };
+  }
 }

@@ -36,6 +36,12 @@
  * ordinary follow-up, nor reuses one; Ben's ask says his reply is posted in the thread; the asker gets no answer
  * notification (the thread reply notifies them); and after every transition the thread is brought up to date
  * (mention-processor's syncThreadFollowUp, loaded when needed, never throwing). Before 0043 none of it exists.
+ *
+ * The stalled re-plan (owner decisions, 8 October 2026: phase 7b): when a lead's chase routine asked about a task it had
+ * already chased for an earlier stall (its action says `replan`), the answer, once stored, comes with a new due date
+ * suggested to the lead (replan-suggest.ts; replans.ts keeps it). It is a Confirm on the follow-up's page: nothing on the
+ * task changes until the lead confirms. The requester's view carries it (`replan`). Before migration 0048 no proposal is
+ * made and the follow-up works as before.
  */
 import { after } from "next/server";
 import { z } from "zod";
@@ -46,6 +52,9 @@ import { resolveEntitlements } from "@/server/lib/entitlements";
 import { forget0039, isMissingSchema, retryWithout0039, schema0039Ready } from "@/server/lib/schema-0039";
 import { schema0043Ready } from "@/server/lib/schema-0043";
 import { schema0046Ready } from "@/server/lib/schema-0046";
+import { schema0048Ready } from "@/server/lib/schema-0048";
+import { suggestReplanDue } from "@/server/services/replan-suggest";
+import { LOOP_WORDS, loopDueLabel, loopTitle, type ReplanView } from "@/lib/commitments";
 import { memberContext } from "@/server/lib/member-context";
 import { addWorkingTime } from "@/server/lib/working-time";
 import { localMidnight, localTimeOn, todayLocal } from "@/server/lib/time";
@@ -493,13 +502,14 @@ function askTitle(n: Names, taskTitle: string | null): string {
  * spent by a schedule), and its answer is not told one by one: once all of that run's follow-ups have closed, one
  * notification says so (the answers stay on the run's page and the follow-ups page). Never throws.
  */
-type RoutineAsk = { runId: string; name: string; followUpIds: string[] };
+/** `replan` (phase 7b): the chase asked about a task it had chased before, so the answer suggests a new due date. */
+type RoutineAsk = { runId: string; name: string; followUpIds: string[]; replan: boolean };
 async function routineAskOf(r: Pick<ProcRow, "id" | "organisation_id" | "requester_membership_id" | "batch_kind" | "thread_mode">): Promise<RoutineAsk | null> {
   if (r.batch_kind !== "person" || !r.requester_membership_id || r.thread_mode) return null;
   try {
     return await withWorker(async (db) => {
       if (!(await schema0046Ready(db))) return null;
-      const run = await db.maybeOne<{ id: string; name: string; actions: { followUpId?: string | null; done?: boolean; reused?: boolean }[] }>(
+      const run = await db.maybeOne<{ id: string; name: string; actions: { followUpId?: string | null; done?: boolean; reused?: boolean; replan?: boolean }[] }>(
         `SELECT rr.id, ro.name, rr.actions
          FROM routine_runs rr JOIN routines ro ON ro.id = rr.routine_id, follow_ups f
          WHERE f.id = $3 AND rr.organisation_id = $1 AND rr.membership_id = $2
@@ -508,7 +518,8 @@ async function routineAskOf(r: Pick<ProcRow, "id" | "organisation_id" | "request
          ORDER BY rr.started_at DESC LIMIT 1`, [r.organisation_id, r.requester_membership_id, r.id]);
       if (!run || !Array.isArray(run.actions)) return null;
       const made = run.actions.filter((a) => a && a.done && !a.reused && typeof a.followUpId === "string").map((a) => a.followUpId as string);
-      return made.includes(r.id) ? { runId: run.id, name: run.name, followUpIds: made } : null;
+      const replan = run.actions.some((a) => a && a.done && !a.reused && a.followUpId === r.id && a.replan === true);
+      return made.includes(r.id) ? { runId: run.id, name: run.name, followUpIds: made, replan } : null;
     });
   } catch (err) {
     if (!isMissingSchema(err)) warn("finding the routine that asked")(err);
@@ -723,9 +734,51 @@ async function compose(r: ProcRow, now: Date, opts: { useModel?: boolean }, pre?
       : to ? `Closed: the time to reply has passed. ${n.RA?.name ?? to} got what your work shows.` : "Closed: the time to reply has passed. Today's team report got what your work shows.");
   }
   await closeBatch(r.batch_id).catch(warn("closing a batch"));
+  // Stalled a second time (phase 7b): the answer is in, so the lead gets a new due date to confirm (never automatic).
+  if (routine?.replan) await proposeReplanFor(r, routine.runId, now).catch(warn("suggesting a re-plan"));
   if (routine) await routineAnswersIn(routine, r);
   syncThread(r);
   return status;
+}
+
+/**
+ * The re-plan for a task the chase found stalled a second time (owner decisions, 8 October 2026: phase 7b): a new due
+ * date suggested to the lead who asked (replan-suggest.ts, from the task's due date, its estimate and the organisation's
+ * working days), kept by replans.ts as a proposal only the lead reads, and the lead told once (`brenda.replan`, the
+ * follow-up's page). Nothing on the task changes. Nothing before 0048, for a task gone, finished or without a holder.
+ */
+async function proposeReplanFor(r: ProcRow, routineRunId: string, now: Date): Promise<void> {
+  if (!r.task_id || !r.requester_membership_id) return;
+  const facts = await withWorker(async (db) => {
+    if (!(await schema0048Ready(db))) return null;
+    const task = await db.maybeOne<{ title: string; due_at: string | null; estimate_minutes: number | null; status: string; archived_at: string | null }>(
+      `SELECT title, due_at, estimate_minutes, status, archived_at FROM tasks WHERE id = $1 AND organisation_id = $2`, [r.task_id, r.organisation_id]);
+    if (!task || task.archived_at || task.status === "completed") return null;
+    return { task, clock: await orgClock(db, r.organisation_id, now) };
+  });
+  if (!facts) return;
+  const proposedDueAt = suggestReplanDue({ now, previousDueAt: facts.task.due_at, estimateMinutes: facts.task.estimate_minutes, schedule: facts.clock.schedule });
+  const { proposeReplan } = await import("@/server/services/replans");
+  const id = await proposeReplan({ organisationId: r.organisation_id, taskId: r.task_id, leadMembershipId: r.requester_membership_id, followUpId: r.id, routineRunId, proposedDueAt });
+  if (!id) return;
+  const label = loopDueLabel(proposedDueAt.toISOString(), r.timezone) ?? proposedDueAt.toISOString();
+  await withWorker((db) => notify(db, {
+    organisationId: r.organisation_id, recipientMembershipId: r.requester_membership_id!, type: "brenda.replan",
+    title: clip(LOOP_WORDS.notifications.replan(loopTitle(facts.task.title)), 200), body: clip(LOOP_WORDS.notifications.replanBody(label), 300),
+    resourceType: "follow_up", resourceId: r.id, href: followUpHref(r.slug, r.id), dedupKey: `replan:${id}`,
+  }));
+}
+
+/** The re-plan on a follow-up the person asked (replans.ts), or null: before 0048, none, or a read that failed. */
+async function replanOf(ctx: OrgContext, followUpId: string): Promise<ReplanView | null> {
+  try {
+    if (!(await withUser(ctx.user.profileId, (db) => schema0048Ready(db)))) return null;
+    const { replanForFollowUp } = await import("@/server/services/replans");
+    return await replanForFollowUp(ctx, followUpId);
+  } catch (err) {
+    if (!isMissingSchema(err)) warn("reading a re-plan")(err);
+    return null;
+  }
 }
 
 /** Closes a batch once every follow-up in it is closed (guarded, once), with its summary; a group's requester is told. */
@@ -945,10 +998,13 @@ export async function followUpsReady(ctx: OrgContext): Promise<boolean> {
 export async function getFollowUp(ctx: OrgContext, id: string): Promise<FollowUpView | null> {
   if (!isUuid(id)) return null;
   await settle(ctx, "f.id = $2", [id]);
-  return retryWithout0039(() => withUser(ctx.user.profileId, async (db) => {
+  const view = await retryWithout0039(() => withUser(ctx.user.profileId, async (db) => {
     if (!(await schema0039Ready(db))) return null;
     return (await loadViews(db, ctx, "f.id = $2", [id]))[0] ?? null;
   }));
+  // Phase 7b: the re-plan suggested with the answer, for the person who asked (the lead) only.
+  if (view && view.viewer === "requester") view.replan = await replanOf(ctx, id);
+  return view;
 }
 
 type BatchRow = { id: string; kind: FollowUpBatchView["kind"]; question: string; task_id: string | null; team_id: string | null; team_name: string | null; task_title: string | null; created_at: string; completed_at: string | null; summary: string | null; requester_membership_id: string | null };

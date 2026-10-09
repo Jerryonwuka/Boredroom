@@ -41,6 +41,14 @@
  *   snapshot is written (server/lib/schema-0046).
  * - Every line links its source when there is one: tasks, the Reviews page, attendance, the follow-up behind an update,
  *   the note behind a note (lib/evidence-links). A figure the report could not read says "not available", never 0.
+ *
+ * Commitments (owner decisions, 8 October 2026: phase 7b): after "Changed since …", a "Commitments" section lists the
+ * commitments accepted today by the people the reader may see (made today) and the open ones past their due date
+ * (overdue, with "2 working days with no progress" once the stalled rule noted it), read as the reader
+ * (commitments.ts commitmentsForReport: supervisors see only accepted ones). Each line links the commitment, the message
+ * when the reader can read it, and its to-do. An overdue commitment makes the day worth sending. Left out before
+ * migration 0048, and when tracking is off and there is nothing to list; a list that could not be read says "not
+ * available".
  */
 import { withUser, withWorker, type Db } from "@/server/db";
 import type { OrgContext } from "@/server/lib/api";
@@ -63,6 +71,7 @@ import { waitingForMe, workspaceUpdatesFor, type WorkspaceUpdate } from "@/serve
 import { composeTemplate, type ComposeInput } from "@/server/services/follow-up-compose";
 import { clamp, oneLine } from "@/server/services/copilot-excerpt";
 import { factsOrNull, firstName, whenLabel } from "@/lib/follow-ups";
+import { loopDueLabel, type CommitmentView } from "@/lib/commitments";
 
 export const REPORT_FOLDER = "Daily reports";
 
@@ -115,7 +124,7 @@ export type PersonDay = PersonWork & {
  * One thing waiting on the reader (phase 7a, "Decisions for you"): plain text, its source, and the words in the text the
  * source's link goes on (`link`, a quoted title); without them the link follows the line, as "([item](…))".
  */
-export type DecisionItem = { text: string; source: EvidenceRef | null; link?: string | null };
+export type DecisionItem = { text: string; source: EvidenceRef | null; link?: string | null; /** More links after the line (phase 7b: a commitment, its message, its task). */ sources?: EvidenceRef[] };
 /** One task in "Changed since yesterday": who holds it, and a word on the change ("due Thu 8 Oct → Mon 12 Oct"). */
 export type ChangeItem = { taskId: string; title: string; person: string; detail: string | null };
 export type ReportChanges = {
@@ -167,6 +176,11 @@ export type DailyReport = {
   changes: ReportChanges | "not_available" | null;
   /** The state this report is written from, saved with it for the next one; null before migration 0046 or on a failure. */
   snapshot: ReportSnapshot | null;
+  /**
+   * Commitments (phase 7b): accepted today and overdue, read as the reader; a list is null when it could not be read
+   * ("not available"); the whole is null (left out) before migration 0048, or when tracking is off and both are empty.
+   */
+  commitments?: { madeToday: DecisionItem[] | null; overdue: DecisionItem[] | null } | null;
 };
 
 type Ref = { membershipId: string; id: string; title: string };
@@ -260,13 +274,15 @@ export async function buildDailyReport(ctx: OrgContext, opts: { useAssistant?: b
       taskRefs: { completed: refsOf(extra.completed, p.membershipId), submitted: refsOf(extra.submitted, p.membershipId), overdue: refsOf(extra.overdue, p.membershipId), inProgress, blocked },
     };
   });
-  // What waits on the reader, and what changed since their previous report (phase 7a), read as them side by side.
-  const [decisions, compared] = await Promise.all([decisionsFor(ctx, people), changesFor(ctx, localDate, people)]);
+  // What waits on the reader, and what changed since their previous report (phase 7a), and (phase 7b) the commitments,
+  // read as them side by side.
+  const [decisions, compared, commitments] = await Promise.all([decisionsFor(ctx, people), changesFor(ctx, localDate, people), commitmentsFor(ctx, localDate)]);
   // A report goes out when something happened or something needs the reader; a scope with neither sends nothing.
   // Overdue or blocked work, reviews waiting for the reader and (phase 7a) any decision waiting on them count as needing
-  // them, even on a quiet day.
+  // them, even on a quiet day; so does (phase 7b) an overdue commitment.
   const active = people.some((p) => p.trackedSeconds > 0 || p.tasksCompleted > 0 || p.submittedForReview > 0);
-  const issues = extra.waitingForYou > 0 || people.some((p) => p.attendance.lateMinutes > 0 || p.attendance.missing || p.overdueOpen > 0 || p.blocked.length > 0);
+  const issues = extra.waitingForYou > 0 || people.some((p) => p.attendance.lateMinutes > 0 || p.attendance.missing || p.overdueOpen > 0 || p.blocked.length > 0)
+    || !!commitments?.overdue?.length;
   const waiting = decisionCount(decisions);
   const empty = !active && !issues && waiting === 0;
   // The model reads the plain list; the document's list links its tasks.
@@ -277,8 +293,75 @@ export async function buildDailyReport(ctx: OrgContext, opts: { useAssistant?: b
   return {
     localDate, title: `Team report, ${dayLabel(localDate)}`, scope: summary.scope, people, totals: summary.totals,
     headline, attention, waitingForYourReview: extra.waitingForYou, empty, updates: [], updatesAt: null, notes: [],
-    decisions, changes: compared.changes, snapshot: compared.snapshot,
+    decisions, changes: compared.changes, snapshot: compared.snapshot, commitments,
   };
+}
+
+// ---- Commitments (owner decisions, 8 October 2026: phase 7b) ------------------------------------------------------------
+
+/** "you" for the reader, else the first name. */
+const whoFor = (p: { membershipId: string; name: string; firstName?: string } | null, reader: string) => (!p ? null : p.membershipId === reader ? "you" : (p.firstName || firstName(p.name)));
+
+/**
+ * The report's lines for commitments (pure): made today, "“Send the deck” (Ben Okafor), due Thu 9 Oct, 17:00, asked by
+ * Olu"; overdue, "“Fix the login bug” (Ada Employee), was due Tue 6 Oct, 17:00, 2 working days with no progress". Each
+ * links the commitment, then the message when the reader can read it (made today) or the to-do (overdue).
+ */
+export function commitmentLines(views: CommitmentView[], o: { reader: string; timeZone: string; overdue: boolean }): DecisionItem[] {
+  return views.map((v) => {
+    const due = v.dueAt ? (v.dueLabel ?? loopDueLabel(v.dueAt, o.timeZone)) : null;
+    const asker = whoFor(v.asker, o.reader);
+    const text = o.overdue
+      ? `“${quote(v.title, 120)}” (${v.committer.name})${due ? `, was due ${due}` : ""}${v.stalled ? ", 2 working days with no progress" : ""}`
+      : `“${quote(v.title, 120)}” (${v.committer.name})${due ? `, due ${due}` : ""}${asker ? `, asked by ${asker}` : ""}`;
+    const sources: EvidenceRef[] = [{ kind: "commitment", id: v.id }];
+    if (!o.overdue && v.message.href) sources.push({ kind: "message", id: v.message.id, conversationId: v.where.conversationId });
+    if (v.todo) sources.push({ kind: "task", id: v.todo.id });
+    if (o.overdue && v.message.href && !v.todo) sources.push({ kind: "message", id: v.message.id, conversationId: v.where.conversationId });
+    return { text, source: null, sources };
+  });
+}
+
+/**
+ * The commitments made today and overdue, read as the reader (commitments.ts, loaded when needed). Null before 0048, or
+ * when tracking is off and there is nothing to list; a failed read is "not available" for both lists. Never throws.
+ */
+async function commitmentsFor(ctx: OrgContext, localDate: string): Promise<DailyReport["commitments"]> {
+  try {
+    const svc = await import("@/server/services/commitments");
+    const read = await svc.commitmentsForReport(ctx, localDate);
+    if (!read) return null;
+    if (!read.madeToday.length && !read.overdue.length) {
+      const settings = await withUser(ctx.user.profileId, (db) => svc.commitmentSettings(db, ctx.org.id)).catch(() => null);
+      if (!settings?.track) return null;
+    }
+    const o = { reader: ctx.membership.id, timeZone: ctx.org.timezone };
+    return { madeToday: commitmentLines(read.madeToday, { ...o, overdue: false }), overdue: commitmentLines(read.overdue, { ...o, overdue: true }) };
+  } catch (err) {
+    if (isMissingSchema(err)) return null;
+    console.warn(`[daily report] commitments not available: ${(err as Error)?.message ?? err}`);
+    return { madeToday: null, overdue: null };
+  }
+}
+
+/**
+ * "## Commitments" (phase 7b): made today, then overdue, at most 10 each then "And {n} more.", each line linked; a list
+ * that could not be read says so; nothing in either says so.
+ */
+export function commitmentsMarkdown(slug: string, c: NonNullable<DailyReport["commitments"]>): string[] {
+  const lines = ["## Commitments", ""];
+  const groups: [string, DecisionItem[] | null][] = [["Made today", c.madeToday], ["Overdue", c.overdue]];
+  for (const [label, items] of groups) {
+    if (items === null) { lines.push(`**${label}**`, `- ${sentence(NOT_AVAILABLE)}.`, ""); continue; }
+    if (!items.length) continue;
+    const shown = items.slice(0, DECISIONS_SHOWN);
+    lines.push(`**${label}**`, ...shown.map((x) => `- ${mdQuoted(x.text)}${sourcesSuffix(slug, x.sources ?? (x.source ? [x.source] : []))}`));
+    if (items.length > shown.length) lines.push(`- And ${items.length - shown.length} more.`);
+    lines.push("");
+  }
+  if (lines.length === 2) lines.push("Nothing was made today and nothing is overdue.", "");
+  while (lines[lines.length - 1] === "") lines.pop();
+  return lines;
 }
 
 // ---- Decisions for you (owner decision, 8 October 2026: phase 7a, the team report) ------------------------------------
@@ -702,6 +785,8 @@ export function reportMarkdown(ctx: OrgContext, r: DailyReport, opts: { writtenA
   // Phase 7a: what waits on the reader first, then what changed since their previous report, then the people.
   if (r.decisions) lines.push(...decisionsMarkdown(slug, r.decisions), "");
   if (r.changes) lines.push(...changesMarkdown(slug, r.changes), "");
+  // Phase 7b: the commitments made today and overdue, after the changes.
+  if (r.commitments) lines.push(...commitmentsMarkdown(slug, r.commitments), "");
   // Attendance links to its page for those who may read everyone's (team leads and organisation accounts).
   const role = ctx.membership.role;
   const attendance = role === "manager" || role === "owner" || role === "hr" ? sourcesSuffix(slug, [{ kind: "attendance" }]) : "";

@@ -121,4 +121,16 @@ export const READBACK = {
   routineYou: (scheduleWords: string) => `You, ${scheduleWords ? `${scheduleWords[0].toLowerCase()}${scheduleWords.slice(1)}` : "on its schedule"}`,
   routineTeam: (n: number | null, team: string) => (n === null ? `The assistants of the people on ${team} (${READBACK_WORDS.membersUnknown})`
     : `The ${n === 1 ? "assistant" : "assistants"} of the ${members(n)} on ${team}`),
+  /**
+   * Loose ends, commitments and blocked on whom (owner decisions, 8 October 2026: phase 7b). A to-do (from a loose end or
+   * an accepted commitment) goes to the person alone; handing it over goes to the other person's assistant for them to
+   * accept; a follow-up later is asked on its day; "blocked on" reaches the person it waits on as “Ben is blocked on
+   * you”; an answer to a block is the answerer's comment on the task, seen by the person waiting.
+   */
+  todoWhat: (title: string) => `A to-do: “${title}”`,
+  handOverTo: (first: string, assistantName: string) => `${first}'s ${assistantName}, for ${first} to accept`,
+  followUpLaterTo: (first: string, assistantName: string, when: string) => `${first}'s ${assistantName}, on ${when}`,
+  blockedOnTo: (first: string, assistantName: string, blockedFirst: string) => `${first}'s ${assistantName}, as “${blockedFirst} is blocked on you”`,
+  blockAnswerTo: (blockedFirst: string, taskTitle: string) => `${blockedFirst}, as your comment on “${taskTitle}”`,
+  commitmentDeclineTo: (first: string) => `${first}, who is told privately`,
 } as const;

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { withUser, withWorker, type Db } from "@/server/db";
 import { conflict, forbidden, invalid, notFound } from "@/server/lib/errors";
+import { schema0048Ready } from "@/server/lib/schema-0048";
 import { storage, tenantKey } from "@/server/lib/storage";
 import { sha256, signPayload, verifyPayload } from "@/server/lib/crypto";
 import { audit, notify, enqueueJob } from "@/server/services/common";
@@ -86,6 +87,8 @@ export async function submitInternal(db: Db, ctx: OrgContext, taskId: string, in
       await enqueueJob(db, "deliverable.scan", { deliverableId: d.id }, { dedupKey: `scan:${d.id}` });
     }
     await db.query(`UPDATE tasks SET status = 'in_review', blocked_reason = NULL, version = version + 1 WHERE id = $1`, [taskId]);
+    // Submitted from Blocked: its open "waiting on" is cleared in the same transaction (phase 7b review, 9 October 2026).
+    if (t.status === "blocked" && (await schema0048Ready(db))) await db.query(`SELECT app_task_block_settle($1)`, [taskId]);
     await db.query(`INSERT INTO task_status_history(organisation_id, task_id, actor_membership_id, from_status, to_status, reason) VALUES ($1, $2, $3, $4, 'in_review', $5)`, [ctx.org.id, taskId, ctx.membership.id, t.status, `Revision ${rev.next} submitted`]);
     await notify(db, { organisationId: ctx.org.id, recipientMembershipId: t.reviewer_membership_id, type: "review.requested", title: `Review requested: ${t.title}`, body: `Revision ${rev.next} from ${ctx.user.displayName}`, resourceType: "task", resourceId: taskId, href: `/app/${ctx.org.slug}/tasks/${taskId}`, dedupKey: `review.requested:${sub.id}` });
     await audit(db, { organisationId: ctx.org.id, actorMembershipId: ctx.membership.id, action: "task.submitted", subjectType: "task_submission", subjectId: sub.id, subjectMembershipId: ctx.membership.id, requestId, metadata: { taskId, revision: rev.next, links: input.links.length, files: input.fileIds.length } });

@@ -97,7 +97,7 @@ const mentionProcess: Handler = async (payload) => {
 // what must happen even when nobody is looking: requests past their time expire (the sender is told), an accepted request
 // a crash left half-done is closed as interrupted (never run again: no second to-do), and today's report notes settle
 // once the report is written. No model. Returns at once before migration 0043 (the service checks), so an old worker
-// that does not know the job only leaves it for this one (rearmFollowUpJobs).
+// that does not know the job only leaves it for this one (claimKilledJobs).
 
 /** Requests past their time, accepted requests left half-done, report notes past the report: at most 50 a run. */
 const assistantItemSweep: Handler = async () => {
@@ -152,6 +152,51 @@ const routineRelease: Handler = async (payload) => {
   if (r.released) console.log(`[worker] routines: ${r.released} held run(s) delivered${r.bundled ? " together" : ""}`);
 };
 
+// ---- Loose ends and commitments (owner decisions, 8 October 2026: phase 7b, "Brenda keeps the loops closed") ----------
+// The workspace's assistant reads tracked group conversations for commitments every few minutes (one short job per
+// organisation; it may call the model, bounded: 4 calls a run, 200 a day for the organisation, recorded as the
+// workspace's own usage). The sweep moves what waits on nobody (expiries, open asks after their grace period, to-dos
+// done, interrupted accepts), follows accepted commitments through (the due reminder, the stalled note, the optional
+// thread follow-up) and settles "blocked on" questions that are no longer true. The loose-ends sweep asks the follow-ups
+// people scheduled ("Follow up later"). Each returns at once before migration 0048.
+
+/** Whether migration 0048 is applied (each job returns at once before it). */
+async function loopsReady(): Promise<boolean> {
+  const { schema0048Ready } = await import("../src/server/lib/schema-0048");
+  return withWorker((db) => schema0048Ready(db)).catch(() => false);
+}
+
+/** One organisation's look at its tracked group conversations (`organisationId`). */
+const commitmentsScan: Handler = async (payload) => {
+  const organisationId = String(payload.organisationId ?? "");
+  if (!UUID.test(organisationId) || !(await loopsReady())) return;
+  const { scanWorkspaceCommitments } = await import("../src/server/services/commitment-detect");
+  const r = await scanWorkspaceCommitments(organisationId);
+  if (r.created || r.agreed) console.log(`[worker] commitments: ${r.created} noted, ${r.agreed} agreed in ${organisationId} (${r.read} read, ${r.candidates} looked at, ${r.engine})`);
+};
+
+/** Commitments moved on, followed through, and blocks settled: at most 50 of each a run. A failure in one leaves the others to run. */
+const commitmentsSweep: Handler = async () => {
+  if (!(await loopsReady())) return;
+  const fail = (what: string) => (err: unknown) => { console.error(`[worker] ${what}: ${(err as Error)?.message ?? String(err)}`); return null; };
+  const { sweepCommitments } = await import("../src/server/services/commitments");
+  const a = await sweepCommitments({ limit: 50 }).catch(fail("sweeping commitments"));
+  const { runCommitmentFollowThrough } = await import("../src/server/services/commitment-followthrough");
+  const b = await runCommitmentFollowThrough({ limit: 50 }).catch(fail("following commitments through"));
+  const { settleBlocks } = await import("../src/server/services/task-blocks");
+  const c = await settleBlocks({ limit: 50 }).catch(fail("settling blocks"));
+  const moved = (a ? a.expired + a.done + a.cancelled + a.interrupted + a.asksDelivered : 0) + (b ? b.reminded + b.stalledNoted + b.threadPosts : 0) + (c?.cleared ?? 0);
+  if (moved) console.log(`[worker] commitments: ${JSON.stringify({ ...(a ?? {}), ...(b ?? {}), cleared: c?.cleared ?? 0 })}`);
+};
+
+/** "Follow up later" on a loose end, once its day comes: asked as the person, at most 25 a run. */
+const looseEndsSweep: Handler = async () => {
+  if (!(await loopsReady())) return;
+  const { runDueLooseEndFollowUps } = await import("../src/server/services/loose-ends");
+  const r = await runDueLooseEndFollowUps({ limit: 25 });
+  if (r.asked || r.failed) console.log(`[worker] loose ends: ${r.asked} follow-up(s) asked, ${r.failed} could not be`);
+};
+
 const retentionDelete: Handler = async (payload) => {
   const { deleteRecording } = await import("../src/server/services/recording");
   await deleteRecording(payload.recordingId as string, (payload.reason as "retention" | "incident" | "offboarding") ?? "retention");
@@ -195,6 +240,9 @@ export const handlers: Record<string, Handler> = {
   "assistant_item.sweep": assistantItemSweep,
   "routine.run": routineRun,
   "routine.release": routineRelease,
+  "commitments.scan": commitmentsScan,
+  "commitments.sweep": commitmentsSweep,
+  "loose_ends.sweep": looseEndsSweep,
   "recording.retention_delete": retentionDelete,
   "recording.assemble": assembleRecording,
   "deliverable.scan": scanDeliverable,

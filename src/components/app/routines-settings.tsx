@@ -163,7 +163,7 @@ export function RoutinesSettings({ orgSlug, name, impersonated, timeZone, initia
       </SettingsGroup>
 
       {sheet && list ? (
-        <RoutineSheet key={opened} orgSlug={orgSlug} mode={sheet} onClose={() => setSheet(null)} chase={list.chase} assistantName={name}
+        <RoutineSheet key={opened} orgSlug={orgSlug} mode={sheet} onClose={() => setSheet(null)} chase={list.chase} unavailable={list.unavailable} assistantName={name}
           timeZone={sheet.routine?.timezone ?? personZone} readOnly={readOnly} onTimeZone={toTimeZone}
           onChange={(v) => upsert(v)} />
       ) : null}

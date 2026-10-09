@@ -14,6 +14,10 @@
  * Phase 6 (owner decision, 8 October 2026: assistants talk to each other): the suggestions also offer the conversation's
  * people's assistants ("Ben's Brenda"); while one is tagged the line under the pill says how it answers, and "Withdraw
  * reply" is offered to its owner too (the server says who may, `mention_reply.canWithdraw`).
+ * Phase 7b (owner decision, 8 October 2026: workspace commitments): the composer carries the page's one-line `notice`
+ * above the pill (the tracked conversation's disclosure, components/app/tracked-disclosure), and the workspace
+ * assistant's own note in a thread gets Reply alone (`MessageMenu` `replyOnly`): nobody edits, withdraws, copies through
+ * a menu or reports it.
  */
 import { createContext, useContext, useEffect, useId, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
@@ -104,8 +108,12 @@ const STRIP_X = "grid size-7 shrink-0 place-items-center rounded-lg text-seconda
  * assistants (`Thread.taggable`, none before 0043), offered after the people. While one of them is tagged the line
  * under the pill says it answers from its owner's work or asks them, and that anything not everyone here can see goes
  * only to the person asking.
+ *
+ * Phase 7b (owner decision, 8 October 2026: workspace commitments): `notice` is one line the page puts above the pill,
+ * in the composer's column (in a tracked group conversation: "Brenda notes commitments made here; people accept them
+ * onto their own list."). It stays while a reply or a task is attached, and while a voice note records.
  */
-export function Composer({ orgSlug, conversationId, task, prefill, placeholder, canVoice = true, people = NO_PEOPLE, mentions = NO_MENTIONS, taggable = NO_TAGGABLE }: { canVoice?: boolean; orgSlug: string; conversationId: string; task: TaskRef; prefill?: string; placeholder: string; people?: MentionPerson[]; mentions?: ComposerMentions; taggable?: TaggableAssistant[] }) {
+export function Composer({ orgSlug, conversationId, task, prefill, placeholder, canVoice = true, people = NO_PEOPLE, mentions = NO_MENTIONS, taggable = NO_TAGGABLE, notice = null }: { canVoice?: boolean; orgSlug: string; conversationId: string; task: TaskRef; prefill?: string; placeholder: string; people?: MentionPerson[]; mentions?: ComposerMentions; taggable?: TaggableAssistant[]; notice?: ReactNode }) {
   const router = useRouter();
   const [body, setBody] = useState(prefill ?? "");
   const { personal } = useAssistant();
@@ -175,6 +183,7 @@ export function Composer({ orgSlug, conversationId, task, prefill, placeholder, 
   return (
     <form data-refresh-safe className="shrink-0 bg-background px-4 pb-4 pt-2 md:px-6" onSubmit={(e) => { e.preventDefault(); void send(); }} onKeyDown={(e) => { if (e.key === "Escape" && reply) { e.preventDefault(); setReply(null); } }}>
       <div className="mx-auto w-full max-w-3xl">
+        {notice ? <div className="mb-2 px-3">{notice}</div> : null}
         <Presence show={!!reply}>
           <div className="mb-2 flex items-center gap-2.5 rounded-xl border border-border bg-fill-0 py-1.5 pl-3 pr-1.5">
             <Reply className="size-4 shrink-0 text-secondary" aria-hidden />
@@ -349,8 +358,25 @@ function TextDialog({ open, onClose, title, description, label, initial = "", su
  * `withdrawReply` is set on an assistant's reply to an @mention for the person who asked and for whoever runs the
  * conversation (personal assistants, phase 5, owner decision, 8 October 2026): "Withdraw reply" removes it for everyone
  * through the mention's own route, since only Boredroom's worker may change an assistant's message.
+ * `replyOnly` (phase 7b, owner decision, 8 October 2026): the workspace assistant's own note in a thread offers Reply and
+ * nothing else, so there is no "…" at all; `senderName` is then the workspace assistant's name ("Replying to Brenda").
  */
-export function MessageMenu({ orgSlug, id, mine, body, isVoice, senderName, canReply = true, canReport = !mine, withdrawReply = null }: { orgSlug: string; id: string; mine: boolean; body: string; isVoice: boolean; senderName: string; canReply?: boolean; canReport?: boolean; withdrawReply?: { mentionId: string; assistantName: string } | null }) {
+export function MessageMenu({ orgSlug, id, mine, body, isVoice, senderName, canReply = true, canReport = !mine, withdrawReply = null, replyOnly = false }: { orgSlug: string; id: string; mine: boolean; body: string; isVoice: boolean; senderName: string; canReply?: boolean; canReport?: boolean; withdrawReply?: { mentionId: string; assistantName: string } | null; replyOnly?: boolean }) {
+  if (replyOnly) return canReply ? <ReplyOnly id={id} body={body} isVoice={isVoice} senderName={senderName} /> : null;
+  return <FullMessageMenu orgSlug={orgSlug} id={id} mine={mine} body={body} isVoice={isVoice} senderName={senderName} canReply={canReply} canReport={canReport} withdrawReply={withdrawReply} />;
+}
+
+/** Reply alone, as the reply arrow beside the bubble (phase 7b: the workspace assistant's note). */
+function ReplyOnly({ id, body, isVoice, senderName }: { id: string; body: string; isVoice: boolean; senderName: string }) {
+  const { setReply } = useReply();
+  return (
+    <div className="flex items-center gap-0.5">
+      <IconButton size="xs" aria-label="Reply" onClick={() => setReply({ id, name: senderName, body: isVoice ? "Voice note" : body })}><Reply aria-hidden /></IconButton>
+    </div>
+  );
+}
+
+function FullMessageMenu({ orgSlug, id, mine, body, isVoice, senderName, canReply, canReport, withdrawReply }: { orgSlug: string; id: string; mine: boolean; body: string; isVoice: boolean; senderName: string; canReply: boolean; canReport: boolean; withdrawReply: { mentionId: string; assistantName: string } | null }) {
   const router = useRouter();
   const { setReply } = useReply();
   const [sheet, setSheet] = useState<"edit" | "report" | "withdraw" | "withdrawReply" | null>(null);

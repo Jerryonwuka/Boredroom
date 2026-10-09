@@ -71,6 +71,17 @@ export function attemptOf(tool: string, input: Record<string, unknown> = {}): st
     case "assistant_inbox": return "check what other assistants brought you";
     case "respond_to_item": return "answer something another assistant brought you";
     case "follow_up_status": return "check your follow-ups";
+    // Loose ends and commitments (phase 7b, owner decisions 8 October 2026; review, 9 October 2026).
+    case "loose_ends": return "look for your loose ends";
+    case "loose_end_action": return input.action === "todo" ? "make a loose end a to-do" : input.action === "remind" ? "set a reminder for a loose end"
+      : input.action === "hand_over" ? "hand a loose end to someone's assistant" : input.action === "follow_up" ? "schedule a follow-up on a loose end"
+      : input.action === "dismiss" ? "set a loose end aside" : "act on a loose end";
+    case "commitments": return "check commitments";
+    case "respond_to_commitment": return input.action === "accept" ? "accept a commitment" : input.action === "decline" ? "decline a commitment"
+      : input.action === "dismiss" ? "mark something as not a commitment" : input.action === "done" ? "mark a commitment done" : "answer a commitment";
+    case "set_blocked_on": return "say who a task is blocked on";
+    case "respond_to_block": return input.action === "not_me" ? "say a blocked task isn't yours" : "answer a blocked task";
+    case "waiting_on": return "check who is waiting on whom";
     default: return "do that";
   }
 }
@@ -91,7 +102,11 @@ export const PRIVATE_TOOLS: ReadonlySet<string> = new Set(["send_message", "mark
   "pass_message", "hand_over_request", "add_report_note", "assistant_inbox", "respond_to_item", "assistant_message", "assistant_request", "assistant_report_note", "assistant_respond",
   // Act without asking (owner decision, 8 October 2026): an Undo's own words ("Undid: Sent Ben …") are the person's; the
   // row's summary for owners and HR says only what kind of thing was undone ("Undid a message").
-  "undo"]);
+  "undo",
+  // Loose ends, commitments and "blocked on whom" (phase 7b; security review, 9 October 2026): their refusals name the
+  // person and can reveal a mute ("Ben isn't taking messages from your assistant right now"), and their words are other
+  // people's. Owners and HR read only what kind of thing was tried.
+  "loose_ends", "loose_end_action", "commitments", "respond_to_commitment", "set_blocked_on", "respond_to_block", "waiting_on"]);
 
 /** The model-facing words of the tainted-turn refusal (copilot.ts TAINT_ERROR), recognised in rows logged before this change. */
 const TAINTED = /^Not done: you read other people's messages/;

@@ -128,7 +128,8 @@ describe("shared mode: every tool has exactly one class", () => {
     expect(of("refused")).toEqual(["team_report"]);
     // Phase 6 (owner decision, 8 October 2026): sending to another assistant and answering what was brought wait for Confirm.
     // Phase 7a (owner decision, 8 October 2026): setting up or changing a routine waits for Confirm too.
-    expect(of("confirm")).toEqual(["add_report_note", "assign_task", "create_routine", "create_team", "follow_up", "hand_over_request", "invite_person", "mark_read", "pass_message", "respond_to_item", "send_message", "submit_for_review", "update_routine"]);
+    // Phase 7b (owner decision, 8 October 2026): answering a commitment or a block, and naming who a task waits on, too.
+    expect(of("confirm")).toEqual(["add_report_note", "assign_task", "create_routine", "create_team", "follow_up", "hand_over_request", "invite_person", "mark_read", "pass_message", "respond_to_block", "respond_to_commitment", "respond_to_item", "send_message", "set_blocked_on", "submit_for_review", "update_routine"]);
     expect(of("public")).toEqual(["list_people"]);
     expect(of("policy")).toEqual(["get_policy"]);
     expect(of("link")).toEqual(["open_page"]);
@@ -138,7 +139,8 @@ describe("shared mode: every tool has exactly one class", () => {
     // Attendance, time, team status, My Day, the briefing, reminders, follow-ups, the tagger's own conversation list.
     // And (phase 6) what passed between the person's assistant and others': theirs alone.
     // And (phase 7a) the person's own routines.
-    expect(of("narrow")).toEqual(["assistant_inbox", "follow_up_status", "get_attendance", "get_briefing", "get_my_day", "get_team_status", "list_conversations", "list_reminders", "list_routines", "work_summary"]);
+    // And (phase 7b) the person's loose ends, commitments and who waits on whom.
+    expect(of("narrow")).toEqual(["assistant_inbox", "commitments", "follow_up_status", "get_attendance", "get_briefing", "get_my_day", "get_team_status", "list_conversations", "list_reminders", "list_routines", "loose_ends", "waiting_on", "work_summary"]);
   });
 });
 

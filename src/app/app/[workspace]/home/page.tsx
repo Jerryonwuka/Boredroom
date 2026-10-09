@@ -15,6 +15,10 @@ import { openerSeen } from "@/server/services/routines";
 import { morningOpener } from "@/server/services/opener";
 import type { Opener } from "@/lib/opener";
 import { formatLongDate } from "@/lib/utils";
+import { listLooseEnds } from "@/server/services/loose-ends";
+import type { LooseEndList } from "@/lib/commitments";
+import type { Person } from "@/components/app/loose-end-actions";
+import { loadLoops } from "./assistants/inbox";
 
 export const dynamic = "force-dynamic";
 
@@ -60,6 +64,13 @@ type Search = { ask?: string | string[]; tab?: string | string[]; chat?: string 
  * browser decides from its own key (BrendaHome). Later visits that day get the usual chips, and the opener is not even
  * read then. It shows during the person's quiet hours too (it is not a pop-up). A failed read never fails the page: the
  * chips show instead.
+ *
+ * Phase 7b (owner decision, 8 October 2026: "Brenda keeps the loops closed"; contract H.1 and H.3): "Waiting for you" also
+ * holds "blocked on you" questions, commitments the workspace's assistant noted for the person and open asks
+ * (`loadLoops`, counted in the "Between assistants" pill), and a "Loose ends" block follows it: the person's three newest
+ * open loose ends (`listLooseEnds`, private to them) with their actions, "See all {n}", or "Look for loose ends" when
+ * there are none. Neither is plan-gated (the built-in look runs on every plan). Before migration 0048 neither shows; a
+ * read that fails leaves it out.
  */
 export default async function HomePage({ params, searchParams }: { params: Promise<{ workspace: string }>; searchParams: Promise<Search> }) {
   const { workspace } = await params;
@@ -73,7 +84,7 @@ export default async function HomePage({ params, searchParams }: { params: Promi
   const { ctx, counts, teams } = await workspacePage(workspace, `/app/${workspace}/home`);
   const role = ctx.membership.role;
   const aiEnabled = ctx.plan.features.AI_ASSISTANT === true;
-  const [history, chat, connected, followUpsReady, waiting, itemsReady, items, opener] = await Promise.all([
+  const [history, chat, connected, followUpsReady, waiting, itemsReady, items, opener, looseEnds, loops] = await Promise.all([
     // Past chats are only shown while the plan includes Brenda (carrying one on needs her).
     aiEnabled ? listConversations(ctx) : Promise.resolve([]),
     aiEnabled && chatId ? getConversation(ctx, chatId) : Promise.resolve(null),
@@ -87,7 +98,12 @@ export default async function HomePage({ params, searchParams }: { params: Promi
     waitingItems(ctx),
     // The morning opener (phase 7a) stands in for the quick asks, which show only while the plan includes the assistant.
     aiEnabled ? openerFor(ctx) : Promise.resolve(null),
+    // Phase 7b: the person's open loose ends (three at most) and what else waits on them. Not plan-gated.
+    openLooseEnds(ctx),
+    loadLoops(ctx),
   ]);
+  // Who a loose end can be handed to, read only when one on screen offers it.
+  const people = looseEnds?.items.some((v) => v.actions.includes("hand_over")) ? await handOverPeople(ctx) : [];
   const now = new Date();
   const hour = localParts(now, ctx.org.timezone).hour;
   const data: HomeData = {
@@ -112,6 +128,9 @@ export default async function HomePage({ params, searchParams }: { params: Promi
     itemsReady,
     items: itemsReady ? items : [],
     opener,
+    looseEnds,
+    loops,
+    handOverPeople: people,
   };
   return (
     <AppShell ctx={ctx} counts={counts} teams={teams}>
@@ -136,5 +155,27 @@ async function openerFor(ctx: OrgContext): Promise<Opener | null> {
   } catch (err) {
     console.warn(`[home] the morning opener could not be read, so the quick asks show: ${(err as Error)?.message ?? String(err)}`);
     return null;
+  }
+}
+
+/** The person's newest open loose ends (three: her panel shows that many), or null when they cannot be read (phase 7b). */
+async function openLooseEnds(ctx: OrgContext): Promise<LooseEndList | null> {
+  try {
+    return await listLooseEnds(ctx, { status: "open", limit: 3 });
+  } catch (err) {
+    console.warn(`[home] loose ends could not be read, so they are left out: ${(err as Error)?.message ?? String(err)}`);
+    return null;
+  }
+}
+
+/** Active members but the person (as /home/loose-ends): who the hand-over sheet offers. The server checks the request. */
+async function handOverPeople(ctx: OrgContext): Promise<Person[]> {
+  try {
+    const rows = await withUser(ctx.user.profileId, (db) => db.query<{ id: string; display_name: string }>(
+      `SELECT m.id, pr.display_name FROM memberships m JOIN profiles pr ON pr.id = m.user_id
+        WHERE m.organisation_id = $1 AND m.status = 'active' AND m.id <> $2 ORDER BY pr.display_name`, [ctx.org.id, ctx.membership.id]));
+    return rows.map((r) => ({ membershipId: r.id, name: r.display_name }));
+  } catch {
+    return [];
   }
 }

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { ComponentType } from "react";
-import { AtSign, Bell, CalendarClock, CircleAlert, CircleCheck, ClipboardCheck, CreditCard, FileText, MessageSquare, MessageSquareQuote, MessageSquareReply, Repeat, ShieldCheck, SquareCheckBig, Video } from "lucide-react";
+import { AtSign, Bell, CalendarClock, CircleAlert, CircleCheck, ClipboardCheck, CreditCard, FileText, Handshake, Hourglass, MessageSquare, MessageSquareQuote, MessageSquareReply, Repeat, ShieldCheck, SquareCheckBig, Video } from "lucide-react";
 import { workspacePage } from "@/server/lib/workspace-page";
 import { AppShell } from "@/components/app/shell";
 import { PageHeader } from "@/components/ui/card";
@@ -13,6 +13,7 @@ import { PageNote, PageNotes } from "@/components/ui/page-notes";
 import { notificationsView } from "@/server/services/views";
 import { assistantProfiles } from "@/server/services/assistant-profile";
 import { ROUTINE_WORDS } from "@/lib/routines";
+import { LOOP_WORDS } from "@/lib/commitments";
 import { formatDateTime, cn } from "@/lib/utils";
 import { MarkRead, MarkAllRead } from "./mark-read";
 
@@ -48,6 +49,15 @@ export const metadata = { title: "Notifications" };
  * opening /home/routines), and a routine that couldn't run or was paused ("Routine", `brenda.routine_failed`, opening
  * Settings → Your assistant → Routines). A repeat icon (a warning circle for the failed one). They sit in the assistant
  * tab, and quiet hours never keep them out of this list: only pop-ups and sounds wait.
+ *
+ * Loose ends and commitments (owner decision, 8 October 2026: phase 7b, "Brenda keeps the loops closed"): the person's
+ * own assistant tells them of a commitment the workspace's assistant noted for them ("Commitment noted",
+ * `brenda.commitment`), an ask nobody took up ("Asked of you", `brenda.open_ask`), what became of their asks ("Commitment
+ * accepted", "Commitment declined"), one due today ("Due today") or overdue on an ask of theirs ("Commitment overdue"),
+ * a colleague blocked on them ("Blocked on you", `brenda.blocked_on`) and what became of their own block ("Answer",
+ * "Blocked on someone else"), and a re-plan to confirm for a lead ("Re-plan", `brenda.replan`). Words from lib/commitments
+ * (`LOOP_WORDS.notifications.kinds`); a handshake for commitments, an hourglass for blocks, a calendar clock for the
+ * re-plan; the assistant tab. Each opens its card (Between assistants), the Commitments page or the follow-up.
  */
 function kindsFor(personal: string, workspace: string): Record<string, string> {
   return {
@@ -58,6 +68,7 @@ function kindsFor(personal: string, workspace: string): Record<string, string> {
     "assistant.message": "Passed-on message", "assistant.request": "Request to accept", "assistant.reply": "Reply", "assistant.outcome": "Request update",
     "assistant.tagged": "Your assistant in Messages", "assistant.thread_reply": "Reply in Messages",
     ...ROUTINE_WORDS.notifications.kinds,
+    ...LOOP_WORDS.notifications.kinds,
   };
 }
 
@@ -84,6 +95,10 @@ function iconOf(type: string): Icon {
   if (type === "assistant.reply") return MessageSquareReply;
   if (type === "assistant.outcome") return CircleCheck;
   if (type === "assistant.tagged" || type === "assistant.thread_reply") return AtSign;
+  // Loose ends and commitments (phase 7b): commitments and asks, blocks, a re-plan to confirm.
+  if (type.startsWith("brenda.commitment") || type === "brenda.open_ask") return Handshake;
+  if (type === "brenda.blocked_on" || type.startsWith("brenda.block_")) return Hourglass;
+  if (type === "brenda.replan") return CalendarClock;
   // Routines (phase 7a): what ran on a schedule; one that couldn't run is a warning.
   if (type === "brenda.routine_failed") return CircleAlert;
   if (type === "brenda.routine" || type === "brenda.routine_bundle") return Repeat;
@@ -107,7 +122,7 @@ function emptyFor(personal: string): Record<Filter, { title: string; description
     unread: { title: "You are all caught up", description: "Nothing unread. New notifications show here first." },
     tasks: { title: "No task notifications", description: "Assignments, comments, blockers and review requests on your tasks show here." },
     messages: { title: "No message notifications", description: "Direct messages and mentions show here." },
-    brenda: { title: `Nothing from ${personal} yet`, description: "Reminders, nudges, follow-ups, daily reports, your routines and what other people's assistants bring you show here." },
+    brenda: { title: `Nothing from ${personal} yet`, description: "Reminders, nudges, follow-ups, daily reports, your routines, commitments and what other people's assistants bring you show here." },
   };
 }
 

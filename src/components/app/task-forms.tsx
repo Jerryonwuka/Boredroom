@@ -4,6 +4,13 @@
  * The task page's actions and forms, v4: the header's buttons (outline first, the one primary last), Mark blocked in a
  * popover, Edit in a right-hand sheet, and the submission, review and reopen forms as cards in the page. Every form
  * shows a refusal next to the field it is about, and only what changed is sent.
+ *
+ * Blocked on whom (owner decision, 8 October 2026: phase 7b, "Brenda keeps the loops closed"; contract H.5): Mark blocked
+ * also asks "Waiting on" ("Nobody in particular" first, then the workspace's people) and, once someone is chosen, "Your
+ * question to them" (started from what is blocking it, up to 500 characters). It marks the task blocked first, then names
+ * who it waits on; if that second step is refused, the task stays blocked and the server's words show above the buttons
+ * (the task page then offers "Waiting on someone?"). Without migration 0048 (`block.ready` false) the fields are hidden
+ * and Mark blocked works as before.
  */
 import { useId, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -20,6 +27,8 @@ import { Sheet } from "@/components/ui/sheet";
 import { api, isApiFailure } from "@/lib/api-client";
 import { DatePicker } from "@/components/ui/date-picker";
 import { DurationPicker } from "@/components/ui/duration-picker";
+import { WaitingOnFields, blockFailure, putBlock, type BlockPerson } from "@/components/app/blocked-on";
+import { LOOP_LIMITS } from "@/lib/commitments";
 import { cn } from "@/lib/utils";
 
 function useForm() {
@@ -54,15 +63,45 @@ function localDateTime(iso: string | null) {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
-export function TaskActions({ orgSlug, task, isAssignee, canManage, members, current }: { orgSlug: string; task: TaskLite; isAssignee: boolean; canManage: boolean; members: { id: string; display_name: string }[]; current: TaskEditable }) {
-  const { pending, error, fieldErrors, submit, reset } = useForm();
+export function TaskActions({ orgSlug, task, isAssignee, canManage, members, current, block }: {
+  orgSlug: string; task: TaskLite; isAssignee: boolean; canManage: boolean; members: { id: string; display_name: string }[]; current: TaskEditable;
+  /** Phase 7b: who a blocked task can wait on (task-blocks `blockFor`); absent or not ready: Mark blocked as before. */
+  block?: { ready: boolean; people: BlockPerson[] };
+}) {
+  const { pending, error, fieldErrors, submit, reset, router } = useForm();
   const [mode, setModeState] = useState<null | "block" | "edit">(null);
-  const setMode = (m: null | "block" | "edit") => { if (m) reset(); setModeState(m); };
+  // Phase 7b: Mark blocked's "Waiting on" and question, and a refusal of that second step (the task stays blocked).
+  const [reason, setReason] = useState("");
+  const [waitingOn, setWaitingOn] = useState("");
+  const [question, setQuestion] = useState("");
+  const [naming, setNaming] = useState(false);
+  const [blockError, setBlockError] = useState<string | null>(null);
+  const setMode = (m: null | "block" | "edit") => {
+    if (m) reset();
+    if (m === "block") { setReason(task.blockedReason ?? ""); setWaitingOn(""); setQuestion(""); setBlockError(null); }
+    setModeState(m);
+  };
   const patch = (body: Record<string, unknown>) => submit(() => api(`/api/orgs/${orgSlug}/tasks/${task.id}`, { method: "PATCH", body: { expectedVersion: task.version, ...body } }), () => setModeState(null));
+  const naming0048 = !!block?.ready && block.people.length > 0;
+  /** Marks the task blocked, then (phase 7b) names who it waits on. A refusal of the second step keeps it blocked and says why. */
+  const markBlocked = async () => {
+    const q = question.trim();
+    if (waitingOn && !q) { setBlockError("Say what you need from them."); return; }
+    let blocked = false;
+    await submit(() => api(`/api/orgs/${orgSlug}/tasks/${task.id}`, { method: "PATCH", body: { expectedVersion: task.version, status: "blocked", reason } }), () => { blocked = true; });
+    if (!blocked) return;
+    setModeState(null);
+    if (!waitingOn) return;
+    setNaming(true);
+    try { await putBlock(orgSlug, task.id, waitingOn, q); setBlockError(null); }
+    catch (err) { setBlockError(`The task is blocked, but who it waits on wasn't saved: ${blockFailure(err).replace(/\.$/, "")}.`); }
+    finally { setNaming(false); router.refresh(); }
+  };
   if (task.archived) return null;
   return (
     <div className="flex flex-col items-end gap-2">
       {error && mode !== "edit" && mode !== "block" ? <Alert tone="danger">{error}</Alert> : null}
+      {blockError && mode !== "block" ? <Alert tone="danger">{blockError}</Alert> : null}
       <div className="flex flex-wrap items-center justify-end gap-2">
         {(isAssignee || canManage) && task.status !== "completed" ? <EditButton iconOnly label="Edit task" aria-haspopup="dialog" className="size-8 rounded-[10px]" onClick={() => setMode("edit")} /> : null}
         {/* "Delete", as in the task list and its sheet: the same action keeps one name (the task is archived; history stays). */}
@@ -72,10 +111,16 @@ export function TaskActions({ orgSlug, task, isAssignee, canManage, members, cur
             trigger={<Button size="sm" variant="secondary">Mark blocked</Button>}>
             {/* Cancel closes through the popover, which hands the focus back to Mark blocked (as Escape does). */}
             {(close) => (
-              <form id="block-form" className="grid gap-3" onSubmit={(e) => { e.preventDefault(); const f = new FormData(e.currentTarget); patch({ status: "blocked", reason: f.get("reason") }); }}>
+              <form id="block-form" className="grid gap-3" onSubmit={(e) => { e.preventDefault(); void markBlocked(); }}>
                 {error && !fieldErrors.reason ? <Alert tone="danger">{error}</Alert> : null}
-                <Field label="What is blocking you?" htmlFor="block-reason" error={fieldErrors.reason}><Textarea id="block-reason" name="reason" required maxLength={2000} className="min-h-20" /></Field>
-                <div className="flex justify-end gap-2"><Button size="sm" variant="secondary" onClick={close}>Cancel</Button><Button size="sm" type="submit" loading={pending}>{pending ? "Saving…" : "Mark blocked"}</Button></div>
+                {blockError ? <Alert tone="danger">{blockError}</Alert> : null}
+                <Field label="What is blocking you?" htmlFor="block-reason" error={fieldErrors.reason}><Textarea id="block-reason" name="reason" required maxLength={2000} className="min-h-20" value={reason} onChange={(e) => setReason(e.target.value)} /></Field>
+                {/* Phase 7b: who it waits on, and the question their assistant brings them. */}
+                {naming0048 && block ? (
+                  <WaitingOnFields people={block.people} waitingOn={waitingOn} question={question} onQuestion={setQuestion} disabled={pending || naming}
+                    onWaitingOn={(v) => { setWaitingOn(v); setBlockError(null); if (v && !question.trim()) setQuestion(reason.trim().slice(0, LOOP_LIMITS.questionMax)); }} />
+                ) : null}
+                <div className="flex justify-end gap-2"><Button size="sm" variant="secondary" onClick={close}>Cancel</Button><Button size="sm" type="submit" loading={pending || naming}>{pending || naming ? "Saving…" : "Mark blocked"}</Button></div>
               </form>
             )}
           </Popover>

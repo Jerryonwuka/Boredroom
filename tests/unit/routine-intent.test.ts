@@ -86,7 +86,7 @@ describe("setting one up", () => {
   });
 
   it("uses each template's default time when none is given", () => {
-    expect(DEFAULT_TIMES).toEqual({ morning_brief: "09:00", still_owed: "16:00", afternoon_check: "15:00", chase_stalled: "16:00" });
+    expect(DEFAULT_TIMES).toEqual({ morning_brief: "09:00", still_owed: "16:00", afternoon_check: "15:00", chase_stalled: "16:00", loose_ends: "17:30" });
     expect(create("every weekday, brief me").time).toBe("09:00");
     expect(create("every Friday send me what's still owed").time).toBe("16:00");
     expect(create("afternoon check every weekday").time).toBe("15:00");
@@ -138,5 +138,21 @@ describe("what is not a routine", () => {
       "what's still owed?", "every Friday", "Every Friday at 4pm", "Tell Ben's assistant every Friday is a deadline", "I need to send what's still owed every Friday",
       "add a to-do every friday", "", "   ",
     ]) expect(routineIntent(q), q).toBeNull();
+  });
+});
+
+describe("loose ends (phase 7b, owner decisions, 8 October 2026)", () => {
+  it("sets up the loose_ends template with its cadence, 17:30 when no time is said", () => {
+    expect(routineIntent("every evening, check for loose ends")).toEqual({ kind: "create", template: "loose_ends", cadence: { kind: "daily" }, time: "17:30", teams: null });
+    expect(routineIntent("every weekday at 6pm find my loose ends")).toEqual({ kind: "create", template: "loose_ends", cadence: { kind: "weekdays" }, time: "18:00", teams: null });
+    expect(create("Every Friday at 4pm, look for loose ends").template).toBe("loose_ends");
+    expect(create("loose ends every day").time).toBe("17:30");
+  });
+  it("without a cadence it is not a routine (the helper's loop intent takes it)", () => {
+    for (const q of ["any loose ends?", "check my loose ends", "show my loose ends"]) expect(routineIntent(q), q).toBeNull();
+  });
+  it("its name reads as a routine's", () => {
+    expect(routineIntent("pause my loose ends")).toEqual({ kind: "pause", name: "loose ends" });
+    expect(looksLikeRoutine("evening loose ends")).toBe(true);
   });
 });

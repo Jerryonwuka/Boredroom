@@ -124,7 +124,9 @@ describe("a routine, from setup to on", () => {
     expect(p.consent.hash).toMatch(/^[0-9a-f]{64}$/);
     expect(p.consent.hash).toBe(R.consentHash({ template: "still_owed", params: {} }));
     expect(p.consent.lines).toEqual([
-      "Send you what's still owed: follow-ups, messages between assistants, overdue or blocked tasks and assignments nobody picked up.",
+      // Phase 7b (owner decision, 8 October 2026): the roundup also lists loose ends and overdue commitments. The lines are
+      // not in the consent hash, so routines already on stay on.
+      "Send you what's still owed: follow-ups, messages between assistants, overdue or blocked tasks, assignments nobody picked up, your loose ends and overdue commitments.",
       "Stay quiet when there's nothing.",
       "Nothing goes to anyone else.",
     ]);

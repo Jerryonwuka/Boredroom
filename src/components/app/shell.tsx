@@ -25,6 +25,13 @@ import { DEFAULT_ASSISTANT_NAME } from "@/lib/assistant-look";
 
 export const ROLE_LABEL: Record<string, string> = { owner: "Organisation owner", hr: "HR administrator", manager: "Team lead", employee: "Staff" };
 
+/**
+ * Commitments (owner decision, 8 October 2026: phase 7b, "Brenda keeps the loops closed"; contract H.4): in the Work group
+ * right after Tasks, for every role (everyone has "My commitments"; leads see their teams', the owner and HR everyone's).
+ * Its icon is lucide's `Handshake` (sidebar.tsx's ICONS `commitments`).
+ */
+const COMMITMENTS_ICON: NavItem["icon"] = "commitments";
+
 export function navItems(ctx: OrgContext, counts: NavCounts, teams: { id: string; name: string; is_manager: boolean }[] = [], assistantName = DEFAULT_ASSISTANT_NAME): NavItem[] {
   const base = `/app/${ctx.org.slug}`;
   const role = ctx.membership.role;
@@ -40,6 +47,7 @@ export function navItems(ctx: OrgContext, counts: NavCounts, teams: { id: string
     items.push({ href: `${base}/attendance`, label: "Attendance", icon: "attendance", group: "Overview" });
     items.push({ href: `${base}/workroom`, label: "Workroom", icon: "team", group: "Overview" });
     items.push({ href: `${base}/tasks`, label: "Tasks", icon: "tasks", group: "Work" });
+    items.push({ href: `${base}/commitments`, label: "Commitments", icon: COMMITMENTS_ICON, group: "Work" });
     items.push({ href: `${base}/messages`, label: "Messages", icon: "messages", badge: counts.messages || undefined, group: "Work" });
     items.push({ href: `${base}/docs`, label: "Docs", icon: "docs", group: "Work" });
     items.push({ href: `${base}/reviews`, label: "Reviews", icon: "reviews", badge: counts.attention || undefined, group: "Work" });
@@ -61,6 +69,7 @@ export function navItems(ctx: OrgContext, counts: NavCounts, teams: { id: string
     // The to-do list has its own page (owner request, 7 October 2026), first in Work.
     items.push({ href: `${base}/todos`, label: "To-dos", icon: "todos", group: "Work" });
     items.push({ href: `${base}/tasks`, label: "Tasks", icon: "tasks", group: "Work" });
+    items.push({ href: `${base}/commitments`, label: "Commitments", icon: COMMITMENTS_ICON, group: "Work" });
     items.push({ href: `${base}/messages`, label: "Messages", icon: "messages", badge: counts.messages || undefined, group: "Work" });
     items.push({ href: `${base}/docs`, label: "Docs", icon: "docs", group: "Work" });
     items.push({ href: `${base}/projects`, label: "Projects", icon: "projects", group: "Work" });
@@ -73,6 +82,7 @@ export function navItems(ctx: OrgContext, counts: NavCounts, teams: { id: string
   items.push({ href: `${base}/clock`, label: "Clock in", icon: "clock", group: "Overview" });
   items.push({ href: `${base}/todos`, label: "To-dos", icon: "todos", group: "Work" });
   items.push({ href: `${base}/tasks`, label: "Tasks", icon: "tasks", group: "Work" });
+  items.push({ href: `${base}/commitments`, label: "Commitments", icon: COMMITMENTS_ICON, group: "Work" });
   items.push({ href: `${base}/messages`, label: "Messages", icon: "messages", badge: counts.messages || undefined, group: "Work" });
   items.push({ href: `${base}/docs`, label: "Docs", icon: "docs", group: "Work" });
   items.push({ href: `${base}/timesheets`, label: "My timesheet", icon: "timesheets", group: "Records" });

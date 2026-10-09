@@ -45,7 +45,15 @@
    the card's one orange button (`.starts`). A routine's card: its lines in the list, each running to two lines with a
    small Open (`.lines`). A Confirm's readback: "Goes to" as the small label over a compact list of who receives it, and
    "What they get" in the secondary grey, aligned with the summary's words (`.readback`). Quiet hours add no styles: the
-   compact bar's words say it. No new orange beyond the opener's one standout. */
+   compact bar's words say it. No new orange beyond the opener's one standout.
+   Brenda keeps the loops closed, second part (owner decision, 8 October 2026: phase 7b). The commitment, open-ask and
+   blocked-on cards are built from the phase 6 parts: the workspace assistant's face (a block: the person's own), a title
+   that may run to two lines, the what or the question in the quoted bubble, the reason box with the talk keys, and actions
+   that stay in view. Orange there: the accept button ("Add to my to-dos", "Accept", "Take it on"), each card's one
+   standout; a block's Open is white (the answer is typed in Boredroom), and Decline, Not a commitment and Not me are
+   ghost. The new notifications' badges keep their status colours: green for one taken on or answered, amber for due today
+   and a re-plan to confirm, red for overdue, neutral words for the rest; never orange. The day card's "3 loose ends" is a
+   row of its "Waiting for you" list that opens the page, its arrow moving like Open's. */
 
 /* Inter and Geist Mono, from @fontsource-variable (SIL Open Font License, fonts/OFL.txt). Nothing loads remotely. */
 @font-face { font-family: "Inter Variable"; font-style: normal; font-display: swap; font-weight: 100 900; src: url(fonts/inter-latin-ext-wght-normal.woff2) format("woff2");
@@ -630,3 +638,9 @@ kbd { display: inline-flex; align-items: center; justify-content: center; box-si
 :is(.btn, .link):is(:hover, :focus-visible) > :is(.ic-alert, .ic-message) { animation-name: ic-tip; transform-origin: 50% 90%; }
 :is(.btn, .link):is(:hover, :focus-visible) > .ic-reply { animation-name: ic-back; }
 :is(.btn, .link):is(:hover, :focus-visible) > :is(.ic-clipboard, .ic-calendar) { animation-name: ic-press; }
+
+/* Brenda keeps the loops closed, second part (owner decision, 8 October 2026: phase 7b). The day card's "3 loose ends"
+   row (a `.rowlink`, as the opener's counts): its arrow sits where a row's figure would, in the secondary grey, and flies
+   out like Open's when the row is hovered or focused (nothing under reduced motion). */
+.list li > .rowlink .k .ic { display: block; }
+.list li > .rowlink:is(:hover, :focus-visible) .ic-open { animation: ic-fly-out .42s var(--ease) 1; }

@@ -122,7 +122,13 @@ describe("the cached prefix and the chat schema", () => {
     // the prefix stays one cached prefix; nothing else may name the mode.
     const PAUSE_LINE = "Waits for confirmation, except pausing when the person chose to act without asking.";
     expect(TOOLS.find((x) => x.name === "update_routine")?.description).toContain(PAUSE_LINE);
-    const prefix = (RULES + JSON.stringify(TOOLS)).replace(PAUSE_LINE, "");
+    // Phase 7b (owner decision, 8 October 2026, contract G.2): two more static sentences, the same for everyone: a to-do
+    // from a loose end always waits (even in that mode), and set_blocked_on waits unless the person chose that mode.
+    const LOOSE_TODO_LINE = "always waits for confirmation, even when they act without asking";
+    const BLOCKED_LINE = "Waits for confirmation unless the person chose to act without asking.";
+    expect(TOOLS.find((x) => x.name === "loose_end_action")?.description).toContain(LOOSE_TODO_LINE);
+    expect(TOOLS.find((x) => x.name === "set_blocked_on")?.description).toContain(BLOCKED_LINE);
+    const prefix = (RULES + JSON.stringify(TOOLS)).replace(PAUSE_LINE, "").replace(LOOSE_TODO_LINE, "").replace(BLOCKED_LINE, "");
     for (const w of [/without asking/i, /\bundo\b/i, /stillAsking/, /withoutAsking/, /act_mode|act mode/i, /\bauto\b/i]) expect(prefix, String(w)).not.toMatch(w);
     expect(prefix).not.toContain(actSituation(actOf()) as string);
   });
@@ -155,6 +161,8 @@ describe("why a Confirm card still asks (B.1)", () => {
     always_asks: "Still asking: Max always asks before this.",
     // Phase 7a (owner decision, 8 October 2026): setting up or turning on a routine is the person's Enable.
     routine_consent: "Still asking: turning on a routine is your standing yes for what it does each time.",
+    // Phase 7b (owner decision, 8 October 2026): a to-do made from someone else's words always asks first.
+    others_words_todo: "Still asking: this to-do comes from words in a conversation, so you confirm it first.",
   };
 
   it.each([...ASK_REASONS])("%s", (reason) => {

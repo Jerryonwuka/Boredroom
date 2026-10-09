@@ -3,6 +3,7 @@ import { withUser, type Db } from "@/server/db";
 import { conflict, forbidden, invalid, notFound } from "@/server/lib/errors";
 import { audit, notify, managersOf } from "@/server/services/common";
 import type { OrgContext } from "@/server/lib/api";
+import { schema0048Ready } from "@/server/lib/schema-0048";
 
 export const TASK_STATUSES = ["todo", "in_progress", "blocked", "in_review", "completed"] as const;
 export type TaskStatus = (typeof TASK_STATUSES)[number];
@@ -173,6 +174,11 @@ export async function updateTask(ctx: OrgContext, taskId: string, input: z.infer
     if (sets.length === 0) return { id: t.id, version: t.version };
     params.push(taskId);
     const updated = await db.one<{ version: number }>(`UPDATE tasks SET ${sets.join(", ")}, version = version + 1 WHERE id = $${params.length} RETURNING version`, params);
+    // Blocked on whom (owner decisions, 8 October 2026: phase 7b): a "waiting on" that is no longer true (the task left
+    // Blocked, was archived or changed hands) is cleared in the same transaction. The definer only ever clears.
+    const leftBlocked = t.status === "blocked" && input.status !== undefined && input.status !== "blocked";
+    const reassigned = input.assigneeMembershipId !== undefined && input.assigneeMembershipId !== t.assignee_membership_id;
+    if ((leftBlocked || input.archive || reassigned) && (await schema0048Ready(db))) await db.query(`SELECT app_task_block_settle($1)`, [taskId]);
     await audit(db, { organisationId: ctx.org.id, actorMembershipId: ctx.membership.id, action: input.archive ? "task.archived" : "task.updated", subjectType: "task", subjectId: taskId, subjectMembershipId: t.assignee_membership_id, requestId, metadata: { changed: Object.keys(input).filter((k) => k !== "expectedVersion"), status: input.status, reason: input.reason } });
     return { id: t.id, version: updated.version };
   });
@@ -395,6 +401,8 @@ export async function completeOwnTaskInternal(db: Db, ctx: OrgContext, t: Comple
   if (open) throw conflict("SESSION_OPEN", "Stop the running session on this task first.");
   const updated = await db.one<{ version: number }>(`UPDATE tasks SET status = 'completed', completed_at = now(), blocked_reason = NULL, version = version + 1 WHERE id = $1 RETURNING version`, [t.id]);
   await db.query(`INSERT INTO task_status_history(organisation_id, task_id, actor_membership_id, from_status, to_status, reason) VALUES ($1, $2, $3, $4, 'completed', $5)`, [ctx.org.id, t.id, ctx.membership.id, t.status, note || "Marked done"]);
+  // A done task waits on nobody any more (phase 7b): its open "waiting on" is cleared in the same transaction.
+  if (t.status === "blocked" && (await schema0048Ready(db))) await db.query(`SELECT app_task_block_settle($1)`, [t.id]);
   if (note) await db.query(`INSERT INTO task_comments(organisation_id, task_id, author_membership_id, body) VALUES ($1, $2, $3, $4)`, [ctx.org.id, t.id, ctx.membership.id, `Done: ${note}`]);
   await audit(db, { organisationId: ctx.org.id, actorMembershipId: ctx.membership.id, action: "task.completed", subjectType: "task", subjectId: t.id, subjectMembershipId: t.assignee_membership_id, requestId, metadata: { self: true } });
   return { id: t.id, version: updated.version, completed: true as const };

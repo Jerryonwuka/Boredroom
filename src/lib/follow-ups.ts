@@ -14,6 +14,7 @@
  */
 import type { AssistantProfile } from "@/lib/assistant-look";
 import type { EvidenceRef } from "@/lib/evidence-links";
+import type { ReplanView } from "@/lib/commitments";
 
 // ---- Statuses and choices ---------------------------------------------------------------------------------------------
 
@@ -373,6 +374,12 @@ export type FollowUpView = {
    * Only what the viewer may already see: the shared facts' tasks once there is an answer.
    */
   sources?: EvidenceRef[];
+  /**
+   * The stalled re-plan (owner decisions, 8 October 2026: phase 7b): a new due date suggested to the lead when their chase
+   * found the task stalled a second time; for the requester only, on the follow-up's own page (null: none; absent: not
+   * read, or before migration 0048).
+   */
+  replan?: ReplanView | null;
 };
 
 export type FollowUpBatchView = {

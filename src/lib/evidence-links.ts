@@ -11,7 +11,10 @@
  * (`server/services/evidence.ts` is a different thing: the files people attach to their work.)
  */
 
-export type EvidenceKind = "task" | "message" | "conversation" | "doc" | "follow_up" | "assistant_item" | "review" | "time_correction" | "routine_run" | "attendance";
+export type EvidenceKind = "task" | "message" | "conversation" | "doc" | "follow_up" | "assistant_item" | "review" | "time_correction" | "routine_run" | "attendance"
+  // Phase 7b (owner decisions, 8 October 2026): a commitment noted in a group chat, a person's loose end, and a
+  // "blocked on you" (shown in the Between-assistants inbox, so it reads "item").
+  | "commitment" | "loose_end" | "task_block";
 /** `id`: the thing's own id (a message's id for `message`); `conversationId`: the conversation a message is in. */
 export type EvidenceRef = { kind: EvidenceKind; id?: string | null; conversationId?: string | null };
 
@@ -21,6 +24,7 @@ export const NOT_AVAILABLE = "not available";
 export const EVIDENCE_WORDS: Record<EvidenceKind, string> = {
   task: "task", message: "message", conversation: "conversation", doc: "doc", follow_up: "follow-up", assistant_item: "item",
   review: "review", time_correction: "time correction", routine_run: "run", attendance: "attendance",
+  commitment: "commitment", loose_end: "loose end", task_block: "item",
 };
 
 const SLUG = /^[a-z0-9-]{1,64}$/;
@@ -45,6 +49,9 @@ export function evidenceHref(slug: string, ref: EvidenceRef): string | null {
     case "time_correction": return `${base}/reviews?tab=corrections`;
     case "routine_run": return okId(ref.id) ? `${base}/home/routines/${ref.id}` : null;
     case "attendance": return `${base}/attendance`;
+    case "commitment": return okId(ref.id) ? `${base}/commitments?c=${ref.id}` : null;
+    case "loose_end": return okId(ref.id) ? `${base}/home/loose-ends?l=${ref.id}` : null;
+    case "task_block": return okId(ref.id) ? `${base}/home/assistants?f=${ref.id}` : null;
     default: return null;
   }
 }

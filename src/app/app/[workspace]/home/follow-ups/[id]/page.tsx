@@ -9,6 +9,8 @@ import { Alert } from "@/components/ui/states";
 import { PageNote, PageNotes } from "@/components/ui/page-notes";
 import { FollowUpExchange } from "@/components/app/follow-up-exchange";
 import { CancelFollowUpButton, WaitingForYou } from "@/components/app/follow-up-reply";
+import { ReplanCard } from "@/components/app/replan-card";
+import type { ReplanView } from "@/lib/commitments";
 import { assistantProfiles } from "@/server/services/assistant-profile";
 import { getFollowUp } from "@/server/services/follow-ups";
 import { schema0039Ready } from "@/server/lib/schema-0039";
@@ -32,6 +34,12 @@ const loadFollowUp = cache(async (slug: string, id: string) => (isId(id) ? getFo
  * Phase 6 (owner decision, 8 October 2026: the assistants' inbox): the lists it came from moved into "Between
  * assistants", so its back link goes to Sent → Follow-ups (the person who asked) or Received → Follow-ups about you
  * (the person asked about). The page itself is unchanged and keeps its address.
+ *
+ * Stalled re-plan (owner decision, 8 October 2026: phase 7b, "Brenda keeps the loops closed"; contract F and H.6): when
+ * the chase routine asked because a task stalled a second time, the lead who asked sees a re-plan under the answer
+ * (replan-card): a new due date to confirm, change or leave ("Not now"). Nothing on the task changes until they confirm.
+ * `view.replan` is filled for the requester only, once migration 0048 is applied; once answered the card says what was
+ * decided.
  */
 export default async function FollowUpPage({ params }: { params: Promise<{ workspace: string; id: string }> }) {
   const { workspace, id } = await params;
@@ -54,6 +62,8 @@ export default async function FollowUpPage({ params }: { params: Promise<{ works
   }
 
   const S = view.subject.firstName;
+  // Phase 7b (FollowUpView.replan, lib/follow-ups): read through a narrow type, so the page compiles before and after it lands.
+  const replan = (view as { replan?: ReplanView | null }).replan ?? null;
   const subjectView = view.viewer === "subject";
   // Since phase 6 the lists live in "Between assistants": Received → Follow-ups about you, Sent → Follow-ups.
   const back = subjectView ? { href: `${base}/home/assistants/received?type=followups`, label: "Back to Follow-ups about you" } : { href: `${base}/home/assistants/sent?type=followups`, label: "Back to Follow-ups" };
@@ -70,6 +80,8 @@ export default async function FollowUpPage({ params }: { params: Promise<{ works
         {/* The person asked about, while their reply is still wanted (kept, collapsed to "Sent.", once it goes). */}
         <WaitingForYou orgSlug={ctx.org.slug} items={view.canReply ? [view] : []} timeZone={ctx.org.timezone} now={now.getTime()} title={null} />
         <FollowUpExchange view={view} timeZone={ctx.org.timezone} now={now.getTime()} />
+        {/* Phase 7b: a re-plan for the lead who asked, under the answer. */}
+        {replan && view.viewer === "requester" ? <ReplanCard orgSlug={ctx.org.slug} replan={replan} timeZone={ctx.org.timezone} /> : null}
       </div>
       <PageNotes>
         {subjectView ? <PageNote>Your to-dos, private documents, messages and your chats with {name} are never shared.</PageNote>

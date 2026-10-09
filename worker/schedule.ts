@@ -6,6 +6,8 @@ import { schema0039Ready } from "../src/server/lib/schema-0039";
 import { schema0041Ready } from "../src/server/lib/schema-0041";
 import { schema0043Ready } from "../src/server/lib/schema-0043";
 import { schema0046Ready } from "../src/server/lib/schema-0046";
+import { schema0048Ready } from "../src/server/lib/schema-0048";
+import { LOOP_LIMITS } from "../src/lib/commitments";
 import { NOTE_SETTLE_GRACE_MINUTES } from "../src/server/services/assistant-items";
 
 /**
@@ -194,25 +196,83 @@ export async function scheduleRoutineReleases(now: Date = new Date()) {
 }
 
 /**
- * Follow-up jobs another worker killed because it does not know them yet (correctness review, 8 October 2026): while a
- * worker deployed before phase 4 still runs against the same database, it claims about half of the new jobs and marks
- * each 'dead' at once ("no handler for job type …"). A dead followup.collect would keep its per-day key and that
- * organisation would get no collection that day. This puts such jobs from the last day back in the queue (attempts
- * reset) for a worker that knows them; a job the old worker claims again comes back on the next run. Harmless once
- * every worker runs phase 4: then nothing matches. The proper fix is deploying the worker before (or with) this one.
- * The mentions' jobs too (owner decision, 8 October 2026: personal assistants, phase 5), for a worker without phase 5,
- * and the assistant items sweep (phase 6), for a worker without phase 6, and the routines' jobs (phase 7a), for a worker
- * without phase 7a.
+ * The workspace's look at tracked group conversations for commitments (owner decisions, 8 October 2026: phase 7b): one
+ * `commitments.scan` job per organisation with tracking on and something new in a tracked conversation, deduplicated
+ * per organisation per 5-minute bucket, so a busy channel is read at most every five minutes. Nothing before 0048.
  */
-export async function rearmFollowUpJobs() {
+export async function scheduleCommitmentScans(now: Date = new Date()) {
+  const { trackedOrgsDue } = await import("../src/server/services/commitment-detect");
+  const orgs = await trackedOrgsDue({ now });
+  if (!orgs.length) return { queued: 0 };
+  const bucket = Math.floor(now.getTime() / (LOOP_LIMITS.scanEveryMinutes * 60_000));
   return withWorker(async (db) => {
-    const r = await db.query<{ id: string }>(
-      `UPDATE jobs SET state = 'pending', attempts = 0, last_error = NULL, finished_at = NULL, locked_at = NULL, locked_by = NULL, next_run_at = now()
-       WHERE state = 'dead' AND type IN ('followup.collect', 'followup.process', 'followup.sweep', 'mention.sweep', 'mention.process', 'assistant_item.sweep', 'routine.run', 'routine.release')
-         AND last_error LIKE 'no handler for job type %' AND created_at > now() - interval '1 day'
-       RETURNING id`);
-    return { rearmed: r.length };
+    for (const o of orgs) await enqueueJob(db, "commitments.scan", { organisationId: o.organisationId }, { dedupKey: `commitments.scan:${o.organisationId}:${bucket}` });
+    return { queued: orgs.length };
   });
+}
+
+/**
+ * The commitments sweep (phase 7b): queued in the minute something waits on nobody (commitments.ts `commitmentsDue`:
+ * an expiry, an open ask past its grace period, a to-do done or archived, an interrupted accept), on a 15-minute bucket
+ * while a due reminder may be waiting (commitment-followthrough), and once an hour whatever happens (stalled notes, thread
+ * follow-ups, blocks to settle). Jobs are never purged, so only when there is work. Nothing before 0048.
+ */
+export async function scheduleCommitmentSweep(now: Date = new Date()) {
+  if (!(await withWorker((db) => schema0048Ready(db)))) return { queued: false, due: false };
+  const { commitmentsDue } = await import("../src/server/services/commitments");
+  const { followThroughDue } = await import("../src/server/services/commitment-followthrough");
+  const minute = Math.floor(now.getTime() / 60_000);
+  const due = await commitmentsDue({ now }).catch((err) => { console.error("[worker] commitments due", (err as Error).message); return false; });
+  const reminders = due ? false : await followThroughDue({ now }).catch(() => false);
+  return withWorker(async (db) => {
+    if (due) await enqueueJob(db, "commitments.sweep", {}, { dedupKey: `commitments.sweep:${minute}` });
+    else if (reminders) await enqueueJob(db, "commitments.sweep", {}, { dedupKey: `commitments.sweep:q${Math.floor(minute / 15)}` });
+    await enqueueJob(db, "commitments.sweep", {}, { dedupKey: `commitments.sweep:h${Math.floor(minute / 60)}` });
+    return { queued: true, due: due || reminders };
+  });
+}
+
+/**
+ * The loose-ends sweep (phase 7b): follow-ups people scheduled with "Follow up later", asked once their time comes.
+ * Queued in the minute one is due and once an hour. Nothing before 0048.
+ */
+export async function scheduleLooseEndSweep(now: Date = new Date()) {
+  if (!(await withWorker((db) => schema0048Ready(db)))) return { queued: false, due: false };
+  const { looseEndsDue } = await import("../src/server/services/loose-ends");
+  const minute = Math.floor(now.getTime() / 60_000);
+  const due = await looseEndsDue({ now }).catch((err) => { console.error("[worker] loose ends due", (err as Error).message); return false; });
+  return withWorker(async (db) => {
+    if (due) await enqueueJob(db, "loose_ends.sweep", {}, { dedupKey: `loose_ends.sweep:${minute}` });
+    await enqueueJob(db, "loose_ends.sweep", {}, { dedupKey: `loose_ends.sweep:h${Math.floor(minute / 60)}` });
+    return { queued: true, due };
+  });
+}
+
+/** A job as the worker claims it. */
+export type ClaimedJob = { id: string; type: string; payload: Record<string, unknown>; attempts: number; max_attempts: number };
+
+/**
+ * Jobs another worker killed because it does not know them yet (correctness review, 8 October 2026; blocker fix,
+ * 9 October 2026). While a worker deployed before a phase still runs against the same database, it claims about half
+ * of the new jobs (follow-ups, mentions, assistant items, routines, commitments, loose ends) and marks each 'dead' at
+ * once ("no handler for job type …"). Putting them back to 'pending' did not help: that worker, closer to the database
+ * and polling just as often, took nearly every one of them again within a second, and killed it again, every 15
+ * seconds, so a phase 7b job (the commitments scan) never ran. They are now claimed straight from 'dead' to 'running'
+ * under THIS worker's name, which an older worker (it only ever takes 'pending' jobs) never sees, and this worker runs
+ * them itself. Only types it has a handler for (`types`), killed in the last day, with attempts left: each claim counts
+ * an attempt, so a job that also fails here ends dead with its real error instead of going round for ever. Harmless
+ * once every worker runs the same code: then nothing matches. The proper fix is still deploying the worker before (or
+ * with) the web.
+ */
+export async function claimKilledJobs(workerId: string, types: string[], limit = 50): Promise<ClaimedJob[]> {
+  if (!types.length) return [];
+  return withWorker((db) => db.query<ClaimedJob>(
+    `UPDATE jobs SET state = 'running', attempts = attempts + 1, last_error = NULL, finished_at = NULL, locked_at = now(), locked_by = $1, next_run_at = now()
+     WHERE id IN (SELECT id FROM jobs
+                  WHERE state = 'dead' AND type = ANY($2::text[]) AND last_error LIKE 'no handler for job type %'
+                    AND attempts < max_attempts AND created_at > now() - interval '1 day'
+                  ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT $3)
+     RETURNING id, type, payload, attempts, max_attempts`, [workerId, types, Math.max(1, Math.min(200, Math.round(limit)))]));
 }
 
 /**
@@ -232,7 +292,12 @@ export async function scheduleMaintenance() {
   // Routines (phase 7a): runs that are due, and deliveries held for quiet hours that may go now.
   await scheduleRoutines().catch((err) => console.error("[worker] routine schedule", (err as Error).message));
   await scheduleRoutineReleases().catch((err) => console.error("[worker] routine release schedule", (err as Error).message));
-  await rearmFollowUpJobs().then((r) => { if (r.rearmed) console.warn(`[worker] ${r.rearmed} follow-up, mention, assistant item or routine job(s) killed by an older worker put back in the queue: deploy the worker everywhere`); }, (err) => console.error("[worker] follow-up job re-arm", (err as Error).message));
+  // Loose ends and commitments (phase 7b): the workspace's scans of tracked group conversations, the commitments sweep
+  // (with the follow-through and the blocks to settle) and the loose ends' scheduled follow-ups.
+  await scheduleCommitmentScans().catch((err) => console.error("[worker] commitment scan schedule", (err as Error).message));
+  await scheduleCommitmentSweep().catch((err) => console.error("[worker] commitment sweep schedule", (err as Error).message));
+  await scheduleLooseEndSweep().catch((err) => console.error("[worker] loose end sweep schedule", (err as Error).message));
+  // Jobs an older worker killed are claimed and run by this worker's loop (claimKilledJobs, worker/index.ts).
   await withWorker(async (db) => {
     const expiring = await db.query<{ id: string }>(`SELECT id FROM recordings WHERE deleted_at IS NULL AND upload_state <> 'deleted' AND expires_at <= now()`);
     for (const r of expiring) await enqueueJob(db, "recording.retention_delete", { recordingId: r.id, reason: "retention" }, { dedupKey: `recording.delete:${r.id}` });

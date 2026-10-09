@@ -43,6 +43,9 @@ import { QuietHoursSettings } from "@/components/app/quiet-hours-settings";
 import { RoutinesWorkspaceSettings } from "@/components/app/routines-workspace-settings";
 import { listRoutines, quietHoursFor, routineSettingsFor } from "@/server/services/routines";
 import { ROUTINE_WORDS } from "@/lib/routines";
+import { CommitmentsSettings } from "@/components/app/commitments-settings";
+import { commitmentSettings } from "@/server/services/commitments";
+import { LOOP_WORDS, type CommitmentSettings } from "@/lib/commitments";
 import { withUser } from "@/server/db";
 import type { AssistantProfiles } from "@/lib/assistant-look";
 import { ASSISTANT_ITEM_WORDS } from "@/lib/assistant-items";
@@ -119,6 +122,11 @@ const MODE_LABEL: Record<string, string> = { disabled: "Off", optional: "On, eac
  * Brenda section gains "Routines" after "Acting without asking", for owners and HR: "Only leads can schedule routines that
  * chase other people" (on by default). All three are read here, with the page, and show disabled under an info alert until
  * migration 0046 is applied; a read that fails leaves the card to read it itself.
+ *
+ * Loose ends and commitments (owner decision, 8 October 2026: phase 7b, "Brenda keeps the loops closed"): the Brenda
+ * section gains "Commitments in group chats" after Routines, for owners and HR (others read it): "Track commitments in
+ * group chats" (OFF until turned on) and "Post gentle follow-ups in the thread" (OFF; needs tracking). Read here with the
+ * page (commitments-settings); disabled under an info alert until migration 0048 is applied, and while unreadable.
  */
 export default async function SettingsPage({ params, searchParams }: { params: Promise<{ workspace: string }>; searchParams: Promise<{ section?: string; setup?: string; billing?: string; plan?: string }> }) {
   const { workspace } = await params;
@@ -274,10 +282,12 @@ export default async function SettingsPage({ params, searchParams }: { params: P
       );
     }
   } else if (section === "brenda") {
-    const [ai, brenda, a, usage, collection, mentions, notesSetting, actSetting, routinesSetting] = await Promise.all([assistantStatus(ctx), brendaOverview(ctx), assistantProfiles(ctx), usageSummary(ctx),
+    const [ai, brenda, a, usage, collection, mentions, notesSetting, actSetting, routinesSetting, commitmentsSetting] = await Promise.all([assistantStatus(ctx), brendaOverview(ctx), assistantProfiles(ctx), usageSummary(ctx),
       withUser(ctx.user.profileId, (db) => followUpSettings(db, ctx.org.id)), withUser(ctx.user.profileId, (db) => mentionSettings(db, ctx.org.id)),
       withUser(ctx.user.profileId, (db) => reportNoteSettings(db, ctx.org.id)), withUser(ctx.user.profileId, (db) => workspaceActSetting(db, ctx.org.id)),
-      routineSettingsFor(ctx)]);
+      routineSettingsFor(ctx),
+      // Phase 7b: the commitments switches (ready: false before 0048). A failed read shows the card disabled.
+      withUser(ctx.user.profileId, (db) => commitmentSettings(db, ctx.org.id)).catch((): CommitmentSettings => ({ ready: false, track: false, threadFollowUps: false, since: null }))]);
     assistants = a;
     body = (
       <>
@@ -291,6 +301,8 @@ export default async function SettingsPage({ params, searchParams }: { params: P
         <ActModeWorkspaceSettings orgSlug={ctx.org.slug} initial={actSetting} canEdit={admin} />
         {/* Who may schedule routines that chase other people (owner decision, 8 October 2026: phase 7a). */}
         <RoutinesWorkspaceSettings orgSlug={ctx.org.slug} initial={routinesSetting} canEdit={admin} />
+        {/* Commitments in group chats (owner decision, 8 October 2026: phase 7b). */}
+        <CommitmentsSettings orgSlug={ctx.org.slug} initial={commitmentsSetting} canEdit={admin} workspaceName={a.workspace.name} />
         {/* The Reports page is gone; Brenda sends supervisors the day's team report instead (owner decision, 5 October 2026). */}
         <BrendaReportSettings orgSlug={ctx.org.slug} initial={brenda.settings} timezone={ctx.org.timezone} inPlan={ctx.plan.features.AI_ASSISTANT === true} />
         {/* Updates for that report from everyone's assistant (owner decision, 8 October 2026: personal assistants, phase 4). */}
@@ -313,6 +325,7 @@ export default async function SettingsPage({ params, searchParams }: { params: P
         <PageNote section="Brenda">She reads what each person is allowed to see, does their own work for them, and asks before anything that lands on someone else, unless the person chose to let their assistant act without asking.</PageNote>
         <PageNote section="Acting without asking">{ACT_WORDS.workspace.pageNote}</PageNote>
         <PageNote section="Routines">{ROUTINE_WORDS.workspace.pageNote}</PageNote>
+        <PageNote section={LOOP_WORDS.settings.card}>{LOOP_WORDS.settings.pageNote}</PageNote>
         <PageNote section="Updates before the report">Updates are collected on working days, from what each person&apos;s work already shows. People who chose &ldquo;Always ask me first&rdquo; for their own assistant are asked once, even when asking is off here.</PageNote>
         <PageNote section="Updates before the report">Owners and HR see in Audit that updates were collected. A person sees under Asked about you exactly what their assistant shared.</PageNote>
         <PageNote section="Messages">Replies show who asked. Anything only the person asking can see stays private to them.</PageNote>

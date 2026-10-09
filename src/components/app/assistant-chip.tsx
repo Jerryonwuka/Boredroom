@@ -16,8 +16,16 @@
  *
  * The chip is a focusable note so the keyboard reaches its tooltip (`[data-tip][tabindex]` in components/ui/tooltips);
  * the tooltip and the screen reader say the same sentence.
+ *
+ * Phase 7b (owner decision, 8 October 2026: workspace commitments): `workspace`, the workspace's own assistant's short
+ * note in a thread ("A gentle nudge on this (due Thu 9 Oct, 17:00): is it still on its way?", posted only when
+ * an owner or HR turned on "Post gentle follow-ups in the thread"; written only by the worker). The row carries the
+ * committer as its sender because a message needs a member, but it is never drawn as theirs: the workspace assistant's
+ * face and name (`useAssistant().workspace` on the client, `assistantProfiles(ctx).workspace` on the server) and
+ * `WorkspaceAssistantMark`, the small "Workspace assistant" tag, in place of "Olu's assistant".
  */
 import { BrendaFace } from "@/components/app/brenda-face";
+import { Badge } from "@/components/ui/badge";
 import { lookOf, type AssistantProfile } from "@/lib/assistant-look";
 import { cn } from "@/lib/utils";
 
@@ -47,6 +55,17 @@ export function AssistantChip({ assistant, personName, isYou, className }: { ass
       <span className="truncate">via {assistant.name}</span>
     </span>
   );
+}
+
+/** The words of the workspace assistant's tag, for the toast's line as well (phase 7b). */
+export const WORKSPACE_ASSISTANT_MARK = "Workspace assistant";
+
+/**
+ * "Workspace assistant": the small tag beside the workspace assistant's name on its own note in a thread (phase 7b), in
+ * the place where an assistant's own message says "Olu's assistant". Neutral, never orange.
+ */
+export function WorkspaceAssistantMark({ className }: { className?: string }) {
+  return <Badge size="sm" className={className}>{WORKSPACE_ASSISTANT_MARK}</Badge>;
 }
 
 /** An assistant in the place of a person's picture: its small face on a grey disc, 32px (or 24px). */

@@ -15,12 +15,17 @@ import { PRESENCE } from "@/lib/presence";
 import { Composer, NewConversation, ScrollToLatest, MessageMenu, ConversationMenu, ConversationRowMenu, ConversationDetails, ReplyProvider, RowPending } from "@/components/app/messages";
 import { MessageBubble } from "@/components/ui/chat-messages";
 import { VoiceNote } from "@/components/app/voice-note";
-import { AssistantAvatar, AssistantChip } from "@/components/app/assistant-chip";
+import { AssistantAvatar, AssistantChip, WorkspaceAssistantMark } from "@/components/app/assistant-chip";
 import { FullAnswerToggle, MentionRows, MentionText } from "@/components/app/mention-thread";
 import { MENTION_WORDS, showsMentionRows } from "@/lib/mentions";
 import { ConversationAssistantSwitch } from "@/components/app/conversation-assistant-switch";
-import { DEFAULT_ASSISTANT_NAME, toProfile } from "@/lib/assistant-look";
+import { ConversationCommitmentsSwitch } from "@/components/app/conversation-commitments-switch";
+import { CommitmentLabel } from "@/components/app/commitment-label";
+import { TrackedDisclosure, isTrackedHere } from "@/components/app/tracked-disclosure";
+import { DEFAULT_ASSISTANT_NAME, toProfile, type AssistantProfile } from "@/lib/assistant-look";
 import type { AssistantRepliesState, MentionRef, MentionView, TaggableAssistant } from "@/lib/mentions";
+import type { ConversationTracking, MessageLabel } from "@/lib/commitments";
+import { assistantProfiles } from "@/server/services/assistant-profile";
 import { inbox, thread, openDirect, peopleToMessage, visibleTask, type AuthorKind, type ConversationSummary, type MessageRow, type Thread } from "@/server/services/messaging";
 import { navCounts } from "@/server/services/workspace";
 import { formatDateTime, formatLongDate, relativeTime, cn } from "@/lib/utils";
@@ -45,8 +50,11 @@ function kindLabel(c: ConversationSummary) {
 /** "Olu" from "Olu Adeyemi". Kept here: a function exported from a client module cannot be called on the server. */
 const firstName = (name: string) => name.trim().split(/\s+/)[0] || name;
 
-/** Who wrote a message; anything unknown (or a row read before migration 0037) is the person's own. */
-const authorOf = (m: Pick<MessageRow, "author_kind">): AuthorKind => (m.author_kind === "via_assistant" || m.author_kind === "assistant" ? m.author_kind : "person");
+/**
+ * Who wrote a message; anything unknown (or a row read before migration 0037) is the person's own. Phase 7b: 'workspace',
+ * the workspace assistant's own note in a thread (migration 0048).
+ */
+const authorOf = (m: Pick<MessageRow, "author_kind">): AuthorKind => (m.author_kind === "via_assistant" || m.author_kind === "assistant" || m.author_kind === "workspace" ? m.author_kind : "person");
 
 /**
  * @mentions before migration 0041 (contract A.2), and while a page is drawn by code older than the thread's: no
@@ -56,6 +64,11 @@ const NO_ASSISTANT_REPLIES: AssistantRepliesState = { ready: false, workspaceOn:
 const NO_MENTION_VIEWS: MentionView[] = [];
 /** Someone else's assistant to tag: none before migration 0043 (phase 6, contract A.3), nor from an older thread(). */
 const NO_TAGGABLE: TaggableAssistant[] = [];
+/**
+ * Commitments before migration 0048 (phase 7b, contract A.2), and from a thread() older than this page: no label, no
+ * disclosure, no switch.
+ */
+const NO_TRACKING: ConversationTracking = { ready: false, workspaceOn: false, here: true, tracked: false, canChange: false, applies: false, workspaceAssistantName: DEFAULT_ASSISTANT_NAME };
 
 /** Who asked an assistant's reply, when it is someone else's assistant answering them (phase 6); null otherwise. */
 const askedByOf = (m: MessageRow) => {
@@ -102,6 +115,18 @@ const UNDER_ROW_MENU = "transition-opacity duration-75 group-hover:opacity-0 gro
  * here.", then Ben's reply, or its answer from Ben's work) are Ben's assistant's own messages with its face and name,
  * the badge "Ben's assistant" and "asked by Olu" (`mention_reply.askedBy`); a run of them never hides who asked; Olu's
  * private card for it has no Post to channel; Ben may withdraw its reply too (the server says who may).
+ *
+ * Phase 7b (owner decision, 8 October 2026: "Brenda keeps the loops closed", workspace commitments; contract H.2): in a
+ * group conversation the workspace assistant tracks (`Thread.commitments`), a message where someone committed ("I'll
+ * send the deck Thursday", or the "On it" that agreed to an ask) carries the small "Noted" label everyone here sees
+ * (`MessageRow.commitment_label`; "Done", "Declined" or "Not a commitment" as the commitment moves on); one line above
+ * the composer says that the workspace assistant notes commitments here; the details pane's "Commitments" section has
+ * the conversation's own switch for whoever runs it. The workspace assistant's own short follow-up in a thread
+ * (`author_kind = 'workspace'`, only when an owner or HR turned thread follow-ups on) is drawn as the workspace
+ * assistant (its face and name, the "Workspace assistant" tag), never as the person the row names as its sender, with
+ * Reply as its only action; the list's last line names it too. Its name and face come from `assistantProfiles(ctx)`
+ * (the same read the shell makes), so they are right whatever an older thread() says. Direct threads show none of it;
+ * neither does anything before migration 0048.
  */
 export default async function MessagesPage({ params, searchParams }: { params: Promise<{ workspace: string }>; searchParams: Promise<{ c?: string; to?: string; task?: string; archived?: string }> }) {
   const { workspace } = await params;
@@ -119,7 +144,9 @@ export default async function MessagesPage({ params, searchParams }: { params: P
       : { id: null, error: "That link does not point to anyone in this workspace." }
     : null;
   if (opened?.id) redirect(`${base}/messages?c=${opened.id}${taskId ? `&task=${taskId}` : ""}`);
-  const [box, people] = await Promise.all([inbox(ctx), peopleToMessage(ctx)]);
+  // The workspace assistant (phase 7b): its note in a thread and the list's last line are drawn with its own name and face.
+  const [box, people, assistants] = await Promise.all([inbox(ctx), peopleToMessage(ctx), assistantProfiles(ctx)]);
+  const workspaceAssistant = assistants.workspace;
   const conversationId = idOrNull(sp.c);
   const selected = conversationId ? await thread(ctx, conversationId) : null;
   const clear = (c: ConversationSummary) => (selected && c.id === selected.conversation.id ? { ...c, unread: 0 } : c);
@@ -142,6 +169,8 @@ export default async function MessagesPage({ params, searchParams }: { params: P
   const preview = (c: ConversationSummary) => {
     if (c.last_body === null) return c.subtitle ?? "";
     if (c.last_body === "") return "Message withdrawn";
+    // The workspace assistant's own note (phase 7b): "Brenda: …", never the person the row names as its sender.
+    if (c.last_author_kind === "workspace") return `${workspaceAssistant.name}: ${c.last_body}`;
     const assistantName = c.last_assistant_name ?? DEFAULT_ASSISTANT_NAME;
     // Someone else's assistant is theirs: "Ben's Brenda: …" (review, 8 October 2026); yours is just "Max: …".
     if (c.last_author_kind === "assistant") return c.last_sender_name && c.last_sender_name !== ctx.user.displayName ? `${firstName(c.last_sender_name)}'s ${assistantName}: ${c.last_body}` : `${assistantName}: ${c.last_body}`;
@@ -183,7 +212,7 @@ export default async function MessagesPage({ params, searchParams }: { params: P
     );
   };
 
-  const details = selected ? <Details t={selected} me={ctx.membership.id} base={base} orgSlug={ctx.org.slug} showTheirDay={showTheirDay} /> : null;
+  const details = selected ? <Details t={selected} me={ctx.membership.id} base={base} orgSlug={ctx.org.slug} showTheirDay={showTheirDay} workspaceAssistantName={workspaceAssistant.name} /> : null;
   // @mentions (phase 5): each tagging message's mention by message, and by id for the assistant's reply to it.
   const mentionViews = selected?.mentions ?? NO_MENTION_VIEWS;
   const mentionByMessage = new Map(mentionViews.map((v) => [v.messageId, v]));
@@ -196,6 +225,9 @@ export default async function MessagesPage({ params, searchParams }: { params: P
   const taggable = selected?.taggable ?? NO_TAGGABLE;
   const namesById = new Map((selected?.conversation.people ?? []).map((p) => [p.membership_id, p.display_name]));
   const where = !selected ? "" : other ? `the chat with ${title}` : selected.conversation.kind === "organisation" ? "Everyone" : `#${title}`;
+  // Phase 7b: whether the workspace assistant notes commitments here, and its name for the labels and the disclosure.
+  const tracking = selected?.commitments ?? NO_TRACKING;
+  const notingName = tracking.workspaceAssistantName || workspaceAssistant.name;
 
   return (
     <AppShell ctx={ctx} counts={counts} teams={teams} bleed>
@@ -277,7 +309,8 @@ export default async function MessagesPage({ params, searchParams }: { params: P
                             {newDay ? <p className="mb-2 mt-6 flex items-center gap-3 text-xs font-medium text-subtle before:h-px before:flex-1 before:bg-border after:h-px after:flex-1 after:bg-border">{formatLongDate(dayKey(m.created_at, ctx.org.timezone))}</p> : null}
                             <Message m={m} me={ctx.membership.id} grouped={grouped} orgSlug={ctx.org.slug} timeZone={ctx.org.timezone} canReply={!selected.conversation.archived_at}
                               fullAnswer={answers?.private?.kind === "full_answer" && !m.mention_reply?.holding ? answers.private.text : null}
-                              owners={ownersOf(m.sender_membership_id, m.mentions ?? [], namesById)} />
+                              owners={ownersOf(m.sender_membership_id, m.mentions ?? [], namesById)}
+                              workspaceAssistant={workspaceAssistant} label={tracking.ready ? (m.commitment_label ?? null) : null} notingName={notingName} />
                             {tagged ? <MentionRows orgSlug={ctx.org.slug} mention={tagged} conversationKind={selected.conversation.kind} /> : null}
                           </li>
                         );
@@ -290,15 +323,17 @@ export default async function MessagesPage({ params, searchParams }: { params: P
               {selected.conversation.archived_at ? <p className="shrink-0 border-t border-border px-6 py-4 text-center text-sm font-normal text-secondary">This channel is archived. {selected.conversation.can_manage ? "Restore it from the menu to write here again." : "The person who made it, the owner or HR can restore it."}</p> : <Composer key={selected.conversation.id} canVoice={ctx.plan.features.VOICE_NOTES} orgSlug={ctx.org.slug} conversationId={selected.conversation.id}
                 people={mentionPeople} mentions={{ ready: assistantReplies.ready, assistantAllowed: assistantReplies.ready && assistantReplies.workspaceOn && assistantReplies.here }} taggable={taggable}
                 task={task ? { id: task.id, title: task.title } : null}
+                notice={isTrackedHere(tracking) ? <TrackedDisclosure state={{ ...tracking, workspaceAssistantName: notingName }} /> : null}
                 prefill={task ? `How far with “${task.title}”?` : undefined}
                 placeholder={selected.conversation.kind === "direct" ? `Message ${title}` : `Message ${isRoom(selected.conversation.kind) ? `#${title}` : "everyone"}`} />}
             </ReplyProvider>
           )}
         </section>
 
-        {/* The details pane (from 1280px; a side sheet below). */}
+        {/* The details pane (from 1280px; a side sheet below). pb-24: its last row (Commitments) scrolls clear of the
+            floating assistant button (review, 9 October 2026). */}
         {selected ? (
-          <aside aria-label="Conversation details" className="prompt-scroll hidden min-h-0 overflow-y-auto border-l border-border p-5 xl:block">{details}</aside>
+          <aside aria-label="Conversation details" className="prompt-scroll hidden min-h-0 overflow-y-auto border-l border-border p-5 pb-24 xl:block">{details}</aside>
         ) : null}
       </div>
     </AppShell>
@@ -311,10 +346,13 @@ export default async function MessagesPage({ params, searchParams }: { params: P
  * other person links to a direct thread with them. Then "Assistants" (phase 5): what a tagged assistant reads here, and
  * the switch for whoever runs the conversation (hidden before migration 0041). Since phase 6 the line says any
  * assistant, yours or someone else's, and that replies show whose assistant it is and who asked.
+ * Phase 7b: then "Commitments", whether the workspace assistant notes commitments here and, for whoever runs the
+ * conversation, its switch (nothing on a direct thread, nor before migration 0048).
  */
-function Details({ t, me, base, orgSlug, showTheirDay }: { t: Thread; me: string; base: string; orgSlug: string; showTheirDay: boolean }) {
+function Details({ t, me, base, orgSlug, showTheirDay, workspaceAssistantName }: { t: Thread; me: string; base: string; orgSlug: string; showTheirDay: boolean; workspaceAssistantName: string }) {
   const c = t.conversation;
   const direct = c.kind === "direct";
+  const tracking = t.commitments ?? NO_TRACKING;
   return (
     <div>
       <div className="flex flex-col items-center text-center">
@@ -344,6 +382,7 @@ function Details({ t, me, base, orgSlug, showTheirDay }: { t: Thread; me: string
         })}
       </ul>
       <ConversationAssistantSwitch orgSlug={orgSlug} conversationId={c.id} state={t.assistantReplies ?? NO_ASSISTANT_REPLIES} />
+      {!direct ? <ConversationCommitmentsSwitch orgSlug={orgSlug} conversationId={c.id} state={{ ...tracking, workspaceAssistantName: tracking.workspaceAssistantName || workspaceAssistantName }} /> : null}
     </div>
   );
 }
@@ -360,19 +399,28 @@ function Details({ t, me, base, orgSlug, showTheirDay }: { t: Thread; me: string
  * Ben's work) is drawn as any assistant's own message, Ben's assistant's face and name with "Ben's assistant" ("Your
  * assistant" for Ben), then "asked by Olu" ("asked by you" for Olu); its owner may withdraw it as well (`canWithdraw`).
  * A tag of someone else's assistant in a person's message is titled with whose it is (`owners`).
+ * Phase 7b (owner decision, 8 October 2026: workspace commitments): `label` is the message's "Noted" label (its state as
+ * the commitment moves on), under the bubble, worded with the workspace assistant's name (`notingName`); never on a
+ * withdrawn message. The workspace assistant's own note (`author_kind = 'workspace'`) is drawn as the workspace assistant
+ * (`workspaceAssistant`: its face, its name and the "Workspace assistant" tag), always on the left (it is nobody's own,
+ * whatever the row's sender), its text plain, and Reply its only action; a reply to it quotes it by that name.
  */
-function Message({ m, me, grouped, orgSlug, timeZone, canReply, fullAnswer = null, owners }: { m: MessageRow; me: string; grouped: boolean; orgSlug: string; timeZone: string; canReply: boolean; fullAnswer?: string | null; owners?: Record<string, string> }) {
+function Message({ m, me, grouped, orgSlug, timeZone, canReply, fullAnswer = null, owners, workspaceAssistant, label = null, notingName }: { m: MessageRow; me: string; grouped: boolean; orgSlug: string; timeZone: string; canReply: boolean; fullAnswer?: string | null; owners?: Record<string, string>; workspaceAssistant: AssistantProfile; label?: MessageLabel | null; notingName: string }) {
   const author = authorOf(m);
-  const assistant = author === "person" ? null : toProfile(m.assistant);
+  const byWorkspace = author === "workspace" ? workspaceAssistant : null;
+  const assistant = author === "person" ? null : byWorkspace ?? toProfile(m.assistant);
   const byAssistant = author === "assistant" && assistant ? assistant : null;
+  // An assistant's own message, its sender's or the workspace's: its face and name in the place of a person's.
+  const ownVoice = byAssistant ?? byWorkspace;
+  const mine = byWorkspace ? false : m.mine;
   const isOwnAssistant = !!byAssistant && m.sender_membership_id === me;
-  const name = byAssistant ? byAssistant.name : m.sender_name;
+  const name = ownVoice ? ownVoice.name : m.sender_name;
   // The chip stays when the person edits or withdraws the message: who sent it does not change (contract B.1).
-  const via = author === "via_assistant" && assistant ? <AssistantChip assistant={assistant} personName={m.sender_name} isYou={m.mine} /> : null;
+  const via = author === "via_assistant" && assistant ? <AssistantChip assistant={assistant} personName={m.sender_name} isYou={mine} /> : null;
   const time = <><time dateTime={m.created_at} title={formatDateTime(m.created_at, timeZone)}>{timeOnly(m.created_at, timeZone)}</time>{m.edited_at && !m.deleted_at ? <span className="ml-1 text-faint" title={`Edited ${formatDateTime(m.edited_at, timeZone)}`}>edited</span> : null}</>;
-  // The quoted message a reply points at: the sender's name (an assistant's own message: the assistant's) and a line of
-  // it, jumping to the original on click.
-  const quoted = m.reply_author_kind === "assistant" ? (m.reply_assistant_name ?? DEFAULT_ASSISTANT_NAME) : m.reply_mine ? "You" : m.reply_sender_name;
+  // The quoted message a reply points at: the sender's name (an assistant's own message: the assistant's; the workspace
+  // assistant's note: the workspace assistant's) and a line of it, jumping to the original on click.
+  const quoted = m.reply_author_kind === "workspace" ? workspaceAssistant.name : m.reply_author_kind === "assistant" ? (m.reply_assistant_name ?? DEFAULT_ASSISTANT_NAME) : m.reply_mine ? "You" : m.reply_sender_name;
   const quote = m.reply_to_id && !m.deleted_at ? (
     <a href={`#m-${m.reply_to_id}`} className="mb-2 flex max-w-full items-stretch gap-2 rounded-lg border border-border bg-fill-1 px-2.5 py-1.5 no-underline transition-colors duration-75 hover:bg-fill-150">
       <span className="w-0.5 shrink-0 self-stretch rounded-full bg-secondary" aria-hidden />
@@ -386,18 +434,24 @@ function Message({ m, me, grouped, orgSlug, timeZone, canReply, fullAnswer = nul
   ) : null;
   const full = fullAnswer && byAssistant && !m.deleted_at ? <FullAnswerToggle text={fullAnswer} /> : null;
   const withdrawReply = byAssistant && m.mention_reply?.canWithdraw ? { mentionId: m.mention_reply.mentionId, assistantName: byAssistant.name } : null;
-  const mentions = m.mentions ?? [];
+  const mentions = byWorkspace ? [] : (m.mentions ?? []);
   // Phase 6: whose assistant it is, then who asked it, when it answered someone other than its owner.
   const askedBy = byAssistant ? askedByOf(m) : null;
-  const whose = byAssistant ? <Badge size="sm">{isOwnAssistant ? "Your assistant" : `${firstName(m.sender_name)}'s assistant`}</Badge> : null;
+  const whose = byWorkspace ? <WorkspaceAssistantMark /> : byAssistant ? <Badge size="sm">{isOwnAssistant ? "Your assistant" : `${firstName(m.sender_name)}'s assistant`}</Badge> : null;
+  // Phase 7b: the "Noted" label, while the message stands.
+  const noted = label && !m.deleted_at ? <CommitmentLabel label={label} assistantName={notingName} /> : null;
+  const actions = m.deleted_at ? null
+    : byWorkspace ? <MessageMenu orgSlug={orgSlug} id={m.id} mine={false} body={m.body} isVoice={false} senderName={name} canReply={canReply} replyOnly />
+      : <MessageMenu orgSlug={orgSlug} id={m.id} mine={mine} body={m.body} isVoice={!!m.voice_key} senderName={name} canReply={canReply} canReport={!mine && !isOwnAssistant} withdrawReply={withdrawReply} />;
   return (
-    <MessageBubble mine={m.mine} grouped={grouped} withdrawn={!!m.deleted_at} name={name} time={time} quote={quote}
-      nameAdornment={whose ? (askedBy ? <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5">{whose}<span className="text-meta font-normal text-secondary">{MENTION_WORDS.askedBy(askedBy.firstName, askedBy.isYou)}</span></span> : whose) : m.mine ? null : via}
-      timeAdornment={m.mine ? via : null}
-      avatar={byAssistant ? <AssistantAvatar assistant={byAssistant} /> : <Avatar profileId={m.sender_profile_id} name={m.sender_name} avatarKey={m.sender_avatar_key} size={32} />}
+    <MessageBubble mine={mine} grouped={grouped} withdrawn={!!m.deleted_at} name={name} time={time} quote={quote}
+      nameAdornment={whose ? (askedBy ? <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5">{whose}<span className="text-meta font-normal text-secondary">{MENTION_WORDS.askedBy(askedBy.firstName, askedBy.isYou)}</span></span> : whose) : mine ? null : via}
+      timeAdornment={mine ? via : null}
+      label={noted}
+      avatar={ownVoice ? <AssistantAvatar assistant={ownVoice} /> : <Avatar profileId={m.sender_profile_id} name={m.sender_name} avatarKey={m.sender_avatar_key} size={32} />}
       footer={taskLink && full ? <div className="grid justify-items-start gap-1.5">{taskLink}{full}</div> : taskLink ?? full}
-      actions={!m.deleted_at ? <MessageMenu orgSlug={orgSlug} id={m.id} mine={m.mine} body={m.body} isVoice={!!m.voice_key} senderName={name} canReply={canReply} canReport={!m.mine && !isOwnAssistant} withdrawReply={withdrawReply} /> : null}>
-      {m.deleted_at ? "Message withdrawn" : m.voice_key && m.voice_seconds ? <VoiceNote src={`/api/orgs/${orgSlug}/messages/${m.id}/voice`} seconds={m.voice_seconds} mine={m.mine} />
+      actions={actions}>
+      {m.deleted_at ? "Message withdrawn" : !byWorkspace && m.voice_key && m.voice_seconds ? <VoiceNote src={`/api/orgs/${orgSlug}/messages/${m.id}/voice`} seconds={m.voice_seconds} mine={mine} />
         : mentions.length ? <MentionText body={m.body} refs={mentions} me={me} senderName={m.sender_name} senderId={m.sender_membership_id} owners={owners} /> : <span className="whitespace-pre-wrap break-words">{m.body}</span>}
     </MessageBubble>
   );

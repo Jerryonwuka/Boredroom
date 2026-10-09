@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { withUser, withWorker, isUniqueViolation, isExclusionViolation, type Db } from "@/server/db";
 import { conflict, forbidden, invalid, notFound } from "@/server/lib/errors";
+import { schema0048Ready } from "@/server/lib/schema-0048";
 import { audit, notify, managersOf } from "@/server/services/common";
 import type { OrgContext } from "@/server/lib/api";
 import { completeOwnTaskInternal, checkerFor, type TaskStatus } from "@/server/services/tasks";
@@ -193,6 +194,9 @@ async function startInternal(db: Db, ctx: OrgContext, input: StartOpts, requestI
   if (t.status === "todo" || t.status === "blocked") {
     await db.query(`UPDATE tasks SET status = 'in_progress', blocked_reason = NULL, version = version + 1 WHERE id = $1`, [t.id]);
     await db.query(`INSERT INTO task_status_history(organisation_id, task_id, actor_membership_id, from_status, to_status) VALUES ($1, $2, $3, $4, 'in_progress')`, [ctx.org.id, t.id, ctx.membership.id, t.status]);
+    // A task that leaves Blocked waits on nobody any more (phase 7b review, 9 October 2026): its open "waiting on" is
+    // cleared in the same transaction, as tasks.ts does.
+    if (t.status === "blocked" && (await schema0048Ready(db))) await db.query(`SELECT app_task_block_settle($1)`, [t.id]);
   }
   await audit(db, { organisationId: ctx.org.id, actorMembershipId: ctx.membership.id, action: "session.started", subjectType: "work_session", subjectId: s.id, subjectMembershipId: ctx.membership.id, requestId, metadata: { taskId: t.id, captureMode } });
   return s.id;

@@ -14,12 +14,17 @@
  * confirmed it has the "via Max" chip on a line under the title; an assistant's own message has the assistant's face,
  * "New message from Max" and ", Olu's assistant" in the description colour (as "in #Design" is). The title wraps onto a
  * second line rather than being cut, so the room's name still shows.
+ *
+ * Phase 7b (owner decision, 8 October 2026: workspace commitments): the workspace assistant's own note in a thread
+ * (`author_kind = 'workspace'`) is drawn as the workspace assistant, never as the person the row names as its sender:
+ * its face, "New message from Brenda" and ", workspace assistant" in the description colour.
  */
 import { useEffect, useRef } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Toaster, toast } from "sonner";
 import { Avatar } from "@/components/ui/avatar";
-import { AssistantAvatar, AssistantChip, firstName } from "@/components/app/assistant-chip";
+import { AssistantAvatar, AssistantChip, WORKSPACE_ASSISTANT_MARK, firstName } from "@/components/app/assistant-chip";
+import { useAssistant } from "@/components/app/assistant-context";
 import { toProfile } from "@/lib/assistant-look";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "@/components/ui/theme-toggle";
@@ -37,6 +42,10 @@ export function MessageToasts({ orgSlug }: { orgSlug: string }) {
   const openConversation = useRef<string | null>(null);
   const currentConversation = pathname.endsWith("/messages") ? search.get("c") : null;
   useEffect(() => { openConversation.current = currentConversation; }, [currentConversation]);
+  // The workspace assistant as the shell knows it now (phase 7b), read by the listener without re-subscribing it.
+  const { workspace } = useAssistant();
+  const workspaceAssistant = useRef(workspace);
+  useEffect(() => { workspaceAssistant.current = workspace; }, [workspace]);
 
   useEffect(() => {
     let busy = false;
@@ -52,17 +61,20 @@ export function MessageToasts({ orgSlug }: { orgSlug: string }) {
           if (m.created_at > since.current) since.current = m.created_at;
           if (openConversation.current === m.conversation_id) continue;
           const href = `/app/${orgSlug}/messages?c=${m.conversation_id}`;
-          // Who wrote it (anything unknown, or a message from before migration 0037, is the person's own).
-          const assistant = m.author_kind === "via_assistant" || m.author_kind === "assistant" ? toProfile(m.assistant) : null;
-          const byAssistant = m.author_kind === "assistant" ? assistant : null;
+          // Who wrote it (anything unknown, or a message from before migration 0037, is the person's own). The workspace
+          // assistant's note (phase 7b) is the workspace assistant's, whoever the row names as its sender.
+          const byWorkspace = m.author_kind === "workspace";
+          const assistant = byWorkspace ? workspaceAssistant.current : m.author_kind === "via_assistant" || m.author_kind === "assistant" ? toProfile(m.assistant) : null;
+          const byAssistant = m.author_kind === "assistant" || byWorkspace ? assistant : null;
           const room = m.kind !== "direct" ? (m.kind === "organisation" ? "Everyone" : `#${m.conversation_title}`) : null;
+          const whose = byWorkspace ? WORKSPACE_ASSISTANT_MARK.toLowerCase() : `${firstName(m.sender_name)}'s assistant`;
           toast.custom((t) => (
             <div className="toast-surface flex w-[340px] max-w-[calc(100vw-2.5rem)] items-start gap-3 p-3 pr-4">
               {byAssistant ? <AssistantAvatar assistant={byAssistant} /> : <Avatar profileId={m.sender_profile_id} name={m.sender_name} avatarKey={m.sender_avatar_key} size={32} />}
               <div className="min-w-0 flex-1">
                 <p className="line-clamp-2 break-words text-sm font-medium text-foreground">
                   New message from {byAssistant ? byAssistant.name : m.sender_name}
-                  {byAssistant ? <span className="font-normal text-[var(--toast-description)]">, {firstName(m.sender_name)}&apos;s assistant{room ? "," : ""}</span> : null}
+                  {byAssistant ? <span className="font-normal text-[var(--toast-description)]">, {whose}{room ? "," : ""}</span> : null}
                   {room ? <span className="font-normal text-[var(--toast-description)]"> in {room}</span> : null}
                 </p>
                 {assistant && !byAssistant ? <p className="mt-1 flex"><AssistantChip assistant={assistant} personName={m.sender_name} isYou={false} /></p> : null}

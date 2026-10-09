@@ -31,6 +31,55 @@ describe("routine-templates.ts", () => {
   });
 });
 
+describe("the loose ends template (owner decisions, 8 October 2026: phase 7b)", () => {
+  const src = read("src/server/services/routine-templates.ts");
+
+  it("its run is loose-end-detect's scan as the person, with at most one model call; the preview never scans", () => {
+    const start = src.indexOf("async function looseEnds(");
+    expect(start).toBeGreaterThan(-1);
+    const body = src.slice(start);
+    expect(body).toContain("scanLooseEnds(ctx, { days, source: \"routine\", useModel: true, maxModelCalls: 1, now })");
+    expect(src.match(/scanLooseEnds\(/g)?.length).toBe(1);
+    // The preview branch reads the open ones and nothing else.
+    const preview = body.slice(body.indexOf("if (preview)"), body.indexOf("} else {"));
+    expect(preview).toContain("listLooseEnds(");
+    expect(preview).not.toContain("scanLooseEnds");
+  });
+});
+
+describe("loose-end-detect.ts (owner decisions, 8 October 2026: phase 7b)", () => {
+  const src = read("src/server/services/loose-end-detect.ts");
+
+  it("never loads the copilot, a Confirm or Undo", () => {
+    const imports = [...src.matchAll(/from\s+"([^"]+)"|import\(\s*"([^"]+)"\s*\)/g)].map((m) => m[1] ?? m[2]);
+    expect(imports.length).toBeGreaterThan(0);
+    expect(imports.filter((x) => /copilot$|act-decision|undo|confirm/.test(x))).toEqual([]);
+    for (const w of ["confirmAction", "askFirst", "runWithoutAsking", "prepareConfirm"]) expect(src.includes(w), w).toBe(false);
+  });
+
+  it("reads as the person, and its model call goes through the classifier only, counted against the person", () => {
+    expect(src).not.toMatch(/withWorker/);
+    expect(src).not.toContain("@anthropic-ai/sdk");
+    expect(src).toContain("classifyBatch(");
+    expect(src).toContain("purpose: \"loose_ends\"");
+  });
+});
+
+describe("the workspace's commitments scan (phase 7b)", () => {
+  const detect = read("src/server/services/commitment-detect.ts");
+  const classify = read("src/server/services/commitment-classify.ts");
+
+  it("never loads the copilot or a Confirm; the classifier's one call has no tools", () => {
+    for (const src of [detect, classify]) {
+      for (const w of ["confirmAction", "askFirst", "runWithoutAsking", "prepareConfirm", "@/server/services/copilot\""]) expect(src.includes(w), w).toBe(false);
+    }
+    expect(classify).toMatch(/messages: \[\{ role: "user", content \}\] \}\), \/\/ NO tools|\/\/ NO tools/);
+    expect(classify).not.toMatch(/\btools:/);
+    expect(detect).toContain("purpose: \"commitments\"");
+    expect(detect).toContain("recordWorkspaceUsage(");
+  });
+});
+
 describe("the worker's routine run", () => {
   const src = read("worker/handlers.ts");
   it("runs the template and nothing of the chat's", () => {
@@ -39,6 +88,18 @@ describe("the worker's routine run", () => {
     const body = src.slice(start, end);
     expect(start).toBeGreaterThan(-1);
     expect(body).toContain("runTemplate(c.ctx, c.routine, { mode: \"run\"");
+    for (const w of ["confirmAction", "askFirst", "runWithoutAsking", "copilot"]) expect(body.includes(w), w).toBe(false);
+  });
+});
+
+describe("the worker's loose ends and commitments jobs (phase 7b)", () => {
+  const src = read("worker/handlers.ts");
+  it("run the services and nothing of the chat's", () => {
+    const start = src.indexOf("const commitmentsScan");
+    const end = src.indexOf("const retentionDelete");
+    const body = src.slice(start, end);
+    expect(start).toBeGreaterThan(-1);
+    for (const w of ["scanWorkspaceCommitments(", "sweepCommitments(", "runCommitmentFollowThrough(", "settleBlocks(", "runDueLooseEndFollowUps("]) expect(body, w).toContain(w);
     for (const w of ["confirmAction", "askFirst", "runWithoutAsking", "copilot"]) expect(body.includes(w), w).toBe(false);
   });
 });

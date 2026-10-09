@@ -28,6 +28,15 @@
  * assistant, and queues the mention with Ben as its owner; at most one assistant per message, own or someone else's. A
  * thread lists the assistants that may be tagged (`taggable`), and marks the owner's assistant's messages with who asked
  * (`mention_reply.askedBy`) and the "I've asked Ben" line (`holding`). Before 0043 none of this is offered or kept.
+ *
+ * Workspace commitments (owner decisions, 8 October 2026: phase 7b; migration 0048): in a tracked group conversation the
+ * workspace's assistant marks a commitment's message with a small label everyone there sees ("Noted", then "Done",
+ * "Declined" or "Not a commitment": `commitment_label`), and a thread carries whether commitments are noted here
+ * (`commitments`: the workspace switch, the conversation's own, who may change it; never a direct thread). A gentle
+ * follow-up the workspace's assistant posts in a thread is a fourth author kind, 'workspace': written only by the
+ * worker, with the committer as its sender (the row needs a member), but every screen shows the workspace assistant's
+ * name and face (`assistant`), never the sender's; it is never "yours", never edited or withdrawn. Before 0048 there are
+ * no labels, `commitments.ready` is false and no 'workspace' message can exist.
  */
 import { z } from "zod";
 import { withUser, withWorker, type Db } from "@/server/db";
@@ -39,6 +48,9 @@ import { retryWithout0037, schema0037Ready } from "@/server/lib/schema-0037";
 import { forget0041, isMissingSchema, retryWithout0041, schema0041Ready } from "@/server/lib/schema-0041";
 import { forget0043, schema0043Ready } from "@/server/lib/schema-0043";
 import { readPersonalAssistant } from "@/server/services/assistant-profile";
+import { conversationTrackingIn, labelsIn } from "@/server/services/commitments";
+import { schema0048Ready } from "@/server/lib/schema-0048";
+import type { ConversationTracking, MessageLabel } from "@/lib/commitments";
 import { assistantRepliesIn, kickMentions, threadMentions, validateMentions } from "@/server/services/mentions";
 import { toProfile, type AssistantProfile } from "@/lib/assistant-look";
 import { clip } from "@/lib/follow-ups";
@@ -50,9 +62,13 @@ export type Participant = { membership_id: string; display_name: string; role: s
 
 export type ConversationKind = "direct" | "team" | "organisation" | "channel";
 
-/** Who wrote a message (migration 0037): the person, their own assistant for them (after they confirmed, or in 'auto'), or the assistant itself. */
-export type AuthorKind = "person" | "via_assistant" | "assistant";
-export const AUTHOR_KINDS: readonly AuthorKind[] = ["person", "via_assistant", "assistant"];
+/**
+ * Who wrote a message (migration 0037): the person, their own assistant for them (after they confirmed, or in 'auto'), or
+ * the assistant itself; and (phase 7b, migration 0048) the workspace's own assistant ('workspace': a gentle follow-up in
+ * the thread of a commitment).
+ */
+export type AuthorKind = "person" | "via_assistant" | "assistant" | "workspace";
+export const AUTHOR_KINDS: readonly AuthorKind[] = ["person", "via_assistant", "assistant", "workspace"];
 
 export type ConversationSummary = {
   id: string; kind: ConversationKind; title: string; subtitle: string | null; team_id: string | null; other_membership_id: string | null;
@@ -75,7 +91,7 @@ export type MessageRow = {
   voice_key: string | null; voice_mime: string | null; voice_seconds: number | null;
   reply_to_id: string | null; reply_body: string | null; reply_sender_name: string | null; reply_mine: boolean | null;
   author_kind: AuthorKind;
-  /** Name and look of the SENDER's own assistant; set exactly when author_kind is not 'person'. */
+  /** Name and look of the SENDER's own assistant; set exactly when author_kind is not 'person' (for 'workspace': the workspace's assistant). */
   assistant: AssistantProfile | null;
   reply_author_kind: AuthorKind | null;
   reply_assistant_name: string | null;
@@ -88,6 +104,8 @@ export type MessageRow = {
    * its own: it goes with the reply). Both are absent for a person's own assistant, whose reply keeps phase 5's shape.
    */
   mention_reply: { mentionId: string; canWithdraw: boolean; askedBy?: { membershipId: string; firstName: string; isYou: boolean } | null; holding?: boolean } | null;
+  /** Phase 7b: the commitment label everyone in the conversation sees on this message ("Noted", "Done"…); null without one and before 0048. */
+  commitment_label: MessageLabel | null;
 };
 export type Thread = {
   conversation: ConversationSummary & { people: Participant[] };
@@ -98,6 +116,8 @@ export type Thread = {
   assistantReplies: AssistantRepliesState;
   /** Phase 6: the other readers' assistants the caller may tag here (shown disabled when the owner switched tags off); [] before 0043. */
   taggable: TaggableAssistant[];
+  /** Phase 7b: whether commitments are noted here, for the disclosure and the details pane's switch; `ready: false` before 0048. */
+  commitments: ConversationTracking;
 };
 
 /** The switches before migration 0041: nothing to show, nothing to change. */
@@ -114,14 +134,14 @@ export const unreadMessagesSql = (org: string, me: string) => `(
      FROM messages m
      JOIN conversations c ON c.id = m.conversation_id
      LEFT JOIN conversation_reads r ON r.conversation_id = c.id AND r.membership_id = ${me}
-     WHERE c.organisation_id = ${org} AND m.deleted_at IS NULL AND m.sender_membership_id <> ${me} AND c.archived_at IS NULL AND r.muted_at IS NULL
+     WHERE c.organisation_id = ${org} AND m.deleted_at IS NULL AND (m.sender_membership_id <> ${me} OR m.author_kind = 'workspace') AND c.archived_at IS NULL AND r.muted_at IS NULL
        AND NOT EXISTS (SELECT 1 FROM conversation_hides h WHERE h.conversation_id = c.id AND h.membership_id = ${me})
        AND m.created_at > COALESCE(r.last_read_at, (SELECT created_at FROM memberships WHERE id = ${me})))
   + (SELECT count(*)::int
        FROM conversation_reads r JOIN conversations c ON c.id = r.conversation_id
        WHERE c.organisation_id = ${org} AND r.membership_id = ${me} AND r.marked_unread AND r.muted_at IS NULL AND c.archived_at IS NULL
          AND NOT EXISTS (SELECT 1 FROM conversation_hides h WHERE h.conversation_id = c.id AND h.membership_id = ${me})
-         AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.conversation_id = c.id AND m.deleted_at IS NULL AND m.sender_membership_id <> ${me} AND m.created_at > r.last_read_at))
+         AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.conversation_id = c.id AND m.deleted_at IS NULL AND (m.sender_membership_id <> ${me} OR m.author_kind = 'workspace') AND m.created_at > r.last_read_at))
 )`;
 
 export async function unreadMessageCount(db: Db, ctx: OrgContext): Promise<number> {
@@ -148,9 +168,9 @@ const summarySql = (ready: boolean) => `
          mo.id AS other_membership_id, po.id AS other_profile_id, po.avatar_key AS other_avatar_key, po.presence AS other_presence,
          lm.body AS last_body, lp.display_name AS last_sender_name, r.last_read_at,
          lm.author_kind AS last_author_kind,
-         ${ready ? `CASE WHEN lm.author_kind <> 'person' THEN COALESCE(lap.name, 'Brenda') END` : "NULL::text"} AS last_assistant_name,
+         ${ready ? `CASE WHEN lm.author_kind = 'workspace' THEN COALESCE(wbs.assistant_name, 'Brenda') WHEN lm.author_kind <> 'person' THEN COALESCE(lap.name, 'Brenda') END` : "NULL::text"} AS last_assistant_name,
          GREATEST((SELECT count(*)::int FROM messages m
-            WHERE m.conversation_id = c.id AND m.deleted_at IS NULL AND m.sender_membership_id <> $2
+            WHERE m.conversation_id = c.id AND m.deleted_at IS NULL AND (m.sender_membership_id <> $2${ready ? " OR m.author_kind = 'workspace'" : ""})
               AND m.created_at > COALESCE(r.last_read_at, (SELECT created_at FROM memberships WHERE id = $2))), CASE WHEN r.marked_unread THEN 1 ELSE 0 END) AS unread,
          (r.muted_at IS NOT NULL) AS muted, COALESCE(r.marked_unread, false) AS marked_unread
   FROM conversations c
@@ -164,7 +184,7 @@ const summarySql = (ready: boolean) => `
   LEFT JOIN LATERAL (SELECT CASE WHEN m.deleted_at IS NULL THEN m.body ELSE '' END AS body, m.sender_membership_id, ${ready ? "m.author_kind" : "'person'::text AS author_kind"} FROM messages m WHERE m.conversation_id = c.id ORDER BY m.created_at DESC LIMIT 1) lm ON true
   LEFT JOIN memberships lms ON lms.id = lm.sender_membership_id
   LEFT JOIN profiles lp ON lp.id = lms.user_id
-  ${ready ? "LEFT JOIN assistant_profiles lap ON lap.membership_id = lm.sender_membership_id" : ""}
+  ${ready ? "LEFT JOIN assistant_profiles lap ON lap.membership_id = lm.sender_membership_id LEFT JOIN brenda_settings wbs ON wbs.organisation_id = c.organisation_id" : ""}
   WHERE c.organisation_id = $1 AND (t.id IS NULL OR t.archived_at IS NULL)
     AND NOT EXISTS (SELECT 1 FROM conversation_hides h WHERE h.conversation_id = c.id AND h.membership_id = $2)`;
 
@@ -216,16 +236,18 @@ export async function openChannel(ctx: OrgContext, teamId: string | null): Promi
  * caller's membership. Before migration 0037 every message is the person's and nothing joins assistant_profiles.
  */
 const authorColumns = (ready: boolean) => ready
-  ? `m.author_kind, (m.sender_membership_id = $2 AND m.author_kind <> 'assistant') AS mine,
-     CASE WHEN m.author_kind <> 'person' THEN json_build_object('name', ap.name, 'colour', ap.colour, 'visor', ap.visor, 'eyes', ap.eyes) END AS assistant,
-     rm.author_kind AS reply_author_kind, (rm.sender_membership_id = $2 AND rm.author_kind <> 'assistant') AS reply_mine,
-     CASE WHEN rm.author_kind <> 'person' THEN COALESCE(rap.name, 'Brenda') END AS reply_assistant_name`
+  ? `m.author_kind, (m.sender_membership_id = $2 AND m.author_kind NOT IN ('assistant', 'workspace')) AS mine,
+     CASE WHEN m.author_kind = 'workspace' THEN json_build_object('name', wbs.assistant_name, 'colour', wbs.assistant_colour, 'visor', wbs.assistant_visor, 'eyes', wbs.assistant_eyes)
+          WHEN m.author_kind <> 'person' THEN json_build_object('name', ap.name, 'colour', ap.colour, 'visor', ap.visor, 'eyes', ap.eyes) END AS assistant,
+     rm.author_kind AS reply_author_kind, (rm.sender_membership_id = $2 AND rm.author_kind NOT IN ('assistant', 'workspace')) AS reply_mine,
+     CASE WHEN rm.author_kind = 'workspace' THEN COALESCE(wbs.assistant_name, 'Brenda') WHEN rm.author_kind <> 'person' THEN COALESCE(rap.name, 'Brenda') END AS reply_assistant_name`
   : `'person'::text AS author_kind, (m.sender_membership_id = $2) AS mine, NULL::json AS assistant,
      CASE WHEN rm.id IS NULL THEN NULL ELSE 'person' END AS reply_author_kind, (rm.sender_membership_id = $2) AS reply_mine,
      NULL::text AS reply_assistant_name`;
 const authorJoins = (ready: boolean) => ready
   ? `LEFT JOIN assistant_profiles ap ON ap.membership_id = m.sender_membership_id
-     LEFT JOIN assistant_profiles rap ON rap.membership_id = rm.sender_membership_id`
+     LEFT JOIN assistant_profiles rap ON rap.membership_id = rm.sender_membership_id
+     LEFT JOIN brenda_settings wbs ON wbs.organisation_id = m.organisation_id`
   : "";
 
 /** The sender's assistant as the client draws it: toProfile fills Brenda's defaults for someone who never chose. */
@@ -310,7 +332,10 @@ export async function thread(ctx: OrgContext, conversationId: string): Promise<T
          ${mentionJoins(ready41, ready43)}
          WHERE m.conversation_id = $1
          ORDER BY m.created_at DESC LIMIT 200) x ORDER BY created_at`, [conversationId, ctx.membership.id]);
-    const messages = rows.map((r) => ({ ...withAssistant(r), mentions: Array.isArray(r.mentions) ? r.mentions : [], mention_reply: r.mention_reply ?? null }));
+    // Phase 7b: the commitment labels on these messages, and whether commitments are noted here (both absent before 0048).
+    const ready48 = await schema0048Ready(db);
+    const labels = ready48 ? await labelsIn(db, conversationId, rows.map((r) => r.id)) : new Map<string, MessageLabel>();
+    const messages = rows.map((r) => ({ ...withAssistant(r), mentions: Array.isArray(r.mentions) ? r.mentions : [], mention_reply: r.mention_reply ?? null, commitment_label: labels.get(r.id) ?? null }));
     // Opening the thread reads it up to now and clears a "mark as unread".
     await db.query(
       `INSERT INTO conversation_reads(conversation_id, organisation_id, membership_id, last_read_at) VALUES ($1, $2, $3, now())
@@ -329,7 +354,8 @@ export async function thread(ctx: OrgContext, conversationId: string): Promise<T
          WHERE recipient_membership_id = $1 AND read_at IS NULL AND type = ANY($3::text[]) AND resource_type = 'conversation' AND resource_id = $2`,
         [ctx.membership.id, conversationId, MENTION_NOTIFICATION_TYPES]);
     }
-    return { conversation: { ...conv, unread: 0, marked_unread: false, people }, messages, mentions, assistantReplies, taggable };
+    const commitments = await conversationTrackingIn(db, ctx, conversationId);
+    return { conversation: { ...conv, unread: 0, marked_unread: false, people }, messages, mentions, assistantReplies, taggable, commitments };
   })));
   if (kick.length) await kickMentions(kick.slice(0, MENTION_LIMITS.kickPerPage));
   return out;
@@ -544,14 +570,15 @@ export async function incomingMessages(ctx: OrgContext, after: string): Promise<
       `SELECT m.id, m.conversation_id, c.kind, CASE c.kind WHEN 'organisation' THEN 'Everyone' WHEN 'team' THEN t.name WHEN 'channel' THEN c.title ELSE p.display_name END AS conversation_title,
               p.display_name AS sender_name, p.id AS sender_profile_id, p.avatar_key AS sender_avatar_key, m.body, m.created_at,
               ${ready
-                ? `m.author_kind, CASE WHEN m.author_kind <> 'person' THEN json_build_object('name', ap.name, 'colour', ap.colour, 'visor', ap.visor, 'eyes', ap.eyes) END AS assistant`
+                ? `m.author_kind, CASE WHEN m.author_kind = 'workspace' THEN json_build_object('name', wbs.assistant_name, 'colour', wbs.assistant_colour, 'visor', wbs.assistant_visor, 'eyes', wbs.assistant_eyes)
+                                       WHEN m.author_kind <> 'person' THEN json_build_object('name', ap.name, 'colour', ap.colour, 'visor', ap.visor, 'eyes', ap.eyes) END AS assistant`
                 : `'person'::text AS author_kind, NULL::json AS assistant`}
        FROM messages m
        JOIN conversations c ON c.id = m.conversation_id
        LEFT JOIN teams t ON t.id = c.team_id
        JOIN memberships sm ON sm.id = m.sender_membership_id JOIN profiles p ON p.id = sm.user_id
-       ${ready ? "LEFT JOIN assistant_profiles ap ON ap.membership_id = m.sender_membership_id" : ""}
-       WHERE m.organisation_id = $1 AND m.sender_membership_id <> $2 AND m.deleted_at IS NULL AND m.created_at > $3::timestamptz
+       ${ready ? "LEFT JOIN assistant_profiles ap ON ap.membership_id = m.sender_membership_id LEFT JOIN brenda_settings wbs ON wbs.organisation_id = m.organisation_id" : ""}
+       WHERE m.organisation_id = $1 AND (m.sender_membership_id <> $2${ready ? " OR m.author_kind = 'workspace'" : ""}) AND m.deleted_at IS NULL AND m.created_at > $3::timestamptz
          AND NOT EXISTS (SELECT 1 FROM conversation_reads r WHERE r.conversation_id = c.id AND r.membership_id = $2 AND r.muted_at IS NOT NULL)
        ORDER BY m.created_at DESC LIMIT 10`, [ctx.org.id, ctx.membership.id, after]);
     return rows.map(withAssistant);
@@ -603,10 +630,11 @@ export async function voiceFor(ctx: OrgContext, messageId: string) {
 }
 
 /**
- * An assistant's own message (migration 0037) is not the person's to change: their edit and withdraw match only what they
- * sent, themselves or through their assistant (the database's guard refuses the rest anyway).
+ * An assistant's own message (migration 0037), or the workspace assistant's follow-up in a thread (0048), is not the
+ * person's to change: their edit and withdraw match only what they sent, themselves or through their assistant (the
+ * database's guard refuses the rest anyway).
  */
-const notAssistantsOwn = async (db: Db) => ((await schema0037Ready(db)) ? "AND author_kind <> 'assistant'" : "");
+const notAssistantsOwn = async (db: Db) => ((await schema0037Ready(db)) ? "AND author_kind NOT IN ('assistant', 'workspace')" : "");
 
 /**
  * Withdraws one of the caller's own messages. The row stays (with an empty body) so the thread keeps its shape. A
@@ -732,7 +760,14 @@ export async function reportMessage(ctx: OrgContext, messageId: string, reason: 
   const why = reason.trim();
   if (!why) throw invalid("Say what is wrong with the message.", { reason: ["Required."] });
   return withUser(ctx.user.profileId, async (db) => {
-    const m = await db.maybeOne<{ id: string; body: string; sender_name: string; conversation_id: string }>(`SELECT m.id, m.body, p.display_name AS sender_name, m.conversation_id FROM messages m JOIN memberships sm ON sm.id = m.sender_membership_id JOIN profiles p ON p.id = sm.user_id WHERE m.id = $1 AND m.organisation_id = $2`, [messageId, ctx.org.id]);
+    // The workspace assistant's own note in a thread (phase 7b, author 'workspace') names the person it is about as its
+    // sender; it is the assistant's, never theirs (review, 9 October 2026).
+    const ready = await schema0037Ready(db);
+    const m = await db.maybeOne<{ id: string; body: string; sender_name: string; conversation_id: string }>(
+      `SELECT m.id, m.body, ${ready ? `CASE WHEN m.author_kind = 'workspace' THEN COALESCE(wbs.assistant_name, 'Brenda') || ', the workspace assistant' ELSE p.display_name END` : "p.display_name"} AS sender_name, m.conversation_id
+       FROM messages m JOIN memberships sm ON sm.id = m.sender_membership_id JOIN profiles p ON p.id = sm.user_id
+       ${ready ? "LEFT JOIN brenda_settings wbs ON wbs.organisation_id = m.organisation_id" : ""}
+       WHERE m.id = $1 AND m.organisation_id = $2`, [messageId, ctx.org.id]);
     if (!m) throw notFound("That message is not visible to you.");
     const r = await db.one<{ id: string }>(`INSERT INTO message_reports(organisation_id, message_id, reporter_membership_id, reason) VALUES ($1, $2, $3, $4) RETURNING id`, [ctx.org.id, messageId, ctx.membership.id, why.slice(0, 1000)]);
     const owners = await db.query<{ id: string }>(`SELECT id FROM memberships WHERE organisation_id = $1 AND status = 'active' AND role IN ('owner', 'hr') AND id <> $2`, [ctx.org.id, ctx.membership.id]);

@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { MessageSquareReply, Inbox } from "lucide-react";
+import { Handshake, MessageSquareReply, Inbox } from "lucide-react";
 import { workspacePage } from "@/server/lib/workspace-page";
 import { AppShell } from "@/components/app/shell";
 import { SectionTitle } from "@/components/ui/card";
@@ -12,7 +12,10 @@ import { WaitingForYou } from "@/components/app/follow-up-reply";
 import { AboutYouList } from "@/components/app/follow-ups-list";
 import { getFollowUp, listFollowUpsAboutMe } from "@/server/services/follow-ups";
 import { listAssistantItems } from "@/server/services/assistant-items";
+import { listCommitments } from "@/server/services/commitments";
+import { CommitmentCard } from "@/components/app/commitment-card";
 import { ASSISTANT_ITEM_WORDS, type AssistantItemKind } from "@/lib/assistant-items";
+import { LOOP_LIMITS, LOOP_WORDS, type CommitmentList } from "@/lib/commitments";
 import { FilterPills, InboxHeader, InboxNotes, TypePills, isId, loadInbox, param } from "../inbox";
 
 export const dynamic = "force-dynamic";
@@ -33,6 +36,11 @@ const KIND_LABEL: Record<Kind, string> = { all: "All", message: "Messages", requ
  *   reply, then every follow-up about their work and exactly what their assistant shared; `?f=` marks one and scrolls to
  *   it. The old /home/follow-ups/about-you address (and every ask's notification) comes here.
  *
+ * - "Commitments" (`?type=loops`; phase 7b, owner decision, 8 October 2026: "Brenda keeps the loops closed", contract
+ *   H.3): the commitments the workspace's assistant noted for the person and the asks they were told about, once
+ *   answered (accepted, declined, not a commitment), from the last 7 days, newest first, as compact cards. Before
+ *   migration 0048 it says it needs a database update.
+ *
  * Always the person's own. Not gated by the plan. Before migration 0043 the messages list says it needs a database
  * update; the follow-ups list works on its own (0039).
  */
@@ -42,7 +50,9 @@ export default async function ReceivedPage({ params, searchParams }: {
 }) {
   const { workspace } = await params;
   const sp = await searchParams;
-  const followUps = param(sp.type) === "followups";
+  const type = param(sp.type);
+  const followUps = type === "followups";
+  const loops = type === "loops";
   const askedKind = param(sp.kind);
   const kind: Kind = KINDS.includes(askedKind as Kind) ? (askedKind as Kind) : "all";
   const f = param(sp.f);
@@ -56,15 +66,40 @@ export default async function ReceivedPage({ params, searchParams }: {
   now.setSeconds(0, 0);
 
   const pills = (
-    <TypePills label="Show" value={followUps ? "followups" : "items"} options={[
+    <TypePills label="Show" value={followUps ? "followups" : loops ? "loops" : "items"} options={[
       { label: W.receivedTypes.items, value: "items", href: here },
       { label: W.receivedTypes.followUps, value: "followups", href: `${here}?type=followups` },
+      { label: LOOP_WORDS.page.title, value: "loops", href: `${here}?type=loops` },
     ]} />
   );
 
   let body: React.ReactNode;
   let notes: React.ReactNode;
-  if (followUps) {
+  if (loops) {
+    // Phase 7b: what the person answered of what the workspace's assistant noted for them, the last 7 days.
+    const list = await answeredCommitments(ctx);
+    const since = now.getTime() - 7 * 86_400_000;
+    const answered = (list?.items ?? []).filter((c) => c.viewer === "committer" && !(c.canAccept || c.canDecline || c.canDismiss)
+      && Date.parse(c.decidedAt ?? c.createdAt) >= since);
+    body = !list ? (
+      <Alert tone="danger">Your commitments couldn&apos;t be read just now. Reload the page to try again.</Alert>
+    ) : !list.ready ? (
+      <Alert tone="info">{LOOP_WORDS.page.notReady}</Alert>
+    ) : answered.length ? (
+      <ul className="-mx-2 space-y-1">
+        {answered.map((c) => (
+          <li key={c.id}>
+            <CommitmentCard orgSlug={ctx.org.slug} view={c} timeZone={ctx.org.timezone} now={now.getTime()} compact id={`commitment-${c.id}`} highlight={highlight === c.id} />
+          </li>
+        ))}
+      </ul>
+    ) : (
+      <EmptyState icon={Handshake} title="Nothing answered this week"
+        description="Commitments noted for you in group chats show here for 7 days once you answer them."
+        action={<Link href={`${base}/commitments`} className={buttonVariants({ variant: "secondary", size: "sm" })}>{LOOP_WORDS.page.tabs.mine}</Link>} />
+    );
+    notes = <PageNote>{LOOP_WORDS.settings.pageNote}</PageNote>;
+  } else if (followUps) {
     // Phase 4's "Asked about you", as it was on /home/follow-ups/about-you.
     const page = await listFollowUpsAboutMe(ctx, { limit: 20 });
     // The asks waiting for a reply have their own cards above; the list below does not repeat them.
@@ -132,4 +167,14 @@ export default async function ReceivedPage({ params, searchParams }: {
       <PageNotes>{notes}</PageNotes>
     </AppShell>
   );
+}
+
+/** The person's own commitments, newest first (`ready: false` before migration 0048); null when the read failed. */
+async function answeredCommitments(ctx: Parameters<typeof listCommitments>[0]): Promise<CommitmentList | null> {
+  try {
+    return await listCommitments(ctx, { scope: "mine", status: "all", limit: LOOP_LIMITS.listMax });
+  } catch (err) {
+    console.warn(`[inbox] answered commitments could not be read: ${(err as Error)?.message ?? String(err)}`);
+    return null;
+  }
 }
