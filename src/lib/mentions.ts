@@ -210,8 +210,10 @@ export function mentionQueryAt(text: string, caret: number): { start: number; qu
 // Phase 6 (someone else's assistant): the owner switched tags off ('off_owner'), no longer reads the conversation
 // ('owner_left'), muted the tagger's assistant ('owner_muted'), may not be followed up by the tagger ('not_followable'),
 // or their assistant was tagged a lot ('limit_owner').
+// Phase 7c (owner decisions, 8–9 October 2026: the abilities catalogue): the tagger switched "@mentions in Messages" off
+// for their own assistant ('off_ability'; migration 0050 widens the note's CHECK).
 export const MENTION_NOTE_CODES = ["off_workspace", "off_conversation", "archived", "limit_minute", "limit_day", "limit_conversation", "limit_workspace", "allowance", "no_ai", "not_allowed", "failed",
-  "off_owner", "owner_left", "owner_muted", "not_followable", "limit_owner"] as const;
+  "off_owner", "owner_left", "owner_muted", "not_followable", "limit_owner", "off_ability"] as const;
 export type MentionNoteCode = (typeof MENTION_NOTE_CODES)[number];
 export const isMentionNoteCode = (v: unknown): v is MentionNoteCode => (MENTION_NOTE_CODES as readonly unknown[]).includes(v);
 
@@ -242,6 +244,7 @@ export function mentionNote(code: MentionNoteCode, assistantName: string, owner?
     case "owner_muted": return `${first} isn't taking messages from your assistant right now.`;
     case "not_followable": return `You can ask ${theirs} about ${first}'s work only when you work with ${first}. Ask ${first} here instead.`;
     case "limit_owner": return `${theirs} has been asked a lot today. Ask ${first} here instead, or try again later.`;
+    case "off_ability": return `You switched off @${name} in Messages. Switch it on in Settings → Your assistant → Abilities.`;
   }
 }
 

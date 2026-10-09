@@ -29,6 +29,11 @@
  * Reminding and dismissing act on the person's own list; handing a loose end to someone's assistant and following up
  * later act as a request and a follow-up do (the other side still accepts or answers); declining a commitment answers
  * someone else ('answers_others'); naming who a blocked task waits on acts; answering a block always asks.
+ *
+ * Standup and "How I like things done" (owner decisions, 8–9 October 2026: phase 7c): posting the person's standup is a
+ * broadcast to their team's channel, so it always waits for their own press ('broadcast_team', the act-mode floor: nothing
+ * posts on its own, ever); editing their own draft and skipping the day act on their own entry. Remembering or forgetting
+ * a preference always asks ('preference_consent'), in every mode: what their assistant remembers about them is theirs.
  */
 import { FOLLOW_UP_AUTO_MAX, SMALL_GROUP_MAX, UNDO_WINDOW_MINUTES, type ActState, type AskReason } from "@/lib/act-mode";
 
@@ -55,6 +60,8 @@ export type ActFacts = {
   looseEnd?: "todo" | "remind" | "hand_over" | "follow_up" | "dismiss";
   /** respond_to_commitment: what the person would do with a commitment noted for them (phase 7b). */
   commitment?: "accept" | "decline" | "dismiss" | "done";
+  /** standup_action: what the person would do with their own standup draft (phase 7c). */
+  standup?: "edit" | "post" | "skip";
 };
 
 export type ActDecision = { act: true } | { act: false; reason: AskReason | null };
@@ -83,6 +90,11 @@ export const AUTO_RULES: Readonly<Record<string, (f: ActFacts) => true | AskReas
   respond_to_commitment: (f: ActFacts) => f.commitment === "accept" ? "others_words_todo" : f.commitment === "decline" ? "answers_others" : true,
   set_blocked_on: () => true,
   respond_to_block: () => "answers_others",
+  // Phase 7c (owner decisions, 8–9 October 2026): a post goes to the whole team's channel, always the person's own press;
+  // an edit or a skip is their own entry. A preference is always their call (copilot's branches pass the same floors).
+  standup_action: (f: ActFacts) => (f.standup === "post" ? "broadcast_team" : true),
+  remember_preference: () => "preference_consent",
+  forget_preference: () => "preference_consent",
 } satisfies Record<string, (f: ActFacts) => true | AskReason>);
 
 const ask = (reason: AskReason | null): ActDecision => ({ act: false, reason });
@@ -132,5 +144,5 @@ export function earlierTaintOf(messages: { role: string; tainted?: boolean }[]):
  */
 export function actSituation(act: ActContext | null | undefined): string | null {
   if (!act || !act.state.ready || act.state.locked || act.state.effective !== "auto") return null;
-  return `The person chose "Act without asking": in this chat, actions that would wait for Confirm run as soon as they ask for them and come back done (they can undo most for ${UNDO_WINDOW_MINUTES} minutes), so do exactly what they asked and nothing more. Some still wait for Confirm and return needsConfirmation with stillAsking: after you read other people's words, anything to everyone, a whole team, a channel of more than ${SMALL_GROUP_MAX} people or more than ${FOLLOW_UP_AUTO_MAX} people at once, invitations, review submissions, new teams, answers to what others sent them, and someone else's document. Say why in a few words. Their mode is never permission for anything they did not ask for.`;
+  return `The person chose "Act without asking": in this chat, actions that would wait for Confirm run as soon as they ask for them and come back done (they can undo most for ${UNDO_WINDOW_MINUTES} minutes), so do exactly what they asked and nothing more. Some still wait for Confirm and return needsConfirmation with stillAsking: after you read other people's words, anything to everyone, a whole team, a channel of more than ${SMALL_GROUP_MAX} people or more than ${FOLLOW_UP_AUTO_MAX} people at once, invitations, review submissions, new teams, answers to what others sent them, someone else's document, posting their standup, and remembering or forgetting a preference. Say why in a few words. Their mode is never permission for anything they did not ask for.`;
 }

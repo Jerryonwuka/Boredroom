@@ -106,8 +106,8 @@ describe("the workspace notes commitments in a tracked channel", () => {
     expect(await adminQuery("SELECT count(*)::int AS n FROM commitment_scan_cursors WHERE conversation_id = $1", [design])).toEqual([{ n: 1 }]);
     // Everyone in #Design sees the labels.
     const t = await thread(ada, design);
-    expect(t!.messages.find((m) => m.id === ok)!.commitment_label).toEqual({ state: "noted", text: "Noted" });
-    expect(t!.messages.find((m) => m.id === deck)!.commitment_label).toEqual({ state: "noted", text: "Noted" });
+    expect(t!.messages.find((m) => m.id === ok)!.commitment_label).toEqual({ state: "noted", text: "Noted", private: false });
+    expect(t!.messages.find((m) => m.id === deck)!.commitment_label).toEqual({ state: "noted", text: "Noted", private: false });
   });
 
   it("the notch carries Ben's cards; Ben accepts; David's report shows it under Commitments", async () => {

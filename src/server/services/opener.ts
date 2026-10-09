@@ -7,6 +7,11 @@
  * follow-ups, the review queue), in parallel, and no model is called. A read that fails gives that count `null` ("not
  * available"), never 0; a feature that is not there (before migration 0039 or 0043, a role without reviews or tasks)
  * leaves its count out. Never throws: the notch calls it on every poll and the home page on the first visit of the day.
+ *
+ * Phase 7c (owner decisions, 8–9 October 2026: the abilities catalogue): an action whose ability is switched off for the
+ * person is left out ("What did I miss?" without catch-up), and `openerFor` answers null when the morning opener itself
+ * is switched off (the route, the notch and the home page then show no opener). The morning brief routine reads the
+ * same content through `morningOpener`; it is unavailable while the opener is off (services/routines).
  */
 import type { OrgContext } from "@/server/lib/api";
 import { localDate } from "@/server/lib/time";
@@ -15,6 +20,8 @@ import { reviewQueue } from "@/server/services/views";
 import { listMyFollowUps, waitingForMe } from "@/server/services/follow-ups";
 import { OPENER_ORDER, openerActions as openerActionsFor, openerCalm, openerCount, type Opener, type OpenerAction, type OpenerCount, type OpenerCountKey } from "@/lib/opener";
 import type { FollowUpStatus } from "@/lib/follow-ups";
+import { abilitiesFor } from "@/server/services/abilities";
+import { abilitiesOff, abilityOff, type AbilityKey } from "@/lib/abilities";
 
 type Briefing = Awaited<ReturnType<typeof briefing>>;
 
@@ -64,9 +71,27 @@ function countOf(...lists: (unknown[] | null | undefined)[]): number | null | un
   return lists.reduce<number>((n, l) => n + (l?.length ?? 0), 0);
 }
 
-/** The opener's actions for these counts (pure; lib/opener). */
-export function openerActions(counts: OpenerCount[], role: OrgContext["membership"]["role"], slug: string): OpenerAction[] {
-  return openerActionsFor(counts, role, slug);
+/** The opener's actions for these counts (pure; lib/opener); `off`: the abilities switched off for the person (phase 7c). */
+export function openerActions(counts: OpenerCount[], role: OrgContext["membership"]["role"], slug: string, off: readonly AbilityKey[] = []): OpenerAction[] {
+  return openerActionsFor(counts, role, slug, { off });
+}
+
+/**
+ * Whether the person has the morning opener (phase 7c): false when it is switched off for them, by the workspace or by
+ * themself. Never throws (a failed read: on).
+ */
+export async function openerOn(ctx: OrgContext): Promise<boolean> {
+  return abilityOff(await abilitiesFor(ctx), "morning_opener") === null;
+}
+
+/**
+ * The morning opener as the route, the notch and the home page show it: null when it is switched off for the person
+ * (phase 7c); else `morningOpener`'s, without the lists behind the counts.
+ */
+export async function openerFor(ctx: OrgContext, o: Parameters<typeof morningOpener>[1] = {}): Promise<Opener | null> {
+  if (!(await openerOn(ctx))) return null;
+  const full = await morningOpener(ctx, o);
+  return Object.fromEntries(Object.entries(full).filter(([k]) => k !== "detail")) as Opener;
 }
 
 export async function morningOpener(
@@ -78,6 +103,7 @@ export async function morningOpener(
   const worker = role === "employee" || role === "manager";
   const since = openerSince(o.since, now).getTime();
   const items = await import("@/server/services/assistant-items").catch(() => null);
+  const off = abilitiesOff(await abilitiesFor(ctx));
   const [brief, waiting, asks, mine, queue] = await Promise.all([
     o.briefing ? Promise.resolve({ ok: true as const, v: o.briefing }) : settle("the briefing", briefing(ctx)),
     items ? settle("the assistant inbox", items.listAssistantItems(ctx, { box: "waiting", limit: 50 })) : Promise.resolve({ ok: false as const }),
@@ -132,7 +158,7 @@ export async function morningOpener(
   const counts = OPENER_ORDER.filter((k) => values[k] !== undefined).map((k) => openerCount(k, values[k] ?? null, ctx.org.slug));
   return {
     // The person's own day when the caller knows their zone (routines and "seen today" use it), else the workspace's.
-    v: 1, localDate: localDate(now, o.timeZone || ctx.org.timezone), counts, actions: openerActionsFor(counts, role, ctx.org.slug), calm: openerCalm(counts),
+    v: 1, localDate: localDate(now, o.timeZone || ctx.org.timezone), counts, actions: openerActionsFor(counts, role, ctx.org.slug, { off }), calm: openerCalm(counts),
     firstVisit: o.firstVisit ?? null, detail,
   };
 }

@@ -45,7 +45,11 @@ export type AssistantProfile = AssistantLook & { name: string };
  * `until` and `nextStart`. Present only for someone with quiet hours on (so every existing literal still compiles and
  * the shape is unchanged for everyone else); absent or `ready: false` is never quiet.
  */
-export type AssistantProfiles = { personal: AssistantProfile; workspace: AssistantProfile; setupDone: boolean; canEditWorkspace: boolean; speak: AssistantSpeak; act?: ActState; ai?: boolean; quiet?: QuietState };
+/**
+ * `voice` (phase 7c, owner decisions, 8–9 October 2026: the abilities catalogue): false when the workspace switched Voice
+ * off (`speak` then reads 'never' and the talk and listen controls are hidden); absent when it is on.
+ */
+export type AssistantProfiles = { personal: AssistantProfile; workspace: AssistantProfile; setupDone: boolean; canEditWorkspace: boolean; speak: AssistantSpeak; act?: ActState; ai?: boolean; quiet?: QuietState; voice?: false };
 
 /** The drawn sphere's four stops (lib/brenda-character/engine), from the lit upper left to the rim. */
 export type SphereShades = { light: string; mid: string; shade: string; rim: string };

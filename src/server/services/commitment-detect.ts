@@ -18,11 +18,16 @@
  *
  * The helpers that build a batch (`classifyLinesFor`, `numberBatches`) are shared with the person's own loose-ends scan
  * (loose-end-detect.ts).
+ *
+ * The async standup (owner decisions, 8–9 October 2026: phase 7c): a posted standup is the day's plan, not a promise, so
+ * after migration 0050 neither scan reads a message that is one (`scanFilter({ standups: true })`); before 0050 the
+ * clause is left out (there are none).
  */
 import { withWorker, type Db } from "@/server/db";
 import { resolveEntitlements } from "@/server/lib/entitlements";
 import { forget0048, isMissingSchema, schema0048Ready } from "@/server/lib/schema-0048";
 import { forget0049, schema0049Ready } from "@/server/lib/schema-0049";
+import { forget0050, schema0050Ready } from "@/server/lib/schema-0050";
 import { addDays, localDate, localMidnight, localTimeOn, todayLocal, weekdayOf } from "@/server/lib/time";
 import { resolveAssistant, type AssistantConnection } from "@/server/services/assistant";
 import { newRequestId, recordWorkspaceUsage } from "@/server/services/ai-usage";
@@ -81,6 +86,10 @@ export const SCAN_JOINS = scanJoins();
 /** The filter every scanned message passes. */
 export const SCAN_FILTER = `m.deleted_at IS NULL AND m.voice_key IS NULL AND m.author_kind IN ('person', 'via_assistant')
   AND NOT EXISTS (SELECT 1 FROM message_mentions am WHERE am.message_id = m.id AND am.kind = 'assistant')`;
+/** Not a posted standup (migration 0050; owner decisions, 8–9 October 2026: a plan for the day is not a promise). */
+export const STANDUP_POST_FILTER = `NOT EXISTS (SELECT 1 FROM standup_entries se WHERE se.message_id = m.id)`;
+/** SCAN_FILTER, and after migration 0050 (`standups`) never a posted standup. */
+export const scanFilter = (o: { standups: boolean }) => (o.standups ? `${SCAN_FILTER}\n  AND ${STANDUP_POST_FILTER}` : SCAN_FILTER);
 
 export type ScanRow = {
   id: string; conversation_id: string; conversation_kind: ScanMessage["conversationKind"]; conversation_name: string | null;
@@ -337,6 +346,8 @@ export async function scanWorkspaceCommitments(organisationId: string, o: { now?
       // Nothing said before tracking was turned on is read, as a candidate or as context: the workspace's time, and (0049)
       // the time the conversation's own switch was last turned back on (review, 9 October 2026).
       const v49 = await schema0049Ready(db);
+      // Phase 7c: posted standups are left out once they exist (migration 0050).
+      const v50 = await schema0050Ready(db);
       const convSince = v49 ? `COALESCE(c.track_commitments_since, '-infinity'::timestamptz)` : `'-infinity'::timestamptz`;
       const contextFloor = `GREATEST($6::timestamptz, ${convSince})`;
       const convs = await db.query<Conv>(
@@ -352,7 +363,7 @@ export async function scanWorkspaceCommitments(organisationId: string, o: { now?
          LEFT JOIN teams tm ON tm.id = c.team_id
          LEFT JOIN commitment_scan_cursors cur ON cur.conversation_id = c.id
          ${scanJoins(contextFloor)}
-         WHERE m.organisation_id = $1 AND m.conversation_id = ANY($2::uuid[]) AND ${SCAN_FILTER}
+         WHERE m.organisation_id = $1 AND m.conversation_id = ANY($2::uuid[]) AND ${scanFilter({ standups: v50 })}
            AND m.created_at >= GREATEST($3::timestamptz, ${convSince}) AND m.created_at <= $4::timestamptz
            AND (cur.conversation_id IS NULL OR (m.created_at, m.id) > (cur.last_created_at, COALESCE(cur.last_message_id, '${NIL}'::uuid)))
          ORDER BY m.created_at, m.id
@@ -376,6 +387,7 @@ export async function scanWorkspaceCommitments(organisationId: string, o: { now?
     if (!isMissingSchema(err)) throw err;
     forget0048();
     forget0049();
+    forget0050();
     return nothing("not_ready");
   }
   if (pre.status !== "ready") return nothing(pre.status);

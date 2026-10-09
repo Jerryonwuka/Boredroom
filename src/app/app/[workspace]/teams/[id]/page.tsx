@@ -21,6 +21,9 @@ import { assistantProfiles } from "@/server/services/assistant-profile";
 import { Person } from "@/components/ui/person";
 import { BrendaGlyph } from "@/components/app/brenda-glyph";
 import { PageNote, PageNotes } from "@/components/ui/page-notes";
+import { StandupSettings } from "@/components/app/standup-settings";
+import { standupSettings } from "@/server/services/standup";
+import type { StandupSettingsView } from "@/lib/standup";
 import { cn } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -43,11 +46,17 @@ export async function generateMetadata({ params }: { params: Promise<{ workspace
   }
 }
 
-type Tab = "tasks" | "members" | "recordings";
+type Tab = "tasks" | "members" | "recordings" | "standup";
 
 /**
  * A team's board, v4: underline tabs for its tasks (a board, one calm column per status), its members (a grid of cards
  * with what each is doing now and their open work) and its screen recordings. `?tab=` picks one; tasks by default.
+ *
+ * Phase 7c (owner decisions, 8–9 October 2026: async standup, option B; contract G.1): a fourth tab, "Standup"
+ * (`?tab=standup`), holds the team's async standup: off until its lead, the owner or HR switches it on, with the time the
+ * drafts arrive, the rollup time and the days (components/app/standup-settings; read here with the page, and by the card
+ * itself when that read fails).
+ * Everyone who sees the team reads it; only those three change it, and the server says so either way.
  */
 export default async function TeamBoardPage({ params, searchParams }: { params: Promise<{ workspace: string; id: string }>; searchParams: Promise<{ tab?: string }> }) {
   const { workspace, id } = await params;
@@ -56,9 +65,11 @@ export default async function TeamBoardPage({ params, searchParams }: { params: 
   const data = await loadBoard(workspace, id);
   if (!data) notFound();
   const { team, members, tasks, isLead, projects, others } = data;
-  const tab: Tab = sp.tab === "members" || sp.tab === "recordings" ? sp.tab : "tasks";
+  const tab: Tab = sp.tab === "members" || sp.tab === "recordings" || sp.tab === "standup" ? sp.tab : "tasks";
   // The hand-off to Brenda names the person's own assistant (owner decision, 7 October 2026: personal assistants).
-  const [recordings, recordingCounts, { personal }] = await Promise.all([listRecordings(ctx, { teamId: team.id, limit: 8 }), recordingCountsByTask(ctx, tasks.map((t) => t.id)), assistantProfiles(ctx)]);
+  const [recordings, recordingCounts, { personal }, standup] = await Promise.all([listRecordings(ctx, { teamId: team.id, limit: 8 }), recordingCountsByTask(ctx, tasks.map((t) => t.id)), assistantProfiles(ctx),
+    // Phase 7c: the team's standup settings, only on its tab (ready: false before 0050; a failed read: the card reads them).
+    tab === "standup" ? standupSettings(ctx, team.id).catch((): StandupSettingsView | null => null) : Promise.resolve(null)]);
   const base = `/app/${ctx.org.slug}`;
   const here = `${base}/teams/${team.id}`;
   const isOrgAdmin = ["owner", "hr"].includes(ctx.membership.role);
@@ -74,6 +85,7 @@ export default async function TeamBoardPage({ params, searchParams }: { params: 
           { value: "tasks", label: "Tasks", count: tasks.length, href: here },
           { value: "members", label: "Members", count: members.length, href: `${here}?tab=members` },
           { value: "recordings", label: "Screen recordings", href: `${here}?tab=recordings` },
+          { value: "standup", label: "Standup", href: `${here}?tab=standup` },
         ]} tabValue={tab} tabParam="tab" tabsLabel="Team sections" />
 
       {tab === "tasks" ? (
@@ -125,9 +137,16 @@ export default async function TeamBoardPage({ params, searchParams }: { params: 
         </section>
       ) : null}
 
+      {tab === "standup" ? (
+        <div className="w-full min-w-0 max-w-[56rem]">
+          <StandupSettings orgSlug={ctx.org.slug} teamId={team.id} teamName={team.name} initial={standup} />
+        </div>
+      ) : null}
+
       {/* Page notes (owner request, 7 October 2026): explanations at the bottom of the screen, small and grey. */}
       <PageNotes>
         {tab === "tasks" && isLead && team.project_name ? <PageNote>New tasks go into the team&apos;s working project (&ldquo;{team.project_name}&rdquo;). Tasks in other projects still appear here when assigned to a team member.</PageNote> : null}
+        {tab === "standup" ? <PageNote section="Async standup">Each person sees and edits only their own draft. The lead reads what people posted, in the channel and in one rollup; anyone without an update is listed by name only, never with a reason.</PageNote> : null}
       </PageNotes>
     </AppShell>
   );

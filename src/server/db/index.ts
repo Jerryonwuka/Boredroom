@@ -103,6 +103,13 @@ export async function withCtx<T>(ctx: Ctx, fn: (db: Db) => Promise<T>): Promise<
   if (ctx.role && ctx.role !== "user" && !ROLES.has(ctx.role)) throw new Error("withCtx: unknown role");
   const setup = ["BEGIN", ...(ctx.userId ? [`SELECT set_config('app.user_id', '${ctx.userId}', true)`] : []), ...(ctx.role && ctx.role !== "user" ? [`SELECT set_config('app.role', '${ctx.role}', true)`] : [])].join("; ");
   const client = await getPool().connect();
+  // While a client is checked out the pool's idle error listener is off, and pg emits 'error' on the client when its
+  // connection drops (Neon's "Connection terminated unexpectedly"). With no listener that is an uncaught exception, which
+  // ends a long-running process such as the worker (fix review, 9 October 2026). The query in flight still rejects; the
+  // broken client is destroyed on release rather than going back to the pool.
+  const lost: { err: Error | null } = { err: null };
+  const onError = (err: Error) => { lost.err = err; console.warn(`[db] connection dropped during a transaction: ${err.message}`); };
+  client.on("error", onError);
   try {
     await client.query(setup);
     const db = wrap(client);
@@ -115,10 +122,11 @@ export async function withCtx<T>(ctx: Ctx, fn: (db: Db) => Promise<T>): Promise<
     if (done.command === "ROLLBACK") console.error(`[db] transaction rolled back at COMMIT: a statement failed inside it and the error was swallowed. Nothing it wrote was saved.\n${new Error().stack}`);
     return result;
   } catch (err) {
-    try { await client.query("ROLLBACK"); } catch { /* ignore */ }
+    if (!lost.err) { try { await client.query("ROLLBACK"); } catch { /* ignore */ } }
     throw err;
   } finally {
-    client.release();
+    client.removeListener("error", onError);
+    client.release(lost.err ?? undefined);
   }
 }
 

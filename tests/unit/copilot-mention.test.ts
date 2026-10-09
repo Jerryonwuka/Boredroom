@@ -124,8 +124,10 @@ describe("shared mode: every tool has exactly one class", () => {
 
   it("puts what normally runs at once among the Confirms and refuses the team report", () => {
     const of = (cls: string) => Object.entries(SHARED_TOOL_CLASS).filter(([, c]) => c === cls).map(([n]) => n).sort();
-    expect(of("immediate")).toEqual([...IMMEDIATE_TOOLS].filter((x) => x !== "team_report").sort());
-    expect(of("refused")).toEqual(["team_report"]);
+    // Phase 7c (owner decisions, 8–9 October 2026): the person's standup and preferences are acted on only in their own
+    // chat (standup_action edits and skips at once, so it is an immediate tool refused in a thread).
+    expect(of("immediate")).toEqual([...IMMEDIATE_TOOLS].filter((x) => x !== "team_report" && x !== "standup_action").sort());
+    expect(of("refused")).toEqual(["forget_preference", "remember_preference", "standup_action", "team_report"]);
     // Phase 6 (owner decision, 8 October 2026): sending to another assistant and answering what was brought wait for Confirm.
     // Phase 7a (owner decision, 8 October 2026): setting up or changing a routine waits for Confirm too.
     // Phase 7b (owner decision, 8 October 2026): answering a commitment or a block, and naming who a task waits on, too.
@@ -140,7 +142,8 @@ describe("shared mode: every tool has exactly one class", () => {
     // And (phase 6) what passed between the person's assistant and others': theirs alone.
     // And (phase 7a) the person's own routines.
     // And (phase 7b) the person's loose ends, commitments and who waits on whom.
-    expect(of("narrow")).toEqual(["assistant_inbox", "commitments", "follow_up_status", "get_attendance", "get_briefing", "get_my_day", "get_team_status", "list_conversations", "list_reminders", "list_routines", "loose_ends", "waiting_on", "work_summary"]);
+    // And (phase 7c) the person's own standup.
+    expect(of("narrow")).toEqual(["assistant_inbox", "commitments", "follow_up_status", "get_attendance", "get_briefing", "get_my_day", "get_team_status", "list_conversations", "list_reminders", "list_routines", "loose_ends", "standup", "waiting_on", "work_summary"]);
   });
 });
 

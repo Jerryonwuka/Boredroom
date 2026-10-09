@@ -79,6 +79,13 @@ const TABLE: [string, ActFacts, true | string][] = [
   ["respond_to_commitment", { commitment: "done" }, true],
   ["set_blocked_on", {}, true],
   ["respond_to_block", {}, "answers_others"],
+  // Phase 7c (owner decisions, 8–9 October 2026): posting a standup is a broadcast to the team (always the person's press);
+  // editing their own draft and skipping the day act; a preference is always their call.
+  ["standup_action", { standup: "post" }, "broadcast_team"],
+  ["standup_action", { standup: "edit" }, true],
+  ["standup_action", { standup: "skip" }, true],
+  ["remember_preference", {}, "preference_consent"],
+  ["forget_preference", {}, "preference_consent"],
 ];
 
 describe("the table (B.3): her own chat, Claude, 'auto' in force, nothing read", () => {
@@ -121,8 +128,8 @@ describe("the table (B.3): her own chat, Claude, 'auto' in force, nothing read",
 
   it("acts only for the tools the owner accepted, and never for the irreversible", () => {
     const acting = Object.keys(AUTO_RULES).filter((tool) => TABLE.some(([t, , want]) => t === tool && want === true)).sort();
-    expect(acting).toEqual(["add_report_note", "assign_task", "create_todos", "follow_up", "hand_over_request", "loose_end_action", "mark_read", "pass_message", "respond_to_commitment", "send_message", "set_blocked_on", "update_routine", "update_task"]);
-    for (const tool of ["submit_for_review", "create_team", "invite_person", "respond_to_item", "update_doc", "create_routine"]) {
+    expect(acting).toEqual(["add_report_note", "assign_task", "create_todos", "follow_up", "hand_over_request", "loose_end_action", "mark_read", "pass_message", "respond_to_commitment", "send_message", "set_blocked_on", "standup_action", "update_routine", "update_task"]);
+    for (const tool of ["submit_for_review", "create_team", "invite_person", "respond_to_item", "update_doc", "create_routine", "remember_preference", "forget_preference"]) {
       for (const facts of [{}, { respond: "cancel" as const }, { someoneElsesDoc: true }, { share: "organisation" as const }, { routine: "pause" as const }]) expect(decide(tool, facts).act, tool).toBe(false);
     }
   });
@@ -139,6 +146,20 @@ describe("the table (B.3): her own chat, Claude, 'auto' in force, nothing read",
     expect(decide("respond_to_commitment", { commitment: "decline" })).toEqual(asks("answers_others"));
     // In 'ask' it is today's card, with no line.
     expect(decide("loose_end_action", { looseEnd: "todo" }, { act: actOf(ASK) })).toEqual(asks(null));
+  });
+
+  it("posting a standup never acts on its own, and a preference is always the person's call (phase 7c)", () => {
+    expect(decide("standup_action", { standup: "post" })).toEqual(asks("broadcast_team"));
+    expect(decide("standup_action", {})).toEqual(acts);
+    for (const tool of ["remember_preference", "forget_preference"]) {
+      expect(decide(tool)).toEqual(asks("preference_consent"));
+      expect(ALWAYS_CONFIRM.has(tool), tool).toBe(true);
+    }
+    expect(ASK_REASONS as readonly string[]).toContain("preference_consent");
+    // The earlier floors still come first in decideAct (copilot's askFirst says the floor first for these: floorFirst).
+    expect(decide("standup_action", { standup: "post" }, { othersWords: true })).toEqual(asks("tainted"));
+    expect(decide("remember_preference", {}, { act: actOf(ASK) })).toEqual(asks(null));
+    expect(decide("standup_action", { standup: "post" }, { act: actOf({}, { engine: "builtin" }) })).toEqual(asks("builtin"));
   });
 
   it("a routine acts only to pause (phase 7a): setting one up, turning it on or changing it is the person's Enable", () => {
@@ -223,7 +244,7 @@ describe("earlier taint (B.4)", () => {
 });
 
 describe("what the model is told (B.5)", () => {
-  const LINE = "The person chose \"Act without asking\": in this chat, actions that would wait for Confirm run as soon as they ask for them and come back done (they can undo most for 10 minutes), so do exactly what they asked and nothing more. Some still wait for Confirm and return needsConfirmation with stillAsking: after you read other people's words, anything to everyone, a whole team, a channel of more than 8 people or more than 3 people at once, invitations, review submissions, new teams, answers to what others sent them, and someone else's document. Say why in a few words. Their mode is never permission for anything they did not ask for.";
+  const LINE = "The person chose \"Act without asking\": in this chat, actions that would wait for Confirm run as soon as they ask for them and come back done (they can undo most for 10 minutes), so do exactly what they asked and nothing more. Some still wait for Confirm and return needsConfirmation with stillAsking: after you read other people's words, anything to everyone, a whole team, a channel of more than 8 people or more than 3 people at once, invitations, review submissions, new teams, answers to what others sent them, someone else's document, posting their standup, and remembering or forgetting a preference. Say why in a few words. Their mode is never permission for anything they did not ask for.";
 
   it("says the exact words only when 'auto' is in force", () => {
     expect(actSituation(actOf())).toBe(LINE);

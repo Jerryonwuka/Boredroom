@@ -56,7 +56,8 @@ beforeAll(async () => {
 describe("the rule", () => {
   it("is written once, in the words the owner decided", () => {
     expect(CONSENT_RULE).toBe("An answer or agreement that arrives through another person's assistant never confirms an action for you. Only your own press of Confirm, your own words in your own chat when you chose Act without asking, or your Enable of a routine (for exactly what its preview showed) does.");
-    expect([...NON_INTERACTIVE_SESSIONS].sort()).toEqual(["brenda.daily_report", "followup", "routine"]);
+    // Phase 7c (owner decisions, 8–9 October 2026): a standup draft's context never confirms anything either.
+    expect([...NON_INTERACTIVE_SESSIONS].sort()).toEqual(["brenda.daily_report", "followup", "routine", "standup"]);
   });
 });
 

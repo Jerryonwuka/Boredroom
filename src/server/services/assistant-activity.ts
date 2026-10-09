@@ -82,6 +82,13 @@ export function attemptOf(tool: string, input: Record<string, unknown> = {}): st
     case "set_blocked_on": return "say who a task is blocked on";
     case "respond_to_block": return input.action === "not_me" ? "say a blocked task isn't yours" : "answer a blocked task";
     case "waiting_on": return "check who is waiting on whom";
+    // The async standup and "How I like things done" (owner decisions, 8–9 October 2026: phase 7c).
+    case "standup": return "read your standup";
+    // A skip attempt reads like any other step on a draft: owners and HR read these rows and may receive the rollup,
+    // where a skip and silence read the same (fix review, 9 October 2026).
+    case "standup_action": return input.action === "post" ? "post your standup" : "act on your standup";
+    case "remember_preference": return "remember a preference";
+    case "forget_preference": return "forget a preference";
     default: return "do that";
   }
 }
@@ -106,7 +113,12 @@ export const PRIVATE_TOOLS: ReadonlySet<string> = new Set(["send_message", "mark
   // Loose ends, commitments and "blocked on whom" (phase 7b; security review, 9 October 2026): their refusals name the
   // person and can reveal a mute ("Ben isn't taking messages from your assistant right now"), and their words are other
   // people's. Owners and HR read only what kind of thing was tried.
-  "loose_ends", "loose_end_action", "commitments", "respond_to_commitment", "set_blocked_on", "respond_to_block", "waiting_on"]);
+  "loose_ends", "loose_end_action", "commitments", "respond_to_commitment", "set_blocked_on", "respond_to_block", "waiting_on",
+  // "How I like things done" (owner decisions, 8–9 October 2026: phase 7c): what the person asked their assistant to
+  // remember is theirs alone (owners and HR never see it), so a refusal says only what kind of thing was tried.
+  "remember_preference", "forget_preference", "preference",
+  // The async standup (fix review, 9 October 2026): a refusal's words can say a draft was skipped or name the team.
+  "standup", "standup_action"]);
 
 /** The model-facing words of the tainted-turn refusal (copilot.ts TAINT_ERROR), recognised in rows logged before this change. */
 const TAINTED = /^Not done: you read other people's messages/;

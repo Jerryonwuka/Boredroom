@@ -29,8 +29,14 @@
  * A pick writes the server's label ("@Ben's Brenda ", or "@Ben Okafor's Brenda " when another reader is also called
  * Ben) and is sent as an `others_assistant` token. One assistant answers a message at most: the first assistant tag in
  * the text, own or someone else's; the server keeps the first assistant token it is given, so it goes first.
+ *
+ * Abilities (owner decisions, 8–9 October 2026: phase 7c): a person who switched "@mentions in Messages" off for their
+ * own assistant (Settings → Your assistant → Abilities) is no longer offered it here (`OwnAssistantOffScope`, set by the
+ * Messages page from the person's abilities), and the hint "Max replies here for everyone to see" does not show for it.
+ * Typed in full it is still sent as a token, so the server's private note says why nothing answered and where to switch
+ * it on ("You switched off @Max in Messages…"). Other people's assistants and people are offered as before.
  */
-import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type FocusEvent, type KeyboardEvent, type RefObject, type SyntheticEvent } from "react";
+import { createContext, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type FocusEvent, type KeyboardEvent, type ReactNode, type RefObject, type SyntheticEvent } from "react";
 import { BrendaFace } from "@/components/app/brenda-face";
 import { Avatar } from "@/components/ui/avatar";
 import { lookOf, type AssistantProfile } from "@/lib/assistant-look";
@@ -55,6 +61,15 @@ const MAX_PERSON_LABEL = 121;
 const MAX_OTHER_LABEL = 160;
 /** No one else's assistant: before migration 0043, and wherever the page passes none. */
 const NO_OTHERS: TaggableAssistant[] = [];
+
+/**
+ * Whether the person switched @mentions off for their own assistant (phase 7c, the `mentions` ability; contract C.3).
+ * The Messages page sets it around the composer, so the composer needs no new prop; false everywhere else.
+ */
+const OwnAssistantOff = createContext(false);
+export function OwnAssistantOffScope({ off, children }: { off: boolean; children: ReactNode }) {
+  return <OwnAssistantOff.Provider value={off}>{children}</OwnAssistantOff.Provider>;
+}
 
 const lower = (s: string) => s.toLocaleLowerCase("en-GB");
 /** Lowercased with curly apostrophes made straight: "@Ben’s" (a Mac's smart quote) is typed "@Ben's". */
@@ -224,6 +239,8 @@ export function useMentionAutocomplete({ enabled, value, setValue, boxRef, peopl
   people: MentionPerson[]; assistant: AssistantProfile; assistantAllowed: boolean; others?: TaggableAssistant[]; onInserted?: (el: HTMLTextAreaElement) => void;
 }) {
   const listId = useId();
+  // Phase 7c: the person's own assistant is not offered while they switched @mentions off for it.
+  const ownOff = useContext(OwnAssistantOff);
   const [query, setQuery] = useState<Query | null>(null);
   const [focused, setFocused] = useState(false);
   // A list closed with Escape stays closed for that "@" (query null), and one just picked from stays closed until the
@@ -255,7 +272,7 @@ export function useMentionAutocomplete({ enabled, value, setValue, boxRef, peopl
       if (!assistantAllowed) break;
       if (o.allowed || q) theirs.push(o);
     }
-    if (meMatches && assistantAllowed) out.push({ key: "assistant", kind: "assistant", label: labels[0] });
+    if (meMatches && assistantAllowed && !ownOff) out.push({ key: "assistant", kind: "assistant", label: labels[0] });
     else if (!assistantAllowed && q && (meMatches || theirsMatch)) out.push({ key: "off", kind: "off" });
     const matches: MentionPerson[] = [];
     for (const p of sortedPeople) { if (matches.length >= MAX_ROWS) break; if (nameMatches(p.name, query.query)) matches.push(p); }
@@ -272,7 +289,7 @@ export function useMentionAutocomplete({ enabled, value, setValue, boxRef, peopl
       out.push(o.allowed ? { key: `assistant-${o.membershipId}`, kind: "other", label: o.label, other: o } : { key: `assistant-${o.membershipId}`, kind: "other_off", other: o });
     }
     return out;
-  }, [query, labels, assistantAllowed, sortedPeople, sortedOthers]);
+  }, [query, labels, assistantAllowed, ownOff, sortedPeople, sortedOthers]);
   const selectable = options.filter(isSelectable);
   const active = selectable.find((o) => o.key === activeKey) ?? selectable[0] ?? null;
   // After a pick, writing on after it ("@Max hi") keeps the list closed: only editing the inserted name opens it again
@@ -398,7 +415,7 @@ export function useMentionAutocomplete({ enabled, value, setValue, boxRef, peopl
     /** The tokens for `text` as it will be sent (only once 0041 is in). */
     tokens: (text: string): MentionToken[] => (enabled ? mentionTokens(text, { assistantName: assistant.name, assistantAllowed, people, picked, others }) : []),
     /** Whether the person's own assistant is tagged in what is written now (the hint line under the box). */
-    assistantTagged: tagged?.kind === "assistant",
+    assistantTagged: tagged?.kind === "assistant" && !ownOff,
     /** Someone else's assistant tagged in what is written now (phase 6: "Ben's Brenda answers here …"), or null. */
     otherTagged,
     /** After a send: the picks and the list start again. */

@@ -313,8 +313,11 @@ describe("validateMentions with someone else's assistant", () => {
 describe("phase 6 words", () => {
   it("has a note for each of the owner's reasons, naming the owner and their assistant", () => {
     const owner = { firstName: "Ben", assistantName: "Brenda" };
-    expect(MENTION_NOTE_CODES.slice(11)).toEqual(["off_owner", "owner_left", "owner_muted", "not_followable", "limit_owner"]);
-    expect(MENTION_NOTE_CODES.slice(11).map((c) => mentionNote(c, "Ben's Brenda", owner))).toEqual([
+    // Phase 7c (owner decisions, 8–9 October 2026): 'off_ability' (the tagger switched @mentions off) follows them.
+    expect(MENTION_NOTE_CODES.slice(11, 16)).toEqual(["off_owner", "owner_left", "owner_muted", "not_followable", "limit_owner"]);
+    expect(MENTION_NOTE_CODES.slice(16)).toEqual(["off_ability"]);
+    expect(mentionNote("off_ability", "Max")).toBe("You switched off @Max in Messages. Switch it on in Settings → Your assistant → Abilities.");
+    expect(MENTION_NOTE_CODES.slice(11, 16).map((c) => mentionNote(c, "Ben's Brenda", owner))).toEqual([
       "Ben has switched off tags for their assistant. Ask Ben here.",
       "Ben isn't in this conversation any more, so Ben's Brenda can't answer here. Ask Ben directly.",
       "Ben isn't taking messages from your assistant right now.",
@@ -354,7 +357,10 @@ describe("migration 0043", () => {
 
   it("lists exactly the statuses and note codes the code knows", () => {
     expect(listed43(/assistant_mentions_status_check\s+CHECK \(status IN \(([^)]*)\)\)/)).toEqual([...MENTION_STATUSES]);
-    expect(listed43(/assistant_mention_private_note_check CHECK \(note_code IS NULL OR note_code IN \(([^)]*)\)\)/)?.map((x) => x.replace(/\s+/g, ""))).toEqual([...MENTION_NOTE_CODES]);
+    // Phase 7c (owner decisions, 8–9 October 2026): 0050 widens it with 'off_ability' (0043's list is the rest).
+    expect(listed43(/assistant_mention_private_note_check CHECK \(note_code IS NULL OR note_code IN \(([^)]*)\)\)/)?.map((x) => x.replace(/\s+/g, ""))).toEqual(MENTION_NOTE_CODES.filter((c) => c !== "off_ability"));
+    const sql50 = readFileSync(join(process.cwd(), "db/migrations/0050_standup_abilities_preferences.sql"), "utf8").split("\n").map((l) => l.replace(/--.*$/, "")).join("\n");
+    expect(/assistant_mention_private_note_check CHECK \(note_code IS NULL OR note_code IN \(([^)]*)\)\)/.exec(sql50)?.[1].split(",").map((s) => s.trim().replace(/^'|'$/g, "").replace(/\s+/g, ""))).toEqual([...MENTION_NOTE_CODES]);
     expect(sql43).toMatch(/message_mentions_label_check CHECK \(char_length\(label\) BETWEEN 2 AND 160/);
   });
 });

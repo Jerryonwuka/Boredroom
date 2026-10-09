@@ -12,11 +12,12 @@
  *
  * This file carries what the server, the pages, the chat and the notch share: the templates, the shapes the routes
  * answer, the limits, the markdown and plain lines of a run's output, and every fixed string the UI shows
- * (`ROUTINE_WORDS`). It imports only lib/evidence-links (itself import-free), so client components can use it. The
- * cadence math is server/lib/routine-time; the services are server/services/routines (foundation) and
- * server/services/routine-templates (what each template reads and does).
+ * (`ROUTINE_WORDS`). It imports only lib/evidence-links (itself import-free) and types from lib/abilities, so client
+ * components can use it. The cadence math is server/lib/routine-time; the services are server/services/routines
+ * (foundation) and server/services/routine-templates (what each template reads and does).
  */
 import { NOT_AVAILABLE, evidenceHref, mdEscape, sourcesSuffix, type EvidenceRef } from "@/lib/evidence-links";
+import type { AbilityKey, AbilityOff } from "@/lib/abilities";
 
 export type { EvidenceRef };
 
@@ -87,11 +88,17 @@ export const NO_QUIET: QuietState = { ready: false, active: false, until: null, 
 /**
  * What the routines list route answers (GET /brenda/routines). `unavailable` (phase 7b): templates that cannot be set up
  * yet (`["loose_ends"]` before migration 0048); absent or empty when every template can.
+ *
+ * Phase 7c (owner decisions, 8–9 October 2026: the abilities catalogue): `off`, who switched "Routines" off for this
+ * person (null: on); `unavailableBecause`, the templates whose own ability is off and which one (they are in
+ * `unavailable` too; the editor shows them disabled with "Switched off: {ability}"). Both absent before migration 0046.
  */
 export type RoutineList = {
   ready: boolean; routines: RoutineView[]; limits: { perPerson: number };
   chase: { allowed: boolean; leadsOnly: boolean; teams: { id: string; name: string; lead: boolean }[] };
   unavailable?: RoutineTemplate[];
+  off?: AbilityOff;
+  unavailableBecause?: Partial<Record<RoutineTemplate, AbilityKey>>;
 };
 /** A preview (POST …/preview): what it would send now, and what Enable consents to. */
 export type RoutinePreview = { output: RoutineOutput; consent: { hash: string; lines: string[] } };
@@ -401,6 +408,8 @@ export const ROUTINE_WORDS = {
       stale: "it changed before it ran",
       duplicate: "it had already run",
       plan: "the assistant is turned off for this workspace",
+      // Phase 7c: routines, or an ability its template needs, is switched off (Settings → Abilities).
+      ability_off: "an ability it needs is switched off",
       other: "it couldn't run then",
     },
     open: "Open",

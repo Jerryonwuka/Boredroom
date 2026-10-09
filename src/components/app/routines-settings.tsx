@@ -23,6 +23,13 @@
  * from that route when the page could not bring it; it follows every change made here from the answers, a refreshed
  * page brings it again (a time zone changed in Quiet hours moves the next times), and Quiet hours' change of zone
  * reads it again too. No orange of its own: the sheet's Enable is the one standout.
+ *
+ * Abilities (owner decisions, 8–9 October 2026: phase 7c): while Routines is switched off for the person, by the
+ * workspace or by them (`RoutineList.off`), an info alert says so and where it is switched on (`ABILITY_WORDS.refusal`),
+ * "Add a routine" waits, and each row offers only History, Pause and Delete (cleaning up stays allowed; the server
+ * refuses the rest). A routine whose template's ability is off (`unavailableBecause`: the morning brief without the
+ * Morning opener, a chase without Follow-ups, Loose ends without Loose ends) stays on but does not run, and its row
+ * says so. Its runs are skipped, never paused: it resumes when the ability is switched back on.
  */
 import { useCallback, useEffect, useState } from "react";
 import { Ellipsis, Eye, History, Pause, Pencil, Play, Trash2 } from "lucide-react";
@@ -38,6 +45,7 @@ import { RoutineSheet, type RoutineSheetMode, type RoutineStep } from "@/compone
 import { routineWhen } from "@/components/app/routine-history";
 import { api, isApiFailure } from "@/lib/api-client";
 import { ROUTINE_LIMITS, ROUTINE_WORDS, isChasing, pausedWords, routineBadge, type PausedReason, type RoutineList, type RoutineView } from "@/lib/routines";
+import { ABILITY_WORDS, abilityTitle, type AbilityKey } from "@/lib/abilities";
 
 const S = ROUTINE_WORDS.settings;
 const OFFLINE = "Cannot reach the server. Check your connection and try again.";
@@ -85,6 +93,9 @@ export function RoutinesSettings({ orgSlug, name, impersonated, timeZone, initia
   }, [load, brought]);
 
   const ready = list?.ready ?? true;
+  // Phase 7c: Routines switched off for the person (the workspace's or theirs), and templates whose ability is off.
+  const off = ready ? list?.off ?? null : null;
+  const because = list?.unavailableBecause ?? {};
   const readOnly = impersonated || !ready;
   const routines = list?.routines ?? [];
   const limit = list?.limits.perPerson ?? ROUTINE_LIMITS.perPerson;
@@ -94,7 +105,7 @@ export function RoutinesSettings({ orgSlug, name, impersonated, timeZone, initia
   /** A saved state of one routine: it takes its row's place (a new one goes last, as the list reads, oldest first). */
   const upsert = (v: RoutineView) => setList((cur) => (cur ? { ...cur, routines: cur.routines.some((r) => r.id === v.id) ? cur.routines.map((r) => (r.id === v.id ? v : r)) : [...cur.routines, v] } : cur));
   const open = (step: RoutineStep, routine: RoutineView | null) => { setOpened((n) => n + 1); setSheet(routine ? { step, routine } : { step: "setup", routine: null }); };
-  const add = () => { if (!readOnly && !full) open("setup", null); };
+  const add = () => { if (!readOnly && !full && !off) open("setup", null); };
 
   async function pause(r: RoutineView) {
     if (pausing) return;
@@ -125,7 +136,7 @@ export function RoutinesSettings({ orgSlug, name, impersonated, timeZone, initia
 
   // While the list is on its way (or failed), the add button waits.
   const addButton = (
-    <Button size="sm" variant="secondary" onClick={add} disabled={!list || readOnly}
+    <Button size="sm" variant="secondary" onClick={add} disabled={!list || readOnly || !!off}
       aria-disabled={full || undefined} data-tip={full ? S.limitTip : undefined} className={full ? "opacity-50" : undefined}>
       {S.add}
     </Button>
@@ -145,13 +156,16 @@ export function RoutinesSettings({ orgSlug, name, impersonated, timeZone, initia
         ) : (
           <>
             {!ready ? <SettingsAlert tone="info">{S.notReady}</SettingsAlert> : impersonated ? <SettingsAlert tone="info">{S.impersonated}</SettingsAlert> : null}
+            {/* Phase 7c: switched off for the person; what they have stays listed, to pause or delete. */}
+            {off ? <SettingsAlert tone="info">{ABILITY_WORDS.refusal(abilityTitle("routines"), off, name)}</SettingsAlert> : null}
             {ready && !routines.length ? (
               <EmptyState compact title={S.emptyTitle} description={S.emptyBody}
-                action={readOnly ? undefined : <Button size="sm" variant="secondary" onClick={add}>{S.add}</Button>} />
+                action={readOnly || off ? undefined : <Button size="sm" variant="secondary" onClick={add}>{S.add}</Button>} />
             ) : routines.length ? (
               <ul className="space-y-0.5 p-2">
                 {routines.map((r) => (
                   <RoutineRow key={r.id} routine={r} readOnly={readOnly} pausing={pausing === r.id} chaseAllowed={list.chase.allowed}
+                    switchedOff={off ? "routines" : because[r.template] ?? null}
                     onOpen={(step) => open(step, r)} onPause={() => void pause(r)} onDelete={() => setDeleting(r)} />
                 ))}
               </ul>
@@ -163,7 +177,7 @@ export function RoutinesSettings({ orgSlug, name, impersonated, timeZone, initia
       </SettingsGroup>
 
       {sheet && list ? (
-        <RoutineSheet key={opened} orgSlug={orgSlug} mode={sheet} onClose={() => setSheet(null)} chase={list.chase} unavailable={list.unavailable} assistantName={name}
+        <RoutineSheet key={opened} orgSlug={orgSlug} mode={sheet} onClose={() => setSheet(null)} chase={list.chase} unavailable={list.unavailable} unavailableBecause={because} assistantName={name}
           timeZone={sheet.routine?.timezone ?? personZone} readOnly={readOnly} onTimeZone={toTimeZone}
           onChange={(v) => upsert(v)} />
       ) : null}
@@ -181,10 +195,13 @@ const REASON_LINE: readonly PausedReason[] = ["new", "consent_changed", "no_righ
  * One routine: its name and status badge, when it runs (and next) or why it is paused, and its menu. Wraps at 400px
  * (ListRow's 64px look, with lines that wrap instead of truncating).
  */
-function RoutineRow({ routine: r, readOnly, pausing, chaseAllowed, onOpen, onPause, onDelete }: {
+function RoutineRow({ routine: r, readOnly, pausing, chaseAllowed, switchedOff = null, onOpen, onPause, onDelete }: {
   routine: RoutineView; readOnly: boolean; pausing: boolean; /** Whether the person may chase other people now. */ chaseAllowed: boolean;
+  /** Phase 7c: the ability that keeps it from running (Routines itself, or its template's), or null. */ switchedOff?: AbilityKey | null;
   onOpen: (step: RoutineStep) => void; onPause: () => void; onDelete: () => void;
 }) {
+  // Switched off: only History, Pause and Delete (the server refuses a preview, an edit and Enable).
+  const stopped = readOnly || !!switchedOff;
   // A chase its owner can no longer turn on (review, 8 October 2026): it needs them, and the row says what to do.
   const lostRights = isChasing(r.template) && !chaseAllowed;
   const badge = lostRights && !r.enabled ? { label: ROUTINE_WORDS.status.needsYou, tone: "warning" as const } : routineBadge(r);
@@ -200,13 +217,14 @@ function RoutineRow({ routine: r, readOnly, pausing, chaseAllowed, onOpen, onPau
         </p>
         <p className="mt-0.5 text-meta font-normal text-secondary">{next}</p>
         {why ? <p className="text-meta font-normal text-secondary">{why}</p> : null}
+        {switchedOff ? <p className="text-meta font-normal text-secondary">Not running: {abilityTitle(switchedOff)} is switched off.{r.enabled ? " It stays on and runs again once that is switched back on." : ""}</p> : null}
       </div>
       <Menu align="end" label={actions} trigger={<IconButton aria-label={actions} aria-busy={pausing || undefined} disabled={pausing} className="-my-1"><Ellipsis aria-hidden /></IconButton>}>
-        <MenuItem icon={<Eye aria-hidden />} onSelect={() => onOpen("preview")}>{S.menu.preview}</MenuItem>
-        <MenuItem icon={<Pencil aria-hidden />} disabled={readOnly} onSelect={() => onOpen("setup")}>{S.menu.edit}</MenuItem>
+        <MenuItem icon={<Eye aria-hidden />} disabled={!!switchedOff} onSelect={() => onOpen("preview")}>{S.menu.preview}</MenuItem>
+        <MenuItem icon={<Pencil aria-hidden />} disabled={stopped} onSelect={() => onOpen("setup")}>{S.menu.edit}</MenuItem>
         {r.enabled
           ? <MenuItem icon={<Pause aria-hidden />} disabled={readOnly} onSelect={onPause}>{S.menu.pause}</MenuItem>
-          : <MenuItem icon={<Play aria-hidden />} disabled={readOnly} onSelect={() => onOpen("preview")}>{S.menu.enable}</MenuItem>}
+          : <MenuItem icon={<Play aria-hidden />} disabled={stopped} onSelect={() => onOpen("preview")}>{S.menu.enable}</MenuItem>}
         <MenuItem icon={<History aria-hidden />} onSelect={() => onOpen("history")}>{S.menu.history}</MenuItem>
         <MenuSeparator />
         <MenuItem icon={<Trash2 aria-hidden />} tone="danger" disabled={readOnly} onSelect={onDelete}>{S.menu.delete}</MenuItem>

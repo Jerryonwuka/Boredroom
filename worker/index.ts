@@ -81,6 +81,10 @@ async function loop() {
   await getPool().end();
 }
 
+// A promise someone forgot to wait for must not end the worker (Node ends the process on an unhandled rejection by
+// default): it is logged and the loop goes on (fix review, 9 October 2026: the local worker stopped mid-morning and no
+// job ran after it, the 10:30 standup rollup among them).
+process.on("unhandledRejection", (err) => { console.error("[worker] unhandled rejection (the loop goes on)", err); });
 process.on("SIGINT", () => { stopping = true; });
 process.on("SIGTERM", () => { stopping = true; });
 loop();

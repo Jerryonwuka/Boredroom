@@ -12,13 +12,17 @@ import { schema0039Ready } from "@/server/lib/schema-0039";
 import { withUser } from "@/server/db";
 import { localParts, todayLocal } from "@/server/lib/time";
 import { openerSeen } from "@/server/services/routines";
-import { morningOpener } from "@/server/services/opener";
+import { morningOpener, openerOn } from "@/server/services/opener";
 import type { Opener } from "@/lib/opener";
 import { formatLongDate } from "@/lib/utils";
 import { listLooseEnds } from "@/server/services/loose-ends";
 import type { LooseEndList } from "@/lib/commitments";
 import type { Person } from "@/components/app/loose-end-actions";
 import { loadLoops } from "./assistants/inbox";
+import { standupForDesktop } from "@/server/services/standup";
+import { abilitiesFor } from "@/server/services/abilities";
+import { abilityOff, type AbilityKey } from "@/lib/abilities";
+import type { DesktopStandup } from "@/lib/standup";
 
 export const dynamic = "force-dynamic";
 
@@ -71,6 +75,14 @@ type Search = { ask?: string | string[]; tab?: string | string[]; chat?: string 
  * open loose ends (`listLooseEnds`, private to them) with their actions, "See all {n}", or "Look for loose ends" when
  * there are none. Neither is plan-gated (the built-in look runs on every plan). Before migration 0048 neither shows; a
  * read that fails leaves it out.
+ *
+ * Phase 7c (owner decisions, 8–9 October 2026; contract G.2 and G.3): "Waiting for you" starts with the person's standup
+ * drafts ready to post today (Post, Edit, Skip today in place) and, for a team lead, today's rollups they have not seen
+ * yet (compact, with Open), from `standupForDesktop` (the notch's read: today's ready drafts and unseen rollups; none
+ * before migration 0050, and none when it cannot be read). Not plan-gated: without the AI the draft is the template.
+ * The person's abilities (`abilitiesFor`, never throws; everything on before 0050) leave out what is switched off for
+ * them: the loose-ends block (`loose_ends`), and the quick asks and "More asks" that need catching up,
+ * follow-ups, passing messages or routines. The opener already leaves out what is off (the server).
  */
 export default async function HomePage({ params, searchParams }: { params: Promise<{ workspace: string }>; searchParams: Promise<Search> }) {
   const { workspace } = await params;
@@ -84,7 +96,7 @@ export default async function HomePage({ params, searchParams }: { params: Promi
   const { ctx, counts, teams } = await workspacePage(workspace, `/app/${workspace}/home`);
   const role = ctx.membership.role;
   const aiEnabled = ctx.plan.features.AI_ASSISTANT === true;
-  const [history, chat, connected, followUpsReady, waiting, itemsReady, items, opener, looseEnds, loops] = await Promise.all([
+  const [history, chat, connected, followUpsReady, waiting, itemsReady, items, opener, openEnds, loops, standup, abilities] = await Promise.all([
     // Past chats are only shown while the plan includes Brenda (carrying one on needs her).
     aiEnabled ? listConversations(ctx) : Promise.resolve([]),
     aiEnabled && chatId ? getConversation(ctx, chatId) : Promise.resolve(null),
@@ -101,7 +113,14 @@ export default async function HomePage({ params, searchParams }: { params: Promi
     // Phase 7b: the person's open loose ends (three at most) and what else waits on them. Not plan-gated.
     openLooseEnds(ctx),
     loadLoops(ctx),
+    // Phase 7c: today's standup drafts ready to post and the rollups not yet seen. Not plan-gated.
+    homeStandup(ctx),
+    // Phase 7c: what is switched off for the person (never throws; everything on before 0050).
+    abilitiesFor(ctx),
   ]);
+  const off = HOME_ABILITIES.filter((k) => abilityOff(abilities, k) !== null);
+  // Loose ends switched off: no block (the server's list is empty then anyway).
+  const looseEnds = off.includes("loose_ends") ? null : openEnds;
   // Who a loose end can be handed to, read only when one on screen offers it.
   const people = looseEnds?.items.some((v) => v.actions.includes("hand_over")) ? await handOverPeople(ctx) : [];
   const now = new Date();
@@ -131,6 +150,8 @@ export default async function HomePage({ params, searchParams }: { params: Promi
     looseEnds,
     loops,
     handOverPeople: people,
+    standup,
+    off,
   };
   return (
     <AppShell ctx={ctx} counts={counts} teams={teams}>
@@ -139,13 +160,29 @@ export default async function HomePage({ params, searchParams }: { params: Promi
   );
 }
 
+/** The abilities her home looks at (phase 7c): what its asks and blocks need. */
+const HOME_ABILITIES: AbilityKey[] = ["catch_up", "loose_ends", "follow_ups", "assistant_talk", "routines"];
+
+/** Today's standup drafts ready to post and unseen rollups (phase 7c); null before 0050 or when they cannot be read. */
+async function homeStandup(ctx: OrgContext): Promise<DesktopStandup | null> {
+  try {
+    const s = await standupForDesktop(ctx);
+    return s.ready ? s : null;
+  } catch (err) {
+    console.warn(`[home] the standup could not be read, so it is left out: ${(err as Error)?.message ?? String(err)}`);
+    return null;
+  }
+}
+
 /**
  * The morning opener for this visit (phase 7a), or null when the person already saw it today. Only what the page shows
  * goes to the browser (not the lists behind the counts, which the morning brief routine uses). Never throws: a read that
- * fails leaves the usual quick asks.
+ * fails leaves the usual quick asks. Null too when the morning opener is switched off for the person, by the workspace
+ * or by themself (owner decisions, 8–9 October 2026: phase 7c, the abilities catalogue); the quick asks show instead.
  */
 async function openerFor(ctx: OrgContext): Promise<Opener | null> {
   try {
+    if (!(await openerOn(ctx))) return null;
     const seen = await openerSeen(ctx);
     if (seen.seenToday === true) return null;
     // Known first visit, or (before 0046) for the browser to tell from its own key.

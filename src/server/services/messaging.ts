@@ -37,6 +37,11 @@
  * worker, with the committer as its sender (the row needs a member), but every screen shows the workspace assistant's
  * name and face (`assistant`), never the sender's; it is never "yours", never edited or withdrawn. Before 0048 there are
  * no labels, `commitments.ready` is false and no 'workspace' message can exist.
+ *
+ * Phase 7c (owner decisions, 8–9 October 2026): a posted standup is the person's approved words in their team's channel,
+ * 'via_assistant' (`insertViaAssistantIn`, called only from services/standup's post after the person's own press), and
+ * a thread says when the person switched @mentions of their own assistant off (`ownAssistantOff`), so the composer stops
+ * suggesting it. A "Declined" or "Not a commitment" label is read only by that commitment's two people (labelsIn).
  */
 import { z } from "zod";
 import { withUser, withWorker, type Db } from "@/server/db";
@@ -50,8 +55,10 @@ import { forget0043, schema0043Ready } from "@/server/lib/schema-0043";
 import { readPersonalAssistant } from "@/server/services/assistant-profile";
 import { conversationTrackingIn, labelsIn } from "@/server/services/commitments";
 import { schema0048Ready } from "@/server/lib/schema-0048";
+import { retryWithout0050 } from "@/server/lib/schema-0050";
 import type { ConversationTracking, MessageLabel } from "@/lib/commitments";
 import { assistantRepliesIn, kickMentions, threadMentions, validateMentions } from "@/server/services/mentions";
+import { abilitiesIn } from "@/server/services/abilities";
 import { toProfile, type AssistantProfile } from "@/lib/assistant-look";
 import { clip } from "@/lib/follow-ups";
 import { MENTION_LIMITS, otherAssistantLabels, type AssistantRepliesState, type MentionRef, type MentionView, type TaggableAssistant } from "@/lib/mentions";
@@ -118,6 +125,11 @@ export type Thread = {
   taggable: TaggableAssistant[];
   /** Phase 7b: whether commitments are noted here, for the disclosure and the details pane's switch; `ready: false` before 0048. */
   commitments: ConversationTracking;
+  /**
+   * Phase 7c (owner decisions, 8–9 October 2026): the person switched "@mentions in Messages" off for their own assistant
+   * (Settings → Your assistant → Abilities), so the composer stops suggesting @{name}. False before migration 0050.
+   */
+  ownAssistantOff: boolean;
 };
 
 /** The switches before migration 0041: nothing to show, nothing to change. */
@@ -299,7 +311,7 @@ const MENTION_NOTIFICATION_TYPES = ["message.mention", "brenda.mention_reply", "
  */
 export async function thread(ctx: OrgContext, conversationId: string): Promise<Thread | null> {
   let kick: string[] = [];
-  const out = await retryWithout0041(() => retryWithout0037(() => withUser(ctx.user.profileId, async (db): Promise<Thread | null> => {
+  const out = await retryWithout0050(() => retryWithout0041(() => retryWithout0037(() => withUser(ctx.user.profileId, async (db): Promise<Thread | null> => {
     kick = [];
     const ready = await schema0037Ready(db);
     const ready41 = ready && (await schema0041Ready(db));
@@ -355,8 +367,10 @@ export async function thread(ctx: OrgContext, conversationId: string): Promise<T
         [ctx.membership.id, conversationId, MENTION_NOTIFICATION_TYPES]);
     }
     const commitments = await conversationTrackingIn(db, ctx, conversationId);
-    return { conversation: { ...conv, unread: 0, marked_unread: false, people }, messages, mentions, assistantReplies, taggable, commitments };
-  })));
+    // Phase 7c: the person's own switch for @mentions of their assistant (false before 0050).
+    const ownAssistantOff = (await abilitiesIn(db, ctx.org.id, ctx.membership.id)).personalOff.includes("mentions");
+    return { conversation: { ...conv, unread: 0, marked_unread: false, people }, messages, mentions, assistantReplies, taggable, commitments, ownAssistantOff };
+  }))));
   if (kick.length) await kickMentions(kick.slice(0, MENTION_LIMITS.kickPerPage));
   return out;
 }
@@ -476,6 +490,26 @@ export async function sendMessage(ctx: OrgContext, input: SendInput, opts: { via
   })));
   if (sent.mentionId && opts.startMention !== false) await kickMentions([sent.mentionId]);
   return sent;
+}
+
+/**
+ * A message in the person's name, written by their own assistant after their own press (owner decisions, 8–9 October
+ * 2026: phase 7c, the standup post), in a transaction the caller holds as the person: the same row as
+ * `sendMessage(..., { via: "assistant" })` ('via_assistant'; the insert's row-level security checks the conversation),
+ * and the sender's read mark moved to now. No mentions, no task, no reply, and no direct notification (a team channel
+ * relies on the unread badge). Needs migration 0037 (the author kind); the caller checks its own readiness first.
+ */
+export async function insertViaAssistantIn(db: Db, ctx: OrgContext, input: { conversationId: string; body: string }): Promise<{ id: string; createdAt: string }> {
+  const body = String(input.body ?? "").trim();
+  if (!body) throw invalid("Write a message first.");
+  if (body.length > 4000) throw invalid("Keep a message under 4000 characters.");
+  const m = await db.one<{ id: string; created_at: string }>(
+    `INSERT INTO messages(organisation_id, conversation_id, sender_membership_id, body, author_kind) VALUES ($1, $2, $3, $4, 'via_assistant') RETURNING id, created_at`,
+    [ctx.org.id, input.conversationId, ctx.membership.id, body]);
+  await db.query(
+    `INSERT INTO conversation_reads(conversation_id, organisation_id, membership_id, last_read_at) VALUES ($1, $2, $3, now())
+     ON CONFLICT (conversation_id, membership_id) DO UPDATE SET last_read_at = now(), marked_unread = false`, [input.conversationId, ctx.org.id, ctx.membership.id]);
+  return { id: m.id, createdAt: m.created_at };
 }
 
 /**

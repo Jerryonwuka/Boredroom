@@ -33,6 +33,14 @@
  *
  * Phase 7b (owner decisions, 8 October 2026): the `loose_ends` template needs migration 0048 as well. Before it, the list
  * names it in `unavailable`, and setting one up, changing, previewing or enabling one answers 503 NOT_READY.
+ *
+ * Phase 7c (owner decisions, 8–9 October 2026: the abilities catalogue): "Routines" can be switched off for the
+ * workspace or by the person, and a template needs its own ability as well (lib/abilities `TEMPLATE_ABILITY`: the
+ * morning brief needs the morning opener, the chase needs follow-ups, loose ends needs loose ends). Either off: setting
+ * one up, changing, previewing or enabling it answers 403 ABILITY_OFF with where to switch it on (pausing and deleting
+ * still work); the list says so (`off`, and the templates in `unavailable` with `unavailableBecause`); and a run is
+ * skipped ('ability_off') with the routine left on, so it runs again once the ability is back. Before migration 0050
+ * nothing is ever off.
  */
 import { z } from "zod";
 import { withUser, withWorker, type Db } from "@/server/db";
@@ -45,6 +53,8 @@ import { forget0046, isMissingSchema, retryWithout0046, schema0046Ready } from "
 import { forget0047, personalTable, retryWithout0047 } from "@/server/lib/schema-0047";
 import { schema0048Ready } from "@/server/lib/schema-0048";
 import { LOOPS_NOT_READY_SHORT } from "@/lib/commitments";
+import { abilitiesIn, abilityError } from "@/server/services/abilities";
+import { TEMPLATE_ABILITY, abilityOff, type Abilities, type AbilityKey } from "@/lib/abilities";
 import { nextRunAt, personTimeZone, quietState } from "@/server/lib/routine-time";
 import { audit, notify } from "@/server/services/common";
 import { logAction } from "@/server/services/brenda";
@@ -113,6 +123,24 @@ async function templateReady(db: Db, template: RoutineTemplate): Promise<void> {
 async function unavailableTemplates(db: Db): Promise<RoutineTemplate[]> {
   return (await schema0048Ready(db)) ? [] : [...NEEDS_0048];
 }
+/**
+ * Which ability stops this template now, for this person (phase 7c): "routines" itself first, then the template's own
+ * (TEMPLATE_ABILITY); null when both are on (and always before 0050).
+ */
+function abilityStop(a: Abilities, template: RoutineTemplate | null): { key: AbilityKey; off: "workspace" | "personal" } | null {
+  const own = abilityOff(a, "routines");
+  if (own) return { key: "routines", off: own };
+  const needs = template ? TEMPLATE_ABILITY[template] : null;
+  const t = needs ? abilityOff(a, needs) : null;
+  return needs && t ? { key: needs, off: t } : null;
+}
+
+/** 403 ABILITY_OFF when routines or the template's ability is switched off for this person, in their transaction. */
+async function requireRoutineAbility(db: Db, ctx: OrgContext, template: RoutineTemplate | null): Promise<void> {
+  const stop = abilityStop(await abilitiesIn(db, ctx.org.id, ctx.membership.id), template);
+  if (stop) throw await abilityError(ctx, stop.key, stop.off, db);
+}
+
 const notYours = () => notFound(W.errors.notYours);
 function notWhileImpersonated(ctx: OrgContext, message: string = W.errors.impersonated) {
   if (ctx.user.impersonation) throw forbidden(message);
@@ -412,9 +440,17 @@ export async function listRoutines(ctx: OrgContext): Promise<RoutineList> {
       [ctx.membership.id, ctx.org.id]);
     const tz = await zoneOf(db, ctx.org.timezone, ctx.membership.id);
     const live = rows.some((r) => isChasing(r.template)) ? await liveTeams(db, ctx) : null;
+    // Phase 7c: routines switched off (`off`), and the templates whose own ability is off (in `unavailable` too).
+    const a = await abilitiesIn(db, ctx.org.id, ctx.membership.id);
+    const unavailableBecause: Partial<Record<RoutineTemplate, AbilityKey>> = {};
+    for (const t of ROUTINE_TEMPLATES) {
+      const needs = TEMPLATE_ABILITY[t];
+      if (needs && abilityOff(a, needs)) unavailableBecause[t] = needs;
+    }
+    const unavailable = [...new Set([...(await unavailableTemplates(db)), ...(Object.keys(unavailableBecause) as RoutineTemplate[])])];
     return {
       ready: true, routines: rows.map((r) => viewOf(r, tz, live)), limits: { perPerson: ROUTINE_LIMITS.perPerson },
-      chase: await chaseTeamsIn(db, ctx), unavailable: await unavailableTemplates(db),
+      chase: await chaseTeamsIn(db, ctx), unavailable, off: abilityOff(a, "routines"), unavailableBecause,
     };
   });
 }
@@ -498,6 +534,7 @@ export async function createRoutine(ctx: OrgContext, raw: RoutineInput): Promise
     // One person's count and insert in order: two tabs can't both add the 20th.
     await db.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [`routines:${ctx.membership.id}`]);
     await templateReady(db, input.template);
+    await requireRoutineAbility(db, ctx, input.template);
     const { n } = await db.one<{ n: number }>(`SELECT count(*)::int AS n FROM routines WHERE membership_id = $1 AND deleted_at IS NULL`, [ctx.membership.id]);
     if (n >= ROUTINE_LIMITS.perPerson) throw conflict("ROUTINE_LIMIT", W.errors.limit);
     if (isChasing(input.template)) {
@@ -525,6 +562,7 @@ export async function updateRoutine(ctx: OrgContext, id: string, raw: RoutinePat
     const r = await loadOwn(db, ctx, id, { lock: true });
     if (!r || r.deleted_at) throw notYours();
     await templateReady(db, r.template);
+    await requireRoutineAbility(db, ctx, r.template);
     const before = rowOf(r);
     const name = patch.name ?? r.name;
     const cadence = patch.cadence ?? before.cadence;
@@ -630,10 +668,12 @@ export async function previewRoutine(ctx: OrgContext, idOrInput: string | Routin
       const r = await loadOwn(db, ctx, idOrInput);
       if (!r || r.deleted_at) throw notYours();
       await templateReady(db, r.template);
+      await requireRoutineAbility(db, ctx, r.template);
       return prepare(db, ctx, rowOf(r));
     }
     const input = parse(routineInputSchema, idOrInput);
     await templateReady(db, input.template);
+    await requireRoutineAbility(db, ctx, input.template);
     if (isChasing(input.template) && Array.isArray(input.teamIds) && !input.teamIds.length) throw invalid(W.errors.noTeams, { teamIds: [W.errors.noTeams] });
     return prepare(db, ctx, draftRow(ctx, input));
   });
@@ -668,6 +708,7 @@ export async function enableRoutine(ctx: OrgContext, id: string, p: { consentHas
     const r = await loadOwn(db, ctx, id, { lock: true });
     if (!r || r.deleted_at) throw notYours();
     await templateReady(db, r.template);
+    await requireRoutineAbility(db, ctx, r.template);
     const row = rowOf(r);
     // A chase's hash names the teams and people as they are now: one added since the preview refuses (409).
     const prep = await prepare(db, ctx, row);
@@ -834,7 +875,8 @@ export async function dueRoutines(opts: { now?: Date; limit?: number } = {}): Pr
   }
 }
 
-export type ClaimSkip = "not_ready" | "stale" | "missed" | "duplicate" | "member_gone" | "no_rights" | "consent_changed" | "plan";
+/** `ability_off` (phase 7c): routines, or the template's own ability, is switched off for the person; the routine stays on. */
+export type ClaimSkip = "not_ready" | "stale" | "missed" | "duplicate" | "member_gone" | "no_rights" | "consent_changed" | "plan" | "ability_off";
 export type ClaimedRun = { runId: string; routine: RoutineRow; ctx: OrgContext; previousRunAt: string | null; timeZone: string };
 
 type ClaimRow = DbRoutine & { org_tz: string; org_status: string; slug: string; own_tz: string | null };
@@ -903,6 +945,13 @@ export async function claimRun(p: { routineId: string; dueAt: string | Date; now
         await skipRun(db, ins.id, "plan");
         await db.query(`UPDATE routines SET last_status = 'skipped' WHERE id = $1`, [r.id]);
         return { skip: "plan" };
+      }
+      // Routines, or the template's own ability, switched off for the person (phase 7c, owner decisions, 8–9 October
+      // 2026): this run does nothing and the routine stays on (not paused), so it runs again once the ability is back.
+      if (abilityStop(await abilitiesIn(db, r.organisation_id, r.membership_id), row.template)) {
+        await skipRun(db, ins.id, "ability_off");
+        await db.query(`UPDATE routines SET last_status = 'skipped' WHERE id = $1`, [r.id]);
+        return { skip: "ability_off" };
       }
       let cover: ChaseCover | null = null;
       if (isChasing(row.template)) {

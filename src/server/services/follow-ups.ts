@@ -42,6 +42,10 @@
  * suggested to the lead (replan-suggest.ts; replans.ts keeps it). It is a Confirm on the follow-up's page: nothing on the
  * task changes until the lead confirms. The requester's view carries it (`replan`). Before migration 0048 no proposal is
  * made and the follow-up works as before.
+ *
+ * Phase 7c (owner decisions, 8–9 October 2026: the abilities catalogue): with "Follow-ups" switched off for the asker
+ * (by the workspace or by them), planning answers the refusal's words and creating answers 403 ABILITY_OFF. Only asking
+ * is gated: answering about yourself, and the workspace's own collection before the report (`followup_collect`), are not.
  */
 import { after } from "next/server";
 import { z } from "zod";
@@ -56,6 +60,8 @@ import { schema0048Ready } from "@/server/lib/schema-0048";
 import { suggestReplanDue } from "@/server/services/replan-suggest";
 import { LOOP_WORDS, loopDueLabel, loopTitle, type ReplanView } from "@/lib/commitments";
 import { memberContext } from "@/server/lib/member-context";
+import { abilitiesIn, abilityError, abilityRefusal } from "@/server/services/abilities";
+import { abilityOff } from "@/lib/abilities";
 import { addWorkingTime } from "@/server/lib/working-time";
 import { localMidnight, localTimeOn, todayLocal } from "@/server/lib/time";
 import { audit, notify } from "@/server/services/common";
@@ -184,6 +190,9 @@ const TOO_MANY = `Ask at most ${FOLLOW_UP_LIMITS.batchMax} people at a time.`;
  * the default question. Writes nothing but refusal audits. Before 0039: `{ ok: false, error: FOLLOW_UPS_NOT_READY }`.
  */
 export async function planFollowUps(ctx: OrgContext, input: FollowUpPlanInput): Promise<FollowUpPlan> {
+  // Phase 7c: the asker switched follow-ups off (or the workspace did).
+  const off = await abilityRefusal(ctx, "follow_ups");
+  if (off) return { ok: false, error: off.message };
   return retryWithout0039(() => withUser(ctx.user.profileId, async (db): Promise<FollowUpPlan> => {
     if (!(await schema0039Ready(db))) return { ok: false, error: FOLLOW_UPS_NOT_READY };
     const members = await db.query<Member>(
@@ -324,6 +333,9 @@ export async function createFollowUps(ctx: OrgContext, input: CreateFollowUpsInp
   // A refusal is returned out of the transaction and thrown after it commits, so its audit row stays.
   const out = await retryWithout0039(() => withUser(ctx.user.profileId, async (db): Promise<CreateFollowUpsResult | { refused: AppError }> => {
     if (!(await schema0039Ready(db))) throw notReady();
+    // Phase 7c: 403 ABILITY_OFF when the asker's follow-ups are switched off (read in this transaction).
+    const off = abilityOff(await abilitiesIn(db, ctx.org.id, ctx.membership.id), "follow_ups");
+    if (off) throw await abilityError(ctx, "follow_ups", off, db);
     const threadMode = opts.threadMode === "facts" || opts.threadMode === "ask" ? opts.threadMode : null;
     if (threadMode && !(await schema0043Ready(db))) throw notReady();
     // One create at a time per person, so two Confirms cannot both pass the daily count.

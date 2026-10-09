@@ -42,6 +42,11 @@
  * Quiet hours (owner decision, 8 October 2026: phase 7a): during the person's quiet hours the panel opens and closes
  * without its chime, and her replies are not read aloud on their own (brenda-chat); Listen and the chimes switch work.
  * Confirm cards here say who receives what (the shared BrendaMessages).
+ *
+ * Abilities (owner decisions, 8–9 October 2026: phase 7c): her opening words and the starters leave out what is switched
+ * off for the person (catching up on Messages; asking a colleague's assistant), read once the panel first opens
+ * (`useAbilitiesOff`); with Voice switched off for the workspace the box has no microphone and no reply has Listen
+ * (the shared composer and BrendaMessages).
  */
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
@@ -51,7 +56,9 @@ import { Bell, BellOff, MessageSquareText, X } from "lucide-react";
 import { AnimatedHistory } from "@/components/ui/animated-icons";
 import { IconButton, ICON_BUTTON } from "@/components/ui/icon-button";
 import { BrendaFace } from "@/components/app/brenda-face";
-import { BrendaComposer, BrendaMessages, STARTERS, useBrendaChat } from "@/components/app/brenda-chat";
+import { BrendaComposer, BrendaMessages, STARTERS, STARTER_ABILITY, useBrendaChat } from "@/components/app/brenda-chat";
+import { useAbilitiesOff } from "@/hooks/use-abilities";
+import type { AbilityKey } from "@/lib/abilities";
 import { useAssistant } from "@/components/app/assistant-context";
 import { ACT_WORDS } from "@/lib/act-mode";
 import { playSound, soundsMuted, setSoundsMuted, subscribeSounds } from "@/lib/brenda-sound";
@@ -71,6 +78,8 @@ const CAN_DO: Record<"org" | "worker", string[]> = {
   org: ["See what is waiting", "Assign work", "Ask someone's assistant where they are", "Follow up on tasks nobody picked up", "Message people", "Set reminders"],
   worker: ["See what is waiting", "Start and stop your timer", "Clock in", "Update your tasks", "Ask a colleague's assistant where they are", "Set reminders"],
 };
+/** Phase 7c: the lines of CAN_DO that need an ability, left out while it is off for the person. */
+const CAN_DO_ABILITY: Readonly<Record<string, AbilityKey>> = { "Ask someone's assistant where they are": "follow_ups", "Ask a colleague's assistant where they are": "follow_ups" };
 
 /** The saved position, kept inside the viewport, or null for the default corner. */
 function useFloatingPosition() {
@@ -139,7 +148,13 @@ export function AssistantDrawer({ orgSlug, isOrg, firstName, floating = false, t
   useEffect(() => { if (!open) return; const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { void dictation.stop(); setOpen(false); } }; document.addEventListener("keydown", onKey); return () => document.removeEventListener("keydown", onKey); }, [open, dictation]);
   useEffect(() => { listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: "smooth" }); }, [messages, pending]);
 
-  const starters = STARTERS[isOrg ? "org" : "worker"];
+  // Phase 7c: what is switched off for the person, read once the panel has opened (nothing is hidden until then).
+  const [everOpen, setEverOpen] = useState(false);
+  if (open && !everOpen) setEverOpen(true);
+  const off = useAbilitiesOff(orgSlug, everOpen);
+  const usable = (line: string, map: Readonly<Record<string, AbilityKey>>) => { const k = map[line]; return !k || !off.has(k); };
+  const starters = STARTERS[isOrg ? "org" : "worker"].filter((s) => usable(s, STARTER_ABILITY));
+  const canDo = CAN_DO[isOrg ? "org" : "worker"].filter((t) => usable(t, CAN_DO_ABILITY));
   const close = () => { void dictation.stop(); setOpen(false); };
   if (onBrendaPage) return null;
 
@@ -191,7 +206,7 @@ export function AssistantDrawer({ orgSlug, isOrg, firstName, floating = false, t
               <div className="text-sm font-normal text-secondary">
                 <p>I&apos;m {name}. Tell me what you need done and I&apos;ll take care of it:</p>
                 <ul className="my-2 list-disc pl-[1.25em] marker:text-secondary [&>li+li]:mt-[0.35em]">
-                  {CAN_DO[isOrg ? "org" : "worker"].map((t) => <li key={t}>{t}</li>)}
+                  {canDo.map((t) => <li key={t}>{t}</li>)}
                 </ul>
                 <p>{ACT_WORDS.chat.intro(chat.actMode.state.effective === "auto", assistants.ai)}</p>
               </div>

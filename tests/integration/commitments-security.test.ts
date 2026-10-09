@@ -4,7 +4,8 @@
  * labels, scan cursors and re-plan proposals; the committer's own steps refuse everyone else with the same word as a
  * missing row; a supervisor reads only accepted (open) and done commitments, another team's lead reads nothing, the asker
  * reads every status; a 'workspace' message is the worker's alone to write or change; and who owes what, and where it
- * was said, never changes, even for the owner role.
+ * was said, never changes, even for the owner role. Phase 7c (owner decision, 9 October 2026; migration 0050): a
+ * "Declined" or "Not a commitment" label is read only by that commitment's committer and asker.
  *
  * Company A: Grace Owner, Mary HR, David Lead (Design: Ada, Ben), Sam Sales (leads Sales: Olu Adeyemi). Local test
  * database only (TEST_DATABASE_URL on localhost). No model.
@@ -130,11 +131,12 @@ describe("who reads what", () => {
     expect(await C.getCommitment(olu, open)).toBeNull();
   });
 
-  it("labels: every reader of the conversation, nobody else", async () => {
-    // Proposed and open: noted (on the "On it"); declined; the promise marked not a commitment.
-    for (const who of [a.manager, a.employee, a.employee2]) {
-      expect((await appQueryAs(who.profileId, `SELECT state FROM message_labels ORDER BY state`)).map((r) => r.state)).toEqual(["declined", "dismissed", "noted", "noted"]);
-    }
+  it("labels: Noted for every reader of the conversation; Declined and Not a commitment for its two people only", async () => {
+    // Proposed and open: noted (on the "On it"); declined (Ada asked Ben); the promise Ben marked not a commitment (no
+    // asker). Phase 7c (owner decision, 9 October 2026): the private labels are read only by the committer and asker.
+    expect((await appQueryAs(a.employee2.profileId, `SELECT state FROM message_labels ORDER BY state`)).map((r) => r.state)).toEqual(["declined", "dismissed", "noted", "noted"]);
+    expect((await appQueryAs(a.employee.profileId, `SELECT state FROM message_labels ORDER BY state`)).map((r) => r.state)).toEqual(["declined", "noted", "noted"]);
+    expect((await appQueryAs(a.manager.profileId, `SELECT state FROM message_labels ORDER BY state`)).map((r) => r.state)).toEqual(["noted", "noted"]);
     for (const who of [a.owner, a.hr, samUser, oluUser]) expect(await appQueryAs(who.profileId, `SELECT state FROM message_labels`)).toEqual([]);
   });
 });

@@ -29,6 +29,7 @@
  * app_assistant_item_unsend). The message then reads "Withdrawn" for the sender, under Done; the recipient no longer
  * reads it at all (row-level security) and their notification is closed and says so.
  */
+import { requireAbility } from "@/server/services/abilities";
 import { withUser, withWorker, isRlsViolation, isUniqueViolation, type Db } from "@/server/db";
 import type { OrgContext } from "@/server/lib/api";
 import { AppError, conflict, forbidden, invalid, notFound } from "@/server/lib/errors";
@@ -471,6 +472,10 @@ function inputOf(p: RequestPayload): RequestInput {
  */
 export async function sendAssistantItem(ctx: OrgContext, input: SendInput): Promise<AssistantItemView> {
   if (!input || !["message", "request", "report_note"].includes(input.kind)) throw invalid(W.refusals.badKind());
+  // Phase 7c (owner decisions, 8–9 October 2026: the abilities catalogue): sending a message or a request needs
+  // "Messages and requests between assistants" (403 ABILITY_OFF otherwise). Report notes keep their own switch
+  // (report_notes); receiving, the inbox and answering are never gated.
+  if (input.kind !== "report_note") await requireAbility(ctx, "assistant_talk");
   // 1. Re-plan.
   let recipientId: string | null = null;
   let body: string | null = null;

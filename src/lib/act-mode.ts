@@ -55,7 +55,10 @@ export const ASK_REASONS = ["tainted", "tainted_earlier", "broadcast_everyone", 
   "irreversible_email", "irreversible_review", "irreversible_team", "answers_others", "cant_undo", "someone_elses_doc",
   "builtin", "workspace_off", "impersonated", "always_asks", "routine_consent",
   // Phase 7b (owner decisions, 8 October 2026): a to-do from someone else's words always asks, whatever the mode.
-  "others_words_todo"] as const;
+  "others_words_todo",
+  // Phase 7c (owner decisions, 8–9 October 2026): what the person's assistant remembers about them is always their own
+  // press, whatever the mode ("How I like things done").
+  "preference_consent"] as const;
 export type AskReason = (typeof ASK_REASONS)[number];
 export const isAskReason = (v: unknown): v is AskReason => (ASK_REASONS as readonly unknown[]).includes(v);
 
@@ -90,6 +93,8 @@ export function whyStillAsking(reason: AskReason, o: { name: string; people?: nu
     // Owner decision, 8 October 2026 (phase 7b): a to-do made from someone else's words (a loose end, a noted commitment,
     // an open ask) is always the person's own yes, even when they chose Act without asking.
     case "others_words_todo": return "Still asking: this to-do comes from words in a conversation, so you confirm it first.";
+    // Owner decisions, 8–9 October 2026 (phase 7c): remembering or forgetting a preference always waits for the person.
+    case "preference_consent": return `Still asking: what ${o.name} remembers about you is always your call.`;
   }
 }
 

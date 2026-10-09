@@ -106,7 +106,7 @@ describe("tracking off, then on", () => {
     // The label: everyone in #Design (Ada, Ben, David) sees "Noted" on Ben's message; Olu, who is not in it, reads none.
     for (const c of [ada, ben, david]) {
       const t = (await thread(c, design))!;
-      expect(t.messages.find((m) => m.id === deckMsg)!.commitment_label).toEqual({ state: "noted", text: LOOP_WORDS.label.noted });
+      expect(t.messages.find((m) => m.id === deckMsg)!.commitment_label).toEqual({ state: "noted", text: LOOP_WORDS.label.noted, private: false });
       expect(t.commitments).toMatchObject({ ready: true, workspaceOn: true, here: true, tracked: true, applies: true });
     }
     expect(await appQueryAs(olu.user.profileId, "SELECT id FROM message_labels WHERE message_id = $1", [deckMsg])).toEqual([]);

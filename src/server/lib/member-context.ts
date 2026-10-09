@@ -18,13 +18,14 @@ type Row = {
 
 /**
  * Who the context stands in for, as `user.sessionId`: "followup" (follow-ups and mentions, the default) or "routine" (a
- * scheduled routine, owner decision, 8 October 2026: phase 7a). Neither is an interactive session: the consent rule
- * (copilot's `NON_INTERACTIVE_SESSIONS`) refuses a Confirm pressed with either, because an answer or agreement that
- * arrives through another person's assistant, or a routine's run, never confirms an action for the person.
+ * scheduled routine, owner decision, 8 October 2026: phase 7a), or "standup" (the person's standup draft, owner
+ * decisions, 8–9 October 2026: phase 7c). None is an interactive session: the consent rule (copilot's
+ * `NON_INTERACTIVE_SESSIONS`) refuses a Confirm pressed with any of them, because an answer or agreement that arrives
+ * through another person's assistant, a routine's run or a standup draft never confirms an action for the person.
  */
-export type MemberSession = "followup" | "routine";
+export type MemberSession = "followup" | "routine" | "standup";
 
-/** The member as a signed-in person would be (`sessionId` "followup" or "routine"); null when they are no longer active. Run with the worker. */
+/** The member as a signed-in person would be (`sessionId` "followup", "routine" or "standup"); null when they are no longer active. Run with the worker. */
 export async function memberContext(db: Db, organisationId: string, membershipId: string, opts: { sessionId?: MemberSession } = {}): Promise<OrgContext | null> {
   const r = await db.maybeOne<Row>(
     `SELECT o.id AS org_id, o.slug, o.name, o.timezone, o.current_policy_id, o.status, m.id AS membership_id, m.role, m.employee_code,
@@ -33,7 +34,7 @@ export async function memberContext(db: Db, organisationId: string, membershipId
      WHERE m.id = $1 AND m.organisation_id = $2 AND m.status = 'active' AND u.status = 'active'`, [membershipId, organisationId]);
   if (!r) return null;
   return {
-    user: { profileId: r.profile_id, authUserId: r.auth_user_id, email: r.email, displayName: r.display_name, emailVerified: !!r.email_verified_at, sessionId: opts.sessionId === "routine" ? "routine" : "followup" },
+    user: { profileId: r.profile_id, authUserId: r.auth_user_id, email: r.email, displayName: r.display_name, emailVerified: !!r.email_verified_at, sessionId: opts.sessionId === "routine" || opts.sessionId === "standup" ? opts.sessionId : "followup" },
     org: { id: r.org_id, slug: r.slug, name: r.name, timezone: r.timezone, current_policy_id: r.current_policy_id, status: r.status },
     membership: { id: r.membership_id, role: r.role, employee_code: r.employee_code },
     plan: await resolveEntitlements(db, r.org_id),

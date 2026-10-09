@@ -22,7 +22,9 @@ const fn = (src: string, name: string) => new RegExp(`CREATE OR REPLACE FUNCTION
 
 describe("migration 0048: the database holds exactly what the code knows", () => {
   it("lists the ledger's purposes, the routine templates and the authors of a message", () => {
-    expect(listed(/ai_usage_purpose_check\s+CHECK \(purpose IN \(([^)]*)\)\)/)).toEqual([...USAGE_PURPOSES]);
+    // Phase 7c (owner decisions, 8–9 October 2026): 0050 adds 'standup' after 0048's list.
+    expect(listed(/ai_usage_purpose_check\s+CHECK \(purpose IN \(([^)]*)\)\)/)).toEqual(USAGE_PURPOSES.filter((p) => p !== "standup"));
+    expect(listedIn(strip(read("0050_standup_abilities_preferences.sql")), /ai_usage_purpose_check\s+CHECK \(purpose IN \(([^)]*)\)\)/)).toEqual([...USAGE_PURPOSES]);
     expect(listed(/routines_template_check\s+CHECK \(template IN \(([^)]*)\)\)/)).toEqual([...ROUTINE_TEMPLATES]);
     expect(listed(/messages_author_kind_check CHECK \(author_kind IN \(([^)]*)\)\)/)).toEqual([...AUTHOR_KINDS]);
   });

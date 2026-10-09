@@ -118,7 +118,7 @@ describe("a promise in a tracked channel", () => {
     expect(await labelOf(msg)).toBe("noted");
     // The label in the thread, for every reader; nobody else reads it.
     const th = await thread(ada, design);
-    expect(th!.messages.find((m) => m.id === msg)!.commitment_label).toEqual({ state: "noted", text: "Noted" });
+    expect(th!.messages.find((m) => m.id === msg)!.commitment_label).toEqual({ state: "noted", text: "Noted", private: false });
     expect(th!.commitments).toMatchObject({ ready: true, applies: true, tracked: true });
     for (const reader of [a.manager, a.employee, a.employee2]) {
       expect(await appQueryAs(reader.profileId, "SELECT state FROM message_labels WHERE message_id = $1", [msg])).toEqual([{ state: "noted" }]);
@@ -195,7 +195,7 @@ describe("a promise in a tracked channel", () => {
     expect(await adminQuery("SELECT done_by FROM commitments WHERE id = $1", [cid])).toEqual([{ done_by: "todo" }]);
     expect(await labelOf(msg)).toBe("done");
     const th = await thread(ben, design);
-    expect(th!.messages.find((m) => m.id === msg)!.commitment_label).toEqual({ state: "done", text: "Done" });
+    expect(th!.messages.find((m) => m.id === msg)!.commitment_label).toEqual({ state: "done", text: "Done", private: false });
   });
 
   it("mark done by hand, with or without a to-do", async () => {
@@ -241,7 +241,7 @@ describe("asks", () => {
     expect(await C.dismissCommitment(ben, cid)).toMatchObject({ status: "dismissed", badge: { label: "Not a commitment", tone: "neutral" } });
     expect(await labelOf(ok)).toBe("dismissed");
     expect(await notifications(id(ada), "brenda.commitment_declined")).toHaveLength(before);
-    expect((await thread(ada, design))!.messages.find((m) => m.id === ok)!.commitment_label).toEqual({ state: "dismissed", text: "Not a commitment" });
+    expect((await thread(ada, design))!.messages.find((m) => m.id === ok)!.commitment_label).toEqual({ state: "dismissed", text: "Not a commitment", private: true, other: "Ben" });
   });
 
   it("an open ask waits 60 minutes, then reaches the asked person; accepted, it is labelled and the asker told", async () => {

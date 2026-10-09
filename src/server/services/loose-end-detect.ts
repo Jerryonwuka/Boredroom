@@ -18,19 +18,31 @@
  *   sent to anyone here: every action is the person's own choice afterwards.
  *
  * This file never prepares or presses a Confirm and never loads the copilot (tests/unit/routine-guard.test.ts).
+ *
+ * The async standup (owner decisions, 8–9 October 2026: phase 7c): a posted standup is the day's plan, not a promise, so
+ * after migration 0050 it is never a loose end. Read as the person, row-level security shows them only their own
+ * standups, so someone else's posted standup is recognised by its shape too: a message their assistant posted for them
+ * in a team channel that starts as every standup does ("Standup, Friday 9 October"; lib/standup standupPostBody).
  */
 import { withSystem, withUser } from "@/server/db";
 import type { OrgContext } from "@/server/lib/api";
 import { forget0048, isMissingSchema, schema0048Ready } from "@/server/lib/schema-0048";
+import { forget0050, schema0050Ready } from "@/server/lib/schema-0050";
 import { resolveAssistant, type AssistantConnection } from "@/server/services/assistant";
 import { aiAllowance, newRequestId, recordUsage } from "@/server/services/ai-usage";
+import { requireAbility } from "@/server/services/abilities";
 import { builtinTitle, prefilter, type PrefilterResult, type Reader } from "@/server/services/commitment-prefilter";
 import { classifyBatch, type Classified } from "@/server/services/commitment-classify";
-import { SCAN_COLUMNS, SCAN_FILTER, SCAN_JOINS, classifyLinesFor, dueFromWords, namedIn, numberBatches, prefilterInputOf, scanMessageOf, type Batch, type ScanMessage, type ScanRow } from "@/server/services/commitment-detect";
+import { SCAN_COLUMNS, SCAN_JOINS, scanFilter, classifyLinesFor, dueFromWords, namedIn, numberBatches, prefilterInputOf, scanMessageOf, type Batch, type ScanMessage, type ScanRow } from "@/server/services/commitment-detect";
 import { namesPerson } from "@/server/services/routine-templates";
 import { LOOP_LIMITS, LOOP_WORDS, type DetectedLooseEnd, type LooseEndKind, type LooseEndScanResult } from "@/lib/commitments";
 
 const DAY_MS = 86_400_000;
+/**
+ * Someone else's posted standup, by its shape (their own row is not readable as this person): sent by their assistant in
+ * a team channel, starting "Standup, " (owner decisions, 8–9 October 2026: phase 7c).
+ */
+export const OTHERS_STANDUP_FILTER = `NOT (m.author_kind = 'via_assistant' AND c.kind = 'team' AND m.body LIKE 'Standup, %')`;
 const warn = (what: string) => (err: unknown) => console.warn(`[loose ends] ${what}: ${(err as Error)?.message ?? String(err)}`);
 
 // ---- Already captured elsewhere (pure) -------------------------------------------------------------------------------------
@@ -83,13 +95,16 @@ const notReady = (): LooseEndScanResult => ({ ready: false, scanned: 0, candidat
 /**
  * Looks for the person's loose ends now. `days`: how far back (1 to 14, 7 by default). `source` on_demand (the page, her
  * chat: at most once every 2 minutes, 429 otherwise) or routine. `maxModelCalls`: 3 on demand, 1 for a routine.
- * `ready: false` before migration 0048.
+ * `ready: false` before migration 0048. Refused first (403 `ABILITY_OFF`, the catalogue's words) when loose ends are
+ * switched off for the person, by the workspace or by themself, so no model call is made for a scan that could not keep
+ * what it found (owner decisions, 8–9 October 2026: phase 7c; everything on before 0050).
  */
 export async function scanLooseEnds(ctx: OrgContext, o: { days?: number; source?: "on_demand" | "routine"; useModel?: boolean; maxModelCalls?: number; now?: Date } = {}): Promise<LooseEndScanResult> {
   const now = o.now ?? new Date();
   const source = o.source ?? "on_demand";
   const days = Math.max(1, Math.min(LOOP_LIMITS.looseEndDaysMax, Math.round(o.days ?? LOOP_LIMITS.looseEndDaysDefault) || LOOP_LIMITS.looseEndDaysDefault));
   const me = ctx.membership.id;
+  await requireAbility(ctx, "loose_ends");
   try {
     if (!(await withUser(ctx.user.profileId, (db) => schema0048Ready(db)))) return notReady();
   } catch (err) {
@@ -107,6 +122,9 @@ export async function scanLooseEnds(ctx: OrgContext, o: { days?: number; source?
   try {
     read = await withUser(ctx.user.profileId, async (db): Promise<Read> => {
       const since = new Date(now.getTime() - days * DAY_MS).toISOString();
+      // Phase 7c: posted standups are left out once they exist (migration 0050).
+      const v50 = await schema0050Ready(db);
+      const filter = v50 ? `${scanFilter({ standups: true })} AND ${OTHERS_STANDUP_FILTER}` : scanFilter({ standups: false });
       const full = ctx.user.displayName.replace(/\s+/g, " ").trim();
       const first = full.split(" ")[0] ?? "";
       const likes = [full, ...([...first].filter((ch) => /\p{L}/u.test(ch)).length >= 3 && first !== full ? [first] : [])]
@@ -121,7 +139,7 @@ export async function scanLooseEnds(ctx: OrgContext, o: { days?: number; source?
          JOIN conversations c ON c.id = m.conversation_id
          LEFT JOIN teams tm ON tm.id = c.team_id
          ${SCAN_JOINS}
-         WHERE m.organisation_id = $1 AND ${SCAN_FILTER}
+         WHERE m.organisation_id = $1 AND ${filter}
            AND m.created_at >= $3::timestamptz AND m.created_at <= $4::timestamptz
            AND (c.archived_at IS NULL OR c.kind = 'direct')
            AND (m.sender_membership_id = $2 OR c.kind = 'direct' OR r.sender_membership_id = $2
@@ -154,6 +172,7 @@ export async function scanLooseEnds(ctx: OrgContext, o: { days?: number; source?
   } catch (err) {
     if (!isMissingSchema(err)) throw err;
     forget0048();
+    forget0050();
     return notReady();
   }
   const { knownLooseEndMessages, insertLooseEnds } = await import("@/server/services/loose-ends");

@@ -7,7 +7,8 @@
  * - a PROPOSAL (a promise or an agreed ask) is marked "Noted" on the message (everyone in the conversation sees the label)
  *   and handed to the committer's own assistant: "Brenda noted you said you'd … Add it to your to-dos?". Accept makes a
  *   to-do linked to the message and the commitment (owners and HR hold no to-dos: Accept tracks it without one); Decline
- *   or "Not a commitment" closes it and the label says so;
+ *   or "Not a commitment" closes it and the label says so, to the committer and the asker only (owner decision,
+ *   9 October 2026: phase 7c; every other reader sees no label on that message);
  * - an OPEN ASK waits 60 minutes (an "On it" in the thread turns it into a proposal instead: `markAgreed`), then the asked
  *   person's assistant brings "Olu asked you to … Take it on?" (Accept → a commitment; Decline → the asker is told
  *   privately). It respects the asked person's mutes: muted, they are never told and it expires quietly;
@@ -214,16 +215,45 @@ export async function setConversationTracking(ctx: OrgContext, conversationId: s
 }
 
 /**
- * The "Noted" labels on these messages, in a transaction the caller holds, as the person (everyone who reads the
- * conversation reads them; nobody else). Empty before 0048.
+ * The commitment labels on these messages, in a transaction the caller holds, as the person. Empty before 0048.
+ *
+ * Private decline labels (owner decision, 9 October 2026: phase 7c): "Noted" and "Done" are read by everyone who reads
+ * the conversation (0048's rule, kept); "Declined" and "Not a commitment" only by that commitment's committer and asker,
+ * so every other reader gets no label at all for that message (not "Noted" either). Enforced here in the query, before
+ * and after migration 0050 (whose replaced `message_labels_select` policy says the same in the database); the
+ * commitments' own row-level security already lets only those two read a declined or dismissed row. A private label
+ * carries the other person's first name ("Only you and Ada see this.").
  */
+/**
+ * The commitment a private label is about (alias x, for label l): the one the label row names (`commitment_id`, which
+ * syncLabel writes), so a party to another commitment on the same message never reads this one's state (fix review,
+ * 9 October 2026; migration 0051 holds the policy to the same rule). A row without one (none is written so) falls back
+ * to any declined or dismissed commitment on the message, as before.
+ */
+const LABEL_COMMITMENT = `(CASE WHEN l.commitment_id IS NOT NULL THEN x.id = l.commitment_id
+  ELSE (x.agreement_message_id = l.message_id OR (x.agreement_message_id IS NULL AND x.source_message_id = l.message_id)) AND x.status IN ('declined', 'dismissed') END)`;
+
 export async function labelsIn(db: Db, conversationId: string, messageIds: string[]): Promise<Map<string, MessageLabel>> {
   const out = new Map<string, MessageLabel>();
   const ids = [...new Set(messageIds.filter(isUuid))];
   if (!ids.length || !isUuid(conversationId) || !(await schema0048Ready(db))) return out;
-  const rows = await db.query<{ message_id: string; state: MessageLabelState }>(
-    `SELECT message_id, state FROM message_labels WHERE conversation_id = $1 AND message_id = ANY($2::uuid[]) AND kind = 'commitment'`, [conversationId, ids]);
-  for (const r of rows) out.set(r.message_id, messageLabel(r.state));
+  const rows = await db.query<{ message_id: string; state: MessageLabelState; other: string | null }>(
+    `SELECT l.message_id, l.state, party.other
+     FROM message_labels l
+     LEFT JOIN LATERAL (
+       SELECT CASE WHEN x.committer_membership_id = app_membership_id(x.organisation_id) THEN ap.display_name ELSE cp.display_name END AS other
+       FROM commitments x
+       JOIN memberships cm ON cm.id = x.committer_membership_id JOIN profiles cp ON cp.id = cm.user_id
+       LEFT JOIN memberships am ON am.id = x.asker_membership_id LEFT JOIN profiles ap ON ap.id = am.user_id
+       WHERE l.state IN ('declined', 'dismissed') AND x.organisation_id = l.organisation_id AND ${LABEL_COMMITMENT}
+         AND app_membership_id(x.organisation_id) IN (x.committer_membership_id, x.asker_membership_id)
+       ORDER BY x.created_at DESC, x.id DESC LIMIT 1) party ON true
+     WHERE l.conversation_id = $1 AND l.message_id = ANY($2::uuid[]) AND l.kind = 'commitment'
+       AND (l.state IN ('noted', 'done') OR EXISTS (
+         SELECT 1 FROM commitments x
+         WHERE x.organisation_id = l.organisation_id AND ${LABEL_COMMITMENT}
+           AND app_membership_id(x.organisation_id) IN (x.committer_membership_id, x.asker_membership_id)))`, [conversationId, ids]);
+  for (const r of rows) out.set(r.message_id, messageLabel(r.state, r.other ? firstName(r.other) : null));
   return out;
 }
 
@@ -341,6 +371,10 @@ type LabelRef = { id: string; organisation_id: string; conversation_id: string; 
  * live commitment on that message: noted while it waits or is open, done, declined, "not a commitment"; none when every
  * one there expired or was cancelled. An open ask has none until it is accepted (its asked person may never be told).
  * As the worker; one row per message.
+ *
+ * Phase 7c (owner decision, 9 October 2026): a public state wins over a private one (declined, dismissed come last), so
+ * a message with an open commitment for Ada and a declined one for Ben shows "Noted" to everyone, and Ben's decline stays
+ * in his own Commitments view.
  */
 async function syncLabel(db: Db, c: LabelRef): Promise<void> {
   const messageId = c.agreement_message_id ?? c.source_message_id;
@@ -348,7 +382,7 @@ async function syncLabel(db: Db, c: LabelRef): Promise<void> {
     `SELECT id, status FROM commitments
      WHERE organisation_id = $1 AND (agreement_message_id = $2 OR (agreement_message_id IS NULL AND source_message_id = $2))
        AND status NOT IN ('expired', 'cancelled') AND NOT (kind = 'open_ask' AND status NOT IN ('accepting', 'open', 'done'))
-     ORDER BY created_at DESC, id DESC LIMIT 1`, [c.organisation_id, messageId]);
+     ORDER BY (status IN ('declined', 'dismissed')) ASC, created_at DESC, id DESC LIMIT 1`, [c.organisation_id, messageId]);
   const state = newest ? labelStateOf(newest.status) : null;
   if (!state || !newest) {
     await db.query(`DELETE FROM message_labels WHERE message_id = $1 AND kind = 'commitment'`, [messageId]);

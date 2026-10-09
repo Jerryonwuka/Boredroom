@@ -53,7 +53,16 @@
    standout; a block's Open is white (the answer is typed in Boredroom), and Decline, Not a commitment and Not me are
    ghost. The new notifications' badges keep their status colours: green for one taken on or answered, amber for due today
    and a re-plan to confirm, red for overdue, neutral words for the rest; never orange. The day card's "3 loose ends" is a
-   row of its "Waiting for you" list that opens the page, its arrow moving like Open's. */
+   row of its "Waiting for you" list that opens the page, its arrow moving like Open's.
+   Standup, abilities and "How I like things done" (owner decisions, 8–9 October 2026: phase 7c). The standup card: the
+   three sections in one near-black panel (`.standup`: a small label over each section's lines, 13/19.5, each line running
+   to two lines before it is cut, "and 2 more" in the secondary grey), the readback under it in the caption grey, and
+   actions that stay in view: Skip today ghost, Edit outline (it opens Boredroom), Post the card's one orange button. The
+   rollup card: the blockers as the routine's two-line rows (who in medium, their words in regular) and who has no update
+   as one plain line of names in the secondary grey (`.names`: a list read as one; never amber or red, never an icon). A
+   preference's Confirm: the summary in the quoted bubble with why it still asks under it (`.pref-q`), "Only you" as its
+   readback, and Remember / Forget the card's one orange button. No other new orange; badges keep their words (amber only
+   for a draft that couldn't be made). */
 
 /* Inter and Geist Mono, from @fontsource-variable (SIL Open Font License, fonts/OFL.txt). Nothing loads remotely. */
 @font-face { font-family: "Inter Variable"; font-style: normal; font-display: swap; font-weight: 100 900; src: url(fonts/inter-latin-ext-wght-normal.woff2) format("woff2");
@@ -659,3 +668,32 @@ kbd { display: inline-flex; align-items: center; justify-content: center; box-si
    out like Open's when the row is hovered or focused (nothing under reduced motion). */
 .list li > .rowlink .k .ic { display: block; }
 .list li > .rowlink:is(:hover, :focus-visible) .ic-open { animation: ic-fly-out .42s var(--ease) 1; }
+
+/* Standup, abilities and "How I like things done" (owner decisions, 8–9 October 2026: phase 7c; the header says what
+   shows). The standup card's sections share one near-black panel with a hairline: each label (`.lbl`) over a short
+   bulleted list of the person's lines in the text colour, a line running to two lines before it is cut (the whole line is
+   its tooltip), "and 2 more" in the secondary grey without a bullet; a long draft scrolls inside the panel, so the readback
+   and Post stay in view. */
+.standup { display: grid; gap: 2px; padding: 8px 12px 10px; background: var(--background); border: 1px solid var(--border); border-radius: var(--radius-card-sm);
+  max-height: 260px; overflow-y: auto; overscroll-behavior: contain; -webkit-user-select: text; user-select: text; }
+.standup::-webkit-scrollbar { width: 6px; }
+.standup::-webkit-scrollbar-thumb { background: var(--border-input-hover); border-radius: 3px; }
+.standup ul { margin: 0 0 6px; padding-left: 18px; font-size: 13px; line-height: 19.5px; font-weight: 400; color: var(--foreground); }
+.standup ul:last-child { margin-bottom: 0; }
+.standup li + li { margin-top: 2px; }
+.standup li::marker { color: var(--subtle); }
+.standup li .t { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; }
+.standup li.more { list-style: none; color: var(--secondary); }
+/* The rollup: a blocker's who in medium, their own words after it in regular; "and 2 more" in grey. Who has no update: one
+   plain line of names in the secondary grey, commas between them (a list for screen readers, one line to the eye). */
+.list li.wrap .who { font-weight: 500; }
+.list li.more .t { color: var(--secondary); font-weight: 400; }
+.names { margin: 0; padding: 0; list-style: none; font-size: 13px; line-height: 19.5px; font-weight: 400; color: var(--secondary); overflow-wrap: anywhere; }
+.names li { display: inline; }
+.names li + li::before { content: ", "; }
+/* A preference's Confirm: the summary in the quoted bubble (no shield, so the readback lines up with the bubble), why it
+   still asks 4px under it in the secondary grey. */
+.pref-q { display: grid; gap: 4px; min-width: 0; }
+.confirm .pref-q .why { margin-top: 0; }
+.confirm.pref .readback { margin-left: 0; }
+.confirm.pref .quote { background: color-mix(in srgb, var(--foreground) 5%, transparent); }

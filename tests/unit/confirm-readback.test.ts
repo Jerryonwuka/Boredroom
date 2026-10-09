@@ -99,7 +99,8 @@ describe("the consent rule (G.2)", () => {
   });
 
   it("names every context that is never the person at the keyboard", () => {
-    expect([...NON_INTERACTIVE_SESSIONS].sort()).toEqual(["brenda.daily_report", "followup", "routine"]);
+    // Phase 7c (owner decisions, 8–9 October 2026): a standup being drafted never presses Confirm either.
+    expect([...NON_INTERACTIVE_SESSIONS].sort()).toEqual(["brenda.daily_report", "followup", "routine", "standup"]);
   });
 
   it.each(["followup", "routine", "brenda.daily_report"])("confirmAction refuses a valid token pressed from %s, before anything is claimed", async (sessionId) => {
@@ -134,7 +135,9 @@ describe("the consent rule (G.2)", () => {
 describe("the routine tools", () => {
   it("are defined as the contract says, and every tool has one thread class", () => {
     const names = TOOLS.map((x) => x.name);
-    expect(names.slice(-3)).toEqual(["list_routines", "create_routine", "update_routine"]);
+    // Phase 7c (owner decisions, 8–9 October 2026): the standup and preference tools come after them.
+    expect(names.slice(-7, -4)).toEqual(["list_routines", "create_routine", "update_routine"]);
+    expect(names.slice(-4)).toEqual(["standup", "standup_action", "remember_preference", "forget_preference"]);
     expect(TOOLS.find((x) => x.name === "create_routine")?.input_schema.required).toEqual(["template", "cadence", "time"]);
     expect(TOOLS.find((x) => x.name === "update_routine")?.input_schema.required).toEqual(["routineId", "action"]);
     expect(Object.keys(SHARED_TOOL_CLASS).sort()).toEqual([...names].sort());

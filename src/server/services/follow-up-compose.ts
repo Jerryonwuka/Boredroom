@@ -275,12 +275,16 @@ export function acceptModelText(text: string, source?: string): string | null {
   const one = t.replace(/\s+/g, " ");
   if (one.length < 1 || one.length > ANSWER_MAX) return null;
   if (MARKUP.test(one) || LINKISH.test(one)) return null;
-  if (source !== undefined && !grounded(one, source)) return null;
+  if (source !== undefined && !groundedIn(one, source)) return null;
   return one;
 }
 
-/** Whether the answer's dates, numbers and forward-looking words all come from the source (see acceptModelText). */
-function grounded(text: string, source: string): boolean {
+/**
+ * Whether the answer's dates, numbers and forward-looking words all come from the source (see acceptModelText).
+ * Exported (owner decisions, 8–9 October 2026: phase 7c) so the standup's one model call is checked by the same rule
+ * (standup-compose.ts acceptStandupText); unchanged otherwise.
+ */
+export function groundedIn(text: string, source: string): boolean {
   const src = source.replace(/\s+/g, " ").toLowerCase();
   // Words quoted exactly from the source (the person's own note, a comment) may say anything: they are theirs.
   const own = text.replace(/[“"]([^”"]{1,400})[”"]/g, (m, inner: string) => (src.includes(inner.replace(/\s+/g, " ").trim().toLowerCase()) ? " " : m));

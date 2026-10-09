@@ -19,6 +19,11 @@
  * the owner, not HR, and nothing here writes an audit row or an activity line others could read. A loose end is only
  * ever about a message the person can read (the insert's policy checks the conversation). Before migration 0048
  * everything here is absent and says so (server/lib/schema-0048).
+ *
+ * Phase 7c (owner decisions, 8–9 October 2026: the abilities catalogue): with "Loose ends" switched off for the person
+ * (by the workspace or by them), the list reads empty with `off` saying who switched it off, keeping what a scan found
+ * and every action answer 403 ABILITY_OFF with where to switch it on (services/abilities); a follow-up later needs
+ * "Follow-ups" too. Before migration 0050 nothing is ever off.
  */
 import { z } from "zod";
 import { withUser, withWorker, type Db } from "@/server/db";
@@ -31,6 +36,8 @@ import { createReminder } from "@/server/services/brenda";
 import { quickTodo } from "@/server/services/tasks";
 import { planRequest, sendAssistantItem } from "@/server/services/assistant-items";
 import { createFollowUps } from "@/server/services/follow-ups";
+import { abilitiesIn, requireAbility } from "@/server/services/abilities";
+import { ABILITY_WORDS, abilityOff, abilityTitle } from "@/lib/abilities";
 import { toProfile } from "@/lib/assistant-look";
 import { clip, firstName, type PersonRef } from "@/lib/follow-ups";
 import {
@@ -176,13 +183,16 @@ export async function listLooseEnds(ctx: OrgContext, o: { status?: "open" | "act
   try {
     return await retryWithout0048(() => withUser(ctx.user.profileId, async (db): Promise<LooseEndList> => {
       if (!(await schema0048Ready(db))) return none;
+      // Phase 7c: switched off for this person, nothing is listed (what was found stays, for when it is back on).
+      const off = abilityOff(await abilitiesIn(db, ctx.org.id, ctx.membership.id), "loose_ends");
+      if (off) return { ready: true, items: [], counts: { open: 0 }, lastScanAt: null, off };
       await db.query(RESOLVE_SQL, [ctx.org.id, ctx.membership.id]);
       const where = status === "open" ? "le.status = 'open'" : status === "acted" ? "le.status <> 'open'" : "true";
       const items = await loadViews(db, ctx, where, [], `ORDER BY (le.status = 'open') DESC, le.created_at DESC, le.id DESC LIMIT ${limit}`);
       const c = await db.one<{ open: number; last: string | null }>(
         `SELECT count(*) FILTER (WHERE status = 'open')::int AS open, max(created_at) AS last FROM loose_ends WHERE organisation_id = $1 AND membership_id = $2`,
         [ctx.org.id, ctx.membership.id]);
-      return { ready: true, items, counts: { open: c.open }, lastScanAt: c.last };
+      return { ready: true, items, counts: { open: c.open }, lastScanAt: c.last, off: null };
     }));
   } catch (err) {
     if (isMissingSchema(err)) { forget0048(); return none; }
@@ -252,6 +262,8 @@ function cleanDetected(r: DetectedLooseEnd, me: string) {
  * must be another member of the workspace (else none). Returns the new ones' views. [] before 0048.
  */
 export async function insertLooseEnds(ctx: OrgContext, rows: DetectedLooseEnd[], o: { source: "on_demand" | "routine" }): Promise<LooseEndView[]> {
+  // Phase 7c: a scan for someone who switched loose ends off keeps nothing (403 ABILITY_OFF).
+  await requireAbility(ctx, "loose_ends");
   const source = o?.source === "routine" ? "routine" : "on_demand";
   const clean = (Array.isArray(rows) ? rows : []).map((r) => cleanDetected(r, ctx.membership.id)).filter((r): r is NonNullable<typeof r> => !!r);
   if (!clean.length) return [];
@@ -370,6 +382,7 @@ async function mark(ctx: OrgContext, id: string, from: LooseEndStatus[], set: st
  */
 export async function looseEndToTodo(ctx: OrgContext, id: string, input: z.infer<typeof looseEndTodoSchema>): Promise<LooseEndView> {
   notWhileImpersonated(ctx);
+  await requireAbility(ctx, "loose_ends");
   const p = looseEndTodoSchema.safeParse(input);
   if (!p.success) throw invalid("Give the to-do a title (at most 200 characters).", { title: ["Between 1 and 200 characters."] });
   await actOnOpen(ctx, id,
@@ -384,6 +397,7 @@ export async function looseEndToTodo(ctx: OrgContext, id: string, input: z.infer
 /** Remind me: a reminder for the person at `at` (createReminder: in the past or over a year ahead, 422). */
 export async function looseEndRemind(ctx: OrgContext, id: string, input: z.infer<typeof looseEndRemindSchema>): Promise<LooseEndView> {
   notWhileImpersonated(ctx);
+  await requireAbility(ctx, "loose_ends");
   const p = looseEndRemindSchema.safeParse(input);
   if (!p.success) throw invalid("Pick when to remind you.", { at: ["Pick a date and time."] });
   await openRow(ctx, id);
@@ -413,6 +427,7 @@ function refusalError(r: { code: string; error: string }): AppError {
  */
 export async function looseEndHandOver(ctx: OrgContext, id: string, input: z.infer<typeof looseEndHandOverSchema>): Promise<LooseEndView> {
   notWhileImpersonated(ctx);
+  await requireAbility(ctx, "loose_ends");
   const p = looseEndHandOverSchema.safeParse(input);
   if (!p.success) throw invalid("Say who it goes to and what the to-do is.", { title: ["Between 1 and 200 characters."] });
   await openRow(ctx, id);
@@ -432,6 +447,8 @@ export async function looseEndHandOver(ctx: OrgContext, id: string, input: z.inf
  */
 export async function looseEndFollowUpLater(ctx: OrgContext, id: string, input: z.infer<typeof looseEndFollowUpSchema>): Promise<LooseEndView> {
   notWhileImpersonated(ctx);
+  await requireAbility(ctx, "loose_ends");
+  await requireAbility(ctx, "follow_ups");
   const p = looseEndFollowUpSchema.safeParse(input);
   if (!p.success) throw invalid("Pick when to follow up.", { at: ["Pick a date and time."] });
   const at = Date.parse(p.data.at);
@@ -446,6 +463,7 @@ export async function looseEndFollowUpLater(ctx: OrgContext, id: string, input: 
 /** Not a commitment: closed for good, and the message remembered so it is never suggested again (also a scheduled follow-up). */
 export async function dismissLooseEnd(ctx: OrgContext, id: string): Promise<LooseEndView> {
   notWhileImpersonated(ctx);
+  await requireAbility(ctx, "loose_ends");
   const r = await openRow(ctx, id, { allowScheduled: true });
   await asPerson(ctx, async (db) => {
     await db.query(`INSERT INTO loose_end_dismissals(membership_id, message_id, organisation_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
@@ -498,6 +516,17 @@ export async function runDueLooseEndFollowUps(o: { now?: Date; limit?: number } 
       const ctx = await withWorker((db) => memberContext(db, r.organisation_id, r.membership_id, { sessionId: "routine" }));
       if (!ctx) { await back(r.id, "You're no longer an active member of this workspace."); out.failed++; continue; }
       if (!r.counterpart_membership_id) { await back(r.id, "There's nobody to follow up with on this one."); out.failed++; continue; }
+      // Loose ends (or follow-ups) switched off since it was scheduled, by the workspace or the person: nothing is asked,
+      // and it goes back to their list with why, where they find it when they switch it on again (fix review, 9 October
+      // 2026: the list hid it and refused Not a commitment while the worker still asked).
+      const a = await withWorker((db) => abilitiesIn(db, r.organisation_id, r.membership_id));
+      const off = abilityOff(a, "loose_ends") ?? abilityOff(a, "follow_ups");
+      if (off) {
+        const key = abilityOff(a, "loose_ends") ? "loose_ends" : "follow_ups";
+        await back(r.id, ABILITY_WORDS.refusal(abilityTitle(key), off, "your assistant"));
+        out.failed++;
+        continue;
+      }
       // Asked while the row is held (review, 9 October 2026): "Not a commitment" pressed meanwhile waits, then finds it
       // asked (409); pressed first, it is found dismissed here and nothing is asked.
       const counterpart = r.counterpart_membership_id;

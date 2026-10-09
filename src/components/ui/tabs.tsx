@@ -42,8 +42,28 @@ export function Tabs({ tabs, value, onChange, param = "tab", className, label = 
     return value !== undefined && t.value ? value === t.value : t.href ? pathname === t.href || ((sp.get(param) ?? "") === (t.value ?? "") && !!t.value) : current === key;
   };
   const activeIndex = tabs.findIndex(isActive);
+  // A row wider than the screen scrolls sideways with its scrollbar hidden: the selected tab is brought into view inside
+  // the row (never the page), so "?tab=standup" on a phone shows "Standup", not "St" (fix review, 9 October 2026).
+  const list = React.useRef<HTMLDivElement>(null);
+  React.useEffect(() => {
+    const row = list.current;
+    const el = activeIndex >= 0 ? row?.querySelectorAll<HTMLElement>("[role=tab]")[activeIndex] : null;
+    if (!row || !el) return;
+    const bring = () => {
+      if (row.scrollWidth <= row.clientWidth) return;
+      const r = row.getBoundingClientRect(), t = el.getBoundingClientRect();
+      if (t.left < r.left) row.scrollLeft -= r.left - t.left + 16;
+      else if (t.right > r.right) row.scrollLeft += t.right - r.right + 16;
+    };
+    bring();
+    // Also once the row is laid out or resized (a streamed page shown after this ran, a phone turned sideways).
+    if (typeof ResizeObserver === "undefined") return;
+    const seen = new ResizeObserver(bring);
+    seen.observe(row);
+    return () => seen.disconnect();
+  }, [activeIndex]);
   return (
-    <div role="tablist" aria-label={label} onKeyDown={onKeyDown}
+    <div ref={list} role="tablist" aria-label={label} onKeyDown={onKeyDown}
       className={cn("flex max-w-full overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden", underline ? cn("gap-6", bordered && "shadow-[inset_0_-1px_0_var(--border)]") : "gap-1", className)}>
       {tabs.map((t, i) => {
         const key = t.value ?? t.href ?? t.label;

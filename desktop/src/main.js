@@ -169,6 +169,32 @@
 //   its own) tells Boredroom it was seen. Other people's words go through esc() only, never Markdown or a link, and only
 //   Boredroom paths open. Quiet hours hold these cards like any other. Before migration 0048 (`ready: false`) and from an
 //   older server (no `loops`) nothing changes: the plain notification cards show.
+//
+// Standup, abilities and "How I like things done" (owner decisions, 8–9 October 2026: phase 7c; "they stay private",
+// "use English for now"). The desktop state's `standup` (DesktopStandup in src/lib/standup.ts), `abilities.off` and
+// `assistant.voice` say what shows; nothing is decided on this computer, and an older server (none of the three) changes
+// nothing.
+// - The standup card (`brenda.standup`, its entry's id as `resource_id`): her face, "Your standup for Design", the day, the
+//   three sections as short plain lists (the person's Yesterday or "Since Friday", Today and Blocked; at most four lines
+//   each, then "and 2 more"; esc() only, never Markdown or a link), the readback "Goes to #Design (6 people), as you, sent
+//   by Max", then Skip today, Edit (opens the entry in Boredroom: editing stays on the web) and Post, the card's one
+//   orange button. Posting always needs this press (the act-mode floor for anything to a whole team): nothing here posts
+//   on its own, ever. Post and Skip go to the same routes as Boredroom's own buttons, as the person, with an idempotency
+//   key (the server also answers a second Post with the post it already made). The card then says what happened ("Posted
+//   to #Design at 09:41" with Open; "Skipped." with Undo while the server allows it). Resting the pointer on it, or
+//   opening it from the day card, tells Boredroom it was seen. Never a reminder: one card per draft, as the server sends
+//   one notification.
+// - The rollup card (`brenda.standup_rollup`, for team leads): "Design standup: 4 of 6 posted", the blockers people named
+//   in their own posted words, and who has no update as one plain grey line of names (never a reason, never a warning
+//   colour), Open and OK. `brenda.standup_failed` is the plain card with Open.
+// - The day card lists "Standup for Design ready" first among what is waiting, and a lead's unseen rollups last.
+// - A Confirm for remember_preference or forget_preference (the chat's answer) shows its summary in the quoted bubble, why
+//   it still asks, "Only you", and Remember or Forget as the card's one orange button: what her assistant remembers about
+//   the person is always their own press, whatever their act mode says.
+// - Voice switched off for the workspace (`assistant.voice` false): the talk keys say "Voice is switched off for Max.
+//   Change it in Boredroom Settings." once per press and do nothing else, the talk and Listen controls go, and nothing is
+//   read aloud. Loose ends switched off: the day card leaves out its loose-ends row. Quiet hours hold every new card as
+//   before.
 
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
@@ -402,8 +428,16 @@ function moodOf() {
     if (t === "brenda.commitment_accepted" || t === "brenda.block_answered") return { mood: "happy", tone: "ok" };
     if (t === "brenda.commitment_stalled" || t === "brenda.replan") return { mood: "alert", tone: "warn" };
     if (t === "brenda.commitment_declined" || t === "brenda.block_not_me") return {};
+    // Standup (phase 7c, 8–9 October 2026): a draft that couldn't be made is sad, with the amber glow of something left to
+    // the person; a rollup is calm news, never an alarm about who didn't post.
+    if (t === "brenda.standup_failed") return { mood: "sad", tone: "warn" };
+    if (t === "brenda.standup_rollup") return {};
     return { mood: "alert", tone: "accent" };
   }
+  // The standup card (phase 7c) waits on the person until they post or skip; posted pleases her; skipped, gone and the
+  // rollup stay neutral.
+  if (card.kind === "standup") return card.phase === "open" ? { mood: "alert", tone: "accent" } : card.phase === "posted" ? { mood: "happy", tone: "ok" } : {};
+  if (card.kind === "standup_rollup") return {};
   // A commitment, an open ask or a block waits on the person until it is answered (phase 7b); taking one on pleases her;
   // the rest of what can come of it stays neutral.
   if (card.kind === "loop") return card.phase === "result" ? (card.decided === "accept" ? { mood: "happy", tone: "ok" } : {}) : card.phase === "gone" ? {} : { mood: "alert", tone: "accent" };
@@ -484,6 +518,8 @@ function setHover(on) {
   if (on && !card && config?.signedIn) { tucked = false; openCard({ kind: "home" }); }
   // A commitment or block card that opened on its own counts as seen once the pointer rests on it (phase 7b).
   else if (on && card?.kind === "loop") loopSeen(card);
+  // So does a standup draft or a rollup (phase 7c).
+  else if (on && (card?.kind === "standup" || card?.kind === "standup_rollup")) standupSeen(card);
   else if (!on && card && !card.sticky) leaveTimer = setTimeout(() => { if (!hovering && card && !card.sticky) closeCard(); }, LEAVE_GRACE_MS);
   else if (!card) fit();
   updateTuck();
@@ -578,7 +614,9 @@ function cardView() {
     // Routines' (phase 7a) when the desktop state has no `routineRuns`: Routine, Routines, and amber for one that failed.
     // Commitments and blocks (phase 7b): the contract's words, green for one taken on or answered, amber for due today and
     // a re-plan to confirm, red for overdue; their titles name a task or a commitment, so they may run to two lines.
-    const loop = loopPill(n.type);
+    // Standup's (phase 7c, 8–9 October 2026) when the desktop state cannot open their own cards, and always for a draft that
+    // couldn't be made: neutral words, amber for that one; their titles name a team, so they may run to two lines too.
+    const loop = loopPill(n.type) || standupPill(n.type);
     const pill = n.type === "brenda.reminder" ? `<span class="pill">Reminder</span>` : n.type === "brenda.clock_in" ? `<span class="pill ok"><span class="d"></span>In</span>` : n.type === "brenda.daily_report" ? `<span class="pill">Daily report</span>` : n.type === "task.assigned" ? `<span class="pill acc">New task</span>` : n.type.startsWith("review") ? `<span class="pill warn">Review</span>` : Object.hasOwn(ITEM_PILLS, n.type) ? `<span class="pill">${ITEM_PILLS[n.type]}</span>` : loop || routinePill(n.type);
     // The end-of-day report is sent by the workspace, so its card shows the workspace's assistant (owner decision,
     // 7 October 2026: personal assistants); everything else comes from the person's own.
@@ -629,6 +667,8 @@ function cardView() {
   if (card.kind === "opener") return openerView();
   if (card.kind === "routine") return routineView();
   if (card.kind === "loop") return loopView();
+  if (card.kind === "standup") return standupView();
+  if (card.kind === "standup_rollup") return rollupView();
   if (card.kind === "error") return `<div class="row fade">${face(moodOf())}<div class="grow"><p class="title">Can't reach Boredroom</p><p class="sub">${esc(card.message)}</p></div></div><div class="actions"><button class="btn" data-act="close">OK</button></div>`;
   return "";
 }
@@ -694,6 +734,12 @@ el.addEventListener("click", async (e) => {
     if (act === "lp-decline") return card?.declining ? decideLoop("decline") : openLoopNote();
     if (act === "lp-back") return closeLoopNote();
     if (act === "lp-notme") return decideLoop("not_me");
+    // Standup (phase 7c, 8–9 October 2026): open a draft or a rollup from the day card; on a draft, Post (the person's own
+    // press, always), Skip today, and Undo on a skip. Edit is a link (open-href): editing stays on the web.
+    if (act === "su-open") return openStandup(target.dataset.sk, target.dataset.id);
+    if (act === "su-post") return decideStandup("post");
+    if (act === "su-skip") return decideStandup("skip");
+    if (act === "su-unskip") return unskipStandup();
     if (act === "read") { await call("PATCH", org(`/notifications/${target.dataset.id}`)); data.notifications = data.notifications.filter((n) => n.id !== target.dataset.id); return closeCard(); }
     busy = true; render();
     const t = data?.timer;
@@ -768,7 +814,7 @@ async function refresh() {
     keepCached();
     applyQuiet();
     if (!card) render();
-    else { followUpClosedElsewhere(); itemClosedElsewhere(); loopClosedElsewhere(); }
+    else { followUpClosedElsewhere(); itemClosedElsewhere(); loopClosedElsewhere(); standupClosedElsewhere(); }
   } catch (err) {
     // During quiet hours (phase 7a) not even this opens on its own.
     if (err?.status && err.status !== 401 && !card && !quietNow()) openCard({ kind: "error", message: err.message });
@@ -787,16 +833,19 @@ function nextNotification() {
   // A follow-up's ask or answer gets its own card when the desktop state knows it (phase 4), and so does a message, a
   // request, a reply or a request's outcome brought by someone's assistant (phase 6); otherwise, and always with an older
   // server, the plain notification card. What waits for an answer (an ask, a request) calls for attention.
-  // A noted commitment, an open ask or a block on the person waits for an answer too (phase 7b).
-  const fu = followUpCard(n) ?? itemCard(n) ?? loopCard(n);
-  if (fu) { openCard(fu); return Sound.play(fu.kind === "followup_ask" || fu.kind === "loop" || (fu.kind === "item" && fu.w.kind === "request") ? "attention" : "reply"); }
+  // A noted commitment, an open ask or a block on the person waits for an answer too (phase 7b). A standup draft waits
+  // for the person's press and a rollup is news (phase 7c): both arrive with the ordinary sound, never the call for
+  // attention (a standup is never a chase).
+  const fu = followUpCard(n) ?? itemCard(n) ?? loopCard(n) ?? standupCard(n);
+  if (fu) { openCard(fu); return Sound.play(fu.kind === "followup_ask" || fu.kind === "loop" || (fu.kind === "item" && fu.w.kind === "request") ? "attention" : fu.kind === "standup" || fu.kind === "standup_rollup" ? "notify" : "reply"); }
   // What a routine sent (phase 7a): its own card when the desktop state carries the run, read as long as a reply.
   const routine = routineCard(n);
   if (routine) { openCard(routine); return Sound.play("notify"); }
   // Mentions in Messages (phase 5): a reply, a Confirm or a private answer has more to read, so it stays as long as a reply.
-  // So does a commitment's or a block's (phase 7b): its title may run to two lines, with a line under it.
+  // So does a commitment's or a block's (phase 7b): its title may run to two lines, with a line under it; and a standup's
+  // (phase 7c).
   const mention = mentionCard(n.type);
-  openCard({ kind: "notification", n, ...(mention?.long || loopPill(n.type) ? { closeAfter: REPLY_CLOSE_MS } : {}) });
+  openCard({ kind: "notification", n, ...(mention?.long || loopPill(n.type) || standupPill(n.type) ? { closeAfter: REPLY_CLOSE_MS } : {}) });
   Sound.play(n.type === "brenda.clock_in" ? "success" : mention?.sound ?? "notify");
 }
 
@@ -889,6 +938,8 @@ window.addEventListener("keydown", (e) => {
 
 function talkButton() {
   const name = esc(me().name);
+  // Voice switched off for the workspace (phase 7c): no talk control at all, as the web hides its own.
+  if (voiceOff()) return "";
   if (voice.enabled && voice.modelReady) return `<span class="hint" title="Hold to talk to ${name}">${mic}<kbd>${esc(voice.shortcut)}</kbd></span>`;
   return `<button class="btn ghost icon" data-act="voice-setup" title="Talk to ${name}" aria-label="Talk to ${name}">${mic}</button>`;
 }
@@ -919,13 +970,22 @@ const speakPref = () => { const s = data?.assistant?.speak; return s === "always
 const aloud = () => talking || talkWaiting;
 /**
  * Whether this answer is read aloud on its own: always, or when it answers something said with the talk keys; never during
- * the person's quiet hours (phase 7a, 8 October 2026), when only Listen reads it.
+ * the person's quiet hours (phase 7a, 8 October 2026), when only Listen reads it; never while the workspace has voice
+ * switched off (phase 7c, 8–9 October 2026), when nothing is read aloud at all.
  */
-const speaksFor = (spoken) => !quietNow() && (speakPref() === "always" || (speakPref() === "voice" && !!spoken));
+const speaksFor = (spoken) => !voiceOff() && !quietNow() && (speakPref() === "always" || (speakPref() === "voice" && !!spoken));
+/**
+ * Voice switched off for the workspace (owner decisions, 8–9 October 2026: phase 7c, the abilities catalogue): the desktop
+ * state's `assistant.voice` is false (or `voice` is among `abilities.off`). An older server sends neither, and voice stays
+ * as the person set it on this computer.
+ */
+const voiceOff = () => data?.assistant?.voice === false || offHere("voice");
+/** One of the person's abilities is switched off, for the workspace or by them (the desktop state's `abilities.off`). */
+const offHere = (key) => { const off = data?.abilities?.off; return Array.isArray(off) && off.includes(key); };
 
 /** Asks Rust to read `text` aloud (it renders first, so the first sound comes a moment later). */
 function sayAloud(text) {
-  if (!text) return;
+  if (!text || voiceOff()) return;
   talkWaiting = true;
   clearTimeout(talkWaitTimer);
   // She never started (nothing to say, or the microphone opened meanwhile): the button goes back to Listen.
@@ -946,9 +1006,9 @@ function hush() {
 /**
  * The reply card's Listen / Stop (owner decision, 7 October 2026: her voice), first in its actions row: the name stays,
  * `aria-pressed` carries the state and the tooltip says what a press does. Stop's square is orange (live, accent rules).
- * Only when the answer has something to say.
+ * Only when the answer has something to say, and never while the workspace has voice switched off (phase 7c).
  */
-const listenButton = () => (card?.spokenText ? `<button class="btn ghost icon" data-act="listen" aria-label="Listen to this reply" aria-pressed="${aloud()}" title="${aloud() ? "Stop" : "Listen"}">${icon(aloud() ? "stop" : "volume")}</button>` : "");
+const listenButton = () => (card?.spokenText && !voiceOff() ? `<button class="btn ghost icon" data-act="listen" aria-label="Listen to this reply" aria-pressed="${aloud()}" title="${aloud() ? "Stop" : "Listen"}">${icon(aloud() ? "stop" : "volume")}</button>` : "");
 
 /** Her faces and the Listen button as `talking` and `talkWaiting` now say, in place. */
 function showTalking() {
@@ -1136,7 +1196,7 @@ function voiceView() {
     return `<div class="row fade top">${face(moodOf())}<div class="grow">${pill ? `<div class="said-row">${said}${pill}</div>` : said}<div class="reply">${md(c.reply)}</div>${note}</div></div>
       ${c.actions?.length ? `<ul class="list fade">${shownLines(c.actions, confirms.length ? 2 : 4).map(({ a, i }) => doneLine(a, i)).join("")}</ul>` : ""}
       ${offers.length ? `<ul class="list fade">${offers.map(({ p, i }) => `<li><span class="t">${offerLabel(p)}</span>${p.done ? `<span class="k ok end">${esc(p.done)}</span>` : `<button class="btn" data-act="offer" data-i="${i}" ${busy ? "disabled" : ""}>${icon(OFFER[p.kind].icon)}${OFFER[p.kind].label}</button>`}</li>`).join("")}</ul>` : ""}
-      ${confirms.map((p, i) => `<div class="confirm fade"><p class="sub">${icon("shield")}<span>${esc(p.summary)}${whyOf(p) ? `<span class="why">${esc(whyOf(p))}</span>` : ""}</span></p>${readbackView(p, `rb${i}`)}${p.detail ? `<div class="detail" tabindex="0" aria-label="${p.tool === "create_routine" || p.tool === "update_routine" ? "The preview and what it does each time" : "The full message"}">${esc(p.detail)}</div>` : ""}<div class="actions">${i === 0 ? listenButton() : ""}<button class="btn ghost" data-act="not-now" data-token="${esc(p.token)}">Not now${i === 0 ? " <kbd>N</kbd>" : ""}</button><button class="btn primary" data-act="confirm" data-token="${esc(p.token)}" ${readbackOf(p) ? `aria-describedby="rb${i}"` : ""} ${busy ? "disabled" : ""}>${icon("check")}Confirm${i === 0 ? " <kbd>Y</kbd>" : ""}</button></div></div>`).join("")}
+      ${confirms.map((p, i) => confirmView(p, i, confirms.findIndex(prefWord) === i)).join("")}
       ${!confirms.length ? askBox("Ask a follow-up…") : ""}
       ${!confirms.length ? `<div class="actions">${listenButton()}${opens.map((p) => `<button class="btn" data-act="open-href" data-href="${esc(p.href)}">${esc(p.label)}${icon("open")}</button>`).join("")}<button class="btn ghost" data-act="open-chat" title="Carry on with this chat on ${esc(`${me().name}'s`)} page in Boredroom">Open chat</button><button class="btn ghost" data-act="close">Done</button></div>` : ""}`;
   }
@@ -1152,7 +1212,35 @@ function voiceView() {
     return `<div class="row fade">${face(moodOf())}<div class="grow"><p class="title">Voice is on</p><p class="sub">Hold <kbd>${esc(voice.shortcut)}</kbd> and talk. Try “What's on today?” or “Remind me to call Josh at 3.”</p></div></div><div class="actions"><button class="btn primary" data-act="close">Got it</button></div>`;
   }
   if (c.phase === "error") return `<div class="row fade">${face(moodOf())}<div class="grow"><p class="title">${esc(c.title ?? "I didn't catch that")}</p><p class="sub">${esc(c.message)}</p></div></div><div class="actions"><button class="btn" data-act="close">OK</button></div>`;
+  // The talk keys while the workspace has voice switched off (phase 7c, 8–9 October 2026): what it is and where it changes.
+  if (c.phase === "disabled") return `<div class="row fade">${face(moodOf())}<div class="grow"><p class="title wrap">Voice is switched off for ${esc(me().name)}.</p><p class="sub">Change it in Boredroom Settings.</p></div></div><div class="actions"><button class="btn primary" data-act="close">OK</button></div>`;
   return "";
+}
+
+// ---- a Confirm on the reply card -------------------------------------------------------------------------------------
+// One Confirm from her answer: the shield and the summary, why it still asks, who gets it (the readback) and the whole
+// message when there is one, then Not now and Confirm (Y and N on the first). "How I like things done" (owner decisions,
+// 8–9 October 2026: phase 7c): remembering or forgetting one of the person's preferences shows the summary (“Remember:
+// “Keep replies to three lines.””) in the quoted bubble instead, "Only you" as who gets it (unless the server's readback
+// says), and Remember or Forget as the card's one orange button. It is a Confirm like any other: the person's own press,
+// the server's token, whatever their act mode says.
+
+/** The button's word for a preference's Confirm ("Remember", "Forget"), or null (own keys only, never the prototype). */
+const PREF_WORDS = { remember_preference: "Remember", forget_preference: "Forget" };
+const prefWord = (p) => (typeof p?.tool === "string" && Object.hasOwn(PREF_WORDS, p.tool) ? PREF_WORDS[p.tool] : null);
+
+/** One Confirm (`i`: its place on the card, `standout`: it is the card's one orange button). */
+function confirmView(p, i, standout) {
+  const pref = prefWord(p);
+  const why = whyOf(p);
+  // A preference goes to nobody but the person: "Only you", when the server's readback does not say it already.
+  const rb = readbackView(pref && !readbackOf(p) ? { readback: { to: ["Only you"] } } : p, `rb${i}`);
+  const head = pref
+    ? `<div class="pref-q"><p class="quote" id="pq${i}">${esc(p.summary)}</p>${why ? `<p class="why">${esc(why)}</p>` : ""}</div>`
+    : `<p class="sub">${icon("shield")}<span>${esc(p.summary)}${why ? `<span class="why">${esc(why)}</span>` : ""}</span></p>`;
+  const described = [pref ? `pq${i}` : "", rb ? `rb${i}` : ""].filter(Boolean).join(" ");
+  const detail = p.detail ? `<div class="detail" tabindex="0" aria-label="${p.tool === "create_routine" || p.tool === "update_routine" ? "The preview and what it does each time" : "The full message"}">${esc(p.detail)}</div>` : "";
+  return `<div class="confirm${pref ? " pref" : ""} fade">${head}${rb}${detail}<div class="actions">${i === 0 ? listenButton() : ""}<button class="btn ghost" data-act="not-now" data-token="${esc(p.token)}">Not now${i === 0 ? " <kbd>N</kbd>" : ""}</button><button class="btn primary${pref && standout ? " accent" : ""}" data-act="confirm" data-token="${esc(p.token)}" ${described ? `aria-describedby="${described}"` : ""} ${busy ? "disabled" : ""}>${icon("check")}${pref ?? "Confirm"}${i === 0 ? " <kbd>Y</kbd>" : ""}</button></div></div>`;
 }
 
 /**
@@ -1721,6 +1809,10 @@ listen("brenda://voice", ({ payload: e }) => {
     return;
   }
   if (!config?.signedIn) return;
+  // Voice switched off for the workspace (phase 7c, 8–9 October 2026): a press of the talk keys says so once and does
+  // nothing else (no listening card, no words into a note, nothing asked).
+  if (voiceOff() && TALK_PHASES.includes(e.phase)) return voiceRefused(e);
+  voiceOffHeld = false;
   // A follow-up's ask is open (phase 4, 8 October 2026), or a message's reply box or a request's reason box (phase 6): the
   // talk keys write into it instead of asking her.
   if (noteCard() && dictate(e)) return;
@@ -1751,9 +1843,34 @@ listen("brenda://voice", ({ payload: e }) => {
   if (e.phase === "error") { Sound.play("error"); return openCard({ kind: "voice", phase: "error", message: e.message, closeAfter: REPLY_CLOSE_MS }); }
 });
 
+/** What the talk keys send while they are held and after (Rust's `brenda://voice` phases other than her own speaking). */
+const TALK_PHASES = ["listening", "transcribing", "heard", "too-short", "limit", "off", "needs-model", "error"];
+/** This press of the talk keys has been told voice is off already (the level events of the same hold say nothing more). */
+let voiceOffHeld = false;
+/**
+ * The talk keys while the workspace has voice switched off (phase 7c): the first event of a press says "Voice is switched
+ * off for Max. Change it in Boredroom Settings." once, in the note's line when a note is open, on the card when one waits
+ * on the person (so nothing they were answering is lost), else on a card of its own; the rest of the press is let go,
+ * and its words, written out on this computer, are never used.
+ */
+function voiceRefused(e) {
+  // A press starts with `listening` (sent again with each level while held), or with `off` / `needs-model` when voice is
+  // not set up on this computer (sent once); what follows a press only ends it.
+  if (!["listening", "off", "needs-model"].includes(e.phase)) { voiceOffHeld = false; return; }
+  if (voiceOffHeld) return;
+  if (e.phase === "listening") voiceOffHeld = true;
+  const words = `Voice is switched off for ${me().name}. Change it in Boredroom Settings.`;
+  if (noteCard()) { Object.assign(card, { dictating: null, dictMessage: words }); return showDictation(); }
+  if (card?.kind === "voice" && card.phase === "disabled") return;
+  if (card?.sticky) { error = words; return showError(); }
+  openCard({ kind: "voice", phase: "disabled" });
+}
+
 listen("brenda://voice-status", ({ payload }) => {
   voice = payload;
   if (!config?.signedIn) return;
+  // Voice turned on here while the workspace has it switched off (phase 7c): the card says so instead of "Voice is on".
+  if (voiceOff()) return openCard({ kind: "voice", phase: "disabled" });
   openCard({ kind: "voice", phase: !voice.enabled ? "off" : voice.modelReady ? "ready" : "downloading", progress: 0, sticky: voice.enabled && !voice.modelReady });
   if (!voice.enabled) { card.phase = "off"; card.sticky = false; render(); scheduleClose(); }
 });
@@ -1939,9 +2056,12 @@ function followUpAskView() {
     <div class="actions"><span class="cap lead">${w.taskTitle ? "This doesn't change the task." : "This doesn't change any of your tasks."}</span><button class="btn ghost" data-act="fu-send" data-choice="not_now" ${off}>Not now</button><button class="btn primary accent" data-act="fu-send" ${busy || !c.choice ? "disabled" : ""}>Send</button></div>`;
 }
 
-/** The talk keys inside the note's field while voice is on: hold them and say the line (it goes into the note). */
-const talkKeys = () => (voice.enabled && voice.modelReady
-  ? `<span class="fu-keys" id="fhold">${mic}<kbd>${esc(voice.shortcut)}</kbd><span class="sr">Or hold ${esc(voice.shortcut)} and say it.</span></span>`
+/**
+ * The talk keys inside the note's field while voice is on: hold them and say the line (it goes into the note). Not while
+ * the workspace has voice switched off (phase 7c).
+ */
+const talkKeys = () => (voice.enabled && voice.modelReady && !voiceOff()
+  ?`<span class="fu-keys" id="fhold">${mic}<kbd>${esc(voice.shortcut)}</kbd><span class="sr">Or hold ${esc(voice.shortcut)} and say it.</span></span>`
   : "");
 
 /** Under the note: the microphone while the talk keys are held, the words being written out, or why it could not listen. */
@@ -2065,20 +2185,24 @@ function openWaiting(id) {
  * The day card's "Waiting for you", at most two (the rest wait in Boredroom), in the order the web's inbox keeps (phase 7b,
  * 8 October 2026): follow-up asks with Reply, blocks on the person with Read, requests to accept with Answer, noted
  * commitments and open asks with Answer, then messages and replies with Read, each kind oldest first. Under them, "3 loose
- * ends" when the person has open ones: the whole row opens their Loose ends page.
+ * ends" when the person has open ones: the whole row opens their Loose ends page. Standup (phase 7c, 8–9 October 2026):
+ * today's drafts come first ("Standup for Design ready", as the web's "Waiting for you" puts them first), and a lead's
+ * unseen rollups last, each with Read.
  */
 function waitingView() {
   const items = itemWaiting().map((w) => ({ id: w.id, title: w.title || itemTitle(w), act: "ai-open", label: w.kind === "request" ? "Answer" : "Read", request: w.kind === "request" }));
   const rows = [
+    ...standupEntries().map((e) => ({ id: e.id, title: `Standup for ${e.team.name.trim()} ready`, act: "su-open", sk: "entry", label: "Read" })),
     ...waitingList().map((w) => ({ id: w.id, title: w.title, act: "fu-open", label: "Reply" })),
     ...loopBlocks().map((b) => ({ id: b.id, title: b.title, act: "lp-open", lk: "block", label: "Read" })),
     ...items.filter((r) => r.request),
     ...loopCommitments().map((c) => ({ id: c.id, title: c.title, act: "lp-open", lk: "commitment", label: "Answer" })),
     ...items.filter((r) => !r.request),
+    ...standupRollups().map((r) => ({ id: r.id, title: rollupTitle(r), act: "su-open", sk: "rollup", label: "Read" })),
   ].slice(0, 2);
   const loose = looseEndsRow();
   if (!rows.length && !loose) return "";
-  return `<ul class="list fade" aria-label="Waiting for you">${rows.map((r) => `<li><span class="t">${esc(r.title)}</span><button class="btn" data-act="${r.act}" data-id="${esc(r.id)}"${r.lk ? ` data-lk="${r.lk}"` : ""}>${r.label}</button></li>`).join("")}${loose}</ul>`;
+  return `<ul class="list fade" aria-label="Waiting for you">${rows.map((r) => `<li><span class="t">${esc(r.title)}</span><button class="btn" data-act="${r.act}" data-id="${esc(r.id)}"${r.lk ? ` data-lk="${r.lk}"` : ""}${r.sk ? ` data-sk="${r.sk}"` : ""}>${r.label}</button></li>`).join("")}${loose}</ul>`;
 }
 
 /** After a poll: the ask on the card was answered on the web, ran out of time or was cancelled meanwhile. */
@@ -2751,8 +2875,12 @@ const acceptLabelOf = (w) => { const s = str(w.acceptLabel).replace(/\s+/g, " ")
  */
 const blockFace = (b) => (b.from && typeof b.from === "object" && b.from.assistant && typeof b.from.assistant === "object" ? assistantOf(b.from.assistant) : me());
 
-/** The day card's row for open loose ends ("3 loose ends", the whole row opens the page), or "". */
+/**
+ * The day card's row for open loose ends ("3 loose ends", the whole row opens the page), or "". Not while loose ends are
+ * switched off for the person (phase 7c, 8–9 October 2026: the abilities catalogue).
+ */
 function looseEndsRow() {
+  if (offHere("loose_ends")) return "";
   const le = loops()?.looseEnds;
   if (!le || typeof le !== "object" || !Number.isInteger(le.open) || le.open <= 0) return "";
   const path = boredroomPath(le.href) ?? `/app/${encodeURIComponent(config.workspaceSlug)}/home/loose-ends`;
@@ -2972,6 +3100,309 @@ async function loopClosedElsewhere() {
   if (!message || !sameLoop(c) || card.phase !== "open" || busy) return;
   card = { ...card, phase: "gone", message, declining: false, dictating: null, sticky: true };
   render(); holdThenClose(CLOSE_AFTER_MS);
+}
+
+// ---- standup ---------------------------------------------------------------------------------------------------------
+// Owner decisions, 8–9 October 2026 (phase 7c, async standup option B; the header says what the cards do). The desktop
+// state's `standup` is DesktopStandup (src/lib/standup.ts, which this page cannot import): { ready, entries, rollups }.
+// `entries` are the person's drafts ready today (StandupEntryView: { id, team { id, name }, dateLabel, sinceLabel, status,
+// texts { yesterday, today, blocked } | null, draft, postTo { name, members }, posted, canUnskip, seen, href }); `rollups`
+// are today's rollups sent to them as a team lead and not seen yet (StandupRollupView: { id, team, dateLabel, content
+// { counts { members, posted }, blockers [{ name, onName, text }], noUpdate [{ name }], late [{ name, at }], cutoffAt },
+// href }). A press goes to /standup/entries/<id>/post, skip, unskip or seen, or /standup/rollups/<id>/seen, as the person;
+// Post answers { entry, message { href }, already? } (a second press answers the post it made, never a second post), Skip
+// and Undo the entry. The words are the contract's (STANDUP_WORDS), which this page cannot import. The card shows what Post
+// would send (`texts`, the person's approved words), else the draft's lines; what the person wrote and other people's names
+// and words go through esc() only, never Markdown or a link, and only Boredroom paths open. Before migration 0050
+// (`ready: false`) and from an older server (no `standup`) nothing changes: the plain notification cards show.
+
+const STANDUP_LINES = 4;      // lines shown per section, then "and 2 more"
+const ROLLUP_BLOCKERS = 4;    // blockers shown on the rollup card, then "and 2 more"
+const STANDUP_SECTIONS = ["yesterday", "today", "blocked"];
+/** The notifications that bring a card of each kind, by `resource_id`. */
+const STANDUP_NOTES = { entry: "brenda.standup", rollup: "brenda.standup_rollup" };
+/** Each standup notification's badge on the plain card: the contract's words; amber only for a draft that couldn't be made. */
+const STANDUP_PILLS = { "brenda.standup": ["Standup", ""], "brenda.standup_rollup": ["Standup rollup", ""], "brenda.standup_failed": ["Standup", "warn"] };
+/** A standup notification's badge, or "" (own keys only: a type is never looked up on the prototype). */
+const standupPill = (type) => (typeof type === "string" && Object.hasOwn(STANDUP_PILLS, type) ? `<span class="pill ${STANDUP_PILLS[type][1]}">${STANDUP_PILLS[type][0]}</span>` : "");
+/** The contract's words these cards use (STANDUP_WORDS in src/lib/standup.ts and section B.4), under names of their own. */
+const STANDUP_SAY = {
+  title: (team) => `Your standup for ${team}`,
+  labels: { yesterday: "Yesterday", today: "Today", blocked: "Blocked" },
+  nothing: "Nothing",
+  // Post sends every line, the hidden ones too: the line says so, and its tooltip lists them (fix review, 9 October 2026).
+  more: (n) => `and ${n} more, posted too`,
+  members: (n) => (Number.isInteger(n) && n > 0 ? `${n} ${n === 1 ? "person" : "people"}` : "member count not available"),
+  goesTo: (to, members, name) => `Goes to ${to} (${members}), as you, sent by ${name}`,
+  skip: "Skip today", edit: "Edit", post: "Post",
+  posted: (to, at) => `Posted to ${to}${at ? ` at ${at}` : ""}`,
+  skipped: "Skipped.", skippedSub: "The rollup lists you under No update, like anyone who didn't post.",
+  undone: "Undone.", undoneSub: (name) => `Your standup is back. ${name} shows it here once it's ready.`,
+  closed: "This standup was skipped or its day has passed.", notFound: "That isn't here any more.",
+  rollup: (team, posted, members) => `${team} standup: ${posted} of ${members} posted`,
+  blocked: "Blocked", noUpdate: "No update", late: (at, names) => `Posted after ${at}: ${names}`,
+};
+
+/** What the desktop state carries of it, or null: an older server, or before migration 0050 (`ready: false`). */
+const standupState = () => (data?.standup && typeof data.standup === "object" && data.standup.ready === true ? data.standup : null);
+const isStandupThing = (x) => !!x && typeof x === "object" && typeof x.id === "string" && !!x.team && typeof x.team === "object" && typeof x.team.name === "string" && !!x.team.name.trim();
+/** Today's drafts waiting for the person's press (none while standup is switched off for them). */
+const standupEntries = () => { const s = standupState(); return offHere("standup") ? [] : (Array.isArray(s?.entries) ? s.entries : []).filter((e) => isStandupThing(e) && e.status === "ready"); };
+/** A lead's rollups sent today and not seen yet. */
+const standupRollups = () => { const s = standupState(); return (Array.isArray(s?.rollups) ? s.rollups : []).filter((r) => isStandupThing(r) && !!r.content && typeof r.content === "object" && r.seen !== true); };
+const sameStandup = (c) => card?.kind === c.kind && card.w?.id === c.w.id;
+/** "#Design": the team channel's name as the server gives it, else the team's. */
+const postToOf = (e) => str(e.postTo?.name).trim() || `#${e.team.name.trim()}`;
+/** A moment as "09:41", or "" when it is not one. */
+const timeOf = (iso) => { const d = new Date(typeof iso === "string" ? iso : NaN); return Number.isNaN(d.getTime()) ? "" : hhmm(d); };
+/** "Design standup: 4 of 6 posted", the rollup notification's own words. */
+function rollupTitle(r) {
+  const counts = r.content.counts && typeof r.content.counts === "object" ? r.content.counts : {};
+  const n = (v) => (Number.isInteger(v) && v >= 0 ? v : 0);
+  return STANDUP_SAY.rollup(r.team.name.trim(), n(counts.posted), n(counts.members));
+}
+
+const standupCardOf = (e, n) => ({ kind: "standup", phase: "open", w: e, n: n ?? null, sticky: true, seen: e.seen === true, keys: {} });
+const rollupCardOf = (r, n) => ({ kind: "standup_rollup", w: r, n: n ?? null, seen: false, closeAfter: REPLY_CLOSE_MS });
+
+/** The card a standup's or a rollup's notification opens, or null for the plain notification card. */
+function standupCard(n) {
+  if (!standupState() || typeof n?.type !== "string") return null;
+  if (n.type === STANDUP_NOTES.entry) { const e = standupEntries().find((x) => x.id === n.resource_id); return e ? standupCardOf(e, n) : null; }
+  if (n.type === STANDUP_NOTES.rollup) { const r = standupRollups().find((x) => x.id === n.resource_id); return r ? rollupCardOf(r, n) : null; }
+  return null;
+}
+
+/** A draft or a rollup opened from the day card (its notification may have been shown and folded away already): seen at once. */
+function openStandup(sk, id) {
+  if (sk !== "entry" && sk !== "rollup") return;
+  const entry = sk === "entry";
+  const w = (entry ? standupEntries() : standupRollups()).find((x) => x.id === id);
+  if (!w) return;
+  const type = entry ? STANDUP_NOTES.entry : STANDUP_NOTES.rollup;
+  const n = (data?.notifications ?? []).find((x) => x.type === type && x.resource_id === id) ?? null;
+  if (n) shown.add(n.id);
+  const c = entry ? standupCardOf(w, n) : rollupCardOf(w, n);
+  openCard(c);
+  standupSeen(c);
+}
+
+/**
+ * Tells Boredroom the person has seen it (once per card; never an answer, and a failure is let go). A rollup seen here
+ * leaves the day card at once (the state carries unseen ones only, so the next poll would drop it anyway).
+ */
+function standupSeen(c) {
+  if (!c || (c.kind !== "standup" && c.kind !== "standup_rollup") || c.seen) return;
+  c.seen = true;
+  const id = encodeURIComponent(c.w.id);
+  call("POST", org(c.kind === "standup" ? `/standup/entries/${id}/seen` : `/standup/rollups/${id}/seen`), {}).catch(() => {});
+  const s = standupState();
+  if (c.kind === "standup_rollup" && s) data.standup = { ...s, rollups: (Array.isArray(s.rollups) ? s.rollups : []).filter((x) => x?.id !== c.w.id) };
+}
+
+/** A section's lines as Post would send them (the person's `texts`), else the draft's; list marks dropped, blank lines left out. */
+function sectionLines(e, s) {
+  const texts = e.texts && typeof e.texts === "object" ? e.texts : null;
+  const lines = texts ? str(texts[s]).split("\n") : (Array.isArray(e.draft?.sections?.[s]) ? e.draft.sections[s] : []).map((l) => str(l?.text));
+  return lines.map((l) => l.replace(/^\s*[-*•]\s+/, "").trim()).filter(Boolean);
+}
+
+/**
+ * One section: its label ("Since Friday", "Today", "Blocked") over its lines, at most four, then "and 2 more". A section
+ * left empty is left out, as the post leaves it out, except Blocked, which says "Nothing" (src/lib/standup.ts,
+ * standupPostBody).
+ */
+function standupSection(e, s, i) {
+  let lines = sectionLines(e, s);
+  if (!lines.length) { if (s !== "blocked") return ""; lines = [STANDUP_SAY.nothing]; }
+  const label = s === "yesterday" ? str(e.sinceLabel).trim() || STANDUP_SAY.labels.yesterday : STANDUP_SAY.labels[s];
+  const more = lines.length - STANDUP_LINES;
+  const rows = (more > 0 ? lines.slice(0, STANDUP_LINES) : lines).map((l) => `<li title="${esc(l)}"><span class="t">${esc(l)}</span></li>`).join("");
+  const hidden = more > 0 ? lines.slice(STANDUP_LINES).join("\n") : "";
+  return `<p class="lbl" id="ss${i}">${esc(label)}</p><ul aria-labelledby="ss${i}">${rows}${more > 0 ? `<li class="more" title="${esc(hidden)}">${esc(STANDUP_SAY.more(more))}</li>` : ""}</ul>`;
+}
+
+/**
+ * The standup card. Open: the team and the day, the three sections, who it goes to, then Skip today, Edit (in Boredroom)
+ * and Post, the card's one orange button and the person's consent: nothing posts until it is pressed. Then what happened:
+ * posted (with Open), skipped (with Undo while the server allows it), undone, or gone (answered in Boredroom, the day
+ * passed, standup switched off) in the server's words.
+ */
+function standupView() {
+  const c = card, e = c.w, m = moodOf();
+  const team = e.team.name.trim();
+  const to = postToOf(e);
+  const off = busy ? "disabled" : "";
+  const head = (title, under, o = {}) => `<div class="row top fade">${face(m)}<div class="grow"><p class="title ${o.full ? "full" : "wrap"}">${esc(title)}</p>${under}</div></div>`;
+  const sub = (s) => (s ? `<p class="sub">${esc(s)}</p>` : "");
+  if (c.phase === "posted") {
+    return `${head(STANDUP_SAY.posted(to, c.at), "", { full: true })}
+      <div class="actions">${c.href ? `<button class="btn" data-act="open-href" data-href="${esc(c.href)}">Open${icon("open")}</button>` : ""}<button class="btn primary" data-act="close">OK</button></div>`;
+  }
+  if (c.phase === "skipped") {
+    return `${head(STANDUP_SAY.skipped, sub(STANDUP_SAY.skippedSub), { full: true })}
+      <div class="actions">${c.canUnskip ? `<button class="btn ghost" data-act="su-unskip" ${off}>${icon("undo")}Undo</button>` : ""}<button class="btn primary" data-act="close" ${off}>OK</button></div>`;
+  }
+  if (c.phase === "result") {
+    return `${head(c.result, sub(c.resultSub), { full: true })}
+      <div class="actions"><button class="btn primary" data-act="close">OK</button></div>`;
+  }
+  if (c.phase === "gone") {
+    return `${head(STANDUP_SAY.title(team), sub(c.message))}
+      <div class="actions">${c.n ? `<button class="btn primary" data-act="read" data-id="${esc(c.n.id)}">OK</button>` : `<button class="btn primary" data-act="close">OK</button>`}</div>`;
+  }
+  const edit = boredroomPath(e.href);
+  return `${head(STANDUP_SAY.title(team), sub(str(e.dateLabel).trim()))}
+    <div class="standup fade" role="group" aria-label="${esc(STANDUP_SAY.title(team))}">${STANDUP_SECTIONS.map((s, i) => standupSection(e, s, i)).join("")}</div>
+    <p class="cap fade" id="sgoes">${esc(STANDUP_SAY.goesTo(to, STANDUP_SAY.members(e.postTo?.members), me().name))}</p>
+    <div class="actions stick"><button class="btn ghost" data-act="su-skip" ${off}>${STANDUP_SAY.skip}</button>${edit ? `<button class="btn" data-act="open-href" data-href="${esc(edit)}" title="Edit it in Boredroom" ${off}>${STANDUP_SAY.edit}${icon("open")}</button>` : ""}<button class="btn primary accent" data-act="su-post" aria-label="${esc(`Post to ${to}`)}" aria-describedby="sgoes" ${off}>${STANDUP_SAY.post}</button></div>`;
+}
+
+/**
+ * The draft is no longer waiting: off the day card, and, once the person answered it (here or in Boredroom), its
+ * notifications read (with the one on the card).
+ */
+function forgetStandup(c, answered) {
+  const ids = new Set((data?.notifications ?? []).filter((x) => x.type === STANDUP_NOTES.entry && x.resource_id === c.w.id).map((x) => x.id));
+  if (c.n) ids.add(c.n.id);
+  if (answered) for (const id of ids) call("PATCH", org(`/notifications/${encodeURIComponent(id)}`)).catch(() => {});
+  if (!data) return;
+  if (answered) data.notifications = (data.notifications ?? []).filter((x) => !ids.has(x.id));
+  const s = standupState();
+  if (s) data.standup = { ...s, entries: (Array.isArray(s.entries) ? s.entries : []).filter((x) => x?.id !== c.w.id) };
+}
+
+/**
+ * A press refused. Closed meanwhile (404, or 409: skipped or past its day, no longer in the team, standup switched off,
+ * the channel archived), the card says so in the server's words; anything else (someone else signed in as the person,
+ * not ready, offline, the same press still going through) stays on the card under it, to try again.
+ */
+function standupRefused(c, err) {
+  Sound.play("error");
+  if (!sameStandup(c)) return;
+  if ((err?.status === 404 || err?.status === 409) && err?.code !== "IN_PROGRESS") {
+    forgetStandup(c, false);
+    card = { ...card, phase: "gone", message: err?.message || (err?.status === 404 ? STANDUP_SAY.notFound : STANDUP_SAY.closed), sticky: true };
+    render(); return holdThenClose(CLOSE_AFTER_MS);
+  }
+  error = err?.message ?? String(err);
+  render();
+}
+
+/**
+ * Post (the person's words go to the team channel as theirs, sent by their assistant) or Skip today (the rollup lists them
+ * under No update, like anyone who didn't post). Each press carries its idempotency key (loopKey: kept for a retry after
+ * Boredroom could not be reached, new once the server has answered). The card then says what happened.
+ */
+async function decideStandup(step) {
+  const c = card;
+  if (c?.kind !== "standup" || c.phase !== "open" || busy || (step !== "post" && step !== "skip")) return;
+  standupSeen(c);
+  hush();
+  busy = true; error = null; render();
+  if (step === "post") Sound.play("send");
+  let r;
+  try { r = await call("POST", org(`/standup/entries/${encodeURIComponent(c.w.id)}/${step}`), {}, { idempotencyKey: loopKey(c, step) }); }
+  catch (err) {
+    busy = false;
+    if (err?.status && err.code !== "IN_PROGRESS") delete c.keys[step]; // the server answered: a new press is a new key
+    return standupRefused(c, err);
+  }
+  busy = false;
+  forgetStandup(c, true);
+  Sound.play(step === "post" ? "success" : "tick");
+  if (sameStandup(c)) {
+    if (step === "post") {
+      const entry = r?.entry && typeof r.entry === "object" ? r.entry : null;
+      card = { ...card, phase: "posted", at: timeOf(entry?.posted?.at), href: boredroomPath(r?.message?.href) ?? boredroomPath(entry?.posted?.href), sticky: true };
+    } else card = { ...card, phase: "skipped", canUnskip: r?.canUnskip === true, ...(isStandupThing(r) && r.id === c.w.id ? { w: r } : {}), sticky: true };
+    render(); holdThenClose(CLOSE_AFTER_MS);
+  }
+  refresh();
+}
+
+/** Undo on a skip, until the rollup has gone: the draft comes back to the card (or is drafted again, and shows once ready). */
+async function unskipStandup() {
+  const c = card;
+  if (c?.kind !== "standup" || c.phase !== "skipped" || !c.canUnskip || busy) return;
+  busy = true; error = null; render();
+  clearTimeout(closeTimer); restartCountdown(0);
+  let r;
+  try { r = await call("POST", org(`/standup/entries/${encodeURIComponent(c.w.id)}/unskip`), {}, { idempotencyKey: loopKey(c, "unskip") }); }
+  catch (err) {
+    busy = false;
+    if (err?.status && err.code !== "IN_PROGRESS") delete c.keys.unskip;
+    Sound.play("error");
+    if (!sameStandup(c)) return;
+    // Too late (the rollup has gone) or closed meanwhile: the server's words, and the Undo goes.
+    if (err?.status === 404 || err?.status === 409) card.canUnskip = false;
+    error = err?.message ?? String(err);
+    render(); return holdThenClose(REPLY_CLOSE_MS);
+  }
+  busy = false;
+  Sound.play("tick");
+  if (sameStandup(c)) {
+    // Back on the card with fresh keys: a skip after this is a new press, never the old one replayed.
+    if (isStandupThing(r) && r.id === c.w.id && r.status === "ready") { card = { ...standupCardOf(r, null), seen: true }; render(); }
+    else { card = { ...card, phase: "result", result: STANDUP_SAY.undone, resultSub: STANDUP_SAY.undoneSub(me().name), sticky: true }; render(); holdThenClose(CLOSE_AFTER_MS); }
+  }
+  refresh();
+}
+
+/**
+ * After a poll: the draft on the card was edited in Boredroom (the card shows the words Post would send now), or it is no
+ * longer waiting: posted or skipped there (the card says so, as if pressed here), or closed (the day passed, standup
+ * switched off, no longer in the team). A draft missing from the list is looked up first.
+ */
+async function standupClosedElsewhere() {
+  const c = card;
+  if (c?.kind !== "standup" || c.phase !== "open" || busy || c.checking || !standupState()) return;
+  const fresh = standupEntries().find((x) => x.id === c.w.id);
+  if (fresh) {
+    if (JSON.stringify(fresh.texts ?? null) !== JSON.stringify(c.w.texts ?? null) || fresh.postTo?.members !== c.w.postTo?.members) { card = { ...c, w: fresh }; render(); }
+    return;
+  }
+  c.checking = true;
+  let next = null;
+  try {
+    const v = await call("GET", org(`/standup/entries/${encodeURIComponent(c.w.id)}`));
+    if (isStandupThing(v)) {
+      if (v.status === "posted") next = { phase: "posted", at: timeOf(v.posted?.at), href: boredroomPath(v.posted?.href) };
+      else if (v.status === "skipped") next = { phase: "skipped", canUnskip: v.canUnskip === true, w: v };
+      else if (v.status !== "ready" && v.status !== "drafting") next = { phase: "gone", message: STANDUP_SAY.closed };
+    }
+  } catch (err) { if (err?.status === 404) next = { phase: "gone", message: STANDUP_SAY.notFound }; }
+  c.checking = false;
+  if (!next || !sameStandup(c) || card.phase !== "open" || busy) return;
+  forgetStandup(c, next.phase !== "gone");
+  card = { ...card, ...next, sticky: true };
+  render(); holdThenClose(CLOSE_AFTER_MS);
+}
+
+/**
+ * The rollup card, for a team lead: "Design standup: 4 of 6 posted", the day, the blockers people named in their own posted
+ * words (who, on whom, what; at most four, then "and 2 more"), who has no update as one plain grey line of names (one
+ * neutral list: never a reason, never a warning colour, never a chase), who posted after the cutoff, Open and OK.
+ */
+function rollupView() {
+  const c = card, r = c.w, k = r.content, m = moodOf();
+  const named = (p) => !!p && typeof p === "object" && typeof p.name === "string" && !!p.name.trim();
+  const blockers = (Array.isArray(k.blockers) ? k.blockers : []).filter((b) => named(b) && !!str(b.text).trim());
+  const quiet = (Array.isArray(k.noUpdate) ? k.noUpdate : []).filter(named);
+  const late = (Array.isArray(k.late) ? k.late : []).filter(named);
+  const more = blockers.length - ROLLUP_BLOCKERS;
+  const rows = (more > 0 ? blockers.slice(0, ROLLUP_BLOCKERS) : blockers).map((b) => {
+    const who = `${b.name.trim()}${str(b.onName).trim() ? ` on ${str(b.onName).trim()}` : ""}`;
+    const text = str(b.text).trim();
+    return `<li class="wrap"><span class="t" title="${esc(`${who}: ${text}`)}"><span class="who">${esc(who)}</span>: ${esc(text)}</span></li>`;
+  }).join("");
+  const day = str(r.dateLabel).trim() || str(k.dateLabel).trim();
+  const open = boredroomPath(r.href);
+  return `<div class="row top fade">${face(m)}<div class="grow"><p class="title wrap">${esc(rollupTitle(r))}</p>${day ? `<p class="sub">${esc(day)}</p>` : ""}</div></div>
+    ${rows ? `<div class="change fade"><p class="lbl" id="rblk">${STANDUP_SAY.blocked}</p><ul class="list lines" aria-labelledby="rblk">${rows}${more > 0 ? `<li class="more"><span class="t">${esc(STANDUP_SAY.more(more))}</span></li>` : ""}</ul></div>` : ""}
+    ${quiet.length ? `<div class="change fade"><p class="lbl" id="rnone">${STANDUP_SAY.noUpdate}</p><ul class="names" aria-labelledby="rnone">${quiet.map((p) => `<li>${esc(p.name.trim())}</li>`).join("")}</ul></div>` : ""}
+    ${late.length ? `<p class="cap fade">${esc(STANDUP_SAY.late(timeOf(k.cutoffAt) || "the rollup", late.map((p) => p.name.trim()).join(", ")))}</p>` : ""}
+    <div class="actions">${open ? `<button class="btn" data-act="open-href" data-href="${esc(open)}">Open${icon("open")}</button>` : ""}${c.n ? `<button class="btn primary" data-act="read" data-id="${esc(c.n.id)}">OK</button>` : `<button class="btn primary" data-act="close">OK</button>`}</div>`;
 }
 
 // ---- poking and admiring Brenda -----------------------------------------------------------------------------------

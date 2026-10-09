@@ -50,6 +50,12 @@ import { withUser } from "@/server/db";
 import type { AssistantProfiles } from "@/lib/assistant-look";
 import { ASSISTANT_ITEM_WORDS } from "@/lib/assistant-items";
 import { ACT_WORDS, actStateOf } from "@/lib/act-mode";
+import { AbilitiesSettings } from "@/components/app/abilities-settings";
+import { PreferencesSettings } from "@/components/app/preferences-settings";
+import { abilitiesView } from "@/server/services/abilities";
+import { listPreferences } from "@/server/services/preferences";
+import { ABILITY_WORDS, type AbilitiesView } from "@/lib/abilities";
+import { PREFERENCE_WORDS, type PreferenceList } from "@/lib/preferences";
 import { cn } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -127,6 +133,15 @@ const MODE_LABEL: Record<string, string> = { disabled: "Off", optional: "On, eac
  * section gains "Commitments in group chats" after Routines, for owners and HR (others read it): "Track commitments in
  * group chats" (OFF until turned on) and "Post gentle follow-ups in the thread" (OFF; needs tracking). Read here with the
  * page (commitments-settings); disabled under an info alert until migration 0048 is applied, and while unreadable.
+ *
+ * Abilities and "How I like things done" (owner decisions, 8–9 October 2026: phase 7c; contract C, D.5 and G.3): the
+ * Brenda section gains "Abilities" right after the Brenda card, for owners and HR: the catalogue of what everyone's
+ * assistant can do, each card with what it does, when to use it and what it never does, and "Offer {ability} in this
+ * workspace" for those that had no switch (the ones that had one link to their own card here, which stays the source of
+ * truth). "Your assistant" gains "Abilities" after Permissions (the same cards, "Use {ability}" for the person's own
+ * assistant) and "How I like things done" after it: the person's own list of how they like things done, in their words,
+ * which only they ever see. Both read with the page (`abilitiesView`, `listPreferences`; a failed read: the card reads
+ * it itself) and show disabled under an info alert until migration 0050 is applied.
  */
 export default async function SettingsPage({ params, searchParams }: { params: Promise<{ workspace: string }>; searchParams: Promise<{ section?: string; setup?: string; billing?: string; plan?: string }> }) {
   const { workspace } = await params;
@@ -146,9 +161,11 @@ export default async function SettingsPage({ params, searchParams }: { params: P
   // The open section's explanatory notes, shown at the bottom of the page after "Every change is audited."
   let notes: ReactNode = null;
   if (section === "assistant") {
-    const [a, activity, followUps, talk, mutes, ai, routines, quiet] = await Promise.all([assistantProfiles(ctx), listActivity(ctx, { limit: 5 }), followUpPreference(ctx), assistantTalkPreferences(ctx), listMutes(ctx), aiConnected(ctx.org.id),
+    const [a, activity, followUps, talk, mutes, ai, routines, quiet, abilities, preferences] = await Promise.all([assistantProfiles(ctx), listActivity(ctx, { limit: 5 }), followUpPreference(ctx), assistantTalkPreferences(ctx), listMutes(ctx), aiConnected(ctx.org.id),
       // Phase 7a: the person's routines and quiet hours (ready: false before 0046). A failed read: the card reads it itself.
-      listRoutines(ctx).catch(() => null), quietHoursFor(ctx).catch(() => null)]);
+      listRoutines(ctx).catch(() => null), quietHoursFor(ctx).catch(() => null),
+      // Phase 7c: the abilities and the person's preferences (ready: false before 0050). A failed read: the card reads it itself.
+      abilitiesView(ctx).catch((): AbilitiesView | null => null), listPreferences(ctx).catch((): PreferenceList | null => null)]);
     assistants = a;
     const { name } = a.personal;
     const now = new Date(); // the server's clock, so "Today" in the activity rows reads the same on both sides
@@ -162,6 +179,9 @@ export default async function SettingsPage({ params, searchParams }: { params: P
         {/* Whether the assistant asks before acting (owner decision, 8 October 2026: act without asking). */}
         {/* Review, 8 October 2026: says when acting without asking waits for the AI, and links owners and HR to the switch. */}
         <MyActModeSettings orgSlug={ctx.org.slug} name={name} initial={actStateOf(a)} ai={ai} workspaceHref={admin ? `${base}/settings?section=brenda#act-mode` : undefined} />
+        {/* What the assistant may do for the person, then how they like it done (owner decisions, 8–9 October 2026: phase 7c). */}
+        <AbilitiesSettings orgSlug={ctx.org.slug} scope="personal" name={name} initial={abilities} />
+        <PreferencesSettings orgSlug={ctx.org.slug} name={name} initial={preferences} />
         {/* What the assistant does on a schedule, then when it keeps quiet (owner decision, 8 October 2026: phase 7a). */}
         <RoutinesSettings orgSlug={ctx.org.slug} name={name} impersonated={!!ctx.user.impersonation} timeZone={quiet?.timezone ?? ctx.org.timezone} initial={routines} />
         <QuietHoursSettings orgSlug={ctx.org.slug} name={name} impersonated={!!ctx.user.impersonation} orgTimeZone={ctx.org.timezone} initial={quiet} />
@@ -175,6 +195,8 @@ export default async function SettingsPage({ params, searchParams }: { params: P
       <>
         <PageNote section="Your assistant">The name and look change how your assistant appears to you and in the desktop app. What it can do for you stays the same. Voices come from this computer; your choice of voice and speed is kept in this browser.</PageNote>
         <PageNote section="Permissions">{ACT_WORDS.settings.pageNote(name)}</PageNote>
+        <PageNote section="Abilities">{ABILITY_WORDS.notes.personalPage(name)}</PageNote>
+        <PageNote section={PREFERENCE_WORDS.section}>{PREFERENCE_WORDS.pageNote(name)}</PageNote>
         <PageNote section="Routines">A routine runs as you, with your permissions and limits, and does only what its preview showed when you enabled it. Follow-ups it asks are answered by each person&apos;s own assistant, under their own rules.</PageNote>
         <PageNote section="Quiet hours">During quiet hours nothing pops up or plays a sound on its own. Emails, such as the end-of-day report, are not held.</PageNote>
         <PageNote section="Follow-ups">Follow-ups between assistants never change anyone&apos;s task. Owners and HR see in Audit that a follow-up happened, not what was said.</PageNote>
@@ -282,12 +304,14 @@ export default async function SettingsPage({ params, searchParams }: { params: P
       );
     }
   } else if (section === "brenda") {
-    const [ai, brenda, a, usage, collection, mentions, notesSetting, actSetting, routinesSetting, commitmentsSetting] = await Promise.all([assistantStatus(ctx), brendaOverview(ctx), assistantProfiles(ctx), usageSummary(ctx),
+    const [ai, brenda, a, usage, collection, mentions, notesSetting, actSetting, routinesSetting, commitmentsSetting, abilities] = await Promise.all([assistantStatus(ctx), brendaOverview(ctx), assistantProfiles(ctx), usageSummary(ctx),
       withUser(ctx.user.profileId, (db) => followUpSettings(db, ctx.org.id)), withUser(ctx.user.profileId, (db) => mentionSettings(db, ctx.org.id)),
       withUser(ctx.user.profileId, (db) => reportNoteSettings(db, ctx.org.id)), withUser(ctx.user.profileId, (db) => workspaceActSetting(db, ctx.org.id)),
       routineSettingsFor(ctx),
       // Phase 7b: the commitments switches (ready: false before 0048). A failed read shows the card disabled.
-      withUser(ctx.user.profileId, (db) => commitmentSettings(db, ctx.org.id)).catch((): CommitmentSettings => ({ ready: false, track: false, threadFollowUps: false, since: null }))]);
+      withUser(ctx.user.profileId, (db) => commitmentSettings(db, ctx.org.id)).catch((): CommitmentSettings => ({ ready: false, track: false, threadFollowUps: false, since: null })),
+      // Phase 7c: the abilities catalogue (ready: false before 0050). A failed read: the card reads it itself.
+      abilitiesView(ctx).catch((): AbilitiesView | null => null)]);
     assistants = a;
     body = (
       <>
@@ -297,6 +321,8 @@ export default async function SettingsPage({ params, searchParams }: { params: P
           action={<Badge tone={ai.source === "none" ? "warning" : "success"} dot>{ai.source === "none" ? "AI not connected" : "On Claude"}</Badge>}>
           <div className="card-panel"><BrendaOrgSettings orgSlug={ctx.org.slug} initial={brenda} canEdit /></div>
         </SettingsSection>
+        {/* What everyone's assistant can do in this workspace (owner decisions, 8–9 October 2026: phase 7c). */}
+        <AbilitiesSettings orgSlug={ctx.org.slug} scope="workspace" name={a.personal.name} initial={abilities} />
         {/* Whether people may let their assistant act without asking (owner decision, 8 October 2026). */}
         <ActModeWorkspaceSettings orgSlug={ctx.org.slug} initial={actSetting} canEdit={admin} />
         {/* Who may schedule routines that chase other people (owner decision, 8 October 2026: phase 7a). */}
@@ -323,6 +349,7 @@ export default async function SettingsPage({ params, searchParams }: { params: P
       <>
         <PageNote section="Workspace assistant">Each person still has their own assistant; this one only signs what the workspace sends by itself.</PageNote>
         <PageNote section="Brenda">She reads what each person is allowed to see, does their own work for them, and asks before anything that lands on someone else, unless the person chose to let their assistant act without asking.</PageNote>
+        <PageNote section="Abilities">{ABILITY_WORDS.notes.workspacePage}</PageNote>
         <PageNote section="Acting without asking">{ACT_WORDS.workspace.pageNote}</PageNote>
         <PageNote section="Routines">{ROUTINE_WORDS.workspace.pageNote}</PageNote>
         <PageNote section={LOOP_WORDS.settings.card}>{LOOP_WORDS.settings.pageNote}</PageNote>
@@ -371,7 +398,7 @@ export default async function SettingsPage({ params, searchParams }: { params: P
 
   return (
     <AppShell ctx={ctx} counts={counts} teams={navTeams}>
-      <PageHeader title="Settings" description={admin ? "How the workspace runs: working hours, screen recording, Brenda, the plan, your assistant and your linked computers." : "Your assistant's name, look and voice in this workspace, whether it asks before acting, what it does on a schedule, when it keeps quiet, how it answers follow-ups about your work, and what other people's assistants may do."} divider />
+      <PageHeader title="Settings" description={admin ? "How the workspace runs: working hours, screen recording, Brenda, the plan, your assistant and your linked computers." : "Your assistant's name, look and voice in this workspace, whether it asks before acting, what it does for you and how you like it done, what it does on a schedule, when it keeps quiet, how it answers follow-ups about your work, and what other people's assistants may do."} divider />
       {sp.setup && admin ? <Alert tone="success" className="mb-6" title="Workspace ready">Work through the setup list to finish.</Alert> : null}
       <div className="grid gap-6 md:grid-cols-[12.5rem_minmax(0,1fr)] md:gap-10">
         {/* Sub-navigation (spec §6): 32px items, r8, fill-1 and the orange marker for the open one, fill-0 on hover; a scrolling row on a phone. */}

@@ -21,6 +21,7 @@ import { MENTION_WORDS, showsMentionRows } from "@/lib/mentions";
 import { ConversationAssistantSwitch } from "@/components/app/conversation-assistant-switch";
 import { ConversationCommitmentsSwitch } from "@/components/app/conversation-commitments-switch";
 import { CommitmentLabel } from "@/components/app/commitment-label";
+import { OwnAssistantOffScope } from "@/components/app/mention-autocomplete";
 import { TrackedDisclosure, isTrackedHere } from "@/components/app/tracked-disclosure";
 import { DEFAULT_ASSISTANT_NAME, toProfile, type AssistantProfile } from "@/lib/assistant-look";
 import type { AssistantRepliesState, MentionRef, MentionView, TaggableAssistant } from "@/lib/mentions";
@@ -127,6 +128,13 @@ const UNDER_ROW_MENU = "transition-opacity duration-75 group-hover:opacity-0 gro
  * Reply as its only action; the list's last line names it too. Its name and face come from `assistantProfiles(ctx)`
  * (the same read the shell makes), so they are right whatever an older thread() says. Direct threads show none of it;
  * neither does anything before migration 0048.
+ *
+ * Phase 7c (owner decisions, 8–9 October 2026). Private decline labels: "Declined" and "Not a commitment" reach only
+ * the commitment's committer and asker (the label query, and after migration 0050 the table's policy, leave them out
+ * for every other reader), and the label itself shows those two that it is theirs alone (commitment-label: a lock and
+ * "Only you and Ada see this."); nothing else changes here. Abilities: a person who switched "@mentions in Messages"
+ * off for their own assistant is not offered it in the composer (`OwnAssistantOffScope`, from the thread's
+ * `ownAssistantOff`).
  */
 export default async function MessagesPage({ params, searchParams }: { params: Promise<{ workspace: string }>; searchParams: Promise<{ c?: string; to?: string; task?: string; archived?: string }> }) {
   const { workspace } = await params;
@@ -228,6 +236,8 @@ export default async function MessagesPage({ params, searchParams }: { params: P
   // Phase 7b: whether the workspace assistant notes commitments here, and its name for the labels and the disclosure.
   const tracking = selected?.commitments ?? NO_TRACKING;
   const notingName = tracking.workspaceAssistantName || workspaceAssistant.name;
+  // Phase 7c: the person switched @mentions off for their own assistant (the thread says so; false before 0050).
+  const ownAssistantOff = selected?.ownAssistantOff === true;
 
   return (
     <AppShell ctx={ctx} counts={counts} teams={teams} bleed>
@@ -320,12 +330,12 @@ export default async function MessagesPage({ params, searchParams }: { params: P
                   <ScrollToLatest count={selected.messages.length} conversationId={selected.conversation.id} />
                 </div>
               </div>
-              {selected.conversation.archived_at ? <p className="shrink-0 border-t border-border px-6 py-4 text-center text-sm font-normal text-secondary">This channel is archived. {selected.conversation.can_manage ? "Restore it from the menu to write here again." : "The person who made it, the owner or HR can restore it."}</p> : <Composer key={selected.conversation.id} canVoice={ctx.plan.features.VOICE_NOTES} orgSlug={ctx.org.slug} conversationId={selected.conversation.id}
+              {selected.conversation.archived_at ? <p className="shrink-0 border-t border-border px-6 py-4 text-center text-sm font-normal text-secondary">This channel is archived. {selected.conversation.can_manage ? "Restore it from the menu to write here again." : "The person who made it, the owner or HR can restore it."}</p> : <OwnAssistantOffScope off={ownAssistantOff}><Composer key={selected.conversation.id} canVoice={ctx.plan.features.VOICE_NOTES} orgSlug={ctx.org.slug} conversationId={selected.conversation.id}
                 people={mentionPeople} mentions={{ ready: assistantReplies.ready, assistantAllowed: assistantReplies.ready && assistantReplies.workspaceOn && assistantReplies.here }} taggable={taggable}
                 task={task ? { id: task.id, title: task.title } : null}
                 notice={isTrackedHere(tracking) ? <TrackedDisclosure state={{ ...tracking, workspaceAssistantName: notingName }} /> : null}
                 prefill={task ? `How far with “${task.title}”?` : undefined}
-                placeholder={selected.conversation.kind === "direct" ? `Message ${title}` : `Message ${isRoom(selected.conversation.kind) ? `#${title}` : "everyone"}`} />}
+                placeholder={selected.conversation.kind === "direct" ? `Message ${title}` : `Message ${isRoom(selected.conversation.kind) ? `#${title}` : "everyone"}`} /></OwnAssistantOffScope>}
             </ReplyProvider>
           )}
         </section>

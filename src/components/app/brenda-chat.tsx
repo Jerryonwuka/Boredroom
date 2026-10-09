@@ -70,6 +70,12 @@
  * (mention-thread uses the same part); the Confirm button points at it (aria-describedby), and a saved Confirm keeps it.
  * The person's quiet hours (`useAssistant().quiet`, re-judged when a window starts or ends: `useQuietNow`) keep her
  * from reading a reply aloud on her own and from playing her sounds; Listen still plays (it is the person's own press).
+ *
+ * Abilities and preferences (owner decisions, 8–9 October 2026: phase 7c). When the workspace switches Voice off
+ * (`useVoiceOn`, from `assistantProfiles`' `voice: false`), the box has no microphone, no reply has Listen and nothing is
+ * read aloud (the server already reads "When she speaks" as never). A Confirm for what her assistant should remember or
+ * forget about the person (`remember_preference`, `forget_preference`: always asked, even when acting without asking)
+ * is pressed as **Remember** or **Forget** instead of Confirm, as in the notch; still white, never orange.
  */
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -90,9 +96,11 @@ import { ActModePill, useActMode } from "@/components/app/act-mode-pill";
 import { ACT_WORDS, undoOpen, type ActState, type UndoOffer } from "@/lib/act-mode";
 import { READBACK_WORDS, moreWords, shownLines, whatLine, type Readback } from "@/lib/confirm-readback";
 import type { QuietState } from "@/lib/routines";
+import type { AbilityKey } from "@/lib/abilities";
 import { playSound } from "@/lib/brenda-sound";
 import { useDictation } from "@/hooks/use-dictation";
 import { useSpeech } from "@/hooks/use-assistant-speech";
+import { useVoiceOn } from "@/hooks/use-abilities";
 import { speech } from "@/lib/assistant-speech/controller";
 import { speakable } from "@/lib/assistant-speech/speakable";
 import { api, isApiFailure, type ApiFailure } from "@/lib/api-client";
@@ -136,6 +144,11 @@ export const STARTERS: Record<"org" | "worker", string[]> = {
   org: ["What's waiting for me today?", "What did I miss in Messages?", "Who is working right now?", "Which assignments has nobody picked up?", "Summarise what the team got done this week"],
   worker: ["What's waiting for me today?", "What did I miss in Messages?", "Arrange my tasks for today", "Start the timer on my highest-priority task", "Remind me to call Josh at 7"],
 };
+/**
+ * The starters that need an ability (owner decisions, 8–9 October 2026: phase 7c): the drawer leaves one out while its
+ * ability is switched off for the person (catching up on Messages: `catch_up`).
+ */
+export const STARTER_ABILITY: Readonly<Record<string, AbilityKey>> = { "What did I miss in Messages?": "catch_up" };
 
 // What the history keeps (CONVERSATION_LIMITS in server/services/brenda-history.ts): the newest 200 messages, each up
 // to 8,000 characters, under a title of up to 200.
@@ -176,6 +189,12 @@ const landed = (theirs: BrendaMsg[], mine: BrendaMsg[]) => {
   const kept = mine.slice(-KEEP.messages);
   return kept.length === theirs.length && kept.every((m, i) => marks(m) === marks(theirs[i]));
 };
+
+/**
+ * The Confirm button's word: Remember or Forget for what the person's assistant keeps about how they like things done
+ * (phase 7c, as the notch says it), else Confirm.
+ */
+const confirmWord = (tool: string | undefined) => (tool === "remember_preference" ? "Remember" : tool === "forget_preference" ? "Forget" : "Confirm");
 
 /** What a card's detail box holds, for a screen reader: a routine's is its preview and what it does each time. */
 const detailLabel = (tool: string | undefined) => (tool === "create_routine" || tool === "update_routine" ? "The preview and what it does each time" : "The full message");
@@ -407,7 +426,10 @@ export function useBrendaChat({ orgSlug, keysActive = true, visible = true, onLe
   const [text, setText] = useState(initialText);
   // When she reads a reply aloud (owner decision, 7 October 2026: her voice): the person's choice, and whether the chat
   // is on screen and still here, kept for the reply that arrives after an await.
-  const { speak: prefer } = useAssistant();
+  // Phase 7c: with Voice switched off for the workspace she never reads aloud on her own (the server says "never" too).
+  const { speak } = useAssistant();
+  const voiceOn = useVoiceOn();
+  const prefer = voiceOn ? speak : "never";
   // During the person's quiet hours (phase 7a) she reads nothing aloud on her own and plays none of her sounds.
   const hushed = useQuietNow(orgSlug);
   const voice = useRef({ prefer, visible, alive: true, hushed });
@@ -791,6 +813,8 @@ export function BrendaMessages({ chat, onLeave, size = "md" }: { chat: BrendaCha
   const { name } = useAssistant().personal;
   const { messages, pending, error, act, decline, look, lastIndex, waitingAt } = chat;
   const voice = useSpeech();
+  // Phase 7c: no Listen while the workspace has Voice switched off.
+  const voiceOn = useVoiceOn();
   // Each Confirm card's readback has its own id, for its Confirm button's aria-describedby.
   const readbackId = useId();
   const lg = size === "lg";
@@ -843,7 +867,7 @@ export function BrendaMessages({ chat, onLeave, size = "md" }: { chat: BrendaCha
               <div className={cn("flex items-start", lg ? "gap-3" : "gap-2.5")}>
                 <BrendaFace size={lg ? "md" : "sm"} className={lg ? "mt-px" : "mt-0.5"} mood={mi === lastIndex ? look.mood : null} />
                 <Markdown variant="chat" source={m.content} base={`/app/${chat.orgSlug}`} onNavigate={open} className="flex-1 font-normal text-foreground" />
-                {voice.supported === true ? <ListenButton content={m.content} playing={voice.speaking && voice.id === chat.speechId(m)} small={!lg} onPress={() => chat.listen(m)} /> : null}
+                {voice.supported === true && voiceOn ? <ListenButton content={m.content} playing={voice.speaking && voice.id === chat.speechId(m)} small={!lg} onPress={() => chat.listen(m)} /> : null}
               </div>
               {voice.blocked !== null && voice.blocked === chat.speechId(m) ? (
                 <p role="status" className={cn("text-xs font-normal text-subtle", indent)}>{name} couldn&apos;t speak in this browser.</p>
@@ -883,7 +907,7 @@ export function BrendaMessages({ chat, onLeave, size = "md" }: { chat: BrendaCha
                       <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
                         {p.done ? <span className="text-xs font-medium text-secondary">{p.done}</span> : !p.token ? <span className="text-xs font-normal text-subtle">Expired. Ask {name} again.</span> : <>
                           <button type="button" className={btn("ghost", "sm")} aria-keyshortcuts={keys ? "N" : undefined} onClick={() => decline(mi, pi)}>Not now{keys ? <KeyHint>N</KeyHint> : null}</button>
-                          <button type="button" className={btn("primary", "sm")} aria-keyshortcuts={keys ? "Y" : undefined} aria-describedby={rb} onClick={() => void act(mi, pi, p)}><AnimatedCheck aria-hidden />Confirm{keys ? <KeyHint>Y</KeyHint> : null}</button>
+                          <button type="button" className={btn("primary", "sm")} aria-keyshortcuts={keys ? "Y" : undefined} aria-describedby={rb} onClick={() => void act(mi, pi, p)}><AnimatedCheck aria-hidden />{confirmWord(p.tool)}{keys ? <KeyHint>Y</KeyHint> : null}</button>
                         </>}
                       </div>
                     </li>
@@ -1131,6 +1155,8 @@ export function BrendaComposer({ chat, placeholder, className, onSend, label, le
 }) {
   const { text, setText, send, pending, dictation, actMode } = chat;
   const { personal: { name }, ai } = useAssistant();
+  // Phase 7c: no microphone while the workspace has Voice switched off.
+  const voiceOn = useVoiceOn();
   // She reads along as you type here; once it is sent she stops reading and gets to work.
   const readAlong = useReadAlong();
   const onKeyDown = (e: React.KeyboardEvent<HTMLElement>) => {
@@ -1153,7 +1179,7 @@ export function BrendaComposer({ chat, placeholder, className, onSend, label, le
     // No box of its own (`contents`): it only hears the typing in the box.
     <div className="contents" {...readAlong} onKeyDown={onKeyDown}>
       <PromptInputBox value={text} onValueChange={setText} onSend={submit} isLoading={pending} placeholder={placeholder ?? `Tell ${name} what you need…`} className={cn("[&_textarea]:min-w-0", className)} label={label ?? `Message ${name}`}
-        recording={dictation.listening} transcribing={dictation.busy} onToggleRecording={() => void dictation.toggle()} recordingSupported={dictation.supported !== false}
+        recording={dictation.listening} transcribing={dictation.busy} onToggleRecording={() => void dictation.toggle()} recordingSupported={voiceOn && dictation.supported !== false}
         recordingPlaceholder={dictation.engine === "whisper" ? "Listening… your words appear when you stop" : undefined}
         recordingHint={hint} recordingHeard={dictation.heard || null} onCancelRecording={() => dictation.cancel()} leading={leading}
         trailing={actMode.state.ready || trailing ? <><ActModePill control={actMode} compact={variant !== "hero"} ai={ai} />{trailing}</> : undefined} variant={variant} size={size} />

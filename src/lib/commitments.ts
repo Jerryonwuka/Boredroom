@@ -26,6 +26,7 @@
  * as written; nothing here turns them into Markdown or links, and nothing they say is an instruction to anyone's
  * assistant. Titles are clipped to 80 characters (`loopTitle`) wherever they go into a sentence.
  */
+import type { AbilityOff } from "@/lib/abilities";
 import { clip, type PersonRef } from "@/lib/follow-ups";
 import { dateTimeLabel } from "@/lib/assistant-items";
 
@@ -70,7 +71,15 @@ export function commitmentBadge(d: CommitmentDisplay, viewer: "committer" | "ask
 }
 
 export type MessageLabelState = "noted" | "done" | "declined" | "dismissed";
-export type MessageLabel = { state: MessageLabelState; text: string };   // text from LOOP_WORDS.label
+/**
+ * A message's commitment label (text from LOOP_WORDS.label). `private` (owner decision, 9 October 2026: phase 7c): a
+ * "Declined" or "Not a commitment" label, which only that commitment's committer and asker read (everyone else reads
+ * no label on that message); `other`: the other one of the two, by first name, for "Only you and Ada see this." (null:
+ * there is no other, "Only you see this."). "Noted" and "Done" are never private.
+ */
+export type MessageLabel = { state: MessageLabelState; text: string; private: boolean; other?: string | null };
+/** The label states only the commitment's two people read (owner decision, 9 October 2026). */
+export const PRIVATE_LABEL_STATES: readonly MessageLabelState[] = ["declined", "dismissed"];
 export const isMessageLabelState = (v: unknown): v is MessageLabelState => v === "noted" || v === "done" || v === "declined" || v === "dismissed";
 
 export type CommitmentView = {
@@ -147,7 +156,11 @@ export type LooseEndView = {
   createdAt: string; actedAt: string | null;
   href: string;                     // /app/{slug}/home/loose-ends?l={id}
 };
-export type LooseEndList = { ready: boolean; items: LooseEndView[]; counts: { open: number }; lastScanAt: string | null };
+/**
+ * `off` (phase 7c, owner decisions, 8–9 October 2026): who switched "Loose ends" off for this person (the workspace or
+ * they themself); the list is then empty. Null when it is on; absent before migration 0048.
+ */
+export type LooseEndList = { ready: boolean; items: LooseEndView[]; counts: { open: number }; lastScanAt: string | null; off?: AbilityOff };
 export type DetectedLooseEnd = {
   messageId: string; conversationId: string; contextMessageId: string | null; kind: LooseEndKind;
   counterpartMembershipId: string | null; title: string; dueAt: string | null; dueWords: string | null;
@@ -263,6 +276,8 @@ export const LOOP_WORDS = {
   label: {
     noted: "Noted", done: "Done", declined: "Declined", dismissed: "Not a commitment",
     aria: (W: string, state: MessageLabelState) => state === "noted" ? `${W} noted a commitment here` : `Commitment: ${({ done: "done", declined: "declined", dismissed: "not a commitment", noted: "noted" })[state]}`,
+    // Phase 7c (owner decision, 9 October 2026): a declined or "not a commitment" label is the two people's only.
+    privateHint: (other: string | null | undefined) => (other ? `Only you and ${other} see this.` : "Only you see this."),
   },
   disclosure: (W: string) => `${W} notes commitments made here; people accept them onto their own list.`,
   conversationSwitch: {
@@ -424,8 +439,9 @@ export const LOOP_WORDS = {
 } as const;
 
 /** The label a message carries, in words (`LOOP_WORDS.label`). */
-export function messageLabel(state: MessageLabelState): MessageLabel {
-  return { state, text: LOOP_WORDS.label[state] };
+export function messageLabel(state: MessageLabelState, other?: string | null): MessageLabel {
+  const isPrivate = PRIVATE_LABEL_STATES.includes(state);
+  return isPrivate ? { state, text: LOOP_WORDS.label[state], private: true, other: other ?? null } : { state, text: LOOP_WORDS.label[state], private: false };
 }
 
 /** What a loose end shows once something was done with it (`LOOP_WORDS.looseEnds.status`); null while it is open. */

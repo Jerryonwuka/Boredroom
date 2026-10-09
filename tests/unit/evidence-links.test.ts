@@ -66,7 +66,13 @@ describe("sourcesSuffix", () => {
 
   it("names every kind", () => {
     // Phase 7b (owner decision, 8 October 2026): commitments, loose ends and "blocked on you" items.
-    expect(Object.keys(EVIDENCE_WORDS).sort()).toEqual(["assistant_item", "attendance", "commitment", "conversation", "doc", "follow_up", "loose_end", "message", "review", "routine_run", "task", "task_block", "time_correction"]);
+    // Phase 7c (owner decisions, 8–9 October 2026): a standup draft and a rollup.
+    expect(Object.keys(EVIDENCE_WORDS).sort()).toEqual(["assistant_item", "attendance", "commitment", "conversation", "doc", "follow_up", "loose_end", "message", "review", "routine_run", "standup", "standup_rollup", "task", "task_block", "time_correction"]);
+  });
+
+  it("links a standup draft and a rollup to the Standup page, by id only (phase 7c)", () => {
+    expect(sourcesSuffix("acme", [{ kind: "standup", id: T }, { kind: "standup_rollup", id: C }])).toBe(` ([standup](/app/acme/home/standup?e=${T}), [rollup](/app/acme/home/standup?r=${C}))`);
+    expect(sourcesSuffix("acme", [{ kind: "standup", id: "x" }, { kind: "standup_rollup", id: null }])).toBe("");
   });
 
   it("links a commitment, a loose end and a block to their own pages, by id only", () => {

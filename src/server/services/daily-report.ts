@@ -49,6 +49,14 @@
  * when the reader can read it, and its to-do. An overdue commitment makes the day worth sending. Left out before
  * migration 0048, and when tracking is off and there is nothing to list; a list that could not be read says "not
  * available".
+ *
+ * Standup (owner decisions, 8–9 October 2026: phase 7c): after "Updates", a "Standup" section lists today's standup
+ * rollups the reader receives (a team lead's teams), one line per team ("**Design**: 4 of 6 posted", linked to the
+ * rollup) with the blockers people named in what they posted. A blocker naming the reader also goes into "Decisions for
+ * you" (Blocked tasks: "Ben is blocked on you: “Logo files” (standup)") unless that task is already there or an open
+ * "blocked on you" question already brings it to them. Read as the reader (standup.ts standupForReport: only rollups they
+ * receive). Left out before migration 0050 or when anything goes wrong; a standup alone does not make the day worth
+ * sending.
  */
 import { withUser, withWorker, type Db } from "@/server/db";
 import type { OrgContext } from "@/server/lib/api";
@@ -72,6 +80,7 @@ import { composeTemplate, type ComposeInput } from "@/server/services/follow-up-
 import { clamp, oneLine } from "@/server/services/copilot-excerpt";
 import { factsOrNull, firstName, whenLabel } from "@/lib/follow-ups";
 import { loopDueLabel, type CommitmentView } from "@/lib/commitments";
+import type { StandupRollupContent } from "@/lib/standup";
 
 export const REPORT_FOLDER = "Daily reports";
 
@@ -181,7 +190,16 @@ export type DailyReport = {
    * ("not available"); the whole is null (left out) before migration 0048, or when tracking is off and both are empty.
    */
   commitments?: { madeToday: DecisionItem[] | null; overdue: DecisionItem[] | null } | null;
+  /**
+   * Standup (phase 7c): today's rollups the reader receives, one per team, with the blockers named in what was posted;
+   * null (left out) before migration 0050, when the reader receives none, or when they could not be read.
+   */
+  standup?: ReportStandup | null;
 };
+
+/** One team's standup in the report (phase 7c): its rollup, how many posted of how many, the blockers people named. */
+export type ReportStandupTeam = { rollupId: string; team: string; posted: number; members: number; blockers: StandupRollupContent["blockers"]; href: string };
+export type ReportStandup = { teams: ReportStandupTeam[] };
 
 type Ref = { membershipId: string; id: string; title: string };
 type Extra = {
@@ -276,7 +294,7 @@ export async function buildDailyReport(ctx: OrgContext, opts: { useAssistant?: b
   });
   // What waits on the reader, and what changed since their previous report (phase 7a), and (phase 7b) the commitments,
   // read as them side by side.
-  const [decisions, compared, commitments] = await Promise.all([decisionsFor(ctx, people), changesFor(ctx, localDate, people), commitmentsFor(ctx, localDate)]);
+  const [decisions, compared, commitments, standup] = await Promise.all([decisionsFor(ctx, people), changesFor(ctx, localDate, people), commitmentsFor(ctx, localDate), standupFor(ctx, localDate)]);
   // A report goes out when something happened or something needs the reader; a scope with neither sends nothing.
   // Overdue or blocked work, reviews waiting for the reader and (phase 7a) any decision waiting on them count as needing
   // them, even on a quiet day; so does (phase 7b) an overdue commitment.
@@ -285,6 +303,9 @@ export async function buildDailyReport(ctx: OrgContext, opts: { useAssistant?: b
     || !!commitments?.overdue?.length;
   const waiting = decisionCount(decisions);
   const empty = !active && !issues && waiting === 0;
+  // Phase 7c: a blocker naming the reader in today's standup joins "Decisions for you", after the day was judged worth
+  // sending (a standup alone never makes it so).
+  if (standup) decisions.blocked = await withStandupBlockers(ctx, decisions.blocked, standup);
   // The model reads the plain list; the document's list links its tasks.
   const attention = attentionList(people, extra.waitingForYou, ctx.org.slug);
   const plain = plainHeadline(ctx, summary, people);
@@ -293,8 +314,93 @@ export async function buildDailyReport(ctx: OrgContext, opts: { useAssistant?: b
   return {
     localDate, title: `Team report, ${dayLabel(localDate)}`, scope: summary.scope, people, totals: summary.totals,
     headline, attention, waitingForYourReview: extra.waitingForYou, empty, updates: [], updatesAt: null, notes: [],
-    decisions, changes: compared.changes, snapshot: compared.snapshot, commitments,
+    decisions, changes: compared.changes, snapshot: compared.snapshot, commitments, standup,
   };
+}
+
+// ---- Standup (owner decisions, 8–9 October 2026: phase 7c) ----------------------------------------------------------------
+
+/**
+ * Today's standup rollups the reader receives, read as them (standup.ts, loaded when needed). Null before 0050, when
+ * there are none, or on any failure (the section is left out; it never fails the report).
+ */
+async function standupFor(ctx: OrgContext, localDate: string): Promise<ReportStandup | null> {
+  try {
+    const { standupForReport } = await import("@/server/services/standup");
+    const r = await standupForReport(ctx, localDate);
+    return r && r.teams.length ? { teams: r.teams } : null;
+  } catch (err) {
+    if (!isMissingSchema(err)) console.warn(`[daily report] standup left out: ${(err as Error)?.message ?? err}`);
+    return null;
+  }
+}
+
+/** The task a Blocked line names: its first quoted title ("“Logo files”: waiting on …"), else the line, clipped. */
+export function blockerTitle(text: string): string {
+  const m = /^\s*["“]([^"”]{1,200})["”]/.exec(text);
+  return quote(m ? m[1] : text, 120);
+}
+
+/**
+ * The blockers in today's standups that name the reader (pure): "Ben is blocked on you: “Logo files” (standup)", each
+ * linked to its task (or the rollup), left out when its task is already in `known` (a blocked task already listed, or an
+ * open "blocked on you" question), each task once.
+ */
+export function standupDecisions(s: ReportStandup, reader: string, known: Set<string>): DecisionItem[] {
+  const out: DecisionItem[] = [];
+  const seen = new Set<string>(known);
+  for (const t of s.teams) {
+    for (const b of t.blockers) {
+      if (b.onMembershipId !== reader || b.membershipId === reader) continue;
+      if (b.taskId) { if (seen.has(b.taskId)) continue; seen.add(b.taskId); }
+      const title = `“${blockerTitle(b.text)}”`;
+      out.push({ text: `${firstName(b.name)} is blocked on you: ${title} (standup)`, source: b.taskId ? { kind: "task", id: b.taskId } : { kind: "standup_rollup", id: t.rollupId }, link: b.taskId ? title : null });
+    }
+  }
+  return out;
+}
+
+/**
+ * "Decisions for you" → blocked tasks, with the standup's blockers that name the reader (deduplicated by task: one already
+ * listed, or with an open "blocked on you" question waiting on the reader, read as them). A list that could not be read
+ * stays "not available"; a failed check adds nothing.
+ */
+async function withStandupBlockers(ctx: OrgContext, blocked: DecisionItem[] | null, s: ReportStandup): Promise<DecisionItem[] | null> {
+  if (blocked === null) return null;
+  const mine = s.teams.flatMap((t) => t.blockers).filter((b) => b.onMembershipId === ctx.membership.id);
+  if (!mine.length) return blocked;
+  try {
+    const known = new Set(blocked.map((d) => (d.source?.kind === "task" ? d.source.id ?? "" : "")).filter(Boolean));
+    const ids = [...new Set(mine.map((b) => b.taskId).filter((x): x is string => !!x && UUID.test(x)))];
+    if (ids.length) {
+      const open = await withUser(ctx.user.profileId, (db) => db.query<{ task_id: string }>(
+        `SELECT task_id FROM task_blocks WHERE organisation_id = $1 AND waiting_on_membership_id = $2 AND status = 'open' AND task_id = ANY($3::uuid[])`,
+        [ctx.org.id, ctx.membership.id, ids])).catch(() => [] as { task_id: string }[]);
+      for (const r of open) known.add(r.task_id);
+    }
+    return [...blocked, ...standupDecisions(s, ctx.membership.id, known)];
+  } catch (err) {
+    console.warn(`[daily report] standup blockers left out of the decisions: ${(err as Error)?.message ?? err}`);
+    return blocked;
+  }
+}
+
+/**
+ * "## Standup" (phase 7c): one line per team, "**Design**: 4 of 6 posted ([rollup](…))", then the blockers named in what
+ * was posted, "**Ben Okafor** on **Ada Obi**: “Logo files”", at most 10 a team then "And {n} more.".
+ */
+export function standupMarkdown(slug: string, s: ReportStandup): string[] {
+  const lines = ["## Standup", ""];
+  for (const t of s.teams) {
+    lines.push(`- **${md(t.team)}**: ${t.posted} of ${t.members} posted${sourcesSuffix(slug, [{ kind: "standup_rollup", id: t.rollupId }])}`);
+    const shown = t.blockers.slice(0, DECISIONS_SHOWN);
+    for (const b of shown) {
+      const on = b.onName ? ` on **${md(b.onName)}**` : "";
+      lines.push(`  - Blocked: **${md(b.name)}**${on}: “${mdQuoted(blockerTitle(b.text))}”${b.taskId ? sourcesSuffix(slug, [{ kind: "task", id: b.taskId }]) : ""}`);
+    }
+    if (t.blockers.length > shown.length) lines.push(`  - And ${t.blockers.length - shown.length} more.`);
+  }
+  return lines;
 }
 
 // ---- Commitments (owner decisions, 8 October 2026: phase 7b) ------------------------------------------------------------
@@ -822,6 +928,8 @@ export function reportMarkdown(ctx: OrgContext, r: DailyReport, opts: { writtenA
     lines.push("## Updates", "", `_${md(asker)} asked everyone's assistant for today's update${r.updatesAt ? ` at ${hhmm(r.updatesAt, tz)}` : ""}._`, "",
       ...r.updates.map((u) => `- **${md(u.name)}**: ${mdQuoted(clamp(oneLine(u.line), UPDATE_LINE_MAX))}${u.id ? sourcesSuffix(slug, [{ kind: "follow_up", id: u.id }]) : ""}`), "");
   }
+  // Phase 7c: today's standup rollups the reader receives, after the Updates and before the notes.
+  if (r.standup?.teams.length) lines.push(...standupMarkdown(slug, r.standup), "");
   // What people asked their assistant to put in today's report (phase 6), in their own words, quoted as typed, each
   // linked to the note (phase 7a).
   if (r.notes?.length) {

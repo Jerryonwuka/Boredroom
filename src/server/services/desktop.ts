@@ -45,6 +45,15 @@
  * `brenda.blocked_on` carry the commitment's or block's id as `resource_id`, so an unread one opens its card. Before
  * migration 0048, or when it cannot be read, `loops` is `{ ready: false, commitments: [], blocks: [], looseEnds: { open: 0, … } }`;
  * an older notch ignores it.
+ *
+ * Standup, abilities and voice (owner decisions, 8–9 October 2026: phase 7c): the state's `standup` (lib/standup
+ * `DesktopStandup`) holds the person's standup drafts ready to post today (the notch's standup card: Post, Skip today,
+ * Edit on the web) and today's rollups they received and have not seen (its rollup card); notifications of type
+ * `brenda.standup`, `brenda.standup_rollup` and `brenda.standup_failed` carry the entry's or rollup's id as
+ * `resource_id`. `abilities.off` lists the abilities switched off for the person (by the workspace or by them);
+ * `assistant.voice` is false when the workspace switched Voice off (nothing is read aloud; the talk keys say so); the
+ * opener is `null` when the morning opener is switched off. Before migration 0050 `standup` is `{ ready: false, entries:
+ * [], rollups: [] }`, nothing is off and voice is on; an older notch ignores all three.
  */
 import { z } from "zod";
 import { withSystem, withUser } from "@/server/db";
@@ -69,6 +78,10 @@ import { schema0046Ready } from "@/server/lib/schema-0046";
 import { NO_QUIET, type QuietState } from "@/lib/routines";
 import { loopsForDesktop } from "@/server/services/commitments";
 import type { DesktopLoops } from "@/lib/commitments";
+import { standupForDesktop } from "@/server/services/standup";
+import type { DesktopStandup } from "@/lib/standup";
+import { abilitiesFor } from "@/server/services/abilities";
+import { abilitiesOff, abilityOff, type AbilityKey } from "@/lib/abilities";
 
 const CODE_TTL_SECONDS = 10 * 60;
 const DESKTOP_SESSION_DAYS = 90;
@@ -174,7 +187,7 @@ export async function revokeDevice(user: CurrentUser, sessionId: string) {
 export type DesktopAssistant = { name: string; colour: string; visor: AssistantVisor; eyes: AssistantEyes; face: FaceShades };
 const forNotch = (p: AssistantProfile): DesktopAssistant => ({ name: p.name, colour: p.colour, visor: p.visor, eyes: p.eyes, face: PALETTE[p.colour].face });
 
-export type { DesktopFollowUps, DesktopAssistantItems, DesktopRoutineRuns, DesktopLoops };
+export type { DesktopFollowUps, DesktopAssistantItems, DesktopRoutineRuns, DesktopLoops, DesktopStandup };
 const NO_FOLLOW_UPS: DesktopFollowUps = { ready: false, waiting: [], answered: [] };
 const NO_ITEMS: DesktopAssistantItems = { ready: false, waiting: [], updates: [] };
 const NO_RUNS: DesktopRoutineRuns = { ready: false, recent: [] };
@@ -223,7 +236,8 @@ export async function desktopState(ctx: OrgContext, o: { opener?: boolean } = {}
   const worker = ctx.membership.role === "employee" || ctx.membership.role === "manager";
   const lead = ctx.membership.role !== "employee";
   const noLoops: DesktopLoops = { ready: false, commitments: [], blocks: [], looseEnds: { open: 0, href: `/app/${ctx.org.slug}/home/loose-ends` } };
-  const [brief, session, clock, team, extra, followUps, assistantItems, routineRuns, loops] = await Promise.all([
+  const noStandup: DesktopStandup = { ready: false, entries: [], rollups: [] };
+  const [brief, session, clock, team, extra, followUps, assistantItems, routineRuns, loops, standup, abilities] = await Promise.all([
     briefing(ctx),
     worker ? currentSession(ctx) : Promise.resolve(null),
     worker ? myClock(ctx) : Promise.resolve(null),
@@ -247,6 +261,10 @@ export async function desktopState(ctx: OrgContext, o: { opener?: boolean } = {}
     routineRunsForDesktop(ctx).catch((err) => { console.warn(`[desktop] routine runs: ${(err as Error)?.message ?? String(err)}`); return NO_RUNS; }),
     // Nor does a problem with commitments, blocks or loose ends (owner decisions, 8 October 2026: phase 7b).
     loopsForDesktop(ctx).catch((err) => { console.warn(`[desktop] loops: ${(err as Error)?.message ?? String(err)}`); return noLoops; }),
+    // Nor does a problem with standups (owner decisions, 8–9 October 2026: phase 7c).
+    standupForDesktop(ctx).catch((err) => { console.warn(`[desktop] standup: ${(err as Error)?.message ?? String(err)}`); return noStandup; }),
+    // The abilities switched off for the person (never throws: everything on when it cannot be read).
+    abilitiesFor(ctx),
   ]);
   const mates = team ? team.rows.filter((r) => r.membership_id !== ctx.membership.id)
     .sort((a, b) => Number(!!b.session_state) - Number(!!a.session_state) || a.display_name.localeCompare(b.display_name))
@@ -256,7 +274,8 @@ export async function desktopState(ctx: OrgContext, o: { opener?: boolean } = {}
     .catch((err) => { console.warn(`[desktop] teammates' assistants: ${(err as Error)?.message ?? String(err)}`); return new Map<string, DesktopAssistant>(); });
   // The opener counts from the briefing just read (no second read of it), and only until the notch has shown today's
   // first card.
-  const opener = wantOpener ? await openerForNotch(ctx, brief) : null;
+  // Phase 7c: none while the morning opener is switched off for the person.
+  const opener = wantOpener && abilityOff(abilities, "morning_opener") === null ? await openerForNotch(ctx, brief) : null;
   // Quiet hours come with the profiles read: present only for someone who has them on.
   const quiet: QuietState = extra.assistants.quiet ?? (extra.quietReady ? { ready: true, active: false, until: null, nextStart: null } : { ...NO_QUIET });
   const s = session?.session ?? null;
@@ -274,7 +293,8 @@ export async function desktopState(ctx: OrgContext, o: { opener?: boolean } = {}
     // lib/assistant-look) (owner decision, 7 October 2026: personal assistants), and when the person's own reads replies
     // aloud (phase 2: her voice; the notch reads anything else, or its absence from an older server, as 'voice'), and
     // whether it asks before acting (act without asking, 8 October 2026; `ready: false` before 0045).
-    assistant: { personal: forNotch(extra.assistants.personal), workspace: forNotch(extra.assistants.workspace), speak: extra.assistants.speak, act, ...(ai === undefined ? {} : { ai }) } satisfies { personal: DesktopAssistant; workspace: DesktopAssistant; speak: AssistantSpeak; act: ActState; ai?: boolean },
+    // Phase 7c: `voice` false when the workspace switched Voice off (speak then reads 'never').
+    assistant: { personal: forNotch(extra.assistants.personal), workspace: forNotch(extra.assistants.workspace), speak: extra.assistants.speak, act, voice: extra.assistants.voice !== false, ...(ai === undefined ? {} : { ai }) } satisfies { personal: DesktopAssistant; workspace: DesktopAssistant; speak: AssistantSpeak; act: ActState; voice: boolean; ai?: boolean },
     settings: extra.settings, prefs: extra.prefs,
     clock: clock ? { status: clock.status, workingDay: clock.workingDay, startAt: clock.scheduledStartAt, endAt: clock.scheduledEndAt, clockInAt: clock.record?.clock_in_at ?? null, lateSeconds: clock.record?.late_seconds ?? 0 } : null,
     timer: s ? { id: s.id, version: s.version, state: s.state, taskId: s.taskId, taskTitle: s.taskTitle, confirmedSeconds: s.confirmedSeconds, openIntervalStartedAt: s.openIntervalStartedAt, serverNow: s.serverNow, estimateMinutes: s.estimateMinutes, progress: running?.progress_percent ?? 0, taskVersion: running?.version ?? null } : null,
@@ -290,6 +310,10 @@ export async function desktopState(ctx: OrgContext, o: { opener?: boolean } = {}
     routineRuns: routineRuns satisfies DesktopRoutineRuns,
     // Commitments and open asks waiting for the person, blocks waiting on them, and open loose ends (phase 7b).
     loops: loops satisfies DesktopLoops,
+    // Standup drafts ready to post and rollups not yet seen, today (owner decisions, 8–9 October 2026: phase 7c).
+    standup: standup satisfies DesktopStandup,
+    // The abilities switched off for the person (phase 7c): the notch leaves out what they need.
+    abilities: { off: abilitiesOff(abilities) satisfies AbilityKey[] },
     // The person's own open tasks, soonest due first: where a dropped file can go.
     myTasks: worker ? extra.progress.slice(0, 8).map((t) => ({ id: t.id, title: t.title, due: t.due_at })) : [],
     // Team leads and organisation accounts: who is working right now, for the small faces in the notch.

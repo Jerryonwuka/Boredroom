@@ -25,6 +25,11 @@
  * the templates from `ROUTINE_TEMPLATES` (weekdays at 17:30 to start with: "every evening"). Before migration 0048 it is
  * listed in `RoutineList.unavailable` and shown disabled with "This needs a database update first." (`unavailable`, or,
  * when the caller does not pass it, read once from GET /brenda/routines as a new routine's sheet opens).
+ *
+ * Abilities (owner decisions, 8–9 October 2026: phase 7c): a template whose ability is switched off for the person (the
+ * morning brief needs the Morning opener, a chase needs Follow-ups, Loose ends needs Loose ends; `RoutineList.
+ * unavailableBecause`) is shown disabled with "Switched off: {ability}", and where it is switched on again (the server
+ * refuses it anyway). It wins over the database line, since switching it on is what the person can do about it.
  */
 import { useEffect, useId, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -43,9 +48,16 @@ import {
   CADENCE_KINDS, DAY_NAMES, DAY_SHORT, ROUTINE_TEMPLATES, ROUTINE_WORDS, TIME_PATTERN, WEEK_ORDER, cadenceWords, isChasing, ordinal,
   type Cadence, type CadenceKind, type RoutineInput, type RoutineList, type RoutinePatch, type RoutineTemplate, type RoutineView,
 } from "@/lib/routines";
+import { ABILITY_WORDS, abilityTitle, type AbilityKey } from "@/lib/abilities";
 import { cn } from "@/lib/utils";
 
 const E = ROUTINE_WORDS.editor;
+/** Phase 7c: templates whose ability is switched off for the person, with the ability (`RoutineList.unavailableBecause`). */
+export type UnavailableBecause = NonNullable<RoutineList["unavailableBecause"]>;
+/** "Switched off: Morning opener. …and where it is switched on." */
+export function switchedOffWords(key: AbilityKey): string {
+  return `${ABILITY_WORDS.card.switchedOff(abilityTitle(key))}. Switch it on in Settings → Your assistant → Abilities, or ask an owner or HR if it is off for the workspace.`;
+}
 const T = ROUTINE_WORDS.templates;
 const OFFLINE = "Cannot reach the server. Check your connection and try again; nothing was changed.";
 
@@ -77,11 +89,13 @@ const told = (err: unknown) => (isApiFailure(err) && (err.error.status < 500 || 
  * follows. `timeZone`: the person's own (for the time's hint); `onTimeZone`: closes the sheet and takes the person to
  * the time zone in Quiet hours.
  */
-export function RoutineSheet({ orgSlug, mode, onClose, onChange, chase, unavailable, assistantName, timeZone, readOnly, onTimeZone }: {
+export function RoutineSheet({ orgSlug, mode, onClose, onChange, chase, unavailable, unavailableBecause, assistantName, timeZone, readOnly, onTimeZone }: {
   orgSlug: string; mode: RoutineSheetMode; onClose: () => void; onChange: (v: RoutineView, how: "created" | "updated" | "enabled") => void;
   chase: RoutineList["chase"];
   /** Phase 7b: templates the server cannot run yet (`RoutineList.unavailable`; loose_ends before 0048). Read here when not given. */
   unavailable?: readonly string[];
+  /** Phase 7c: templates whose ability is switched off for the person, with the ability. */
+  unavailableBecause?: UnavailableBecause;
   assistantName: string; timeZone: string; readOnly: boolean; onTimeZone: () => void;
 }) {
   const formId = useId();
@@ -134,7 +148,7 @@ export function RoutineSheet({ orgSlug, mode, onClose, onChange, chase, unavaila
           tabs={[{ label: E.setUp, value: "setup" }, { label: ROUTINE_WORDS.preview.heading, value: "preview" }, { label: ROUTINE_WORDS.history.heading, value: "history" }]} />
       ) : null}
       {step === "setup" ? (
-        <RoutineSetupForm formId={formId} orgSlug={orgSlug} routine={routine} chase={chase} unavailable={unavailable} timeZone={timeZone} readOnly={readOnly}
+        <RoutineSetupForm formId={formId} orgSlug={orgSlug} routine={routine} chase={chase} unavailable={unavailable} unavailableBecause={unavailableBecause} timeZone={timeZone} readOnly={readOnly}
           onSaving={setSaving} onSaved={saved} onTimeZone={onTimeZone} />
       ) : step === "preview" && routine ? (
         <>
@@ -164,22 +178,26 @@ type Errors = Partial<Record<"form" | "name" | "days" | "time" | "teams", string
  * The "Set up" step's form. Validated here first (a day, a 24-hour time, a team for a chase), then by the server, whose
  * words show at the top of the form and on the field they belong to.
  */
-function RoutineSetupForm({ formId, orgSlug, routine, chase, unavailable: given, timeZone, readOnly, onSaving, onSaved, onTimeZone }: {
-  formId: string; orgSlug: string; routine: RoutineView | null; chase: RoutineList["chase"]; unavailable?: readonly string[]; timeZone: string; readOnly: boolean;
+function RoutineSetupForm({ formId, orgSlug, routine, chase, unavailable: given, unavailableBecause: givenBecause, timeZone, readOnly, onSaving, onSaved, onTimeZone }: {
+  formId: string; orgSlug: string; routine: RoutineView | null; chase: RoutineList["chase"]; unavailable?: readonly string[]; unavailableBecause?: UnavailableBecause; timeZone: string; readOnly: boolean;
   onSaving: (busy: boolean) => void; onSaved: (v: RoutineView, created: boolean) => void; onTimeZone: () => void;
 }) {
   const id = useId();
   const editing = !!routine;
-  const firstTemplate: RoutineTemplate = routine?.template ?? "morning_brief";
+  // A new routine starts on the first template the person can choose (phase 7c: the morning brief may be switched off).
+  const firstTemplate: RoutineTemplate = routine?.template
+    ?? ROUTINE_TEMPLATES.find((t) => !givenBecause?.[t] && !(given ?? []).includes(t) && !(isChasing(t) && !chase.allowed)) ?? "morning_brief";
   const start = scheduleFor(firstTemplate);
   // Phase 7b: which templates cannot be chosen yet. The caller's list, or (a new routine, none given) the server's.
-  const [fetched, setFetched] = useState<readonly string[] | null>(null);
-  const unavailable = given ?? fetched ?? [];
+  const [fetched, setFetched] = useState<{ unavailable: readonly string[]; because: UnavailableBecause } | null>(null);
+  const unavailable = given ?? fetched?.unavailable ?? [];
+  // Phase 7c: why a template is switched off, from the caller or the same read.
+  const because: UnavailableBecause = givenBecause ?? fetched?.because ?? {};
   useEffect(() => {
     if (given || editing) return;
     let gone = false;
-    api<RoutineList & { unavailable?: string[] }>(`/api/orgs/${orgSlug}/brenda/routines`)
-      .then((r) => { if (!gone) setFetched(r.unavailable ?? []); }, () => { /* the server refuses it on save, in words */ });
+    api<RoutineList>(`/api/orgs/${orgSlug}/brenda/routines`)
+      .then((r) => { if (!gone) setFetched({ unavailable: r.unavailable ?? [], because: r.unavailableBecause ?? {} }); }, () => { /* the server refuses it on save, in words */ });
     return () => { gone = true; };
   }, [given, editing, orgSlug]);
   const [template, setTemplate] = useState<RoutineTemplate>(firstTemplate);
@@ -272,12 +290,15 @@ function RoutineSetupForm({ formId, orgSlug, routine, chase, unavailable: given,
           <div className="mt-2.5 space-y-3">
             {ROUTINE_TEMPLATES.map((t) => {
               const cannotChase = isChasing(t) && !chase.allowed;
+              // Phase 7c: its ability is switched off for the person (it is listed as unavailable too).
+              const offBecause = because[t] ?? null;
               // Phase 7b: a template the server cannot run yet (loose_ends before migration 0048).
-              const notReady = unavailable.includes(t);
-              const locked = cannotChase || notReady;
+              const notReady = !offBecause && unavailable.includes(t);
+              const locked = cannotChase || notReady || !!offBecause;
               return (
                 <Radio key={t} name={`${id}-template`} value={t} checked={template === t} disabled={locked} onChange={() => pickTemplate(t)}
-                  hint={<>{T[t].description}{notReady ? <span className="mt-0.5 block text-subtle">{LOOP_WORDS.looseEnds.notReady}</span>
+                  hint={<>{T[t].description}{offBecause ? <span className="mt-0.5 block text-subtle">{switchedOffWords(offBecause)}</span>
+                    : notReady ? <span className="mt-0.5 block text-subtle">{LOOP_WORDS.looseEnds.notReady}</span>
                     : cannotChase ? <span className="mt-0.5 block text-subtle">{chase.leadsOnly ? E.chaseLeadsOnly : E.pickTeam}</span> : null}</>}>
                   {T[t].name}
                 </Radio>

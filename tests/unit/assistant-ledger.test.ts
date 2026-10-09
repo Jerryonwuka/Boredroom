@@ -21,7 +21,8 @@ describe("migration 0037", () => {
     // list is checked against USAGE_PURPOSES in follow-ups-lib.test.ts. Phase 5 (owner decision, 8 October 2026): 0041
     // widens it again with 'mention' (checked in mentions-lib.test.ts).
     // Phase 7b (owner decision, 8 October 2026): 0048 adds 'loose_ends' and 'commitments' (checked in loops-migration.test.ts).
-    const later = new Set(["followup", "mention", "loose_ends", "commitments"]);
+    // Phase 7c (owner decisions, 8–9 October 2026): 0050 adds 'standup' (checked in loops-migration.test.ts).
+    const later = new Set(["followup", "mention", "loose_ends", "commitments", "standup"]);
     expect(listed(/ai_usage_purpose_check CHECK \(purpose IN \(([^)]*)\)\)/)).toEqual(USAGE_PURPOSES.filter((p) => !later.has(p)));
   });
 
@@ -71,7 +72,8 @@ describe("the limits", () => {
     // Phase 5 (owner decision, 8 October 2026): so does a mention in Messages, once per mention.
     // Phase 7b (owner decision, 8 October 2026): so does a look for loose ends, once per look. The workspace's own
     // commitment detection is the workspace's, never a person's.
-    expect([...LIMITED_PURPOSES]).toEqual(["chat", "plan", "report", "followup", "mention", "loose_ends"]);
+    // Phase 7c (owner decisions, 8–9 October 2026): so does a person's standup draft, once per draft.
+    expect([...LIMITED_PURPOSES]).toEqual(["chat", "plan", "report", "followup", "mention", "loose_ends", "standup"]);
     expect(AI_BURST).toEqual({ requests: 20, windowSeconds: 60 });
     expect(AI_BURST_MESSAGE).toBe("That's a lot of requests in one minute. Wait a moment, then try again.");
   });

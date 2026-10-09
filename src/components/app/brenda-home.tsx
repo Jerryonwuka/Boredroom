@@ -77,6 +77,16 @@
  * After it, a "Loose ends" block (loose-ends-list `LooseEndsPanel`): the person's three newest open loose ends, each a
  * row with the headline, where and when, the due date and a menu of its actions (a to-do always asks first, in a sheet),
  * then "See all {n}"; with none, one line and "Look for loose ends". Private to the person. Hidden before migration 0048.
+ *
+ * Async standup and abilities (owner decisions, 8–9 October 2026: phase 7c; contract G.2 and G.3). "Waiting for you"
+ * starts with the person's standup drafts ready to post today (standup-card: the three sections with their links, who
+ * it goes to, **Post to #Design**, Edit and Skip today), then, for a team lead, today's rollups not yet seen as compact
+ * rows with Open; the follow-up asks and items follow under the same title and count. Post is the panel's orange
+ * button only while her box is empty (its Send is orange once it has text): never two at once. A card posted or skipped
+ * here stays, saying what it became. What is switched off for the person (`data.off`) leaves out its asks: "What did I
+ * miss?" and "Catch me up on messages" (catch-up), "Follow up with someone" (follow-ups), "Pass a message on" (passing
+ * messages between assistants) and "Set up a routine" (routines); the loose-ends block is not shown (the page sends
+ * none). With Voice switched off for the workspace, her box has no microphone (brenda-chat).
  */
 import { useEffect, useId, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
 import { PALETTE, type AssistantColour } from "@/lib/assistant-look";
@@ -92,6 +102,10 @@ import { PromptTextAction } from "@/components/ui/ai-prompt-box";
 import { Menu, MenuItem, MenuLabel } from "@/components/ui/menu";
 import { ToolTile, ToolTileRow } from "@/components/ui/tool-tile";
 import { CountPill } from "@/components/ui/badge";
+import { SectionTitle } from "@/components/ui/card";
+import { StandupWaiting } from "@/components/app/standup-card";
+import type { DesktopStandup } from "@/lib/standup";
+import type { AbilityKey } from "@/lib/abilities";
 import { StatusDot, type StatusTone } from "@/components/ui/status-dot";
 import { BrendaCharacter, type BrendaCharacterHandle } from "@/components/app/brenda-character";
 import { BrendaFace } from "@/components/app/brenda-face";
@@ -150,9 +164,15 @@ export type HomeData = {
   loops?: LoopInboxItem[];
   /** Phase 7b: who a loose end can be handed to (only read when one on screen offers it). */
   handOverPeople?: Person[];
+  /** Phase 7c: today's standup drafts ready to post and the rollups not yet seen; null before 0050 or when unread. */
+  standup?: DesktopStandup | null;
+  /** Phase 7c: the abilities switched off for the person that her home's asks need. */
+  off?: AbilityKey[];
 };
 
-type Ask = { icon: React.ComponentType<{ "aria-hidden"?: boolean }>; label: string; prompt: string };
+type Ask = { icon: React.ComponentType<{ "aria-hidden"?: boolean }>; label: string; prompt: string; /** Phase 7c: the ability it needs. */ ability?: AbilityKey };
+/** Phase 7c: an ask whose ability is switched off for the person is left out. */
+const usable = (off: readonly AbilityKey[] | undefined) => (a: Ask) => !a.ability || !(off ?? []).includes(a.ability);
 
 /** Her asks in a new chat, as tool tiles: short labels (they sit under a 40px square, 81px wide); the words they put in the box. */
 const ASKS: Record<"worker" | "lead", Ask[]> = {
@@ -173,7 +193,7 @@ const ASKS: Record<"worker" | "lead", Ask[]> = {
 };
 
 /** The catch-up ask, first among the quick asks for everyone (owner decision, 8 October 2026: personal assistants, phase 3). */
-const CATCH_UP: Ask = { icon: AnimatedInbox, label: "What did I miss?", prompt: "What did I miss in Messages? Catch me up." };
+const CATCH_UP: Ask = { icon: AnimatedInbox, label: "What did I miss?", prompt: "What did I miss in Messages? Catch me up.", ability: "catch_up" };
 
 /** Her quick asks on her home screen: chips above the box (the label, then a small icon). Each fills the box, never sends. Four wrap at 400px. */
 const QUICK: Record<"worker" | "lead", Ask[]> = {
@@ -216,13 +236,13 @@ function moreAsks(role: HomeData["role"], followUps: boolean, talk: boolean): As
     ...(worker ? [{ icon: AnimatedClock, label: "Clock me in", prompt: "Clock me in." }, { icon: AnimatedPlay, label: "Start my timer", prompt: "Start the timer on " }] : []),
     { icon: AnimatedAlarmClock, label: "Set a reminder", prompt: "Remind me to " },
     // Phase 7a (owner decision, 8 October 2026): a routine of her own, set up from chat behind one Confirm.
-    { icon: AnimatedCalendarCheck, label: "Set up a routine", prompt: "Every Friday at 4pm, send me what's still owed" },
+    { icon: AnimatedCalendarCheck, label: "Set up a routine", prompt: "Every Friday at 4pm, send me what's still owed", ability: "routines" },
     { icon: AnimatedSend, label: "Send a message", prompt: "Send a message to " },
     // Phase 4: ask someone's assistant how their work is going, instead of asking them.
-    ...(followUps ? [{ icon: AnimatedMessageSquareReply, label: "Follow up with someone", prompt: "Follow up with " }] : []),
+    ...(followUps ? [{ icon: AnimatedMessageSquareReply, label: "Follow up with someone", prompt: "Follow up with ", ability: "follow_ups" as const }] : []),
     // Phase 6: pass something on to someone's assistant, which delivers it as the person's own words.
-    ...(talk ? [{ icon: AnimatedMessageSquare, label: "Pass a message on", prompt: "Tell " }] : []),
-    { icon: AnimatedInbox, label: "Catch me up on messages", prompt: "Catch me up on my messages." },
+    ...(talk ? [{ icon: AnimatedMessageSquare, label: "Pass a message on", prompt: "Tell ", ability: "assistant_talk" as const }] : []),
+    { icon: AnimatedInbox, label: "Catch me up on messages", prompt: "Catch me up on my messages.", ability: "catch_up" },
     { icon: AnimatedFileText, label: "Write a document", prompt: "Help me write a document about " },
   ];
 }
@@ -393,7 +413,14 @@ export function BrendaHome({ data }: { data: HomeData }) {
     if (chatting && !chat.pending && idle && !covered) focusBoxIn(box.current);
   }, [chatting, chat.pending]); // eslint-disable-line react-hooks/exhaustive-deps -- closing the sheet is not a reason to move the focus
 
-  const more = <MoreMenu role={role} followUps={data.followUpsReady} talk={data.itemsReady} onPick={(p) => fill(p, true)} />;
+  const more = <MoreMenu role={role} followUps={data.followUpsReady} talk={data.itemsReady} off={data.off} onPick={(p) => fill(p, true)} />;
+  // Phase 7c: the standup cards in "Waiting for you". Once shown they stay for the visit, so a card posted or skipped
+  // here keeps saying what it became after the page refreshes without it.
+  const standupEntries = data.standup?.entries ?? [];
+  const standupRollups = data.standup?.rollups ?? [];
+  const standupCount = standupEntries.filter((e) => e.status === "ready").length + standupRollups.length;
+  const [standupShown, setStandupShown] = useState(standupCount > 0);
+  if (standupCount > 0 && !standupShown) setStandupShown(true);
 
   // The morning opener (phase 7a): the server's word on the first visit, or (before 0046) this browser's own key. The
   // server's render cannot read that key: it draws the chips, as most visits of a day are later ones, and the browser
@@ -491,7 +518,19 @@ export function BrendaHome({ data }: { data: HomeData }) {
               Answering does not need the plan's assistant, so it shows on every plan. Kept mounted, so a card just
               answered stays (as "Sent.", or what it became) after the refresh drops it; with nothing to show it renders
               nothing. */}
-          {inbox ? (
+          {standupShown ? (
+            // Phase 7c: the standup first, then everything else waiting, under one title and one count.
+            <section aria-labelledby="home-waiting" className="mb-5 min-w-0">
+              <SectionTitle id="home-waiting" title={<span className="inline-flex items-center gap-2">Waiting for you<CountPill count={standupCount + waiting} tone="attention" /></span>}
+                action={inbox && waiting > 2 ? <Link href={`${base}/home/assistants`} className={buttonVariants({ variant: "ghost", size: "sm" })}>See all {waiting}</Link> : undefined} />
+              <StandupWaiting orgSlug={data.orgSlug} entries={standupEntries} rollups={standupRollups} timeZone={data.timeZone} standout={!chat.text.trim()}
+                cardClassName="bg-[color:var(--brenda-fill)] shadow-none" />
+              {inbox ? (
+                <AssistantWaiting orgSlug={data.orgSlug} asks={data.followUpsReady ? data.waiting : []} items={data.itemsReady ? data.items : []} loops={loops} timeZone={data.timeZone} now={data.now}
+                  max={2} title={null} compact cardClassName="bg-[color:var(--brenda-fill)] shadow-none" className="mt-2" />
+              ) : null}
+            </section>
+          ) : inbox ? (
             <AssistantWaiting orgSlug={data.orgSlug} asks={data.followUpsReady ? data.waiting : []} items={data.itemsReady ? data.items : []} loops={loops} timeZone={data.timeZone} now={data.now}
               max={2} seeAllHref={`${base}/home/assistants`} compact cardClassName="bg-[color:var(--brenda-fill)] shadow-none" className="mb-5" />
           ) : null}
@@ -507,7 +546,7 @@ export function BrendaHome({ data }: { data: HomeData }) {
                 <MorningOpener opener={opener} orgSlug={data.orgSlug} who={data.memberId} chip={cn(pill, "bg-[color:var(--brenda-fill)] [&_svg]:size-3.5")} onAsk={(p) => fill(p)} />
               ) : (
                 <div role="group" aria-label="Quick asks" className="mb-3 flex flex-wrap gap-2">
-                  {QUICK[kind].map((a) => (
+                  {QUICK[kind].filter(usable(data.off)).map((a) => (
                     <button key={a.label} type="button" onClick={() => fill(a.prompt)}
                       className={cn(pill, "bg-[color:var(--brenda-fill)] [&_svg]:size-3.5")}>
                       {a.label}<a.icon aria-hidden />
@@ -655,12 +694,12 @@ function ActionCard({ card, onPick }: { card: Card; onPick: () => void }) {
 }
 
 /** "More asks" on the left of her box's bottom row: a menu of more things to ask. Choosing one puts its sentence in the box. */
-function MoreMenu({ role, followUps, talk, onPick }: { role: HomeData["role"]; followUps: boolean; talk: boolean; onPick: (prompt: string) => void }) {
+function MoreMenu({ role, followUps, talk, off, onPick }: { role: HomeData["role"]; followUps: boolean; talk: boolean; off?: AbilityKey[]; onPick: (prompt: string) => void }) {
   const { name } = useAssistant().personal;
   return (
     <Menu label={`Ask ${name} to`} trigger={<PromptTextAction><AnimatedPlus aria-hidden />More asks</PromptTextAction>}>
       <MenuLabel>Ask {name} to…</MenuLabel>
-      {moreAsks(role, followUps, talk).map((a) => <MenuItem key={a.label} icon={<a.icon aria-hidden />} onSelect={() => onPick(a.prompt)}>{a.label}</MenuItem>)}
+      {moreAsks(role, followUps, talk).filter(usable(off)).map((a) => <MenuItem key={a.label} icon={<a.icon aria-hidden />} onSelect={() => onPick(a.prompt)}>{a.label}</MenuItem>)}
     </Menu>
   );
 }

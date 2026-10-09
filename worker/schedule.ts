@@ -248,13 +248,59 @@ export async function scheduleLooseEndSweep(now: Date = new Date()) {
   });
 }
 
+/**
+ * The async standup (owner decisions, 8–9 October 2026: phase 7c, option B). For each team that runs one today (switched
+ * on, its organisation active, the workspace offering standup, today one of its days; standup.ts standupDaysDue): one
+ * `standup.open` at the day's post time on the organisation's clock, queued at most an hour ahead (or at once when the
+ * time has passed and the cutoff has not), deduplicated per team per local date, and moved when the time changed while it
+ * still waits, as the daily report's jobs are. For each open rollup whose cutoff is within the hour: one `standup.rollup`
+ * at the cutoff (moved the same way). The sweep in the minute anything is due (standupSweepDue), and once an hour whatever
+ * happens. Returns at once before migration 0050. `now` for the tests.
+ */
+export async function scheduleStandups(now: Date = new Date()) {
+  const none = { opens: 0, rollups: 0, sweep: false };
+  try {
+    const { schema0050Ready } = await import("../src/server/lib/schema-0050");
+    if (!(await withWorker((db) => schema0050Ready(db)))) return none;
+  } catch { return none; }
+  const { standupDaysDue, standupRollupsDue, standupSweepDue } = await import("../src/server/services/standup");
+  const days = (await standupDaysDue(now)).filter((d) => !d.opened);
+  const rollups = await standupRollupsDue(now, 60);
+  const due = await standupSweepDue(now).catch((err) => { console.error("[worker] standup sweep due", (err as Error).message); return false; });
+  return withWorker(async (db) => {
+    let opens = 0, queuedRollups = 0;
+    for (const d of days) {
+      const runAt = new Date(d.postAt);
+      if (Number.isNaN(runAt.getTime()) || runAt.getTime() > now.getTime() + 60 * 60000) continue;
+      const dedupKey = `standup.open:${d.teamId}:${d.localDate}`;
+      // The post time changed after today's job was queued: the job still waiting moves with it.
+      await db.query(`UPDATE jobs SET next_run_at = $2 WHERE type = 'standup.open' AND state = 'pending' AND attempts = 0 AND dedup_key = $1 AND next_run_at <> $2`, [dedupKey, runAt]);
+      await enqueueJob(db, "standup.open", { teamId: d.teamId, localDate: d.localDate }, { dedupKey, runAt });
+      opens++;
+    }
+    for (const r of rollups) {
+      const runAt = new Date(r.cutoffAt);
+      if (Number.isNaN(runAt.getTime())) continue;
+      const dedupKey = `standup.rollup:${r.rollupId}`;
+      await db.query(`UPDATE jobs SET next_run_at = $2 WHERE type = 'standup.rollup' AND state = 'pending' AND attempts = 0 AND dedup_key = $1 AND next_run_at <> $2`, [dedupKey, runAt]);
+      await enqueueJob(db, "standup.rollup", { rollupId: r.rollupId }, { dedupKey, runAt });
+      queuedRollups++;
+    }
+    const minute = Math.floor(now.getTime() / 60_000);
+    if (due) await enqueueJob(db, "standup.sweep", {}, { dedupKey: `standup.sweep:${minute}` });
+    // Once an hour whatever happens (its own key, so a loop that misses a minute still runs it).
+    await enqueueJob(db, "standup.sweep", {}, { dedupKey: `standup.sweep:h${Math.floor(minute / 60)}` });
+    return { opens, rollups: queuedRollups, sweep: due };
+  });
+}
+
 /** A job as the worker claims it. */
 export type ClaimedJob = { id: string; type: string; payload: Record<string, unknown>; attempts: number; max_attempts: number };
 
 /**
  * Jobs another worker killed because it does not know them yet (correctness review, 8 October 2026; blocker fix,
  * 9 October 2026). While a worker deployed before a phase still runs against the same database, it claims about half
- * of the new jobs (follow-ups, mentions, assistant items, routines, commitments, loose ends) and marks each 'dead' at
+ * of the new jobs (follow-ups, mentions, assistant items, routines, commitments, loose ends, and phase 7c's standups) and marks each 'dead' at
  * once ("no handler for job type …"). Putting them back to 'pending' did not help: that worker, closer to the database
  * and polling just as often, took nearly every one of them again within a second, and killed it again, every 15
  * seconds, so a phase 7b job (the commitments scan) never ran. They are now claimed straight from 'dead' to 'running'
@@ -297,6 +343,8 @@ export async function scheduleMaintenance() {
   await scheduleCommitmentScans().catch((err) => console.error("[worker] commitment scan schedule", (err as Error).message));
   await scheduleCommitmentSweep().catch((err) => console.error("[worker] commitment sweep schedule", (err as Error).message));
   await scheduleLooseEndSweep().catch((err) => console.error("[worker] loose end sweep schedule", (err as Error).message));
+  // The async standup (phase 7c): days opening at their time, rollups at their cutoff, and the sweep.
+  await scheduleStandups().catch((err) => console.error("[worker] standup schedule", (err as Error).message));
   // Jobs an older worker killed are claimed and run by this worker's loop (claimKilledJobs, worker/index.ts).
   await withWorker(async (db) => {
     const expiring = await db.query<{ id: string }>(`SELECT id FROM recordings WHERE deleted_at IS NULL AND upload_state <> 'deleted' AND expires_at <= now()`);

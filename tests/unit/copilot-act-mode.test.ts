@@ -128,7 +128,13 @@ describe("the cached prefix and the chat schema", () => {
     const BLOCKED_LINE = "Waits for confirmation unless the person chose to act without asking.";
     expect(TOOLS.find((x) => x.name === "loose_end_action")?.description).toContain(LOOSE_TODO_LINE);
     expect(TOOLS.find((x) => x.name === "set_blocked_on")?.description).toContain(BLOCKED_LINE);
-    const prefix = (RULES + JSON.stringify(TOOLS)).replace(PAUSE_LINE, "").replace(LOOSE_TODO_LINE, "").replace(BLOCKED_LINE, "");
+    // Phase 7c (owner decisions, 8–9 October 2026, contract F.1): posting a standup and remembering a preference always
+    // wait, even in that mode: two more static sentences, the same for everyone.
+    const STANDUP_POST_LINE = "always waits for their Confirm, even when they act without asking";
+    const PREFERENCE_LINE = "Always waits for their Confirm, even when they act without asking.";
+    expect(TOOLS.find((x) => x.name === "standup_action")?.description).toContain(STANDUP_POST_LINE);
+    expect(TOOLS.find((x) => x.name === "remember_preference")?.description).toContain(PREFERENCE_LINE);
+    const prefix = (RULES + JSON.stringify(TOOLS)).replace(PAUSE_LINE, "").replace(LOOSE_TODO_LINE, "").replace(BLOCKED_LINE, "").replace(STANDUP_POST_LINE, "").replace(PREFERENCE_LINE, "");
     for (const w of [/without asking/i, /\bundo\b/i, /stillAsking/, /withoutAsking/, /act_mode|act mode/i, /\bauto\b/i]) expect(prefix, String(w)).not.toMatch(w);
     expect(prefix).not.toContain(actSituation(actOf()) as string);
   });
@@ -163,6 +169,8 @@ describe("why a Confirm card still asks (B.1)", () => {
     routine_consent: "Still asking: turning on a routine is your standing yes for what it does each time.",
     // Phase 7b (owner decision, 8 October 2026): a to-do made from someone else's words always asks first.
     others_words_todo: "Still asking: this to-do comes from words in a conversation, so you confirm it first.",
+    // Phase 7c (owner decisions, 8–9 October 2026): what the assistant remembers about the person is always their call.
+    preference_consent: "Still asking: what Max remembers about you is always your call.",
   };
 
   it.each([...ASK_REASONS])("%s", (reason) => {

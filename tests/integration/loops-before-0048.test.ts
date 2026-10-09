@@ -230,6 +230,6 @@ describe("then 0048, applied twice by hand", () => {
     expect(r.created).toHaveLength(1);
     const t = await thread(ada, design);
     expect(t!.commitments).toMatchObject({ ready: true, applies: true, tracked: true });
-    expect(t!.messages.find((m) => m.id === someMessage)!.commitment_label).toEqual({ state: "noted", text: "Noted" });
+    expect(t!.messages.find((m) => m.id === someMessage)!.commitment_label).toEqual({ state: "noted", text: "Noted", private: false });
   });
 });

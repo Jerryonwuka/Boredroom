@@ -44,6 +44,7 @@ import { AppError, conflict, forbidden, notFound } from "@/server/lib/errors";
 import { forget0041, isMissingSchema, retryWithout0041, schema0041Ready } from "@/server/lib/schema-0041";
 import { forget0042, schema0042Ready } from "@/server/lib/schema-0042";
 import { forget0043, schema0043Ready } from "@/server/lib/schema-0043";
+import { abilitiesIn } from "@/server/services/abilities";
 import { memberContext } from "@/server/lib/member-context";
 import { localMidnight, todayLocal } from "@/server/lib/time";
 import { audit, notify } from "@/server/services/common";
@@ -350,6 +351,13 @@ export async function claimMention(id: string, opts: { now?: Date } = {}): Promi
     if (!ctx) { await failIn(db, r, true); return null; }
     if (!r.workspace_on) { await refuseIn(db, r, "off_workspace"); return null; }
     if (!r.assistant_replies) { await refuseIn(db, r, "off_conversation"); return null; }
+    // Phase 7c (owner decisions, 8–9 October 2026: the abilities catalogue): the tagger switched "@mentions in Messages"
+    // off for their own assistant (Settings → Your assistant → Abilities). Only their own assistant's tags: someone
+    // else's assistant answers under its owner's own switch ("Let people tag …"). Never before migration 0050.
+    if (!r.owner_membership_id && (await abilitiesIn(db, r.organisation_id, r.tagger_membership_id)).personalOff.includes("mentions")) {
+      await refuseIn(db, r, "off_ability");
+      return null;
+    }
     if (r.archived) { await refuseIn(db, r, "archived"); return null; }
     // Someone else's assistant (phase 6): its owner still active and reading here, tags still on, the tagger not muted.
     if (r.owner_membership_id) {

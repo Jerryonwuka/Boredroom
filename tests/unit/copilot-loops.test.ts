@@ -133,8 +133,10 @@ describe("the registry", () => {
     const names = TOOLS.map((x) => x.name);
     for (const n of NEW) expect(names, n).toContain(n);
     expect(new Set(names).size).toBe(names.length);
-    expect(names.slice(-3)).toEqual(["list_routines", "create_routine", "update_routine"]);
-    expect(names.slice(-8, -3)).toEqual(["pass_message", "hand_over_request", "add_report_note", "assistant_inbox", "respond_to_item"]);
+    // Phase 7c (owner decisions, 8–9 October 2026): the standup and preference tools come last.
+    expect(names.slice(-4)).toEqual(["standup", "standup_action", "remember_preference", "forget_preference"]);
+    expect(names.slice(-7, -4)).toEqual(["list_routines", "create_routine", "update_routine"]);
+    expect(names.slice(-12, -7)).toEqual(["pass_message", "hand_over_request", "add_report_note", "assistant_inbox", "respond_to_item"]);
     expect(tool("loose_ends")?.input_schema.required).toEqual([]);
     expect(tool("loose_end_action")?.input_schema.required).toEqual(["looseEndId", "action"]);
     expect(tool("commitments")?.input_schema.required).toEqual([]);

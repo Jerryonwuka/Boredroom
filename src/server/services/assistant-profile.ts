@@ -26,6 +26,12 @@
  * the same one statement, so the web stops reading replies aloud and playing her sounds on its own while they are. It
  * is there only for someone who has quiet hours on; absent (before 0046, or none set) is never quiet. Saving them lives
  * in services/routines.
+ *
+ * Voice as an ability (owner decisions, 8–9 October 2026: phase 7c, the abilities catalogue): when owners or HR switch
+ * Voice off for the workspace (migration 0050's `brenda_settings.abilities_off`), the profiles read carries `voice:
+ * false` and `speak` reads 'never' (nothing is read aloud; the web hides the talk and listen controls, the notch says
+ * it is off). Absent otherwise, so the shape stays exactly as before for everyone; the person's own `speak` is kept as
+ * they chose it and comes back when Voice is offered again.
  */
 import { cache } from "react"; // React 19 exports cache in Node too (a pass-through outside a render), so the worker can import this file
 import { z } from "zod";
@@ -36,6 +42,7 @@ import { logAction } from "@/server/services/brenda";
 import { forget0045, retryWithout0045, schema0045Ready } from "@/server/lib/schema-0045";
 import { forget0046, retryWithout0046, schema0046Ready } from "@/server/lib/schema-0046";
 import { forget0047, retryWithout0047, schema0047Ready } from "@/server/lib/schema-0047";
+import { forget0050, retryWithout0050, schema0050Ready } from "@/server/lib/schema-0050";
 import { personTimeZone, quietState } from "@/server/lib/routine-time";
 import { ASK_STATE, actStateFrom } from "@/lib/act-mode";
 import type { QuietState } from "@/lib/routines";
@@ -140,6 +147,7 @@ type ProfilesRow = {
   assistant_name: string | null; assistant_colour: string | null; assistant_visor: string | null; assistant_eyes: string | null;
   act_mode: string | null; allow_auto_act: boolean | null;
   timezone: string | null; quiet_start: string | null; quiet_end: string | null; quiet_days: number[] | null;
+  abilities_off: string[] | null;
 };
 
 /**
@@ -161,21 +169,25 @@ export async function readAssistantProfiles(db: Db, ctx: Pick<OrgContext, "org" 
   const quiet = q46
     ? "q.timezone, to_char(q.quiet_start, 'HH24:MI') AS quiet_start, to_char(q.quiet_end, 'HH24:MI') AS quiet_end, q.quiet_days"
     : "NULL::text AS timezone, NULL::text AS quiet_start, NULL::text AS quiet_end, NULL::smallint[] AS quiet_days";
+  // Phase 7c: whether the workspace switched Voice off (before 0050 nothing is off).
+  const abilities = (await schema0050Ready(db)) ? "b.abilities_off" : "NULL::text[] AS abilities_off";
   const r = await db.one<ProfilesRow>(
-    `SELECT p.name, p.colour, p.visor, p.eyes, p.setup_done_at, ${speak}, ${act}, ${quiet},
+    `SELECT p.name, p.colour, p.visor, p.eyes, p.setup_done_at, ${speak}, ${act}, ${quiet}, ${abilities},
             b.assistant_name, b.assistant_colour, b.assistant_visor, b.assistant_eyes
      FROM (SELECT 1) one
      LEFT JOIN assistant_profiles p ON p.membership_id = $2
      ${q47 ? "LEFT JOIN assistant_private q ON q.membership_id = $2" : "LEFT JOIN assistant_profiles q ON q.membership_id = $2"}
      LEFT JOIN brenda_settings b ON b.organisation_id = $1`, [ctx.org.id, ctx.membership.id]);
+  const voiceOff = Array.isArray(r.abilities_off) && r.abilities_off.includes("voice");
   return {
     personal: toProfile(r),
     workspace: toProfile({ name: r.assistant_name, colour: r.assistant_colour, visor: r.assistant_visor, eyes: r.assistant_eyes }),
     setupDone: !!r.setup_done_at,
     canEditWorkspace: canEdit(ctx),
-    speak: toSpeak(r.speak),
+    speak: voiceOff ? "never" : toSpeak(r.speak),
     act: actStateFrom({ ready: act45, mode: r.act_mode, allowed: r.allow_auto_act, impersonated: !!ctx.user?.impersonation }),
     ...quietOf(q46, r, ctx.org.timezone, now),
+    ...(voiceOff ? { voice: false } : {}),
   };
 }
 
@@ -200,7 +212,7 @@ function quietOf(ready: boolean, r: Pick<ProfilesRow, "timezone" | "quiet_start"
 export const assistantProfiles = cache(async (ctx: OrgContext): Promise<AssistantProfiles> => {
   try {
     // A database restored to before 0045 (or 0046) while the process runs: once more without those columns, not Brenda for all.
-    const p = await retryWithout0046(() => retryWithout0045(() => retryWithout0047(() => withUser(ctx.user.profileId, (db) => readAssistantProfiles(db, ctx)))));
+    const p = await retryWithout0050(() => retryWithout0046(() => retryWithout0045(() => retryWithout0047(() => withUser(ctx.user.profileId, (db) => readAssistantProfiles(db, ctx))))));
     // Only for someone who chose 'auto' (review, 8 October 2026): without AI the built-in helper always asks, and the
     // drawer, Brenda's page and the notch say so instead of promising it acts straight away.
     return p.act?.mode === "auto" ? { ...p, ai: await aiConnected(ctx.org.id) } : p;
@@ -211,6 +223,7 @@ export const assistantProfiles = cache(async (ctx: OrgContext): Promise<Assistan
     forget0045();
     forget0046();
     forget0047();
+    forget0050();
     warnOnce();
     return { ...DEFAULT_PROFILES, setupDone: true, canEditWorkspace: canEdit(ctx), act: { ...ASK_STATE } };
   }

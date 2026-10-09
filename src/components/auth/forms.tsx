@@ -102,10 +102,13 @@ function takeAfterVerify(): string | null {
   } catch { return null; }
 }
 
+// Every form here is `method="post"`: before the page's script runs (slow or blocked JavaScript), pressing Enter submits
+// natively, and a GET would put the email and the password in the address bar, the history and the server logs (fix
+// review, 9 October 2026). A POST keeps them in the body; the page then simply loads again.
 export function LoginForm({ next, email: knownEmail }: { next?: string; email?: string }) {
   const { pending, error, fieldErrors, run, go, showFieldErrors } = useSubmit();
   return (
-    <form className={FORM} noValidate onSubmit={async (e) => {
+    <form className={FORM} method="post" noValidate onSubmit={async (e) => {
       e.preventDefault();
       const form = e.currentTarget;
       const errors = check(form, { email, password: (v) => (v ? null : "Enter your password.") });
@@ -133,7 +136,7 @@ export function SignupForm({ next, email: knownEmail }: { next?: string; email?:
   const { pending, error, fieldErrors, run, go, showFieldErrors } = useSubmit();
   const safe = next ? safeNextPath(next, "") : "";
   return (
-    <form className={FORM} noValidate onSubmit={async (e) => {
+    <form className={FORM} method="post" noValidate onSubmit={async (e) => {
       e.preventDefault();
       const form = e.currentTarget;
       const errors = check(form, { displayName: (v) => (v.trim() ? null : "Enter your name."), email, password: newPassword });
@@ -170,7 +173,7 @@ export function RecoverForm() {
     );
   }
   return (
-    <form className={FORM} noValidate onSubmit={async (e) => {
+    <form className={FORM} method="post" noValidate onSubmit={async (e) => {
       e.preventDefault();
       const form = e.currentTarget;
       const errors = check(form, { email });
@@ -189,7 +192,7 @@ export function RecoverForm() {
 export function ResetForm({ token }: { token: string }) {
   const { pending, error, fieldErrors, run, go, showFieldErrors } = useSubmit();
   return (
-    <form className={FORM} noValidate onSubmit={async (e) => {
+    <form className={FORM} method="post" noValidate onSubmit={async (e) => {
       e.preventDefault();
       const form = e.currentTarget;
       const errors = check(form, { password: newPassword });

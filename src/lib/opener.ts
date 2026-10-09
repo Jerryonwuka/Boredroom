@@ -8,8 +8,13 @@
  * A figure that could not be read is "not available", never 0. Link actions open the page; ask actions fill the box and
  * never send (owner decision, 5 October 2026).
  *
- * Client-safe: imports nothing.
+ * Phase 7c (owner decisions, 8–9 October 2026: the abilities catalogue): the opener itself can be switched off (the
+ * server then answers no opener and the page shows its usual chips), and an action whose ability is switched off for
+ * the person is left out ("What did I miss?" needs catch-up; `OPENER_ACTION_ABILITY`).
+ *
+ * Client-safe: imports only types (lib/abilities).
  */
+import type { AbilityKey } from "@/lib/abilities";
 
 export type OpenerCountKey = "requests" | "overdue" | "answers" | "items" | "reviews";
 export type OpenerCount = { key: OpenerCountKey; value: number | null; /** "2 requests waiting" | "Overdue tasks: not available" */ label: string; href: string };
@@ -68,14 +73,19 @@ export const OPENER_DEFAULTS: Record<OpenerRole, readonly Default[]> = {
   hr: [ASK.whoWorking, ASK.missed, ASK.weekSummary],
 };
 
+/** The ability a default action needs (phase 7c): an action whose ability is off for the person is left out. */
+export const OPENER_ACTION_ABILITY: Readonly<Record<string, AbilityKey>> = { missed: "catch_up" };
+
 export const OPENER_MIN_ACTIONS = 3;
 export const OPENER_MAX_ACTIONS = 6;
 
 /**
  * The opener's one-tap actions, 3 to 6: first one per count above 0 (requests, overdue, reviews, answers, messages from
- * assistants, in that order), then the role's defaults until there are 3. Pure (tests/unit/opener-actions.test.ts).
+ * assistants, in that order), then the role's defaults until there are 3. `off` (phase 7c): the abilities switched off
+ * for the person; a default that needs one is left out (so there may be two). Pure (tests/unit/opener-actions.test.ts).
  */
-export function openerActions(counts: OpenerCount[], role: OpenerRole, slug: string): OpenerAction[] {
+export function openerActions(counts: OpenerCount[], role: OpenerRole, slug: string, opts: { off?: readonly AbilityKey[] } = {}): OpenerAction[] {
+  const off = new Set(opts.off ?? []);
   const n = (key: OpenerCountKey) => counts.find((c) => c.key === key)?.value ?? 0;
   const out: OpenerAction[] = [];
   const href = (path: string) => `${base(slug)}${path}`;
@@ -92,6 +102,8 @@ export function openerActions(counts: OpenerCount[], role: OpenerRole, slug: str
   }
   for (const d of OPENER_DEFAULTS[role] ?? OPENER_DEFAULTS.employee) {
     if (out.length >= OPENER_MIN_ACTIONS) break;
+    const needs = OPENER_ACTION_ABILITY[d.id];
+    if (needs && off.has(needs)) continue;
     if (!out.some((a) => a.id === d.id)) out.push({ ...d });
   }
   return out.slice(0, OPENER_MAX_ACTIONS);
