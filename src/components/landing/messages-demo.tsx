@@ -3,7 +3,8 @@ import { useState } from "react";
 import { ArrowUp, SquareCheckBig } from "lucide-react";
 import { Tabs } from "@/components/ui/tabs";
 import { Avatar } from "@/components/ui/avatar";
-import { Pane } from "@/components/landing/parts";
+import { Pane, arrive } from "@/components/landing/parts";
+import { cn } from "@/lib/utils";
 
 const THREADS = [
   { value: "everyone", label: "Everyone", messages: [{ who: "Mary Eze", t: "09:02", body: "Client call moved to 15:00, please be on the clock." }, { who: "Ben Adeyemi", t: "09:04", body: "Noted. Deck will be at revision 2 by then." }, { who: "You", t: "09:06", body: "Great. Ada, how far with the homepage?", task: "Homepage design" }] },
@@ -13,20 +14,23 @@ const THREADS = [
 
 /**
  * Messages with the task attached, on real v4 underline tabs (the Design channel's unread count is an orange
- * attention pill until it is opened, as in the app). The thread is a picture of the app; the tabs work.
+ * attention pill until it is opened, as in the app). The thread is a picture of the app; the tabs work. As the card
+ * first arrives, the Everyone thread's messages come in one after another (owner request, 10 October 2026:
+ * arrival.tsx); a thread someone opens shows at once.
  */
 export function MessagesDemo() {
   const [tab, setTab] = useState<string>(THREADS[0].value);
   const [read, setRead] = useState<string[]>([]);
   const thread = THREADS.find((t) => t.value === tab) ?? THREADS[0];
+  const story = read.length === 0; // untouched: the first thread's arrival plays; after a choice, nothing waits
   const open = (v: string) => { setTab(v); setRead((r) => (r.includes(v) ? r : [...r, v])); };
   return (
     <Pane className="lp-reveal overflow-hidden shadow-chart">
       <Tabs tabs={THREADS.map((t) => ({ label: t.label, value: t.value, count: "count" in t && !read.includes(t.value) ? t.count : undefined, attention: true }))} value={tab} onChange={open} label="Threads" className="px-5 pt-3" />
       <div role="tabpanel" aria-label={thread.label} className="min-h-[248px] p-5">
         <ul className="space-y-4">
-          {thread.messages.map((m) => (
-            <li key={m.t + m.who} className="flex gap-3">
+          {thread.messages.map((m, i) => (
+            <li key={m.t + m.who} className={cn("flex gap-3", story && "lp-item")} style={story ? arrive(0, 350 + i * 450) : undefined}>
               <Avatar profileId={`landing-${m.who}`} name={m.who === "You" ? "Owner Admin" : m.who} size={28} />
               <div className="min-w-0 flex-1">
                 <p className="text-sm"><span className="font-semibold text-foreground">{m.who === "You" ? "You" : m.who.split(" ")[0]}</span><span className="ml-2 text-xs font-normal tabular-nums text-subtle">{m.t}</span></p>

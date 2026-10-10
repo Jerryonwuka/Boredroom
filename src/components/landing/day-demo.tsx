@@ -5,7 +5,7 @@ import { LINE_ICON, type Icon3DName } from "@/components/ui/icon";
 import { LiveIndicator } from "@/components/ui/status-dot";
 import { ToolSquare } from "@/components/ui/tool-tile";
 import { buttonVariants } from "@/components/ui/button";
-import { FAKE_BUTTON, Pane } from "@/components/landing/parts";
+import { FAKE_BUTTON, Pane, arrive } from "@/components/landing/parts";
 import { cn } from "@/lib/utils";
 
 const TYPED = "Finish the homepage design by Friday";
@@ -13,7 +13,7 @@ const TYPED = "Finish the homepage design by Friday";
 const FEED: { icon: Icon3DName; text: string; meta: string }[] = [
   { icon: "clock-in", text: "Ada clocked in", meta: "08:58, on time" },
   { icon: "stopwatch", text: "Ada started Homepage design", meta: "09:12" },
-  { icon: "video-people", text: "Ben is on a call with Ada", meta: "Brand deck, revision 2" },
+  { icon: "video-people", text: "Ben is on a call with Ada", meta: "in #Design" },
   { icon: "day-checklist", text: "Chidi added 3 to-dos", meta: "from a voice note" },
   { icon: "card-check", text: "Ada sent Homepage design for a check", meta: "revision 2, Figma link" },
   { icon: "shield-check", text: "David approved it", meta: "both revisions kept" },
@@ -74,7 +74,13 @@ export function DayDemo() {
         <p className="text-sm font-medium text-foreground">What do you need to do?</p>
         <div className="mt-2 min-h-11 rounded-xl border border-foreground px-3.5 py-2.5 text-base font-normal text-foreground shadow-[var(--field-ring)]">
           <span className="sr-only">{TYPED}</span>
-          <span aria-hidden>{TYPED.slice(0, typed)}<span className={cn("ml-px inline-block h-5 w-[1.5px] bg-foreground align-[-4px]", done && !reduced && "animate-pulse")} /></span>
+          {/* The finished line sits invisibly under the typing, so the field is its final height from the start: on a
+              phone the line wraps as it is typed, and growing then pushed everything below (integration, 10 October
+              2026: a 0.14 layout shift at 400px). */}
+          <span aria-hidden className="grid">
+            <span className="invisible col-start-1 row-start-1">{TYPED}<span className="ml-px inline-block h-5 w-[1.5px]" /></span>
+            <span className="col-start-1 row-start-1">{TYPED.slice(0, typed)}<span className={cn("ml-px inline-block h-5 w-[1.5px] bg-foreground align-[-4px]", done && !reduced && "animate-pulse")} /></span>
+          </span>
         </div>
         <ul className="mt-4 space-y-1">
           {TODOS.map(([t, m, running]) => (
@@ -86,7 +92,7 @@ export function DayDemo() {
           ))}
         </ul>
       </Pane>
-      <Pane className="lp-reveal flex flex-col p-5 sm:p-6">
+      <Pane className="lp-reveal flex flex-col p-5 sm:p-6" style={arrive(2)}>
         <div className="flex items-center justify-between gap-3">
           <p className="text-sm font-semibold text-foreground">Today in the room</p>
           <LiveIndicator />

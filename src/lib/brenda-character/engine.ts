@@ -58,6 +58,10 @@ export type BrendaState =
   | "idle" | "listening" | "thinking" | "working" | "happy" | "alert" | "question"
   | "error" | "sleeping" | "dizzy" | "love" | "proud";
 export type BrendaEmote = "love" | "wink" | "proud" | "surprised" | "yawn" | "happy" | "pleased" | "annoyed" | "celebrate";
+/** Where her light comes from (`setGlowMode`): her mood's colour, her own at rest, or her own whatever her mood. */
+export type BrendaGlowMode = "mood" | "own" | "own-always";
+/** A face held on top of her state until cleared (`setFace`): the landing hero's winking Brenda. */
+export type BrendaFace = "wink";
 /** What happened in the box she is reading: a character arrived, a few words went by, a lot arrived at once. */
 export type ReadCue = "key" | "beat" | "paste";
 type EyeShape = "pill" | "wide" | "happy" | "closed" | "flat" | "line" | "spiral" | "heart" | "star" | "wink" | "tired" | "dot";
@@ -570,8 +574,10 @@ type FurJob = { kit: FurKit; steps: [g: CanvasRenderingContext2D, run: () => voi
 /**
  * The radii (device pixels) her coat is baked at, about 1.19x apart: every size draws from the next rung up (scaled
  * down a little), so a handful of bakes cover every size and pixel ratio. The app's sizes land on or just under a rung.
+ * 236 is the landing hero's front Brenda (280px on a 2x screen, owner request 10 October 2026), so she draws from a
+ * native bake rather than 170's scaled up; the app's sizes never reach it (their largest radius is about 109).
  */
-const FUR_RUNGS = [12, 15, 18, 22, 26, 31, 37, 44, 52, 62, 74, 88, 104, 124, 146, 170];
+const FUR_RUNGS = [12, 15, 18, 22, 26, 31, 37, 44, 52, 62, 74, 88, 104, 124, 146, 170, 236];
 const FUR_MAX_KITS = 8;
 /** How long she takes to fade in when her first frame had to wait for her coat. */
 const APPEAR_MS = 180;
@@ -907,9 +913,12 @@ export class BrendaEngine {
   /**
    * "own" (her home, owner request 9 October 2026: the glow is "whatever colour the selected Brenda is"): her resting
    * light is her own colour, not her moods' violet; expressive moods (happy, alert, error…) still show their colour.
-   * "mood" everywhere else.
+   * "own-always" (the landing hero, owner feedback 10 October 2026): her own colour in every mood, so each expression
+   * keeps the light the backdrop is matched to; her eyes keep their mood's tint. "mood" everywhere else.
    */
-  private glowMode: "mood" | "own" = "mood";
+  private glowMode: BrendaGlowMode = "mood";
+  /** A face held under any passing expression (an emote wins while it lasts); kept by settle(). */
+  private face: BrendaFace | null = null;
   private beats = 0;
   private glow: RGB = hex(STATES.idle.glow);
   private glowTarget: RGB = hex(STATES.idle.glow);
@@ -970,13 +979,18 @@ export class BrendaEngine {
     this.pathR = -1; this.grads = null;
   }
   get look(): AssistantLook { return { ...this.drawn }; }
+  /** Whether any of her has been drawn yet (her coat was ready, or she has begun to fade in): the hero's `onReady`. */
+  get shown(): boolean { return this.appear > 0; }
 
-  /** Whether her light is her mood's colour ("mood") or, at rest, her own ("own"; her home). */
-  setGlowMode(mode: "mood" | "own") { this.glowMode = mode; }
+  /** Whether her light is her mood's colour ("mood"), her own at rest ("own"; her home) or her own always ("own-always"). */
+  setGlowMode(mode: BrendaGlowMode) { this.glowMode = mode; }
 
-  /** The colour of her light this frame: her own at rest in "own" mode, else her mood's. */
+  /** Holds a face on top of her state (her eyes only), or lets it go with null. */
+  setFace(face: BrendaFace | null) { this.face = face; }
+
+  /** The colour of her light this frame: her own at rest in "own" mode or always in "own-always", else her mood's. */
   private lightColour(): RGB {
-    return this.glowMode === "own" && RESTING_STATES.has(this.state) ? this.ownGlow : this.glow;
+    return this.glowMode === "own-always" || (this.glowMode === "own" && RESTING_STATES.has(this.state)) ? this.ownGlow : this.glow;
   }
 
   setState(next: BrendaState) {
@@ -992,21 +1006,25 @@ export class BrendaEngine {
     if (next === "dizzy") this.spin(1300, 2);
   }
 
-  /** A passing expression on top of the state. */
-  emote(e: BrendaEmote) {
+  /**
+   * A passing expression on top of the state. `burst: false` plays it without its particles (the landing hero, review
+   * fix 10 October 2026: her speech bubble rises where they would fly); the default keeps them.
+   */
+  emote(e: BrendaEmote, burst = true) {
     const n = nowS();
+    const emit = (kind: Particle["kind"], count: number) => { if (burst) this.emit(kind, count); };
     const hold = (shape: EyeShape, s: number) => { this.override = shape; this.overrideUntil = n + s; };
     switch (e) {
-      case "love": hold("heart", 2.2); this.emit("heart", 4); this.glowFlash("#ff4d6d"); break;
+      case "love": hold("heart", 2.2); emit("heart", 4); this.glowFlash("#ff4d6d"); break;
       case "wink": hold("wink", 0.7); this.tween("tilt", [[0.14, 120, E.out], [0.14, 300, E.lin], [0, 220, E.inOut]]); break;
-      case "proud": hold("star", 1.8); this.emit("star", 5); this.tween("tilt", [[-0.12, 200, E.out], [-0.12, 900, E.lin], [0, 300, E.inOut]]); break;
+      case "proud": hold("star", 1.8); emit("star", 5); this.tween("tilt", [[-0.12, 200, E.out], [-0.12, 900, E.lin], [0, 300, E.inOut]]); break;
       case "surprised": hold("dot", 0.9); this.eyeScale = 1.35; this.hop(); break;
-      case "yawn": hold("tired", 1.4); this.tween("sy", [[1.14, 500, E.inOut], [1, 500, E.inOut]]); this.emit("z", 1); break;
-      case "happy": hold("happy", 1.4); this.hop(); this.emit("spark", 5); break;
+      case "yawn": hold("tired", 1.4); this.tween("sy", [[1.14, 500, E.inOut], [1, 500, E.inOut]]); emit("z", 1); break;
+      case "happy": hold("happy", 1.4); this.hop(); emit("spark", 5); break;
       // A reply: smiling eyes and a small lift, quieter than happy (no hop, no sparks).
       case "pleased": hold("happy", 1.3); this.tween("oy", [[-0.06, 160, E.out], [0, 320, E.inOut]]); break;
       case "annoyed": hold("line", 0.9); this.squash(); this.glowFlash("#a855f7"); break;
-      case "celebrate": hold("happy", 1.6); this.spin(950, 1); this.emit("spark", 12); this.emit("star", 3); break;
+      case "celebrate": hold("happy", 1.6); this.spin(950, 1); emit("spark", 12); emit("star", 3); break;
     }
   }
 
@@ -1360,7 +1378,7 @@ export class BrendaEngine {
       x.lineWidth = R * 0.035; x.strokeStyle = "rgba(255,255,255,0.12)"; x.stroke(visor);
       // Eyes behind the glass: they move a little further than the visor (they sit deeper), glow softly and keep
       // every expression.
-      const shape = this.override ?? this.cfg.eye;
+      const shape = this.override ?? this.face ?? this.cfg.eye;
       x.fillStyle = rgba(eyeInk); x.strokeStyle = rgba(eyeInk);
       x.shadowColor = rgba(eyeInk, 0.85); x.shadowBlur = R * 0.08;
       const px = Math.sin(this.yaw) * R * 0.07, py = -Math.sin(this.pitch) * R * 0.05;

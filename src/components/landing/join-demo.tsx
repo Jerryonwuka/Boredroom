@@ -51,7 +51,7 @@ export function JoinDemo() {
               <div>
                 <p className="text-sm font-medium text-secondary">Share one link</p>
                 <div className="mt-3 flex h-10 items-center gap-3 rounded-xl border border-border-input pl-3 pr-1.5">
-                  <span className="min-w-0 flex-1 truncate font-mono text-meta text-foreground">boredroom.app/join/K7QM-3XNA</span>
+                  <span className="min-w-0 flex-1 truncate font-mono text-meta text-foreground">boredroom.cc/join/K7QM-3XNA</span>
                   <span className={fake("primary")}>Copy</span>
                 </div>
                 <ol className="mt-5 space-y-3">

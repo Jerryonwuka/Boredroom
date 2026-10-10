@@ -10,8 +10,9 @@
   interface and a display face (Geist, standing in for their proprietary Waldenburg) for page titles. Orange marks what
   is live, active, chosen or the one thing to do (the accent rules, owner decision 6 October 2026: the active nav icon,
   tab underlines, attention counts, the one standout button, live dots and timers, progress, checked boxes, selected
-  rows), 3 to 6 small touches a screen, never decoration. No gradients, no glass, no glow, no aurora (one exception,
-  owner decision 7 October 2026: Brenda's home panel and orb, §5).
+  rows), 3 to 6 small touches a screen, never decoration. No gradients, no glass, no glow, no aurora (two exceptions:
+  Brenda's home panel, owner decision 7 October 2026, §5; the landing hero's backdrop, owner request 10 October 2026,
+  §6).
   docs/design-system.md records the decisions; /dev/design shows every part.
 
   Order of this file:
@@ -806,7 +807,8 @@ html[data-brenda-chat] #workspace-sidebar, html:has([data-brenda-chat-view]) #wo
 /* ---------------------------------------------------------------------------------------------------------------
    6. Landing page (`.lp`: src/app/page.tsx, src/components/landing), v4 for marketing (owner request, 6 October 2026).
    The app's tokens and parts on the same canvas (no landing palette of its own), display type at marketing sizes, and
-   product views built from src/components/ui. No glass, glow, aurora or 3D icons; orange follows the accent rules.
+   product views built from src/components/ui. No glass, aurora or 3D icons, and one glow: the hero's backdrop in the colour of the
+   Brenda in front (owner request, 10 October 2026; docs/design-system.md); orange follows the accent rules.
    --------------------------------------------------------------------------------------------------------------- */
 @layer components {
 /* Type roles. Display: Geist 400, tight, white; lines under titles: Inter 400 in the secondary grey. */
@@ -828,14 +830,54 @@ html[data-brenda-chat] #workspace-sidebar, html:has([data-brenda-chat-view]) #wo
 }
 }
 
-/* A block fades in and lifts 12px over its first 180px on screen, where the browser runs scroll-driven animations;
-   elsewhere, and with reduced motion, it simply shows (nothing is hidden waiting for script). */
-@supports (animation-timeline: view()) {
-  @media (prefers-reduced-motion: no-preference) {
-    .lp-reveal { animation: lp-reveal linear both; animation-timeline: view(); animation-range: entry 0% entry 180px; }
+/* Arrivals (owner request, 10 October 2026: "add other animations on other sections in the website"; markup contract in
+   components/landing/arrival.tsx). Once per visit, not tied to the scroll position: a block, or the parts of a picture
+   in the order its story happens, rises 12px into place the first time it comes into view. The finished state is the
+   default: only what script armed below the fold waits at its starting pose, so without script, already on screen or
+   with reduced motion nothing is hidden. Opacity and transform only (no layout shift), backwards fill only (each
+   element's own transitions and transforms are untouched afterwards). `.lp-reveal` (a block that moves itself) used to
+   scrub with the scroll; it now arrives once like the rest. */
+@media (prefers-reduced-motion: no-preference) {
+  :is([data-lp-armed]:not([data-lp-arrived]) .lp-item, .lp-item[data-lp-armed]:not([data-lp-arrived]), .lp-reveal[data-lp-armed]:not([data-lp-arrived])) {
+    opacity: 0; transform: var(--lp-from, translate3d(0, 12px, 0));
+  }
+  :is([data-lp-arrived] .lp-item, .lp-item[data-lp-arrived], .lp-reveal[data-lp-arrived]) {
+    animation: lp-arrive var(--lp-dur, 700ms) cubic-bezier(0.22, 1, 0.36, 1) backwards;
+    animation-delay: var(--lp-d, calc(var(--lp-i, 0) * 70ms));
   }
 }
-@keyframes lp-reveal { from { opacity: 0; transform: translateY(12px); } }
+@keyframes lp-arrive { from { opacity: 0; transform: var(--lp-from, translate3d(0, 12px, 0)); } }
+/* Each item states its own pose and length (custom properties inherit, and a card's pose must not pass to its words). */
+.lp-item, .lp-reveal { --lp-from: translate3d(0, 12px, 0); --lp-dur: 700ms; }
+/* Story beats that light rather than travel (a badge, a chip): a small settle from 92%. */
+.lp-pop { --lp-from: scale(0.92); --lp-dur: 420ms; }
+/* Report bars grow from their baseline, one day after another (the chart's own bars: components/ui/charts BarChart). */
+@media (prefers-reduced-motion: no-preference) {
+  [data-lp-armed]:not([data-lp-arrived]) .lp-bars span[title] { transform: scaleY(0); }
+  [data-lp-arrived] .lp-bars span[title] { transform-origin: 50% 100%; animation: lp-grow 900ms cubic-bezier(0.22, 1, 0.36, 1) backwards; animation-delay: calc(var(--lp-bar, 0) * 70ms + 150ms); }
+  .lp-bars [role="img"] div:nth-child(2) > span[title] { --lp-bar: 1; }
+  .lp-bars [role="img"] div:nth-child(3) > span[title] { --lp-bar: 2; }
+  .lp-bars [role="img"] div:nth-child(4) > span[title] { --lp-bar: 3; }
+  .lp-bars [role="img"] div:nth-child(5) > span[title] { --lp-bar: 4; }
+  .lp-bars [role="img"] div:nth-child(6) > span[title] { --lp-bar: 5; }
+  .lp-bars [role="img"] div:nth-child(7) > span[title] { --lp-bar: 6; }
+}
+@keyframes lp-grow { from { transform: scaleY(0); } }
+@media print { [data-lp-armed] .lp-item, [data-lp-armed].lp-item, .lp-reveal[data-lp-armed] { opacity: 1 !important; transform: none !important; } }
+
+/* Sticky pictures (owner request, 10 October 2026: "let the card stick to the top of that section, so that when we
+   scroll only the overflowing text scrolls and the card stays sticky till we're done with this section"). In a
+   two-column section whose text runs longer than its picture, the picture's column stretches to the text's height and
+   the picture starts level with the text, holds under the nav while the text scrolls past, and leaves with the end of
+   the text. Sticky positioning only (no script, no jump); from 768px wide and 560px tall (stacked on phones, and a
+   picture never sticks taller than a short window). --lp-sticky-top is the notch nav's open height (52px,
+   site-nav.module.css), so a held picture clears the notch folded (34px) and opened by hover alike; 24px of air under
+   it (76px in all). The FAQ's title holds the same way beside its answers. */
+.lp { --lp-sticky-top: 52px; }
+@media (min-width: 768px) and (min-height: 560px) {
+  .lp-sticky-col { align-self: stretch; }
+  .lp-sticky { position: sticky; top: calc(var(--lp-sticky-top) + 24px); }
+}
 
 /* Marquees (the questions strip and the week's moments): tracks hold their list twice. The edges fade out (a mask over
    the content, not a coloured gradient). Hover pauses them; reduced motion stops them. */
@@ -853,4 +895,130 @@ html[data-motion="paused"] :is(.marquee-track, .lp-mq-y-track) { animation-play-
 .lp-faq summary::-webkit-details-marker { display: none; }
 @media (prefers-reduced-motion: reduce) {
   .marquee-track, .lp-mq-y-track { animation: none; }
+}
+
+/* ---- The hero (owner request, 10 October 2026): Brenda in every colour on a backdrop of the one in front. The second
+   approved exception to "no gradients, no glow" (docs/design-system.md, Principles 6). Hero builder's markup:
+   components/landing/hero-stage.tsx, hero-carousel.tsx. ---- */
+@property --lp-hero-tint { syntax: "<color>"; inherits: true; initial-value: #f56d5c; }
+
+.lp { --lp-nav-h: 57px; } /* the notch header's sticky box (site-nav.module.css .shell) */
+
+@layer components {
+.lp-hero {
+  --u: 176px;                                   /* the front Brenda's size; the carousel reads it */
+  --lp-hero-pull: calc(var(--u) * -0.05);        /* the headline tucks under her */
+  --lp-glow-top: 26%; --lp-glow-halo: 10%; --lp-glow-wide: 8%; --lp-drift: 18%; --lp-grain: 0.05;
+  --lp-hero-tint: var(--lp-tint-dark, #f56d5c);
+  position: relative; isolation: isolate; overflow: clip;
+  margin-top: calc(-1 * var(--lp-nav-h));
+  padding-top: calc(var(--lp-nav-h) + 20px); padding-bottom: 48px;
+  transition: --lp-hero-tint 700ms var(--ease-out);
+}
+[data-theme="light"] .lp-hero {
+  --lp-hero-tint: var(--lp-tint-light, #c94c3d);
+  --lp-glow-top: 12%; --lp-glow-halo: 7%; --lp-glow-wide: 6%; --lp-drift: 10%; --lp-grain: 0.03;
+}
+/* Under 360px the longest flipped line ("team is waiting on") fits only at 34px; the lead steps down with it, so the
+   gap to the headline stays small. */
+@media (max-width: 359px) {
+  .lp-hero-title { font-size: 34px; line-height: 38px; }
+  .lp-hero .lp-lead { font-size: 16px; line-height: 24px; }
+}
+@media (min-width: 640px) {
+  .lp-hero { --u: 220px; --lp-hero-pull: calc(var(--u) * -0.1); padding-top: calc(var(--lp-nav-h) + 28px); padding-bottom: 56px; }
+}
+@media (min-width: 1024px) {
+  .lp-hero { --u: 280px; padding-bottom: 72px; }
+}
+/* Short laptop screens: a smaller stage and headline keep the buttons above the fold. 840px, not 760px (integration,
+   10 October 2026): a 13-inch laptop's browser window is about 790px tall, and at 280px the buttons end at 791px. */
+@media (min-width: 1024px) and (max-height: 840px) {
+  .lp-hero { --u: 220px; }
+  .lp-hero-title { font-size: 56px; line-height: 60px; }
+}
+/* A 1366 × 768 screen leaves a window about 660px tall. */
+@media (min-width: 1024px) and (max-height: 700px) {
+  .lp-hero { --u: 200px; padding-top: calc(var(--lp-nav-h) + 16px); } /* not under 200px: that is the phone layout */
+  .lp-hero-title { font-size: 48px; line-height: 52px; }
+}
+
+.lp-hero-backdrop { position: absolute; inset: 0; z-index: 0; pointer-events: none;
+  background:
+    radial-gradient(64% 50% at 50% 0%, color-mix(in srgb, var(--lp-hero-tint) var(--lp-glow-top), transparent), transparent 75%),
+    radial-gradient(34% 30% at 50% 30%, color-mix(in srgb, var(--lp-hero-tint) var(--lp-glow-halo), transparent), transparent 70%),
+    radial-gradient(120% 78% at 50% 0%, color-mix(in srgb, var(--lp-hero-tint) var(--lp-glow-wide), transparent), transparent 80%);
+  background-repeat: no-repeat; }
+/* The very subtle effect behind them: two pools of her light drift slowly in opposite directions. Compositor-only
+   (transform). Review fix, 10 October 2026: at 9%, ±2.5% and 34 s nobody could see it move; now light slowly moving,
+   still quiet. */
+.lp-hero-drift { position: absolute; inset: -8% -12% 22% -12%; pointer-events: none; }
+.lp-hero-drift::before, .lp-hero-drift::after { content: ""; position: absolute; inset: 0; will-change: transform;
+  animation: lp-hero-drift-a 20s ease-in-out infinite alternate; }
+.lp-hero-drift::before { background: radial-gradient(38% 42% at 28% 30%, color-mix(in srgb, var(--lp-hero-tint) var(--lp-drift), transparent), transparent 70%); }
+.lp-hero-drift::after { background: radial-gradient(34% 40% at 74% 24%, color-mix(in srgb, var(--lp-hero-tint) var(--lp-drift), transparent), transparent 70%);
+  animation-name: lp-hero-drift-b; animation-duration: 22s; }
+@keyframes lp-hero-drift-a { from { transform: translate3d(-7%, -2%, 0) scale(1); } to { transform: translate3d(7%, 5%, 0) scale(1.12); } }
+@keyframes lp-hero-drift-b { from { transform: translate3d(7%, 4%, 0) scale(1.12); } to { transform: translate3d(-7%, -3%, 0) scale(1); } }
+/* Static grain: kills banding in the deep gradient; fades out before the hero's foot so there is no seam. */
+.lp-hero-grain { position: absolute; inset: 0; pointer-events: none; opacity: var(--lp-grain);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='96' height='96'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 .7 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 96px 96px; /* a small tile: as an image, the browser could count a 160px one as the page's largest paint */
+  -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 45%, transparent 90%); mask-image: linear-gradient(to bottom, #000 0%, #000 45%, transparent 90%); }
+[data-theme="light"] .lp-hero-grain { filter: invert(1); }
+html[data-motion="paused"] .lp-hero-drift::before, html[data-motion="paused"] .lp-hero-drift::after,
+.lp-hero[data-offscreen] .lp-hero-drift::before, .lp-hero[data-offscreen] .lp-hero-drift::after { animation-play-state: paused; }
+
+/* The pill rides on the glow: the canvas at 55%, so the colour reads through without a dark hole. */
+.lp-hero-pill { background: color-mix(in srgb, var(--background) 55%, transparent); }
+
+/* The carousel stage: as tall as a front canvas; slots are absolutely placed from its centre. */
+.lp-hero-stage { position: relative; isolation: isolate; width: 100%; height: calc(var(--u) * 1.25);
+  touch-action: pan-y; user-select: none; -webkit-user-select: none; cursor: grab; }
+.lp-hero-stage[data-dragging] { cursor: grabbing; }
+.lp-hero-stage[data-over-slot] { cursor: pointer; }
+.lp-hero-slot { position: absolute; left: 50%; top: 0; width: calc(var(--u) * 1.5); height: calc(var(--u) * 1.25);
+  margin-left: calc(var(--u) * -0.75); transform-origin: 50% 50%; pointer-events: none; will-change: transform, opacity, filter; }
+/* Her canvas is a rectangle and her light runs past it: fade it out before the edges (her fur stays whole), as on her home. */
+.lp-hero-slot > canvas { -webkit-mask-image: radial-gradient(closest-side, #000 80%, transparent); mask-image: radial-gradient(closest-side, #000 80%, transparent); }
+.lp-hero-title { position: relative; z-index: 1; margin-top: var(--lp-hero-pull); }
+
+/* The control row: hidden (space kept) until the Brendas are drawn. */
+.lp-hero-controls { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 40px; }
+.lp-hero-controls:not([data-ready]) { visibility: hidden; }
+.lp-hero-dots { display: flex; align-items: center; }
+.lp-hero-dot { display: grid; place-items: center; width: 18px; height: 24px; cursor: pointer; }
+.lp-hero-dot::before { content: ""; width: 8px; height: 8px; border-radius: 9999px; background: var(--dot);
+  box-shadow: 0 0 0 1px var(--border-input); transition: transform 150ms var(--ease-out), box-shadow 150ms var(--ease-out); }
+.lp-hero-dot[data-active]::before { transform: scale(1.25); box-shadow: 0 0 0 2px var(--background), 0 0 0 3.5px var(--foreground); }
+/* Touch: narrower cells (the row fits 320px), and the chosen dot is given room so its ring never runs over its
+   neighbours (review fix, 10 October 2026). */
+@media (pointer: coarse) {
+  .lp-hero-dot { width: 13px; pointer-events: none; }
+  .lp-hero-dot[data-active] { margin-inline: 4px; }
+}
+/* Under 360px the row still fits a 280px column. */
+@media (pointer: coarse) and (max-width: 359px) { .lp-hero-dot { width: 11px; } }
+@media (max-width: 359px) { .lp-hero-controls { gap: 2px; } }
+
+/* The flipping word (components/landing/flip-words.tsx): every word stacked in one cell; a flip changes only opacity
+   and transform. The line moves sideways to keep the word showing centred. */
+.lp-flip-line { display: inline-block; white-space: nowrap; }
+.lp-flip-line[data-glide] { transition: transform 300ms var(--ease-out); } /* not as it is built: that move is the same frame's, unseen */
+.lp-flip-cell { display: inline-grid; justify-items: start; }
+.lp-flip-word { grid-area: 1 / 1; opacity: 0; transform: translateY(10px); }
+.lp-flip-word[data-state="on"] { opacity: 1; transform: none; transition: opacity 300ms var(--ease-out), transform 300ms var(--ease-out); }
+.lp-flip-word[data-state="out"] { opacity: 0; transform: translate(40px, -40px) scale(2); transition: opacity 400ms var(--ease-out), transform 400ms var(--ease-out); }
+
+/* ---- "Everything in view" (dashboard builder: components/landing/container-scroll-animation.tsx) ---- */
+.lp-scroll-perspective { perspective: 1000px; }
+.lp-scroll-card { will-change: transform; }
+.lp-scroll-viewport { -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 80px), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - 80px), transparent); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lp-hero { transition: none; }
+  .lp-hero-drift::before, .lp-hero-drift::after { animation: none; }
+  .lp-flip-line, .lp-flip-word[data-state] { transition: none; }
+  .lp-scroll-card, .lp-scroll-title { transform: none !important; }
 }

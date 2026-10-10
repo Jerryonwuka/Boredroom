@@ -27,9 +27,15 @@
  * character of hers on the page talks at once, on top of whatever state she is in. Under reduced motion she takes the
  * still speaking pose when she starts and drops it when she stops; nothing pulses. `quiet` keeps a character from ever
  * talking (a preview of someone else's assistant).
+ *
+ * The landing hero (owner request, 10 October 2026): `still` draws her as one still frame of her pose with no drawing
+ * loop (the hero's far Brendas, and every one of them while the page's motion is paused); it can change at any time,
+ * without a new canvas. `onReady` is called once, after the first frame drawn with her coat. Each of the hero's Brendas
+ * wears her own expression (owner feedback, 10 October 2026): `face` holds a wink on top of her state, and
+ * `glow="own-always"` keeps her light in her own colour whatever her mood.
  */
 import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
-import { attention, BrendaEngine, type BrendaEmote, type BrendaState } from "@/lib/brenda-character/engine";
+import { attention, BrendaEngine, type BrendaEmote, type BrendaFace, type BrendaGlowMode, type BrendaState } from "@/lib/brenda-character/engine";
 import { speech } from "@/lib/assistant-speech/controller";
 import { sameLook, type AssistantLook } from "@/lib/assistant-look";
 import { useScopedAssistant } from "@/components/app/assistant-context";
@@ -37,7 +43,8 @@ import { playSound } from "@/lib/brenda-sound";
 import { cn } from "@/lib/utils";
 
 export type BrendaCharacterHandle = {
-  emote: (e: BrendaEmote) => void;
+  /** `burst: false` plays the expression without its particles (the landing hero's speech bubble). */
+  emote: (e: BrendaEmote, burst?: boolean) => void;
   /** Points her eyes at a spot on the page (viewport coordinates), as she looks at the caret; null gives them back to the pointer. */
   lookAt: (x: number | null, y?: number) => void;
 };
@@ -55,9 +62,18 @@ export const BrendaCharacter = forwardRef<BrendaCharacterHandle, {
   look?: AssistantLook;
   /** Never talks, even while she speaks (a preview of someone else's assistant). */
   quiet?: boolean;
-  /** "own": her resting light is her own colour, not her moods' (her home, owner request 9 October 2026). */
-  glow?: "mood" | "own";
-}>(function BrendaCharacter({ state = "idle", size = 120, interactive = false, className, label, stream = null, level, look, quiet = false, glow = "mood" }, ref) {
+  /**
+   * "own": her resting light is her own colour, not her moods' (her home, owner request 9 October 2026); "own-always":
+   * her own colour in every mood (the landing hero, owner feedback 10 October 2026).
+   */
+  glow?: BrendaGlowMode;
+  /** A face held on top of `state` (the landing hero's winking Brenda); null or absent, none. */
+  face?: BrendaFace | null;
+  /** One still frame, no drawing loop (the landing hero's far Brendas, or paused motion); it may change at any time. */
+  still?: boolean;
+  /** Called once, after her first frame drawn with her coat. */
+  onReady?: () => void;
+}>(function BrendaCharacter({ state = "idle", size = 120, interactive = false, className, label, stream = null, level, look, quiet = false, glow = "mood", face = null, still: frozen = false, onReady }, ref) {
   const scoped = useScopedAssistant();
   const { colour, visor, eyes } = look ?? scoped;
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -79,8 +95,13 @@ export const BrendaCharacter = forwardRef<BrendaCharacterHandle, {
   /** Whether she keeps quiet while speaking, read in the drawing loop; `hush` re-takes the still pose under reduced motion. */
   const quietRef = useRef(quiet);
   const hush = useRef<() => void>(() => {});
+  /** `still`, read by the drawing set-up (which does not re-run for it); `wake` stops or restarts the loop when it changes. */
+  const frozenRef = useRef(frozen);
+  const wake = useRef<() => void>(() => {});
+  const onReadyRef = useRef(onReady);
+  useEffect(() => { onReadyRef.current = onReady; });
 
-  useImperativeHandle(ref, () => ({ emote: (e) => engine.current?.emote(e), lookAt: (x, y) => place.current(x, y) }), []);
+  useImperativeHandle(ref, () => ({ emote: (e, burst) => engine.current?.emote(e, burst), lookAt: (x, y) => place.current(x, y) }), []);
 
   useEffect(() => {
     const el = canvas.current; if (!el) return;
@@ -92,17 +113,20 @@ export const BrendaCharacter = forwardRef<BrendaCharacterHandle, {
     el.width = Math.round(W * dpr); el.height = Math.round(H * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-    let frame = 0, last = performance.now(), visible = true;
-    const draw = () => { e.draw(ctx, W, H); };
+    let frame = 0, last = performance.now(), visible = true, announced = false;
+    const draw = () => {
+      e.draw(ctx, W, H);
+      if (!announced && e.shown) { announced = true; onReadyRef.current?.(); }
+    };
     const loop = (t: number) => {
       const dt = Math.min(0.05, (t - last) / 1000); last = t;
       e.voice = levelRef.current?.() ?? hear.current?.() ?? null;
       // Her voice: every character of hers reads the page's one voice, so they all talk at once.
       e.talk = quietRef.current || !speech.getSnapshot().talking ? null : speech.level();
       e.update(dt); draw();
-      frame = visible && document.visibilityState === "visible" ? requestAnimationFrame(loop) : 0;
+      frame = visible && document.visibilityState === "visible" && !frozenRef.current ? requestAnimationFrame(loop) : 0;
     };
-    const start = () => { if (!frame && !reduced) { last = performance.now(); frame = requestAnimationFrame(loop); } };
+    const start = () => { if (!frame && !reduced && !frozenRef.current) { last = performance.now(); frame = requestAnimationFrame(loop); } };
     const onMove = (ev: PointerEvent) => {
       const r = el.getBoundingClientRect();
       e.lookX = Math.tanh((ev.clientX - (r.left + r.width / 2)) / 260);
@@ -115,7 +139,7 @@ export const BrendaCharacter = forwardRef<BrendaCharacterHandle, {
       e.lookAt(Math.tanh((p.x - (r.left + r.width / 2)) / 180), Math.tanh((p.y - (r.top + r.height / 2)) / 90));
     };
     const settle = () => { e.settle(); draw(); };
-    place.current = (x, y = 0) => { aimAt(x === null ? null : { x, y }); if (reduced) settle(); else start(); };
+    place.current = (x, y = 0) => { aimAt(x === null ? null : { x, y }); if (reduced || frozenRef.current) settle(); else start(); };
     // Someone typing to her. With reduced motion she takes the pose of reading when the typing starts and holds it
     // until it stops (no tracking, no flicks).
     let readingStill = !!attention.gaze;
@@ -127,6 +151,7 @@ export const BrendaCharacter = forwardRef<BrendaCharacterHandle, {
         readingStill = !!gaze; aimAt(gaze); settle(); return;
       }
       aimAt(gaze);
+      if (frozenRef.current) { settle(); return; }
       if (gaze && cue) e.readAlong(cue);
       start();
     });
@@ -147,17 +172,27 @@ export const BrendaCharacter = forwardRef<BrendaCharacterHandle, {
     const onVis = () => { if (document.visibilityState === "visible") start(); };
     document.addEventListener("visibilitychange", onVis);
     window.addEventListener("pointermove", onMove, { passive: true });
-    still.current = reduced ? settle : null;
-    if (reduced) settle(); else start();
+    still.current = reduced ? settle : () => { if (frozenRef.current) settle(); };
+    // `still` changing: stop the loop and take the still pose, or start moving again.
+    wake.current = () => {
+      if (reduced) return;
+      if (frozenRef.current) { cancelAnimationFrame(frame); frame = 0; settle(); } else start();
+    };
+    if (reduced || frozenRef.current) settle(); else start();
     return () => {
       cancelAnimationFrame(frame); frame = 0; io.disconnect(); offAttention(); offSpeech();
       document.removeEventListener("visibilitychange", onVis); window.removeEventListener("pointermove", onMove);
-      still.current = null; place.current = () => {}; hush.current = () => {};
+      still.current = null; place.current = () => {}; hush.current = () => {}; wake.current = () => {};
     };
   }, [size]);
 
+  useEffect(() => {
+    if (frozenRef.current === frozen) return;
+    frozenRef.current = frozen; wake.current();
+  }, [frozen]);
   useEffect(() => { engine.current?.setState(state); still.current?.(); }, [state]);
   useEffect(() => { engine.current?.setGlowMode(glow); still.current?.(); }, [glow]);
+  useEffect(() => { engine.current?.setFace(face); still.current?.(); }, [face]);
   // A character told to keep quiet (or no longer) while she speaks: the loop reads it next frame; a still one redraws.
   useEffect(() => { quietRef.current = quiet; hush.current(); }, [quiet]);
   // A new look (the editor's preview, a saved profile): drawn from the next frame, or at once when she is still.

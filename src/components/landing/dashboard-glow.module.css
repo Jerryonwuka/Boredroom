@@ -1,0 +1,75 @@
+/*
+  The orange light behind the dashboard card (owner request, 10 October 2026: "a glowing gradient behind it, maybe
+  orange, … cleanly animate it in a classy sleek manner"). Light behind glass: the card's tray is translucent, so the
+  glow shows through its 8px band and spills a little past its edges; the dashboard itself stays opaque.
+
+  The warm-up (chosen from three variants, integration, 10 October 2026): a dawn above the card's top rim (b2) over a
+  softer field behind it (b1). The wrapper's opacity and scale follow the scroll (dashboard-glow.tsx); once the card has
+  been flat, both lights breathe a little and the top one drifts slowly sideways, each on its own long loop. A still
+  1px highlight on the card's top rim (.rim) is where the light meets the glass.
+
+  Only transform (the individual translate and scale properties) and opacity move, so the compositor does the work;
+  the gradients are painted once. Nothing loops until the card has been flat, and the loops pause while the light is
+  off screen (`data-offscreen`, set by dashboard-glow.tsx, as the hero does; review fix, 10 October 2026). The paler theme gets a weaker light with almost no side spill. Reduced motion: still
+  light at the breathing's average strength. The page's Pause button (html[data-motion="paused"]) stops it too.
+*/
+
+.field {
+  --a1: 0.45;   /* the field behind the card */
+  --a2: 0.5;    /* the dawn above its rim */
+  position: absolute;
+  inset: -14% -11% -7% -11%;
+  pointer-events: none;
+  /* No light behind the dashboard's faded bottom: the chart's last bars stay clean. */
+  -webkit-mask-image: linear-gradient(to bottom, #000 55%, transparent 85%);
+  mask-image: linear-gradient(to bottom, #000 55%, transparent 85%);
+}
+/* On a phone the cards under the dashboard come straight after it: no spill below the card. */
+@media (max-width: 767px) { .field { inset: -8% -10% 0; } }
+:global([data-theme="light"]) .field { --a1: 0.22; --a2: 0.26; }
+
+/* A soft light: an ellipse whose edge falls off over most of its radius, so no ring and no visible edge. Mixed in
+   oklab and leaning amber towards the edge, so the falloff glows rather than browning on the near-black canvas. */
+.light {
+  position: absolute;
+  background: radial-gradient(in oklab closest-side,
+    rgb(255 150 64 / var(--a)) 0%,
+    rgb(255 108 2 / calc(var(--a) * 0.62)) 38%,
+    rgb(255 170 90 / calc(var(--a) * 0.24)) 74%,
+    transparent 100%);
+}
+
+.warm { position: absolute; inset: 0; transform-origin: 50% 40%; will-change: transform, opacity; }
+.b1 { --a: var(--a1); inset: 4% 9% 10%; }
+.b2 { --a: var(--a2); left: 18%; right: 18%; top: -4%; height: 52%; }
+/* Light theme: the side field stays inside the card's width, so it never reads as a stain on white. */
+:global([data-theme="light"]) .b1 { inset: 4% 14% 12%; }
+/* The breathing starts at the resting values (no negative delay), so the moment it begins is invisible. */
+.warm[data-settled] .light { will-change: transform, opacity; }
+.warm[data-settled] .b1 { animation: breathe 12s ease-in-out infinite alternate; }
+.warm[data-settled] .b2 { animation: drift 34s ease-in-out infinite alternate, breathe 17s 5s ease-in-out infinite alternate; }
+@keyframes breathe { from { scale: 1; opacity: 1; } to { scale: 1.03; opacity: 0.86; } }
+/* Centred to one side and back: it starts at rest (0) so it never jumps when the card settles. */
+@keyframes drift { 0% { translate: 0 0; } 33% { translate: -4% 0; } 100% { translate: 4% 0; } }
+
+/* The rim: 1px over the card's top border, brightest in the middle and gone well before the rounded corners. */
+.rim {
+  position: absolute;
+  top: -1px;
+  left: 0;
+  right: 0;
+  height: 1px;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent 15%, rgb(255 150 64 / 0.55) 50%, transparent 85%);
+}
+:global([data-theme="light"]) .rim { background: linear-gradient(90deg, transparent 15%, rgb(255 130 40 / 0.35) 50%, transparent 85%); }
+
+:global(html[data-motion="paused"]) .field *, .field[data-offscreen] * { animation-play-state: paused; }
+
+@media (prefers-reduced-motion: reduce) {
+  .field * { animation: none !important; }
+  /* Still, at about the breathing's average, not its peak (the script picks still ranges; this also covers the
+     server-rendered first paint). */
+  .warm { opacity: 0.88 !important; transform: none !important; scale: none !important; }
+  .rim { opacity: 1 !important; }
+}

@@ -1,0 +1,69 @@
+/* The hero Brenda's speech bubble (owner request, 10 October 2026; markup: hero-bubble.tsx). A small rounded surface
+   with a tail, tinted a little by her colour; it rises from her head, holds and fades as it floats on up, all in one
+   2.2 s run of transform and opacity (the phases match BUBBLE_RISE_MS, BUBBLE_HOLD_MS and BUBBLE_FADE_MS in
+   hero-assistants.ts: 0 to 16% rise, to 80% hold, to 100% fade). It sits in her slot, so it travels and shrinks with
+   her if the ring turns, and never takes the pointer. It sits over her canvas (z-index), so a particle that drifts
+   up behind it passes under it, never through it. Under reduced motion or the page's Pause it fades in and out
+   where it stands. */
+
+.bubble {
+  position: absolute;
+  left: 50%;
+  /* The tail's tip a breath above her fur, clear of where her drifting Zs and sparkles start; her reaction plays
+     without its burst while the bubble shows (hero-stage.tsx), so nothing flies through her words (review fix,
+     10 October 2026). */
+  top: calc(var(--u) * 0.14);
+  translate: -50% calc(-100% - 6px);     /* the tail (5px) and a hair of air */
+  z-index: 1;
+  pointer-events: none;
+  white-space: nowrap;
+  padding: 5px 11px;
+  border-radius: 10px;
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 500;
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--bubble-tint) 14%, var(--background));
+  border: 1px solid color-mix(in srgb, var(--bubble-tint) 40%, var(--border-input));
+  box-shadow: var(--elev-natural-xs);
+  transform-origin: 50% 100%;
+  animation: rise 2200ms both;
+}
+[data-theme="light"] .bubble {
+  background: color-mix(in srgb, var(--bubble-tint) 9%, var(--background));
+}
+/* The tail: a small square turned on its corner, the bubble's own surface and the two lower hairlines. */
+.bubble::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -5px;
+  width: 9px;
+  height: 9px;
+  margin-left: -4.5px;
+  background: inherit;
+  border-right: inherit;
+  border-bottom: inherit;
+  border-bottom-right-radius: 2px;
+  transform: rotate(45deg);
+}
+
+@keyframes rise {
+  0% { opacity: 0; transform: translateY(10px) scale(0.92); animation-timing-function: cubic-bezier(0.23, 1, 0.32, 1); }
+  16% { opacity: 1; transform: translateY(0) scale(1); animation-timing-function: linear; }
+  80% { opacity: 1; transform: translateY(-4px) scale(1); animation-timing-function: cubic-bezier(0.4, 0, 1, 1); }
+  100% { opacity: 0; transform: translateY(-14px) scale(1); }
+}
+@keyframes fade {
+  0% { opacity: 0; }
+  12% { opacity: 1; }
+  80% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+:global(html[data-motion="paused"]) .bubble { animation-name: fade; }
+/* Reduced motion: the fade without the travel. The page-wide rule cuts every animation to 0.01ms (globals.css §3),
+   which would leave her words on screen for no time at all; the class outranks its `*`, so her bubble keeps its run. */
+@media (prefers-reduced-motion: reduce) {
+  .bubble { animation-name: fade; animation-duration: 2200ms !important; }
+}

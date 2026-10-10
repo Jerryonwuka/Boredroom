@@ -1,0 +1,177 @@
+/* The landing page's notch navigation (owner request, 10 October 2026; markup: site-nav.tsx). A black island hung
+   from the top centre with flared shoulders, as on a MacBook and as in Brenda desktop's own notch, so it stays black
+   in both themes and its contents use the dark tokens (`data-theme="dark"` on the notch). From 768px up it is open at
+   the top of the page (the logo, the five links, the theme toggle and the call to action) and folds to a small notch
+   once the page scrolls (the "B." mark and, inside a linked section, that section's name); a mouse over it, keyboard
+   focus inside it, or a tap on a touch screen opens it again. Below 768px it is a bar at the top of the page and a
+   compact notch (the mark and the menu button) once the page scrolls; the menu grows the notch out and down into a
+   sheet. Only its height, padding, corner radius and the widths of the folding groups move (the groups fold through
+   grid tracks, so no width is measured); their contents only fade. Folding runs in two steps (review fix, 10 October
+   2026): the contents fade out first, then the shape closes, so no word is ever cut mid-glyph, and the section name
+   slides in only once the groups have mostly folded, so the notch never swells on its way down. Under reduced motion
+   every state is instant. */
+
+.shell {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-sticky);
+  height: var(--lp-nav-h, 57px);   /* keeps the space the hero pulls itself up under (globals.css `.lp-hero`) */
+  pointer-events: none;            /* only the notch takes the pointer; the page shows through on either side */
+}
+
+/* ---- The notch ---- */
+.notch {
+  --ease: cubic-bezier(0.23, 1, 0.32, 1);   /* the design system's --ease-out: fast in, long soft settle */
+  --open-ms: 420ms;
+  --close-ms: 320ms;
+  --linger: 140ms;                          /* a pointer that brushes out and straight back in does not fold it */
+  --fade-ms: 90ms;                          /* closing: the contents fade out in this before the shape moves */
+  --shape-delay: calc(var(--linger) + var(--fade-ms));
+  --label-delay: calc(var(--shape-delay) + var(--close-ms) * 0.6);
+  --compact-w: 104px;                       /* the phone's compact notch: the mark and the menu button */
+  --edge: transparent;                      /* a hairline round the silhouette, drawn on the dark page only */
+  --shoulder: 12px;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  margin-inline: auto;             /* centred at its own width (left: 50% would cap that width at half the screen) */
+  width: max-content;
+  display: flex;
+  flex-direction: column;
+  max-width: calc(100% - 32px);
+  pointer-events: auto;
+  color: var(--foreground);
+  background: black;               /* the hardware notch: black in both themes, like the NotchMock island */
+  border-radius: 0 0 14px 14px;
+  box-shadow: 0 0 0 1px var(--edge), inset 0 -1px 0 rgb(255 255 255 / 0.08), 0 10px 28px -14px rgb(0 0 0 / 0.55);
+  transition: border-radius var(--close-ms) var(--ease) var(--shape-delay);
+}
+/* On the near-black dark page a black island all but disappears and the folded notch reads as a stray "B." (review
+   fix, 10 October 2026): a faint hairline traces its edge and its shoulders, so the silhouette survives. */
+:global(html:not([data-theme="light"])) .notch { --edge: rgb(255 255 255 / 0.11); }
+/* The flared shoulders: a black square each side with a quarter circle cut from its lower outer corner. */
+.notch::before, .notch::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  width: var(--shoulder);
+  height: var(--shoulder);
+  pointer-events: none;
+}
+.notch::before { right: 100%; background: radial-gradient(circle at 0 100%, transparent calc(var(--shoulder) - 1.5px), var(--edge) calc(var(--shoulder) - 1px), var(--edge) calc(var(--shoulder) - 0.5px), black var(--shoulder)); }
+.notch::after { left: 100%; background: radial-gradient(circle at 100% 100%, transparent calc(var(--shoulder) - 1.5px), var(--edge) calc(var(--shoulder) - 1px), var(--edge) calc(var(--shoulder) - 0.5px), black var(--shoulder)); }
+
+.row {
+  display: flex;
+  align-items: center;
+  height: 34px;
+  padding-inline: 12px;
+  transition: height var(--close-ms) var(--ease) var(--shape-delay), padding var(--close-ms) var(--ease) var(--shape-delay);
+}
+
+/* The logo: the "B." mark folded, the whole wordmark open (it starts with the same B, so it reads as unrolling). */
+.logo {
+  position: relative;
+  display: block;
+  flex: none;
+  width: var(--logo-mark);
+  height: var(--logo-h);
+  border-radius: 6px;
+  overflow: clip;                  /* the wordmark never runs past the mark into the links while it folds */
+  overflow-clip-margin: 2px;
+  transition: width var(--close-ms) var(--ease) var(--shape-delay);
+}
+.logo > span { position: absolute; left: 0; top: 0; transition: opacity var(--fade-ms) linear var(--linger); }
+.logoFull { opacity: 0; }
+/* The notch is always dark, so it always shows the light-lettered artwork, whatever the page's theme. */
+:global(html[data-theme="light"]) .logo img:first-child { display: block; }
+:global(html[data-theme="light"]) .logo img:last-child { display: none; }
+
+/* A folding group: a one-track grid that runs from 0fr (folded) to 1fr (its own width). Its inner padding leaves room
+   for the focus rings, which the clip would otherwise cut (clip, not hidden: a clipped box is not a scroll container,
+   so focusing a folded link cannot scroll the group sideways). */
+.fold {
+  display: grid;
+  grid-template-columns: 0fr;
+  opacity: 0;
+  transition: grid-template-columns var(--close-ms) var(--ease) var(--shape-delay), opacity var(--fade-ms) linear var(--linger);
+}
+.foldInner { min-width: 0; overflow: clip; padding-block: 6px; white-space: nowrap; }
+/* The tools unroll from their right edge, so the call to action arrives whole and is never cut in half. */
+.foldEnd > .foldInner { display: flex; justify-content: flex-end; }
+.foldEnd > .foldInner > * { flex: none; }
+
+/* The section name beside the mark when folded: the reverse of the groups above. Its width is set from its text. */
+.label {
+  display: block;
+  width: var(--label-w, 0px);
+  overflow: hidden;
+  white-space: nowrap;
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 500;
+  color: var(--secondary);
+  transition: width 300ms var(--ease), opacity 160ms linear;
+}
+.label > span { display: inline-block; padding-left: 10px; }
+/* Just folded: it waits until the groups have mostly folded (a later change of section moves it at once). */
+.label[data-late] { transition-delay: var(--label-delay); }
+.label[data-off] { width: 0; opacity: 0; transition-delay: 0ms; }
+
+/* ---- Open ---- */
+.notch[data-state="open"] { border-radius: 0 0 20px 20px; transition-duration: var(--open-ms); transition-delay: 0ms; }
+.notch[data-state="open"] .row { height: 52px; padding-inline: 10px 9px; transition-duration: var(--open-ms); transition-delay: 0ms; }
+.notch[data-state="open"] .logo { width: var(--logo-full); margin-left: 6px; transition-duration: var(--open-ms); transition-delay: 0ms; }
+.notch[data-state="open"] .logoMark { opacity: 0; transition-duration: 160ms; transition-delay: 0ms; }
+.notch[data-state="open"] .logoFull { opacity: 1; transition-duration: 160ms; transition-delay: 0ms; }
+.notch[data-state="open"] .fold {
+  grid-template-columns: 1fr;
+  opacity: 1;
+  transition: grid-template-columns var(--open-ms) var(--ease), opacity 220ms linear 90ms;
+}
+.notch[data-state="open"] .label { width: 0; opacity: 0; transition-duration: 200ms, 100ms; transition-delay: 0ms; }
+
+/* ---- Phones: a bar at the top, a compact notch once scrolled; the menu grows it out and down into a sheet ---- */
+.phoneOnly { display: none; }
+@media (max-width: 767.98px) {
+  /* The bar: the full width less the page's 16px sides (a length, so it can move to and from the compact width). */
+  .notch {
+    width: calc(100% - 32px);
+    max-width: none;
+    border-radius: 0 0 18px 18px;
+    transition: width var(--close-ms) var(--ease) var(--shape-delay), border-radius var(--close-ms) var(--ease) var(--shape-delay);
+  }
+  .notch[data-state] .row { height: 48px; padding-inline: 14px 6px; }
+  .notch[data-state] .logo { width: var(--logo-full); margin-left: 0; }
+  .notch[data-state] .logoMark { opacity: 0; }
+  .notch[data-state] .logoFull { opacity: 1; }
+  /* Scrolled, with the menu shut: the compact notch, the "B." mark and the menu button. */
+  .notch[data-state="closed"]:not([data-menu]) { width: var(--compact-w); border-radius: 0 0 16px 16px; }
+  .notch[data-state="closed"]:not([data-menu]) .row { height: 44px; padding-inline: 12px 2px; }
+  .notch[data-state="closed"]:not([data-menu]) .logo { width: var(--logo-mark); }
+  .notch[data-state="closed"]:not([data-menu]) .logoMark { opacity: 1; }
+  .notch[data-state="closed"]:not([data-menu]) .logoFull { opacity: 0; }
+  /* The menu opens it from the compact notch at the opening pace, and keeps the call to action in the bar. */
+  .notch[data-menu] { border-radius: 0 0 22px 22px; }
+  .notch[data-menu], .notch[data-menu] :is(.row, .logo) { transition-duration: var(--open-ms); transition-delay: 0ms; }
+  .notch[data-menu] .logo > span { transition-duration: 160ms; transition-delay: 0ms; }
+  .notch[data-menu] .fold { grid-template-columns: 1fr; opacity: 1; transition: grid-template-columns var(--open-ms) var(--ease), opacity 220ms linear 90ms; }
+  .notch[data-state="open"] { transition-duration: var(--open-ms); transition-delay: 0ms; }
+  .wideOnly { display: none; }
+  .phoneOnly { display: flex; }
+}
+.panel {
+  display: grid;
+  grid-template-rows: 0fr;
+  visibility: hidden;
+  transition: grid-template-rows 300ms var(--ease), visibility 0s linear 300ms;
+}
+.panelInner { min-height: 0; overflow: clip; }
+.panelScroll { max-height: calc(100dvh - 72px); overflow-y: auto; overscroll-behavior: contain; padding: 4px 8px 12px; }
+.notch[data-menu] .panel { grid-template-rows: 1fr; visibility: visible; transition: grid-template-rows 360ms var(--ease), visibility 0s; }
+@media (min-width: 768px) { .panel { display: none; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .notch, .row, .logo, .logo > span, .fold, .label, .panel { transition: none !important; }
+}
