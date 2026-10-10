@@ -244,8 +244,9 @@ export default async function LandingPage() {
           <section aria-labelledby="close-title" className="pt-8 sm:pt-12">
             <div className={WRAP}>
               <div className="lp-reveal rounded-[22px] border border-border bg-fill-0 px-5 py-12 sm:rounded-[28px] sm:px-12 sm:py-20">
-                {waitlist && !user ? (
-                  /* Waitlist mode (owner decision, 25 September 2026): the closing section carries the form, copy on the left, form on the right. */
+                {waitlist ? (
+                  /* Waitlist mode (owner decision, 25 September 2026): the closing section carries the form, copy on the left, form on the right;
+                     signed in too, so the hero pill's link always reaches it (owner request, 10 October 2026). */
                   <div className="grid items-center gap-10 md:grid-cols-[1.05fr_0.95fr] md:gap-14">
                     <div className="min-w-0">
                       <h2 id="close-title" className="lp-h2 lg:text-[56px] lg:leading-[60px]">{copy.headline || <>Know what your<br className="max-sm:hidden" /> remote team is doing</>}</h2>

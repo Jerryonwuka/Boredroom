@@ -32,8 +32,8 @@ const LEAD_SHORT = "Each person's Brenda answers “any update?” from their re
  * The pill: the five faces (three below 380px), then in waitlist mode, signed out, "Opening soon. Join the waitlist.";
  * in maintenance the admin's notice, as plain text; otherwise the newest thing built, calls with Brenda's notes (review
  * fix, 10 October 2026: signed in there is no waitlist form to go to). Its words wrap rather than being cut off on the
- * narrowest phones. In maintenance sign-ups are off, so the call to action is Log in. The call to action is the screen's one orange button only in waitlist mode, signed out
- * (joining the waitlist is the one thing to do); signed in, or when the app is open, it is the white primary. The
+ * narrowest phones. In maintenance sign-ups are off, so the call to action is Log in. The call to action is the white primary in every mode
+ * (owner request, 10 October 2026: Join the waitlist was orange; the landing's buttons are all white). The
  * admin's copy (Control Center, landingSettings) replaces the headline, the lead and the button's words in waitlist
  * mode; an admin headline is plain text, with no flip.
  *
@@ -49,7 +49,9 @@ export function Hero({ signedIn, waitlist = false, maintenance = false, notice =
   // The pill as the v4 hero drew it, faces and all (owner feedback, 10 October 2026: "keep the pill with the faces"),
   // with an honest line: never a user count.
   const pillClass = "lp-hero-pill inline-flex min-h-8 max-w-full items-center gap-2 rounded-full border border-border-input py-1 pl-1 pr-2.5 text-left text-meta font-medium text-secondary transition-colors duration-75 hover:border-border-input-hover hover:text-foreground";
-  const joinable = waitlist && !signedIn;
+  // In waitlist mode the pill is always about joining the waitlist, signed in or not (owner request, 10 October 2026);
+  // the closing section carries the form in waitlist mode for everyone, so its link always has somewhere to go.
+  const joinable = waitlist;
   const pillBody = (
     <>
       <span className="flex shrink-0 -space-x-1.5" aria-hidden>
@@ -79,7 +81,7 @@ export function Hero({ signedIn, waitlist = false, maintenance = false, notice =
       </p>
       <div className="mt-6 flex flex-wrap justify-center gap-3 sm:mt-8">
         {signedIn ? <Link href="/app" className={heroButton("primary")}>Open your workspace</Link>
-          : waitlist ? <WaitlistLink className={heroButton("accent")}>{copy.cta || "Join the waitlist"}</WaitlistLink>
+          : waitlist ? <WaitlistLink className={heroButton("primary")}>{copy.cta || "Join the waitlist"}</WaitlistLink>
           : maintenance ? <Link href="/login" className={heroButton("primary")}>Log in</Link>
           : <Link href="/signup?intent=org" className={heroButton("primary")}>Get started</Link>}
         <a href="#how" className={heroButton("secondary")}>How it works</a>

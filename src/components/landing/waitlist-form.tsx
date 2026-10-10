@@ -10,8 +10,8 @@ const SIZES = ["1-5", "6-20", "21-50", "51-200", "201-1000", "1000+"];
 
 /**
  * The public waitlist form: name, work email, company, size, role, and why. Posts to /api/waitlist (unchanged). v4:
- * the app's fields (`.field`, labels 14/20 medium), and the submit is the screen's one orange button (joining is the
- * one thing to do here). The caller puts it on a card.
+ * the app's fields (`.field`, labels 14/20 medium), and the submit is the white primary (owner request, 10 October
+ * 2026: the landing's buttons are all white). The caller puts it on a card.
  */
 export function WaitlistForm({ cta = "Join the waitlist", source = "landing" }: { cta?: string; source?: string }) {
   const [pending, setPending] = useState(false);
@@ -44,7 +44,7 @@ export function WaitlistForm({ cta = "Join the waitlist", source = "landing" }: 
       <label className={cn(label, "sm:col-span-2")}><span>What would you use Boredroom for? <span className="font-normal text-subtle">(optional)</span></span><textarea name="interest" maxLength={1000} rows={2} className="field field-lg min-h-[4.5rem] py-2" /></label>
       <input name="website" tabIndex={-1} autoComplete="off" className="hidden" aria-hidden />
       {error ? <p role="alert" className="text-sm font-normal text-danger sm:col-span-2">{error}</p> : null}
-      <div className="sm:col-span-2"><button type="submit" disabled={pending} aria-busy={pending || undefined} className={cn(buttonVariants({ variant: "accent", size: "lg" }), "h-11 w-full text-[15px]")}>{pending ? "Adding you…" : cta}</button></div>
+      <div className="sm:col-span-2"><button type="submit" disabled={pending} aria-busy={pending || undefined} className={cn(buttonVariants({ variant: "primary", size: "lg" }), "h-11 w-full text-[15px]")}>{pending ? "Adding you…" : cta}</button></div>
       <p className="text-xs font-normal text-secondary sm:col-span-2">One email when we open, nothing else. Reply “unsubscribe” to any email to stop.</p>
     </form>
   );
