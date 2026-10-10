@@ -20,11 +20,23 @@ export type Tab = { label: string; href?: string; value?: string; count?: number
  * state. Counts sit in a CountPill (orange with `attention: true`). Arrow keys move between tabs; Home and End jump to
  * the ends. A tab's lucide `icon` plays its animated twin on hover and keyboard focus (components/ui/animated-icons).
  */
-export function Tabs({ tabs, value, onChange, param = "tab", className, label = "Sections", variant = "underline", bordered = true }: { tabs: Tab[]; value?: string; onChange?: (v: string) => void; param?: string; className?: string; label?: string; variant?: "underline" | "pills"; bordered?: boolean }) {
-  const pathname = usePathname();
+type TabsProps = { tabs: Tab[]; value?: string; onChange?: (v: string) => void; param?: string; className?: string; label?: string; variant?: "underline" | "pills"; bordered?: boolean };
+
+// Controlled tabs (`value`) never read the URL's search params (deploy fix, 10 October 2026: useSearchParams outside a
+// Suspense boundary failed the production build of the statically rendered landing page, whose demos use value tabs).
+export function Tabs(props: TabsProps) {
+  return props.value !== undefined ? <TabsView {...props} sp={null} /> : <TabsFromUrl {...props} />;
+}
+
+function TabsFromUrl(props: TabsProps) {
   const sp = useSearchParams();
+  return <TabsView {...props} sp={sp} />;
+}
+
+function TabsView({ tabs, value, onChange, param = "tab", className, label = "Sections", variant = "underline", bordered = true, sp }: TabsProps & { sp: Pick<URLSearchParams, "get"> | null }) {
+  const pathname = usePathname();
   const marker = `tabs-${React.useId()}`;
-  const current = value ?? sp.get(param) ?? tabs[0]?.value ?? tabs[0]?.href;
+  const current = value ?? sp?.get(param) ?? tabs[0]?.value ?? tabs[0]?.href;
   const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     const keys = ["ArrowLeft", "ArrowRight", "Home", "End"];
     if (!keys.includes(e.key)) return;
@@ -39,7 +51,7 @@ export function Tabs({ tabs, value, onChange, param = "tab", className, label = 
   // A page that knows its state passes `value`, so the default tab lights up even before the URL names it.
   const isActive = (t: Tab) => {
     const key = t.value ?? t.href ?? t.label;
-    return value !== undefined && t.value ? value === t.value : t.href ? pathname === t.href || ((sp.get(param) ?? "") === (t.value ?? "") && !!t.value) : current === key;
+    return value !== undefined && t.value ? value === t.value : t.href ? pathname === t.href || ((sp?.get(param) ?? "") === (t.value ?? "") && !!t.value) : current === key;
   };
   const activeIndex = tabs.findIndex(isActive);
   // A row wider than the screen scrolls sideways with its scrollbar hidden: the selected tab is brought into view inside
