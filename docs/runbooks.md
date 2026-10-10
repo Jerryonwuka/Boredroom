@@ -14,21 +14,54 @@ Under 5 ms means the app and database share a region and pages should render in 
 
 Use the scripts: `pnpm db:dump` to back up, `pnpm db:restore "<url>" <file>` to restore anywhere (see "Backup, and moving the database to Neon" below for the full procedure and the version requirement for `pg_dump`).
 
-After restoring a backup that is older than the live data, re-apply deletion tombstones before opening access: media whose recording rows have `deleted_at` set, or whose ids appear in `deletion_tombstones`, must be deleted again from the restored object store. Run:
-```sql
-SELECT subject_id, storage_keys FROM deletion_tombstones;
-SELECT id FROM recordings WHERE deleted_at IS NOT NULL OR restricted_at IS NOT NULL OR expires_at < now();
-```
-and delete every listed key from storage. Only then point the application at the restored database.
+Restoring a backup taken before the old recordings were deleted (phase 8) brings recording rows back: run "Deleting the old recordings" below again (the dry run, then `--confirm`) before migration 0055 is applied, or its guard refuses.
 
 Restore drill status: `pnpm db:dump` → `pnpm db:restore` into a fresh database was verified on PostgreSQL 16 (18 September 2026): identical table, policy, trigger and function counts, and row-level security enforced on the copy. A production drill with real object storage is a launch prerequisite.
 
-## Retention
+## Deleting the old recordings (phase 8)
 
-- The worker enqueues `recording.retention_delete` for each recording whose `expires_at` has passed (deduplicated per recording).
-- The handler deletes chunks, assembled media and derivatives, marks chunks `deleted`, writes a `deletion_tombstones` row and sets `upload_state = 'deleted'`. It is idempotent; re-running it is safe.
-- Playback is refused at `expires_at` even before the worker runs (`authorisePlayback` and `/api/media/[token]` check live state).
-- Lag check: `SELECT count(*) FROM recordings WHERE expires_at < now() AND deleted_at IS NULL;` should be zero within minutes of expiry when the worker is healthy.
+Screen recording for tasks was taken out (owner decisions, 8 October 2026) and the existing recordings are deleted by the owner, with `db/scripts/delete-recordings.ts` (package script `db:delete-recordings`). It is the only thing that deletes recording data. It connects with `DATABASE_ADMIN_URL` (the database owner: the app role may not delete audit rows) and prints the host and the database's name only, never the connection string.
+
+Where to run it: on the machine that serves the web app's files, with that machine's storage settings (`STORAGE_PROVIDER`, `STORAGE_LOCAL_DIR`; only the local provider exists today) and a `DATABASE_ADMIN_URL` for the database to clean. The script deletes the stored video files through the storage provider of the machine it runs on and sweeps `org/*/recordings/` under that machine's `STORAGE_LOCAL_DIR`. Run anywhere else, the rows are deleted and the real files stay behind on the other machine, with nothing pointing at them.
+
+The order (contract A.9):
+
+1. Merge phase 8 and apply migration 0054 (the lead).
+2. Deploy the new web app AND the new worker everywhere (the Fly worker too). A worker from before phase 8 still reads `recordings` on every maintenance pass; after 0055 it would fail each one.
+3. The owner runs the dry run and reads it:
+   ```
+   pnpm db:delete-recordings
+   ```
+   It changes nothing (`BEGIN READ ONLY`) and prints, per organisation and in total: recordings by state, chunks by state, the access log, privacy incidents, grants, capture exceptions, tombstones, work sessions linked to a capture exception, recording jobs by state, the notifications, session events and audit rows that only exist because of recording; the stored files the database knows (how many exist, bytes declared and found), orphan files and empty folders under `org/*/recordings/`; the storage provider and root it checked; local backups in `var/backups` that may still hold recording rows (listed, never touched). It starts with the database it reads ("Database: neondb, on host ep-…") and ends with the exact command to delete. When it says files the database knows were "not found here", they were either deleted already (retention deleted most recordings) or are kept on another machine: if another machine, run steps 3 and 4 there instead.
+4. The owner runs that command, which names the database host AND the database (fix review, 10 October 2026: several databases can share one host, such as dev and test on localhost, or several on one Neon endpoint):
+   ```
+   pnpm db:delete-recordings --confirm=<host>/<database>
+   ```
+   The database is the one PostgreSQL says the connection reached (`current_database()`). A different host, another database on the same host, the host alone, or a bare `--confirm` is refused, so a pasted command cannot delete from another database. One transaction locks the recording tables, deletes the rows in foreign-key order, deletes the audit rows about recordings (add `--keep-audit` to keep them), and writes one `recordings.purged` audit row per organisation and one global row, with counts only. After the commit it deletes the stored files and the `org/*/recordings/` folders. Any failure before "The database part is done" rolls back whole; running it again is safe (a second run finds nothing and only sweeps folders). If the rows were already deleted from another machine, the same `--confirm=<host>/<database>` command run on the machine with the files sweeps its `org/*/recordings/` folders.
+5. The lead moves `db/pending/0055_remove_screen_recording.sql` into `db/migrations/` and applies it (`pnpm db:migrate`). Its guard raises `RECORDINGS_REMAIN` if step 4 did not happen; it is safe to run twice.
+6. Browsers clear the `boredroom-capture` buffer of unsent video on their next workspace page, by themselves.
+
+Neon's point-in-time history keeps the deleted rows until its restore window passes; old dumps in `var/backups` keep them until deleted by hand.
+
+## Calls: checking LiveKit
+
+Calls use LiveKit Cloud (owner decision, 8 October 2026). `GET /api/health` reports `calls`: "LiveKit configured" or what is missing (never the values); calls are optional, so it never fails the health check.
+
+- Rooms open now: from a scratch script with the server SDK, `new RoomServiceClient(httpsUrl, key, secret).listRooms()`. Every Boredroom room is named `call-<call id>`; the worker deletes a room when its call ends and sweeps leftovers every 10 minutes, so a room older than its call is a bug worth reporting.
+- Calls in the database: `SELECT state, count(*) FROM calls GROUP BY state;` and live ones with `WHERE state <> 'ended'`.
+- Minutes: the Control Center's overview and Usage pages show "Calls this month" and "Call minutes this month" (participant minutes, what LiveKit counts). LiveKit Cloud's free Build plan stops at 5,000 participant minutes a month (a hard stop until the 1st). Calls are on every plan: move to the Ship plan (from $50 a month) before launch, or as soon as the minutes approach the limit.
+
+## Registering the LiveKit webhook in production
+
+Optional but recommended: calls work without it (devices heartbeat and Boredroom compares each live room with who is in the call, at most every 15 seconds from the heartbeats and every minute from the worker; localhost cannot receive webhooks anyway). In production it ends an abandoned room's call a little sooner, and takes out at once anyone who comes back to a call they are no longer on (LiveKit cannot revoke a join token: someone who left, or was taken out of the channel, could reconnect with the token they held until it expires; Boredroom's tokens last 2 minutes; fix review, 10 October 2026).
+
+1. LiveKit Cloud → the project → Settings → Webhooks → add `https://<host>/api/livekit/webhook`.
+2. Choose the API key the server uses (`LIVEKIT_API_KEY`); its secret signs every delivery and the route refuses anything it cannot verify.
+3. Only `room_finished`, `participant_joined`, `participant_left` and `participant_connection_aborted` are acted on; repeats are harmless. A `participant_joined` from someone without a place in the call (not `joined` in Boredroom) is taken out of the room at once.
+
+## Call transcripts
+
+When people on a call agree to Brenda's notes, each consenting person's own device sends the text of their own words (never audio). Only the people who were on the call can read those lines; owners, HR and team leads cannot. The `call.transcript_purge` worker job (hourly) deletes them 7 days after the recap; the recap stays. Check: `SELECT count(*) FROM call_transcript_lines l JOIN call_recaps r ON r.call_id = l.call_id WHERE r.created_at < now() - interval '7 days';` should be zero within the hour.
 
 ## Worker health
 
@@ -43,7 +76,7 @@ Restore drill status: `pnpm db:dump` → `pnpm db:restore` into a fresh database
 
 ## Offboarding
 
-People → Offboard. Effects: membership revoked (new requests and live channels denied), open session interrupted at its last confirmed boundary, recording grants revoked, sign-in sessions revoked if the person has no other active workspace, audit event written. Historical work is retained.
+People → Offboard. Effects: membership revoked (new requests and live channels denied), open session interrupted at its last confirmed boundary, sign-in sessions revoked if the person has no other active workspace, audit event written. Historical work is retained.
 
 ## Control Center (super admin)
 
@@ -68,12 +101,6 @@ The internal console lives at `/admin`. It is a separate area of the same app wi
 
 - `APP_SECRET` signs cookies indirectly (session tokens are random and hashed in the DB) and signs short-lived media/file URLs. Rotating it invalidates outstanding 60-second URLs only.
 - Database passwords: rotate `boardroom_app` and update `DATABASE_URL`; the pool reconnects on restart.
-
-## Incident: sensitive footage flagged
-
-1. The employee flags a recording; ordinary reviewer playback is denied immediately (`restricted_at`).
-2. A privacy administrator (an explicit `privacy_admin` grant) opens Reviews → Privacy incidents and chooses Delete or Release with a note. Both are audited.
-3. Deletion runs through the same worker job as retention.
 
 ## Backup, and moving the database to Neon (or any hosted PostgreSQL)
 
@@ -122,7 +149,7 @@ Copy those into `.env.local`, run `pnpm doctor`, then `pnpm dev`. Re-running the
 
 ### What is not in the dump
 
-- Recording video files live in `var/storage`, not in the database. Copy that folder to the new machine, or set `STORAGE_PROVIDER` to a private bucket and upload the files there, keeping the same keys.
+- Files (evidence, voice notes, pictures) live in `var/storage`, not in the database. Copy that folder to the new machine, or set `STORAGE_PROVIDER` to a private bucket and upload the files there, keeping the same keys.
 - Local mail-sink files in `var/mail-outbox` (development only).
 
 ### Notes for Neon specifically
@@ -145,5 +172,5 @@ A person may own one workspace on Free, five on Pro and any number on Enterprise
 1. **Keys.** Control Center, Settings, Paystack: paste the test public and secret keys, press Test test key, save. Paste the live pair when the account is approved, test it, then move the switch to Live. Secrets are stored encrypted in `platform_settings.payments` and shown by their last four characters. `PAYSTACK_SECRET_KEY` in the environment is only a fallback for servers with nothing stored.
 2. **Paystack dashboard.** Settings, API Keys and Webhooks: add the webhook URL shown on that page for both test and live. The callback URL is set per checkout by the app.
 3. **Buying.** The home page pricing section lists every active plan (Plans in the Control Center). A visitor picks a plan and signs up; a signed-in person lands on Settings, Plan and billing, with the plan marked. Pay with Paystack opens Paystack's page; the callback verifies the reference and records the payment; the webhook records it again idempotently. A success activates the subscription for the interval paid and notifies the owners in the bell and by email.
-4. **What the plan unlocks.** `resolveEntitlements` (server/lib/entitlements.ts) merges the plan's features, the organisation's overrides and the global flags into `ctx.plan`. Recording, exports, the assistant, voice notes and the audit page check it on the server (402 PLAN_REQUIRED) and in the UI (hidden from the nav, an upgrade notice on the page). Seats follow `max_users` (402 SEATS_FULL on invite and join). A lapsed paid plan falls back to Free's entitlements after the grace period; nothing is deleted.
+4. **What the plan unlocks.** `resolveEntitlements` (server/lib/entitlements.ts) merges the plan's features, the organisation's overrides and the global flags into `ctx.plan`. Exports, the assistant, voice notes and the audit page check it on the server (402 PLAN_REQUIRED) and in the UI (hidden from the nav, an upgrade notice on the page). Seats follow `max_users` (402 SEATS_FULL on invite and join). A lapsed paid plan falls back to Free's entitlements after the grace period; nothing is deleted.
 5. **Reminders.** The daily worker job notifies owners and HR in-app 14, 7, 3 and 1 days before the period ends and the day after it ends; the automations engine sends the matching emails. Owners also see a banner in the app in the last week, after a failed payment, and while lapsed.

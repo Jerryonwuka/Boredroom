@@ -110,7 +110,22 @@
      the natural voice is left alone for the rest of the run (no request is made: a context that will not run never spends
      characters); &natural=decode answers with bytes that are not audio; &natural=listen holds the talk keys 1.5 s into
      the audio, which stops it at once (the listening card opens). A browser that wants a press before playing sound shows
-     "Press anywhere to start" first (the notch's WKWebView needs none: Tauri creates it with autoplay on). -->
+     "Press anywhere to start" first (the notch's WKWebView needs none: Tauri creates it with autoplay on).
+     Calls (owner decisions, 8 October 2026: phase 8, contract F.7; Jeremiah and the running example's people, as the n-
+     states). The mock answers GET /calls/now as CallsNow (src/lib/calls.ts) and the call routes as the server does; the
+     mocked open_in_browser logs the call page it would open. ?state=call-incoming (Ada calls, direct: her face, "Ada Obi is
+     calling", the hairline running down over 30 s, Decline, Message and Accept; the ring sounds every 2.5 s, Esc silences
+     it; after 30 s the ring stops and the card folds), call-incoming-group (Ben's call in #Design, "+1 more calling": Ada
+     rings too), call-incoming-busy (Olu's follow-up ask is open and a quick reply is picked, so it stays: Ada's ring comes
+     as the strip on top of it, a quiet Decline and Accept in white), call-waiting (Jeremiah is on a call with Ben: "You're on another call.
+     Accepting leaves it."), call-missed (Ada's missed direct call: Call back), call-missed-live (Ben's call in #Design,
+     still going: Join; &busy: Jeremiah is on a call with Ada, so the card says "You're on another call." and offers
+     "Leave it and join", which leaves it first; &busy=stale: the poll has not seen that call, so Join meets the server's
+     409 IN_ANOTHER_CALL and turns into the same choice), on-call (the bar: the live dot, the clock running from 12:04, "On a call in #Design"), call-recap
+     (the call's notes, the plain card). &accept=ended answers Accept with the server's 409 CALL_ENDED ("The call has
+     ended."); &hold keeps it ringing past 30 s; &calls=404 answers /calls/now as a server from before phase 8 does (the
+     notch asks again in 5 minutes). Every other state answers /calls/now as before migration 0054 (60 s, nothing rings).
+     ?state=lead shows Chidi on a call (a phone on his face, "On a call"). -->
 <html lang="en"><head><meta charset="utf-8"><title>Brenda notch preview</title><link rel="stylesheet" href="src/style.css">
 <style>html,body{background:#3b3b3b!important;height:100%;overflow:hidden!important} body::before{content:"";position:fixed;inset:0 0 auto;height:40px;background:rgb(0 0 0 / .28);box-shadow:inset 0 -1px 0 rgb(255 255 255 / .075)} #stage{position:relative;width:480px;height:440px;margin:0 auto;outline:1px dashed rgb(255 255 255 / .1)}</style></head>
 <body><div id="stage"><div id="island" class="island"><i id="wash" class="wash" aria-hidden="true"></i><main id="notch" class="notch compact"></main><i id="countdown" class="countdown"></i></div></div>
@@ -279,7 +294,10 @@ const quietNotes = [{ id: "n31", type: "brenda.reminder", title: "Reminder: Call
 // Notifications, "A plus the grafts" (owner decision, 9 October 2026; the comment at the top lists the states): the
 // running example's people, each with their own assistant, and the notifications as the desktop state carries them, each
 // with its `facts` (src/server/services/notice-facts.ts, B.1) and the state lists its card reads.
-const nState = state.startsWith("n-") ? state : q.has("n-bar") ? "n-bar" : null;
+// Calls (phase 8): the call states use the n- states' people and data; the notifications each one shows.
+const CALL_STATES = { "call-incoming": [], "call-incoming-group": [], "call-incoming-busy": [["ask"]], "call-waiting": [], "call-missed": [["missed"]], "call-missed-live": [["missedLive"]], "on-call": [], "call-recap": [["recap"]] };
+const callState = Object.hasOwn(CALL_STATES, state) ? state : null;
+const nState = state.startsWith("n-") || callState ? state : q.has("n-bar") ? "n-bar" : null;
 const barKind = q.get("bar") ?? q.get("n-bar") ?? "one";
 const bug = q.get("bug");
 const T0 = Date.now();
@@ -289,6 +307,7 @@ const dayAt = (days, h, m = 0) => { const d = new Date(T0); d.setDate(d.getDate(
 const localDate = (days) => { const d = new Date(T0); d.setDate(d.getDate() + days); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
 const yesterdayName = new Date(T0 - 86_400_000).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" });
 const NW = "/app/khronocorp";
+const CALL_A = "ca110000-0000-4000-8000-000000000001", CALL_G = "ca110000-0000-4000-8000-000000000002", CALL_B = "ca110000-0000-4000-8000-000000000003", CALL_NEW = "ca110000-0000-4000-8000-000000000004";
 const mid = (n) => `b1a00000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const NP = {
   ada: { membershipId: mid(1), name: "Ada Obi", assistant: assistantFrom("purple,screen,square", "Nova") },
@@ -403,6 +422,12 @@ const NK = {
       add: { rollups: [{ id, team: { id: "t9000000-0000-4000-8000-000000000001", name: "Design" }, dateLabel: "Today", seen: false, href: `${NW}/standup/rollups/${id}`,
         content: { counts: { members: 6, posted: 4 }, blockers: [{ name: "Ben Okafor", onName: "Ada Obi", text: "Waiting on the product photos" }], noUpdate: [{ name: "Aba Mensah" }, { name: "Fabro Fashio" }], late: [], cutoffAt: dayAt(0, 10) } }] } };
   },
+  // Calls (phase 8): a missed direct call (Call back), a missed call in #Design still going (Join), a call's notes.
+  missed: () => ({ n: nN("missed", "call.missed", "Missed call from Ada Obi", null, `${NW}/calls/${CALL_A}`,
+    { v: 1, kind: "call", callId: CALL_A, from: NP.ada, where: null, direct: true, at: minsAgo(4), live: false, callBack: { membershipId: NP.ada.membershipId } }, CALL_A, 4) }),
+  missedLive: () => ({ n: nN("missed-live", "call.missed", "Missed call from Ben Okafor in #Design", null, `${NW}/calls/${CALL_G}`,
+    { v: 1, kind: "call", callId: CALL_G, from: NP.ben, where: "#Design", direct: false, at: minsAgo(1), live: true, callBack: null }, CALL_G, 1) }),
+  recap: () => ({ n: nN("recap", "call.recap", "Notes from your call with Ada", "We agreed the pricing page ships on Friday. 2 action items.", `${NW}/calls/${CALL_A}`, null, CALL_A, 2) }),
   clockin: () => ({ n: nN("clockin", "brenda.clock_in", "Clocked in", `${nMe.name} clocked you in when you sat down.`, null, null, null, 0) }),
   plain: () => ({ n: nN("plain", "billing.renewal", "Your plan renews on 1 November", "Nothing to do: the card on file is charged.", `${NW}/settings?section=billing`, null, null, 2) }),
   long: (k = 0) => {
@@ -422,6 +447,7 @@ const ONE = { "n-message": "message", "n-mention": "mention", "n-reply": "reply"
   "n-routine": "routine", "n-rollup": "rollup", "n-clockin": "clockin", "n-plain": "plain", "n-tuck": "request", "n-burst": "message" };
 const BARS = { clear: [], one: [["message"]], two: [["message"], ["mention"]], many: EIGHT, waiting: [["request"]], timer: [["message"], ["reminder"]] };
 const nNotes = !nState ? null
+  : callState ? nPick(CALL_STATES[callState])
   : Object.hasOwn(ONE, nState) ? nPick([[ONE[nState]]])
   : nState === "n-long" ? nPick(q.has("many") ? [["long", 0], ["long", 1], ["long", 2]] : [["long", 0]])
   : nState === "n-bar" ? nPick(BARS[barKind] ?? BARS.one)
@@ -452,7 +478,7 @@ const sample = {
   // Quiet hours (phase 7a): nothing due today, so the compact bar has only "Quiet until …" to say.
   briefing: { openTasks: 5, dueToday: quietOn ? [] : [{ id: "t1", title: "KITA onboarding flow", due: now }], dueTomorrow: [{ id: "t3", title: "Brand deck refresh", due: now }], overdue: quietOn ? [] : [{ id: "t2", title: "Landing page copy", due: now }], waitingForYourReview: state === "lead" ? [{ id: "r1" }] : [], assignmentsNotPickedUp: state === "lead" ? [{ id: "a1" }] : [], remindersToday: [], waitingForTheirCheck: [] },
   myTasks: [{ id: "11111111-1111-1111-1111-111111111111", title: "KITA onboarding flow", due: now }, { id: "22222222-2222-2222-2222-222222222222", title: "Landing page copy", due: null }],
-  team: state === "lead" || state === "idle" ? [{ id: "m1", name: "Ada Employee", state: "running", task: "Homepage hero illustrations", assistant: { name: "Nova", colour: "teal", visor: "band", eyes: "round", face: { hi: "#d1f5f0", mid: "#4ccfc3", edge: "#1f948a" } } }, { id: "m2", name: "Ben Employee", state: "paused", task: "Brand deck refresh", assistant: { name: "Brenda", colour: "white", visor: "bean", eyes: "pill", face: { hi: "#ffffff", mid: "#ececf0", edge: "#c9cad1" } } }, { id: "m3", name: "Chidi Okafor", state: null, task: null, assistant: { name: "Pip", colour: "purple", visor: "screen", eyes: "square", face: { hi: "#e9dfff", mid: "#a88cff", edge: "#7559d6" } } }] : [],
+  team: state === "lead" || state === "idle" ? [{ id: "m1", name: "Ada Employee", state: "running", task: "Homepage hero illustrations", assistant: { name: "Nova", colour: "teal", visor: "band", eyes: "round", face: { hi: "#d1f5f0", mid: "#4ccfc3", edge: "#1f948a" } } }, { id: "m2", name: "Ben Employee", state: "paused", task: "Brand deck refresh", assistant: { name: "Brenda", colour: "white", visor: "bean", eyes: "pill", face: { hi: "#ffffff", mid: "#ececf0", edge: "#c9cad1" } } }, { id: "m3", name: "Chidi Okafor", state: null, task: null, onCall: true, assistant: { name: "Pip", colour: "purple", visor: "screen", eyes: "square", face: { hi: "#e9dfff", mid: "#a88cff", edge: "#7559d6" } } }] : [],
   notifications: state === "reminder" ? [{ id: "n1", type: "brenda.reminder", title: "Reminder: Call Josh", body: `You asked ${personal.name} to remind you.`, href: null, created_at: now }]
     : state === "report" ? [{ id: "n2", type: "brenda.daily_report", title: "Your team report for Monday 5 October is ready", body: "Ada and Ben logged 13h 20m; Ben finished the brand deck and Ada sent the onboarding flow for review.", href: "/app/company-a/docs/44444444-4444-4444-4444-444444444444", created_at: now }]
     : quietOn ? quietNotes : routineCardShown ? routineNotes : fuNotes,
@@ -530,9 +556,55 @@ const replies = {
   reply: { reply: "Ben is on the clock, with two more tasks due this week.\n\n**Working on now**\n- **Homepage hero illustrations**, 1h 12m so far\n\n**Due this week**\n1. **Brand deck refresh**, due Thu 8 Oct, 17:00\n2. **Landing page copy**, due Fri 9 Oct, 17:00\n\nHis team's day is in the [Workroom](/app/company-a/workroom).", spoken: "Ben is on the clock, with two more tasks due this week. Working on now: Homepage hero illustrations, 1h 12m so far. Due this week: Brand deck refresh, due Thu 8 Oct, 17:00. Landing page copy, due Fri 9 Oct, 17:00. His team's day is in the Workroom.", engine: "claude", actions: [{ kind: "todo", summary: "Added “Send Ben the brief” to your list" }], proposals: [{ kind: "open", href: "/app/company-a/workroom", label: "Workroom" }, { kind: "open", href: "/app/company-a/reports", label: "Reports" }], note: null },
 };
 const saved = [];
+// Calls (phase 8, contract F.7): what rings, the call Jeremiah is on, and how GET /calls/now answers (CallsNow). The ring
+// starts when the page loads (call-incoming-busy: 2.5 s in, once the ask card is open and a reply picked) and stops 30 s
+// later, as the server's does (&hold keeps it).
+const RANG = T0 + (state === "call-incoming-busy" ? 2500 : 0);
+const callPerson = (p) => ({ membershipId: p.membershipId, name: p.name, firstName: p.name.split(" ")[0], profileId: p.membershipId, avatarKey: null, assistant: p.assistant });
+const whereOf = (kind, name, c) => ({ conversationId: c, kind, name, href: `${NW}/messages?c=${c}` });
+const DESIGN_AT = whereOf("team", "#Design", "c1000000-0000-4000-8000-000000000010");
+const ringOf = (id, kind, p, where) => ({ id, kind, caller: callPerson(p), where, rangAt: new Date(RANG).toISOString(), expiresAt: new Date(RANG + 30_000).toISOString(), href: `${NW}/calls/${id}`, inAnotherCall: state === "call-waiting" });
+let callRinging = ["call-incoming", "call-incoming-busy", "call-waiting"].includes(state) ? [ringOf(CALL_A, "direct", NP.ada, whereOf("direct", "Ada Obi", "c1000000-0000-4000-8000-000000000001"))]
+  : state === "call-incoming-group" ? [ringOf(CALL_G, "group", NP.ben, DESIGN_AT), ringOf(CALL_B, "direct", NP.ada, whereOf("direct", "Ada Obi", "c1000000-0000-4000-8000-000000000001"))] : [];
+let callActive = state === "on-call" ? { id: CALL_G, kind: "group", where: DESIGN_AT, startedAt: minsAgo(13), answeredAt: new Date(T0 - (12 * 60 + 4) * 1000).toISOString(), joinedAt: minsAgo(12), inRoom: 3, href: `${NW}/calls/${CALL_G}` }
+  : state === "call-waiting" ? { id: CALL_B, kind: "direct", where: whereOf("direct", "Ben Okafor", "c1000000-0000-4000-8000-000000000002"), startedAt: minsAgo(6), answeredAt: minsAgo(6), joinedAt: minsAgo(6), inRoom: 2, href: `${NW}/calls/${CALL_B}` } : null;
+// call-missed-live&busy (fix review, 10 October 2026): Jeremiah is on a call with Ada, so the missed card says so and its
+// button is "Leave it and join"; &busy=stale: the ring poll has not seen that call yet, so the first Join meets the
+// server's 409 IN_ANOTHER_CALL and the card turns into the same choice. Accepting without leaveOther is refused while he
+// is on it, as the server does.
+let busyCall = state === "call-missed-live" && q.has("busy") ? { id: CALL_A, kind: "direct", where: whereOf("direct", "Ada Obi", "c1000000-0000-4000-8000-000000000001"), startedAt: minsAgo(3), answeredAt: minsAgo(3), joinedAt: minsAgo(3), inRoom: 2, href: `${NW}/calls/${CALL_A}` } : null;
+if (busyCall && q.get("busy") !== "stale") callActive = busyCall;
+let lastRingSaid = null;
+const callsNow = () => {
+  if (!callState) return { ready: false, available: false, me: null, ringing: [], active: null, pollMs: 60_000, serverNow: new Date().toISOString(), ringsOnDesktop: false };
+  const t = Date.now();
+  const ringing = t < RANG ? [] : callRinging.filter((r) => q.has("hold") || Date.parse(r.expiresAt) > t);
+  return { ready: true, available: true, me: meP.membershipId, ringing, active: callActive, pollMs: ringing.length ? 2000 : 4000, serverNow: new Date().toISOString(), ringsOnDesktop: false };
+};
 window.__TAURI__ = {
   core: { invoke: async (cmd, args = {}) => {
     const path = String(args.path ?? "");
+    if (cmd === "api" && /\/calls\/now(\?|$)/.test(path)) {
+      // One ringer (fix review, 10 October 2026): the poll says whether the notch rings aloud (?ring=1 or ?ring=0).
+      const rings = /[?&]ring=1\b/.test(path);
+      if (rings !== lastRingSaid) { lastRingSaid = rings; console.log(`calls/now: the notch ${rings ? "rings aloud (a browser on this network stays silent)" : "does not ring aloud"}`); }
+      if (q.get("calls") === "404") { console.log("calls/now: 404"); throw { status: 404, code: "NOT_FOUND", message: "Not found." }; }
+      return callsNow();
+    }
+    const callStep = /\/calls\/([^/]+)\/(accept|decline)$/.exec(path);
+    if (cmd === "api" && callStep) {
+      const [, id, step] = callStep;
+      await wait(500);
+      console.log("call", step, id, JSON.stringify(args.body));
+      if (step === "accept" && q.get("accept") === "ended") throw { status: 409, code: "CALL_ENDED", message: "This call has ended." };
+      if (step === "accept" && busyCall && busyCall.id !== id && args.body?.leaveOther !== true) throw { status: 409, code: "IN_ANOTHER_CALL", message: "You're on another call." };
+      if (step === "accept") busyCall = null; // leaveOther: the other call is left first
+      const r = callRinging.find((x) => x.id === id);
+      callRinging = callRinging.filter((x) => x.id !== id);
+      if (step === "accept") callActive = { id, kind: r?.kind ?? "group", where: r?.where ?? DESIGN_AT, startedAt: minsAgo(1), answeredAt: new Date().toISOString(), joinedAt: new Date().toISOString(), inRoom: 2, href: `${NW}/calls/${id}` };
+      return step === "decline" ? { call: { id }, messageId: args.body?.message ? "m0000000-0000-4000-8000-000000000001" : null } : { call: { id } };
+    }
+    if (cmd === "api" && args.method === "POST" && /\/calls$/.test(path)) { await wait(500); console.log("call back", JSON.stringify(args.body)); return { call: { id: CALL_NEW }, existing: false, connection: null }; }
     if (cmd === "api" && path.endsWith("/assistant/chat")) {
       await new Promise((r) => setTimeout(r, 900));
       // What the notch sends back (acting without asking: an earlier answer's `tainted` rides on it).
@@ -765,6 +837,8 @@ if (state === "n-pager") setTimeout(() => {
   setTimeout(step, 400);
 }, 1500);
 if (state === "n-allread") setTimeout(() => pressNotch('[data-act="pg-all"]'), 1500);
+// Calls (phase 8): on call-incoming-busy a quick reply is picked on the open ask (so it must stay) before Ada rings.
+if (state === "call-incoming-busy") setTimeout(() => { if (card?.kind === "followup_ask") chooseReply("on_track"); }, 1500);
 // The bar states: what opened folds, so the bar shows what is unread (the waiting state tucks on its own after 15 s).
 if (nState === "n-bar" && ["one", "two", "many", "timer"].includes(barKind)) setTimeout(() => closeCard(), 1500);
 if (bug === "throw") setTimeout(pointAtBar, 1500);

@@ -24,6 +24,10 @@
 //   3 s; one that waits on something being typed, pressed or said stays.
 // It never reads `window`, `document` or main.js's state: everything comes in through the arguments, and every function
 // returns new objects instead of changing the ones it is given.
+//
+// Calls (owner decisions, 8 October 2026: phase 8, calls): what a ring does to what is open (`ringAction`) and when to ask
+// for rings again (`ringPollMs`, `ringRetryMs`). An incoming call outranks every card, the morning opener and the summary
+// and never waits in the queue; quiet hours ring nothing.
 
 // A global for main.js, a later classic script on the page (and module.exports for Node, at the end).
 const Notify = (() => {
@@ -202,6 +206,40 @@ const Notify = (() => {
   /** No pointer movement for 5 minutes. */
   const away = (lastMoveAt, now) => Number.isFinite(lastMoveAt) && Number.isFinite(now) && now - lastMoveAt > T.AWAY_MS;
 
-  return Object.freeze({ T, GROUP_RANK, countWords, holdMs, order, initial, arrival, pagerStart, pagerInsert, pagerStep, pagerRemove, dotWindow, leaveFold, markAllRead, away });
+  // ---- calls (owner decisions, 8 October 2026: phase 8, calls; contract F.1 and F.2) ----------------------------------
+  // The notch rings, answers and declines; the call itself runs in the person's browser. GET /calls/now says what rings
+  // and how soon to ask again (`pollMs`: 4 s, 2 s while ringing, 60 s before migration 0054 or without LiveKit; the
+  // numbers are CALL_LIMITS.pollMs in src/lib/calls.ts, which this file cannot import).
+
+  /** The ring poll's bounds and fallbacks: the server's pollMs clamped to 2 to 60 s; 5 minutes for a server from before phase 8 (404); 15 s after any other failure. */
+  const CALL_POLL = Object.freeze({ MIN_MS: 2_000, MAX_MS: 60_000, IDLE_MS: 4_000, OLD_SERVER_MS: 300_000, RETRY_MS: 15_000 });
+
+  /** When to ask GET /calls/now again: the server's `pollMs`, clamped to 2 to 60 s (4 s when it sent none). */
+  function ringPollMs(pollMs) {
+    const ms = typeof pollMs === "number" && Number.isFinite(pollMs) ? pollMs : CALL_POLL.IDLE_MS;
+    return Math.min(CALL_POLL.MAX_MS, Math.max(CALL_POLL.MIN_MS, Math.round(ms)));
+  }
+
+  /** After a failed poll: a server from before phase 8 (404) is asked again in 5 minutes, anything else in 15 s. */
+  const ringRetryMs = (status) => (status === 404 ? CALL_POLL.OLD_SERVER_MS : CALL_POLL.RETRY_MS);
+
+  /**
+   * What a ring does to the island (contract F.2). `ringing`: a call rings for the person now; `cardKind`: the open card's
+   * kind (or null); `sticky`: the open card (not the call's own) has something being typed, pressed or said, or a Confirm
+   * waiting; `quiet`: their quiet hours are on; `micOpen`: the talk keys are held. No ring: "none" (an open call card
+   * closes: the ring was answered elsewhere, declined, cancelled or timed out). Quiet hours: "none" (the owner's rule, D4:
+   * the server rings nobody in quiet hours, this is the belt and braces). The call card already open: "show" (it stays).
+   * The talk keys held or a sticky card: "bar" (the call rings in a strip on what is open, never over it). Otherwise
+   * "show": the incoming card replaces whatever is open; it outranks every other card and never waits in the queue.
+   */
+  function ringAction(o = {}) {
+    if (!o.ringing) return "none";
+    if (o.quiet) return "none";
+    if (o.cardKind === "call") return "show";
+    if (o.micOpen || o.sticky) return "bar";
+    return "show";
+  }
+
+  return Object.freeze({ T, GROUP_RANK, CALL_POLL, countWords, holdMs, order, initial, arrival, pagerStart, pagerInsert, pagerStep, pagerRemove, dotWindow, leaveFold, markAllRead, away, ringPollMs, ringRetryMs, ringAction });
 })();
 if (typeof module === "object" && module && module.exports) module.exports = Notify;

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { withUser, withWorker, isUniqueViolation, isExclusionViolation, type Db } from "@/server/db";
-import { conflict, forbidden, invalid, notFound } from "@/server/lib/errors";
+import { conflict, forbidden, notFound } from "@/server/lib/errors";
 import { schema0048Ready } from "@/server/lib/schema-0048";
 import { audit, notify, managersOf } from "@/server/services/common";
 import type { OrgContext } from "@/server/lib/api";
@@ -15,8 +15,6 @@ export type SessionView = {
   taskTitle: string;
   projectName: string;
   state: SessionState;
-  captureMode: string;
-  captureRequirement: string;
   startedAt: string;
   endedAt: string | null;
   lastHeartbeatAt: string;
@@ -30,14 +28,15 @@ export type SessionView = {
   serverNow: string;
   heartbeatSeconds: number;
   staleAfterSeconds: number;
-  /** Whether the session's member has agreed to the current recording rules (asked once, when a recorded session starts). */
-  policyAcknowledged: boolean;
 };
 
+/**
+ * Screen recording is gone (owner decision, 8 October 2026: phase 8), and with it the session's capture mode and
+ * capture exception. Zod strips unknown keys, so an old tab or an old notch build that still sends `captureMode: "none"`
+ * (or a capture exception id) keeps working: the extra keys are simply dropped.
+ */
 export const startSchema = z.object({
   taskId: z.string().uuid(),
-  captureMode: z.enum(["none", "optional", "required", "exception"]).default("none"),
-  captureExceptionId: z.string().uuid().nullable().optional(),
 });
 export const versionSchema = z.object({ expectedVersion: z.number().int().positive() });
 export const stopSchema = versionSchema.extend({
@@ -46,14 +45,12 @@ export const stopSchema = versionSchema.extend({
 });
 export const switchSchema = versionSchema.extend({
   nextTaskId: z.string().uuid(),
-  captureMode: z.enum(["none", "optional", "required", "exception"]).default("none"),
-  captureExceptionId: z.string().uuid().nullable().optional(),
   note: z.string().trim().max(2000).default(""),
 });
 
 async function policyTimings(db: Db, policyId: string | null) {
-  const p = policyId ? await db.maybeOne<{ heartbeat_seconds: number; stale_after_seconds: number; recording_mode: string }>(`SELECT heartbeat_seconds, stale_after_seconds, recording_mode FROM policies WHERE id = $1`, [policyId]) : null;
-  return { heartbeatSeconds: p?.heartbeat_seconds ?? 30, staleAfterSeconds: p?.stale_after_seconds ?? 90, recordingMode: p?.recording_mode ?? "disabled" };
+  const p = policyId ? await db.maybeOne<{ heartbeat_seconds: number; stale_after_seconds: number }>(`SELECT heartbeat_seconds, stale_after_seconds FROM policies WHERE id = $1`, [policyId]) : null;
+  return { heartbeatSeconds: p?.heartbeat_seconds ?? 30, staleAfterSeconds: p?.stale_after_seconds ?? 90 };
 }
 
 async function lockUser(db: Db, userId: string) {
@@ -71,19 +68,18 @@ async function confirmedSeconds(db: Db, sessionId: string): Promise<{ confirmed:
 }
 
 export async function sessionView(db: Db, ctx: OrgContext, sessionId: string): Promise<SessionView> {
-  const s = await db.maybeOne<{ id: string; task_id: string; title: string; project_name: string; state: SessionState; capture_mode: string; capture_requirement: string; started_at: string; ended_at: string | null; last_heartbeat_at: string; version: number; estimate_minutes: number | null; policy_id: string | null; membership_id: string }>(
-    `SELECT s.id, s.task_id, t.title, p.name AS project_name, s.state, s.capture_mode, t.capture_requirement, s.started_at, s.ended_at, s.last_heartbeat_at, s.version, t.estimate_minutes, s.policy_id, s.membership_id
+  const s = await db.maybeOne<{ id: string; task_id: string; title: string; project_name: string; state: SessionState; started_at: string; ended_at: string | null; last_heartbeat_at: string; version: number; estimate_minutes: number | null; policy_id: string | null; membership_id: string }>(
+    `SELECT s.id, s.task_id, t.title, p.name AS project_name, s.state, s.started_at, s.ended_at, s.last_heartbeat_at, s.version, t.estimate_minutes, s.policy_id, s.membership_id
      FROM work_sessions s JOIN tasks t ON t.id = s.task_id JOIN projects p ON p.id = t.project_id WHERE s.id = $1 AND s.organisation_id = $2`, [sessionId, ctx.org.id]);
   if (!s) throw notFound("Session not found.");
   const sums = await confirmedSeconds(db, s.id);
   const timings = await policyTimings(db, ctx.org.current_policy_id);
-  const ack = ctx.org.current_policy_id ? await db.maybeOne(`SELECT 1 FROM policy_acknowledgements WHERE membership_id = $1 AND policy_id = $2`, [s.membership_id, ctx.org.current_policy_id]) : true;
   const now = await db.one<{ now: string }>(`SELECT now() AS now`);
   return {
-    id: s.id, taskId: s.task_id, taskTitle: s.title, projectName: s.project_name, state: s.state, captureMode: s.capture_mode, captureRequirement: s.capture_requirement,
+    id: s.id, taskId: s.task_id, taskTitle: s.title, projectName: s.project_name, state: s.state,
     startedAt: s.started_at, endedAt: s.ended_at, lastHeartbeatAt: s.last_heartbeat_at, version: s.version, estimateMinutes: s.estimate_minutes,
     confirmedSeconds: sums.confirmed, openIntervalStartedAt: sums.openStartedAt, uncertainSeconds: sums.uncertain, serverNow: now.now,
-    heartbeatSeconds: timings.heartbeatSeconds, staleAfterSeconds: timings.staleAfterSeconds, policyAcknowledged: !!ack,
+    heartbeatSeconds: timings.heartbeatSeconds, staleAfterSeconds: timings.staleAfterSeconds,
   };
 }
 
@@ -92,50 +88,21 @@ export async function getSession(ctx: OrgContext, sessionId: string): Promise<Se
 }
 
 /**
- * The workspace's current recording rules, in the words the consent prompt needs, and whether this person has agreed to
- * them. Agreement is asked once per version, at the moment a recorded session starts (owner decision, 5 October 2026:
- * no general sign-off). Null when the workspace has no rules yet, which means nothing can be recorded.
+ * The caller's open session, wherever it is. Cross-workspace sessions are reported without task details. This runs on
+ * every poll of the timer and the desktop notch. (The recording rules it used to carry went with screen recording:
+ * owner decision, 8 October 2026, phase 8.)
  */
-export type RecordingRules = { version: number; mode: string; retentionDays: number; notice: string; agreed: boolean };
-
-/**
- * The caller's open session, wherever it is, and the recording rules here. Cross-workspace sessions are reported
- * without task details. Both come from one statement: this runs on every poll of the timer and the desktop notch.
- */
-export async function currentSession(ctx: OrgContext): Promise<{ session: SessionView | null; elsewhere: { organisationName: string; organisationSlug: string } | null; recording: RecordingRules | null }> {
+export async function currentSession(ctx: OrgContext): Promise<{ session: SessionView | null; elsewhere: { organisationName: string; organisationSlug: string } | null }> {
   return withUser(ctx.user.profileId, async (db) => {
-    const r = await db.one<{ open: { id: string; organisation_id: string; name: string; slug: string } | null; recording: RecordingRules | null }>(
-      `SELECT (SELECT json_build_object('id', s.id, 'organisation_id', s.organisation_id, 'name', o.name, 'slug', o.slug)
-                 FROM work_sessions s JOIN organisations o ON o.id = s.organisation_id
-                 WHERE s.user_id = $1 AND s.state IN ('running','paused','interrupted')) AS open,
-              (SELECT json_build_object('version', p.version, 'mode', p.recording_mode, 'retentionDays', p.retention_days, 'notice', p.notice_text,
-                                        'agreed', EXISTS (SELECT 1 FROM policy_acknowledgements a WHERE a.membership_id = $2 AND a.policy_id = p.id))
-                 FROM policies p WHERE p.id = $3) AS recording`,
-      [ctx.user.profileId, ctx.membership.id, ctx.org.current_policy_id]);
-    const { open, recording } = r;
-    if (!open) return { session: null, elsewhere: null, recording };
-    if (open.organisation_id !== ctx.org.id) return { session: null, elsewhere: { organisationName: open.name, organisationSlug: open.slug }, recording };
-    return { session: await sessionView(db, ctx, open.id), elsewhere: null, recording };
+    const open = await db.maybeOne<{ id: string; organisation_id: string; name: string; slug: string }>(
+      `SELECT s.id, s.organisation_id, o.name, o.slug
+       FROM work_sessions s JOIN organisations o ON o.id = s.organisation_id
+       WHERE s.user_id = $1 AND s.state IN ('running','paused','interrupted')`,
+      [ctx.user.profileId]);
+    if (!open) return { session: null, elsewhere: null };
+    if (open.organisation_id !== ctx.org.id) return { session: null, elsewhere: { organisationName: open.name, organisationSlug: open.slug } };
+    return { session: await sessionView(db, ctx, open.id), elsewhere: null };
   });
-}
-
-/**
- * Consent given while a timer already runs: the session started before the person had agreed, so it was started
- * unrecorded. Once they agree, their open session here may record, exactly as if they had agreed before pressing Start
- * (see startInternal); nothing records until they choose a screen. Called when someone agrees to the rules
- * (acknowledgePolicy). A session whose own rules had recording off stays as it is.
- */
-export async function allowRecordingOnOpenSession(db: Db, ctx: OrgContext): Promise<void> {
-  const opened = await db.query<{ id: string }>(
-    `UPDATE work_sessions s SET capture_mode = 'optional'
-     WHERE s.organisation_id = $1 AND s.membership_id = $2 AND s.state IN ('running','paused','interrupted') AND s.capture_mode = 'none'
-       AND EXISTS (SELECT 1 FROM policies p WHERE p.id = s.policy_id AND p.recording_mode <> 'disabled')
-       AND EXISTS (SELECT 1 FROM policies p WHERE p.id = $3 AND p.recording_mode <> 'disabled')
-     RETURNING s.id`, [ctx.org.id, ctx.membership.id, ctx.org.current_policy_id]);
-  for (const o of opened) {
-    await db.query(`INSERT INTO session_events(organisation_id, session_id, actor_user_id, event_type, metadata) VALUES ($1, $2, $3, 'capture_allowed', $4)`,
-      [ctx.org.id, o.id, ctx.user.profileId, JSON.stringify({ captureMode: "optional", reason: "consent" })]);
-  }
 }
 
 type StartOpts = z.infer<typeof startSchema>;
@@ -145,38 +112,20 @@ async function startInternal(db: Db, ctx: OrgContext, input: StartOpts, requestI
   const visible = await db.maybeOne<{ assignee_membership_id: string }>(`SELECT assignee_membership_id FROM tasks WHERE id = $1 AND organisation_id = $2`, [input.taskId, ctx.org.id]);
   if (!visible) throw notFound("Task not found.");
   if (visible.assignee_membership_id !== ctx.membership.id) throw forbidden("Only the task's assignee can start a session on it.");
-  const t = await db.maybeOne<{ id: string; title: string; status: string; assignee_membership_id: string; archived_at: string | null; capture_requirement: string; project_status: string }>(
-    `SELECT t.id, t.title, t.status, t.assignee_membership_id, t.archived_at, t.capture_requirement, p.status AS project_status
+  const t = await db.maybeOne<{ id: string; title: string; status: string; assignee_membership_id: string; archived_at: string | null; project_status: string }>(
+    `SELECT t.id, t.title, t.status, t.assignee_membership_id, t.archived_at, p.status AS project_status
      FROM tasks t JOIN projects p ON p.id = t.project_id WHERE t.id = $1 AND t.organisation_id = $2 FOR UPDATE OF t`, [input.taskId, ctx.org.id]);
   if (!t) throw notFound("Task not found.");
   if (t.archived_at || t.project_status !== "active") throw conflict("TASK_ARCHIVED", "Archived tasks cannot start sessions.");
   if (t.status === "completed") throw conflict("TASK_COMPLETED", "This task is completed. Reopen it (with a reason) before working on it again.");
   if (t.status === "in_review") throw conflict("TASK_IN_REVIEW", "This task is waiting for review. Wait for the reviewer's decision or ask them to return it.");
 
-  const timings = await policyTimings(db, ctx.org.current_policy_id);
-  const captureRequired = t.capture_requirement === "required" && timings.recordingMode === "required_on_designated_tasks";
-  let captureMode = input.captureMode;
-  if (timings.recordingMode === "disabled") captureMode = "none";
-  const acknowledged = ctx.org.current_policy_id ? !!(await db.maybeOne(`SELECT 1 FROM policy_acknowledgements WHERE membership_id = $1 AND policy_id = $2`, [ctx.membership.id, ctx.org.current_policy_id])) : true;
-  // Recording allowed by policy but not demanded for this task: the session may record (the member presses
-  // "Record screen" when they want to); nothing starts without their explicit action.
-  if (!captureRequired && captureMode === "none" && timings.recordingMode !== "disabled" && acknowledged) captureMode = "optional";
-  if (captureRequired) {
-    if (captureMode === "exception") {
-      const ex = input.captureExceptionId ? await db.maybeOne(`SELECT 1 FROM capture_exceptions WHERE id = $1 AND membership_id = $2 AND organisation_id = $3`, [input.captureExceptionId, ctx.membership.id, ctx.org.id]) : null;
-      if (!ex) throw invalid("An exception request is required to work without capture on this task.");
-    } else if (captureMode !== "required") {
-      throw conflict("CAPTURE_REQUIRED", "This task requires screen capture. Start recording, or request an exception.", { taskId: t.id });
-    }
-  }
-  if ((captureMode === "required" || captureMode === "optional") && !acknowledged) throw conflict("POLICY_NOT_ACKNOWLEDGED", "Agree to the current recording rules before starting a recorded session.");
-
   let s: { id: string; started_at: string };
   try {
     s = await db.one(
-      `INSERT INTO work_sessions(organisation_id, user_id, membership_id, task_id, state, capture_mode, capture_exception_id, policy_id)
-       VALUES ($1, $2, $3, $4, 'running', $5, $6, $7) RETURNING id, started_at`,
-      [ctx.org.id, ctx.user.profileId, ctx.membership.id, t.id, captureMode, captureMode === "exception" ? input.captureExceptionId : null, ctx.org.current_policy_id]);
+      `INSERT INTO work_sessions(organisation_id, user_id, membership_id, task_id, state, policy_id)
+       VALUES ($1, $2, $3, $4, 'running', $5) RETURNING id, started_at`,
+      [ctx.org.id, ctx.user.profileId, ctx.membership.id, t.id, ctx.org.current_policy_id]);
   } catch (err) {
     if (isUniqueViolation(err)) throw conflict("SESSION_OPEN", "You already have an open work session. Resume it or switch.", {});
     throw err;
@@ -189,8 +138,8 @@ async function startInternal(db: Db, ctx: OrgContext, input: StartOpts, requestI
     if (isExclusionViolation(err)) throw conflict("INTERVAL_OVERLAP", "Another confirmed interval overlaps this moment. Stop it first.");
     throw err;
   }
-  await db.query(`INSERT INTO session_events(organisation_id, session_id, actor_user_id, event_type, request_id, metadata) VALUES ($1, $2, $3, 'started', $4, $5)`,
-    [ctx.org.id, s.id, ctx.user.profileId, requestId ?? null, JSON.stringify({ captureMode })]);
+  await db.query(`INSERT INTO session_events(organisation_id, session_id, actor_user_id, event_type, request_id) VALUES ($1, $2, $3, 'started', $4)`,
+    [ctx.org.id, s.id, ctx.user.profileId, requestId ?? null]);
   if (t.status === "todo" || t.status === "blocked") {
     await db.query(`UPDATE tasks SET status = 'in_progress', blocked_reason = NULL, version = version + 1 WHERE id = $1`, [t.id]);
     await db.query(`INSERT INTO task_status_history(organisation_id, task_id, actor_membership_id, from_status, to_status) VALUES ($1, $2, $3, $4, 'in_progress')`, [ctx.org.id, t.id, ctx.membership.id, t.status]);
@@ -198,7 +147,7 @@ async function startInternal(db: Db, ctx: OrgContext, input: StartOpts, requestI
     // cleared in the same transaction, as tasks.ts does.
     if (t.status === "blocked" && (await schema0048Ready(db))) await db.query(`SELECT app_task_block_settle($1)`, [t.id]);
   }
-  await audit(db, { organisationId: ctx.org.id, actorMembershipId: ctx.membership.id, action: "session.started", subjectType: "work_session", subjectId: s.id, subjectMembershipId: ctx.membership.id, requestId, metadata: { taskId: t.id, captureMode } });
+  await audit(db, { organisationId: ctx.org.id, actorMembershipId: ctx.membership.id, action: "session.started", subjectType: "work_session", subjectId: s.id, subjectMembershipId: ctx.membership.id, requestId, metadata: { taskId: t.id } });
   return s.id;
 }
 
@@ -219,8 +168,8 @@ export async function startSession(ctx: OrgContext, input: StartOpts, requestId?
 }
 
 async function loadOwnOpen(db: Db, ctx: OrgContext, sessionId: string) {
-  const s = await db.maybeOne<{ id: string; state: SessionState; version: number; task_id: string; last_heartbeat_at: string; started_at: string; capture_mode: string }>(
-    `SELECT id, state, version, task_id, last_heartbeat_at, started_at, capture_mode FROM work_sessions WHERE id = $1 AND organisation_id = $2 AND membership_id = $3 FOR UPDATE`, [sessionId, ctx.org.id, ctx.membership.id]);
+  const s = await db.maybeOne<{ id: string; state: SessionState; version: number; task_id: string; last_heartbeat_at: string; started_at: string }>(
+    `SELECT id, state, version, task_id, last_heartbeat_at, started_at FROM work_sessions WHERE id = $1 AND organisation_id = $2 AND membership_id = $3 FOR UPDATE`, [sessionId, ctx.org.id, ctx.membership.id]);
   if (!s) throw notFound("Session not found.");
   return s;
 }
@@ -329,7 +278,7 @@ export async function stopSession(ctx: OrgContext, sessionId: string, input: z.i
   });
 }
 
-/** Closes the current session and opens the next one atomically. Capture permission for the next task must already be granted client-side. */
+/** Closes the current session and opens the next one atomically. */
 export async function switchSession(ctx: OrgContext, sessionId: string, input: z.infer<typeof switchSchema>, requestId?: string) {
   return withUser(ctx.user.profileId, async (db) => {
     await lockUser(db, ctx.user.profileId);
@@ -343,7 +292,7 @@ export async function switchSession(ctx: OrgContext, sessionId: string, input: z
     if (s.version !== input.expectedVersion) throw conflict("VERSION_CONFLICT", "This session changed elsewhere. Reload to see its current state.", { currentVersion: s.version, state: s.state });
     if (s.task_id === input.nextTaskId) throw conflict("SAME_TASK", "You are already working on that task.");
     await stopInternal(db, ctx, s, { note: input.note, outcome: "continue_later" }, requestId);
-    const nextId = await startInternal(db, ctx, { taskId: input.nextTaskId, captureMode: input.captureMode, captureExceptionId: input.captureExceptionId }, requestId);
+    const nextId = await startInternal(db, ctx, { taskId: input.nextTaskId }, requestId);
     await db.query(`INSERT INTO session_events(organisation_id, session_id, actor_user_id, event_type, request_id, metadata) VALUES ($1, $2, $3, 'switched_from', $4, $5)`, [ctx.org.id, nextId, ctx.user.profileId, requestId ?? null, JSON.stringify({ previousSessionId: s.id })]);
     return sessionView(db, ctx, nextId);
   });

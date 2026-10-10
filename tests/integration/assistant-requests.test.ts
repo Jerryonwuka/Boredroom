@@ -177,7 +177,7 @@ describe("the other kinds, as the recipient", () => {
     // "Pricing page copy" waits for David's check now: the holder cannot move it, so it is refused at plan, in words.
     expect(await planRequest(olu, { to: "Ben Okafor", request: { kind: "task_status", task: "Pricing page copy", status: "in_progress" } }))
       .toMatchObject({ ok: false, code: "bad_transition", error: "Ben can't move “Pricing page copy” from In review to In progress." });
-    const fresh = await createTask(david, { projectId: a.projectId, title: "Landing page", expectedOutput: "The landing page, live.", assigneeMembershipId: id(ben), reviewerMembershipId: id(david), category: "work", priority: "normal", estimateMinutes: null, dueAt: null, captureRequirement: "none", addToMyDay: false });
+    const fresh = await createTask(david, { projectId: a.projectId, title: "Landing page", expectedOutput: "The landing page, live.", assigneeMembershipId: id(ben), reviewerMembershipId: id(david), category: "work", priority: "normal", estimateMinutes: null, dueAt: null, addToMyDay: false });
     const req = await ask(olu, ben, { kind: "task_status", task: fresh.id, status: "in_progress" });
     // Before Ben answers, David hands the task to Olu.
     await adminQuery("UPDATE tasks SET assignee_membership_id = $2 WHERE id = $1", [fresh.id, id(olu)]);
@@ -248,7 +248,7 @@ describe("refusals at plan, in words", () => {
     expect(await refusal(olu, "Ben Okafor", { kind: "task_status", task: a.taskIds.homepage, status: "in_progress" })).toEqual({ code: "not_theirs", error: "Ben doesn't hold that task, so Ben can't move it." });
     // A project only Olu is in (the owner made it): Olu sees its task, Ben does not.
     const secret = await createProject(a.ownerCtx, { name: "Acquisition", description: "Confidential", requiresDueDate: false, requiresEstimate: false, memberIds: [id(olu)] });
-    const hidden = await createTask(a.ownerCtx, { projectId: secret.id, title: "Due diligence", expectedOutput: "Notes.", assigneeMembershipId: id(olu), reviewerMembershipId: null, category: "work", priority: "normal", estimateMinutes: null, dueAt: null, captureRequirement: "none", addToMyDay: false });
+    const hidden = await createTask(a.ownerCtx, { projectId: secret.id, title: "Due diligence", expectedOutput: "Notes.", assigneeMembershipId: id(olu), reviewerMembershipId: null, category: "work", priority: "normal", estimateMinutes: null, dueAt: null, addToMyDay: false });
     expect(await refusal(olu, "Ben Okafor", { kind: "task_comment", task: hidden.id, text: "See this" })).toEqual({ code: "not_visible", error: "Ben can't see that task, so Ben can't comment on it." });
     const todo = await quickTodo(ben, { title: "Fresh one" });
     expect(await refusal(david, "Ben Okafor", { kind: "task_status", task: todo.id, status: "completed" })).toEqual({ code: "bad_transition", error: "Ben can't move “Fresh one” from To do to Done." });

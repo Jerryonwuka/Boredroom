@@ -41,7 +41,7 @@ export function PlanForm({ plan, featureKeys }: { plan?: PlanRow; featureKeys: r
         <div className="grid gap-3 sm:grid-cols-2">
           <Labelled label="Name"><input name="name" defaultValue={plan?.name ?? ""} className={inputCls} required placeholder="Pro" /></Labelled>
           <Labelled label="Code" htmlFor={`${id}-code`}><InputAdorned id={`${id}-code`} prefix="plan /" name="code" defaultValue={plan?.code ?? ""} pattern="[a-z0-9\-]{2,40}" required placeholder="pro" className="font-mono" /></Labelled>
-          <Labelled label="One line for the pricing page" className="sm:col-span-2"><textarea name="description" defaultValue={plan?.description ?? ""} rows={2} className={inputCls} placeholder="Everything a remote team needs, recordings included." /></Labelled>
+          <Labelled label="One line for the pricing page" className="sm:col-span-2"><textarea name="description" defaultValue={plan?.description ?? ""} rows={2} className={inputCls} placeholder="Everything a remote team needs." /></Labelled>
         </div>
       </Section>
       <Section title="Price" hint="Typed in major units. Yearly is charged once; the pricing page shows it per month.">

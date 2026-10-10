@@ -2,6 +2,7 @@ import { accessSync, constants, mkdirSync } from "node:fs";
 import { getPool } from "@/server/db";
 import { mailConfigProblem } from "@/server/lib/mail";
 import { googleConfigured } from "@/server/auth/google";
+import { livekitConfigured } from "@/server/lib/livekit";
 
 export type Check = { ok: boolean; detail?: string; fix?: string };
 
@@ -24,7 +25,7 @@ export function explainInfraError(err: unknown): { message: string; fix: string 
   return null;
 }
 
-export async function runHealthChecks(): Promise<{ ok: boolean; checks: Record<string, Check>; nodeEnv: string | undefined; mailProvider: string; storageProvider: string; assistantServerKey: boolean }> {
+export async function runHealthChecks(): Promise<{ ok: boolean; checks: Record<string, Check>; nodeEnv: string | undefined; mailProvider: string; storageProvider: string; assistantServerKey: boolean; calls: boolean }> {
   const checks: Record<string, Check> = {};
   const has = (name: string) => !!process.env[name] && !String(process.env[name]).startsWith("change-me");
   const missing = [!has("DATABASE_URL") && "DATABASE_URL", !has("APP_SECRET") && "APP_SECRET"].filter(Boolean) as string[];
@@ -51,5 +52,8 @@ export async function runHealthChecks(): Promise<{ ok: boolean; checks: Record<s
     try { mkdirSync(dir, { recursive: true }); accessSync(dir, constants.W_OK); checks.mail = { ok: true, detail: `sink → ${dir} (nothing is delivered; read it at /dev/mail)` }; }
     catch (err) { checks.mail = { ok: false, detail: `${dir}: ${(err as Error).message}`, fix: "Use a writable MAIL_SINK_DIR or set MAIL_PROVIDER=resend." }; }
   } else checks.mail = { ok: true, detail: `${mailKind}${mailKind === "smtp" ? ` via ${new URL(process.env.SMTP_URL!).hostname}` : ""}, from ${process.env.MAIL_FROM}` };
-  return { ok: Object.values(checks).every((c) => c.ok), checks, nodeEnv: process.env.NODE_ENV, mailProvider: process.env.MAIL_PROVIDER ?? "sink", storageProvider: process.env.STORAGE_PROVIDER ?? "local", assistantServerKey: !!process.env.ANTHROPIC_API_KEY };
+  // Calls (owner decisions, 8 October 2026: phase 8): LiveKit Cloud. Optional, so always ok; the names only, never values.
+  const calls = livekitConfigured();
+  checks.calls = { ok: true, detail: calls ? "LiveKit configured" : "Calls are off: set LIVEKIT_URL, LIVEKIT_API_KEY and LIVEKIT_API_SECRET." };
+  return { ok: Object.values(checks).every((c) => c.ok), checks, nodeEnv: process.env.NODE_ENV, mailProvider: process.env.MAIL_PROVIDER ?? "sink", storageProvider: process.env.STORAGE_PROVIDER ?? "local", assistantServerKey: !!process.env.ANTHROPIC_API_KEY, calls };
 }

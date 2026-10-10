@@ -27,6 +27,11 @@
  *   every time, so a withdrawn message or a channel left shows at the next poll.
  * Kinds the notch draws from the state lists it already reads (the follow-up ask, assistant messages and replies,
  * commitments and open asks noted, blocks, standup drafts) get no facts here.
+ *
+ * Calls (owner decisions, 8 October 2026: phase 8): a missed call (`call.missed`) gets `kind: "call"`: who called (with
+ * their assistant's face), where ("#Design", or null for a one-to-one call), whether the call is still on (`live`: the
+ * card offers Join) and, for a one-to-one call, who to call back. Read as the viewer under row-level security: only
+ * someone the call rang (or who reads its conversation) gets facts. None before migration 0054.
  */
 import { withUser, type Db } from "@/server/db";
 import type { OrgContext } from "@/server/lib/api";
@@ -43,6 +48,7 @@ import { getAssistantItem } from "@/server/services/assistant-items";
 import { getCommitment } from "@/server/services/commitments";
 import { getStandupRollup } from "@/server/services/standup";
 import { snapshotOf, type ReportFacts, type ReportSnapshot } from "@/server/services/daily-report";
+import { retryWithout0054, schema0054Ready } from "@/server/lib/schema-0054";
 
 // ---- The shape (contract B.1) ------------------------------------------------------------------------------------------
 
@@ -74,7 +80,10 @@ export type NoticeFacts =
   | { v: 1; kind: "reminder"; text: string; at: string; setAt: string | null; taskTitle: string | null; taskId: string | null }
   | { v: 1; kind: "routine"; name: string; lead: string; sections: { id: string; label: string; count: number }[] }
   | { v: 1; kind: "rollup"; team: string; posted: number; members: number; blockers: number;
-      noUpdate: NoticePerson[]; late: NoticePerson[] };
+      noUpdate: NoticePerson[]; late: NoticePerson[] }
+  // Phase 8: a missed call. `live`: still on (Join); `callBack`: a one-to-one call's caller (Call back).
+  | { v: 1; kind: "call"; callId: string; from: NoticePerson; where: string | null; direct: boolean; at: string; live: boolean;
+      callBack: { membershipId: string } | null };
 export type NoticeKind = NoticeFacts["kind"];
 
 /** A notification as the notch receives it: the row's own fields and its facts (null: the plain card). */
@@ -149,6 +158,7 @@ export function noticeKindOf(n: Pick<NoticeRow, "type" | "resource_type">): Noti
     case "brenda.reminder": return "reminder";
     case "brenda.routine": return "routine";
     case "brenda.standup_rollup": return "rollup";
+    case "call.missed": return "call";
     default: return null;
   }
 }
@@ -627,12 +637,52 @@ const rollups: Resolver = (ctx, rows) => each(ctx, "rollup", rows, (id) => getSt
 });
 
 /**
+ * A missed call (phase 8): the call the notification points at, as the viewer reads it (row-level security: the people it
+ * rang and its conversation's readers), with who started it and where. `live` (the card's Join) only while the call is
+ * on, the viewer is not in it already and still reads its conversation (fix review, 10 October 2026: the card kept
+ * offering Join after a late join). None before migration 0054.
+ */
+const calls: Resolver = async (ctx, rows) => {
+  const ids = [...new Set(rows.filter((n) => n.resource_type === "call").map((n) => n.resource_id).filter(isUuid))];
+  const out = new Map<string, Built>();
+  if (!ids.length) return out;
+  const found = await retryWithout0054(() => withUser(ctx.user.profileId, async (db) => {
+    if (!(await schema0054Ready(db))) return [];
+    return db.query<{ id: string; kind: string; state: string; started_by: string; by_name: string | null; created_at: string; conv_kind: string | null; conv_name: string | null; joinable: boolean }>(
+      `SELECT c.id, c.kind, c.state, c.started_by, p.display_name AS by_name, c.created_at, cv.kind AS conv_kind,
+              CASE cv.kind WHEN 'team' THEN t.name WHEN 'channel' THEN cv.title END AS conv_name,
+              (app_can_read_conversation(c.conversation_id) AND NOT EXISTS (
+                 SELECT 1 FROM call_participants x WHERE x.call_id = c.id AND x.membership_id = $3 AND x.state = 'joined')) AS joinable
+       FROM calls c
+       LEFT JOIN memberships ms ON ms.id = c.started_by LEFT JOIN profiles p ON p.id = ms.user_id
+       LEFT JOIN conversations cv ON cv.id = c.conversation_id LEFT JOIN teams t ON t.id = cv.team_id
+       WHERE c.id = ANY($1::uuid[]) AND c.organisation_id = $2`, [ids, ctx.org.id, ctx.membership.id]);
+  }));
+  const byId = new Map(found.map((c) => [c.id, c]));
+  for (const n of rows) {
+    const c = n.resource_id ? byId.get(n.resource_id) : undefined;
+    if (!c) continue;
+    const direct = c.kind === "direct";
+    out.set(n.id, {
+      people: [c.started_by],
+      make: (looks) => ({
+        v: 1, kind: "call", callId: c.id, from: personOf({ membershipId: c.started_by, name: c.by_name }, looks),
+        where: direct ? null : whereOf(c.conv_kind ?? "channel", c.conv_name), direct, at: c.created_at, live: c.state !== "ended" && c.joinable,
+        callBack: direct && c.started_by !== ctx.membership.id ? { membershipId: c.started_by } : null,
+      }),
+    });
+  }
+  return out;
+};
+
+/**
  * Each kind's resolver (contract B.2), looked up when the facts are read: the integration test replaces one for a moment
  * to see a failure stay contained.
  */
 export const NOTICE_RESOLVERS: Record<NoticeKind, Resolver> = {
   message: messagesBy("message"), mention: messagesBy("mention"), comment: comments, answer: answers, batch: batches, report: reports,
   review: reviews, assignment: assignments, request: requests, commitment: commitments, reminder: reminders, routine: routines, rollup: rollups,
+  call: calls,
 };
 
 // ---- The whole -----------------------------------------------------------------------------------------------------------

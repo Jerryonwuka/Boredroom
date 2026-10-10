@@ -21,7 +21,7 @@ type NavIcon = LucideIcon | typeof BrendaGlyph;
 const NAV: { group?: string; items: { label: string; icon: NavIcon; active?: boolean; count?: number }[] }[] = [
   { items: [{ label: "Brenda", icon: BrendaGlyph, active: true }, { label: "Dashboard", icon: LayoutDashboard }, { label: "Attendance", icon: ClipboardList }, { label: "Workroom", icon: Activity }] },
   { group: "Work", items: [{ label: "Tasks", icon: ListChecks }, { label: "Messages", icon: MessageSquare, count: 3 }, { label: "Docs", icon: FileText }, { label: "Reviews", icon: ClipboardCheck }, { label: "Projects", icon: FolderKanban }] },
-  { group: "Organisation", items: [{ label: "People and teams", icon: UsersRound }, { label: "Recordings", icon: Video }, { label: "Timesheets", icon: History }] },
+  { group: "Organisation", items: [{ label: "People and teams", icon: UsersRound }, { label: "Calls", icon: Video }, { label: "Timesheets", icon: History }] },
 ];
 
 /** A team lead's three action cards under her box, as on Brenda's home (components/app/brenda-home, CARDS.lead). */

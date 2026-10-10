@@ -1,5 +1,7 @@
 # Boardroom — Product and Engineering Build Specification
 
+> Screen recording removed (owner decision, 8 October 2026), replaced by Calls (phase 8).
+
 Version: 1.0 · 10 September 2026  
 Audience: Claude Code and the engineer responsible for implementation  
 Status: Build brief, not implemented software. Defaults below are proposed implementation decisions, not validated customer requirements.
@@ -38,6 +40,8 @@ Never represent a timer, connection heartbeat, recording, mouse movement, or log
 
 ### Recording pilot, included after the core release
 
+> Screen recording removed (owner decision, 8 October 2026), replaced by Calls (phase 8).
+
 - Explicit browser screen/window capture; no microphone or audio.
 - Optional capture or capture required on designated tasks, governed by policy.
 - Visible controls, recoverable uploads, private playback, access logs, and retention deletion.
@@ -55,9 +59,9 @@ Exclude covert recording, keylogging, live manager screen watching, automatic sa
 | --- | --- |
 | Company time zone | Africa/Lagos, editable during onboarding; store timestamps in UTC |
 | Working schedule | Monday–Friday; 09:00–17:00; editable and informational, not an automatic pay rule |
-| Recording | Disabled until organisation policy is configured and activated |
-| Recording retention | 7 days after session end; selectable 1–30 days in the pilot |
-| Capture audio | Disabled |
+| Recording | Removed (phase 8, owner decision 8 October 2026). Was: disabled until organisation policy is configured and activated |
+| Recording retention | Removed (phase 8, owner decision 8 October 2026). Was: 7 days after session end; selectable 1–30 days in the pilot. A call's transcript is deleted 7 days after its recap |
+| Capture audio | Removed (phase 8, owner decision 8 October 2026). Was: disabled |
 | Heartbeat | Every 30 seconds; status becomes stale after 90 seconds |
 | Reminder | One reminder 30 minutes before scheduled day end; no penalty |
 | Invitations | Email-bound, single-use, expire after 72 hours |
@@ -84,8 +88,10 @@ A user can belong to multiple organisations. Workspace switching changes the aut
 | Start or stop an employee timer | Own timer only | Own timer only | Own timer only | Own timer only |
 | Review task deliverables | If designated reviewer | If designated reviewer | Assigned review scope | No self-approval |
 | Approve reports/corrections | Other members, authorised scope | Other members, authorised scope | Own team, excluding self | No |
-| Read recording content | Explicit grant only | Explicit grant only | Explicit grant only | Own available footage |
+| Read recording content (removed, phase 8) | Explicit grant only | Explicit grant only | Explicit grant only | Own available footage |
 | View audit history | Organisation | Operational scope | Own team review actions | Own record history |
+
+> Screen recording removed (owner decision, 8 October 2026), replaced by Calls (phase 8). Recording grants went with it; a call's transcript and recap are read only by the people who were on the call.
 
 Recording-review grants are additive permissions with organisation/team scope and an auditable grantor. Owner grants these permissions; every grant is recorded. Company role alone grants no recording playback. New grants do not bypass restricted-incident rules.
 
@@ -114,6 +120,8 @@ Show assigned, overdue, blocked, and unfinished work. Employee selects daily pri
 Reuse task metadata across sessions. Do not require rewriting a task when resuming. My Day order is employee-specific and independent of project priority.
 
 ### 5.4 Work session
+
+> Screen recording removed (owner decision, 8 October 2026), replaced by Calls (phase 8): the capture steps below no longer apply.
 
 Start opens a session for an eligible task. If another session is open, offer Resume or Switch. A switch closes the previous session and creates the new one in a single database transaction.
 
@@ -156,11 +164,11 @@ HR inspects approved records and exports CSV with organisation, employee ID, loc
 | /app/[workspace]/projects/[id] | Task list/board, assignees, deadlines, filters |
 | /app/[workspace]/tasks/[id] | Expected output, sessions, evidence versions, discussion, review |
 | /app/[workspace]/team | Reported activity, last sync, blockers, workload |
-| /app/[workspace]/reviews | Task submissions, reports, corrections, capture exceptions |
+| /app/[workspace]/reviews | Task submissions, reports, corrections (capture exceptions removed, phase 8) |
 | /app/[workspace]/timesheets | Own records or authorised team records; corrections and export |
 | /app/[workspace]/reports | Delivery, time allocation, blockers, logging completeness |
 | /app/[workspace]/people | Members, pending invitations, teams, role changes, offboarding |
-| /app/[workspace]/settings | Policies, schedule, retention, grants, organisation details |
+| /app/[workspace]/settings | Policies, schedule, organisation details (recording retention and grants removed, phase 8) |
 | /app/[workspace]/audit | Filtered access and change history |
 
 Use a clean, restrained interface: light neutral background, generous spacing, readable sans-serif text, one accent colour, and clear tables. Use 16px primary body text, keyboard access, visible focus, and text labels alongside state colours. Mobile supports planning and review; recording support is feature-detected and desktop-focused.
@@ -172,6 +180,8 @@ Every screen needs loading, empty, error, permission-denied, and offline states 
 Task states: todo → in_progress → in_review → completed. in_progress may enter blocked; blocked may return to in_progress. in_review may return to in_progress on changes requested. Authorised reopening of completed work requires a reason. Archived tasks cannot start sessions.
 
 Session states: running, paused, interrupted, stopped. running → paused/stopped/interrupted; paused → running/stopped; interrupted → running/stopped after reconciliation. A session owns zero or more immutable timed intervals. Resume starts a new interval; it does not rewrite the previous interval's end.
+
+> Screen recording removed (owner decision, 8 October 2026), replaced by Calls (phase 8): the recording states below no longer apply.
 
 Recording states: requesting, recording, interrupted, uploading, processing, ready, failed, restricted, deleting, deleted. Keep capture state separate from upload state in the implementation; upload can continue after capture ends.
 
@@ -189,6 +199,8 @@ Key rules:
 10. Archive projects/tasks and revoke memberships; do not cascade-delete historical approved work.
 
 ## 8. Data model
+
+> Screen recording removed (owner decision, 8 October 2026), replaced by Calls (phase 8): the recording, capture-exception, incident and grant tables below go with migration 0055; the calls tables are migration 0054.
 
 Use PostgreSQL migrations, UUID keys, timestamptz timestamps, constrained enums/checks, indexes, and explicit foreign keys. Every tenant-owned table includes organisation_id. Composite foreign keys or equivalent constraints must reject linking rows across tenants even through privileged server code.
 
@@ -242,7 +254,7 @@ Use authenticated, validated endpoints or equivalent server actions. REST names 
 | POST /api/invitations/accept | Email-bound token, one-time membership creation |
 | POST /api/orgs/:org/tasks | Validate project access, assignee and reviewer scope |
 | PATCH /api/orgs/:org/tasks/:task | Expected version; authorised changes and transition validation |
-| POST /api/orgs/:org/sessions/start | taskId, capture mode/exception reference; return session and serverNow |
+| POST /api/orgs/:org/sessions/start | taskId (capture mode and exception reference removed, phase 8); return session and serverNow |
 | POST /api/orgs/:org/sessions/:id/heartbeat | Session ownership, expected open state; update confirmed timestamp |
 | POST /api/orgs/:org/sessions/:id/pause,resume,stop | Separate actions; expectedVersion; note where relevant |
 | POST /api/orgs/:org/sessions/:id/switch | nextTaskId, expectedVersion; transactional close/start |
@@ -251,16 +263,18 @@ Use authenticated, validated endpoints or equivalent server actions. REST names 
 | POST /api/orgs/:org/reports/:id/submit,review | Separate actions; snapshot/version validation |
 | POST /api/orgs/:org/time-adjustments | Proposed intervals and reason; no silent overwrite |
 | POST /api/orgs/:org/time-adjustments/:id/review | Validate overlap and atomically apply approved ledger changes |
-| POST /api/orgs/:org/recordings | Authorise session, policy, limits; allocate server-owned storage prefix |
-| POST /api/orgs/:org/recordings/:id/chunks/authorise | sequence, checksum, size; issue limited upload target |
-| POST /api/orgs/:org/recordings/:id/finalise | Validate manifest completeness; enqueue idempotent assembly |
-| POST /api/orgs/:org/recordings/:id/playback | Verify ownership/grant, restriction and expiry; audit access; short-lived URL |
+| POST /api/orgs/:org/recordings | Removed (phase 8, owner decision 8 October 2026). Was: authorise session, policy, limits; allocate server-owned storage prefix |
+| POST /api/orgs/:org/recordings/:id/chunks/authorise | Removed (phase 8, owner decision 8 October 2026). Was: sequence, checksum, size; issue limited upload target |
+| POST /api/orgs/:org/recordings/:id/finalise | Removed (phase 8, owner decision 8 October 2026). Was: validate manifest completeness; enqueue idempotent assembly |
+| POST /api/orgs/:org/recordings/:id/playback | Removed (phase 8, owner decision 8 October 2026). Was: verify ownership/grant, restriction and expiry; audit access; short-lived URL |
 | GET /api/orgs/:org/team-status | Scoped last-reported activity and staleness |
 | GET /api/orgs/:org/exports/timesheets | Approved versioned records only, permission checked |
 
 Use 401 unauthenticated, 403 known forbidden operations, 404 inaccessible resource identifiers, 409 state/version conflicts, 422 invalid input, and 429 rate limits. State-changing requests require idempotency keys where retries could duplicate work. Same key with a different request body must fail. Use CSRF protection appropriate to cookie-based authentication.
 
 ## 11. Recording pipeline and exceptions
+
+> Screen recording removed (owner decision, 8 October 2026), replaced by Calls (phase 8).
 
 Browser capture must be initiated by an employee action over HTTPS. Feature-detect capture and supported recording MIME types. The browser selects the surface; a UI preference for a window is not a guarantee. Show selected surface information where available. Never claim that Boardroom can inspect unshared screens or prove continuous attention.
 
@@ -345,6 +359,8 @@ Implement private deliverables, submission revisions, reviews, daily report snap
 
 ### M4 — Recording pilot
 
+> Screen recording removed (owner decision, 8 October 2026), replaced by Calls (phase 8).
+
 Implement policy activation/acknowledgement, capture controls, segmented uploads, media worker, playback authorisation, exceptions, incident restriction, quota handling, and deletion. Gate: permission denial, interruption, partial upload, resume, and retention tests pass on declared supported browsers.
 
 ### M5 — Pilot hardening and handoff
@@ -374,15 +390,15 @@ At each milestone update requirement coverage, migration notes, tests run, failu
 | A11 | Employee or manager attempts self-approval | Rejected, including owner fallback path |
 | A12 | Approved report gets a time correction | New version requires approval; historical approved snapshot retained |
 | A13 | Proposed correction overlaps another session | Rejected without revealing another organisation's task details |
-| A14 | Capture denied, unsupported, or stopped through browser UI | Clear status and exception path; no fabricated recording |
-| A15 | Upload fails, is retried, then resumes out of order | Ordered manifest validates; no duplicate/conflicting chunks accepted |
-| A16 | Tab closes before upload finalisation | Partial/pending state remains honest; recover available chunks only |
-| A17 | HR without recording grant requests playback | Denied; explicit scoped reviewer succeeds with audit event |
-| A18 | Sensitive recording flagged or retention expires | New playback denied immediately; deletion covers chunks and derivatives |
+| A14 | Capture denied, unsupported, or stopped through browser UI | Removed (phase 8, owner decision 8 October 2026). Was: clear status and exception path; no fabricated recording |
+| A15 | Upload fails, is retried, then resumes out of order | Removed (phase 8, owner decision 8 October 2026). Was: ordered manifest validates; no duplicate/conflicting chunks accepted |
+| A16 | Tab closes before upload finalisation | Removed (phase 8, owner decision 8 October 2026). Was: partial/pending state remains honest; recover available chunks only |
+| A17 | HR without recording grant requests playback | Removed (phase 8, owner decision 8 October 2026). Was: denied; explicit scoped reviewer succeeds with audit event |
+| A18 | Sensitive recording flagged or retention expires | Removed (phase 8, owner decision 8 October 2026). Was: new playback denied immediately; deletion covers chunks and derivatives |
 | A19 | Employee is offboarded with an active session | Access revoked, session interrupted at confirmed boundary, historical work retained |
 | A20 | CSV export compared with approved report versions | Exact duration reconciliation; unapproved time excluded; text formula-safe |
-| A21 | User submits malicious file or storage key for another tenant | Rejected or quarantined; cannot replace another tenant's evidence |
-| A22 | Duplicate reminder/deletion jobs execute | No repeated notifications or inconsistent deletion state |
+| A21 | User submits malicious file or storage key for another tenant | Rejected or quarantined; cannot replace another tenant's evidence (the recording part removed, phase 8, owner decision 8 October 2026) |
+| A22 | Duplicate reminder/deletion jobs execute | No repeated notifications or inconsistent deletion state (still current: reminders, and the call transcripts' 7-day deletion; recording deletion removed, phase 8, owner decision 8 October 2026) |
 | A23 | Owner tries removing last owner | Rejected with clear recovery instruction |
 | A24 | Keyboard-only employee completes core daily workflow | Controls reachable, labels/focus clear, errors understandable |
 

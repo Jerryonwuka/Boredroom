@@ -35,7 +35,7 @@ export default async function OrganisationPage({ params, searchParams }: { param
   const { org } = d;
   const base = `/admin/organisations/${id}`;
   const act = `/api/admin/organisations/${id}/actions`;
-  const storage = Number(d.usage.recording_bytes) + Number(d.usage.deliverable_bytes);
+  const storage = Number(d.usage.deliverable_bytes);
   const seats = org.plan_max_users ? `${org.users} / ${org.plan_max_users}` : `${org.users}`;
   const quota = org.plan_max_storage ? `${bytes(storage)} / ${bytes(org.plan_max_storage)}` : bytes(storage);
   const heavy = !!org.plan_max_storage && storage > org.plan_max_storage * 0.8;
@@ -81,7 +81,7 @@ export default async function OrganisationPage({ params, searchParams }: { param
                   { label: "Adoption", value: <>{num(d.usage.active_users_7d)} of {num(org.users)} people active this week</> },
                   { label: "Clock-ins, 30 days", value: <span className="tabular-nums">{num(d.usage.clock_ins_30d)}</span> },
                   { label: "Tasks", value: <>{num(d.tasks.open)} open, {num(d.tasks.blocked)} blocked, {num(d.tasks.completed_30d)} done in 30 days</> },
-                  { label: "Recordings", value: <>{num(d.usage.recordings)} ({bytes(d.usage.recording_bytes)})</> },
+                  { label: "Files", value: <>{bytes(d.usage.deliverable_bytes)} of deliverables, {num(d.usage.voice_notes)} voice notes</> },
                   { label: "Billing", value: <>{org.plan_name ?? "No plan"}, {org.sub_status ? words(org.sub_status).toLowerCase() : "none"}{org.period_end ? `, ${org.sub_status === "trial" ? "trial ends" : "renews"} ${dateOnly(org.period_end)}` : ""}</> },
                   { label: "Last activity", value: org.last_activity_at ? relativeTime(org.last_activity_at) : "Never" },
                 ]} />
@@ -192,7 +192,7 @@ export default async function OrganisationPage({ params, searchParams }: { param
 
         {tab === "storage" ? (
           <div className="grid gap-3">
-            <Ledger items={[{ label: "Recordings", value: bytes(d.usage.recording_bytes), note: `${num(d.usage.recordings)} files` }, { label: "Deliverables", value: bytes(d.usage.deliverable_bytes) }, { label: "Total", value: bytes(storage), tone: heavy ? "danger" : "default" }, { label: "Plan limit", value: org.plan_max_storage ? bytes(org.plan_max_storage) : "None" }]} />
+            <Ledger items={[{ label: "Deliverables", value: bytes(d.usage.deliverable_bytes), tone: heavy ? "danger" : "default" }, { label: "Voice notes", value: num(d.usage.voice_notes) }, { label: "Avatars", value: num(d.usage.avatars) }, { label: "Plan limit", value: org.plan_max_storage ? bytes(org.plan_max_storage) : "None" }]} />
             {org.plan_max_storage ? <ProgressBar value={storage} max={Number(org.plan_max_storage)} label="Storage used of the plan's limit" valueText={`${bytes(storage)} of ${bytes(org.plan_max_storage)}`} doneTone="accent" /> : null}
           </div>
         ) : null}
@@ -225,7 +225,7 @@ export default async function OrganisationPage({ params, searchParams }: { param
       </div>
       <PageNotes>
         {tab === "overview" ? <PageNote section="Health profile">An operational profile, not a ranking.</PageNote> : null}
-        <PageNote>Hours are confirmed intervals; storage counts recordings and deliverables. {formatDuration(Math.round(d.usage.hours_30d * 3600))} in 30 days.</PageNote>
+        <PageNote>Hours are confirmed intervals; storage counts deliverables in bytes, and voice notes and avatars by number. {formatDuration(Math.round(d.usage.hours_30d * 3600))} in 30 days.</PageNote>
       </PageNotes>
     </>
   );

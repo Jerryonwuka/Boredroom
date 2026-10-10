@@ -27,6 +27,12 @@
  * one guarded statement: no row back means someone moved it first, and the caller stops quietly. Reads settle overdue
  * rows on the spot, so expiry, delivery and "done" work even with a worker that predates this phase. Audit rows hold ids
  * only. Before migration 0048 everything here is absent and says so (server/lib/schema-0048).
+ *
+ * Calls (owner decisions, 8 October 2026: phase 8): an action item in the workspace assistant's recap of a call becomes a
+ * proposed promise for the person named (`insertCallCommitments`), only when they joined the call and agreed to notes;
+ * it waits for their Accept like any other. Its message is the recap in the call's thread, never quoted and never
+ * labelled; its link opens the call's page. The new columns (`call_id`, `call_item`, migration 0054) are read through
+ * `to_jsonb(cm)`, so every read works before and after 0054.
  */
 import { z } from "zod";
 import { withUser, withWorker, type Db } from "@/server/db";
@@ -40,6 +46,8 @@ import { quickTodo } from "@/server/services/tasks";
 import { readWorkspaceAssistant } from "@/server/services/assistant-profile";
 import { toProfile } from "@/lib/assistant-look";
 import { clip, firstName, type PersonRef } from "@/lib/follow-ups";
+import { callHref } from "@/lib/calls";
+import { schema0054Ready } from "@/server/lib/schema-0054";
 import {
   LOOP_LIMITS as L, LOOP_WORDS as W, LOOPS_NOT_READY_SHORT, commitmentBadge, commitmentDisplay, commitmentHref, commitmentInboxHref, isCommitmentKind,
   loopDueLabel, loopTitle, messageLabel,
@@ -270,6 +278,7 @@ type ViewRow = {
   msg_visible: boolean; msg_at: string | null; msg_body: string | null; msg_deleted: boolean; msg_edited: boolean;
   agr_visible: boolean; agr_body: string | null; agr_deleted: boolean; agr_edited: boolean;
   task_id: string | null; task_title: string | null; task_status: string | null;
+  call_id: string | null;
 };
 
 /** As the viewer ($1 organisation, $2 the viewer's membership): their commitments under row-level security. */
@@ -283,7 +292,8 @@ const VIEW_SQL = `
          COALESCE(sm.edited_at > cm.created_at, false) AS msg_edited,
          (am.id IS NOT NULL) AS agr_visible, CASE WHEN am.deleted_at IS NULL THEN am.body END AS agr_body, (am.deleted_at IS NOT NULL) AS agr_deleted,
          COALESCE(am.edited_at > cm.created_at, false) AS agr_edited,
-         t.id AS task_id, t.title AS task_title, t.status AS task_status
+         t.id AS task_id, t.title AS task_title, t.status AS task_status,
+         (to_jsonb(cm) ->> 'call_id') AS call_id
   FROM commitments cm
   JOIN memberships cmm ON cmm.id = cm.committer_membership_id JOIN profiles cp ON cp.id = cmm.user_id
   LEFT JOIN assistant_profiles ca ON ca.membership_id = cm.committer_membership_id
@@ -312,13 +322,15 @@ function toView(r: ViewRow, ctx: OrgContext, o: { now: number; kinds: Map<string
   const display = commitmentDisplay(r.status, r.due_at, o.now);
   const waiting = (r.status === "proposed" || r.status === "asked") && Date.parse(r.expires_at) > o.now;
   const kind = (r.conv_kind ?? o.kinds.get(r.conversation_id) ?? "channel") as CommitmentView["where"]["kind"];
+  // An action item from a call's recap (phase 8): the recap is never quoted; its link opens the call's page.
+  const call = r.call_id ? { id: r.call_id, href: callHref(slug, r.call_id) } : null;
   return {
     id: r.id, kind: r.kind, status: r.status, display, viewer,
     title: r.title, dueAt: r.due_at, dueWords: r.due_words, dueLabel: loopDueLabel(r.due_at, ctx.org.timezone),
     committer: personOf(r.committer_membership_id, r.committer_name, { name: r.ca_name, colour: r.ca_colour, visor: r.ca_visor, eyes: r.ca_eyes }),
     asker: r.asker_membership_id ? personOf(r.asker_membership_id, r.asker_name, { name: r.aa_name, colour: r.aa_colour, visor: r.aa_visor, eyes: r.aa_eyes }) : null,
-    where: { conversationId: r.conversation_id, kind: kind === "team" || kind === "organisation" ? kind : "channel", name: r.conv_name ?? null },
-    message: {
+    where: { conversationId: r.conversation_id, kind: kind === "team" || kind === "organisation" || (call && kind === "direct") ? kind : "channel", name: r.conv_name ?? null },
+    message: call ? { id: r.source_message_id, at: r.msg_at ?? r.created_at, href: call.href, quote: null, withdrawn: false } : {
       id: r.source_message_id, at: r.msg_at ?? r.created_at,
       href: r.msg_visible ? messageHref(slug, r.conversation_id, r.source_message_id) : null,
       // Words edited after they were noted are not what was agreed to (security review, 9 October 2026): the card says
@@ -345,6 +357,7 @@ function toView(r: ViewRow, ctx: OrgContext, o: { now: number; kinds: Map<string
     canMarkDone: viewer === "committer" && r.status === "open",
     acceptMakesTodo: !isOrgAccount(r.committer_role),
     href: commitmentHref(slug, r.id),
+    call,
   };
 }
 
@@ -376,12 +389,15 @@ type LabelRef = { id: string; organisation_id: string; conversation_id: string; 
  * a message with an open commitment for Ada and a declined one for Ben shows "Noted" to everyone, and Ben's decline stays
  * in his own Commitments view.
  */
+// Phase 8 (owner decisions, 8 October 2026): a call's action items never label a message (the recap is the workspace
+// assistant's own); only commitments noted in a group chat count here.
 async function syncLabel(db: Db, c: LabelRef): Promise<void> {
   const messageId = c.agreement_message_id ?? c.source_message_id;
   const newest = await db.maybeOne<{ id: string; status: CommitmentStatus }>(
     `SELECT id, status FROM commitments
      WHERE organisation_id = $1 AND (agreement_message_id = $2 OR (agreement_message_id IS NULL AND source_message_id = $2))
        AND status NOT IN ('expired', 'cancelled') AND NOT (kind = 'open_ask' AND status NOT IN ('accepting', 'open', 'done'))
+       AND (to_jsonb(commitments) ->> 'call_id') IS NULL
      ORDER BY (status IN ('declined', 'dismissed')) ASC, created_at DESC, id DESC LIMIT 1`, [c.organisation_id, messageId]);
   const state = newest ? labelStateOf(newest.status) : null;
   if (!state || !newest) {
@@ -422,6 +438,7 @@ type NoticeRow = {
   expires_at: string; ask_notify_after: string | null; notified_at: string | null; decided_at: string | null; lease_until: string | null; todo_task_id: string | null;
   slug: string; timezone: string; committer_name: string; committer_role: string; asker_name: string | null; ws_name: string | null;
   src_gone: boolean; agr_gone: boolean; task_status: string | null; task_archived: boolean; muted: boolean;
+  call_id: string | null;
 };
 /** One commitment with everything a transition needs, as the worker. */
 const NOTICE_SQL = `
@@ -432,7 +449,8 @@ const NOTICE_SQL = `
          (cm.agreement_message_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.id = cm.agreement_message_id AND m.deleted_at IS NULL)) AS agr_gone,
          t.status AS task_status, (t.archived_at IS NOT NULL) AS task_archived,
          (cm.asker_membership_id IS NOT NULL AND EXISTS (SELECT 1 FROM assistant_item_mutes x WHERE x.recipient_membership_id = cm.committer_membership_id
-                                                         AND x.sender_membership_id = cm.asker_membership_id AND x.muted)) AS muted
+                                                         AND x.sender_membership_id = cm.asker_membership_id AND x.muted)) AS muted,
+         (to_jsonb(cm) ->> 'call_id') AS call_id
   FROM commitments cm
   JOIN organisations o ON o.id = cm.organisation_id
   JOIN memberships cmm ON cmm.id = cm.committer_membership_id JOIN profiles cp ON cp.id = cmm.user_id
@@ -448,7 +466,8 @@ async function tellCommitter(db: Db, r: NoticeRow): Promise<void> {
   const askerFirst = firstName(r.asker_name ?? "Someone");
   await notify(db, {
     organisationId: r.organisation_id, recipientMembershipId: r.committer_membership_id, type: "brenda.commitment",
-    title: clip(r.kind === "agreed_ask" ? W.notifications.agreed(ws, askerFirst, title) : W.notifications.commitment(ws, title), 200),
+    // An action item from a call's recap (phase 8, owner decisions, 8 October 2026) says so.
+    title: clip(r.call_id ? W.notifications.callCommitment(ws, title) : r.kind === "agreed_ask" ? W.notifications.agreed(ws, askerFirst, title) : W.notifications.commitment(ws, title), 200),
     body: isOrgAccount(r.committer_role) ? `${W.inbox.commitmentQuestionNoTodos} ${W.inbox.nothingChanges}` : W.notifications.commitmentBody,
     resourceType: "commitment", resourceId: r.id, href: commitmentInboxHref(r.slug, r.id), dedupKey: `commitment:${r.id}`,
   });
@@ -815,8 +834,9 @@ export async function acceptCommitment(ctx: OrgContext, id: string, input: { tit
     const e = decideError(r.r);
     if (e) throw e;
     await readNotices(db, ctx, id);
-    return db.one<{ kind: CommitmentKind; title: string; due_at: string | null; conversation_id: string; source_message_id: string; agreement_message_id: string | null; conv_name: string | null }>(
-      `SELECT cm.kind, cm.title, cm.due_at, cm.conversation_id, cm.source_message_id, cm.agreement_message_id, ${CONV_NAME_SQL} AS conv_name
+    return db.one<{ kind: CommitmentKind; title: string; due_at: string | null; conversation_id: string; source_message_id: string; agreement_message_id: string | null; conv_name: string | null; call_id: string | null }>(
+      `SELECT cm.kind, cm.title, cm.due_at, cm.conversation_id, cm.source_message_id, cm.agreement_message_id, ${CONV_NAME_SQL} AS conv_name,
+              (to_jsonb(cm) ->> 'call_id') AS call_id
        FROM commitments cm LEFT JOIN conversations c ON c.id = cm.conversation_id LEFT JOIN teams ct ON ct.id = c.team_id WHERE cm.id = $1`, [id]);
   });
   const finalTitle = title ?? row.title;
@@ -825,8 +845,12 @@ export async function acceptCommitment(ctx: OrgContext, id: string, input: { tit
   let note: string | null = null;
   if (!isOrgAccount(ctx.membership.role)) {
     const href = `${appOrigin()}${messageHref(ctx.org.slug, row.conversation_id, row.agreement_message_id ?? row.source_message_id)}`;
+    // An action item from a call (phase 8, owner decisions, 8 October 2026) links the call's page instead of a message.
+    const description = row.call_id
+      ? `${finalTitle}\n\n${W.cards.fromCall}: ${appOrigin()}${callHref(ctx.org.slug, row.call_id)}`
+      : `${finalTitle}\n\nNoted in ${row.conv_name ?? "Messages"}: ${href}`;
     try {
-      const t = await quickTodo(ctx, { title: finalTitle, dueAt, description: `${finalTitle}\n\nNoted in ${row.conv_name ?? "Messages"}: ${href}` });
+      const t = await quickTodo(ctx, { title: finalTitle, dueAt, description });
       taskId = t.id;
     } catch (err) {
       warn(`adding the to-do for ${id}`)(err);
@@ -1080,6 +1104,88 @@ export async function markAgreed(commitmentId: string, agreementMessageId: strin
     if (isMissingSchema(err)) { forget0048(); return false; }
     throw err;
   }
+}
+
+// ---- Calls: action items from a recap (phase 8) --------------------------------------------------------------------------------
+
+/** One action item from a call's recap, for the person named in it (a membership that joined and agreed to notes). */
+export type CallCommitmentInput = { item: number; committerMembershipId: string; title: string; dueAt: string | null; dueWords: string | null };
+
+/**
+ * Action items from the workspace assistant's recap of a call (owner decisions, 8 October 2026: phase 8, contract E.8):
+ * each becomes a PROPOSED promise its person must accept (nobody asked it of them; it was said on the call), never a
+ * to-do. As the worker, each item in its own transaction. Skipped: a source message that is not this call's recap (or was
+ * withdrawn); a person who never joined the call, did not say yes to notes, left the workspace or no longer reads the
+ * conversation; a person past 10 proposals today (the same count and lock as detected commitments). The workspace's
+ * "track commitments in group chats" switch does not apply (the call's own consent does, decision D10). No label on the
+ * recap message. One per item (`commitments_one_per_message` with `call_item`): running it again finds the same ids and
+ * tells nobody twice. Nothing before 0054.
+ */
+export async function insertCallCommitments(organisationId: string, callId: string, sourceMessageId: string, items: CallCommitmentInput[], o: { now?: Date } = {}): Promise<{ created: { item: number; id: string }[]; skipped: number }> {
+  const now = o.now ?? new Date();
+  const created: { item: number; id: string }[] = [];
+  let skipped = 0;
+  if (!isUuid(organisationId) || !isUuid(callId) || !isUuid(sourceMessageId) || !Array.isArray(items) || !items.length) return { created, skipped: Array.isArray(items) ? items.length : 0 };
+  let org: { timezone: string } | null;
+  try {
+    org = await withWorker(async (db) => {
+      if (!(await schema0048Ready(db)) || !(await schema0054Ready(db))) return null;
+      return db.maybeOne<{ timezone: string }>(`SELECT timezone FROM organisations WHERE id = $1 AND status = 'active'`, [organisationId]);
+    });
+  } catch (err) {
+    if (isMissingSchema(err)) { forget0048(); return { created, skipped: items.length }; }
+    throw err;
+  }
+  if (!org) return { created, skipped: items.length };
+  const dayStart = localMidnight(todayLocal(org.timezone, now), org.timezone).toISOString();
+  for (const raw of items) {
+    const item = Number(raw?.item);
+    const committer = raw?.committerMembershipId;
+    const title = clip(oneLine(raw?.title), L.titleMax);
+    if (!Number.isInteger(item) || item < 0 || item > 19 || !isUuid(committer) || !title) { skipped++; continue; }
+    const dueAt = typeof raw.dueAt === "string" && !Number.isNaN(Date.parse(raw.dueAt)) ? new Date(raw.dueAt).toISOString() : null;
+    const dueWords = clip(oneLine(raw.dueWords), L.dueWordsMax) || null;
+    try {
+      const id = await withWorker(async (db): Promise<{ id: string; fresh: boolean } | null> => {
+        const src = await db.maybeOne<{ conversation_id: string }>(
+          `SELECT m.conversation_id FROM messages m
+           WHERE m.id = $1 AND m.organisation_id = $2 AND m.call_id = $3 AND m.call_part = 'recap' AND m.deleted_at IS NULL`, [sourceMessageId, organisationId, callId]);
+        if (!src) return null;
+        // Already made (a resumed recap): the same id, nobody told twice.
+        const existing = await db.maybeOne<{ id: string }>(
+          `SELECT id FROM commitments WHERE organisation_id = $1 AND call_id = $2 AND call_item = $3 AND committer_membership_id = $4`, [organisationId, callId, item, committer]);
+        if (existing) return { id: existing.id, fresh: false };
+        const who = await db.maybeOne<{ ok: boolean }>(
+          `SELECT (p.first_joined_at IS NOT NULL AND nc.consent = 'yes' AND m.status = 'active' AND app_conversation_has_reader($3, $2)) AS ok
+           FROM call_participants p
+           JOIN memberships m ON m.id = p.membership_id
+           LEFT JOIN call_note_consents nc ON nc.call_id = p.call_id AND nc.membership_id = p.membership_id
+           WHERE p.call_id = $1 AND p.membership_id = $2 AND p.organisation_id = $4`, [callId, committer, src.conversation_id, organisationId]);
+        if (!who?.ok) return null;
+        // One at a time per committer, so two inserts cannot both pass the daily count (as detected commitments).
+        await db.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [`commitment.insert:${committer}`]);
+        const today = await db.one<{ n: number }>(`SELECT count(*)::int AS n FROM commitments WHERE committer_membership_id = $1 AND created_at >= $2::timestamptz`, [committer, dayStart]);
+        if (today.n >= L.proposalsPerPersonPerDay) return null;
+        const ins = await db.maybeOne<{ id: string }>(
+          `INSERT INTO commitments(organisation_id, conversation_id, source_message_id, agreement_message_id, kind, committer_membership_id, asker_membership_id,
+                                   title, due_at, due_words, status, detected_by, confidence, expires_at, call_id, call_item)
+           VALUES ($1, $2, $3, NULL, 'promise', $4, NULL, $5, $6, $7, 'proposed', 'claude', 0.9, $8::timestamptz + make_interval(days => $9), $10, $11)
+           ON CONFLICT ON CONSTRAINT commitments_one_per_message DO NOTHING RETURNING id`,
+          [organisationId, src.conversation_id, sourceMessageId, committer, title, dueAt, dueWords, now.toISOString(), L.commitmentTtlDays, callId, item]);
+        if (!ins) return null;
+        const n = await db.one<NoticeRow>(NOTICE_SQL, [ins.id]);
+        await tellCommitter(db, n);
+        await audit(db, { organisationId, action: "commitment.noted", subjectType: "commitment", subjectId: ins.id, subjectMembershipId: committer, metadata: { commitmentId: ins.id, callId, item } });
+        return { id: ins.id, fresh: true };
+      });
+      if (id) created.push({ item, id: id.id }); else skipped++;
+    } catch (err) {
+      skipped++;
+      if (isMissingSchema(err)) { forget0048(); break; }
+      warn("storing an action item from a call")(err);
+    }
+  }
+  return { created, skipped };
 }
 
 // ---- The report and the notch ------------------------------------------------------------------------------------------------

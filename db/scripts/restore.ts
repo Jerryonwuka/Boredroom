@@ -13,12 +13,31 @@ import { existsSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { Client } from "pg";
 
-const GRANTS = `
+// The app role's grants after a restore (pg_restore runs with --no-privileges). The tables a dump may or may not have
+// are revoked only where they exist (fix review, 10 October 2026), so a dump from either side of phase 8 restores with
+// the privileges its migrations gave: before 0055 the two tables screen recording left are append-only again (0005:
+// no DELETE on either, no UPDATE on the access log; 0055 drops both, and a plain REVOKE on a missing table would fail
+// a newer restore), and from 0054 the app role deletes nothing from a call, its people, their answers or its recap
+// (a transcript's lines stay deletable: the worker's 7-day purge, under row-level security).
+export const GRANTS = `
 GRANT USAGE ON SCHEMA public TO boardroom_app;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO boardroom_app;
 REVOKE DELETE ON audit_events, session_intervals, report_versions, reviews, task_submissions, deliverables,
-  recording_access_log, deletion_tombstones, policy_acknowledgements FROM boardroom_app;
-REVOKE UPDATE ON audit_events, reviews, policy_acknowledgements, recording_access_log FROM boardroom_app;
+  policy_acknowledgements FROM boardroom_app;
+REVOKE UPDATE ON audit_events, reviews, policy_acknowledgements FROM boardroom_app;
+DO $$
+DECLARE r record;
+BEGIN
+  FOR r IN SELECT * FROM (VALUES
+      ('recording_access_log', 'DELETE, UPDATE'), ('deletion_tombstones', 'DELETE'),
+      ('calls', 'DELETE'), ('call_participants', 'DELETE'), ('call_note_consents', 'DELETE'), ('call_recaps', 'DELETE')
+    ) AS t(name, privileges)
+  LOOP
+    IF to_regclass('public.' || r.name) IS NOT NULL THEN
+      EXECUTE format('REVOKE %s ON %I FROM boardroom_app', r.privileges, r.name);
+    END IF;
+  END LOOP;
+END $$;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO boardroom_app;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO boardroom_app;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT EXECUTE ON FUNCTIONS TO boardroom_app;`;
@@ -76,4 +95,5 @@ async function main() {
   console.log(`\nRestored: ${c.orgs} organisation(s), ${c.members} membership(s), ${c.tasks} task(s); migrations through ${c.migration}.`);
   console.log(`\nPut these in .env.local on the machine that runs the app:\n  DATABASE_ADMIN_URL=${target}\n  DATABASE_URL=${withUser(target, "boardroom_app", appPassword)}\n\nThe app role password above is shown once; keep it with your secrets. Then run: pnpm doctor`);
 }
-main().catch((err) => { console.error(err.message); process.exit(1); });
+// Only as the command (`pnpm db:restore`), never on import: tests/integration/restore-grants.test.ts reads GRANTS.
+if (process.argv[1] && /restore\.ts$/.test(process.argv[1])) main().catch((err) => { console.error(err.message); process.exit(1); });

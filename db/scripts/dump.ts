@@ -43,6 +43,6 @@ async function main() {
   const r = spawnSync("pg_dump", args, { stdio: "inherit" });
   if (r.status !== 0) { console.error("pg_dump failed."); process.exit(r.status ?? 1); }
   const mb = (statSync(file).size / 1048576).toFixed(2);
-  console.log(`Backup written: ${file} (${mb} MB)\n\nRestore anywhere with: pnpm db:restore "<target connection url>" ${file}\nRecording video files are not in the database; copy var/storage (or point STORAGE_* at a bucket) separately.`);
+  console.log(`Backup written: ${file} (${mb} MB)\n\nRestore anywhere with: pnpm db:restore "<target connection url>" ${file}\nFiles (evidence, voice notes, pictures) are not in the database; copy var/storage too (or point STORAGE_* at a bucket).`);
 }
 main().catch((err) => { console.error(err.message); process.exit(1); });

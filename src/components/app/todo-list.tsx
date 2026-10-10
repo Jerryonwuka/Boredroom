@@ -3,7 +3,7 @@
 /**
  * To-dos (owner request, 7 October 2026: "Take the to-do list that's currently in My Day and create a new separate
  * tab/page for To-do"): "Your to-dos for today", moved from My Day as it was. Add a to-do (the "+" opens a row to type
- * or dictate in), press Start (with or without screen recording), press Mark done when finished. That sends the work to
+ * or dictate in), press Start, press Mark done when finished. That sends the work to
  * the person who checks it; it shows as "Sent for check" and then "Completed". A finished to-do never offers Start again.
  * Past tasks sit under the list; team leads hand to-dos out with "For".
  *
@@ -32,7 +32,6 @@ import { AnimatedArrowUpRight, AnimatedChevronRight } from "@/components/ui/anim
 import { EditButton } from "@/components/ui/edit-button";
 import { Avatar } from "@/components/ui/avatar";
 import { SessionTimer, type CurrentSessionPayload, type StartableTask } from "@/components/app/session-timer";
-import { CaptureProvider, useCaptureGate, useCaptureContext, useCaptureSupported } from "@/components/app/capture";
 import { VoiceCapture } from "@/components/app/voice-capture";
 import { BrendaGlyph } from "@/components/app/brenda-glyph";
 import { useAssistant } from "@/components/app/assistant-context";
@@ -69,7 +68,7 @@ type Props = {
   planned: TaskRow[]; ownTodos: TaskRow[]; fromLeads: (TaskRow & { created_by_name: string })[]; doneToday: { id: string; title: string; completed_at: string }[]; pastTasks: PastTask[];
   /** People this member may hand to-dos to (team leads only; empty for staff). */
   assignable: Person[];
-  membershipId: string; recordingMode: string;
+  membershipId: string;
   /** Whether Brenda's AI is connected; without it a simple built-in reader drafts dictated to-dos. */
   assistantConfigured: boolean;
   /** The organisation's zone: dates on the list read the same on the server and in the browser, and match other pages. */
@@ -118,59 +117,39 @@ export function todoRows<T extends TaskRow>(planned: T[], fromLeads: T[], ownTod
 
 /** What the timer may start or switch to: the to-dos not finished, not waiting for a check and not removed. */
 export function startableTasks(rows: TaskRow[]): StartableTask[] {
-  return rows.filter((t) => t.status !== "completed" && t.status !== "in_review" && !t.archived_at).map((t) => ({ id: t.id, title: t.title, project_name: t.project_name, status: t.status, capture_requirement: t.capture_requirement, estimate_minutes: t.estimate_minutes, progress_percent: t.progress_percent, version: t.version }));
+  return rows.filter((t) => t.status !== "completed" && t.status !== "in_review" && !t.archived_at).map((t) => ({ id: t.id, title: t.title, project_name: t.project_name, status: t.status, estimate_minutes: t.estimate_minutes, progress_percent: t.progress_percent, version: t.version }));
 }
 
 /**
  * The clock My Day and To-dos both carry: the session as the page knows it, the timer card (shown only while something
  * is on the clock) and Start for a list. Start goes through the timer ("boredroom:start-task"), so the open-session
- * conflict is handled in one place; "Start and record" asks for consent first, once (owner decision, 5 October 2026),
- * and Cancel starts nothing. Call it inside a CaptureProvider.
+ * conflict is handled in one place. (One Start: "Start and record" went with screen recording, owner decision,
+ * 8 October 2026: phase 8.)
  */
-export function useWorkClock({ orgSlug, initialSession, tasks, recordingMode }: { orgSlug: string; initialSession: CurrentSessionPayload; tasks: StartableTask[]; recordingMode: string }) {
-  const capture = useCaptureContext();
+export function useWorkClock({ orgSlug, initialSession, tasks }: { orgSlug: string; initialSession: CurrentSessionPayload; tasks: StartableTask[] }) {
   const [session, setSession] = useState<SessionView | null>(initialSession.session);
-  const { captureGate, onSession, dialogEl, recordingControls } = useCaptureGate();
-  const recordAfterStart = useRef(false);
-
   function onSessionChange(s: SessionView | null) {
     setSession(s);
-    onSession(s);
-    if (s && s.state === "running" && recordAfterStart.current) {
-      recordAfterStart.current = false;
-      if (s.captureMode !== "none" && capture) void capture.startCapture(s.id);
-    }
   }
-  /** Agreeing to record opens the screen picker in the same press; without consent the server starts it unrecorded. */
-  async function start(taskId: string, record: boolean) {
-    if (record && capture && !(await capture.ensureConsent())) return;
-    recordAfterStart.current = record;
+  function start(taskId: string) {
     window.dispatchEvent(new CustomEvent("boredroom:start-task", { detail: { taskId } }));
   }
-  const timer = (
-    <SessionTimer orgSlug={orgSlug} initial={initialSession} tasks={tasks} captureDialog={dialogEl} onSessionChange={onSessionChange}
-      {...(recordingMode === "disabled" ? {} : { captureGate, recordingControls })} />
-  );
+  const timer = <SessionTimer orgSlug={orgSlug} initial={initialSession} tasks={tasks} onSessionChange={onSessionChange} />;
   return { session, onSessionChange, start, timer };
 }
 
 /** The To-dos page: the timer while something runs, then "Your to-dos for today" and Past tasks. */
 export function TodosBoard(props: Props) {
-  return (
-    <CaptureProvider orgSlug={props.orgSlug} recordingMode={props.recordingMode} rules={props.initialSession.recording}>
-      <Board {...props} />
-    </CaptureProvider>
-  );
+  return <Board {...props} />;
 }
 
-function Board({ orgSlug, today, initialSession, planned, ownTodos, fromLeads, doneToday, pastTasks, assignable, membershipId, recordingMode, assistantConfigured, timeZone, serverNow }: Props) {
+function Board({ orgSlug, today, initialSession, planned, ownTodos, fromLeads, doneToday, pastTasks, assignable, membershipId, assistantConfigured, timeZone, serverNow }: Props) {
   const router = useRouter();
   const { name } = useAssistant().personal;
   const nowMs = useNow(serverNow);
-  const captureSupported = useCaptureSupported();
   const listed = useMemo(() => todoRows<Row>(planned, fromLeads, ownTodos), [planned, fromLeads, ownTodos]);
   const startable = useMemo(() => startableTasks(listed), [listed]);
-  const clock = useWorkClock({ orgSlug, initialSession, tasks: startable, recordingMode });
+  const clock = useWorkClock({ orgSlug, initialSession, tasks: startable });
   const session = clock.session;
   // The new-to-do row: open or not, and a nudge that puts the cursor back in it when "+" is pressed while it is open.
   const [adding, setAdding] = useState(false);
@@ -185,9 +164,6 @@ function Board({ orgSlug, today, initialSession, planned, ownTodos, fromLeads, d
 
   // The running task first, the rest by status.
   const rows: Row[] = useMemo(() => [...listed].sort((a, b) => (session?.taskId === a.id ? -1 : session?.taskId === b.id ? 1 : 0)), [listed, session?.taskId]);
-  // Consent to screen recording is asked once, when a recorded session starts (owner decision, 5 October 2026), so
-  // the only conditions here are the organisation's setting and the browser.
-  const canRecord = recordingMode !== "disabled" && captureSupported === true;
   // The tabs (owner decision, 28 September 2026): to do, in progress, upcoming (a future date, not started), done.
   // "Future" is the due date's day in the organisation's zone after today there: the UTC date of due_at is a day out
   // for a deadline near midnight away from UTC.
@@ -207,9 +183,9 @@ function Board({ orgSlug, today, initialSession, planned, ownTodos, fromLeads, d
   const chosen = shown.filter((t) => selected.has(t.id)).map((t) => t.id);
   const openRow = open ? rows.find((t) => t.id === open) ?? null : null;
 
-  async function start(t: Row, record: boolean) {
+  function start(t: Row) {
     setError(null); setNotice(null);
-    await clock.start(t.id, record);
+    clock.start(t.id);
   }
   async function done(t: Row) {
     setError(null); setNotice(null);
@@ -244,7 +220,6 @@ function Board({ orgSlug, today, initialSession, planned, ownTodos, fromLeads, d
   return (
     <div className="min-w-0 space-y-6">
       {clock.timer}
-      {recordingMode === "disabled" ? <Alert tone="info">Screen recording is switched off for this organisation. An owner can turn it on under Settings, Screen recording.</Alert> : null}
       <Presence show={!!error}><Alert tone="danger">{error}</Alert></Presence>
       <Presence show={!!notice}><Alert tone="success">{notice}</Alert></Presence>
 
@@ -320,8 +295,8 @@ function Board({ orgSlug, today, initialSession, planned, ownTodos, fromLeads, d
               setSelected(new Set()); router.refresh();
             } catch (err) { setError(isApiFailure(err) ? `Nothing was deleted. ${err.error.message}` : "Nothing was deleted: cannot reach the server. Check your connection and try again."); }
           }} />
-        {openRow ? <TodoSheet t={openRow} orgSlug={orgSlug} self={membershipId} running={session?.taskId === openRow.id} anyRunning={!!session} canRecord={canRecord} timeZone={timeZone} nowMs={nowMs}
-          onStart={(record) => { setOpen(null); void start(openRow, record); }} onDone={() => { setOpen(null); void done(openRow); }} onSaved={(msg) => { setNotice(msg); router.refresh(); }} onClose={() => setOpen(null)} /> : null}
+        {openRow ? <TodoSheet t={openRow} orgSlug={orgSlug} self={membershipId} running={session?.taskId === openRow.id} anyRunning={!!session} timeZone={timeZone} nowMs={nowMs}
+          onStart={() => { setOpen(null); start(openRow); }} onDone={() => { setOpen(null); void done(openRow); }} onSaved={(msg) => { setNotice(msg); router.refresh(); }} onClose={() => setOpen(null)} /> : null}
       </section>
 
       <PastTasks orgSlug={orgSlug} items={pastTasks} timeZone={timeZone} onCleared={(n) => { setNotice(`${n} past task${n === 1 ? "" : "s"} cleared from your list.`); router.refresh(); }} />
@@ -330,7 +305,7 @@ function Board({ orgSlug, today, initialSession, planned, ownTodos, fromLeads, d
 }
 
 /** The to-do in a right-hand sheet: what it is, how far along, and every action on it: start, edit, mark done. */
-function TodoSheet({ t, orgSlug, self, running, anyRunning, canRecord, timeZone, nowMs, onStart, onDone, onSaved, onClose }: { t: Row; orgSlug: string; self: string; running: boolean; anyRunning: boolean; canRecord: boolean; timeZone: string; nowMs: number; onStart: (record: boolean) => void; onDone: () => void; onSaved: (msg: string) => void; onClose: () => void }) {
+function TodoSheet({ t, orgSlug, self, running, anyRunning, timeZone, nowMs, onStart, onDone, onSaved, onClose }: { t: Row; orgSlug: string; self: string; running: boolean; anyRunning: boolean; timeZone: string; nowMs: number; onStart: () => void; onDone: () => void; onSaved: (msg: string) => void; onClose: () => void }) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
   const [confirmDone, setConfirmDone] = useState(false);
@@ -353,9 +328,8 @@ function TodoSheet({ t, orgSlug, self, running, anyRunning, canRecord, timeZone,
       {waiting ? null : (
         <>
           {!running && !editing ? <EditButton iconOnly label="Edit to-do" onClick={() => setEditing(true)} /> : null}
-          {!running && canRecord ? <Button size="sm" variant="secondary" disabled={anyRunning} onClick={() => onStart(true)}><span className="size-2 rounded-full bg-current" aria-hidden />Start and record</Button> : null}
           {/* The sheet's one standout (accent rules): Start on this to-do. */}
-          {!running ? <Button size="sm" variant="accent" disabled={anyRunning} onClick={() => onStart(false)}><Play aria-hidden />Start</Button> : null}
+          {!running ? <Button size="sm" variant="accent" disabled={anyRunning} onClick={() => onStart()}><Play aria-hidden />Start</Button> : null}
           {running || t.status === "in_progress" || t.status === "blocked" ? (confirmDone
             ? <><Button size="sm" variant="ghost" onClick={() => setConfirmDone(false)}>Not yet</Button><Button size="sm" onClick={() => { setConfirmDone(false); onDone(); }}><Check aria-hidden />Yes, mark done</Button></>
             : <Button size="sm" variant={running ? "primary" : "secondary"} onClick={() => setConfirmDone(true)}><Check aria-hidden />Mark done</Button>) : null}
@@ -371,7 +345,6 @@ function TodoSheet({ t, orgSlug, self, running, anyRunning, canRecord, timeZone,
         <p className="flex flex-wrap items-center gap-2">
           {running ? <Badge tone="accent" dot>Working now</Badge> : waiting ? <Badge tone="warning">Sent for check</Badge> : t.status === "blocked" ? <Badge tone="danger">Blocked</Badge> : t.status === "in_progress" ? <Badge>Started</Badge> : <Badge tone="info">To do</Badge>}
           {overdue ? <Badge tone="danger">Overdue</Badge> : null}
-          {t.capture_requirement === "required" ? <Badge tone="warning">Recording required</Badge> : null}
         </p>
         {error ? <Alert tone="danger">{error}</Alert> : null}
         {t.blocked_reason ? <Alert tone="danger" title="Blocked">{t.blocked_reason}</Alert> : null}

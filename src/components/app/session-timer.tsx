@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Pause, Play, Square, ArrowLeftRight, CircleDashed } from "lucide-react";
+import { Pause, Play, Square, ArrowLeftRight } from "lucide-react";
 import { api, isApiFailure } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
@@ -15,25 +15,17 @@ import { ProgressSlider } from "@/components/app/progress-slider";
 import { cn, formatClock, formatDuration } from "@/lib/utils";
 import { Swap } from "@/components/ui/motion";
 import { StatusDot } from "@/components/ui/status-dot";
-import type { RecordingRules, SessionView } from "@/server/services/sessions";
+import type { SessionView } from "@/server/services/sessions";
 
-/** `recording`: the workspace's recording rules and whether you have agreed (the consent prompt reads them). */
-export type CurrentSessionPayload = { session: SessionView | null; elsewhere: { organisationName: string; organisationSlug: string } | null; recording?: RecordingRules | null };
-export type StartableTask = { id: string; title: string; project_name: string; status: string; capture_requirement: string; estimate_minutes: number | null; progress_percent?: number; version?: number };
-
-/** Capture integration point (recording pilot). Returns the capture mode to start with, or null to abort. */
-export type CaptureGate = (task: StartableTask, sessionIdForRecording: (id: string) => void) => Promise<{ captureMode: "none" | "optional" | "required" | "exception"; captureExceptionId?: string | null } | null>;
+/** The timer's start: no screen-capture hooks any more (owner decision, 8 October 2026: phase 8, screens are no longer recorded). */
+export type CurrentSessionPayload = { session: SessionView | null; elsewhere: { organisationName: string; organisationSlug: string } | null };
+export type StartableTask = { id: string; title: string; project_name: string; status: string; estimate_minutes: number | null; progress_percent?: number; version?: number };
 
 type Props = {
   orgSlug: string;
   initial: CurrentSessionPayload;
   tasks: StartableTask[];
-  captureGate?: CaptureGate;
-  /** Called with every authoritative session change (capture client starts/stops recording from it). */
-  onCaptureSession?: (s: SessionView | null) => void;
-  captureDialog?: React.ReactNode;
   onSessionChange?: (s: SessionView | null) => void;
-  recordingControls?: (session: SessionView) => React.ReactNode;
 };
 
 type Conflict = { sessionId: string; taskId: string; state: string; sameTask: boolean; wantedTaskId: string };
@@ -55,7 +47,7 @@ function elapsedFor(session: SessionView | null, nowMs: number | null, offsetMs:
  * task under it, the controls as 40px outline icon buttons on the right (named for screen readers and the tooltip),
  * then "How far along". The estimate runs as a thin orange line along the bottom edge. Stop and Switch open a sheet.
  */
-export function SessionTimer({ orgSlug, initial, tasks, captureGate, onCaptureSession, captureDialog, onSessionChange, recordingControls }: Props) {
+export function SessionTimer({ orgSlug, initial, tasks, onSessionChange }: Props) {
   const router = useRouter();
   const [session, setSession] = useState<SessionView | null>(initial.session);
   const [nowMs, setNowMs] = useState<number | null>(null);
@@ -78,9 +70,8 @@ export function SessionTimer({ orgSlug, initial, tasks, captureGate, onCaptureSe
     setLastHeartbeatOkMs(now);
     setConnectionLost(false);
     onSessionChange?.(s);
-    onCaptureSession?.(s);
     router.refresh();
-  }, [onSessionChange, onCaptureSession, router]);
+  }, [onSessionChange, router]);
 
   // Seed the clock offset from the server-rendered payload.
   useEffect(() => {
@@ -144,11 +135,9 @@ export function SessionTimer({ orgSlug, initial, tasks, captureGate, onCaptureSe
   }, [refetch]);
 
   const start = useCallback(async (task: StartableTask) => {
-    let capture: Awaited<ReturnType<CaptureGate>> = { captureMode: "none" };
-    if (captureGate) { capture = await captureGate(task, () => undefined); if (!capture) return; }
-    const s = await run(`start:${task.id}`, () => api<SessionView>(`${base}/start`, { method: "POST", body: { taskId: task.id, ...capture } }));
+    const s = await run(`start:${task.id}`, () => api<SessionView>(`${base}/start`, { method: "POST", body: { taskId: task.id } }));
     if (s) apply(s);
-  }, [apply, base, captureGate, run]);
+  }, [apply, base, run]);
 
   // Task lists elsewhere on the page ask the timer to start a task so conflict handling lives in one place.
   useEffect(() => {
@@ -160,7 +149,6 @@ export function SessionTimer({ orgSlug, initial, tasks, captureGate, onCaptureSe
   async function pause() { if (!session) return; const s = await run("pause", () => api<SessionView>(`${base}/${session.id}/pause`, { method: "POST", body: { expectedVersion: session.version } })); if (s) apply(s); }
   async function resume() {
     if (!session) return;
-    if (captureGate && session.captureMode !== "none") { const task = tasks.find((t) => t.id === session.taskId); if (task) { const c = await captureGate(task, () => undefined); if (!c) return; } }
     const s = await run("resume", () => api<SessionView>(`${base}/${session.id}/resume`, { method: "POST", body: { expectedVersion: session.version } })); if (s) apply(s);
   }
   async function stop(note: string, outcome: string) {
@@ -170,10 +158,7 @@ export function SessionTimer({ orgSlug, initial, tasks, captureGate, onCaptureSe
   }
   async function doSwitch(nextTaskId: string, note: string) {
     if (!session) return;
-    const task = tasks.find((t) => t.id === nextTaskId);
-    let capture: Awaited<ReturnType<CaptureGate>> = { captureMode: "none" };
-    if (captureGate && task) { capture = await captureGate(task, () => undefined); if (!capture) return; }
-    const s = await run("switch", () => api<SessionView>(`${base}/${session.id}/switch`, { method: "POST", body: { expectedVersion: session.version, nextTaskId, note, ...capture } }));
+    const s = await run("switch", () => api<SessionView>(`${base}/${session.id}/switch`, { method: "POST", body: { expectedVersion: session.version, nextTaskId, note } }));
     if (s) { setStopDialog(null); apply(s); }
   }
 
@@ -213,15 +198,14 @@ export function SessionTimer({ orgSlug, initial, tasks, captureGate, onCaptureSe
   const hasAlerts = !!(elsewhere || connectionLost || session?.state === "interrupted" || (estimateReached && live) || (error && !stopDialog) || conflict);
 
   // Nothing on the clock (owner decision, 5 October 2026): no card and no idle clock, the page header already says how
-  // long you worked today. Only what a Start needs to say is shown: that it is starting, a problem, the recording dialog.
+  // long you worked today. Only what a Start needs to say is shown: that it is starting, or a problem.
   if (!session) {
     const starting = !!busy?.startsWith("start:");
-    if (!starting && !hasAlerts && !captureDialog) return null;
+    if (!starting && !hasAlerts) return null;
     return (
       <div className="space-y-3">
         {starting ? <p role="status" className="inline-flex h-8 items-center gap-2 rounded-[10px] bg-fill-0 px-3 text-meta font-medium text-secondary"><StatusDot tone="live" size={6} />Starting the timer…</p> : null}
         {alerts}
-        {captureDialog}
       </div>
     );
   }
@@ -247,7 +231,6 @@ export function SessionTimer({ orgSlug, initial, tasks, captureGate, onCaptureSe
           {paused ? <Button size="icon" variant="accent" aria-label="Resume" onClick={resume} disabled={!!busy}><Play aria-hidden /></Button> : null}
           <IconButton variant="outline" aria-label="Switch task" onClick={() => setStopDialog({ mode: "switch", nextTaskId: "" })} disabled={!!busy || !canSwitch} aria-describedby={canSwitch ? undefined : "timer-no-switch"}><ArrowLeftRight aria-hidden /></IconButton>
           <IconButton variant="outline" aria-label="Stop" className="text-danger hover:text-danger" onClick={() => setStopDialog({ mode: "stop" })} disabled={!!busy}><Square className="fill-current !size-3.5" aria-hidden /></IconButton>
-          {recordingControls ? recordingControls(session) : null}
           {!canSwitch ? <span id="timer-no-switch" className="sr-only">Nothing else on your list to switch to.</span> : null}
         </div>
       </Swap>
@@ -271,8 +254,6 @@ export function SessionTimer({ orgSlug, initial, tasks, captureGate, onCaptureSe
         <StopDialog mode={stopDialog.mode} nextTaskId={stopDialog.mode === "switch" ? stopDialog.nextTaskId : ""} tasks={tasks.filter((t) => t.id !== session.taskId)} busy={!!busy} error={error}
           onCancel={() => { setStopDialog(null); setError(null); }} onStop={stop} onSwitch={doSwitch} />
       ) : null}
-      {captureDialog}
-      {current?.capture_requirement === "required" && session.captureMode === "exception" ? <p className="mt-3 inline-flex items-center gap-2 text-meta font-normal text-warning"><CircleDashed className="size-3.5" aria-hidden />Tracked under a capture exception: time is provisional pending review; no recording exists for this session.</p> : null}
       {session.estimateMinutes ? (
         // The estimate as a thin line along the bottom edge; it grows by transform, so the browser only composites it.
         <div className="absolute inset-x-0 bottom-0 h-0.5 overflow-hidden bg-fill-1" aria-hidden>

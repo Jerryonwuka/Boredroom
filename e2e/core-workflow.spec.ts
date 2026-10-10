@@ -10,7 +10,7 @@ test("A24: employee plans, starts, pauses, stops and submits; manager reviews; C
   await page.goto("/app/company-a/todos");
   await expect(page.getByRole("heading", { name: "To-dos", exact: true })).toBeVisible();
   // Start the homepage task. It is due in three days, so it waits on the Upcoming tab; a to-do opens in a sheet, whose
-  // Start begins the timer without recording ("Start and record" is the separate button beside it).
+  // Start begins the timer (the only Start since phase 8: owner decision, 8 October 2026).
   await page.getByRole("tab", { name: /Upcoming/ }).click();
   const row = page.getByRole("listitem").filter({ hasText: "Homepage design" }).first();
   await row.getByRole("button", { name: /Homepage design/ }).click();

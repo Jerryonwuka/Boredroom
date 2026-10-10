@@ -36,7 +36,7 @@ beforeAll(async () => {
   const ife = await createVerifiedUser("ifeoma@company-a.test", "Ifeoma Nwosu");
   ifeoma = await joinViaInvitation(a.hrCtx, ife, "employee", null, "EMP-003");
   const opsProject = await createProject(olu, { name: "Ops", description: "Operations", requiresDueDate: false, requiresEstimate: false, memberIds: [id(ifeoma), id(ben)] });
-  ops = (await createTask(olu, { projectId: opsProject.id, title: "Ops checklist", expectedOutput: "Done.", assigneeMembershipId: id(ifeoma), reviewerMembershipId: id(ben), category: "work", priority: "normal", estimateMinutes: null, dueAt: null, captureRequirement: "none", addToMyDay: false })).id;
+  ops = (await createTask(olu, { projectId: opsProject.id, title: "Ops checklist", expectedOutput: "Done.", assigneeMembershipId: id(ifeoma), reviewerMembershipId: id(ben), category: "work", priority: "normal", estimateMinutes: null, dueAt: null, addToMyDay: false })).id;
 });
 
 describe("the workspace's collection never shows a lead more than they can see", () => {
@@ -113,7 +113,7 @@ describe("who may ask", () => {
     // Ada legitimately shares one task with Ifeoma (the owner made it: Ifeoma holds it, Ada checks it). She asks, cancels
     // and asks again, about the task and about what Ifeoma is working on.
     const NO_MODEL = { useModel: false } as const;
-    const shared = (await createTask(olu, { projectId: a.projectId, title: "Vendor list", expectedOutput: "Done.", assigneeMembershipId: id(ifeoma), reviewerMembershipId: id(ada), category: "work", priority: "normal", estimateMinutes: null, dueAt: null, captureRequirement: "none", addToMyDay: false })).id;
+    const shared = (await createTask(olu, { projectId: a.projectId, title: "Vendor list", expectedOutput: "Done.", assigneeMembershipId: id(ifeoma), reviewerMembershipId: id(ada), category: "work", priority: "normal", estimateMinutes: null, dueAt: null, addToMyDay: false })).id;
     const askAndCancel = async (taskId: string | null) => {
       const r = await createFollowUps(ada, { subjectMembershipIds: [id(ifeoma)], taskId, question: "Any news?" });
       const fid = r.created[0].id;

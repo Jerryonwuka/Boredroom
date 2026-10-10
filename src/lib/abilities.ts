@@ -22,12 +22,17 @@ import { ROUTINE_WORDS, type RoutineTemplate } from "@/lib/routines";
 // ---- Keys --------------------------------------------------------------------------------------------------------------
 
 /** Every ability on the catalogue, in the order the cards show (contract C.1). */
-export const ABILITY_KEYS = ["catch_up", "loose_ends", "follow_ups", "assistant_talk", "mentions", "routines", "commitments", "standup", "voice", "act", "morning_opener"] as const;
+// Phase 8 (owner decisions, 8 October 2026): `call_notes`, last (Brenda's notes on calls; a workspace switch only: each
+// call asks each person, so there is no personal switch).
+export const ABILITY_KEYS = ["catch_up", "loose_ends", "follow_ups", "assistant_talk", "mentions", "routines", "commitments", "standup", "voice", "act", "morning_opener", "call_notes"] as const;
 export type AbilityKey = (typeof ABILITY_KEYS)[number];
 export const isAbilityKey = (v: unknown): v is AbilityKey => (ABILITY_KEYS as readonly unknown[]).includes(v);
 
-/** The workspace's own switches (`brenda_settings.abilities_off`, migration 0050's CHECK lists exactly these). */
-export const WORKSPACE_SWITCH_KEYS: readonly AbilityKey[] = ["catch_up", "loose_ends", "follow_ups", "assistant_talk", "routines", "standup", "voice", "morning_opener"];
+/**
+ * The workspace's own switches (`brenda_settings.abilities_off`, migration 0050's CHECK lists exactly these, and 0054's
+ * adds `call_notes`; before 0054 saving `call_notes` answers 503 NOT_READY).
+ */
+export const WORKSPACE_SWITCH_KEYS: readonly AbilityKey[] = ["catch_up", "loose_ends", "follow_ups", "assistant_talk", "routines", "standup", "voice", "morning_opener", "call_notes"];
 /** The person's own switches (`assistant_private.abilities_off`, migration 0050's CHECK lists exactly these). */
 export const PERSONAL_SWITCH_KEYS: readonly AbilityKey[] = ["catch_up", "loose_ends", "follow_ups", "assistant_talk", "mentions", "routines", "standup", "morning_opener"];
 export const isWorkspaceSwitchKey = (v: unknown): v is AbilityKey => (WORKSPACE_SWITCH_KEYS as readonly unknown[]).includes(v);
@@ -165,6 +170,14 @@ export const ABILITY_CATALOGUE: readonly AbilityEntry[] = [
     useWhen: "Use when you want to start the day knowing what needs you.",
     never: "Never sends anything: its buttons open a page or fill the box.",
   },
+  // Phase 8 (owner decisions, 8 October 2026): notes on calls, with each person's own consent.
+  {
+    key: "call_notes", title: "Notes on calls", icon: "NotebookPen",
+    what: ({ ws }) => `On a call, anyone can ask ${ws} to take notes. Everyone chooses for themselves, and ${ws} writes a recap from the words of the people who agree.`,
+    whatAll: ({ ws }) => `On a call, anyone can ask ${ws} to take notes. Everyone chooses for themselves, and ${ws} writes a recap from the words of the people who agree.`,
+    useWhen: "Use when a call decides things that should be written down and followed up.",
+    never: "Never listens without each person's yes, never sends audio anywhere, never shows the transcript to anyone who wasn't on the call, and never adds a to-do until its person accepts.",
+  },
 ];
 
 /** One ability's catalogue entry. */
@@ -232,6 +245,8 @@ export const ABILITY_WORDS = {
     followUpsAnswering: (name: string) => `Asking only. How ${name} answers about your work stays in Follow-ups.`,
     assistantTalkSending: "Sending only. Receiving is never blocked.",
     assistantTalkNotes: "Notes from the team keep their own switch.",
+    // Phase 8 (owner decisions, 8 October 2026): notes on calls have no personal switch; each call asks each person.
+    callNotesPersonal: "Each call asks you",
   },
   notes: {
     workspacePage: "Switching an ability off here turns it off for everyone's assistant. The switches that already had their own card stay there.",

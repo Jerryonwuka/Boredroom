@@ -3,7 +3,7 @@ import { ShieldCheck } from "lucide-react";
 import { workspacePage } from "@/server/lib/workspace-page";
 import { AppShell } from "@/components/app/shell";
 import { PageHeader, SectionTitle } from "@/components/ui/card";
-import { Badge, CountPill, label } from "@/components/ui/badge";
+import { CountPill } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/states";
 import { DataTable } from "@/components/ui/table";
@@ -21,14 +21,14 @@ import { PageNote, PageNotes } from "@/components/ui/page-notes";
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Reviews" };
 
-type Tab = "all" | "submissions" | "corrections" | "exceptions" | "incidents" | "overdue";
+type Tab = "all" | "submissions" | "corrections" | "overdue";
 
 /**
  * Reviews, v4: the queue as tables under underline tabs (All, then one per kind, each with its count). A submission
- * opens in a sheet with the decision form; a time correction, a capture exception or a privacy incident opens a sheet
- * with its details and the decision. No daily reports, no Missing reports and no day exemptions here any more (owner
- * decision, 6 October 2026): staff no longer write a daily report, and Brenda's end-of-day report tells team leads what
- * their teams did. Leads keep deciding on submitted work, time corrections and capture exceptions.
+ * opens in a sheet with the decision form; a time correction opens a sheet with its details and the decision. No daily
+ * reports, no Missing reports and no day exemptions here any more (owner decision, 6 October 2026): staff no longer
+ * write a daily report, and Brenda's end-of-day report tells team leads what their teams did. Leads keep deciding on
+ * submitted work and time corrections (the two screen-video queues went in phase 8: owner decision, 8 October 2026).
  *
  * Accent rules (6 October 2026): for the team lead who decides, each kind's tab count is orange (attention); for everyone
  * else they are plain totals. The "All" sum and the section-title counts repeat those numbers, so they stay neutral (the
@@ -46,7 +46,7 @@ export default async function ReviewsPage({ params, searchParams }: { params: Pr
   const viewer = taskViewer(ctx);
   // Organisation accounts see the whole queue; team leads give the decisions.
   const decides = ctx.membership.role === "manager";
-  const total = q.submissions.length + q.adjustments.length + q.exceptions.length + q.incidents.length;
+  const total = q.submissions.length + q.adjustments.length;
   const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
   const clear = total === 0 && q.overdue.length === 0;
   const showOverdue = q.overdue.length > 0 || !isEmployee;
@@ -54,8 +54,6 @@ export default async function ReviewsPage({ params, searchParams }: { params: Pr
     { value: "all", label: "All", count: total, href: `${base}/reviews` },
     { value: "submissions", label: "Submissions", count: q.submissions.length, attention: decides, href: `${base}/reviews?tab=submissions` },
     { value: "corrections", label: "Time corrections", count: q.adjustments.length, attention: decides, href: `${base}/reviews?tab=corrections` },
-    { value: "exceptions", label: "Capture exceptions", count: q.exceptions.length, attention: decides, href: `${base}/reviews?tab=exceptions` },
-    ...(q.incidents.length ? [{ value: "incidents" as const, label: "Privacy incidents", count: q.incidents.length, attention: !isEmployee, href: `${base}/reviews?tab=incidents` }] : []),
     ...(showOverdue ? [{ value: "overdue" as const, label: "Overdue", count: q.overdue.length, href: `${base}/reviews?tab=overdue` }] : []),
   ];
   const tab: Tab = tabs.some((t) => t.value === sp.tab) ? (sp.tab as Tab) : "all";
@@ -65,7 +63,7 @@ export default async function ReviewsPage({ params, searchParams }: { params: Pr
   return (
     <AppShell ctx={ctx} counts={counts} teams={teams}>
       <PageHeader title="Reviews"
-        description={decides ? "Submitted work, time corrections, capture exceptions and privacy incidents waiting for a decision." : "Everything waiting for a decision across the organisation."}
+        description={decides ? "Submitted work and time corrections waiting for a decision." : "Everything waiting for a decision across the organisation."}
         tabs={clear ? undefined : tabs} tabValue={tab} tabParam="tab" tabsLabel="Review queue" divider={clear} />
       {clear ? (
         <EmptyState icon={ShieldCheck} title="Queue is clear"
@@ -127,65 +125,6 @@ export default async function ReviewsPage({ params, searchParams }: { params: Pr
                   ))}</tbody>
                 </DataTable>
               )}
-            </section>
-          ) : null}
-
-          {show("exceptions") && (tab !== "all" || q.exceptions.length) ? (
-            <section aria-labelledby="q-exceptions">
-              {tab === "all" ? <QueueTitle id="q-exceptions" title="Capture exceptions" count={q.exceptions.length} /> : <h2 id="q-exceptions" className="sr-only">Capture exceptions</h2>}
-              {q.exceptions.length === 0 ? nothing("No capture exceptions are waiting.") : (
-                <DataTable caption="Capture exceptions waiting for a decision" fit>
-                  <thead><tr><th className="w-[30%]">Person</th><th>Exception</th><th className="hidden w-[180px] md:table-cell">Requested</th><th className="w-[96px] text-right"><span className="sr-only">Decision</span></th></tr></thead>
-                  <tbody>{q.exceptions.map((c) => (
-                    <tr key={c.id}>
-                      <td><span className="flex min-w-0 items-center gap-2.5"><Avatar profileId={c.id} name={c.display_name} size={28} /><span className="truncate font-medium">{c.display_name}</span></span></td>
-                      <td><p className="flex min-w-0 items-center gap-2"><span className="truncate font-medium">{c.task_title ?? "No task"}</span><Badge tone="warning">{label(c.reason_code)}</Badge></p><p className="truncate text-meta text-secondary">{c.reason}</p></td>
-                      <td className="hidden tabular-nums text-secondary md:table-cell">{formatDateTime(c.created_at, tz)}</td>
-                      <td className="text-right">
-                        <DecisionSheetButton label={decides ? "Review" : "View"} aria-label={`${decides ? "Review" : "View"} the capture exception from ${c.display_name}`} title="Capture exception" description={`${c.display_name}${c.task_title ? `, ${c.task_title}` : ""}`}>
-                          <div className="grid gap-5">
-                            <p><Badge tone="warning">{label(c.reason_code)}</Badge></p>
-                            <section aria-label="Why">
-                              <h3 className="mb-1.5 text-sm font-semibold text-foreground">Why</h3>
-                              <p className="whitespace-pre-wrap text-sm font-normal text-foreground">{c.reason}</p>
-                            </section>
-                            <p className="text-meta font-normal text-secondary">Requested {formatDateTime(c.created_at, tz)}</p>
-                            {decides ? <DecisionForm path={`/api/orgs/${ctx.org.slug}/capture-exceptions/${c.id}/review`} options={[{ value: "accepted", label: "Accept" }, { value: "rejected", label: "Reject" }]} /> : <p className="text-sm font-normal text-secondary">Waiting for the team lead&apos;s decision.</p>}
-                          </div>
-                        </DecisionSheetButton>
-                      </td>
-                    </tr>
-                  ))}</tbody>
-                </DataTable>
-              )}
-            </section>
-          ) : null}
-
-          {show("incidents") && q.incidents.length ? (
-            <section aria-labelledby="q-incidents">
-              {tab === "all" ? <QueueTitle id="q-incidents" title="Privacy incidents" count={q.incidents.length} /> : <h2 id="q-incidents" className="sr-only">Privacy incidents</h2>}
-              <DataTable caption="Privacy incidents on restricted footage" fit>
-                <thead><tr><th className="w-[30%]">Flagged by</th><th>Reason</th><th className="hidden w-[180px] md:table-cell">Restricted</th><th className="w-[96px] text-right"><span className="sr-only">Decision</span></th></tr></thead>
-                <tbody>{q.incidents.map((i) => (
-                  <tr key={i.id}>
-                    <td><span className="flex min-w-0 items-center gap-2.5"><Avatar profileId={i.id} name={i.reporter_name} size={28} /><span className="truncate font-medium">{i.reporter_name}</span></span></td>
-                    <td><p className="truncate">{i.reason}</p><p className="truncate text-meta text-danger">Restricted footage</p></td>
-                    <td className="hidden tabular-nums text-secondary md:table-cell">{formatDateTime(i.restricted_at, tz)}</td>
-                    <td className="text-right">
-                      <DecisionSheetButton label="Decide" aria-label={`Decide on the incident flagged by ${i.reporter_name}`} title="Privacy incident" description={`Flagged by ${i.reporter_name}, ${formatDateTime(i.restricted_at, tz)}`}>
-                        <div className="grid gap-5">
-                          <section aria-label="Why it was flagged">
-                            <h3 className="mb-1.5 text-sm font-semibold text-foreground">Why it was flagged</h3>
-                            <p className="whitespace-pre-wrap text-sm font-normal text-foreground">{i.reason}</p>
-                          </section>
-                          <p className="text-meta font-normal text-secondary">Ordinary playback is denied while open. Deletion removes chunks and derivatives and is logged.</p>
-                          <DecisionForm path={`/api/orgs/${ctx.org.slug}/incidents/${i.id}/resolve`} options={[{ value: "released", label: "Release for normal access" }, { value: "deleted", label: "Delete recording", danger: true }]} noteLabel="Decision note" noteRequired />
-                        </div>
-                      </DecisionSheetButton>
-                    </td>
-                  </tr>
-                ))}</tbody>
-              </DataTable>
             </section>
           ) : null}
 

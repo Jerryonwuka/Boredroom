@@ -12,15 +12,12 @@ import { DataTable } from "@/components/ui/table";
 import { Alert } from "@/components/ui/states";
 import { Person } from "@/components/ui/person";
 import { taskDetail } from "@/server/services/views";
-import { listSessionRecordings } from "@/server/services/recording";
 import { formatDateTime, formatDuration } from "@/lib/utils";
 import { TaskActions, SubmissionForm, ReviewForm, DeliverableList, ReopenForm } from "@/components/app/task-forms";
 import { TaskPanels } from "@/components/app/task-panels";
-import { SessionRecordings } from "@/components/app/recording-panel";
 import { DetailList, DetailRow } from "@/components/app/detail-list";
 import { DueDate } from "@/components/app/due";
 import { ProgressBar } from "@/components/ui/progress-arc";
-import { PageNote, PageNotes } from "@/components/ui/page-notes";
 import { BlockedOn, type BlockInfo } from "@/components/app/blocked-on";
 import { blockFor } from "@/server/services/task-blocks";
 import type { OrgContext } from "@/server/lib/api";
@@ -74,7 +71,6 @@ export default async function TaskPage({ params, searchParams }: { params: Promi
   // Organisation accounts see the review; the team lead gives the decision.
   const isOrgAccount = ctx.membership.role === "owner" || ctx.membership.role === "hr";
   const canReview = task.status === "in_review" && latest && !latestDecided && !isAssignee && (isReviewer || canManage) && !isOrgAccount;
-  const recordingsBySession = Object.fromEntries(await Promise.all(sessions.slice(0, 10).map(async (s) => [s.id, await listSessionRecordings(ctx, s.id)] as const)));
   const base = `/app/${ctx.org.slug}`;
   const first = (name: string | null | undefined) => name?.split(" ")[0];
   // Who a new comment notifies: the assignee and the reviewer, never the person writing it (services/tasks.ts addComment).
@@ -83,8 +79,6 @@ export default async function TaskPage({ params, searchParams }: { params: Promi
   const estimate = task.estimate_minutes ? task.estimate_minutes * 60 : 0;
   const share = estimate ? Math.min(1, task.tracked_seconds / estimate) : 0;
   const overdue = !!task.due_at && new Date(task.due_at) < new Date() && task.status !== "completed";
-  // A recording the viewer can press Watch on (SessionRecordings shows Watch for these only).
-  const watchable = Object.values(recordingsBySession).some((rs) => rs.some((r) => r.upload_state === "ready" && !r.restricted_at));
   return (
     <AppShell ctx={ctx} counts={counts} teams={teams}>
       {/* "Back" goes to wherever the task was opened from (BackLink follows history); with no history, to Tasks. */}
@@ -93,7 +87,6 @@ export default async function TaskPage({ params, searchParams }: { params: Promi
           <Badge tone={TASK_STATUS_TONE[task.status]}>{statusLabel(task.status)}</Badge>
           {task.priority !== "normal" ? <Badge tone={task.priority === "urgent" ? "danger" : task.priority === "high" ? "warning" : "neutral"}>{label(task.priority)} priority</Badge> : null}
           {overdue ? <Badge tone="danger">Overdue</Badge> : null}
-          {task.capture_requirement !== "none" ? <Badge tone="warning">Screen capture {task.capture_requirement}</Badge> : null}
           {task.archived_at ? <Badge tone="danger">Deleted</Badge> : null}
         </span>}
         actions={<>
@@ -101,7 +94,7 @@ export default async function TaskPage({ params, searchParams }: { params: Promi
           {!isAssignee ? <Link href={`${base}/messages?to=${task.assignee_membership_id}&task=${task.id}`} className={buttonVariants({ variant: "secondary", size: "sm" })}>Ask {first(task.assignee_name)} for an update</Link>
             : task.reviewer_membership_id ? <Link href={`${base}/messages?to=${task.reviewer_membership_id}&task=${task.id}`} className={buttonVariants({ variant: "secondary", size: "sm" })}>Message {first(task.reviewer_name) ?? "your reviewer"}</Link> : null}
           <TaskActions orgSlug={ctx.org.slug} task={{ id: task.id, version: task.version, status: task.status, archived: !!task.archived_at, blockedReason: task.blocked_reason }} isAssignee={isAssignee} canManage={canManage} members={members}
-            current={{ reviewerId: task.reviewer_membership_id, assigneeId: task.assignee_membership_id, estimateMinutes: task.estimate_minutes, dueAt: task.due_at, priority: task.priority, captureRequirement: task.capture_requirement }}
+            current={{ reviewerId: task.reviewer_membership_id, assigneeId: task.assignee_membership_id, estimateMinutes: task.estimate_minutes, dueAt: task.due_at, priority: task.priority }}
             block={{ ready: blockInfo.ready, people: blockInfo.people }} />
         </>} />
 
@@ -126,7 +119,6 @@ export default async function TaskPage({ params, searchParams }: { params: Promi
               <DetailRow label="Completed">{task.completed_at ? <span className="tabular-nums">{formatDateTime(task.completed_at, tz)}</span> : <span className="text-secondary">Not yet</span>}</DetailRow>
               <DetailRow label="Priority">{label(task.priority)}</DetailRow>
               <DetailRow label="Category">{label(task.category)}</DetailRow>
-              <DetailRow label="Screen capture">{task.capture_requirement === "none" ? <span className="text-secondary">Not requested</span> : label(task.capture_requirement)}</DetailRow>
             </DetailList>
           </Card>
         </aside>
@@ -190,7 +182,7 @@ export default async function TaskPage({ params, searchParams }: { params: Promi
                     <td>{s.state === "running" ? <Badge tone="accent" dot>Running</Badge> : <Badge tone={SESSION_STATE_TONE[s.state]}>{label(s.state)}</Badge>}</td>
                     <td className="text-right tabular-nums">{formatDuration(s.confirmed_seconds)}</td>
                     <td className="text-right tabular-nums">{s.uncertain_seconds ? <span className="text-warning">{formatDuration(s.uncertain_seconds)}</span> : <span className="text-subtle">None</span>}</td>
-                    <td className="wrap">{s.stop_outcome ? label(s.stop_outcome) : <span className="text-subtle">Not stopped</span>}{recordingsBySession[s.id]?.length ? <SessionRecordings orgSlug={ctx.org.slug} recordings={recordingsBySession[s.id]} own={isAssignee} timeZone={ctx.org.timezone} /> : null}</td>
+                    <td className="wrap">{s.stop_outcome ? label(s.stop_outcome) : <span className="text-subtle">Not stopped</span>}</td>
                   </tr>
                 ))}</tbody>
               </DataTable>
@@ -198,11 +190,6 @@ export default async function TaskPage({ params, searchParams }: { params: Promi
           </section>
         </div>
       </div>
-
-      {/* Page notes (owner request, 7 October 2026): explanations at the bottom of the screen, small and grey. */}
-      <PageNotes>
-        {watchable ? <PageNote section="Recordings">The link works for 60 seconds. Every play is written to the access log.</PageNote> : null}
-      </PageNotes>
     </AppShell>
   );
 }

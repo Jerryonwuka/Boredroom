@@ -61,6 +61,10 @@
  * numbers, a request's change, a task's due day; services/notice-facts, read as the person). `facts: null` means the
  * plain card; a problem reading them leaves every one null and never takes the rest of the notch down. An older notch
  * ignores the field. `notificationsUnread` is how many are unread in all (review, 9 October 2026), past the 20 sent.
+ *
+ * Calls (owner decisions, 8 October 2026: phase 8): each teammate in `team` says whether they are on a call now
+ * (`onCall`: who, never which call; false before migration 0054 or when it cannot be read). Ringing is NOT in this
+ * 20-second state: the notch polls `GET /calls/now` for it (services/calls `callsNowIn`), every few seconds.
  */
 import { z } from "zod";
 import { withSystem, withUser } from "@/server/db";
@@ -90,6 +94,7 @@ import type { DesktopStandup } from "@/lib/standup";
 import { abilitiesFor } from "@/server/services/abilities";
 import { abilitiesOff, abilityOff, type AbilityKey } from "@/lib/abilities";
 import { noticeFacts, type DesktopNotification, type NoticeFacts, type NoticeRow } from "@/server/services/notice-facts";
+import { membersOnCall } from "@/server/services/calls";
 
 const CODE_TTL_SECONDS = 10 * 60;
 const DESKTOP_SESSION_DAYS = 90;
@@ -193,7 +198,7 @@ export async function revokeDevice(user: CurrentUser, sessionId: string) {
  * lib/assistant-look (owner decision, 7 October 2026: personal assistants).
  */
 export type DesktopAssistant = { name: string; colour: string; visor: AssistantVisor; eyes: AssistantEyes; face: FaceShades };
-const forNotch = (p: AssistantProfile): DesktopAssistant => ({ name: p.name, colour: p.colour, visor: p.visor, eyes: p.eyes, face: PALETTE[p.colour].face });
+export const forNotch = (p: AssistantProfile): DesktopAssistant => ({ name: p.name, colour: p.colour, visor: p.visor, eyes: p.eyes, face: PALETTE[p.colour].face });
 
 export type { DesktopFollowUps, DesktopAssistantItems, DesktopRoutineRuns, DesktopLoops, DesktopStandup };
 const NO_FOLLOW_UPS: DesktopFollowUps = { ready: false, waiting: [], answered: [] };
@@ -287,10 +292,14 @@ export async function desktopState(ctx: OrgContext, o: { opener?: boolean } = {}
     .slice(0, 8) : [];
   // A problem reading their looks never takes the notch down: they show as Brenda. Nor does one reading the
   // notifications' facts (owner decision, 9 October 2026: notch notifications): every card is then the plain one.
-  const [mateLooks, facts] = await Promise.all([
+  const [mateLooks, facts, onCall] = await Promise.all([
     teammateAssistants(ctx, mates.map((r) => r.membership_id))
       .catch((err) => { console.warn(`[desktop] teammates' assistants: ${(err as Error)?.message ?? String(err)}`); return new Map<string, DesktopAssistant>(); }),
     noticeFacts(ctx, extra.notifications).catch(() => new Map<string, NoticeFacts>()),
+    // Phase 8: who is on a call now (never which call); nobody when it cannot be read.
+    mates.length
+      ? withUser(ctx.user.profileId, (db) => membersOnCall(db, ctx.org.id)).catch(() => new Set<string>())
+      : Promise.resolve(new Set<string>()),
   ]);
   // The opener counts from the briefing just read (no second read of it), and only until the notch has shown today's
   // first card.
@@ -346,6 +355,6 @@ export async function desktopState(ctx: OrgContext, o: { opener?: boolean } = {}
     // Team leads and organisation accounts: who is working right now, for the small faces in the notch.
     // Each teammate's face is their own assistant (owner request, 9 October 2026), Brenda where they have none.
     team: mates.map((r) => ({ id: r.membership_id, name: r.display_name, state: r.session_state ?? null, task: r.task_title ?? null,
-      assistant: mateLooks.get(r.membership_id) ?? forNotch(DEFAULT_ASSISTANT) })),
+      assistant: mateLooks.get(r.membership_id) ?? forNotch(DEFAULT_ASSISTANT), onCall: onCall.has(r.membership_id) })),
   };
 }

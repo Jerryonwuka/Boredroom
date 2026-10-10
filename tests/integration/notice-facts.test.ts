@@ -157,7 +157,7 @@ describe("tasks and reminders", () => {
   });
 
   it("a reassignment names nobody", async () => {
-    const t = await createTask(david, { projectId: a.projectId, title: "Hero illustrations", expectedOutput: "Three hero illustrations.", assigneeMembershipId: id(ada), reviewerMembershipId: id(david), category: "work", priority: "normal", estimateMinutes: null, dueAt: null, captureRequirement: "none", addToMyDay: false });
+    const t = await createTask(david, { projectId: a.projectId, title: "Hero illustrations", expectedOutput: "Three hero illustrations.", assigneeMembershipId: id(ada), reviewerMembershipId: id(david), category: "work", priority: "normal", estimateMinutes: null, dueAt: null, addToMyDay: false });
     const [{ version }] = await adminQuery<{ version: number }>("SELECT version FROM tasks WHERE id = $1", [t.id]);
     await updateTask(david, t.id, { expectedVersion: version, assigneeMembershipId: id(ben) });
     expect(await factsOf(ben, "task.assigned", (n) => n.resource_id === t.id)).toMatchObject({ kind: "assignment", task: { title: "Hero illustrations", priority: "normal" }, by: null, canStart: true });
@@ -276,7 +276,7 @@ describe("the team report", () => {
 
   it("before 0052: the card's counts come from the snapshot (finished, overdue, blocked; no hours, no names)", async () => {
     // Something for the report to say: an overdue task, and Ben clocked in 40 minutes late.
-    const late = await createTask(david, { projectId: a.projectId, title: "Old copy", expectedOutput: "Copy.", assigneeMembershipId: id(ada), reviewerMembershipId: id(david), category: "work", priority: "normal", estimateMinutes: null, dueAt: later(3600).toISOString(), captureRequirement: "none", addToMyDay: false });
+    const late = await createTask(david, { projectId: a.projectId, title: "Old copy", expectedOutput: "Copy.", assigneeMembershipId: id(ada), reviewerMembershipId: id(david), category: "work", priority: "normal", estimateMinutes: null, dueAt: later(3600).toISOString(), addToMyDay: false });
     await adminQuery("UPDATE tasks SET due_at = now() - interval '2 days' WHERE id = $1", [late.id]);
     await adminQuery(
       `INSERT INTO attendance_days(organisation_id, membership_id, local_date, timezone, scheduled_start, scheduled_end, clock_in_at, late_seconds)

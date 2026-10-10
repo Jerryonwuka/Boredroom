@@ -32,13 +32,20 @@ export const ROLE_LABEL: Record<string, string> = { owner: "Organisation owner",
  */
 const COMMITMENTS_ICON: NavItem["icon"] = "commitments";
 
+/**
+ * Calls (owner decisions, 8 October 2026: phase 8): screen recording is gone, so both Recordings items went; "Calls" sits
+ * right after Messages for every role, on every plan (no feature flag). The page explains itself before migration 0054
+ * or without LiveKit ("Calls need a database update first.").
+ */
+const CALLS_LABEL = "Calls";
+
 export function navItems(ctx: OrgContext, counts: NavCounts, teams: { id: string; name: string; is_manager: boolean }[] = [], assistantName = DEFAULT_ASSISTANT_NAME): NavItem[] {
   const base = `/app/${ctx.org.slug}`;
   const role = ctx.membership.role;
   // Brenda's page first for everyone, marked with her face; the URL stays /home (owner decision, 5 October 2026). It is
   // named after the person's assistant (owner decision, 7 October 2026: personal assistants), and the glyph draws that
   // assistant's visor from context. Reports and Policy are gone for every role: Brenda sends supervisors the end-of-day
-  // report, and working hours and recording rules live in Settings.
+  // report, and working hours and the monitoring notice live in Settings.
   const items: NavItem[] = [{ href: `${base}/home`, label: assistantName, icon: "brenda", group: "Overview" }];
   if (role === "owner" || role === "hr") {
     // Organisation account: supervision and management only.
@@ -49,11 +56,11 @@ export function navItems(ctx: OrgContext, counts: NavCounts, teams: { id: string
     items.push({ href: `${base}/tasks`, label: "Tasks", icon: "tasks", group: "Work" });
     items.push({ href: `${base}/commitments`, label: "Commitments", icon: COMMITMENTS_ICON, group: "Work" });
     items.push({ href: `${base}/messages`, label: "Messages", icon: "messages", badge: counts.messages || undefined, group: "Work" });
+    items.push({ href: `${base}/calls`, label: CALLS_LABEL, icon: "calls", group: "Work" });
     items.push({ href: `${base}/docs`, label: "Docs", icon: "docs", group: "Work" });
     items.push({ href: `${base}/reviews`, label: "Reviews", icon: "reviews", badge: counts.attention || undefined, group: "Work" });
     items.push({ href: `${base}/projects`, label: "Projects", icon: "projects", group: "Work" });
     items.push({ href: `${base}/people`, label: "People and teams", icon: "people", group: "Organisation" });
-    if (ctx.plan.features.VIDEO_RECORDING) items.push({ href: `${base}/recordings`, label: "Recordings", icon: "recordings", group: "Organisation" });
     // Records (timesheets, corrections, CSV export) were reached from Reports; with Reports gone they need their own item.
     items.push({ href: `${base}/timesheets`, label: "Timesheets", icon: "timesheets", group: "Organisation" });
     if (ctx.plan.features.AUDIT_LOGS) items.push({ href: `${base}/audit`, label: "Audit", icon: "audit", group: "Others" });
@@ -71,9 +78,9 @@ export function navItems(ctx: OrgContext, counts: NavCounts, teams: { id: string
     items.push({ href: `${base}/tasks`, label: "Tasks", icon: "tasks", group: "Work" });
     items.push({ href: `${base}/commitments`, label: "Commitments", icon: COMMITMENTS_ICON, group: "Work" });
     items.push({ href: `${base}/messages`, label: "Messages", icon: "messages", badge: counts.messages || undefined, group: "Work" });
+    items.push({ href: `${base}/calls`, label: CALLS_LABEL, icon: "calls", group: "Work" });
     items.push({ href: `${base}/docs`, label: "Docs", icon: "docs", group: "Work" });
     items.push({ href: `${base}/projects`, label: "Projects", icon: "projects", group: "Work" });
-    if (ctx.plan.features.VIDEO_RECORDING) items.push({ href: `${base}/recordings`, label: "Recordings", icon: "recordings", group: "Work" });
     items.push({ href: `${base}/timesheets`, label: "Timesheets", icon: "timesheets", group: "Records" });
     return items;
   }
@@ -84,6 +91,7 @@ export function navItems(ctx: OrgContext, counts: NavCounts, teams: { id: string
   items.push({ href: `${base}/tasks`, label: "Tasks", icon: "tasks", group: "Work" });
   items.push({ href: `${base}/commitments`, label: "Commitments", icon: COMMITMENTS_ICON, group: "Work" });
   items.push({ href: `${base}/messages`, label: "Messages", icon: "messages", badge: counts.messages || undefined, group: "Work" });
+  items.push({ href: `${base}/calls`, label: CALLS_LABEL, icon: "calls", group: "Work" });
   items.push({ href: `${base}/docs`, label: "Docs", icon: "docs", group: "Work" });
   items.push({ href: `${base}/timesheets`, label: "My timesheet", icon: "timesheets", group: "Records" });
   return items;

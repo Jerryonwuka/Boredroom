@@ -4,8 +4,8 @@
  * The review queue's sheets (owner decision, 26 September 2026: a submission opens in a pop-up, not a page). v4: right-
  * hand sheets. `SubmissionButton` opens a task submission (the task, the revision's note, its links and files, the
  * decisions so far, and the decision form for whoever may give it; loaded on open from /api/orgs/:org/submissions/:id).
- * `DecisionSheetButton` opens anything else waiting for a decision (a time correction, a capture exception, a privacy
- * incident): the page renders the details and the DecisionForm, and the sheet closes itself once a decision is saved.
+ * `DecisionSheetButton` opens anything else waiting for a decision (a time correction): the page renders the details
+ * and the DecisionForm, and the sheet closes itself once a decision is saved.
  */
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";

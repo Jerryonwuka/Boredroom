@@ -43,7 +43,9 @@ describe("the scripts", () => {
   });
   it("declare one global each and nothing else", () => {
     expect(Object.isFrozen(Notify)).toBe(true);
-    expect(Object.keys(Notify).sort()).toEqual(["GROUP_RANK", "T", "arrival", "away", "countWords", "dotWindow", "holdMs", "initial", "leaveFold", "markAllRead", "order", "pagerInsert", "pagerRemove", "pagerStart", "pagerStep"]);
+    // Phase 8 (owner decisions, 8 October 2026: calls) adds the ring's rules: CALL_POLL, ringAction, ringPollMs and
+    // ringRetryMs (tests/unit/notch-calls.test.ts checks them).
+    expect(Object.keys(Notify).sort()).toEqual(["CALL_POLL", "GROUP_RANK", "T", "arrival", "away", "countWords", "dotWindow", "holdMs", "initial", "leaveFold", "markAllRead", "order", "pagerInsert", "pagerRemove", "pagerStart", "pagerStep", "ringAction", "ringPollMs", "ringRetryMs"]);
   });
 });
 

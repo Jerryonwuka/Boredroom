@@ -116,7 +116,7 @@ function NewTaskSheet({ orgSlug, projectId, members, self, canAssignOthers, requ
         const r = await submit(() => api<{ id: string }>(`/api/orgs/${orgSlug}/tasks`, { method: "POST", body: {
           projectId, title: f.get("title"), expectedOutput: f.get("expectedOutput"), assigneeMembershipId: f.get("assigneeMembershipId") || self, reviewerMembershipId: f.get("reviewerMembershipId") || null,
           category: f.get("category"), priority: f.get("priority"), estimateMinutes: f.get("estimateMinutes") ? Number(f.get("estimateMinutes")) : null,
-          dueAt: f.get("dueAt") ? new Date(String(f.get("dueAt"))).toISOString() : null, captureRequirement: f.get("captureRequirement") ?? "none", addToMyDay: false } }));
+          dueAt: f.get("dueAt") ? new Date(String(f.get("dueAt"))).toISOString() : null, addToMyDay: false } }));
         if (r) { onClose(); router.refresh(); }
       }}>
         {error && !placed ? <Alert tone="danger">{error}</Alert> : null}
@@ -130,7 +130,6 @@ function NewTaskSheet({ orgSlug, projectId, members, self, canAssignOthers, requ
           <Field label="Estimated time" htmlFor="t-est" hint={requiresEstimate ? "Required" : "Optional"} error={fieldErrors.estimateMinutes}><DurationPicker id="t-est" name="estimateMinutes" required={requiresEstimate} /></Field>
           <Field label="Due" htmlFor="t-due" hint={requiresDueDate ? "Required" : "Optional"} error={fieldErrors.dueAt}><DatePicker mode="datetime" id="t-due" name="dueAt" required={requiresDueDate} /></Field>
         </div>
-        {canAssignOthers ? <Field label="Screen capture" htmlFor="t-cap" hint="Only applies if policy enables recording"><Select id="t-cap" name="captureRequirement" defaultValue="none"><option value="none">Not requested</option><option value="optional">Optional</option><option value="required">Required on this task</option></Select></Field> : null}
       </form>
     </Sheet>
   );

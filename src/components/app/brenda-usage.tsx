@@ -26,6 +26,8 @@ const PURPOSE_LABEL: Record<UsagePurpose, string> = {
   chat: "Chat", plan: "To-do planner", report: "Team reports", summary: "Summaries", test: "Connection tests", other: "Other", followup: "Follow-ups",
   mention: "Mentions in Messages", loose_ends: "Loose ends", commitments: "Commitments in group chats",
   standup: "Standup drafts",
+  // "call_recap": the workspace assistant's notes on a call (owner decisions, 8 October 2026: phase 8).
+  call_recap: "Call notes",
 };
 
 const exact = new Intl.NumberFormat("en-GB");

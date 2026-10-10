@@ -234,14 +234,15 @@ const PAGES: Page[] = [
   { label: "Tasks", path: "/tasks", what: "every task: open, waiting for a check, done", roles: ALL },
   { label: "Docs", path: "/docs", what: "documents: notes, SOPs, meeting notes, reports, the handbook; private, for a team or for everyone", roles: ALL },
   { label: "People and teams", path: "/people", what: "join code, invitations, teams and their leads", roles: ORG },
-  { label: "Reviews", path: "/reviews", what: "submitted work, time corrections and capture exceptions waiting for a decision", roles: LEADS },
-  { label: "Recordings", path: "/recordings", what: "screen recordings, playback grants", roles: LEADS },
+  { label: "Reviews", path: "/reviews", what: "submitted work and time corrections waiting for a decision", roles: LEADS },
+  // Calls (owner decisions, 8 October 2026: phase 8) in place of the old screen recordings page.
+  { label: "Calls", path: "/calls", what: "Your calls: who called, missed calls, and notes from calls you were on", roles: ALL },
   { label: "Timesheets", path: "/timesheets", what: "confirmed hours per day, corrections, CSV export", roles: ALL },
   { label: "Projects", path: "/projects", what: "projects and their members", roles: LEADS },
-  { label: "Settings", path: "/settings", what: "working hours, recording rules and the monitoring notice, AI assistant, grants", roles: ORG },
+  { label: "Settings", path: "/settings", what: "working hours, the monitoring notice, AI assistant", roles: ORG },
   { label: "Audit", path: "/audit", what: "who did what and when", roles: ORG },
   { label: "Notifications", path: "/notifications", what: "assignments, review requests and decisions", roles: ALL },
-  { label: "Your profile", path: "/profile", what: "your picture, name, title, status; Recording and privacy: the monitoring notice in full and whether you agreed to it", roles: ALL },
+  { label: "Your profile", path: "/profile", what: "your picture, name, title, status; Privacy: the monitoring notice in full, and what calls and Brenda's notes on calls keep", roles: ALL },
   // Settings opens for every role at its "Your assistant" section (owner decision, 7 October 2026: personal assistants),
   // so the assistant can say where to rename or restyle it. Only the uncached page list changes, never the cached prefix.
   { label: "Your assistant", path: "/settings?section=assistant", what: "rename your assistant and choose its colour, visor and eyes", roles: ALL },
@@ -512,7 +513,7 @@ export const TOOLS = [
   { name: "create_doc", description: "Write and save a new document as the person: a note, SOP, report, meeting notes, a policy draft. body is the whole document in markdown. Private unless they ask to share. 'team' shares it with one team (exact name, or the person's own team when they are on one). 'organisation' lets everyone read it: it is saved as a private draft at once and shared with everyone when the person confirms. Returns the path for open_page.", input_schema: obj({ title: str("Title, at most 200 characters"), body: str("The document in markdown"), folder: str("Folder such as 'Meeting notes' or 'SOPs', or omit"), visibility: { type: "string", enum: [...DOC_VISIBILITIES], description: "private by default" }, team: str("Exact team name when visibility is team, or omit") }, ["title", "body"]) },
   { name: "update_doc", description: "Change a document by id: a new title, new text (body replaces it all) or text added to the end (append), a folder ('none' takes it out of its folder), or who can read it. The person's own document changes at once; someone else's (owner and HR only), or sharing with the whole organisation, waits for confirmation.", input_schema: obj({ docId: str("Document id"), title: str("New title, or omit"), body: str("Markdown replacing the whole text, or omit"), append: str("Markdown to add at the end, or omit"), folder: str("Folder name, 'none', or omit"), visibility: { type: "string", enum: [...DOC_VISIBILITIES] }, team: str("Exact team name when visibility is team, or omit") }, ["docId"]) },
   // HR and management
-  { name: "get_policy", description: "The organisation's rules from real data: working days and hours, the grace period before someone counts as late, the time zone, the current monitoring notice (what is recorded, the recording mode, how long recordings are kept) and whether the person has agreed to screen recording (asked once, the first time they start a recorded session), what Brenda may do automatically, and who the owner and HR are. Rules not held here (leave, pay, conduct, benefits) may be in an organisation document: search list_docs.", input_schema: obj({}) },
+  { name: "get_policy", description: "The organisation's rules from real data: working days and hours, the grace period before someone counts as late, the time zone, the current monitoring notice (what Boredroom tracks), how calls are handled (never recorded; Brenda's notes only with each person's consent), what Brenda may do automatically, and who the owner and HR are. Rules not held here (leave, pay, conduct, benefits) may be in an organisation document: search list_docs.", input_schema: obj({}) },
   { name: "work_summary", description: "What got done in a period, per person: hours tracked, tasks completed, tasks sent for review, open, blocked and overdue tasks, days clocked in and days late. Team leads see themselves and their teams, organisation accounts everyone who holds work, staff only themselves.", input_schema: obj({ period: { type: "string", enum: [...SUMMARY_PERIODS], description: "today; week (Monday to today); month (the 1st to today); last_week; last_month" }, person: str("Exact name from list_people to narrow to one person, or omit") }, ["period"]) },
   { name: "team_report", description: "Today's end-of-day team report, written now from real data and saved privately to the person's Docs (folder Daily reports): per person, confirmed hours, what they finished and sent for review, what is in progress, anything overdue or blocked, attendance, and what needs their attention. Returns the headline and the path for open_page; once today's end-of-day report has gone out, returns that one. Team leads get their teams, the owner and HR the whole organisation; staff are refused.", input_schema: obj({}) },
   { name: "open_page", description: "Offer a link to a page (a path from the page list, a document path such as /docs/<id>, or a task, person, project or team href from search).", input_schema: obj({ path: str("Path such as /tasks or /tasks/<id>"), label: str("Link text") }, ["path", "label"]) },
@@ -1042,12 +1043,8 @@ async function runTool(t: ToolCtx, name: string, input: Record<string, unknown>)
   if (t.proposals.length > before) narrow("proposal");
   const o = out && typeof out === "object" && !Array.isArray(out) ? (out as Record<string, unknown>) : null;
   if (!o || "error" in o) { narrow("error"); return out; }
-  if (cls === "policy") {
-    // Whether the tagger (or how many people) agreed to screen recording is theirs, not the organisation's rules.
-    const rest = { ...o };
-    delete rest.youAgreedToRecording; delete rest.agreedToRecording;
-    return rest;
-  }
+  // "policy": get_policy holds only the organisation's rules (who agreed to what went with screen recording: owner
+  // decisions, 8 October 2026, phase 8), so its answer passes as it is.
   if (cls === "task" || cls === "doc" || cls === "conversation") {
     // Set by the tool itself while it ran (TypeScript cannot see that through the call).
     const seen = t.items as ToolCtx["items"];
@@ -2224,7 +2221,7 @@ async function runToolInner(t: ToolCtx, name: string, input: Record<string, unkn
       if (input.action === "start") {
         const taskId = uuid(input.taskId); if (!taskId) return { error: "taskId must be one of the person's task ids." };
         if (s) return { error: `A timer is already running on "${s.taskTitle}". Stop or pause it first.` };
-        await startSession(ctx, { taskId, captureMode: "none" });
+        await startSession(ctx, { taskId });
         return done("timer_start", "Started the timer", `${base}/my-day`);
       }
       if (!s) return { error: "No timer is running." };
@@ -2465,9 +2462,6 @@ async function runToolInner(t: ToolCtx, name: string, input: Record<string, unkn
         withUser(ctx.user.profileId, async (db) => ({
           schedule: await scheduleFor(db, ctx.org.id, ctx.org.timezone),
           brenda: await brendaSettings(db, ctx.org.id),
-          agreed: ORG.includes(role) && ctx.org.current_policy_id ? await db.one<{ members: number; agreed: number }>(
-            `SELECT (SELECT count(*) FROM memberships WHERE organisation_id = $1 AND status = 'active')::int AS members,
-                    (SELECT count(*) FROM policy_acknowledgements WHERE organisation_id = $1 AND policy_id = $2)::int AS agreed`, [ctx.org.id, ctx.org.current_policy_id]) : null,
         })),
         people(),
       ]);
@@ -2478,18 +2472,13 @@ async function runToolInner(t: ToolCtx, name: string, input: Record<string, unkn
       const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
       const [sh, sm] = s.start_local.split(":").map(Number);
       const lateFrom = sh * 60 + sm + s.clock_grace_minutes;
-      const RECORDING: Record<string, string> = {
-        disabled: "Off: nobody can record their screen.",
-        optional: "On: staff and team leads get a Record screen button while a timer runs, and recording is their choice.",
-        required_on_designated_tasks: "On, and required while working on tasks marked as recording required; optional otherwise.",
-      };
       const askable = [...(ORG.includes(role) ? [{ name: ctx.user.displayName, role }] : []), ...ps.filter((x) => x.role === "owner" || x.role === "hr").map((x) => ({ name: x.display_name, role: x.role }))];
       return {
         workSchedule: { workingDays: [...s.working_days].sort((a, b) => ((a + 6) % 7) - ((b + 6) % 7)).map((d) => DAYS[d]), starts: s.start_local.slice(0, 5), ends: s.end_local.slice(0, 5), graceMinutes: s.clock_grace_minutes, lateAfter: `${String(Math.floor(lateFrom / 60) % 24).padStart(2, "0")}:${String(lateFrom % 60).padStart(2, "0")}`, timeZone: s.timezone },
-        monitoringNotice: p.policy ? { version: p.policy.version, screenRecording: RECORDING[p.policy.recording_mode] ?? p.policy.recording_mode, recordingsKeptForDays: p.policy.retention_days, notice: p.policy.notice_text, inForceSince: p.policy.effective_at } : null,
-        // Nobody signs the notice off (owner decision, 5 October 2026): people agree to recording once, when they first record.
-        youAgreedToRecording: p.agreedAt ? { at: p.agreedAt } : "Not yet. You are asked once, the first time you start a recorded session.",
-        ...(org.agreed ? { agreedToRecording: `${org.agreed.agreed} of ${org.agreed.members} people so far` } : {}),
+        // Nobody signs the notice off (owner decision, 5 October 2026) and nobody is asked to agree to anything: screens
+        // are no longer recorded and calls never are (owner decisions, 8 October 2026: phase 8).
+        monitoringNotice: p.policy ? { version: p.policy.version, notice: p.policy.notice_text, inForceSince: p.policy.effective_at } : null,
+        calls: { recorded: false, notes: "Only with each person's consent; the transcript is deleted 7 days after the recap." },
         // The end-of-day team report goes to supervisors at the time set in Settings, in the organisation's time zone.
         brendaMay: { clockPeopleInAutomatically: org.brenda.autoClockIn, sendReminders: org.brenda.reminders, sendDailyTeamReport: org.brenda.dailyReportEnabled ? `at ${org.brenda.dailyReportTime}` : false },
         whoToAsk: askable.map((x) => `${x.name} (${x.role === "owner" ? "organisation owner" : "HR"})`),
@@ -2548,7 +2537,7 @@ export const RULES = [
   "Resolve relative times and dates against the current time given below (\"in two hours\", \"at 3\", \"tomorrow morning\") and give ISO 8601 datetimes with the offset given below; 17:00 local when only a day is given; never ask the person what time it is. Dictated messages contain filler and mistakes: read through them.",
   "Arranging the day ('arrange my day', 'plan my tasks', 'what order should I do things in'): call get_my_day, and get_briefing for anything overdue or waiting on them. Plan the tasks they hold that are todo or in_progress (a blocked task cannot be worked on and one in review is waiting for someone else: mention them, do not plan them). Order them: overdue and the earliest deadline first, then priority (urgent, high, normal, low), then the shortest estimate. Fit them one after another into the rest of today's working hours (from now, or from workStarts if the day has not begun, until workEnds), allowing the estimate less the time already tracked, or 60 minutes for a task with no estimate. For each task that fits, call update_task with due set to its planned finish time today and priority high when it is overdue or due today (leave urgent as it is); their own tasks change at once. Never move a deadline later: a task that is overdue or due before its planned finish keeps its due date (it simply goes first). Then save the order with plan_day. Tasks that do not fit stay as they are; say which. If today is not a working day (workingDay false) or the working hours are over, say so and ask before planning anything. Reply with the plan as a numbered list in working order, one line per task: its title in bold, then its time (\"1. **Landing page copy**, 09:30 to 11:00\"); the tasks that did not fit, and the blocked or in-review ones, follow as a bulleted list under a bold label. Organisation accounts hold no tasks: offer work_summary or the team's status instead.",
   "Writing ('write', 'draft', 'take notes', 'make an SOP', 'put together a report'): write it properly, as markdown, in plain British English: a clear title, short sections with headings, lists where they help, complete enough to use as it is, never placeholder text. Save it with create_doc: private unless they ask to share it; a folder that fits (Meeting notes, SOPs, Reports, Policies). Then say in one sentence where it is saved and who can read it, and call open_page with its path (/docs/<id>). If create_doc returns needsConfirmation, the draft is already saved privately and is shared with everyone only when they press Confirm; say so. To change a document, find it with list_docs, read it with read_doc, then call update_doc (append adds to the end; body rewrites it). Documents are full markdown (headings, tables, everything); your replies use only the light formatting in the last rule.",
-  "Questions about how this organisation works (working hours, lateness, monitoring and screen recording, leave, pay, conduct, the handbook): call get_policy, and search the organisation's documents with list_docs and read_doc the one that answers it. Answer only from what they say, and name the document you used. If the answer is not there, say plainly that it is not written down in Boredroom and suggest who to ask (whoToAsk from get_policy). Never invent a policy, a number, an entitlement or a date. Questions that are not about this organisation (how to write a good update, what a term means, how to approach a task) you answer from your own knowledge.",
+  "Questions about how this organisation works (working hours, lateness, monitoring, leave, pay, conduct, the handbook): call get_policy, and search the organisation's documents with list_docs and read_doc the one that answers it. Answer only from what they say, and name the document you used. If the answer is not there, say plainly that it is not written down in Boredroom and suggest who to ask (whoToAsk from get_policy). Never invent a policy, a number, an entitlement or a date. Questions that are not about this organisation (how to write a good update, what a term means, how to approach a task) you answer from your own knowledge.",
   "Team leads and organisation accounts asking what the team got done, who is behind, or for a weekly summary: call work_summary (week runs from Monday to today; use last_week on a Monday morning) and report the facts per person: hours tracked, what was completed and sent for review, what is overdue or blocked. 'Behind' means overdue or blocked work, not fewer hours. Mention lateness only when asked about attendance. Offer to save a summary worth keeping as a document.",
   "Today's team report ('send me today's report', 'the daily report', 'how did my team do today'): call team_report. It saves the report privately to their Docs; reply with its headline, say it is in their Docs under Daily reports, and call open_page with its path. If it returns nothing, say there is nothing to report yet. You also send this report to team leads, the owner and HR at the end of every working day, at the time set in Settings. Staff do not write or submit a daily report: if one asks how to, say there is none to write, their to-dos and timer are the record, and offer what they got done today (work_summary).",
   "Do not narrate your steps (no \"let me check\"); call the tools you need, then write one reply. Nothing here is a productivity score, and you never rank or judge people.",
@@ -3614,7 +3603,7 @@ type SharedToolClass = "public" | "policy" | "link" | "task" | "doc" | "conversa
 /**
  * What each tool may do in a thread (owner decision, 8 October 2026: the public reply may only contain what every
  * current participant can already see). Every name in TOOLS is in exactly one class (a unit test checks it):
- * - public: the people list. policy: the organisation's rules, without who agreed to recording.
+ * - public: the people list. policy: the organisation's rules (nothing personal in them).
  * - link: open_page offers nothing (a bubble shows no links).
  * - task, doc, conversation: runs as the tagger, then each item it returned is checked against every current reader
  *   (app_visible_to_readers); one that some reader cannot see makes the answer private. An error does too.
@@ -4101,7 +4090,7 @@ const M_ATTENDANCE = /\b(?:late|clocked|clock(?:ed)?\s+in|attendance|absent|off\
 const M_LATE_RULE = /\b(?:grace(?:\s+period)?|late\s+after|(?:counts?|counted|considered)\s+(?:as\s+)?late)\b/i;
 const M_PEOPLE = /\bwho(?:'s|’s|\s+is|\s+are)\s+(?:here|in\s+here|(?:in|on)\s+(?:this|the)\s+(?:channel|chat|thread|conversation|group))\b|\b(?:people|members)\s+(?:are\s+)?(?:here|in\s+(?:this|the)\s+(?:channel|chat|thread|conversation|group))\b/i;
 const M_PAGE = /\b(?:where\s+(?:do|can|would|should)\s+(?:i|we|you)|which\s+page|what\s+page|how\s+do\s+i\s+(?:find|get\s+to|open))\b/i;
-const M_POLICY = /\b(?:working\s+(?:days|hours|week)|work(?:ing)?\s+hours|office\s+hours|hours\s+of\s+work|(?:start|starting|finish|finishing|end)\s+time|what\s+time\s+do\s+we\s+(?:start|finish)|when\s+do\s+we\s+(?:start|finish)|which\s+days\s+do\s+we\s+work|grace(?:\s+period)?|late\s+after|(?:counts?|counted|considered)\s+(?:as\s+)?late|time\s?zone|monitoring|screen\s+record(?:ing)?|recording\s+(?:rules?|policy)|are\s+we\s+recorded)\b/i;
+const M_POLICY = /\b(?:working\s+(?:days|hours|week)|work(?:ing)?\s+hours|office\s+hours|hours\s+of\s+work|(?:start|starting|finish|finishing|end)\s+time|what\s+time\s+do\s+we\s+(?:start|finish)|when\s+do\s+we\s+(?:start|finish)|which\s+days\s+do\s+we\s+work|grace(?:\s+period)?|late\s+after|(?:counts?|counted|considered)\s+(?:as\s+)?late|time\s?zone|monitoring|screen\s+record(?:ing)?|recording\s+(?:rules?|policy)|are\s+we\s+recorded|record(?:s|ed|ing)?\s+(?:our\s+|the\s+)?calls?|calls?\s+(?:get\s+|being\s+|are\s+)?recorded)\b/i;
 const M_BRIEFING = /\b(?:what(?:'s|’s|\s+is)\s+waiting|waiting\s+for\s+me|what\s+should\s+i\s+(?:do|work\s+on)|overdue|due\s+today|brief(?:ing)?|needs?\s+my\s+attention)\b/i;
 const M_MY_DAY = /\b(?:my\s+day|my\s+tasks|my\s+to-?dos?|my\s+list|my\s+plan|on\s+my\s+plate|what\s+am\s+i\s+(?:doing|working\s+on))\b/i;
 const M_TASK = [
@@ -4265,7 +4254,7 @@ async function builtinMention(ctx: OrgContext, t: ToolCtx, input: MentionInput &
       return answered(count <= 1 ? `Only ${list || "you"} ${list ? "is" : "are"} in ${here}.` : `${count} people are in ${here}: ${list}.`);
     }
     case "policy": {
-      const out = await runTool(t, "get_policy", {}) as { error?: string; workSchedule?: { workingDays: string[]; starts: string; ends: string; graceMinutes: number; lateAfter: string; timeZone: string }; monitoringNotice?: { screenRecording: string; recordingsKeptForDays: number } | null };
+      const out = await runTool(t, "get_policy", {}) as { error?: string; workSchedule?: { workingDays: string[]; starts: string; ends: string; graceMinutes: number; lateAfter: string; timeZone: string } };
       const w = out.workSchedule;
       if (out.error || !w) return cannot();
       const all = !intent.topics.length;
@@ -4276,7 +4265,8 @@ async function builtinMention(ctx: OrgContext, t: ToolCtx, input: MentionInput &
         ...(want("hours") ? [`Working hours: ${w.starts} to ${w.ends}, ${w.timeZone} time.`] : []),
         ...(want("late") ? [`Someone counts as late after ${w.lateAfter} (${g === 1 ? "1 minute's grace" : g ? `${g} minutes' grace` : "no grace period"}).`] : []),
         ...(want("zone") && !want("hours") ? [`Time zone: ${w.timeZone}.`] : []),
-        ...(want("recording") ? [out.monitoringNotice ? `Screen recording: ${out.monitoringNotice.screenRecording} Recordings are kept for ${plural(out.monitoringNotice.recordingsKeptForDays, "day")}.` : "There is no monitoring notice in force yet."] : []),
+        // The topic stays, its answer is fixed (owner decisions, 8 October 2026: phase 8).
+        ...(want("recording") ? ["Boredroom doesn't record screens or calls. Brenda only takes notes on a call for the people who agree."] : []),
       ];
       return lines.length ? answered(lines.join("\n")) : cannot();
     }

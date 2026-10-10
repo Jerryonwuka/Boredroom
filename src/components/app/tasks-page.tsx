@@ -14,7 +14,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Play, Plus, X, ArrowLeftRight, MessageSquareText, Trash2, UserRoundCheck, Search, Video } from "lucide-react";
+import { Play, Plus, X, ArrowLeftRight, MessageSquareText, Trash2, UserRoundCheck, Search } from "lucide-react";
 import { AnimatedArrowUpRight } from "@/components/ui/animated-icons";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { IconButton, ICON_BUTTON } from "@/components/ui/icon-button";
@@ -404,10 +404,10 @@ export function PickUpTask({ orgSlug, taskId, running, anyRunning, standout = fa
         try {
           if (anyRunning) {
             const cur = await api<{ session: { id: string; version: number } | null }>(`/api/orgs/${orgSlug}/sessions/current`);
-            if (cur.session) await api(`/api/orgs/${orgSlug}/sessions/${cur.session.id}/switch`, { method: "POST", body: { expectedVersion: cur.session.version, nextTaskId: taskId, captureMode: "none" } });
-            else await api(`/api/orgs/${orgSlug}/sessions/start`, { method: "POST", body: { taskId, captureMode: "none" } });
+            if (cur.session) await api(`/api/orgs/${orgSlug}/sessions/${cur.session.id}/switch`, { method: "POST", body: { expectedVersion: cur.session.version, nextTaskId: taskId } });
+            else await api(`/api/orgs/${orgSlug}/sessions/start`, { method: "POST", body: { taskId } });
           } else {
-            await api(`/api/orgs/${orgSlug}/sessions/start`, { method: "POST", body: { taskId, captureMode: "none" } });
+            await api(`/api/orgs/${orgSlug}/sessions/start`, { method: "POST", body: { taskId } });
           }
           router.push(`/app/${orgSlug}/my-day`);
         } catch (err) { setError(isApiFailure(err) ? err.error.message : "Cannot reach the server. Check your connection and try again."); setPending(false); }
@@ -473,12 +473,11 @@ const timeNote = (tracked: number | undefined, estimateMinutes: number | null | 
  * A board of tasks (projects and teams, v4): calm columns, one per status, each a fill-0 r16 lane with its name and a
  * count, the tasks as cards in it. The lanes stack on a phone and sit side by side from md (scrolling sideways inside
  * the board when there is not room for all five). `overdue` comes from the server, so the page and the browser agree.
- * `showProject` adds the project to each card (a team's tasks come from several); `recordings` counts screen
- * recordings per task.
+ * `showProject` adds the project to each card (a team's tasks come from several).
  */
-export function TaskBoard({ orgSlug, tasks, viewer, showProject = false, recordings = {}, label: boardLabel = "Tasks by status" }: {
+export function TaskBoard({ orgSlug, tasks, viewer, showProject = false, label: boardLabel = "Tasks by status" }: {
   orgSlug: string; tasks: (TaskPeek & { status: string; assignee_membership_id: string; assignee_name: string; overdue: boolean })[]; viewer: TaskViewer;
-  showProject?: boolean; recordings?: Record<string, number>; label?: string;
+  showProject?: boolean; label?: string;
 }) {
   return (
     <div role="group" aria-label={boardLabel} className="grid gap-3 md:auto-cols-[minmax(13.5rem,1fr)] md:grid-flow-col md:overflow-x-auto md:pb-1">
@@ -494,14 +493,12 @@ export function TaskBoard({ orgSlug, tasks, viewer, showProject = false, recordi
               <ul className="mt-1 space-y-2">
                 {items.map((t) => {
                   const note = timeNote(t.tracked_seconds, t.estimate_minutes);
-                  const recs = recordings[t.id] ?? 0;
                   const meta = [showProject ? t.project_name : null, note || null, t.archived_at ? "Deleted" : null].filter(Boolean).join(", ");
                   return (
                     <TaskCard key={t.id} orgSlug={orgSlug} viewer={viewer} task={t} className={t.archived_at ? "opacity-60" : undefined}
-                      meta={t.blocked_reason || meta || recs ? <>
+                      meta={t.blocked_reason || meta ? <>
                         {t.blocked_reason ? <span className="block text-danger">Blocked: {t.blocked_reason}</span> : null}
                         {meta ? <span className="block">{meta}</span> : null}
-                        {recs ? <span className="flex items-center gap-1"><Video className="size-3.5" aria-hidden />{recs} recording{recs === 1 ? "" : "s"}</span> : null}
                       </> : undefined}
                       footer={<>
                         <Avatar profileId={t.assignee_membership_id} name={t.assignee_name} size={20} />

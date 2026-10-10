@@ -96,7 +96,7 @@ describe("handing tasks upwards", () => {
     // HR and another lead can be assignees too; the owner still cannot give themself a task.
     await quickTodo(a.managerCtx, { title: "Send the contract to legal", assigneeMembershipId: a.hrCtx.membership.id });
     expect((await tasksView(a.hrCtx)).tasks.map((x) => x.title)).toContain("Send the contract to legal");
-    await expect(createTask(a.ownerCtx, { projectId: a.projectId, title: "Owner task", expectedOutput: "x", assigneeMembershipId: a.ownerCtx.membership.id, category: "work", priority: "normal", captureRequirement: "none", addToMyDay: false })).rejects.toMatchObject({ status: 422 });
+    await expect(createTask(a.ownerCtx, { projectId: a.projectId, title: "Owner task", expectedOutput: "x", assigneeMembershipId: a.ownerCtx.membership.id, category: "work", priority: "normal", addToMyDay: false })).rejects.toMatchObject({ status: 422 });
     // Staff still cannot hand tasks to anyone.
     await expect(quickTodo(a.employeeCtx, { title: "Not allowed", assigneeMembershipId: a.ownerCtx.membership.id })).rejects.toMatchObject({ status: 403 });
   });

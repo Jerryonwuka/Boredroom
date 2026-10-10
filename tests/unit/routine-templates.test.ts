@@ -37,7 +37,7 @@ const svc = vi.hoisted(() => ({
   myFollowUps: { ready: true, batches: [] as unknown[], nextBefore: null },
   waitingForMe: [] as unknown[],
   items: { waiting: { ready: true, items: [] as unknown[], nextBefore: null }, sent: { ready: true, items: [] as unknown[], nextBefore: null } },
-  queue: { submissions: [] as unknown[], adjustments: [] as unknown[], exceptions: [], incidents: [], overdue: [] },
+  queue: { submissions: [] as unknown[], adjustments: [] as unknown[], overdue: [] },
   briefing: { assignmentsNotPickedUp: [] as unknown[] },
 }));
 vi.mock("@/server/services/follow-ups", () => ({
@@ -104,7 +104,7 @@ beforeEach(() => {
   svc.created = []; svc.refuse = null; svc.reported = [];
   svc.myFollowUps = { ready: true, batches: [], nextBefore: null }; svc.waitingForMe = [];
   svc.items = { waiting: { ready: true, items: [], nextBefore: null }, sent: { ready: true, items: [], nextBefore: null } };
-  svc.queue = { submissions: [], adjustments: [], exceptions: [], incidents: [], overdue: [] };
+  svc.queue = { submissions: [], adjustments: [], overdue: [] };
   svc.briefing = { assignmentsNotPickedUp: [] };
   loops.ready = false; loops.looseEnds = []; loops.commitments = []; loops.scans = []; loops.found = []; loops.lists = 0;
 });

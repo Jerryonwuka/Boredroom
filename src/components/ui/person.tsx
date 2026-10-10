@@ -4,6 +4,10 @@
  * A person in a list (owner decision, 25 September 2026): their face first, so a row is read at a glance, the name
  * beside it, and a card on hover with the rest: role, teams, employee id, status. The card loads on first hover from
  * /api/orgs/:org/members/:id/card and is remembered for the page, so lists stay light.
+ *
+ * Calls (owner decisions, 8 October 2026: phase 8): the card says "On a call" after their status while they are on one
+ * (never which call), and offers "Call" beside Message (not for yourself, nor where calls aren't available; someone who
+ * left has no card). The card is remembered for the page, so "On a call" is as of its first hover.
  */
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -17,8 +21,13 @@ import { api } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
 import { liftToTopLayer, popoverHost } from "@/components/ui/top-layer";
+import { CallButton } from "@/components/app/call-button";
+import { useCall } from "@/components/app/call-host";
+import { CALL_WORDS } from "@/lib/calls";
 
-export type PersonCard = { membership_id: string; display_name: string; role: string; employee_code: string; profile_id: string; avatar_key: string | null; presence: Presence; title: string | null; status_text: string | null; teams: string | null; email: string | null; joined_at: string };
+export type PersonCard = { membership_id: string; display_name: string; role: string; employee_code: string; profile_id: string; avatar_key: string | null; presence: Presence; title: string | null; status_text: string | null; teams: string | null; email: string | null; joined_at: string;
+  /** Phase 8 (calls): they are on a call now (never which); absent from servers before phase 8. */
+  on_call?: boolean };
 const ROLE: Record<string, string> = { owner: "Organisation owner", hr: "HR administrator", manager: "Team lead", employee: "Staff" };
 const cache = new Map<string, Promise<PersonCard>>();
 
@@ -33,6 +42,7 @@ export function Person({ orgSlug, membershipId, name, profileId, avatarKey, pres
   orgSlug: string; membershipId: string; name: string; profileId?: string | null; avatarKey?: string | null; presence?: Presence | null; size?: number; href?: string; showName?: boolean; meta?: React.ReactNode; className?: string; you?: boolean;
 }) {
   const [card, setCard] = useState<PersonCard | null>(null);
+  const calls = useCall();
   const [failed, setFailed] = useState(false);
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState({ top: 0, left: 0, up: false });
@@ -77,13 +87,14 @@ export function Person({ orgSlug, membershipId, name, profileId, avatarKey, pres
             {card ? (
               <>
                 <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs font-medium">
-                  <dt className="text-subtle">Status</dt><dd className="flex min-w-0 items-center gap-1.5 text-secondary"><span className="inline-block size-1.5 rounded-full" style={{ background: PRESENCE[card.presence].color }} aria-hidden />{PRESENCE[card.presence].label}{card.status_text ? <span className="truncate">, “{card.status_text}”</span> : null}</dd>
+                  <dt className="text-subtle">Status</dt><dd className="flex min-w-0 items-center gap-1.5 text-secondary"><span className="inline-block size-1.5 rounded-full" style={{ background: PRESENCE[card.presence].color }} aria-hidden />{PRESENCE[card.presence].label}{card.on_call ? `, ${CALL_WORDS.onCall}` : null}{card.status_text ? <span className="truncate">, “{card.status_text}”</span> : null}</dd>
                   <dt className="text-subtle">Teams</dt><dd className="truncate text-secondary">{card.teams ?? "No team"}</dd>
                   <dt className="text-subtle">Id</dt><dd className="font-mono text-secondary">{card.employee_code}</dd>
                   {card.email ? <><dt className="text-subtle">Email</dt><dd className="min-w-0 truncate text-secondary">{card.email}</dd></> : null}
                 </dl>
                 <div className="-mx-1 mt-3 flex flex-wrap items-center gap-1 border-t border-border pt-3">
                   <Link href={`/app/${orgSlug}/messages?to=${card.membership_id}`} className={buttonVariants({ variant: "ghost", size: "xs" })}><AnimatedMessageSquare aria-hidden />Message</Link>
+                  {calls?.available && calls.me !== card.membership_id && !you ? <CallButton orgSlug={orgSlug} target={{ kind: "person", membershipId: card.membership_id, name: card.display_name }} live={null} available size="xs" variant="ghost" /> : null}
                   <Link href={`/app/${orgSlug}/workroom/${card.membership_id}`} className={buttonVariants({ variant: "ghost", size: "xs" })}><CalendarClock aria-hidden />Their day</Link>
                 </div>
               </>

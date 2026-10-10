@@ -6,11 +6,12 @@ import { withUser, type Db } from "@/server/db";
 import type { OrgContext } from "@/server/lib/api";
 import { assignableMembers } from "@/server/services/tasks";
 import { todayLocal } from "@/server/lib/time";
+import { membersOnCall } from "@/server/services/calls";
 
 export type TaskRow = {
   id: string; title: string; status: string; priority: string; category: string; project_id: string; project_name: string;
   assignee_membership_id: string; assignee_name: string; reviewer_membership_id: string | null; reviewer_name: string | null;
-  due_at: string | null; estimate_minutes: number | null; capture_requirement: string; blocked_reason: string | null; version: number;
+  due_at: string | null; estimate_minutes: number | null; blocked_reason: string | null; version: number;
   archived_at: string | null; tracked_seconds: number; updated_at: string; created_by: string;
   /** 0 to 100, set by the person holding the task; 100 once completed. */
   progress_percent: number;
@@ -22,7 +23,7 @@ const isUuid = (v: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-
 const TASK_SELECT = `
   SELECT t.id, t.title, t.status, t.priority, t.category, t.project_id, p.name AS project_name,
          t.assignee_membership_id, pa.display_name AS assignee_name, t.reviewer_membership_id, pr.display_name AS reviewer_name,
-         t.due_at, t.estimate_minutes, t.capture_requirement, t.blocked_reason, t.version, t.archived_at, t.updated_at, t.created_by,
+         t.due_at, t.estimate_minutes, t.blocked_reason, t.version, t.archived_at, t.updated_at, t.created_by,
          CASE WHEN t.status = 'completed' THEN 100 ELSE t.progress_percent END::int AS progress_percent,
          COALESCE((SELECT SUM(EXTRACT(EPOCH FROM (COALESCE(i.ended_at, now()) - i.started_at)))::int FROM session_intervals i WHERE i.task_id = t.id AND i.confirmation_status = 'confirmed'), 0) AS tracked_seconds
   FROM tasks t
@@ -60,8 +61,8 @@ export async function myDay(ctx: OrgContext) {
        WHERE t.organisation_id = $1 AND t.assignee_membership_id = $2 AND t.cleared_at IS NULL
          AND ((t.status = 'completed' AND t.completed_at < $3::timestamptz) OR (t.archived_at IS NOT NULL AND t.status <> 'completed'))
        ORDER BY COALESCE(t.completed_at, t.archived_at) DESC LIMIT 50`, [ctx.org.id, ctx.membership.id, dayStartIso(today, ctx.org.timezone)]);
-    // No policy flag here any more: consent to recording is asked when a recorded session starts (capture.tsx reads the
-    // rules from the current-session payload), so My Day no longer gates on it (owner decision, 5 October 2026).
+    // No policy flag here: My Day never gates on the notice (owner decision, 5 October 2026), and screen recording,
+    // which once asked for consent here, is gone (owner decision, 8 October 2026: phase 8).
     return { today, planned, assigned, ownTodos, fromLeads, overdue, todaySeconds: todaySeconds.n, projects, members, doneToday, pastTasks };
   });
 }
@@ -155,11 +156,10 @@ export async function teamStatus(ctx: OrgContext, filters: { teamId?: string | n
 
 export async function peopleView(ctx: OrgContext) {
   return withUser(ctx.user.profileId, async (db) => {
-    const members = await db.query<{ id: string; display_name: string; email: string; employee_code: string; role: string; status: string; created_at: string; teams: { id: string; name: string; is_manager: boolean }[]; acknowledged: boolean }>(
+    const members = await db.query<{ id: string; display_name: string; email: string; employee_code: string; role: string; status: string; created_at: string; teams: { id: string; name: string; is_manager: boolean }[] }>(
       `SELECT m.id, pr.display_name, pr.email, m.employee_code, m.role, m.status, m.created_at,
-              COALESCE((SELECT json_agg(json_build_object('id', t.id, 'name', t.name, 'is_manager', tm.is_manager) ORDER BY t.name) FROM team_members tm JOIN teams t ON t.id = tm.team_id WHERE tm.membership_id = m.id), '[]'::json) AS teams,
-              EXISTS (SELECT 1 FROM policy_acknowledgements a WHERE a.membership_id = m.id AND a.policy_id = $2) AS acknowledged
-       FROM memberships m JOIN profiles pr ON pr.id = m.user_id WHERE m.organisation_id = $1 ORDER BY m.status, pr.display_name`, [ctx.org.id, ctx.org.current_policy_id]);
+              COALESCE((SELECT json_agg(json_build_object('id', t.id, 'name', t.name, 'is_manager', tm.is_manager) ORDER BY t.name) FROM team_members tm JOIN teams t ON t.id = tm.team_id WHERE tm.membership_id = m.id), '[]'::json) AS teams
+       FROM memberships m JOIN profiles pr ON pr.id = m.user_id WHERE m.organisation_id = $1 ORDER BY m.status, pr.display_name`, [ctx.org.id]);
     const invitations = await db.query<{ id: string; email: string; role: string; expires_at: string; accepted_at: string | null; revoked_at: string | null; sent_at: string | null; created_at: string; team_name: string | null }>(
       `SELECT i.id, i.email, i.role, i.expires_at, i.accepted_at, i.revoked_at, i.sent_at, i.created_at, t.name AS team_name FROM invitations i LEFT JOIN teams t ON t.id = i.team_id WHERE i.organisation_id = $1 ORDER BY i.created_at DESC LIMIT 100`, [ctx.org.id]);
     const teams = await db.query<{ id: string; name: string; member_count: number; project_id: string | null; leads: string[] }>(`SELECT t.id, t.name, t.project_id, (SELECT count(*) FROM team_members tm WHERE tm.team_id = t.id)::int AS member_count, COALESCE((SELECT array_agg(pr.display_name ORDER BY pr.display_name) FROM team_members tm JOIN memberships m ON m.id = tm.membership_id JOIN profiles pr ON pr.id = m.user_id WHERE tm.team_id = t.id AND tm.is_manager), '{}') AS leads FROM teams t WHERE t.organisation_id = $1 AND t.archived_at IS NULL ORDER BY t.name`, [ctx.org.id]);
@@ -189,33 +189,27 @@ export async function auditView(ctx: OrgContext, filters: { action?: string; fro
 
 export async function settingsView(ctx: OrgContext) {
   return withUser(ctx.user.profileId, async (db) => {
-    const policy = await db.maybeOne<{ id: string; version: number; recording_mode: string; retention_days: number; notice_text: string; heartbeat_seconds: number; stale_after_seconds: number; reminder_minutes_before_end: number; invitation_ttl_hours: number; attachment_max_bytes: number; attachment_mime_types: string[]; effective_at: string | null }>(`SELECT id, version, recording_mode, retention_days, notice_text, heartbeat_seconds, stale_after_seconds, reminder_minutes_before_end, invitation_ttl_hours, attachment_max_bytes, attachment_mime_types, effective_at FROM policies WHERE id = $1`, [ctx.org.current_policy_id]);
+    const policy = await db.maybeOne<{ id: string; version: number; notice_text: string; heartbeat_seconds: number; stale_after_seconds: number; reminder_minutes_before_end: number; invitation_ttl_hours: number; attachment_max_bytes: number; attachment_mime_types: string[]; effective_at: string | null }>(`SELECT id, version, notice_text, heartbeat_seconds, stale_after_seconds, reminder_minutes_before_end, invitation_ttl_hours, attachment_max_bytes, attachment_mime_types, effective_at FROM policies WHERE id = $1`, [ctx.org.current_policy_id]);
     const schedule = await db.maybeOne<{ timezone: string; working_days: number[]; start_local: string; end_local: string; clock_grace_minutes: number; effective_from: string }>(`SELECT timezone, working_days, start_local, end_local, clock_grace_minutes, effective_from FROM schedules WHERE organisation_id = $1 AND membership_id IS NULL ORDER BY effective_from DESC, created_at DESC LIMIT 1`, [ctx.org.id]);
-    const grants = await db.query<{ id: string; grantee_name: string; grantee_membership_id: string; scope_type: string; scope_name: string | null; granted_by_name: string; granted_at: string }>(
-      `SELECT g.id, pr.display_name AS grantee_name, g.grantee_membership_id, g.scope_type, t.name AS scope_name, pg.display_name AS granted_by_name, g.granted_at
-       FROM recording_grants g JOIN memberships m ON m.id = g.grantee_membership_id JOIN profiles pr ON pr.id = m.user_id
-       JOIN memberships mg ON mg.id = g.granted_by JOIN profiles pg ON pg.id = mg.user_id LEFT JOIN teams t ON t.id = g.scope_id
-       WHERE g.organisation_id = $1 AND g.revoked_at IS NULL ORDER BY g.granted_at DESC`, [ctx.org.id]);
     const members = await db.query<{ id: string; display_name: string }>(`SELECT m.id, pr.display_name FROM memberships m JOIN profiles pr ON pr.id = m.user_id WHERE m.organisation_id = $1 AND m.status = 'active' ORDER BY pr.display_name`, [ctx.org.id]);
     const teams = await db.query<{ id: string; name: string }>(`SELECT id, name FROM teams WHERE organisation_id = $1 AND archived_at IS NULL ORDER BY name`, [ctx.org.id]);
-    const counts = await db.one<{ members: number; teams: number; projects: number; acknowledged: number }>(
+    const counts = await db.one<{ members: number; teams: number; projects: number }>(
       `SELECT (SELECT count(*) FROM memberships WHERE organisation_id = $1 AND status = 'active')::int AS members,
               (SELECT count(*) FROM teams WHERE organisation_id = $1 AND archived_at IS NULL)::int AS teams,
-              (SELECT count(*) FROM projects WHERE organisation_id = $1 AND status = 'active')::int AS projects,
-              (SELECT count(*) FROM policy_acknowledgements WHERE organisation_id = $1 AND policy_id = $2)::int AS acknowledged`, [ctx.org.id, ctx.org.current_policy_id]);
-    return { policy, schedule, grants, members, teams, counts };
+              (SELECT count(*) FROM projects WHERE organisation_id = $1 AND status = 'active')::int AS projects`, [ctx.org.id]);
+    return { policy, schedule, members, teams, counts };
   });
 }
 
 /**
- * The current monitoring notice and recording rules, and when this person agreed to them (asked once, when a recorded
- * session starts; there is no Policy page or general sign-off since 5 October 2026). Brenda's get_policy reads it.
+ * The current monitoring notice (there is no Policy page or general sign-off since 5 October 2026, and nobody is asked
+ * to agree since screen recording went: owner decision, 8 October 2026, phase 8). The profile's Privacy section and
+ * Brenda's get_policy read it.
  */
 export async function policyView(ctx: OrgContext) {
   return withUser(ctx.user.profileId, async (db) => {
-    const policy = await db.maybeOne<{ id: string; version: number; recording_mode: string; retention_days: number; notice_text: string; effective_at: string | null }>(`SELECT id, version, recording_mode, retention_days, notice_text, effective_at FROM policies WHERE id = $1`, [ctx.org.current_policy_id]);
-    const agreed = await db.maybeOne<{ acknowledged_at: string }>(`SELECT acknowledged_at FROM policy_acknowledgements WHERE membership_id = $1 AND policy_id = $2`, [ctx.membership.id, ctx.org.current_policy_id]);
-    return { policy, agreedAt: agreed?.acknowledged_at ?? null };
+    const policy = await db.maybeOne<{ id: string; version: number; notice_text: string; effective_at: string | null }>(`SELECT id, version, notice_text, effective_at FROM policies WHERE id = $1`, [ctx.org.current_policy_id]);
+    return { policy };
   });
 }
 
@@ -235,17 +229,10 @@ export async function reviewQueue(ctx: OrgContext) {
       `SELECT a.id, pr.display_name, t.title AS task_title, a.reason, a.evidence_note, a.proposed_intervals, cardinality(a.original_interval_ids) AS original_count, a.created_at
        FROM time_adjustments a JOIN memberships m ON m.id = a.membership_id JOIN profiles pr ON pr.id = m.user_id JOIN tasks t ON t.id = a.task_id
        WHERE a.organisation_id = $1 AND a.status = 'pending' AND a.membership_id <> $2 AND (app_has_role($1, 'owner', 'hr') OR app_manages($1, a.membership_id)) ORDER BY a.created_at`, [ctx.org.id, ctx.membership.id]);
-    const exceptions = await db.query<{ id: string; display_name: string; reason_code: string; reason: string; created_at: string; task_title: string | null }>(
-      `SELECT c.id, pr.display_name, c.reason_code, c.reason, c.created_at, t.title AS task_title
-       FROM capture_exceptions c JOIN memberships m ON m.id = c.membership_id JOIN profiles pr ON pr.id = m.user_id LEFT JOIN tasks t ON t.id = COALESCE(c.task_id, (SELECT task_id FROM work_sessions WHERE id = c.session_id))
-       WHERE c.organisation_id = $1 AND c.status = 'pending' AND c.membership_id <> $2 AND (app_has_role($1, 'owner', 'hr') OR app_manages($1, c.membership_id)) ORDER BY c.created_at`, [ctx.org.id, ctx.membership.id]);
-    const incidents = await db.query<{ id: string; recording_id: string; reason: string; restricted_at: string; reporter_name: string }>(
-      `SELECT i.id, i.recording_id, i.reason, i.restricted_at, pr.display_name AS reporter_name FROM privacy_incidents i JOIN memberships m ON m.id = i.reporter_membership_id JOIN profiles pr ON pr.id = m.user_id
-       WHERE i.organisation_id = $1 AND i.disposition = 'open' AND app_is_privacy_admin($1) ORDER BY i.restricted_at`, [ctx.org.id]);
     const overdue = await db.query<{ id: string; title: string; assignee_name: string; assignee_membership_id: string; assignee_profile_id: string; assignee_avatar_key: string | null; due_at: string; status: string }>(
       `SELECT t.id, t.title, pr.display_name AS assignee_name, m.id AS assignee_membership_id, pr.id AS assignee_profile_id, pr.avatar_key AS assignee_avatar_key, t.due_at, t.status FROM tasks t JOIN memberships m ON m.id = t.assignee_membership_id JOIN profiles pr ON pr.id = m.user_id
        WHERE t.organisation_id = $1 AND t.archived_at IS NULL AND t.status <> 'completed' AND t.due_at < now() AND (app_has_role($1, 'owner', 'hr') OR app_manages($1, t.assignee_membership_id)) ORDER BY t.due_at LIMIT 50`, [ctx.org.id]);
-    return { submissions, adjustments, exceptions, incidents, overdue };
+    return { submissions, adjustments, overdue };
   });
 }
 
@@ -400,7 +387,8 @@ export type WorkroomRow = {
   today_seconds: number;
   first_start_today: string | null; last_activity_at: string | null;
   tasks_today: number; done_today: number; sent_for_check_today: number;
-  recording_live: boolean; recordings_today: number;
+  /** In a call right now (owner decision, 8 October 2026: phase 8): filled after the query from membersOnCall. */
+  on_call: boolean;
 };
 
 export type WorkroomStatus = "active" | "paused" | "clocked_out" | "not_started";
@@ -417,7 +405,7 @@ export async function workroomView(ctx: OrgContext, filters: { teamId?: string |
   return withUser(ctx.user.profileId, async (db) => {
     const today = todayLocal(ctx.org.timezone);
     const dayStart = dayStartIso(today, ctx.org.timezone);
-    const rows = await db.query<WorkroomRow>(
+    const found = await db.query<Omit<WorkroomRow, "on_call">>(
       `WITH day AS (SELECT $2::timestamptz AS start_at, $4::timestamptz AS end_at)
        SELECT * FROM (
        SELECT m.id AS membership_id, pr.display_name, m.employee_code, m.role,
@@ -430,9 +418,7 @@ export async function workroomView(ctx: OrgContext, filters: { teamId?: string |
               (SELECT MAX(COALESCE(ws.ended_at, ws.last_heartbeat_at)) FROM work_sessions ws WHERE ws.membership_id = m.id) AS last_activity_at,
               (SELECT count(DISTINCT ws.task_id) FROM work_sessions ws, day WHERE ws.membership_id = m.id AND ws.started_at >= day.start_at AND ws.started_at < day.end_at)::int AS tasks_today,
               (SELECT count(*) FROM tasks x, day WHERE x.assignee_membership_id = m.id AND x.status = 'completed' AND x.completed_at >= day.start_at)::int AS done_today,
-              (SELECT count(*) FROM tasks x WHERE x.assignee_membership_id = m.id AND x.status = 'in_review' AND x.archived_at IS NULL)::int AS sent_for_check_today,
-              (s.id IS NOT NULL AND EXISTS (SELECT 1 FROM recordings r WHERE r.session_id = s.id AND r.capture_state = 'recording')) AS recording_live,
-              (SELECT count(*) FROM recordings r, day WHERE r.membership_id = m.id AND r.deleted_at IS NULL AND r.capture_started_at >= day.start_at)::int AS recordings_today
+              (SELECT count(*) FROM tasks x WHERE x.assignee_membership_id = m.id AND x.status = 'in_review' AND x.archived_at IS NULL)::int AS sent_for_check_today
        FROM memberships m JOIN profiles pr ON pr.id = m.user_id
        LEFT JOIN work_sessions s ON s.membership_id = m.id AND s.state IN ('running','paused','interrupted')
        LEFT JOIN tasks tk ON tk.id = s.task_id
@@ -441,6 +427,10 @@ export async function workroomView(ctx: OrgContext, filters: { teamId?: string |
          AND app_can_view_records($1, m.id)) w
        ORDER BY CASE w.session_state WHEN 'running' THEN 0 WHEN 'paused' THEN 1 WHEN 'interrupted' THEN 1 ELSE 2 END, (w.first_start_today IS NULL), w.display_name`,
       [ctx.org.id, dayStart, filters.teamId ?? null, dayEndIso(today, ctx.org.timezone)]);
+    // "On a call" instead of the old LIVE recording badge (owner decision, 8 October 2026: phase 8): who is in a call,
+    // never which call. membersOnCall answers an empty set before 0054 and never throws.
+    const onCall = found.length ? await membersOnCall(db, ctx.org.id) : new Set<string>();
+    const rows: WorkroomRow[] = found.map((r) => ({ ...r, on_call: onCall.has(r.membership_id) }));
     const teams = await db.query<{ id: string; name: string }>(`SELECT id, name FROM teams WHERE organisation_id = $1 AND archived_at IS NULL ORDER BY name`, [ctx.org.id]);
     const timings = await db.maybeOne<{ stale_after_seconds: number }>(`SELECT stale_after_seconds FROM policies WHERE id = $1`, [ctx.org.current_policy_id]);
     const now = await db.one<{ now: string }>(`SELECT now() AS now`);
@@ -448,9 +438,9 @@ export async function workroomView(ctx: OrgContext, filters: { teamId?: string |
   });
 }
 
-export type WorkroomTaskRow = { id: string; title: string; status: string; project_name: string; due_at: string | null; completed_at: string | null; seconds_today: number; sessions_today: number; first_started_today: string | null; last_worked_at: string | null; created_by_name: string; recordings: number; current: boolean };
+export type WorkroomTaskRow = { id: string; title: string; status: string; project_name: string; due_at: string | null; completed_at: string | null; seconds_today: number; sessions_today: number; first_started_today: string | null; last_worked_at: string | null; created_by_name: string; current: boolean };
 
-/** One person's day: every task they touched, planned or finished today, their sessions, and today's recordings. */
+/** One person's day: every task they touched, planned or finished today, and their sessions. */
 export async function workroomPerson(ctx: OrgContext, membershipId: string) {
   return withUser(ctx.user.profileId, async (db) => {
     const today = todayLocal(ctx.org.timezone);
@@ -465,7 +455,6 @@ export async function workroomPerson(ctx: OrgContext, membershipId: string) {
               (SELECT count(*) FROM work_sessions ws, day WHERE ws.task_id = t.id AND ws.membership_id = $3 AND ws.started_at >= day.start_at AND ws.started_at < day.end_at)::int AS sessions_today,
               (SELECT MIN(ws.started_at) FROM work_sessions ws, day WHERE ws.task_id = t.id AND ws.membership_id = $3 AND ws.started_at >= day.start_at) AS first_started_today,
               (SELECT MAX(COALESCE(ws.ended_at, ws.last_heartbeat_at)) FROM work_sessions ws WHERE ws.task_id = t.id AND ws.membership_id = $3) AS last_worked_at,
-              (SELECT count(*) FROM recordings r JOIN work_sessions ws ON ws.id = r.session_id WHERE ws.task_id = t.id AND r.membership_id = $3 AND r.deleted_at IS NULL)::int AS recordings,
               EXISTS (SELECT 1 FROM work_sessions ws WHERE ws.task_id = t.id AND ws.membership_id = $3 AND ws.state IN ('running','paused','interrupted')) AS current
        FROM tasks t JOIN projects p ON p.id = t.project_id JOIN memberships mc ON mc.id = t.created_by JOIN profiles pc ON pc.id = mc.user_id, day
        WHERE t.organisation_id = $1 AND t.assignee_membership_id = $3 AND t.archived_at IS NULL
@@ -475,10 +464,9 @@ export async function workroomPerson(ctx: OrgContext, membershipId: string) {
               OR t.status IN ('in_progress','blocked','in_review'))
        ORDER BY current DESC, CASE t.status WHEN 'in_progress' THEN 0 WHEN 'blocked' THEN 1 WHEN 'todo' THEN 2 WHEN 'in_review' THEN 3 ELSE 4 END, seconds_today DESC, t.title`,
       [ctx.org.id, dayStart, membershipId, today, dayEndIso(today, ctx.org.timezone)]);
-    const sessions = await db.query<{ id: string; task_id: string; task_title: string; state: string; started_at: string; ended_at: string | null; stop_outcome: string | null; stop_note: string | null; seconds: number; recordings: number }>(
+    const sessions = await db.query<{ id: string; task_id: string; task_title: string; state: string; started_at: string; ended_at: string | null; stop_outcome: string | null; stop_note: string | null; seconds: number }>(
       `SELECT s.id, s.task_id, t.title AS task_title, s.state, s.started_at, s.ended_at, s.stop_outcome, s.stop_note,
-              COALESCE((SELECT SUM(EXTRACT(EPOCH FROM (COALESCE(i.ended_at, now()) - i.started_at)))::int FROM session_intervals i WHERE i.session_id = s.id AND i.confirmation_status = 'confirmed'), 0) AS seconds,
-              (SELECT count(*) FROM recordings r WHERE r.session_id = s.id AND r.deleted_at IS NULL)::int AS recordings
+              COALESCE((SELECT SUM(EXTRACT(EPOCH FROM (COALESCE(i.ended_at, now()) - i.started_at)))::int FROM session_intervals i WHERE i.session_id = s.id AND i.confirmation_status = 'confirmed'), 0) AS seconds
        FROM work_sessions s JOIN tasks t ON t.id = s.task_id WHERE s.membership_id = $1 AND s.started_at >= $2::timestamptz ORDER BY s.started_at DESC`, [membershipId, dayStart]);
     return { person, tasks, sessions, today, staleAfterSeconds: all.staleAfterSeconds, serverNow: all.serverNow };
   });

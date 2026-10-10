@@ -565,8 +565,9 @@ dialog.side-sheet[open] { display: flex; flex-direction: column; animation: side
 /* The live status dot: a ring that swells and fades from the green dot. */
 .presence-live { animation: presence-ping 2s cubic-bezier(0, 0, 0.2, 1) infinite; opacity: 0.6; }
 @keyframes presence-ping { 0% { transform: scale(1); opacity: 0.6; } 75%, 100% { transform: scale(2.2); opacity: 0; } }
-.rec-dot { animation: rec-pulse 1.4s ease-in-out infinite; }
-@keyframes rec-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+/* A calling face's ring (calls, fix review 10 October 2026): the same breath, smaller, so it stays inside its card. */
+.avatar-ping { animation: avatar-ping 2s cubic-bezier(0, 0, 0.2, 1) infinite; opacity: 0.6; }
+@keyframes avatar-ping { 0% { transform: scale(1); opacity: 0.6; } 75%, 100% { transform: scale(1.35); opacity: 0; } }
 .prompt-scroll::-webkit-scrollbar { width: 6px; }
 .prompt-scroll::-webkit-scrollbar-track { background: transparent; }
 .prompt-scroll::-webkit-scrollbar-thumb { background-color: var(--scrollbar); border-radius: 3px; }
@@ -718,7 +719,7 @@ html[data-brenda-chat] #workspace-sidebar, html:has([data-brenda-chat-view]) #wo
   .brenda-face[data-talking] { translate: none; filter: drop-shadow(0 0 .5px rgb(20 24 40 / .45)) drop-shadow(0 1px 1px rgb(0 0 0 / .1)) drop-shadow(0 0 6px color-mix(in srgb, var(--talk-glow) 70%, transparent)); }
   .brenda-face[data-talking] .eyes > span { scale: 1.04 1.1; }
   .brenda-shimmer { -webkit-text-fill-color: currentColor; }
-  .rec-dot, .presence-live { animation: none; }
+  .presence-live, .avatar-ping { animation: none; }
 }
 
 /* Her home (owner decision, 7 October 2026: "I want the Brenda tab to look just like this, but instead of the purple

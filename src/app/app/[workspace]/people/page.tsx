@@ -27,8 +27,8 @@ const ROLE = { owner: "Organisation owner", hr: "HR administrator", manager: "Te
 /**
  * People and teams, v4: the title with underline tabs (Teams, People, Invitations) and the tab's one action on the
  * right, the screen's orange standout (accent rules, 6 October 2026: "Add people"); calm tables underneath. The People tab opens with the join code in a section card.
- * What team leads do, what the Recording rules column means and how joining works are the tab's page notes at the
- * bottom (owner request, 7 October 2026).
+ * What team leads do and how joining works are the tab's page notes at the bottom (owner request, 7 October 2026).
+ * Nobody is asked to agree to anything since phase 8 (owner decision, 8 October 2026), so the agreement column went.
  */
 export default async function PeoplePage({ params, searchParams }: { params: Promise<{ workspace: string }>; searchParams: Promise<{ tab?: string }> }) {
   const { workspace } = await params;
@@ -78,7 +78,7 @@ export default async function PeoplePage({ params, searchParams }: { params: Pro
           <section aria-labelledby="people-heading">
             <SectionTitle id="people-heading" title={<span className="inline-flex items-center gap-2">Everyone<CountPill count={activeMembers.length} showZero /></span>} />
             <DataTable caption="Members">
-              <thead><tr><th>Name</th><th>Employee ID</th><th>Role</th><th>Teams</th><th>Recording rules</th><th><span className="sr-only">Actions</span></th></tr></thead>
+              <thead><tr><th>Name</th><th>Employee ID</th><th>Role</th><th>Teams</th><th><span className="sr-only">Actions</span></th></tr></thead>
               <tbody>{members.map((m) => (
                 <MemberRow key={m.id} orgSlug={ctx.org.slug} member={m} teams={teams} isOwner={isOwner} self={m.id === ctx.membership.id} />
               ))}</tbody>
@@ -107,7 +107,6 @@ export default async function PeoplePage({ params, searchParams }: { params: Pro
         {tab === "teams" ? <PageNote>Team leads create and assign their team&apos;s tasks and check finished work; each team gets its own project automatically.</PageNote> : null}
         {tab === "people" && joinCode.join_code ? <PageNote section="Join code">Share the code in your team chat or send the link. Anyone who joins is listed under Everyone and can be offboarded at any time.</PageNote> : null}
         {tab === "people" ? <PageNote>Team leads create and assign their team&apos;s tasks and check its work.</PageNote> : null}
-        {tab === "people" ? <PageNote>Recording rules shows whether each person has agreed to the current rules; they are asked the first time they record.</PageNote> : null}
         {tab === "people" ? <PageNote>Open a team to see a person&apos;s records.</PageNote> : null}
       </PageNotes>
     </AppShell>

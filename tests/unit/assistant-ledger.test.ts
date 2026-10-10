@@ -22,7 +22,8 @@ describe("migration 0037", () => {
     // widens it again with 'mention' (checked in mentions-lib.test.ts).
     // Phase 7b (owner decision, 8 October 2026): 0048 adds 'loose_ends' and 'commitments' (checked in loops-migration.test.ts).
     // Phase 7c (owner decisions, 8–9 October 2026): 0050 adds 'standup' (checked in loops-migration.test.ts).
-    const later = new Set(["followup", "mention", "loose_ends", "commitments", "standup"]);
+    // Phase 8 (owner decisions, 8 October 2026): 0054 adds 'call_recap' (checked in loops-migration.test.ts).
+    const later = new Set(["followup", "mention", "loose_ends", "commitments", "standup", "call_recap"]);
     expect(listed(/ai_usage_purpose_check CHECK \(purpose IN \(([^)]*)\)\)/)).toEqual(USAGE_PURPOSES.filter((p) => !later.has(p)));
   });
 

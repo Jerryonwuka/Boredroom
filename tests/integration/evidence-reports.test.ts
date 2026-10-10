@@ -30,10 +30,10 @@ describe("A10 / A11 evidence and review", () => {
     await expect(reviewSubmission(a.employeeCtx, r1.submissionId, { decision: "approved", note: "" })).rejects.toMatchObject({ status: 403 });
     await expect(adminQuery("INSERT INTO reviews(organisation_id, submission_id, reviewer_membership_id, decision) VALUES ($1, $2, $3, 'approved')", [a.ownerCtx.org.id, r1.submissionId, a.employeeCtx.membership.id])).rejects.toThrow(/SELF_REVIEW/);
     // Organisation accounts may keep a task for themselves (owner decision, 25 September 2026), but they supervise: no timers.
-    const ownerTask = await createTask(a.ownerCtx, { projectId: a.projectId, title: "Owner task", expectedOutput: "x", reviewerMembershipId: a.managerCtx.membership.id, category: "work", priority: "normal", captureRequirement: "none", addToMyDay: false });
+    const ownerTask = await createTask(a.ownerCtx, { projectId: a.projectId, title: "Owner task", expectedOutput: "x", reviewerMembershipId: a.managerCtx.membership.id, category: "work", priority: "normal", addToMyDay: false });
     expect((await adminQuery<{ assignee_membership_id: string }>("SELECT assignee_membership_id FROM tasks WHERE id = $1", [ownerTask.id]))[0].assignee_membership_id).toBe(a.ownerCtx.membership.id);
     const { startSession: start } = await import("@/server/services/sessions");
-    await expect(start(a.ownerCtx, { taskId: t, captureMode: "none" })).rejects.toMatchObject({ status: 403 });
+    await expect(start(a.ownerCtx, { taskId: t })).rejects.toMatchObject({ status: 403 });
     // David requests changes.
     const rv1 = await reviewSubmission(a.managerCtx, r1.submissionId, { decision: "changes_requested", note: "Mobile layout missing" });
     expect(rv1.taskStatus).toBe("in_progress");
@@ -83,7 +83,7 @@ describe("A12 / A13 / A20 confirmed time, corrections and export", () => {
   it("confirms timer time, corrects it once the lead approves and exports reconciled CSV", async () => {
     const ctx = a.employee2Ctx; // Ben: clean timeline
     const today = todayLocal(a.ownerCtx.org.timezone);
-    const s = await startSession(ctx, { taskId: a.taskIds.second, captureMode: "none" });
+    const s = await startSession(ctx, { taskId: a.taskIds.second });
     await stopSession(ctx, s.id, { expectedVersion: s.version, note: "Drafted copy", outcome: "continue_later" });
     // Make the interval 30 minutes long, ending now.
     await adminQuery("ALTER TABLE session_intervals DISABLE TRIGGER session_intervals_immutable");
@@ -99,8 +99,8 @@ describe("A12 / A13 / A20 confirmed time, corrections and export", () => {
     // Company B's five people fill the Free plan's seats; Pro makes room for Ben.
     await adminQuery("INSERT INTO subscriptions(organisation_id, plan_id, status, billing_interval, current_period_end, updated_at) VALUES ($1, (SELECT id FROM plans WHERE code = 'pro'), 'active', 'monthly', NULL, now()) ON CONFLICT (organisation_id) DO UPDATE SET plan_id = EXCLUDED.plan_id, status = 'active', current_period_end = NULL", [b.ownerCtx.org.id]);
     const benInB = await joinViaInvitation(b.hrCtx, a.employee2, "employee", b.teamId);
-    const tB = await createTask(b.managerCtx, { projectId: b.projectId, title: "B secret task", expectedOutput: "x", assigneeMembershipId: benInB.membership.id, category: "work", priority: "normal", captureRequirement: "none", addToMyDay: false });
-    const sB = await startSession(benInB, { taskId: tB.id, captureMode: "none" });
+    const tB = await createTask(b.managerCtx, { projectId: b.projectId, title: "B secret task", expectedOutput: "x", assigneeMembershipId: benInB.membership.id, category: "work", priority: "normal", addToMyDay: false });
+    const sB = await startSession(benInB, { taskId: tB.id });
     await stopSession(benInB, sB.id, { expectedVersion: sB.version, note: "", outcome: "continue_later" });
     const bInterval = (await adminQuery<{ started_at: string; ended_at: string }>("SELECT started_at, ended_at FROM session_intervals WHERE session_id = $1", [sB.id]))[0];
     const overlapErr = await requestAdjustment(ctx, { taskId: a.taskIds.second, localDate: today, originalIntervalIds: [], proposedIntervals: [{ startedAt: new Date(new Date(bInterval.started_at).getTime() - 1000).toISOString(), endedAt: bInterval.ended_at }], reason: "Forgot to start the timer" }).catch((e) => e);
@@ -139,8 +139,8 @@ describe("A12 / A13 / A20 confirmed time, corrections and export", () => {
   it("leaves a running timer out of the export until it stops", async () => {
     const today = todayLocal(a.ownerCtx.org.timezone);
     const before = await exportTimesheetsCsv(a.hrCtx, { from: today, to: today, membershipId: a.employeeCtx.membership.id });
-    const fresh = await createTask(a.managerCtx, { projectId: a.projectId, title: "Fresh task", expectedOutput: "x", assigneeMembershipId: a.employeeCtx.membership.id, category: "work", priority: "normal", captureRequirement: "none", addToMyDay: false });
-    const s = await startSession(a.employeeCtx, { taskId: fresh.id, captureMode: "none" });
+    const fresh = await createTask(a.managerCtx, { projectId: a.projectId, title: "Fresh task", expectedOutput: "x", assigneeMembershipId: a.employeeCtx.membership.id, category: "work", priority: "normal", addToMyDay: false });
+    const s = await startSession(a.employeeCtx, { taskId: fresh.id });
     const during = await exportTimesheetsCsv(a.hrCtx, { from: today, to: today, membershipId: a.employeeCtx.membership.id });
     expect(during.totalSeconds).toBe(before.totalSeconds);
     expect(during.csv).not.toContain("Fresh task");

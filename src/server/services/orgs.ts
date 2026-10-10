@@ -11,17 +11,61 @@ import { invitationMail } from "@/server/lib/emails";
 import { audit, notify } from "@/server/services/common";
 import type { OrgContext } from "@/server/lib/api";
 import { assertCanCreateWorkspace } from "@/server/services/workspace-limit";
-import { allowRecordingOnOpenSession } from "@/server/services/sessions";
+import { recordingColumnsGone, retryWithRecordingColumns } from "@/server/lib/schema-0055";
 import { resolveEntitlements, requireSeat } from "@/server/lib/entitlements";
 
 export const ROLES = ["owner", "hr", "manager", "employee"] as const;
 export type Role = (typeof ROLES)[number];
 
+/**
+ * The standard monitoring notice (owner decisions, 8 October 2026: phase 8). Screen recording is gone and calls are
+ * never recorded; Brenda's notes on a call are each person's own choice. Existing workspaces keep their own words
+ * (D12): owners see an alert in Settings while their notice still describes screen recording.
+ */
 export const DEFAULT_NOTICE = `Boredroom records the tasks you plan, the work sessions you start and stop, and the progress notes and evidence you submit. Timers only run when you start them. Heartbeats show whether your browser is connected; they are not a measure of productivity.
+
+Boredroom does not record your screen, and calls are never recorded: their sound and video pass through our video provider only to reach the people on the call. If someone turns on Brenda's notes during a call, you choose for yourself. Only the words of people who agree are written down, by their own device, and the transcript is deleted 7 days after the recap.
+
+Unlogged or uncertain time leads to a clarification request, not an automatic penalty.`;
+
+/**
+ * The standard notice before phase 8, exactly as workspaces received it. Settings compares the current notice with it
+ * to offer "Use the new standard notice" (owner decision, 8 October 2026: D12).
+ */
+export const PREVIOUS_DEFAULT_NOTICE = `Boredroom records the tasks you plan, the work sessions you start and stop, and the progress notes and evidence you submit. Timers only run when you start them. Heartbeats show whether your browser is connected; they are not a measure of productivity.
 
 Screen recording is optional and is never started for you: it only happens while your timer runs and after you press "Record screen" and choose a screen or window in your browser. Never audio, always with a visible indicator. You, your team lead, the organisation's owner and HR, and anyone they give access to can watch it, and every viewing is logged. Recordings are deleted automatically after the retention period. Your organisation can switch recording off, or require it on specific tasks, by publishing a new version of this notice; you are asked to agree to it the first time you record, and again after any change.
 
 Unlogged or uncertain time leads to a clarification request, not an automatic penalty.`;
+
+/** Words about recording screens, in one clause: the feature's name, the act, a screen being recorded, the old button, the
+ *  old recordings' life ("Recordings are deleted after…"). */
+const SCREEN_RECORDING_WORDS = [
+  /\bscreen[\s-]?record(?:ing|ings|er|ers)?\b/i,
+  /\brecord(?:s|ed|ing)?\s+(?:(?:your|their|the|our|my|his|her|a|people's|staff|employees'?|members'?|everyone's)\s+)?(?:screens?|desktops?|displays?)\b/i,
+  /\b(?:screens?|desktops?|displays?)\s+(?:is|are|was|were|will be|may be|can be|might be|gets?|being)\s+recorded\b/i,
+  /["“”'‘’]record screen["“”'‘’]/i,
+  /\brecordings?\s+(?:are|is|will be|get|gets|can be|may be)\s+(?:kept|deleted|stored|watched|viewed|reviewed|retained|logged|available|saved|shared|played)\b/i,
+];
+/** Words, anywhere in the same clause, that say it does not (or no longer) happen. */
+const NOT_HAPPENING = /\b(?:not|never|no|none|nobody|nothing|without|nor|neither|removed|gone|stopped|discontinued|retired|disabled)\b|n['’]t\b|\b(?:switched|turned)\s+off\b/i;
+/** Sentences and clauses: a clause joined by "but", "while", "although"… is read on its own. */
+const CLAUSES = /[.;:!?\n]+|,\s*(?:and|or|but|while|whereas|although|though|except)\b|\s(?:but|while|whereas|although|though|except)\s/i;
+const sameText = (a: string, b: string) => a.replace(/\s+/g, " ").trim() === b.replace(/\s+/g, " ").trim();
+
+/**
+ * True when a notice still describes screen recording as something Boredroom does: the old standard text, or a clause
+ * about recording screens (the feature, the act, the old "Record screen" button, the recordings' retention) that does not
+ * say it doesn't happen. The new standard text, and a notice that says screens are NOT recorded ("Boredroom does not
+ * record your screen", "we don't use screen recording", "screen recording has been removed"), are not flagged (fix
+ * review, 10 October 2026: the new standard notice was itself flagged, so Settings warned every workspace for good).
+ */
+export function noticeMentionsScreenRecording(text: string | null | undefined): boolean {
+  if (!text || !text.trim()) return false;
+  if (sameText(text, DEFAULT_NOTICE)) return false;
+  if (sameText(text, PREVIOUS_DEFAULT_NOTICE)) return true;
+  return text.split(CLAUSES).some((clause) => !!clause && SCREEN_RECORDING_WORDS.some((re) => re.test(clause)) && !NOT_HAPPENING.test(clause));
+}
 
 export const createOrgSchema = z.object({
   name: z.string().trim().min(1).max(160),
@@ -34,7 +78,8 @@ export async function createOrganisation(userId: string, input: z.infer<typeof c
   if (!(await registrationOpen())) throw forbidden("Boredroom is not open for new organisations yet. Join the waitlist and we will email you when it is.");
   if (!isValidTimeZone(input.timezone)) throw invalid("Unknown time zone.", { timezone: ["Choose a valid IANA time zone."] });
   await assertCanCreateWorkspace(userId);
-  const created = await withUser(userId, async (db) => {
+  // Retried once when the cached answer about 0055's recording columns was wrong (schema-0055).
+  const created = await retryWithRecordingColumns(() => withUser(userId, async (db) => {
     // The id is generated here: RETURNING would need SELECT rights the creator only gains once their membership exists.
     const org = { id: randomUUID(), slug: input.slug };
     try {
@@ -47,16 +92,19 @@ export async function createOrganisation(userId: string, input: z.infer<typeof c
     const membership = await db.one<{ id: string }>(
       `INSERT INTO memberships(organisation_id, user_id, employee_code, role) VALUES ($1, $2, $3, 'owner') RETURNING id`,
       [org.id, userId, input.employeeCode]);
+    // Before 0055 the policy row still needs the old recording columns (NOT NULL, no default): recording off, 7 days.
     const policy = await db.one<{ id: string }>(
-      `INSERT INTO policies(organisation_id, version, recording_mode, retention_days, notice_text, created_by, effective_at)
-       VALUES ($1, 1, 'optional', 7, $2, $3, now()) RETURNING id`, [org.id, DEFAULT_NOTICE, membership.id]);
+      (await recordingColumnsGone(db))
+        ? `INSERT INTO policies(organisation_id, version, notice_text, created_by, effective_at) VALUES ($1, 1, $2, $3, now()) RETURNING id`
+        : `INSERT INTO policies(organisation_id, version, recording_mode, retention_days, notice_text, created_by, effective_at)
+           VALUES ($1, 1, 'disabled', 7, $2, $3, now()) RETURNING id`, [org.id, DEFAULT_NOTICE, membership.id]);
     await db.query(`UPDATE organisations SET current_policy_id = $2 WHERE id = $1`, [org.id, policy.id]);
     await db.query(`INSERT INTO schedules(organisation_id, timezone) VALUES ($1, $2)`, [org.id, input.timezone]);
     await db.query(`INSERT INTO policy_acknowledgements(organisation_id, membership_id, policy_id, shown_notice_text) VALUES ($1, $2, $3, $4)`,
       [org.id, membership.id, policy.id, DEFAULT_NOTICE]);
     await audit(db, { organisationId: org.id, actorMembershipId: membership.id, actorUserId: userId, action: "org.created", subjectType: "organisation", subjectId: org.id });
     return { orgId: org.id, slug: org.slug, membershipId: membership.id };
-  });
+  }));
   // The platform event is recorded after the workspace is saved, with the system role (people cannot write platform
   // events). Inside the transaction above, its refusal aborted the transaction and the whole workspace was silently
   // rolled back, so new owners landed on "Workspace not found". Best-effort: a failure here never undoes the workspace.
@@ -214,7 +262,7 @@ function translateMembershipError(err: unknown) {
 /** Revokes access immediately; interrupts any open session at its last confirmed boundary; keeps history. */
 export async function revokeMembership(ctx: OrgContext, membershipId: string) {
   if (membershipId === ctx.membership.id) throw forbidden("You cannot offboard yourself.");
-  return withUser(ctx.user.profileId, async (db) => {
+  await withUser(ctx.user.profileId, async (db) => {
     const m = await db.maybeOne<{ id: string; role: Role; user_id: string }>(`SELECT id, role, user_id FROM memberships WHERE id = $1 AND organisation_id = $2 AND status = 'active' FOR UPDATE`, [membershipId, ctx.org.id]);
     if (!m) throw notFound("Member not found.");
     if (m.role === "owner" && ctx.membership.role !== "owner") throw forbidden("Only owners can offboard an owner.");
@@ -232,10 +280,17 @@ export async function revokeMembership(ctx: OrgContext, membershipId: string) {
       await db.query(`INSERT INTO session_events(organisation_id, session_id, actor_user_id, event_type, metadata) VALUES ($1, $2, $3, 'offboarded', $4)`,
         [ctx.org.id, open.id, ctx.user.profileId, JSON.stringify({ confirmedUntil: open.last_heartbeat_at })]);
     }
-    await db.query(`UPDATE recording_grants SET revoked_at = now(), revoked_by = $3 WHERE grantee_membership_id = $1 AND organisation_id = $2 AND revoked_at IS NULL`, [membershipId, ctx.org.id, ctx.membership.id]);
     await db.query(`UPDATE auth_sessions s SET revoked_at = now() FROM profiles p WHERE p.id = $1 AND s.user_id = p.auth_user_id AND s.revoked_at IS NULL AND NOT EXISTS (SELECT 1 FROM memberships mm WHERE mm.user_id = p.id AND mm.status = 'active')`, [m.user_id]).catch(() => undefined);
     await audit(db, { organisationId: ctx.org.id, actorMembershipId: ctx.membership.id, action: "membership.revoked", subjectType: "membership", subjectId: membershipId, subjectMembershipId: membershipId, metadata: { interruptedSession: open?.id ?? null } });
   });
+  // Phase 8 (fix review, 10 October 2026): out of any call they are on, and their device out of its room, at once.
+  await settleCallsAfterChange(ctx, { membershipId });
+}
+
+/** Live calls the change touched settle now (services/calls, imported when needed); never throws. */
+async function settleCallsAfterChange(ctx: OrgContext, scope: { teamId?: string; membershipId?: string }) {
+  const { settleCallsAfterAccessChange } = await import("@/server/services/calls");
+  await settleCallsAfterAccessChange(ctx.org.id, scope);
 }
 
 // ---------------------------------------------------------------------------
@@ -258,7 +313,7 @@ export async function createTeam(ctx: OrgContext, name: string) {
 }
 
 export async function setTeamMember(ctx: OrgContext, teamId: string, membershipId: string, opts: { isManager: boolean; remove?: boolean }) {
-  return withUser(ctx.user.profileId, async (db) => {
+  await withUser(ctx.user.profileId, async (db) => {
     if (opts.remove) {
       await db.query(`DELETE FROM team_members WHERE organisation_id = $1 AND team_id = $2 AND membership_id = $3`, [ctx.org.id, teamId, membershipId]);
       await syncTeamProjectMember(db, ctx.org.id, teamId, membershipId, "remove");
@@ -272,6 +327,8 @@ export async function setTeamMember(ctx: OrgContext, teamId: string, membershipI
     }
     await audit(db, { organisationId: ctx.org.id, actorMembershipId: ctx.membership.id, action: opts.remove ? "team.member_removed" : "team.member_set", subjectType: "team", subjectId: teamId, subjectMembershipId: membershipId, metadata: { isManager: opts.isManager } });
   });
+  // Phase 8 (fix review, 10 October 2026): taken out of the team, they are out of its call too.
+  if (opts.remove) await settleCallsAfterChange(ctx, { teamId });
 }
 
 // ---------------------------------------------------------------------------
@@ -312,79 +369,43 @@ export async function updateSchedule(ctx: OrgContext, input: z.infer<typeof sche
   });
 }
 
+/**
+ * The monitoring notice and the end-of-day reminder (owner decisions, 8 October 2026: phase 8). The recording mode and
+ * retention went with screen recording; Zod strips them if an old tab still sends them.
+ */
 export const policySchema = z.object({
-  recordingMode: z.enum(["disabled", "optional", "required_on_designated_tasks"]),
-  retentionDays: z.number().int().min(1).max(30),
   noticeText: z.string().trim().min(20).max(20000),
   reminderMinutesBeforeEnd: z.number().int().min(0).max(240).default(30),
 });
 
 /**
- * Creates a new policy version and makes it current. Nobody signs it off (owner decision, 5 October 2026): each member
- * is asked to agree to the new recording rules once, the next time a recorded session starts (capture.tsx).
+ * Creates a new policy version and makes it current. Nobody signs it off (owner decision, 5 October 2026), and nobody
+ * is asked to agree any more (screen recording, the only thing that asked, is gone: owner decision, 8 October 2026);
+ * everyone is told the notice changed and can read it in their profile.
  */
 export async function publishPolicy(ctx: OrgContext, input: z.infer<typeof policySchema>) {
   if (ctx.membership.role !== "owner") throw forbidden("Only owners can change the monitoring policy.");
-  return withUser(ctx.user.profileId, async (db) => {
+  return retryWithRecordingColumns(() => withUser(ctx.user.profileId, async (db) => {
     const v = await db.one<{ next: number }>(`SELECT COALESCE(MAX(version), 0) + 1 AS next FROM policies WHERE organisation_id = $1`, [ctx.org.id]);
+    // Before 0055 the row still needs the old recording columns (NOT NULL, no default): recording off, 7 days.
     const p = await db.one<{ id: string }>(
-      `INSERT INTO policies(organisation_id, version, recording_mode, retention_days, notice_text, reminder_minutes_before_end, created_by, effective_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, now()) RETURNING id`,
-      [ctx.org.id, v.next, input.recordingMode, input.retentionDays, input.noticeText, input.reminderMinutesBeforeEnd, ctx.membership.id]);
+      (await recordingColumnsGone(db))
+        ? `INSERT INTO policies(organisation_id, version, notice_text, reminder_minutes_before_end, created_by, effective_at)
+           VALUES ($1, $2, $3, $4, $5, now()) RETURNING id`
+        : `INSERT INTO policies(organisation_id, version, recording_mode, retention_days, notice_text, reminder_minutes_before_end, created_by, effective_at)
+           VALUES ($1, $2, 'disabled', 7, $3, $4, $5, now()) RETURNING id`,
+      [ctx.org.id, v.next, input.noticeText, input.reminderMinutesBeforeEnd, ctx.membership.id]);
     await db.query(`UPDATE organisations SET current_policy_id = $2 WHERE id = $1`, [ctx.org.id, p.id]);
     await db.query(`INSERT INTO policy_acknowledgements(organisation_id, membership_id, policy_id, shown_notice_text) VALUES ($1, $2, $3, $4)`,
       [ctx.org.id, ctx.membership.id, p.id, input.noticeText]);
     const members = await db.query<{ id: string }>(`SELECT id FROM memberships WHERE organisation_id = $1 AND status = 'active' AND id <> $2`, [ctx.org.id, ctx.membership.id]);
     for (const m of members) {
-      await notify(db, { organisationId: ctx.org.id, recipientMembershipId: m.id, type: "policy.updated", title: "Recording rules updated",
-        body: input.recordingMode === "disabled" ? "Screen recording is now off." : "Nothing changes until you next record your screen; you are asked to agree to the new rules then.",
-        href: `/app/${ctx.org.slug}/home?ask=${encodeURIComponent("Explain our recording rules: what is recorded, who can watch it and how long it is kept.")}`, dedupKey: `policy:${p.id}` });
+      await notify(db, { organisationId: ctx.org.id, recipientMembershipId: m.id, type: "policy.updated", title: "Monitoring notice updated",
+        body: "Read what Boredroom tracks, and what it never does.", href: `/app/${ctx.org.slug}/profile#privacy`, dedupKey: `policy:${p.id}` });
     }
-    await audit(db, { organisationId: ctx.org.id, actorMembershipId: ctx.membership.id, action: "policy.published", subjectType: "policy", subjectId: p.id, metadata: { version: v.next, recordingMode: input.recordingMode, retentionDays: input.retentionDays } });
+    await audit(db, { organisationId: ctx.org.id, actorMembershipId: ctx.membership.id, action: "policy.published", subjectType: "policy", subjectId: p.id, metadata: { version: v.next } });
     return { id: p.id, version: v.next };
-  });
-}
-
-/**
- * The person agrees to the current recording rules: the one-time prompt shown when a recorded session starts, which
- * also shows the notice text recorded here. Agreeing again changes nothing and logs nothing. An open session that
- * started before they agreed may record from now on (allowRecordingOnOpenSession).
- */
-export async function acknowledgePolicy(ctx: OrgContext) {
-  return withUser(ctx.user.profileId, async (db) => {
-    const p = await db.maybeOne<{ id: string; notice_text: string }>(`SELECT id, notice_text FROM policies WHERE id = $1`, [ctx.org.current_policy_id]);
-    if (!p) throw notFound("No current policy.");
-    const added = await db.maybeOne(`INSERT INTO policy_acknowledgements(organisation_id, membership_id, policy_id, shown_notice_text) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING RETURNING policy_id`,
-      [ctx.org.id, ctx.membership.id, p.id, p.notice_text]);
-    if (added) await audit(db, { organisationId: ctx.org.id, actorMembershipId: ctx.membership.id, action: "policy.acknowledged", subjectType: "policy", subjectId: p.id, subjectMembershipId: ctx.membership.id });
-    await allowRecordingOnOpenSession(db, ctx);
-  });
-}
-
-export async function hasAcknowledgedCurrentPolicy(db: Db, ctx: OrgContext): Promise<boolean> {
-  if (!ctx.org.current_policy_id) return true;
-  const r = await db.maybeOne(`SELECT 1 FROM policy_acknowledgements WHERE membership_id = $1 AND policy_id = $2`, [ctx.membership.id, ctx.org.current_policy_id]);
-  return !!r;
-}
-
-export async function grantRecordingAccess(ctx: OrgContext, input: { granteeMembershipId: string; scopeType: "organisation" | "team" | "privacy_admin"; scopeId?: string | null }) {
-  if (ctx.membership.role !== "owner") throw forbidden("Only owners can grant recording access.");
-  return withUser(ctx.user.profileId, async (db) => {
-    const g = await db.one<{ id: string }>(
-      `INSERT INTO recording_grants(organisation_id, grantee_membership_id, scope_type, scope_id, granted_by) VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-      [ctx.org.id, input.granteeMembershipId, input.scopeType, input.scopeType === "team" ? input.scopeId : null, ctx.membership.id]);
-    await audit(db, { organisationId: ctx.org.id, actorMembershipId: ctx.membership.id, action: "recording_grant.created", subjectType: "recording_grant", subjectId: g.id, subjectMembershipId: input.granteeMembershipId, metadata: input });
-    return g;
-  });
-}
-
-export async function revokeRecordingAccess(ctx: OrgContext, grantId: string) {
-  if (ctx.membership.role !== "owner") throw forbidden("Only owners can revoke recording access.");
-  return withUser(ctx.user.profileId, async (db) => {
-    const g = await db.maybeOne<{ id: string; grantee_membership_id: string }>(`UPDATE recording_grants SET revoked_at = now(), revoked_by = $3 WHERE id = $1 AND organisation_id = $2 AND revoked_at IS NULL RETURNING id, grantee_membership_id`, [grantId, ctx.org.id, ctx.membership.id]);
-    if (!g) throw notFound("Grant not found.");
-    await audit(db, { organisationId: ctx.org.id, actorMembershipId: ctx.membership.id, action: "recording_grant.revoked", subjectType: "recording_grant", subjectId: g.id, subjectMembershipId: g.grantee_membership_id });
-  });
+  }));
 }
 
 export { AppError };
@@ -516,13 +537,4 @@ export async function clearAssistantKey(ctx: OrgContext) {
     await db.query(`DELETE FROM organisation_secrets WHERE organisation_id = $1`, [ctx.org.id]);
     await audit(db, { organisationId: ctx.org.id, actorMembershipId: ctx.membership.id, action: "assistant.disconnected", subjectType: "organisation", subjectId: ctx.org.id });
   });
-}
-
-/** One-click recording switch: publishes a new policy version that changes only the recording mode. Owners only. */
-export async function setRecordingMode(ctx: OrgContext, mode: "disabled" | "optional" | "required_on_designated_tasks") {
-  if (ctx.membership.role !== "owner") throw forbidden("Only owners can change the monitoring policy.");
-  const current = await withUser(ctx.user.profileId, (db) => db.maybeOne<{ recording_mode: string; retention_days: number; notice_text: string; reminder_minutes_before_end: number }>(`SELECT recording_mode, retention_days, notice_text, reminder_minutes_before_end FROM policies WHERE id = $1`, [ctx.org.current_policy_id]));
-  if (current?.recording_mode === mode) return { changed: false as const };
-  const r = await publishPolicy(ctx, { recordingMode: mode, retentionDays: current?.retention_days ?? 7, noticeText: current?.notice_text ?? DEFAULT_NOTICE, reminderMinutesBeforeEnd: current?.reminder_minutes_before_end ?? 30 });
-  return { changed: true as const, version: r.version };
 }

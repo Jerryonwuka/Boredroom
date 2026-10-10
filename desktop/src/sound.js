@@ -90,6 +90,12 @@ const Sound = (() => {
     dizzy: () => { [0, 0.09, 0.18, 0.27].forEach((at, i) => note({ f: 700 - i * 90, to: 640 - i * 90, at, dur: 0.12, gain: 0.3 })); },
     // Loved: two warm notes up.
     love: () => { note({ f: 659, dur: 0.16, gain: 0.35 }); note({ f: 988, at: 0.1, dur: 0.24, gain: 0.3 }); },
+    // Someone is calling (owner decisions, 8 October 2026: phase 8, calls): the web's soft two-tone phone pattern
+    // (src/lib/brenda-sound.ts `ring`), about 1.2 s; main.js plays it every 2.5 s while the incoming card shows. Quiet hours
+    // and the tray's sound switch silence it as they silence every sound.
+    ring: () => { [0, 0.4].forEach((at) => { note({ f: 660, at, dur: 0.18, type: "triangle", gain: 0.45 }); note({ f: 880, at: at + 0.2, dur: 0.18, type: "triangle", gain: 0.4 }); }); },
+    // A call declined from here: the web's `hangup`, one short falling note.
+    hangup: () => { note({ f: 520, to: 360, dur: 0.22, type: "triangle", gain: 0.4 }); },
   };
 
   return {

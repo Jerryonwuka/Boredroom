@@ -17,11 +17,13 @@ export const ICON_3D = {
   "eye-dashboard": "Workroom, dashboard, overview",
   "box-doc-check": "Deliverables, uploads, evidence",
   "doc-link-check": "Submissions, links, corrections",
-  "eye-checklist": "Reviews, playback, checks",
+  "eye-checklist": "Reviews, checks",
   "shield-check": "Policy, fairness, security, approved",
   chat: "Messages, conversations",
-  "video-people": "Recordings, meetings",
-  "screen-record": "Screen recording",
+  // Phase 8 (owner decisions, 8 October 2026): calls replace screen videos. Both names stay so callers compile; the
+  // PNGs stay too (the owner's earlier note). "eye-checklist" no longer says playback (fix review, 10 October 2026).
+  "video-people": "Calls, meetings",
+  "screen-record": "Screen sharing",
   desk: "Workspace, organisation",
   "calendar-clock": "Attendance, schedule, retention",
   "person-laptop": "A staff member, remote work",

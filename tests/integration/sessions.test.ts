@@ -21,8 +21,8 @@ beforeEach(async () => { await stopAny(a.employeeCtx); });
 describe("A04 concurrent start", () => {
   it("allows exactly one open session when two starts race", async () => {
     const results = await Promise.allSettled([
-      startSession(a.employeeCtx, { taskId: a.taskIds.homepage, captureMode: "none" }),
-      startSession(a.employeeCtx, { taskId: a.taskIds.meeting, captureMode: "none" }),
+      startSession(a.employeeCtx, { taskId: a.taskIds.homepage }),
+      startSession(a.employeeCtx, { taskId: a.taskIds.meeting }),
     ]);
     const ok = results.filter((r) => r.status === "fulfilled");
     const failed = results.filter((r) => r.status === "rejected") as PromiseRejectedResult[];
@@ -40,9 +40,9 @@ describe("A04 concurrent start", () => {
     const b = await buildCompany("b");
     const { joinViaInvitation } = await import("@/server/services/fixtures");
     const adaInB = await joinViaInvitation(b.hrCtx, a.employee, "employee", b.teamId);
-    const tB = await createTask(b.managerCtx, { projectId: b.projectId, title: "B task", expectedOutput: "x", assigneeMembershipId: adaInB.membership.id, category: "work", priority: "normal", captureRequirement: "none", addToMyDay: false });
-    const sA = await startSession(a.employeeCtx, { taskId: a.taskIds.homepage, captureMode: "none" });
-    await expect(startSession(adaInB, { taskId: tB.id, captureMode: "none" })).rejects.toMatchObject({ code: "SESSION_OPEN", details: { elsewhere: true } });
+    const tB = await createTask(b.managerCtx, { projectId: b.projectId, title: "B task", expectedOutput: "x", assigneeMembershipId: adaInB.membership.id, category: "work", priority: "normal", addToMyDay: false });
+    const sA = await startSession(a.employeeCtx, { taskId: a.taskIds.homepage });
+    await expect(startSession(adaInB, { taskId: tB.id })).rejects.toMatchObject({ code: "SESSION_OPEN", details: { elsewhere: true } });
     const cur = await currentSession(adaInB);
     expect(cur.session).toBeNull();
     expect(cur.elsewhere?.organisationSlug).toBe("company-a");
@@ -52,7 +52,7 @@ describe("A04 concurrent start", () => {
 
 describe("A05 idempotent retries and A06 pause maths", () => {
   it("retry of stop after timeout returns the committed result without duplicate intervals", async () => {
-    const s = await startSession(a.employeeCtx, { taskId: a.taskIds.homepage, captureMode: "none" });
+    const s = await startSession(a.employeeCtx, { taskId: a.taskIds.homepage });
     const stopped = await stopSession(a.employeeCtx, s.id, { expectedVersion: s.version, note: "done for now", outcome: "continue_later" });
     expect(stopped.state).toBe("stopped");
     const again = await stopSession(a.employeeCtx, s.id, { expectedVersion: s.version, note: "done for now", outcome: "continue_later" });
@@ -63,7 +63,7 @@ describe("A05 idempotent retries and A06 pause maths", () => {
   });
 
   it("work 10, pause 5, resume 10 = 20 minutes confirmed, breaks excluded", async () => {
-    const s = await startSession(a.employeeCtx, { taskId: a.taskIds.homepage, captureMode: "none" });
+    const s = await startSession(a.employeeCtx, { taskId: a.taskIds.homepage });
     const paused = await pauseSession(a.employeeCtx, s.id, s.version);
     const resumed = await resumeSession(a.employeeCtx, s.id, paused.version);
     const stopped = await stopSession(a.employeeCtx, s.id, { expectedVersion: resumed.version, note: "", outcome: "continue_later" });
@@ -84,7 +84,7 @@ describe("A05 idempotent retries and A06 pause maths", () => {
 
 describe("A07 refresh restores the same session", () => {
   it("currentSession returns the open session with server-computed elapsed time", async () => {
-    const s = await startSession(a.employeeCtx, { taskId: a.taskIds.homepage, captureMode: "none" });
+    const s = await startSession(a.employeeCtx, { taskId: a.taskIds.homepage });
     const cur = await currentSession(a.employeeCtx);
     expect(cur.session?.id).toBe(s.id);
     expect(cur.session?.openIntervalStartedAt).toBeTruthy();
@@ -97,7 +97,7 @@ describe("A08 heartbeat loss", () => {
   it("interrupts at the last heartbeat and marks the gap uncertain on reconnect", async () => {
     // Ben has no earlier intervals in this file, so his timeline can be rewritten freely.
     const ctx = a.employee2Ctx;
-    const s = await startSession(ctx, { taskId: a.taskIds.second, captureMode: "none" });
+    const s = await startSession(ctx, { taskId: a.taskIds.second });
     await heartbeat(ctx, s.id);
     const lastHb = new Date(Date.now() - 5 * 60000).toISOString();
     await adminQuery("ALTER TABLE session_intervals DISABLE TRIGGER session_intervals_immutable");
@@ -124,12 +124,12 @@ describe("A08 heartbeat loss", () => {
 
 describe("switch and task rules", () => {
   it("switch closes the previous session and opens the next atomically; retry is idempotent", async () => {
-    const s = await startSession(a.employeeCtx, { taskId: a.taskIds.homepage, captureMode: "none" });
-    const next = await switchSession(a.employeeCtx, s.id, { expectedVersion: s.version, nextTaskId: a.taskIds.meeting, captureMode: "none", note: "" });
+    const s = await startSession(a.employeeCtx, { taskId: a.taskIds.homepage });
+    const next = await switchSession(a.employeeCtx, s.id, { expectedVersion: s.version, nextTaskId: a.taskIds.meeting, note: "" });
     expect(next.taskId).toBe(a.taskIds.meeting);
     const prev = await adminQuery<{ state: string }>("SELECT state FROM work_sessions WHERE id = $1", [s.id]);
     expect(prev[0].state).toBe("stopped");
-    const retry = await switchSession(a.employeeCtx, s.id, { expectedVersion: s.version, nextTaskId: a.taskIds.meeting, captureMode: "none", note: "" });
+    const retry = await switchSession(a.employeeCtx, s.id, { expectedVersion: s.version, nextTaskId: a.taskIds.meeting, note: "" });
     expect(retry.id).toBe(next.id);
     const open = await adminQuery("SELECT count(*)::int AS n FROM work_sessions WHERE user_id = $1 AND state <> 'stopped'", [a.employee.profileId]);
     expect(open[0].n).toBe(1);
@@ -137,19 +137,19 @@ describe("switch and task rules", () => {
   });
 
   it("archived tasks cannot start sessions and reassignment is blocked while a session is open", async () => {
-    const t = await createTask(a.managerCtx, { projectId: a.projectId, title: "Temp", expectedOutput: "x", assigneeMembershipId: a.employeeCtx.membership.id, category: "work", priority: "normal", captureRequirement: "none", addToMyDay: false });
-    const s = await startSession(a.employeeCtx, { taskId: t.id, captureMode: "none" });
+    const t = await createTask(a.managerCtx, { projectId: a.projectId, title: "Temp", expectedOutput: "x", assigneeMembershipId: a.employeeCtx.membership.id, category: "work", priority: "normal", addToMyDay: false });
+    const s = await startSession(a.employeeCtx, { taskId: t.id });
     const cur = await adminQuery<{ version: number }>("SELECT version FROM tasks WHERE id = $1", [t.id]);
     await expect(updateTask(a.managerCtx, t.id, { expectedVersion: cur[0].version, assigneeMembershipId: a.employee2Ctx.membership.id })).rejects.toMatchObject({ code: "SESSION_OPEN" });
     await stopSession(a.employeeCtx, s.id, { expectedVersion: s.version, note: "", outcome: "continue_later" });
     const v = await adminQuery<{ version: number }>("SELECT version FROM tasks WHERE id = $1", [t.id]);
     await updateTask(a.managerCtx, t.id, { expectedVersion: v[0].version, archive: true });
-    await expect(startSession(a.employeeCtx, { taskId: t.id, captureMode: "none" })).rejects.toMatchObject({ code: "TASK_ARCHIVED" });
+    await expect(startSession(a.employeeCtx, { taskId: t.id })).rejects.toMatchObject({ code: "TASK_ARCHIVED" });
   });
 
   it("only the assignee can start; stop with blocked outcome marks the task blocked and notifies the manager", async () => {
-    await expect(startSession(a.employee2Ctx, { taskId: a.taskIds.homepage, captureMode: "none" })).rejects.toMatchObject({ status: 403 });
-    const s = await startSession(a.employeeCtx, { taskId: a.taskIds.homepage, captureMode: "none" });
+    await expect(startSession(a.employee2Ctx, { taskId: a.taskIds.homepage })).rejects.toMatchObject({ status: 403 });
+    const s = await startSession(a.employeeCtx, { taskId: a.taskIds.homepage });
     await stopSession(a.employeeCtx, s.id, { expectedVersion: s.version, note: "Waiting on brand assets", outcome: "blocked" });
     const t = await adminQuery<{ status: string; blocked_reason: string }>("SELECT status, blocked_reason FROM tasks WHERE id = $1", [a.taskIds.homepage]);
     expect(t[0].status).toBe("blocked");

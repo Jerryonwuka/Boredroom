@@ -2,7 +2,7 @@
 
 Boredroom helps organisations understand what remote employees plan to do, what they report working on, what they deliver, and what their managers accept. Task planning, work sessions, evidence, confirmed time and review live in one workflow, and Brenda, an AI teammate, sends each team lead an end-of-day report of what the team did. Multiple isolated organisations are supported from the first release.
 
-> Timers, heartbeats, recordings, mouse movement and logins are never treated as proof of productivity. Unlogged or uncertain work leads to a clarification request, not an automatic penalty.
+> Timers, heartbeats, mouse movement and logins are never treated as proof of productivity. Unlogged or uncertain work leads to a clarification request, not an automatic penalty.
 
 The product specification is in [`BOARDROOM_BUILD_SPEC.md`](./BOARDROOM_BUILD_SPEC.md). Build status, decisions and evidence are tracked in [`BUILD_PROGRESS.md`](./BUILD_PROGRESS.md).
 
@@ -38,7 +38,7 @@ Requirements: Node 22, pnpm 10, PostgreSQL 16 with the `btree_gist`, `citext` an
 pnpm install
 pnpm first-run        # writes .env.local, creates roles/databases/extensions, migrates, seeds, runs pnpm doctor
 pnpm dev              # web app on http://localhost:3000
-pnpm worker           # in a second terminal: heartbeat recovery, reminders, media assembly, retention deletion
+pnpm worker           # in a second terminal: heartbeat recovery, reminders, routines, call sweeps, Brenda's call recaps
 ```
 
 `pnpm first-run` connects to PostgreSQL as a superuser using `PG_SUPERUSER_URL` (default `postgres://postgres:postgres@localhost:5432/postgres`); set that variable if your local superuser or password differs. The manual equivalent is:
@@ -68,9 +68,9 @@ pnpm db:migrate && pnpm db:seed
 
 All passwords: `correct-horse-battery`. Company A has a "Website relaunch" project with a homepage design task (Figma-link deliverable expected) and a client meeting task assigned to Ada, reviewed by David.
 
-### Where recordings live
+### Where files live
 
-While a person records, the browser uploads ten-second chunks to `var/storage/org/<organisation>/recordings/<session>/<recording>/` (or the configured private bucket). The background worker then stitches them into one video file next to the chunks and marks the recording "Ready to watch". `pnpm dev` starts the worker with the app; on a server, run `pnpm worker` next to `pnpm start`, or recordings stay at "processing".
+Evidence uploads, voice notes and pictures are kept under `var/storage/org/<organisation>/…` (or the configured private bucket), never in the database. Copy that folder with a database backup. Calls are never stored anywhere (see Calls below).
 
 ### After `git pull`
 
@@ -101,8 +101,8 @@ src/app              routes: (auth), onboarding, app/[workspace]/*, api/*
 src/server/auth      local auth provider
 src/server/db        pool + per-request RLS context (withUser / withSystem / withWorker)
 src/server/lib       api wrapper (errors, idempotency, origin check), crypto, time, mail, storage
-src/server/services  orgs, tasks, sessions, evidence, reports, recording, views, fixtures
-src/components       UI kit (ui/), app components (timer, capture client, forms)
+src/server/services  orgs, tasks, sessions, evidence, reports, calls, call-notes, views, fixtures
+src/components       UI kit (ui/), app components (timer, calls, forms)
 worker               job loop, handlers, scheduler
 tests                unit + integration (Vitest); e2e (Playwright)
 docs                 providers, runbooks, walkthrough
@@ -115,7 +115,7 @@ docs                 providers, runbooks, walkthrough
 
 ## The Workroom
 
-Owners, HR and team leads open **Workroom** to see everyone who has clocked in today: status (Active, Paused, Off the clock, Not started), the task they are on with a live clock, a LIVE badge while they record their screen, and today's totals. Click a person for every task, session and recording of their day. Status is derived from timers only.
+Owners, HR and team leads open **Workroom** to see everyone who has clocked in today: status (Active, Paused, Off the clock, Not started), the task they are on with a live clock, an orange "On a call" badge while they are in a call (never which call), and today's totals. Click a person for every task and session of their day. Status is derived from timers only.
 
 ## Clocking in and out
 
@@ -129,9 +129,16 @@ Everyone, staff, team leads, owner and HR, clocks in and out from **Clock in** i
 
 People in an organisation message each other from **Messages** in the sidebar: a direct thread with anyone (in your team or not), a channel per team, and an "Everyone" channel for the whole organisation. A message can point at a task: "Ask for an update" on a person's Workroom page, a task page or a People row opens the thread with the task attached and "How far with …?" ready to send. Threads update live over the existing event stream, the sidebar badge counts unread messages, and a direct message also lands in the recipient's notifications. Only the two people in a direct thread can read it (not the team lead, not the owner); team channels are readable by team members only; nothing crosses organisations. Senders can withdraw their own messages.
 
-## Watching recordings
+## Calls
 
-Owners, HR and team leads open **Recordings** in the menu: every recording they may watch, filterable by team and person, with a Watch button. Team boards list the team's latest recordings and show a recordings count on each task; opening a task shows its sessions, who ran them and the footage. Team leads see their teams' people, organisation accounts see everyone, and every play is logged.
+Screen recording for tasks was taken out in phase 8 (owner decision, 8 October 2026) and replaced by calls: one-to-one in a direct thread, a group call from a named channel, and the team call from a team channel, on every plan. Anyone can call the people they can already message; owners, HR and team leads get no extra access to anyone's calls. One global safety cap holds for now: 50 people and 4 hours a call.
+
+- **Video**: LiveKit Cloud (hosted). Set `LIVEKIT_URL` (the project's `wss://` address), `LIVEKIT_API_KEY` and `LIVEKIT_API_SECRET` in `.env.local` (never commit values). Without them, or before migration 0054 is applied, every call button is hidden and the Calls page says why. Camera, microphone and screen share need `http://localhost:3000` or an HTTPS address.
+- **Ringing and missed calls**: a call rings the other person (or, in a channel, the members who are online, not in quiet hours and not in another call) for 30 seconds on every open web page and in the desktop notch, then turns into a missed call: a notification, a notch card and a line in the thread. Devices in a call send a heartbeat every 15 seconds; the worker settles rings, dropped devices (45 seconds), the 4-hour cap and 15 minutes alone, and closes LiveKit rooms. No LiveKit webhooks are needed on localhost (a verified webhook route exists for production, see `docs/runbooks.md`).
+- **Brenda's notes, with consent**: anyone on a call can turn on "Brenda takes notes"; everyone on the call sees it and answers for themselves ("Not me" keeps their words out). Each consenting person's own device writes down their own words (the browser's on-device speech recognition, or the app's on-device Whisper); no audio is sent anywhere or kept. After the call the workspace assistant writes a recap (summary, decisions, action items) from those lines only; it goes to everyone who was on the call, and to the thread. Action items become Commitments that each named person must accept. Only the people who were on the call can read its transcript, and the transcript is deleted 7 days after the recap (the recap stays).
+- **Routes**: pages `/app/[workspace]/calls` (history and missed calls) and `/app/[workspace]/calls/[id]`; API `GET|POST /api/orgs/[org]/calls`, `calls/now`, `calls/live`, `calls/[id]`, `calls/[id]/join`, `accept`, `decline`, `leave`, `end`, `heartbeat`, `notes`, `consent`, `lines`, `recap`; `POST /api/livekit/webhook` (production, optional).
+
+The old recordings are deleted by the owner with `pnpm db:delete-recordings` (a dry run by default); see `docs/runbooks.md`, "Deleting the old recordings (phase 8)".
 
 ## The to-do assistant
 
@@ -141,13 +148,9 @@ To run it on Claude, an organisation owner opens **Settings → AI assistant** a
 
 Dictation uses the browser's speech recognition (Chrome, Edge, Safari) and needs the app open at `http://localhost:3000` or an `https://` address; the browser asks for the microphone the first time.
 
-## Screen recording
-
-Recording is on (each person's choice) for new organisations; owners switch it under **Settings → Screen recording**. Each person acknowledges the monitoring notice once (Policy page; My Day links to it); after that the timer shows **Record screen** while a session runs. Recording starts only when they press it and the browser asks what to share. Needs Chrome or Edge on `http://localhost:3000` or an HTTPS address; on a LAN address such as `http://192.168.x.x:3000` browsers refuse screen and microphone access and the app tells you so.
-
 ## Product routes
 
-`/login`, `/signup`, `/join`, `/join/[code]`, `/recover`, `/verify`, `/invite/[token]`, `/onboarding`, `/app` (workspace picker), and under `/app/[workspace]`: `dashboard`, `my-day`, `workroom`, `workroom/[member]`, `teams/[id]`, `recordings`, `projects`, `projects/[id]`, `tasks/[id]`, `team` (activity), `reviews`, `timesheets`, `reports` (with period presets), `people` (tabs: teams, people, invitations), `policy`, `settings`, `notifications`, `audit`. `/dev/mail` shows the local mail sink in development.
+`/login`, `/signup`, `/join`, `/join/[code]`, `/recover`, `/verify`, `/invite/[token]`, `/onboarding`, `/app` (workspace picker), and under `/app/[workspace]`: `dashboard`, `my-day`, `workroom`, `workroom/[member]`, `teams/[id]`, `calls`, `calls/[id]`, `projects`, `projects/[id]`, `tasks/[id]`, `team` (activity), `reviews`, `timesheets`, `reports` (with period presets), `people` (tabs: teams, people, invitations), `policy`, `settings`, `notifications`, `audit`. `/dev/mail` shows the local mail sink in development.
 
 ## Security notes
 
@@ -156,6 +159,6 @@ Recording is on (each person's choice) for new organisations; owners switch it u
 - Self-review and last-owner removal are rejected by triggers as well as service code.
 - State-changing API calls accept `Idempotency-Key`; the same key with a different body is rejected.
 - Uploads are validated by size, MIME and magic bytes, stored privately with server-generated keys, quarantined until scanned, and downloaded as attachments only.
-- Recording playback needs an explicit, audited grant; short-lived URLs expire in 60 seconds; retention deletion is a worker job with tombstones.
+- Calls are never recorded. LiveKit tokens are signed on the server for one room and one identity, last 2 minutes and cannot change their own metadata; who may join a call is exactly who may read its thread, and someone taken out of the thread is out of its live call at once. LiveKit cannot revoke a token, so anyone in a call's room without a place in the call is taken out (the webhook's `participant_joined`, the devices' heartbeats, the worker's sweep; fix review, 10 October 2026). A call's transcript is readable only by the people who were on it (and still read its thread) and is deleted 7 days after the recap.
 
 See `docs/providers.md` for production provider setup and `docs/runbooks.md` for operations.

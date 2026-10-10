@@ -90,7 +90,7 @@ beforeAll(async () => {
 describe("a draft carries only what the team channel's readers can already see (security review P7)", () => {
   it("Kemi gives Ada a Sales-only task: it is not in Ada's Design draft, so Post never sends it to #Design", async () => {
     const proj = await createProject(kemi, { name: "Sales restructure", description: "Confidential", requiresDueDate: false, requiresEstimate: false, memberIds: [id(ada)] });
-    const t = await createTask(kemi, { projectId: proj.id, title: "Shortlist for Sales redundancies", expectedOutput: "A list.", assigneeMembershipId: id(ada), reviewerMembershipId: null, category: "work", priority: "normal", estimateMinutes: 60, dueAt: null, captureRequirement: "none", addToMyDay: false });
+    const t = await createTask(kemi, { projectId: proj.id, title: "Shortlist for Sales redundancies", expectedOutput: "A list.", assigneeMembershipId: id(ada), reviewerMembershipId: null, category: "work", priority: "normal", estimateMinutes: 60, dueAt: null, addToMyDay: false });
     const [m] = await adminQuery<{ version: number }>("SELECT version FROM tasks WHERE id = $1", [t.id]);
     await updateTask(ada, t.id, { expectedVersion: m.version, status: "in_progress" });
     expect(await appQueryAs(a.employee2.profileId, "SELECT id FROM tasks WHERE id = $1", [t.id])).toHaveLength(0);

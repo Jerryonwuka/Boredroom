@@ -45,7 +45,7 @@ async function report(c: OrgContext): Promise<string> {
 }
 const work = (title: string, assignee: OrgContext, dueAt: string | null = null) => createTask(david, {
   projectId: a.projectId, title, expectedOutput: "Done and linked.", assigneeMembershipId: id(assignee), reviewerMembershipId: id(david),
-  category: "work", priority: "normal", estimateMinutes: 60, dueAt, captureRequirement: "none", addToMyDay: false,
+  category: "work", priority: "normal", estimateMinutes: 60, dueAt, addToMyDay: false,
 });
 
 beforeAll(async () => {

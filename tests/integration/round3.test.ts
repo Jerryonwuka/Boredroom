@@ -1,14 +1,15 @@
 /**
- * Round 3: team leads hand out to-dos, "Done" from My Day, past tasks, and screen recording that staff can start.
+ * Round 3: team leads hand out to-dos, "Done" from My Day, past tasks. (Its screen-recording part went with the feature:
+ * owner decision, 8 October 2026, phase 8.)
  */
 import { beforeAll, describe, expect, it } from "vitest";
 import { resetTestDatabase, adminQuery } from "../helpers/db";
-import { buildCompany, contextFor, type CompanyFixture } from "@/server/services/fixtures";
+import { buildCompany, type CompanyFixture } from "@/server/services/fixtures";
 import { quickTodo, completeTask, clearPastTasks, assignableMembers } from "@/server/services/tasks";
 import { myDay, notificationsView, reviewQueue } from "@/server/services/views";
 import { startSession, stopSession, currentSession } from "@/server/services/sessions";
 import { reviewSubmission } from "@/server/services/evidence";
-import { publishPolicy, acknowledgePolicy, setRecordingMode, setAssistantKey, clearAssistantKey, assistantStatus } from "@/server/services/orgs";
+import { setAssistantKey, clearAssistantKey, assistantStatus } from "@/server/services/orgs";
 import { planFromText, resolveAssistant } from "@/server/services/assistant";
 
 let a: CompanyFixture;
@@ -88,40 +89,11 @@ describe("Done from My Day", () => {
 
   it("stopping a session with outcome 'completed' sends the task for its check in the same step", async () => {
     const todo = await quickTodo(a.employeeCtx, { title: "Write the release notes" });
-    const s = await startSession(a.employeeCtx, { taskId: todo.id, captureMode: "none" });
+    const s = await startSession(a.employeeCtx, { taskId: todo.id });
     await stopSession(a.employeeCtx, s.id, { expectedVersion: s.version, note: "All sections written.", outcome: "completed" });
     expect((await adminQuery<{ status: string }>("SELECT status FROM tasks WHERE id = $1", [todo.id]))[0].status).toBe("in_review");
     expect((await currentSession(a.employeeCtx)).session).toBeNull();
-    await expect(startSession(a.employeeCtx, { taskId: todo.id, captureMode: "none" })).rejects.toMatchObject({ code: "TASK_IN_REVIEW" });
-  });
-});
-
-describe("screen recording staff can start", () => {
-  it("recording is on by default; every session of an acknowledged member may record without any prompt at Start", async () => {
-    // New organisations start with recording 'optional' and invited members acknowledged the notice on joining.
-    let s = await startSession(a.employee2Ctx, { taskId: a.taskIds.second, captureMode: "none" });
-    expect(s.captureMode).toBe("optional");
-    await stopSession(a.employee2Ctx, s.id, { expectedVersion: s.version, note: "", outcome: "continue_later" });
-    // Owner switches it off with the one-click switch, then on again: a new notice version each time.
-    expect(await setRecordingMode(a.ownerCtx, "disabled")).toMatchObject({ changed: true });
-    a.ownerCtx = await contextFor(a.owner, a.slug); // contexts are rebuilt per request in the app
-    expect(await setRecordingMode(a.ownerCtx, "disabled")).toMatchObject({ changed: false });
-    a.employee2Ctx = await contextFor(a.employee2, a.slug);
-    s = await startSession(a.employee2Ctx, { taskId: a.taskIds.second, captureMode: "none" });
-    expect(s.captureMode).toBe("none");
-    await stopSession(a.employee2Ctx, s.id, { expectedVersion: s.version, note: "", outcome: "continue_later" });
-    await expect(setRecordingMode(a.employeeCtx, "optional")).rejects.toMatchObject({ status: 403 });
-
-    await publishPolicy(a.ownerCtx, { recordingMode: "optional", retentionDays: 7, noticeText: "You may record your screen while a timer runs. Video only, started by you.", reminderMinutesBeforeEnd: 30 });
-    a.employee2Ctx = await contextFor(a.employee2, a.slug);
-    // Not yet acknowledged: the session runs, but cannot record.
-    s = await startSession(a.employee2Ctx, { taskId: a.taskIds.second, captureMode: "none" });
-    expect(s.captureMode).toBe("none");
-    await stopSession(a.employee2Ctx, s.id, { expectedVersion: s.version, note: "", outcome: "continue_later" });
-    await acknowledgePolicy(a.employee2Ctx);
-    s = await startSession(a.employee2Ctx, { taskId: a.taskIds.second, captureMode: "none" });
-    expect(s.captureMode).toBe("optional"); // "Record screen" is available in the timer
-    await stopSession(a.employee2Ctx, s.id, { expectedVersion: s.version, note: "", outcome: "continue_later" });
+    await expect(startSession(a.employeeCtx, { taskId: todo.id })).rejects.toMatchObject({ code: "TASK_IN_REVIEW" });
   });
 });
 

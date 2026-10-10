@@ -12,7 +12,9 @@ export type LandingSettings = { headline: string; subheadline: string; cta: stri
 export type BillingSettings = { trial_days: number; grace_days: number };
 export type FeatureFlags = Record<string, boolean>;
 
-export const FEATURE_KEYS = ["VIDEO_RECORDING", "HEARTBEAT_TRACKING", "ADVANCED_ANALYTICS", "SCREEN_CAPTURE", "API_ACCESS", "CUSTOM_ROLES", "AUDIT_LOGS", "EXPORT_REPORTS", "AI_ASSISTANT", "VOICE_NOTES", "GOOGLE_SIGN_IN"] as const;
+// Calls have no flag: they are on every plan (owner decisions, 8 October 2026: phase 8, which also took out the two
+// screen-recording flags).
+export const FEATURE_KEYS = ["HEARTBEAT_TRACKING", "ADVANCED_ANALYTICS", "API_ACCESS", "CUSTOM_ROLES", "AUDIT_LOGS", "EXPORT_REPORTS", "AI_ASSISTANT", "VOICE_NOTES", "GOOGLE_SIGN_IN"] as const;
 
 type Cache = { at: number; values: Record<string, unknown> };
 let cache: Cache | null = null;

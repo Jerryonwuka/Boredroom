@@ -14,7 +14,6 @@ import { ConfirmButton, ConfirmDialog } from "@/components/ui/confirm";
 import { Input, InputAdorned, Textarea, Select } from "@/components/ui/input";
 import { Alert } from "@/components/ui/states";
 import { Badge } from "@/components/ui/badge";
-import { Segmented } from "@/components/ui/segmented";
 import { SectionTitle } from "@/components/ui/card";
 import { api, isApiFailure } from "@/lib/api-client";
 import { dateOnly } from "@/lib/format";
@@ -180,102 +179,48 @@ export function ScheduleForm({ orgSlug, schedule }: { orgSlug: string; schedule:
   );
 }
 
-// ---- Recording ----------------------------------------------------------------------------------------------------
-
-const MODES = [
-  { value: "disabled", label: "Off" },
-  { value: "optional", label: "Each person's choice" },
-  { value: "required_on_designated_tasks", label: "Required on marked tasks" },
-];
+// ---- Monitoring notice -------------------------------------------------------------------------------------------
 
 /**
- * The recording switch: a segmented control with the three modes. Turning recording on, or between the two "on"
- * modes, happens at once; turning it off asks first. While the change is on its way the control shows the new
- * choice; if it fails it goes back and says why.
+ * The monitoring notice (owner decisions, 8 October 2026: phase 8, A.3.4): the notice text and how long before the end
+ * of the working day people are reminded, published as a new version. The recording mode, retention and audio rows went
+ * with screen recording; nobody is asked to agree any more, everyone is told the notice changed.
  */
-export function RecordingSwitch({ orgSlug, mode }: { orgSlug: string; mode: string }) {
-  const { pending, error, ok, submit } = useForm();
-  const [target, setTarget] = useState<string | null>(null);
-  const [confirmOff, setConfirmOff] = useState(false);
-  // When the page brings the saved mode back, it takes over from the optimistic choice.
-  const [seen, setSeen] = useState(mode);
-  if (seen !== mode) { setSeen(mode); setTarget(null); }
-  const set = async (m: string) => {
-    setTarget(m);
-    const r = await submit(() => api(`/api/orgs/${orgSlug}/settings/recording`, { method: "POST", body: { mode: m } }), m === "disabled" ? "Screen recording is off." : "Screen recording is on. Each person can press Record screen while a timer runs; the first time, they read the notice and agree to it.");
-    if (r === null) setTarget(null);
-    return r;
-  };
-  return (
-    <div className="grid gap-2">
-      {/* No `name`: a named radio group moves its choice with the arrow keys, and here every choice is an organisation-wide
-          change (a new notice version). Each mode is its own Tab stop, chosen with Space or a press. */}
-      <Segmented aria-label="Screen recording" value={target ?? mode} disabled={pending}
-        onChange={(v) => { if (v === (target ?? mode)) return; if (v === "disabled") setConfirmOff(true); else void set(v); }} options={MODES} />
-      {error ? <p role="alert" className="text-meta font-medium text-danger">{error}</p> : null}
-      <p role="status" aria-live="polite" className="text-meta font-normal text-secondary">{pending ? "Switching…" : ok}</p>
-      <ConfirmDialog open={confirmOff} onClose={() => setConfirmOff(false)} title="Turn screen recording off for everyone?" description="Nobody can start a recording until it is turned on again. Existing recordings are kept until they expire." confirmLabel="Turn recording off" pendingLabel="Turning off…"
-        onConfirm={() => set("disabled")} />
-    </div>
-  );
-}
-
-export function PolicyForm({ orgSlug, policy }: { orgSlug: string; policy: { recording_mode: string; retention_days: number; notice_text: string } | null }) {
+export function PolicyForm({ orgSlug, policy }: { orgSlug: string; policy: { notice_text: string; reminder_minutes_before_end: number } | null }) {
   const { pending, error, ok, fieldErrors, submit } = useForm();
   const [draft, setDraft] = useState<FormData | null>(null);
-  const publish = (f: FormData) => submit(() => api(`/api/orgs/${orgSlug}/settings/policy`, { method: "POST", body: { recordingMode: f.get("recordingMode"), retentionDays: Number(f.get("retentionDays")), noticeText: f.get("noticeText") } }), "New policy version published.");
+  const publish = (f: FormData) => submit(() => api(`/api/orgs/${orgSlug}/settings/policy`, { method: "POST", body: { noticeText: f.get("noticeText"), reminderMinutesBeforeEnd: Number(f.get("reminderMinutesBeforeEnd")) } }), "New notice version published.");
   return (
     <>
       {/* The dialog sits outside the form: a <form> inside a <form> is invalid HTML and breaks hydration. */}
-      <ConfirmDialog open={!!draft} onClose={() => setDraft(null)} tone="primary" title="Publish a new policy version?" description="Each person sees the new notice once, when they next start a recorded session, and agrees to it before anything is captured. Nothing else changes for them." confirmLabel="Publish version" pendingLabel="Publishing…" onConfirm={async () => { if (draft) await publish(draft); }} />
+      <ConfirmDialog open={!!draft} onClose={() => setDraft(null)} tone="primary" title="Publish a new notice version?" description="Everyone in the workspace is told the notice changed and can read it in their profile. Nothing else changes for them." confirmLabel="Publish version" pendingLabel="Publishing…" onConfirm={async () => { if (draft) await publish(draft); }} />
       <form className={SETTINGS_GROUP} onSubmit={(e) => { e.preventDefault(); setDraft(new FormData(e.currentTarget)); }}>
         {error ? <SettingsAlert>{error}</SettingsAlert> : null}
-        <SettingsRow label="Recording" hint="The first time someone records under this notice, they read it and agree to it before anything is captured. Recordings are video only, started by the person, with a visible indicator." htmlFor="p-mode" error={fieldErrors.recordingMode}>
-          <Select id="p-mode" name="recordingMode" defaultValue={policy?.recording_mode ?? "disabled"}><option value="disabled">Off: nobody can record</option><option value="optional">On: each person may press Record screen while a timer runs</option><option value="required_on_designated_tasks">On, and required on tasks marked recording required</option></Select>
-        </SettingsRow>
-        <SettingsRow label="Keep recordings for" hint="1 to 30 days in the pilot, then they are deleted automatically. Not a legal compliance claim." htmlFor="p-ret" error={fieldErrors.retentionDays}>
-          <InputAdorned id="p-ret" name="retentionDays" type="number" inputMode="numeric" min={1} max={30} defaultValue={policy?.retention_days ?? 7} required suffix="days" className="sm:max-w-64" />
-        </SettingsRow>
         <SettingsRow stacked label="Monitoring notice shown to employees" hint="At least 20 characters. Get it reviewed for your jurisdiction before a real employee pilot." htmlFor="p-notice" error={fieldErrors.noticeText}>
           <Textarea id="p-notice" name="noticeText" className="min-h-48" defaultValue={policy?.notice_text ?? ""} required minLength={20} maxLength={20000} />
         </SettingsRow>
-        <SettingsRow label="Audio" hint="Never captured: audio capture is permanently disabled." align="text"><span className="text-secondary">Off, always</span></SettingsRow>
+        <SettingsRow label="Remind people before the end of their day" hint="0 to 240 minutes; 0 sends no reminder." htmlFor="p-remind" error={fieldErrors.reminderMinutesBeforeEnd}>
+          <InputAdorned id="p-remind" name="reminderMinutesBeforeEnd" type="number" inputMode="numeric" min={0} max={240} defaultValue={policy?.reminder_minutes_before_end ?? 30} required suffix="minutes" className="sm:max-w-64" />
+        </SettingsRow>
         <SettingsFooter status={ok}><Button type="submit" size="md" loading={pending}>{pending ? "Publishing…" : "Publish new version"}</Button></SettingsFooter>
       </form>
     </>
   );
 }
 
-const SCOPE_LABEL: Record<string, string> = { team: "Team recordings", organisation: "All recordings", privacy_admin: "Privacy administrator" };
-
-export function GrantsPanel({ orgSlug, grants, members, teams, isOwner }: { orgSlug: string; grants: { id: string; grantee_name: string; scope_type: string; scope_name: string | null; granted_by_name: string; granted_at: string }[]; members: { id: string; display_name: string }[]; teams: { id: string; name: string }[]; isOwner: boolean }) {
-  const { pending, error, ok, fieldErrors, submit } = useForm();
-  const [scope, setScope] = useState("team");
-  // A team grant needs a team to point at; say so instead of sending a grant the server will turn away.
-  const blocked = members.length === 0 ? "Nobody else is in the workspace yet, so there is no one to grant access to." : scope === "team" && teams.length === 0 ? "There are no teams yet. Create one under People and teams, or grant all recordings instead." : null;
+/**
+ * "Use the new standard notice" (owner decision, 8 October 2026: D12): shown while the current notice still describes
+ * screen recording. Publishes the standard text as a new version through the same route (owners only), keeping the
+ * reminder as it is.
+ */
+export function StandardNoticeButton({ orgSlug, text, reminderMinutesBeforeEnd }: { orgSlug: string; text: string; reminderMinutesBeforeEnd: number }) {
+  const { pending, error, ok, submit } = useForm();
   return (
-    <div className="grid gap-3">
-      <div className={SETTINGS_GROUP}>
-        {error ? <SettingsAlert>{error}</SettingsAlert> : null}
-        {grants.length === 0 ? <p className="px-5 py-4 text-sm font-normal text-secondary">No extra grants. The person recorded, their team lead, HR and the owner can already watch; add a grant to let someone else.</p> : grants.map((g) => (
-          <div key={g.id} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-5 py-3">
-            <div className="min-w-0">
-              <p className="flex flex-wrap items-center gap-2 text-sm font-medium text-foreground">{g.grantee_name}<Badge>{SCOPE_LABEL[g.scope_type] ?? g.scope_type}{g.scope_name ? `: ${g.scope_name}` : ""}</Badge></p>
-              <p className="text-meta font-normal text-secondary">Granted by {g.granted_by_name}, <time dateTime={g.granted_at} suppressHydrationWarning>{dateOnly(g.granted_at)}</time></p>
-            </div>
-            {isOwner ? <ConfirmButton size="md" variant="danger" disabled={pending} title={`Revoke ${g.grantee_name}'s access?`} description={`${g.grantee_name} can no longer play ${g.scope_type === "team" && g.scope_name ? `${g.scope_name}'s recordings` : "these recordings"}. Their earlier plays stay in the audit log.`} confirmLabel="Revoke access" pendingLabel="Revoking…" onConfirm={() => submit(() => api(`/api/orgs/${orgSlug}/grants/${g.id}`, { method: "DELETE" }), `${g.grantee_name}'s access was revoked.`)}>Revoke</ConfirmButton> : null}
-          </div>
-        ))}
-      </div>
-      {isOwner ? (
-        <form className={SETTINGS_GROUP} onSubmit={(e) => { e.preventDefault(); if (blocked) return; const f = new FormData(e.currentTarget); submit(() => api(`/api/orgs/${orgSlug}/grants`, { method: "POST", body: { granteeMembershipId: f.get("granteeMembershipId"), scopeType: f.get("scopeType"), scopeId: f.get("scopeId") || null } }), "Access granted. It is logged with your name."); }}>
-          <SettingsRow label="Person" hint="Who gets to watch." htmlFor="g-who" error={fieldErrors.granteeMembershipId}><Select id="g-who" name="granteeMembershipId" disabled={!members.length}>{members.map((m) => <option key={m.id} value={m.id}>{m.display_name}</option>)}</Select></SettingsRow>
-          <SettingsRow label="Can play" hint="One team's recordings, all of them, or privacy administration." htmlFor="g-scope" error={fieldErrors.scopeType}><Select id="g-scope" name="scopeType" value={scope} onChange={(e) => setScope(e.target.value)}>{Object.entries(SCOPE_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Select></SettingsRow>
-          {scope === "team" ? <SettingsRow label="Team" htmlFor="g-team" error={fieldErrors.scopeId}><Select id="g-team" name="scopeId" disabled={!teams.length}>{teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</Select></SettingsRow> : null}
-          {blocked ? <p className="px-5 py-3 text-sm font-normal text-secondary">{blocked}</p> : null}
-          <SettingsFooter status={ok}><Button type="submit" size="md" variant="secondary" loading={pending} disabled={!!blocked}>{pending ? "Granting…" : "Grant access"}</Button></SettingsFooter>
-        </form>
-      ) : null}
+    <div className="mt-3 grid justify-items-start gap-2">
+      <ConfirmButton size="sm" variant="secondary" tone="primary" disabled={pending} title="Use the new standard notice?" description="Everyone in the workspace is told the notice changed." confirmLabel="Publish it" pendingLabel="Publishing…"
+        onConfirm={() => submit(() => api(`/api/orgs/${orgSlug}/settings/policy`, { method: "POST", body: { noticeText: text, reminderMinutesBeforeEnd } }), "The new standard notice is published.")}>Use the new standard notice</ConfirmButton>
+      {error ? <p role="alert" className="text-meta font-medium text-danger">{error}</p> : null}
+      {ok ? <p role="status" className="text-meta font-normal text-secondary">{ok}</p> : null}
     </div>
   );
 }

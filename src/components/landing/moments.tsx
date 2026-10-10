@@ -12,7 +12,7 @@ const COLS: { icon: Icon3DName; text: string; meta: string }[][] = [
   [
     { icon: "clock-in", text: "Ada clocked in at 08:58", meta: "On time, Design" },
     { icon: "stopwatch", text: "Homepage design started", meta: "Estimate 2h 30m" },
-    { icon: "screen-record", text: "Ben pressed Record screen", meta: "Shares one window" },
+    { icon: "video-people", text: "Ben started a call in #Design", meta: "Ada and David joined" },
     { icon: "card-check", text: "Revision 2 sent for a check", meta: "Figma link attached" },
     { icon: "shield-check", text: "David approved it", meta: "Both revisions kept" },
     { icon: "clock-out", text: "Ben clocked out at 17:31", meta: "7h 40m confirmed" },
@@ -28,7 +28,7 @@ const COLS: { icon: Icon3DName; text: string; meta: string }[][] = [
   [
     { icon: "day-checklist", text: "3 to-dos from a voice note", meta: "Assistant, confirmed by Chidi" },
     { icon: "people", text: "Graphics team created", meta: "Ben is the lead" },
-    { icon: "video-people", text: "Segment 2 ready to watch", meta: "24 minutes, David can view" },
+    { icon: "card-check", text: "Brenda's notes are ready: 3 action items", meta: "Each one waits for its person to accept" },
     { icon: "box-doc-check", text: "Deliverable scanned and clean", meta: "logo-pack.zip" },
     { icon: "chart-ring", text: "Weekly timesheets exported", meta: "CSV, formula safe" },
     { icon: "person-laptop", text: "Connection lost for 12 minutes", meta: "Marked uncertain, asked about" },

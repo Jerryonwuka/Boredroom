@@ -18,7 +18,6 @@ export const createTaskSchema = z.object({
   priority: z.enum(["low", "normal", "high", "urgent"]).default("normal"),
   estimateMinutes: z.number().int().positive().nullable().optional(),
   dueAt: z.string().datetime({ offset: true }).nullable().optional(),
-  captureRequirement: z.enum(["none", "optional", "required"]).default("none"),
   addToMyDay: z.boolean().default(false),
 });
 
@@ -32,7 +31,6 @@ export const updateTaskSchema = z.object({
   priority: z.enum(["low", "normal", "high", "urgent"]).optional(),
   estimateMinutes: z.number().int().positive().nullable().optional(),
   dueAt: z.string().datetime({ offset: true }).nullable().optional(),
-  captureRequirement: z.enum(["none", "optional", "required"]).optional(),
   status: z.enum(TASK_STATUSES).optional(),
   reason: z.string().trim().max(2000).optional(),
   archive: z.boolean().optional(),
@@ -74,9 +72,9 @@ export async function createTask(ctx: OrgContext, input: z.infer<typeof createTa
       if (!rev) throw invalid("Reviewer is not an active member.", { reviewerMembershipId: ["Not an active member."] });
     }
     const task = await db.one<{ id: string; version: number }>(
-      `INSERT INTO tasks(organisation_id, project_id, assignee_membership_id, reviewer_membership_id, created_by, title, expected_output, category, priority, estimate_minutes, due_at, capture_requirement)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id, version`,
-      [ctx.org.id, input.projectId, assignee, input.reviewerMembershipId ?? null, ctx.membership.id, input.title, input.expectedOutput, input.category, input.priority, input.estimateMinutes ?? null, input.dueAt ?? null, input.captureRequirement]);
+      `INSERT INTO tasks(organisation_id, project_id, assignee_membership_id, reviewer_membership_id, created_by, title, expected_output, category, priority, estimate_minutes, due_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id, version`,
+      [ctx.org.id, input.projectId, assignee, input.reviewerMembershipId ?? null, ctx.membership.id, input.title, input.expectedOutput, input.category, input.priority, input.estimateMinutes ?? null, input.dueAt ?? null]);
     await db.query(`INSERT INTO task_status_history(organisation_id, task_id, actor_membership_id, from_status, to_status) VALUES ($1, $2, $3, NULL, 'todo')`, [ctx.org.id, task.id, ctx.membership.id]);
     if (input.addToMyDay && assignee === ctx.membership.id) {
       await db.query(`INSERT INTO daily_plan_items(organisation_id, membership_id, local_date, task_id, position)
@@ -129,7 +127,6 @@ export async function updateTask(ctx: OrgContext, taskId: string, input: z.infer
       }
     }
     if (input.dueAt !== undefined) push("due_at", input.dueAt);
-    if (input.captureRequirement !== undefined) { if (!manages) throw forbidden("Only managers can change capture requirements."); push("capture_requirement", input.captureRequirement); }
     if (input.reviewerMembershipId !== undefined) {
       if (input.reviewerMembershipId && input.reviewerMembershipId === t.assignee_membership_id) throw invalid("Reviewer must differ from assignee.", { reviewerMembershipId: ["Choose someone other than the assignee."] });
       push("reviewer_membership_id", input.reviewerMembershipId);
@@ -356,7 +353,7 @@ export async function quickTodo(ctx: OrgContext, input: z.infer<typeof quickTodo
   const projectId = input.projectId ?? await withUser(ctx.user.profileId, (db) => (forSelf ? todoProjectFor(db, ctx) : handoutProjectFor(db, ctx, assignee)));
   // Own to-dos are checked by the team lead; a to-do handed out is checked by whoever handed it out.
   const reviewer = forSelf ? await withUser(ctx.user.profileId, (db) => defaultReviewerFor(db, ctx.org.id, ctx.membership.id)) : ctx.membership.id;
-  return createTask(ctx, { projectId, title: input.title, expectedOutput: input.description?.trim() || input.title, assigneeMembershipId: assignee, reviewerMembershipId: reviewer, category: "work", priority: input.priority ?? "normal", estimateMinutes: input.estimateMinutes ?? null, dueAt: input.dueAt ?? null, captureRequirement: "none", addToMyDay: forSelf }, requestId);
+  return createTask(ctx, { projectId, title: input.title, expectedOutput: input.description?.trim() || input.title, assigneeMembershipId: assignee, reviewerMembershipId: reviewer, category: "work", priority: input.priority ?? "normal", estimateMinutes: input.estimateMinutes ?? null, dueAt: input.dueAt ?? null, addToMyDay: forSelf }, requestId);
 }
 
 export type AssignablePerson = { id: string; display_name: string; team_name: string; group: "team" | "organisation" };

@@ -17,6 +17,7 @@ import { withUser, withWorker, type Db } from "@/server/db";
 import type { OrgContext } from "@/server/lib/api";
 import { AppError, forbidden } from "@/server/lib/errors";
 import { forget0050, isMissingSchema, retryWithout0050, schema0050Ready } from "@/server/lib/schema-0050";
+import { forget0054, schema0054Ready } from "@/server/lib/schema-0054";
 import { audit } from "@/server/services/common";
 import { logAction } from "@/server/services/brenda";
 import { readAssistantProfiles, readPersonalAssistant } from "@/server/services/assistant-profile";
@@ -127,7 +128,8 @@ async function teamsOnIn(db: Db, orgId: string, ready: boolean): Promise<number>
   return r.n;
 }
 
-type CardInput = { a: Abilities; s: Switches; name: string; ws: string; slug: string; actMode: "ask" | "auto"; actEffective: boolean; teamsOn: number };
+/** `calls`: migration 0054 is applied (phase 8: the `call_notes` switch exists only then). */
+type CardInput = { a: Abilities; s: Switches; name: string; ws: string; slug: string; actMode: "ask" | "auto"; actEffective: boolean; teamsOn: number; calls: boolean };
 
 /**
  * A card's badge in Settings → Brenda (fix review, 9 October 2026): the workspace's own state, never the viewer's
@@ -139,6 +141,8 @@ function workspaceStateOf(c: AbilityCard, i: CardInput): string {
     return c.workspace.on ? W.state.on : W.state.offWorkspace;
   }
   if (!i.a.ready) return W.state.notReady;
+  // Phase 8 (owner decisions, 8 October 2026): notes on calls need migration 0054 (its CHECK allows the key).
+  if (c.key === "call_notes" && !i.calls) return W.state.notReady;
   if (!c.workspace.offered) return W.state.offWorkspace;
   if (c.key === "standup") return i.teamsOn > 0 ? W.state.standupOn(i.teamsOn) : W.state.standupNone;
   return W.state.on;
@@ -197,6 +201,16 @@ function cardsOf(i: CardInput): AbilityCard[] {
           personal: { kind: "existing", on: i.s.speak !== "never", label: E.speak(i.name), href: mine("voice") },
           effective: offered("voice"), state: offered("voice") ? W.state.on : W.state.offWorkspace,
         });
+      case "call_notes": {
+        // Phase 8 (owner decisions, 8 October 2026): a workspace switch only; each call asks each person for themselves.
+        const effective = i.a.ready && i.calls && offered("call_notes");
+        return card({
+          ...base,
+          workspace: { kind: "switch", offered: offered("call_notes") },
+          personal: { kind: "none", label: W.card.callNotesPersonal },
+          effective, state: !i.a.ready || !i.calls ? W.state.notReady : offered("call_notes") ? W.state.on : W.state.offWorkspace,
+        });
+      }
       case "act":
         return card({
           ...base,
@@ -218,11 +232,11 @@ function cardsOf(i: CardInput): AbilityCard[] {
 export async function abilitiesView(ctx: OrgContext): Promise<AbilitiesView> {
   const read = async (db: Db) => {
     const a = await abilitiesIn(db, ctx.org.id, ctx.membership.id);
-    const [s, profiles, teamsOn] = [await existingSwitches(db, ctx), await readAssistantProfiles(db, ctx), await teamsOnIn(db, ctx.org.id, a.ready)];
+    const [s, profiles, teamsOn, calls] = [await existingSwitches(db, ctx), await readAssistantProfiles(db, ctx), await teamsOnIn(db, ctx.org.id, a.ready), await schema0054Ready(db)];
     const act = profiles.act;
     return {
       ready: a.ready,
-      cards: cardsOf({ a, s, name: profiles.personal.name, ws: profiles.workspace.name, slug: ctx.org.slug, actMode: act?.mode ?? "ask", actEffective: act?.effective === "auto", teamsOn }),
+      cards: cardsOf({ a, s, name: profiles.personal.name, ws: profiles.workspace.name, slug: ctx.org.slug, actMode: act?.mode ?? "ask", actEffective: act?.effective === "auto", teamsOn, calls }),
       canEditWorkspace: isOrgAccount(ctx), impersonated: !!ctx.user.impersonation,
     };
   };
@@ -284,6 +298,8 @@ export async function saveWorkspaceAbility(ctx: OrgContext, p: { key: AbilityKey
   if (typeof p.offered !== "boolean") throw new AppError(400, "INVALID_INPUT", W.errors.sayOn, { fieldErrors: { offered: [W.errors.sayOn] } });
   const changed = await retryWithout0050(() => withUser(ctx.user.profileId, async (db) => {
     if (!(await schema0050Ready(db))) throw notReady();
+    // Phase 8 (owner decisions, 8 October 2026): 0050's CHECK does not allow `call_notes`; 0054's does.
+    if (key === "call_notes" && !(await schema0054Ready(db))) throw notReady();
     await db.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [`brenda_settings:${ctx.org.id}`]);
     const before = await db.maybeOne<{ off: string[] }>(`SELECT abilities_off AS off FROM brenda_settings WHERE organisation_id = $1`, [ctx.org.id]);
     const wasOffered = !(before?.off ?? []).includes(key);
@@ -307,9 +323,17 @@ export async function saveWorkspaceAbility(ctx: OrgContext, p: { key: AbilityKey
     });
     return true;
   })).catch((err) => {
-    if (isMissingSchema(err)) { forget0050(); throw notReady(); }
+    if (isMissingSchema(err)) { forget0050(); forget0054(); throw notReady(); }
+    // A database restored to before 0054 while the cache said it was there: its CHECK refuses the key.
+    if (key === "call_notes" && (err as { code?: string })?.code === "23514") { forget0054(); throw notReady(); }
     throw err;
   });
+  if (changed && key === "call_notes" && !p.offered) {
+    // Phase 8 (fix review, 10 October 2026): notes stop on every live call now, not only on the next one, and every
+    // recap still waiting is skipped (lines are refused and no recap is written either: call-notes, call-recap).
+    const { stopCallNotes } = await import("@/server/services/call-notes");
+    await stopCallNotes(ctx.org.id);
+  }
   if (changed && key === "standup" && !p.offered) {
     // Today's open standups end now (the sweep would do it within the hour): drafts cancelled, open rollups skipped.
     try {

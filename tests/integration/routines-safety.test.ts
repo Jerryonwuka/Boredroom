@@ -53,7 +53,7 @@ function ran(r: Awaited<ReturnType<typeof runNow>>) {
 
 /** A task for `assignee`, set by `by`, with no progress for a week (or `days`). */
 async function stalledTask(by: OrgContext, title: string, assignee: OrgContext, days = 7) {
-  const t = (await createTask(by, { projectId: a.projectId, title, expectedOutput: `${title}, done.`, assigneeMembershipId: id(assignee), reviewerMembershipId: id(david), category: "work", priority: "normal", estimateMinutes: null, dueAt: null, captureRequirement: "none", addToMyDay: false })).id;
+  const t = (await createTask(by, { projectId: a.projectId, title, expectedOutput: `${title}, done.`, assigneeMembershipId: id(assignee), reviewerMembershipId: id(david), category: "work", priority: "normal", estimateMinutes: null, dueAt: null, addToMyDay: false })).id;
   await adminQuery(`SET session_replication_role = replica;
     UPDATE tasks SET created_at = created_at - interval '${days} days' WHERE id = '${t}';
     UPDATE task_status_history SET occurred_at = occurred_at - interval '${days} days' WHERE task_id = '${t}';

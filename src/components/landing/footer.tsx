@@ -33,7 +33,7 @@ export function SiteFooter() {
         <nav aria-label="Help">
           <p className="mb-2 text-sm font-medium text-foreground">Help</p>
           <a href="#faq" className={LINK}>FAQ</a>
-          <a href="#fair" className={LINK}>What is recorded</a>
+          <a href="#fair" className={LINK}>What is tracked</a>
           <a href="mailto:jonwuka@xsitecapital.com" className={LINK}>Contact</a>
         </nav>
       </div>

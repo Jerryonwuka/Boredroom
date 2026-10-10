@@ -4,7 +4,6 @@ import { AppShell } from "@/components/app/shell";
 import { PageHeader } from "@/components/ui/card";
 import { myDay } from "@/server/services/views";
 import { currentSession } from "@/server/services/sessions";
-import { withUser } from "@/server/db";
 import { TodosBoard } from "@/components/app/todo-list";
 import { formatLongDate } from "@/lib/utils";
 import { assignableMembers } from "@/server/services/tasks";
@@ -32,12 +31,11 @@ export default async function TodosPage({ params }: { params: Promise<{ workspac
   const { ctx, counts, teams } = await workspacePage(workspace, `/app/${workspace}/todos`);
   const role = ctx.membership.role;
   if (role === "owner" || role === "hr") redirect(`/app/${ctx.org.slug}/tasks`);
-  const [data, session, assignable, aiConnected, timings, { personal }] = await Promise.all([
+  const [data, session, assignable, aiConnected, { personal }] = await Promise.all([
     myDay(ctx),
     currentSession(ctx),
     assignableMembers(ctx),
     assistantConfigured(ctx.org.id),
-    withUser(ctx.user.profileId, (db) => db.maybeOne<{ recording_mode: string }>(`SELECT recording_mode FROM policies WHERE id = $1`, [ctx.org.current_policy_id])),
     // The header names the person's own assistant (owner decision, 7 October 2026: personal assistants).
     assistantProfiles(ctx),
   ]);
@@ -56,7 +54,6 @@ export default async function TodosPage({ params }: { params: Promise<{ workspac
         pastTasks={data.pastTasks}
         assignable={assignable}
         membershipId={ctx.membership.id}
-        recordingMode={timings?.recording_mode ?? "disabled"}
         assistantConfigured={aiConnected}
         timeZone={ctx.org.timezone}
         serverNow={serverNow()}

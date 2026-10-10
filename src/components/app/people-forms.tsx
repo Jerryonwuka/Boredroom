@@ -65,10 +65,10 @@ export function InviteForm({ orgSlug, teams, isOwner, label = "Invite someone" }
 
 /**
  * One person in the People table, v4: name and email, the employee ID as a mono chip, the role (a small select where
- * the caller may change it), their teams as badges, whether they agreed to the recording rules, and a "…" menu for
+ * the caller may change it), their teams as badges, and a "…" menu for
  * Message, Teams and Offboard. Offboarding asks first.
  */
-export function MemberRow({ orgSlug, member, teams, isOwner, self }: { orgSlug: string; member: { id: string; display_name: string; email: string; employee_code: string; role: string; status: string; teams: { id: string; name: string; is_manager: boolean }[]; acknowledged: boolean }; teams: Team[]; isOwner: boolean; self: boolean }) {
+export function MemberRow({ orgSlug, member, teams, isOwner, self }: { orgSlug: string; member: { id: string; display_name: string; email: string; employee_code: string; role: string; status: string; teams: { id: string; name: string; is_manager: boolean }[] }; teams: Team[]; isOwner: boolean; self: boolean }) {
   const { pending, error, submit } = useForm();
   const [confirmRevoke, setConfirmRevoke] = useState(false);
   const [teamSheet, setTeamSheet] = useState(false);
@@ -92,7 +92,6 @@ export function MemberRow({ orgSlug, member, teams, isOwner, self }: { orgSlug: 
           {!revoked && !member.teams.length ? <Button size="xs" variant="secondary" onClick={() => setTeamSheet(true)} aria-haspopup="dialog" aria-label={`Add to team, ${member.display_name}`}><Plus aria-hidden />Add to team</Button> : null}
         </span>
       </td>
-      <td>{member.acknowledged ? <Badge tone="success" dot>Agreed</Badge> : <Badge tone="info">Not asked yet</Badge>}</td>
       {/* No text-right on the cell: the sheet and the confirm inside it would inherit it. The trigger is pushed right instead. */}
       <td className="w-10">
         {!revoked ? (

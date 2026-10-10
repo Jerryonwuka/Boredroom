@@ -8,7 +8,6 @@ import { myDay, teamStatus } from "@/server/services/views";
 import { currentSession } from "@/server/services/sessions";
 import { briefing } from "@/server/services/brenda";
 import { assistantProfiles } from "@/server/services/assistant-profile";
-import { withUser } from "@/server/db";
 import { MyDayBoard } from "@/components/app/my-day";
 import { YourDaySection } from "@/components/app/your-day";
 import { PageNote, PageNotes } from "@/components/ui/page-notes";
@@ -34,10 +33,9 @@ export default async function MyDayPage({ params }: { params: Promise<{ workspac
   const role = ctx.membership.role;
   if (role === "owner" || role === "hr") redirect(`/app/${ctx.org.slug}/dashboard`);
   const lead = role === "manager";
-  const [data, session, timings, brief, team, { personal }] = await Promise.all([
+  const [data, session, brief, team, { personal }] = await Promise.all([
     myDay(ctx),
     currentSession(ctx),
-    withUser(ctx.user.profileId, (db) => db.maybeOne<{ recording_mode: string }>(`SELECT recording_mode FROM policies WHERE id = $1`, [ctx.org.current_policy_id])),
     briefing(ctx),
     // Team leads: the people in their team (themselves aside) and the timer each has open.
     lead ? teamStatus(ctx).then((s) => s.rows) : Promise.resolve(null),
@@ -61,7 +59,6 @@ export default async function MyDayPage({ params }: { params: Promise<{ workspac
         planned={data.planned}
         ownTodos={data.ownTodos}
         fromLeads={data.fromLeads}
-        recordingMode={timings?.recording_mode ?? "disabled"}
         lead={lead}
         yourDay={<YourDaySection className="pb-4" orgSlug={ctx.org.slug} role={role} brief={brief} timeZone={ctx.org.timezone} team={yourTeam} />}
       />

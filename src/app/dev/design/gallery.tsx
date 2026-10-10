@@ -51,6 +51,14 @@ import { notify, ToastCard } from "@/components/ui/toast";
 import { QuickLink, ToolSquare, ToolTile, ToolTileRow } from "@/components/ui/tool-tile";
 import { cn } from "@/lib/utils";
 import { SampleAppFrame } from "./app-frame";
+import { IncomingCallCard } from "@/components/app/incoming-call";
+import { CallDockBar } from "@/components/app/call-dock";
+import { CallTile } from "@/components/app/call-tile";
+import { CallControls } from "@/components/app/call-controls";
+import { CallThreadLine } from "@/components/app/call-thread-line";
+import { CallNotesBanner, CallNotesToggle, NoteTakerTile } from "@/components/app/call-notes";
+import { DEFAULT_ASSISTANT, PALETTE, type AssistantColour } from "@/lib/assistant-look";
+import { CALL_LIMITS, type CallLineView, type CallPerson, type CallView, type RingingCall } from "@/lib/calls";
 
 type Theme = "dark" | "light";
 
@@ -58,7 +66,7 @@ const SECTIONS = [
   ["foundations", "Foundations"], ["accents", "Accents"], ["type", "Type"], ["icons", "Animated icons"], ["buttons", "Buttons"], ["inputs", "Inputs"], ["selection", "Selection"],
   ["tabs", "Tabs"], ["badges", "Badges"], ["cards", "Cards"], ["stats", "Stat cards"], ["analytics", "Analytics"],
   ["filters", "Filters"], ["tiles", "Tool tiles"], ["lists", "Lists"], ["tables", "Tables"], ["feedback", "Feedback"],
-  ["notes", "Page notes"], ["overlays", "Overlays"], ["pickers", "Pickers"], ["prompt", "Prompt"], ["charts", "Charts"], ["frame", "App frame"],
+  ["notes", "Page notes"], ["overlays", "Overlays"], ["pickers", "Pickers"], ["prompt", "Prompt"], ["charts", "Charts"], ["calls", "Calls"], ["frame", "App frame"],
 ] as const;
 
 function ThemePanel({ theme, children, className }: { theme: Theme; children: React.ReactNode; className?: string }) {
@@ -215,7 +223,7 @@ function Accents() {
             </Rule>
             <Rule name="Live and now">
               <span className="inline-flex items-center gap-2"><StatusDot tone="live" label="Timer running" /><span className="font-mono text-sm tabular-nums text-accent-text">01:24:09</span></span>
-              <LiveIndicator>Recording</LiveIndicator>
+              <LiveIndicator>On a call</LiveIndicator>
               <span className="inline-flex items-center gap-2 text-xs font-medium text-secondary"><StatusDot tone="live" />Live, last sync 10:42</span>
               <span className="inline-flex items-center gap-2 text-xs font-medium text-secondary"><StatusDot tone="success" />Working (green stays green)</span>
             </Rule>
@@ -401,7 +409,7 @@ function Selection() {
           <div className="grid gap-6 sm:grid-cols-2">
             <div className="space-y-1">
               <Switch defaultChecked hint="Brenda writes your daily summary at 17:00.">Daily summary</Switch>
-              <Switch hint="Off until an owner turns it on.">Screen recording</Switch>
+              <Switch defaultChecked hint="On every plan for now.">Screen sharing</Switch>
               <Switch disabled hint="Your plan does not include it.">Exports</Switch>
               <div className="flex items-center gap-3 pt-2"><Switch aria-label="Bare on" defaultChecked /><Switch aria-label="Bare off" /><Cap>bare, for tables</Cap></div>
             </div>
@@ -633,12 +641,12 @@ function Tables() {
         {(t) => (
           <div className="space-y-6">
             <DataTable caption="People">
-              <thead><tr><th>Name</th><th>Role</th><th>Status</th><th className="text-right">Hours</th><th>Recording</th><th><span className="sr-only">Actions</span></th></tr></thead>
+              <thead><tr><th>Name</th><th>Role</th><th>Status</th><th className="text-right">Hours</th><th>Reminders</th><th><span className="sr-only">Actions</span></th></tr></thead>
               <tbody>
                 {rows.map(([name, role, tone, status, hours], i) => (
                   <tr key={name}>
                     <td className="font-medium">{name}</td><td className="text-secondary">{role}</td><td><Badge tone={tone} dot>{status}</Badge></td>
-                    <td className="text-right tabular-nums">{hours}</td><td><Switch aria-label={`Recording for ${name} (${t})`} defaultChecked={i !== 1} /></td>
+                    <td className="text-right tabular-nums">{hours}</td><td><Switch aria-label={`Reminders for ${name} (${t})`} defaultChecked={i !== 1} /></td>
                     <td className="w-10 text-right"><IconButton aria-label={`Actions for ${name}`}><Ellipsis aria-hidden /></IconButton></td>
                   </tr>
                 ))}
@@ -659,7 +667,7 @@ function Feedback() {
         {() => (
           <div className="space-y-5">
             <div className="grid gap-2">
-              <Alert title="Heads up">Recording starts only when the person presses Record.</Alert>
+              <Alert title="Heads up">Calls are never recorded. Notes start only when someone on the call turns them on.</Alert>
               <Alert tone="success" title="Saved">Your schedule is up to date.</Alert>
               <Alert tone="warning" title="Trial ends Friday" action={<Button size="xs" variant="secondary">See plans</Button>}>Choose a plan to keep your reports.</Alert>
               <Alert tone="danger">That did not go through. Check your connection and try again.</Alert>
@@ -1003,6 +1011,81 @@ function AnimatedIcons() {
 
 // ---- Page -------------------------------------------------------------------------------------------------------------
 
+// ---- Calls (owner decisions, 8 October 2026: phase 8) ----
+
+const callPerson = (id: string, name: string, colour: AssistantColour, assistant: string): CallPerson => ({
+  membershipId: id, name, firstName: name.split(" ")[0], profileId: id, avatarKey: null,
+  assistant: { name: assistant, colour, visor: "bean", eyes: "pill", face: PALETTE[colour].face },
+});
+const ADA = callPerson("g-ada", "Ada Lovelace", "orange", "Max");
+const BEN = callPerson("g-ben", "Ben Carter", "teal", "Brenda");
+const SAMPLE_AT = "2026-10-10T14:05:00.000Z";
+const SAMPLE_RING: RingingCall = { id: "g-ring", kind: "group", caller: ADA, where: { conversationId: "g-c", kind: "team", name: "#Design", href: null }, rangAt: SAMPLE_AT, expiresAt: SAMPLE_AT, href: "#calls", inAnotherCall: false };
+const SAMPLE_VIEW: CallView = {
+  id: "g-call", kind: "group", state: "active", where: SAMPLE_RING.where, room: "call-g", startedBy: ADA, startedAt: SAMPLE_AT, answeredAt: SAMPLE_AT, endedAt: null, endReason: null,
+  durationSeconds: 728, endsAt: new Date(Date.parse(SAMPLE_AT) + CALL_LIMITS.maxCallMs).toISOString(),
+  participants: [ADA, BEN].map((p, i) => ({ ...p, role: i ? "joiner" as const : "caller" as const, state: "joined" as const, you: i === 0, inRoom: true, rangAt: null, firstJoinedAt: SAMPLE_AT, joinedAt: SAMPLE_AT, leftAt: null, consent: "yes" as const })),
+  inRoom: 2, me: { membershipId: ADA.membershipId, state: "joined", role: "caller", access: "participant", canJoin: false, canDecline: false, canLeave: true, canEnd: true, elsewhere: null },
+  notes: { state: "on", everOn: true, onBy: ADA, onAt: SAMPLE_AT, offAt: null, myConsent: "yes", included: [ADA, BEN], pendingCount: 0, recap: "none" }, serverNow: SAMPLE_AT,
+};
+const line = (o: Partial<CallLineView>): CallLineView => ({ id: "g-line", part: "line", kind: "direct", state: "ended", startedBy: { membershipId: ADA.membershipId, firstName: "Ada" }, startedAt: SAMPLE_AT, answeredAt: null, endedAt: SAMPLE_AT, endReason: "missed", inRoom: 0, joinedCount: 0, joinedNames: [], href: "#calls", ...o });
+
+/**
+ * Calls (owner decisions, 8 October 2026: phase 8; docs/design-system.md, "Calls"): the incoming card (Accept its one
+ * orange), the "On a call" dock (live dot and orange digits, Leave in red), a tile in each state (camera off with the
+ * assistant-colour ring, speaking with the orange outline, muted, sharing), the note-taker tile (brenda_notes'), the
+ * controls and the thread's call lines.
+ */
+function Calls() {
+  return (
+    <Section id="calls" title="Calls" description="The incoming card (top right, a phone's bottom edge; Accept is its one orange), the dock while on a call on another page, tiles (r16 on fill-1, the face ringed in the assistant's colour, a 2px orange outline while speaking), Brenda's note-taker tile, the controls (round 44px; Leave in status red) and the thread's call lines.">
+      <Both>
+        {(t) => (
+          <div className="space-y-6">
+            <div className="grid gap-4 lg:grid-cols-2">
+              <div className="space-y-2"><IncomingCallCard ring={SAMPLE_RING} more={t === "dark" ? 1 : 0} onAccept={() => {}} onDecline={() => {}} className="max-w-[360px] shadow-toast" /><Cap>Incoming: the caller&apos;s face, ringed and gently pulsing (still with reduced motion)</Cap></div>
+              <div className="space-y-2"><IncomingCallCard ring={{ ...SAMPLE_RING, kind: "direct", inAnotherCall: true, where: { ...SAMPLE_RING.where, kind: "direct", name: "Ada Lovelace" } }} onAccept={() => {}} onDecline={() => {}} silenced={t === "dark"} onSilence={() => {}} className="max-w-[360px] shadow-toast" /><Cap>One-to-one, while already on a call; light: the Silence button, dark: Ring silenced</Cap></div>
+            </div>
+            <div className="space-y-2"><CallDockBar label="On a call in #Design" seconds={728} micOn href="#calls" onMic={() => {}} onLeave={() => {}} /><Cap>The dock: live dot, the clock in orange digits, mute, Back to call, Leave</Cap></div>
+            <div className="grid h-[340px] grid-cols-2 grid-rows-2 gap-3">
+              <CallTile name="Ada Lovelace" profileId="g-ada" assistant={{ colour: "orange" }} micOn cameraOn={false} quality="excellent" />
+              <CallTile name="Ben Carter" profileId="g-ben" assistant={{ colour: "teal" }} micOn cameraOn={false} speaking quality="good" />
+              <CallTile name="Grace Hopper" profileId="g-grace" assistant={{ colour: "white" }} micOn={false} cameraOn={false} quality="poor" />
+              <NoteTakerTile orgSlug="dev" call={SAMPLE_VIEW} availability={{ available: true, reason: null }} workspaceAssistant={DEFAULT_ASSISTANT} onChanged={() => {}} />
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <CallTile compact name="David Okafor" profileId="g-david" assistant={{ colour: "purple" }} micOn cameraOn={false} sharing quality="good" />
+              <CallTile compact you name="Ada Lovelace" profileId="g-ada" assistant={{ colour: "orange" }} micOn={false} cameraOn={false} />
+              <CallTile compact name="Olu Owner" profileId="g-olu" assistant={{ colour: "white" }} micOn cameraOn={false} speaking />
+            </div>
+            <Cap>Tiles: camera off with the ring, speaking, muted, sharing (the share itself takes the main area), yourself; the note-taker tile while notes are on</Cap>
+            {/* Brenda's notes banner (brenda_notes' component), as each viewer sees it (integration, 10 October 2026: the
+                consent banner had no gallery entry). A press here calls the dev workspace's routes and only shows an error. */}
+            <div className="space-y-2">
+              <CallNotesBanner orgSlug="dev" call={{ ...SAMPLE_VIEW, me: { ...SAMPLE_VIEW.me, membershipId: "g-grace", role: "joiner", canEnd: false }, notes: { ...SAMPLE_VIEW.notes, myConsent: "pending", pendingCount: 1 } }} availability={{ available: true, reason: null }} workspaceAssistant={DEFAULT_ASSISTANT} onChanged={() => {}} />
+              <CallNotesBanner orgSlug="dev" call={SAMPLE_VIEW} availability={{ available: true, reason: null }} workspaceAssistant={DEFAULT_ASSISTANT} onChanged={() => {}} />
+              <CallNotesBanner orgSlug="dev" call={{ ...SAMPLE_VIEW, me: { ...SAMPLE_VIEW.me, membershipId: "g-olu", role: "joiner", canEnd: false }, notes: { ...SAMPLE_VIEW.notes, myConsent: "no" } }} availability={{ available: true, reason: null }} workspaceAssistant={DEFAULT_ASSISTANT} onChanged={() => {}} />
+            </div>
+            <Cap>Notes on: someone else turned them on and you haven&apos;t answered (Not me, Include me); you turned them on and are included; you said Not me (nobody else ever sees that)</Cap>
+            {/* Fix review, 10 October 2026: one toggle model (pressed = muted, camera off, sharing, notes on; drawn inverted),
+                and the notes toggle in the bar. Dark: unmuted, notes on, sharing; light: muted,
+                notes off. A press on the notes toggle here calls the dev workspace's routes and only shows an error. */}
+            <CallControls micOn={t === "dark"} cameraOn={false} sharing={t === "dark"} canShare onMic={() => {}} onCamera={() => {}} onScreen={() => {}} onPeople={() => {}} peopleCount={3} canEnd onLeave={() => {}} onEnd={async () => {}}
+              notes={<CallNotesToggle orgSlug="dev" call={t === "dark" ? SAMPLE_VIEW : { ...SAMPLE_VIEW, notes: { ...SAMPLE_VIEW.notes, state: "off" } }} availability={{ available: true, reason: null }} workspaceAssistant={DEFAULT_ASSISTANT} onChanged={() => {}} />} />
+            <Cap>Controls: a pressed toggle is drawn white (muted, camera off, sharing, notes on), never orange; Leave in status red</Cap>
+            <div className="rounded-xl border border-border px-3">
+              <CallThreadLine line={line({})} orgSlug="dev" time="14:05" callBack={null} available={false} />
+              <CallThreadLine line={line({ answeredAt: SAMPLE_AT, endedAt: "2026-10-10T14:17:00.000Z", endReason: "completed" })} orgSlug="dev" time="14:17" callBack={null} available={false} />
+              <CallThreadLine line={line({ kind: "group", state: "active", inRoom: 3 })} orgSlug="dev" time="14:05" callBack={null} available={false} />
+            </div>
+            <Cap>Thread lines: missed, done, a group call running (Live, Join)</Cap>
+          </div>
+        )}
+      </Both>
+    </Section>
+  );
+}
+
 export function DesignGallery() {
   return (
     <div className="min-h-dvh bg-background text-foreground">
@@ -1042,6 +1125,7 @@ export function DesignGallery() {
         <Pickers />
         <Prompt />
         <Charts />
+        <Calls />
         <Section id="frame" title="App frame" description="The v4 shell at real sizes: 256px sidebar, 50px top bar with centred search, page header with tabs, stat cards, the analytics card and a table. Copy from src/app/dev/design/app-frame.tsx.">
           <SampleAppFrame />
         </Section>

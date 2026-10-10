@@ -16,7 +16,6 @@
  */
 import { useMemo } from "react";
 import Link from "next/link";
-import { CaptureProvider, useCaptureSupported } from "@/components/app/capture";
 import { startableTasks, todoRows, useWorkClock } from "@/components/app/todo-list";
 import type { CurrentSessionPayload } from "@/components/app/session-timer";
 import { Card, CardHeader } from "@/components/ui/card";
@@ -27,27 +26,16 @@ type Props = {
   orgSlug: string; initialSession: CurrentSessionPayload;
   /** The to-dos the timer may start or switch to (the same list as on To-dos). */
   planned: TaskRow[]; ownTodos: TaskRow[]; fromLeads: TaskRow[];
-  recordingMode: string;
   /** Team leads hand to-dos out with "For"; "How it works" says so. */
   lead: boolean;
   /** "Your day" (and Team for leads), rendered by the page on the server's data; shown under the timer. */
   yourDay?: React.ReactNode;
 };
 
-export function MyDayBoard(props: Props) {
-  return (
-    <CaptureProvider orgSlug={props.orgSlug} recordingMode={props.recordingMode} rules={props.initialSession.recording}>
-      <Board {...props} />
-    </CaptureProvider>
-  );
-}
-
-function Board({ orgSlug, initialSession, planned, ownTodos, fromLeads, recordingMode, lead, yourDay }: Props) {
-  const captureSupported = useCaptureSupported();
+export function MyDayBoard({ orgSlug, initialSession, planned, ownTodos, fromLeads, lead, yourDay }: Props) {
   const { name } = useAssistant().personal;
   const startable = useMemo(() => startableTasks(todoRows(planned, fromLeads, ownTodos)), [planned, fromLeads, ownTodos]);
-  const clock = useWorkClock({ orgSlug, initialSession, tasks: startable, recordingMode });
-  const canRecord = recordingMode !== "disabled" && captureSupported === true;
+  const clock = useWorkClock({ orgSlug, initialSession, tasks: startable });
   const todos = `/app/${orgSlug}/todos`;
 
   return (
@@ -62,7 +50,7 @@ function Board({ orgSlug, initialSession, planned, ownTodos, fromLeads, recordin
           <CardHeader as="h2" size="sm" title={<span id="how-heading">How it works</span>} className="mb-3" />
           <ol className="list-decimal space-y-2 pl-4 text-sm font-normal text-secondary marker:text-subtle">
             <li>On <Link href={todos} className="link-inline">To-dos</Link>, press <strong className="font-medium text-foreground">+</strong> and write your to-dos for today, or dictate them and {name} writes them down. Your team lead may add some too.</li>
-            <li>Press <strong className="font-medium text-foreground">Start</strong> on the one you are working on{canRecord ? ", with or without screen recording" : ""}. Its timer shows here and on To-dos while it runs.</li>
+            <li>Press <strong className="font-medium text-foreground">Start</strong> on the one you are working on. Its timer shows here and on To-dos while it runs.</li>
             <li>Press <strong className="font-medium text-foreground">Mark done</strong> when you finish. It goes to your lead for a quick check, then shows as Completed.</li>
             {lead ? <li>As a team lead, use “For” on a new to-do to hand it to someone on your team, or to anyone else in the organisation, or say who it is for when you dictate.</li> : null}
           </ol>

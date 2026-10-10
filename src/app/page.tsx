@@ -37,13 +37,15 @@ export const metadata = { title: "Boredroom · Know what your remote team is doi
 
 const WAYS_IN = ["Join code", "Join link", "Email invitation", "Teams", "Team leads", "Owner", "HR", "Staff", "One workspace per company", "Sealed from every other"];
 
+// The fairness rules (owner decisions, 8 October 2026: phase 8, A.3.2): screens and calls are never recorded; Brenda's
+// notes on a call are each person's own choice, written on their own device, and gone 7 days after the recap.
 const FAIR: { icon: Icon3DName; t: string; d: string }[] = [
-  { icon: "shield-check", t: "Consent before any recording", d: "Each person reads exactly what is recorded about them, and agrees, before their screen is first recorded." },
-  { icon: "flag-alert", t: "No productivity score", d: "Timers, heartbeats, logins and recordings are never treated as proof of work." },
+  { icon: "shield-check", t: "Nothing is recorded", d: "Boredroom doesn't record screens, and calls are never recorded. Their sound and video only pass through to the people on the call." },
+  { icon: "flag-alert", t: "No productivity score", d: "Timers, heartbeats and logins are never treated as proof of work." },
   { icon: "stopwatch", t: "Uncertain time gets a question", d: "A gap leads to a clarification request, not a penalty." },
-  { icon: "screen-record", t: "Recording needs a press", d: "Off by default, video only, explicit each time, with an indicator that never hides." },
-  { icon: "eye-checklist", t: "Playback is granted, not assumed", d: "Every play is logged. Sensitive footage can be flagged and locked." },
-  { icon: "calendar-clock", t: "Short retention", d: "Recordings expire on a schedule and leave a record of their own deletion." },
+  { icon: "video-people", t: "Notes only with consent", d: "Brenda takes notes on a call only for the people who say yes. Anyone can say \"Not me\" and their words are left out." },
+  { icon: "person-laptop", t: "Words stay on your device", d: "Each person's own device writes down their words. No audio is sent for transcription or kept." },
+  { icon: "calendar-clock", t: "Transcripts don't linger", d: "A call's transcript is deleted 7 days after the recap, and only the people on the call can read it." },
   { icon: "doc-link-check", t: "Corrections keep history", d: "A timesheet correction creates a new version. The approved one stays." },
   { icon: "card-check", t: "No self-approval", d: "A reviewer cannot approve their own submission. The database refuses it." },
   { icon: "people", t: "Organisations are sealed", d: "Row-level security keeps each company's data apart, even from privileged code." },
@@ -56,8 +58,8 @@ const CONTROL: { icon: Icon3DName; t: string; d: string }[] = [
 ];
 
 const FAQ: [string, string][] = [
-  ["Do my staff know they are being tracked?", "Yes. Before anyone's screen is recorded for the first time, they read exactly what is recorded, who can watch it and how long it is kept, and agree to it. They are asked again whenever the rules change."],
-  ["Is screen recording mandatory?", "No. It is off until an owner turns it on. Even then nothing records until the person presses Record screen and picks what to share, and a visible indicator runs the whole time."],
+  ["Do my staff know what is tracked?", "Yes. Everyone can read the monitoring notice in their profile: the tasks they plan, the timers they start and the work they submit. Screens and calls are never recorded, and everyone is told when the notice changes."],
+  ["Does Boredroom record calls?", "No. Calls are never recorded. If someone asks Brenda to take notes, each person chooses for themselves: only the words of people who agree are written down, on their own device, and the transcript is deleted 7 days after the recap."],
   ["Can a team lead read private messages?", "No. A direct thread is readable only by the two people in it. Team channels are readable by that team. Nothing crosses organisations."],
   ["What happens when someone's laptop sleeps?", "The session closes at the last heartbeat and the gap is marked uncertain. The person is asked what happened; the time is not counted and not held against them."],
   ["When does it launch?", "Boredroom is in a private pilot. Create an organisation account to start with your own team."],
@@ -167,8 +169,8 @@ export default async function LandingPage() {
 
           <section aria-label="From the monitoring notice" className="py-16 sm:py-24">
             <figure className={cn(WRAP, "lp-reveal max-w-4xl text-center")}>
-              <blockquote className="font-display text-[28px] font-normal leading-9 tracking-[-0.02em] text-balance text-foreground sm:text-[40px] sm:leading-[48px]">&ldquo;Timers, heartbeats, recordings and logins are never treated as proof of productivity. Unlogged or uncertain work leads to a question, not a penalty.&rdquo;</blockquote>
-              <figcaption className="mt-6 text-sm font-normal text-secondary">From the monitoring notice every member reads before they are recorded</figcaption>
+              <blockquote className="font-display text-[28px] font-normal leading-9 tracking-[-0.02em] text-balance text-foreground sm:text-[40px] sm:leading-[48px]">&ldquo;Timers, heartbeats and logins are never treated as proof of productivity. Unlogged or uncertain work leads to a question, not a penalty.&rdquo;</blockquote>
+              <figcaption className="mt-6 text-sm font-normal text-secondary">From the monitoring notice every member can read</figcaption>
             </figure>
           </section>
 

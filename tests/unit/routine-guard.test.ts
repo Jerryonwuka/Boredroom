@@ -96,7 +96,7 @@ describe("the worker's loose ends and commitments jobs (phase 7b)", () => {
   const src = read("worker/handlers.ts");
   it("run the services and nothing of the chat's", () => {
     const start = src.indexOf("const commitmentsScan");
-    const end = src.indexOf("const retentionDelete");
+    const end = src.indexOf("const scanDeliverable");
     const body = src.slice(start, end);
     expect(start).toBeGreaterThan(-1);
     for (const w of ["scanWorkspaceCommitments(", "sweepCommitments(", "runCommitmentFollowThrough(", "settleBlocks(", "runDueLooseEndFollowUps("]) expect(body, w).toContain(w);

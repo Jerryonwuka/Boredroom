@@ -44,7 +44,7 @@ const org = () => a.ownerCtx.org.id;
 const id = (ctx: OrgContext) => ctx.membership.id;
 
 async function task(ctx: OrgContext, projectId: string, title: string, assignee: string, reviewer: string | null) {
-  return (await createTask(ctx, { projectId, title, expectedOutput: `${title}, done.`, assigneeMembershipId: assignee, reviewerMembershipId: reviewer, category: "work", priority: "normal", estimateMinutes: null, dueAt: null, captureRequirement: "none", addToMyDay: false })).id;
+  return (await createTask(ctx, { projectId, title, expectedOutput: `${title}, done.`, assigneeMembershipId: assignee, reviewerMembershipId: reviewer, category: "work", priority: "normal", estimateMinutes: null, dueAt: null, addToMyDay: false })).id;
 }
 const refusal = async (ctx: OrgContext, subject: string, taskId: string | null = null) =>
   (await appQueryAs(ctx.user.profileId, "SELECT app_follow_up_refusal($1, $2, $3::uuid) AS r", [org(), subject, taskId]))[0].r as string | null;
@@ -220,7 +220,7 @@ describe("row-level security", () => {
 
 describe("what is shared", () => {
   it("gathers only what the asker may see: a colleague never sees time or the timer, a lead does", async () => {
-    const s = await startSession(ben, { taskId: pricing, captureMode: "none" });
+    const s = await startSession(ben, { taskId: pricing });
     await adminQuery(`INSERT INTO session_intervals(organisation_id, session_id, user_id, membership_id, task_id, started_at, ended_at)
       VALUES ($1, $2, $3, $4, $5, now() - interval '50 minutes', now() - interval '20 minutes')`, [org(), s.id, ben.user.profileId, id(ben), pricing]);
     await addComment(ben, pricing, "Copy is done, waiting on images");
@@ -259,7 +259,7 @@ describe("what is shared", () => {
   it("never shares a person's own to-dos, with anyone, the owner included", async () => {
     await stopTimer(ben);
     await addComment(ben, todo, "private note about the dentist");
-    const s = await startSession(ben, { taskId: todo, captureMode: "none" });
+    const s = await startSession(ben, { taskId: todo });
     await adminQuery(`INSERT INTO session_intervals(organisation_id, session_id, user_id, membership_id, task_id, started_at, ended_at)
       VALUES ($1, $2, $3, $4, $5, now() - interval '19 minutes', now() - interval '10 minutes')`, [org(), s.id, ben.user.profileId, id(ben), todo]);
     for (const who of [olu, mary, david, ada]) {

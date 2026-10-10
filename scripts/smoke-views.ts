@@ -17,7 +17,7 @@ async function main() {
   const ada = await who("ada@company-a.test"); const david = await who("david@company-a.test"); const owner = await who("owner@company-a.test");
   const today = todayLocal(ada.org.timezone);
   const checks: [string, () => Promise<unknown>][] = [
-    ["navCounts", () => navCounts(ada)], ["myDay", () => views.myDay(ada)], ["currentSession", async () => { const r = await currentSession(ada); if (r.recording === undefined) throw new Error("no recording rules"); return r; }],
+    ["navCounts", () => navCounts(ada)], ["myDay", () => views.myDay(ada)], ["currentSession", () => currentSession(ada)],
     ["listProjects", () => views.listProjects(ada)],
     ["projectDetail", async () => views.projectDetail(ada, (await views.listProjects(ada))[0].id)],
     ["taskDetail", async () => views.taskDetail(ada, (await views.myDay(ada)).assigned[0].id)],

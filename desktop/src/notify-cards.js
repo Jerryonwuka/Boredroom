@@ -21,6 +21,16 @@
 // face colours. A kind it does not know, or facts that are missing or malformed, draw the plain card, never an error: a
 // template that throws falls back to the plain card too, so a card is never drawn empty (the empty black island, owner's
 // screenshot, 9 October 2026).
+//
+// Calls (owner decisions, 8 October 2026, confirmed 10 October 2026: phase 8, calls; contract F.3 to F.5). Screen recording
+// is gone ("capture.exception" with it); people call each other, and the notch rings, answers and declines while the call
+// itself opens in the browser. `ringCard` draws the incoming call: the caller's assistant's face, "Ada is calling", where,
+// "You're on another call. Accepting leaves it." when it applies, a hairline running down to the ring's end in the needs
+// colour, Decline, Message (three quick messages, the web's words) and Accept, the card's one orange button. `ringStrip`
+// is the same ring as one row on a card that must stay (something being typed, said or pressed), `ringBar` and `callBar`
+// the compact bar while a call rings or runs. A missed call (`call.missed`) has its own card (`tCall`: Join while the call
+// is still on, Call back for a direct call, else Open); the call's notes (`call.recap`) are the plain card, from the
+// workspace's assistant. Every name goes through env.esc(); ids reach attributes only when they look like ids.
 
 // A global for main.js, a later classic script on the page (and module.exports for Node, at the end).
 const NotifyCards = (() => {
@@ -96,6 +106,10 @@ const NotifyCards = (() => {
     undo: `<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11"/>`,
     // Blocked on the team report (lucide Ban): the mockup has no chip for it.
     ban: `<circle cx="12" cy="12" r="9.5"/><path d="m5.3 5.3 13.4 13.4"/>`,
+    // Calls (phase 8, 8 October 2026): lucide Phone, PhoneOff and MessageSquare.
+    phone: `<path d="M13.832 16.568a1 1 0 0 0 1.213-.303l.355-.465A2 2 0 0 1 17 15h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2A18 18 0 0 1 2 4a2 2 0 0 1 2-2h3a2 2 0 0 1 2 2v3a2 2 0 0 1-.8 1.6l-.468.351a1 1 0 0 0-.292 1.233 14 14 0 0 0 6.392 6.384"/>`,
+    phoneoff: `<path d="M10.1 13.9a14 14 0 0 0 3.732 2.668 1 1 0 0 0 1.213-.303l.355-.465A2 2 0 0 1 17 15h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2 18 18 0 0 1-12.728-5.272"/><path d="M22 2 2 22"/><path d="M4.76 13.582A18 18 0 0 1 2 4a2 2 0 0 1 2-2h3a2 2 0 0 1 2 2v3a2 2 0 0 1-.8 1.6l-.468.351a1 1 0 0 0-.292 1.233 14 14 0 0 0 .244.473"/>`,
+    message: `<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>`,
   };
   const icon = (name) => (own(ICONS, name) ? `<svg class="ic ic-${name}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name]}</svg>` : "");
   /** B's star, in an assistant's coat colour (a validated face colour only). */
@@ -123,7 +137,23 @@ const NotifyCards = (() => {
   /** FU_BADGE in main.js: a follow-up answer's status in words. */
   const FU_BADGE = { answered: { label: "Answered", tone: "ok" }, expired: { label: "No reply", tone: "" }, declined: { label: "Not now", tone: "" }, failed: { label: "Couldn't follow up", tone: "bad" } };
   const PRIVATE_LEAD = /^Only visible to you\.\s*/;
-  const STATUS = { todo: "To do", in_progress: "In progress", blocked: "Blocked", in_review: "In review", completed: "Done" };
+  /**
+   * CALL_WORDS in src/lib/calls.ts (owner decisions, 8 October 2026: phase 8, calls), the parts the notch says, copied
+   * verbatim because this file cannot import it: the incoming card's words and the three quick messages a decline can send.
+   */
+  const CALL_SAY = {
+    accept: "Accept", decline: "Decline", message: "Message", join: "Join", callBack: "Call back",
+    // A missed call still going while the person is on another one (fix review, 10 October 2026).
+    leaveAndJoin: "Leave it and join", inAnotherCall: "You're on another call.",
+    incoming: { title: (name) => `${name} is calling`, direct: "Call", group: (where) => `Call in ${where}`, waiting: "You're on another call. Accepting leaves it.", declineFrom: (first) => `Decline ${first}'s call` },
+    quickMessages: Object.freeze(["Can't talk now. I'll call you back.", "In a meeting. I'll call you after.", "Can you send me a message instead?"]),
+    missed: (name) => `Missed call from ${name}`,
+  };
+  /** The ring's length (CALL_LIMITS.ringMs): the hairline runs down over it. */
+  const RING_MS = 30_000;
+  /** A call's or a membership's id, as the server makes them (a UUID); anything else never reaches an attribute or a path. */
+  const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const STATUS ={ todo: "To do", in_progress: "In progress", blocked: "Blocked", in_review: "In review", completed: "Done" };
 
   // ---- kinds ----------------------------------------------------------------------------------------------------------
   // Owner decision, 9 October 2026 (the contract's A.4 table): each type's template, its family (the wash and the dot:
@@ -157,7 +187,8 @@ const NotifyCards = (() => {
     "brenda.replan": T("confirm", "needs", "ask", true, "re-plan"),
     "review.requested": T("confirm", "needs", "ask", true, "review"),
     "adjustment.requested": T("confirm", "needs", "ask", true, "to decide"),
-    "capture.exception": T("confirm", "needs", "ask", true, "to decide"),
+    // "capture.exception" is gone with screen recording (owner decisions, 8 October 2026: phase 8): an old one still unread
+    // draws the plain card.
     "brenda.reminder": T("reminder", "needs", "time", false, "reminder"),
     "task.assigned": T("assignment", "needs", "time", false, "new task"),
     "brenda.commitment_due": T("due", "needs", "time", false, "due"),
@@ -169,6 +200,10 @@ const NotifyCards = (() => {
     "brenda.routine_bundle": T("routine", "plain", "report", false, "routine"),
     "brenda.standup_rollup": T("rollup", "plain", "report", false, "standup"),
     "brenda.clock_in": T("clockin", "good", "good", false, "clocked in"),
+    // Calls (owner decisions, 8 October 2026: phase 8, contract F.4): a missed call is people's news with its own card
+    // (Join, Call back or Open); a call's notes are a report, the plain card, from the workspace's assistant.
+    "call.missed": T("call", "talk", "people", false, "missed call"),
+    "call.recap": T("plain", "plain", "report", false, "call notes"),
     // The plain card, with the family of what they are: someone's answer or question is talk, a failure is a sad report.
     "review.question": T("plain", "talk", "people", false, "update"),
     "brenda.commitment_declined": T("plain", "talk", "people", false, "update"),
@@ -180,7 +215,7 @@ const NotifyCards = (() => {
   /** Kinds whose plain card shows a sad face: something couldn't be done. */
   const SAD = new Set(["brenda.routine_failed", "brenda.standup_failed"]);
   /** What the workspace's own assistant sends (its face, "Team" in the summary). */
-  const FROM_WS = new Set(["brenda.daily_report", "brenda.commitment"]);
+  const FROM_WS = new Set(["brenda.daily_report", "brenda.commitment", "call.recap"]);
 
   /** A notification's facts as the server sent them (B.1), or null: anything else draws the plain card. */
   const factsOf = (n) => (n && typeof n === "object" && n.facts && typeof n.facts === "object" && n.facts.v === 1 && typeof n.facts.kind === "string" ? n.facts : null);
@@ -272,7 +307,8 @@ const NotifyCards = (() => {
 
   function byline(k, faces, ctx, o = {}) {
     const more = int(k.opts.more);
-    const at = o.noWhen || !k.n ? "" : whenOf(k.n.created_at, k.env);
+    // `o.at`: a time of its own (a missed call's is when it rang), else the notification's.
+    const at = o.noWhen || !k.n ? "" : whenOf(o.at ?? k.n.created_at, k.env);
     const tail = more ? `<span class="nc-more"><span class="n">+${more}</span>waiting</span>` : at ? `<span class="when">${k.e(at)}</span>` : "";
     return `<div class="nc-by">${faces.length ? `<span class="nc-pair">${faces.join("")}</span>` : ""}<span class="ctx">${ctx}</span>${tail}</div>`;
   }
@@ -879,9 +915,41 @@ const NotifyCards = (() => {
     };
   }
 
+  /**
+   * 19. A missed call (owner decisions, 8 October 2026: phase 8, contract F.4): the caller's face, sad; "Missed call from
+   * Ada Obi" (or "from Ada", or "Missed call"); where it was and when it rang in the byline. The one thing to do is the
+   * card's one orange button: Join while the call is still on, Call back for a direct call, else Open its page; OK reads
+   * it. Without the server's `call` facts, the plain card. `o.leaveOther` (main.js: the person is on another call, by
+   * the ring poll or the server's 409 IN_ANOTHER_CALL; fix review, 10 October 2026): the card says so, and Join becomes
+   * "Leave it and join", which leaves that call first (`data-leave-other`), as the incoming card's Accept does.
+   */
+  function tCall(k) {
+    const { env, n } = k;
+    const F = facts(n, "call");
+    if (!F || !UUID.test(str(F.callId))) return null;
+    const from = personOf(env, F.from);
+    const where = clip(one(F.where), 60);
+    const direct = F.direct === true;
+    const head = fit(from && CALL_SAY.missed(from.name), from && CALL_SAY.missed(from.first), "Missed call");
+    const ctx = `<b>${k.e(from?.first || "Someone")}</b>, ${direct || !where ? "direct call" : `in ${k.e(where)}`}`;
+    const read = n && typeof n.id === "string" ? n.id : null;
+    const back = direct && F.callBack && typeof F.callBack === "object" && UUID.test(str(F.callBack.membershipId)) ? F.callBack.membershipId : null;
+    const leaves = F.live === true && k.opts.leaveOther === true;
+    const ok = (main) => okBtn(k, main ? {} : { cls: "ghost", main: false });
+    let actions;
+    if (F.live === true) actions = `${ok(false)}${btn(k, { cls: "primary accent", act: "call-join", main: true, attrs: { "data-call": F.callId, "data-read-id": read, "data-leave-other": leaves ? "1" : null }, html: `${icon("phone")}${k.e(leaves ? CALL_SAY.leaveAndJoin : CALL_SAY.join)}` })}`;
+    else if (back) actions = `${ok(false)}${btn(k, { cls: "primary accent", act: "call-back", main: true, attrs: { "data-to": back, "data-read-id": read }, html: `${icon("phone")}${k.e(CALL_SAY.callBack)}` })}`;
+    else { const path = pathOf(env, n.href); actions = path ? `${ok(false)}${openBtn(k, path, { read: true, cls: "primary", main: true })}` : ok(true); }
+    return {
+      by: byline(k, [k.face({ who: from?.who ?? env.assistantOf(null), mood: "sad" })], ctx, { at: F.at }),
+      body: `${hl(k, head)}${F.live === true ? lede(k, "The call is still going.") : ""}${leaves ? note(k, CALL_SAY.inAnotherCall) : ""}`,
+      actions,
+    };
+  }
+
   /** The plain card's byline word, where the summary's word would not read after a name ("Brenda, good news"). */
   const PLAIN_WORDS = { approved: "good news", accepted: "good news", "took it on": "good news", answered: "good news", asks: "a request", "clocked in": "clock-in" };
-  /** 19. The plain card: every kind without a card of its own, or without the facts it needs. It never fails. */
+  /** 20. The plain card: every kind without a card of its own, or without the facts it needs. It never fails. */
   function tPlain(k, c, info) {
     const { env, n } = k;
     const type = str(n?.type);
@@ -900,7 +968,7 @@ const NotifyCards = (() => {
   const TEMPLATES = {
     message: tMessage, mention: tMention, reply: tReply, answer: tAnswer, report: tReport, together: tTogether, request: tRequest,
     ask: tAsk, commitment: tCommitment, blocked: tBlocked, standup: tStandup, confirm: tConfirm, reminder: tReminder,
-    assignment: tAssignment, due: tDue, routine: tRoutine, rollup: tRollup, clockin: tClockin, plain: tPlain,
+    assignment: tAssignment, due: tDue, routine: tRoutine, rollup: tRollup, clockin: tClockin, call: tCall, plain: tPlain,
   };
 
   /** What a main.js card is: the template from its kind and what the state carried, else from the notification's type. */
@@ -972,6 +1040,7 @@ const NotifyCards = (() => {
         case "commitment": return t === "brenda.commitment" ? "ws" : s?.from ?? null;
         case "blocked": return s?.from ?? null;
         case "assignment": return F?.by ?? null;
+        case "call": return F?.kind === "call" ? F.from ?? null : null;
         case "plain":
           if (t === "brenda.commitment_declined") return F?.committer ?? null;
           if (t === "assistant.outcome") return F?.from ?? s?.other ?? null;
@@ -999,6 +1068,7 @@ const NotifyCards = (() => {
     if (t === "brenda.followup_answer" && F?.kind === "answer") { const rk = str(F.result?.key); return own(ANSWER_MOODS, rk) ? ANSWER_MOODS[rk][1] : F.status === "expired" ? "blink away" : ""; }
     if (t === "brenda.commitment_due") return F?.overdue === true ? "sad" : "alert";
     if (t === "task.assigned") return other ? "happy" : "gulp";
+    if (t === "call.missed") return "sad";
     if (cls.group === "time") return "alert";
     return "";
   }
@@ -1024,6 +1094,7 @@ const NotifyCards = (() => {
       // A request: the sender's own note, else what it asks (review, 9 October 2026: the bar repeated the sender's name).
       else if (F.kind === "request" && t === "assistant.request") line = one(F.note) || requestLine(F.request);
       else if (F.kind === "report") line = reportHead(F, n.title);
+      else if (F.kind === "call") line = one(F.where) && F.direct !== true ? `Missed call in ${one(F.where)}` : "Missed call";
     }
     if (!line && s && t === "assistant.request") line = one(s.note);
     if (!line && s) line = unquote(s.question ?? s.body ?? s.what ?? s.title ?? s.lead ?? "");
@@ -1191,6 +1262,133 @@ const NotifyCards = (() => {
     return `<button type="button" class="nc-strip" data-act="nc-inbox" aria-label="${env.esc(`${b.label}. ${single ? "Show it" : "Show them"}`)}">${b.lead}<span class="nc-strip-t">${b.text}</span>${b.trail}${icon("right")}</button>`;
   }
 
+  // ---- calls: the incoming card, the strip, the bar ------------------------------------------------------------------------
+  // Owner decisions, 8 October 2026 (phase 8, calls; contract F.3 and F.5). A ring is GET /calls/now's RingingCall
+  // (src/lib/calls.ts): { id, kind, caller: { membershipId, name, firstName, assistant (with its face's shades) }, where:
+  // { kind, name }, rangAt, expiresAt, href, inAnotherCall }. Nothing of it is drawn unchecked.
+
+  /** A ring as the notch may draw it, or null: an id that looks like one and a caller with a name. */
+  function ringOf(r) {
+    if (!r || typeof r !== "object" || !UUID.test(str(r.id))) return null;
+    const c = r.caller && typeof r.caller === "object" ? r.caller : null;
+    if (!c || !one(c.name)) return null;
+    const w = r.where && typeof r.where === "object" ? r.where : {};
+    const kind = w.kind === "team" || w.kind === "channel" ? w.kind : "direct";
+    return { id: r.id, caller: c, direct: r.kind !== "group" && kind === "direct", where: clip(one(w.name), 60), expiresAt: dateOf(r.expiresAt), inAnotherCall: r.inAnotherCall === true };
+  }
+  /** "Call" for a direct call, "Call in #Design" for a group one (CALL_WORDS.incoming). */
+  const ringWhere = (r) => (r.direct || !r.where ? CALL_SAY.incoming.direct : CALL_SAY.incoming.group(r.where));
+
+  /**
+   * The incoming call (`card.kind = "call"`): the caller's assistant's face, alert, and where the call is ("Call" or "Call
+   * in #Design"); "Ada Obi is calling" (or "Ada is calling"); the waiting line when the person is on another call (fix
+   * review, 10 October 2026: the byline said the name the headline says right under it, so the byline now says where).
+   * When even the first name is too long for the headline, it reads "Incoming call" and the byline keeps the name, with
+   * where under the headline. Then a hairline running down to the ring's end; "+1 more calling" when others ring too.
+   * Decline and Message are ghost buttons; Accept is the card's one orange button and its main action. Message opens the
+   * three quick messages (each a decline that sends it). `o`: { more, messages, result: { title, sub, tone, actions } } (what a press did, in place of
+   * the body and the buttons). Never throws, never empty.
+   */
+  function ringCard(ring, env0, o0) {
+    const env = envOf(env0);
+    const o = o0 && typeof o0 === "object" ? o0 : {};
+    const k = kit(env, o, null);
+    let r = null;
+    try { r = ringOf(ring); } catch { r = null; }
+    const open = (inner, actions) => `<section class="nc nc-call" data-template="call-incoming" data-family="needs" aria-labelledby="nc-hl">${inner}<div class="actions">${actions}</div></section>`;
+    if (!r) return open(`<h3 class="nc-hl" id="nc-hl">Incoming call</h3>`, btn(k, { cls: "primary", act: "close", main: true, free: true, html: "OK" }));
+    const p = personOf(env, r.caller);
+    const name = p ? p.name : "Someone", first = p ? p.first : "";
+    const more = int(o.more) ?? 0;
+    const tail = more ? `<span class="nc-more"><span class="n">+${more}</span>more calling</span>` : "";
+    const face = `<span class="nc-pair">${k.face({ who: p ? p.who : env.assistantOf(null), mood: "alert" })}</span>`;
+    const byName = `<div class="nc-by">${face}<span class="ctx"><b>${k.e(name)}</b></span>${tail}</div>`;
+    if (o.result && typeof o.result === "object") return open(`${byName}${resultBody(k, o.result)}`, str(o.result.actions));
+    const head = fit(CALL_SAY.incoming.title(name), first && CALL_SAY.incoming.title(first), "Incoming call");
+    const named = !!p && head !== "Incoming call";
+    const by = named ? `<div class="nc-by">${face}<span class="ctx">${k.e(ringWhere(r))}</span>${tail}</div>` : byName;
+    const left = r.expiresAt ? Math.max(0, Math.min(RING_MS, r.expiresAt.getTime() - env.now)) : null;
+    const hair = left === null ? "" : `<div class="nc-ringtime" aria-hidden="true"><i style="--from:${(left / RING_MS).toFixed(3)};animation-duration:${Math.round(left)}ms"></i></div>`;
+    const quick = o.messages
+      ? `<div class="nc-quick" id="nc-quick" role="group" aria-label="Decline with a message">${CALL_SAY.quickMessages.map((m, i) => btn(k, { act: "call-decline-msg", attrs: { "data-i": String(i) }, html: k.e(m) })).join("")}</div>`
+      : "";
+    const actions = `${btn(k, { cls: "ghost", act: "call-decline", html: `${icon("phoneoff")}${k.e(CALL_SAY.decline)}` })}`
+      + `${btn(k, { cls: "ghost", act: "call-message", attrs: { "aria-expanded": o.messages ? "true" : "false", "aria-controls": o.messages ? "nc-quick" : null }, html: `${icon("message")}${k.e(CALL_SAY.message)}` })}`
+      + `${btn(k, { cls: "primary accent", act: "call-accept", main: true, html: `${icon("phone")}${k.e(CALL_SAY.accept)}` })}`;
+    return open(`${by}${hl(k, head)}${named ? "" : lede(k, ringWhere(r))}${r.inAnotherCall ? note(k, CALL_SAY.incoming.waiting) : ""}${hair}${quick}`, actions);
+  }
+
+  /**
+   * The ring as one row on a card that must stay (contract F.2's "bar": the talk keys held, something typed, pressed or
+   * awaiting a Confirm): the caller's face, "Ada is calling", a quiet Decline (a ghost icon button, "Decline Ada's call";
+   * fix review, 10 October 2026: without it the person had to wait out the 30 s), Accept. Accept here is white, never the
+   * card's main action (Enter belongs to the card underneath), so the card keeps its own one orange button.
+   */
+  function ringStrip(ring, env0) {
+    const env = envOf(env0);
+    let r = null;
+    try { r = ringOf(ring); } catch { r = null; }
+    if (!r) return "";
+    const p = personOf(env, r.caller);
+    const first = p?.first || "Someone";
+    const label = CALL_SAY.incoming.title(first);
+    const off = env.busy ? " disabled" : "";
+    return `<div class="nc-ringstrip" role="group" aria-label="${env.esc(label)}">${env.face({ who: p ? p.who : env.assistantOf(null), small: true, mood: "alert" })}<span class="nc-ringstrip-t"><b>${env.esc(first)}</b> is calling</span><button type="button" class="btn ghost icon" data-act="call-decline" data-call="${r.id}" aria-label="${env.esc(CALL_SAY.incoming.declineFrom(first))}" title="${env.esc(CALL_SAY.decline)}"${off}>${icon("phoneoff")}</button><button type="button" class="btn primary" data-act="call-accept" data-call="${r.id}"${off}>${icon("phone")}${CALL_SAY.accept}</button></div>`;
+  }
+
+  /** The compact bar while a call rings and no card is open: the caller's face, "Ada is calling", Accept (white). */
+  function ringBar(ring, env0) {
+    const env = envOf(env0);
+    const empty = { lead: "", text: "", trail: "", wide: false, label: "" };
+    let r = null;
+    try { r = ringOf(ring); } catch { r = null; }
+    if (!r) return empty;
+    const p = personOf(env, r.caller);
+    const first = p?.first || "Someone";
+    return {
+      lead: `<span class="nc-stack">${env.face({ who: p ? p.who : env.assistantOf(null), small: true, mood: "alert" })}</span>`,
+      text: `<b>${env.esc(clip(first, 40))}</b> is calling`,
+      trail: `<button type="button" class="btn primary nc-bar-btn" data-act="call-accept" data-call="${r.id}">${CALL_SAY.accept}</button>`,
+      wide: true,
+      label: CALL_SAY.incoming.title(first),
+    };
+  }
+
+  /** A live clock (callClock in src/lib/calls.ts): "0:42", "12:04", "1:02:09". */
+  function callClock(seconds) {
+    const s = Math.max(0, Math.floor(Number(seconds) || 0)), h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60, x = s % 60;
+    const pad2 = (v) => String(v).padStart(2, "0");
+    return h ? `${h}:${pad2(m)}:${pad2(x)}` : `${m}:${pad2(x)}`;
+  }
+  /** "On a call with Ada", "On a call in #Design", or "On a call". */
+  function onCallWords(a) {
+    const w = a && a.where && typeof a.where === "object" ? a.where : {};
+    const name = clip(one(w.name), 60);
+    if (!name) return "On a call";
+    return w.kind === "direct" ? `On a call with ${firstOf(name) || name}` : `On a call in ${name}`;
+  }
+  /**
+   * The compact bar on a call (contract F.5): the live dot, the clock from when it was answered (else from when the person
+   * joined) in live orange digits, then "On a call in #Design"; ahead of the timer and of notification lines. `clockId`
+   * names the clock so main.js ticks it every second.
+   */
+  function callBar(active, env0, clockId = "cclock") {
+    const env = envOf(env0);
+    const empty = { lead: "", text: "", trail: "", wide: false, label: "" };
+    if (!active || typeof active !== "object") return empty;
+    const from = dateOf(active.answeredAt) ?? dateOf(active.joinedAt);
+    const words = onCallWords(active);
+    const clock = from ? callClock((env.now - from.getTime()) / 1000) : "";
+    const id = /^[a-z]{1,16}$/.test(str(clockId)) ? clockId : "cclock";
+    return {
+      lead: `<span class="nc-live" aria-hidden="true"></span>`,
+      text: `${clock ? `<span class="clock live" id="${id}" role="timer">${clock}</span>&ensp;` : ""}${env.esc(words)}`,
+      trail: "",
+      wide: true,
+      label: `${words}${clock ? `, ${clock}` : ""}`,
+    };
+  }
+
   // ---- the API ----------------------------------------------------------------------------------------------------------
 
   const api = {
@@ -1206,6 +1404,14 @@ const NotifyCards = (() => {
     strip,
     mix,
     words: (c, env) => build(c, env, {}).words,
+    // Calls (owner decisions, 8 October 2026: phase 8).
+    ringCard,
+    ringStrip,
+    ringBar,
+    callBar,
+    callClock,
+    onCallWords,
+    CALL_QUICK: CALL_SAY.quickMessages,
   };
   return api;
 })();

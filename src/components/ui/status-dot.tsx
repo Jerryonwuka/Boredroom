@@ -1,13 +1,15 @@
 import { cn } from "@/lib/utils";
 
 /**
- * Status dots, v4 with the accent rules (owner decision, 6 October 2026). Orange means LIVE: a running timer, a
- * recording in progress, Brenda listening or working, a page that syncs live. Status colours keep their meaning
- * (success green, warning amber, danger red); `neutral` is a quiet grey.
+ * Status dots, v4 with the accent rules (owner decision, 6 October 2026). Orange means LIVE: a running timer, a call in
+ * progress, a voice note being recorded, Brenda listening or working, a page that syncs live (phase 8, 10 October 2026:
+ * screen recording is gone; "Recording" is a voice note's). Status colours keep their meaning (success green, warning
+ * amber, danger red); `neutral` is a quiet grey.
  *
  * - `StatusDot`: an 8px dot. `tone="live"` is orange and breathes (a ring that swells and fades); any tone can breathe
  *   with `pulse`. `label` names it for screen readers; leave it out when the words sit beside it.
- * - `LiveIndicator`: the dot and a short word in 12/16 medium, orange text ("Live", "Recording", "Listening").
+ * - `LiveIndicator`: the dot and a short word in 12/16 medium, orange text ("Live", "On a call", "Recording" for a voice
+ *   note, "Listening").
  * - For a running timer's digits use `text-accent-text tabular-nums` (Geist Mono: `font-mono`) beside a live dot.
  */
 export type StatusTone = "live" | "success" | "warning" | "danger" | "neutral";

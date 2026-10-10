@@ -1,22 +1,20 @@
 import { cache } from "react";
 import Link from "next/link";
 import type { Metadata } from "next";
-import { ListTodo, Users, Video } from "lucide-react";
+import { ListTodo, Users } from "lucide-react";
 import { notFound } from "next/navigation";
 import { workspacePage } from "@/server/lib/workspace-page";
 import { orgContext } from "@/server/lib/api";
 import { AppShell } from "@/components/app/shell";
 import { TaskBoard } from "@/components/app/tasks-page";
 import { taskViewer } from "@/server/lib/task-viewer";
-import { Card, PageHeader, SectionTitle } from "@/components/ui/card";
+import { Card, PageHeader } from "@/components/ui/card";
 import { buttonVariants } from "@/components/ui/button";
 import { Badge, SESSION_STATE_TONE, label } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/states";
 import { teamBoard } from "@/server/services/views";
 import { NewTaskForm } from "@/components/app/project-forms";
 import { TeamMemberActions } from "@/components/app/team-forms";
-import { RecordingsTable } from "@/components/app/recordings-table";
-import { listRecordings, recordingCountsByTask } from "@/server/services/recording";
 import { assistantProfiles } from "@/server/services/assistant-profile";
 import { Person } from "@/components/ui/person";
 import { BrendaGlyph } from "@/components/app/brenda-glyph";
@@ -46,13 +44,14 @@ export async function generateMetadata({ params }: { params: Promise<{ workspace
   }
 }
 
-type Tab = "tasks" | "members" | "recordings" | "standup";
+type Tab = "tasks" | "members" | "standup";
 
 /**
  * A team's board, v4: underline tabs for its tasks (a board, one calm column per status), its members (a grid of cards
- * with what each is doing now and their open work) and its screen recordings. `?tab=` picks one; tasks by default.
+ * with what each is doing now and their open work) and its standup. `?tab=` picks one; tasks by default. (The third
+ * tab, the team's screen videos, went in phase 8: owner decision, 8 October 2026.)
  *
- * Phase 7c (owner decisions, 8–9 October 2026: async standup, option B; contract G.1): a fourth tab, "Standup"
+ * Phase 7c (owner decisions, 8–9 October 2026: async standup, option B; contract G.1): the "Standup" tab
  * (`?tab=standup`), holds the team's async standup: off until its lead, the owner or HR switches it on, with the time the
  * drafts arrive, the rollup time and the days (components/app/standup-settings; read here with the page, and by the card
  * itself when that read fails).
@@ -65,9 +64,9 @@ export default async function TeamBoardPage({ params, searchParams }: { params: 
   const data = await loadBoard(workspace, id);
   if (!data) notFound();
   const { team, members, tasks, isLead, projects, others } = data;
-  const tab: Tab = sp.tab === "members" || sp.tab === "recordings" || sp.tab === "standup" ? sp.tab : "tasks";
+  const tab: Tab = sp.tab === "members" || sp.tab === "standup" ? sp.tab : "tasks";
   // The hand-off to Brenda names the person's own assistant (owner decision, 7 October 2026: personal assistants).
-  const [recordings, recordingCounts, { personal }, standup] = await Promise.all([listRecordings(ctx, { teamId: team.id, limit: 8 }), recordingCountsByTask(ctx, tasks.map((t) => t.id)), assistantProfiles(ctx),
+  const [{ personal }, standup] = await Promise.all([assistantProfiles(ctx),
     // Phase 7c: the team's standup settings, only on its tab (ready: false before 0050; a failed read: the card reads them).
     tab === "standup" ? standupSettings(ctx, team.id).catch((): StandupSettingsView | null => null) : Promise.resolve(null)]);
   const base = `/app/${ctx.org.slug}`;
@@ -84,7 +83,6 @@ export default async function TeamBoardPage({ params, searchParams }: { params: 
         tabs={[
           { value: "tasks", label: "Tasks", count: tasks.length, href: here },
           { value: "members", label: "Members", count: members.length, href: `${here}?tab=members` },
-          { value: "recordings", label: "Screen recordings", href: `${here}?tab=recordings` },
           { value: "standup", label: "Standup", href: `${here}?tab=standup` },
         ]} tabValue={tab} tabParam="tab" tabsLabel="Team sections" />
 
@@ -95,7 +93,7 @@ export default async function TeamBoardPage({ params, searchParams }: { params: 
               description={isLead ? `Press New task to create one and assign it to someone on the team, or tell ${personal.name} what needs doing and ${personal.name} drafts the tasks for you to confirm.` : "Your team lead has not assigned tasks yet."}
               // The one hand-off to Brenda on this page: she creates and assigns tasks (create_todos), each waiting for a yes.
               action={isLead && members.length ? <Link href={`${base}/home?ask=${encodeURIComponent(`Help me plan this week's tasks for the ${team.name} team and assign them.`)}`} className={buttonVariants({ variant: "secondary", size: "sm" })}><BrendaGlyph aria-hidden />Ask {personal.name} to plan tasks</Link> : undefined} />
-          ) : <TaskBoard orgSlug={ctx.org.slug} viewer={viewer} tasks={boardTasks} showProject recordings={recordingCounts} label={`${team.name} tasks, by status`} />}
+          ) : <TaskBoard orgSlug={ctx.org.slug} viewer={viewer} tasks={boardTasks} showProject label={`${team.name} tasks, by status`} />}
         </section>
       ) : null}
 
@@ -125,15 +123,6 @@ export default async function TeamBoardPage({ params, searchParams }: { params: 
             </ul>
           )}
           {isOrgAdmin && others.length ? <Card><TeamMemberActions orgSlug={ctx.org.slug} teamId={team.id} addCandidates={others} /></Card> : null}
-        </section>
-      ) : null}
-
-      {tab === "recordings" ? (
-        <section aria-labelledby="team-recordings-heading">
-          <SectionTitle id="team-recordings-heading" title="Latest recordings" action={<Link href={`${base}/recordings?team=${team.id}`} className={buttonVariants({ variant: "ghost", size: "sm" })}>All recordings for this team</Link>} />
-          {recordings.length === 0 ? <EmptyState icon={Video} title="No recordings from this team yet" description="When someone on the team presses Record screen while their timer runs, the footage appears here against their task." /> : (
-            <RecordingsTable orgSlug={ctx.org.slug} rows={recordings} timeZone={ctx.org.timezone} compact />
-          )}
         </section>
       ) : null}
 

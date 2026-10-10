@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { Hash, Building2, ArrowLeft, BellOff, MessagesSquare, MessageSquare, SquareCheckBig } from "lucide-react";
+import { Hash, Building2, ArrowLeft, BellOff, MessagesSquare, MessageSquare, NotebookPen, SquareCheckBig } from "lucide-react";
 import { AnimatedArchive } from "@/components/ui/animated-icons";
 import { workspacePage } from "@/server/lib/workspace-page";
 import { AppShell, ROLE_LABEL } from "@/components/app/shell";
@@ -29,6 +29,11 @@ import type { ConversationTracking, MessageLabel } from "@/lib/commitments";
 import { assistantProfiles } from "@/server/services/assistant-profile";
 import { inbox, thread, openDirect, peopleToMessage, visibleTask, type AuthorKind, type ConversationSummary, type MessageRow, type Thread } from "@/server/services/messaging";
 import { navCounts } from "@/server/services/workspace";
+import { CallButton } from "@/components/app/call-button";
+import { CallThreadLine } from "@/components/app/call-thread-line";
+import { callsAvailability, liveCalls, membersOnCall } from "@/server/services/calls";
+import { withUser } from "@/server/db";
+import { CALL_WORDS, type LiveCallSummary } from "@/lib/calls";
 import { formatDateTime, formatLongDate, relativeTime, cn } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -135,6 +140,15 @@ const UNDER_ROW_MENU = "transition-opacity duration-75 group-hover:opacity-0 gro
  * "Only you and Ada see this."); nothing else changes here. Abilities: a person who switched "@mentions in Messages"
  * off for their own assistant is not offered it in the composer (`OwnAssistantOffScope`, from the thread's
  * `ownAssistantOff`).
+ *
+ * Phase 8 (owner decisions, 8 October 2026: calls; contract D.7). The thread's header has "Call" between "Their day" and
+ * the details (a direct thread with someone still in the workspace, a team channel, a named channel that is not
+ * archived; never Everyone, D1), or "Join (n)" while a call runs there; a direct thread's subtitle adds "On a call" when
+ * the other person is on one (never which). A call's line in the thread (`MessageRow.call`, part "line") is drawn as a
+ * centred call line, not a bubble (call-thread-line: "Missed call from Ada", "Call, 12 min" with Call back, "Ada started
+ * a call" with Live and Join); a call's recap (part "recap") is the workspace assistant's message as before, plus "Open
+ * the notes". The list's last line for a call message is its words alone (`last_is_call`), never "Brenda: …". Before
+ * migration 0054, or without LiveKit, none of it shows.
  */
 export default async function MessagesPage({ params, searchParams }: { params: Promise<{ workspace: string }>; searchParams: Promise<{ c?: string; to?: string; task?: string; archived?: string }> }) {
   const { workspace } = await params;
@@ -177,6 +191,8 @@ export default async function MessagesPage({ params, searchParams }: { params: P
   const preview = (c: ConversationSummary) => {
     if (c.last_body === null) return c.subtitle ?? "";
     if (c.last_body === "") return "Message withdrawn";
+    // Phase 8: a call's line or recap reads as its own words ("Missed call from Ada"), never "Brenda: …".
+    if (c.last_is_call) return c.last_body;
     // The workspace assistant's own note (phase 7b): "Brenda: …", never the person the row names as its sender.
     if (c.last_author_kind === "workspace") return `${workspaceAssistant.name}: ${c.last_body}`;
     const assistantName = c.last_assistant_name ?? DEFAULT_ASSISTANT_NAME;
@@ -238,6 +254,18 @@ export default async function MessagesPage({ params, searchParams }: { params: P
   const notingName = tracking.workspaceAssistantName || workspaceAssistant.name;
   // Phase 7c: the person switched @mentions off for their own assistant (the thread says so; false before 0050).
   const ownAssistantOff = selected?.ownAssistantOff === true;
+  // Phase 8 (calls): whether a call can start here, the call running here now, and whether the other person of a direct
+  // thread is on a call (never which). Nothing before migration 0054 or without LiveKit.
+  const callKind = selected?.conversation.kind;
+  const otherActive = !!other?.other_membership_id && people.some((p) => p.membership_id === other.other_membership_id);
+  const callable = !!selected && !selected.conversation.archived_at && (callKind === "direct" ? otherActive : callKind === "team" || callKind === "channel");
+  const calls = selected ? await callsAvailability() : { ready: false, configured: false, available: false };
+  const [liveHere, othersOnCall] = callable && calls.ready ? await Promise.all([
+    calls.available ? liveCalls(ctx, { conversationId: selected!.conversation.id }).then((l) => l[0] ?? null, () => null) : Promise.resolve<LiveCallSummary | null>(null),
+    other?.other_membership_id ? withUser(ctx.user.profileId, (db) => membersOnCall(db, ctx.org.id)).catch(() => new Set<string>()) : Promise.resolve(new Set<string>()),
+  ]) : [null, new Set<string>()];
+  const otherOnCall = !!other?.other_membership_id && othersOnCall.has(other.other_membership_id);
+  const callBack = other?.other_membership_id && otherActive ? { membershipId: other.other_membership_id, name: other.title } : null;
 
   return (
     <AppShell ctx={ctx} counts={counts} teams={teams} bleed>
@@ -281,7 +309,7 @@ export default async function MessagesPage({ params, searchParams }: { params: P
                   : <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-fill-1 text-secondary">{selected.conversation.kind === "organisation" ? <Building2 className="size-4" aria-hidden /> : <Hash className="size-4" aria-hidden />}</span>}
                 <div className="min-w-0 flex-1">
                   <h2 className="truncate text-sm font-semibold text-foreground">{shownTitle(selected.conversation)}</h2>
-                  {other ? <p className="truncate text-xs font-medium text-secondary">{PRESENCE[other.other_presence ?? "offline"].label}{other.subtitle ? `, ${other.subtitle}` : ""}</p>
+                  {other ? <p className="truncate text-xs font-medium text-secondary">{PRESENCE[other.other_presence ?? "offline"].label}{otherOnCall ? `, ${CALL_WORDS.onCall}` : ""}{other.subtitle ? `, ${other.subtitle}` : ""}</p>
                     : <p className="truncate text-xs font-medium text-secondary"><span className="tabular-nums">{selected.conversation.people.length}</span> people, {kindLabel(selected.conversation).toLowerCase()}</p>}
                 </div>
                 {selected.conversation.kind !== "direct" ? (
@@ -291,6 +319,8 @@ export default async function MessagesPage({ params, searchParams }: { params: P
                   </div>
                 ) : null}
                 {showTheirDay && other?.other_membership_id ? <span className="hidden sm:inline-flex"><Link href={`${base}/workroom/${other.other_membership_id}`} className={buttonVariants({ variant: "secondary", size: "sm" })}>Their day</Link></span> : null}
+                {callable ? <CallButton orgSlug={ctx.org.slug} available={calls.available} live={liveHere}
+                  target={other?.other_membership_id ? { kind: "person", membershipId: other.other_membership_id, name: other.title } : { kind: "conversation", conversationId: selected.conversation.id, label: shownTitle(selected.conversation).replace(/^# /, "#") }} /> : null}
                 <ConversationDetails title={other ? (title ?? "Details") : shownTitle(selected.conversation)}>{details}</ConversationDetails>
                 <ConversationMenu orgSlug={ctx.org.slug} conversation={{ id: selected.conversation.id, kind: selected.conversation.kind, title: title ?? "", archived_at: selected.conversation.archived_at, can_manage: selected.conversation.can_manage, other_membership_id: selected.conversation.other_membership_id }} people={people} memberIds={selected.conversation.people.map((p) => p.membership_id)} />
               </header>
@@ -307,7 +337,7 @@ export default async function MessagesPage({ params, searchParams }: { params: P
                         const prevTagged = prev && !prev.deleted_at ? mentionByMessage.get(prev.id) : undefined;
                         // Phase 6: someone else's assistant answering two different people starts a new run, so "asked by"
                         // always shows (owner decision, 8 October 2026).
-                        const grouped = !newDay && !!prev && !(prevTagged && showsMentionRows(prevTagged)) && prev.sender_membership_id === m.sender_membership_id && authorOf(prev) === authorOf(m) && authorOf(m) !== "via_assistant"
+                        const grouped = !newDay && !!prev && !prev.call && !m.call && !(prevTagged && showsMentionRows(prevTagged)) && prev.sender_membership_id === m.sender_membership_id && authorOf(prev) === authorOf(m) && authorOf(m) !== "via_assistant"
                           && askedByOf(prev)?.membershipId === askedByOf(m)?.membershipId
                           && new Date(m.created_at).getTime() - new Date(prev.created_at).getTime() < 5 * 60_000;
                         // Phase 5: the mention this message started (its rows go under it, unless it was withdrawn), and
@@ -317,10 +347,13 @@ export default async function MessagesPage({ params, searchParams }: { params: P
                         return (
                           <li key={m.id} id={`m-${m.id}`} className="target-flash scroll-mt-4 rounded-xl">
                             {newDay ? <p className="mb-2 mt-6 flex items-center gap-3 text-xs font-medium text-subtle before:h-px before:flex-1 before:bg-border after:h-px after:flex-1 after:bg-border">{formatLongDate(dayKey(m.created_at, ctx.org.timezone))}</p> : null}
-                            <Message m={m} me={ctx.membership.id} grouped={grouped} orgSlug={ctx.org.slug} timeZone={ctx.org.timezone} canReply={!selected.conversation.archived_at}
+                            {m.call?.part === "line" && !m.deleted_at ? (
+                              <CallThreadLine line={m.call} orgSlug={ctx.org.slug} available={calls.available} callBack={callBack}
+                                time={<time dateTime={m.created_at} title={formatDateTime(m.created_at, ctx.org.timezone)}>{timeOnly(m.created_at, ctx.org.timezone)}</time>} />
+                            ) : <Message m={m} me={ctx.membership.id} grouped={grouped} orgSlug={ctx.org.slug} timeZone={ctx.org.timezone} canReply={!selected.conversation.archived_at}
                               fullAnswer={answers?.private?.kind === "full_answer" && !m.mention_reply?.holding ? answers.private.text : null}
                               owners={ownersOf(m.sender_membership_id, m.mentions ?? [], namesById)}
-                              workspaceAssistant={workspaceAssistant} label={tracking.ready ? (m.commitment_label ?? null) : null} notingName={notingName} />
+                              workspaceAssistant={workspaceAssistant} label={tracking.ready ? (m.commitment_label ?? null) : null} notingName={notingName} />}
                             {tagged ? <MentionRows orgSlug={ctx.org.slug} mention={tagged} conversationKind={selected.conversation.kind} /> : null}
                           </li>
                         );
@@ -443,6 +476,8 @@ function Message({ m, me, grouped, orgSlug, timeZone, canReply, fullAnswer = nul
     </Link>
   ) : null;
   const full = fullAnswer && byAssistant && !m.deleted_at ? <FullAnswerToggle text={fullAnswer} /> : null;
+  // Phase 8: a call's recap, signed by the workspace assistant, opens the call's notes.
+  const notes = m.call?.part === "recap" && !m.deleted_at ? <Link href={m.call.href} className={buttonVariants({ variant: "secondary", size: "xs" })}><NotebookPen aria-hidden />Open the notes</Link> : null;
   const withdrawReply = byAssistant && m.mention_reply?.canWithdraw ? { mentionId: m.mention_reply.mentionId, assistantName: byAssistant.name } : null;
   const mentions = byWorkspace ? [] : (m.mentions ?? []);
   // Phase 6: whose assistant it is, then who asked it, when it answered someone other than its owner.
@@ -459,7 +494,7 @@ function Message({ m, me, grouped, orgSlug, timeZone, canReply, fullAnswer = nul
       timeAdornment={mine ? via : null}
       label={noted}
       avatar={ownVoice ? <AssistantAvatar assistant={ownVoice} /> : <Avatar profileId={m.sender_profile_id} name={m.sender_name} avatarKey={m.sender_avatar_key} size={32} />}
-      footer={taskLink && full ? <div className="grid justify-items-start gap-1.5">{taskLink}{full}</div> : taskLink ?? full}
+      footer={notes ?? (taskLink && full ? <div className="grid justify-items-start gap-1.5">{taskLink}{full}</div> : taskLink ?? full)}
       actions={actions}>
       {m.deleted_at ? "Message withdrawn" : !byWorkspace && m.voice_key && m.voice_seconds ? <VoiceNote src={`/api/orgs/${orgSlug}/messages/${m.id}/voice`} seconds={m.voice_seconds} mine={mine} />
         : mentions.length ? <MentionText body={m.body} refs={mentions} me={me} senderName={m.sender_name} senderId={m.sender_membership_id} owners={owners} /> : <span className="whitespace-pre-wrap break-words">{m.body}</span>}

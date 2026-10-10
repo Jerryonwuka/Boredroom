@@ -4,7 +4,7 @@
  */
 import { withSystem, withUser } from "@/server/db";
 import { hashPassword } from "@/server/lib/crypto";
-import { createOrganisation, createTeam, setTeamMember, createInvitation, acceptInvitation, acknowledgePolicy } from "@/server/services/orgs";
+import { createOrganisation, createTeam, setTeamMember, createInvitation, acceptInvitation } from "@/server/services/orgs";
 import { createProject, createTask } from "@/server/services/tasks";
 import type { OrgContext } from "@/server/lib/api";
 import { resolveEntitlements } from "@/server/lib/entitlements";
@@ -35,11 +35,7 @@ export async function contextFor(user: FixtureUser, orgSlug: string): Promise<Or
 export async function joinViaInvitation(inviter: OrgContext, user: FixtureUser, role: "owner" | "hr" | "manager" | "employee", teamId?: string | null, employeeCode?: string) {
   const inv = await createInvitation(inviter, { email: user.email, role, teamId: teamId ?? null, employeeCode: employeeCode ?? null }, { send: false });
   await acceptInvitation(user.profileId, user.email, inv.token!);
-  const ctx = await contextFor(user, inviter.org.slug);
-  // Fixture members have already agreed to the initial recording rules, as if they had recorded once before (the
-  // tests start recorded sessions straight away). Real members are asked when their first recorded session starts.
-  await acknowledgePolicy(ctx);
-  return ctx;
+  return contextFor(user, inviter.org.slug);
 }
 
 export type CompanyFixture = {
@@ -67,8 +63,8 @@ export async function buildCompany(prefix: "a" | "b", opts: { names?: Partial<Re
   const employee2Ctx = await joinViaInvitation(hrCtx, employee2, "employee", team.id, "EMP-002");
   await setTeamMember(ownerCtx, team.id, managerCtx.membership.id, { isManager: true });
   const project = await createProject(managerCtx, { name: "Website relaunch", description: "Marketing site refresh", requiresDueDate: false, requiresEstimate: false, memberIds: [employeeCtx.membership.id, employee2Ctx.membership.id] });
-  const homepage = await createTask(managerCtx, { projectId: project.id, title: "Homepage design", expectedOutput: "Figma link to the approved homepage layout (desktop and mobile).", assigneeMembershipId: employeeCtx.membership.id, reviewerMembershipId: managerCtx.membership.id, category: "work", priority: "high", estimateMinutes: 240, dueAt: new Date(Date.now() + 3 * 86400000).toISOString(), captureRequirement: "none", addToMyDay: false });
-  const meeting = await createTask(managerCtx, { projectId: project.id, title: "Client kickoff meeting", expectedOutput: "Meeting notes with agreed scope and next steps.", assigneeMembershipId: employeeCtx.membership.id, reviewerMembershipId: managerCtx.membership.id, category: "meeting", priority: "normal", estimateMinutes: 60, dueAt: null, captureRequirement: "none", addToMyDay: false });
-  const second = await createTask(managerCtx, { projectId: project.id, title: "Pricing page copy", expectedOutput: "Draft copy document for the pricing page.", assigneeMembershipId: employee2Ctx.membership.id, reviewerMembershipId: managerCtx.membership.id, category: "work", priority: "normal", estimateMinutes: 120, dueAt: null, captureRequirement: "none", addToMyDay: false });
+  const homepage = await createTask(managerCtx, { projectId: project.id, title: "Homepage design", expectedOutput: "Figma link to the approved homepage layout (desktop and mobile).", assigneeMembershipId: employeeCtx.membership.id, reviewerMembershipId: managerCtx.membership.id, category: "work", priority: "high", estimateMinutes: 240, dueAt: new Date(Date.now() + 3 * 86400000).toISOString(), addToMyDay: false });
+  const meeting = await createTask(managerCtx, { projectId: project.id, title: "Client kickoff meeting", expectedOutput: "Meeting notes with agreed scope and next steps.", assigneeMembershipId: employeeCtx.membership.id, reviewerMembershipId: managerCtx.membership.id, category: "meeting", priority: "normal", estimateMinutes: 60, dueAt: null, addToMyDay: false });
+  const second = await createTask(managerCtx, { projectId: project.id, title: "Pricing page copy", expectedOutput: "Draft copy document for the pricing page.", assigneeMembershipId: employee2Ctx.membership.id, reviewerMembershipId: managerCtx.membership.id, category: "work", priority: "normal", estimateMinutes: 120, dueAt: null, addToMyDay: false });
   return { slug, owner, hr, manager, employee, employee2, ownerCtx, hrCtx, managerCtx, employeeCtx, employee2Ctx, teamId: team.id, projectId: project.id, taskIds: { homepage: homepage.id, meeting: meeting.id, second: second.id } };
 }

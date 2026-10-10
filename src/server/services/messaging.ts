@@ -42,6 +42,14 @@
  * 'via_assistant' (`insertViaAssistantIn`, called only from services/standup's post after the person's own press), and
  * a thread says when the person switched @mentions of their own assistant off (`ownAssistantOff`), so the composer stops
  * suggesting it. A "Declined" or "Not a commitment" label is read only by that commitment's two people (labelsIn).
+ *
+ * Calls (owner decisions, 8 October 2026: phase 8; migration 0054): a call leaves one line in its thread (a group call's
+ * "Ada started a call" when it starts, drawn live; a one-to-one call's "Missed call from Ada" or "Call, 12 min" when it
+ * ends) and, after Brenda's notes, one short recap: both 'workspace' messages written by the worker (services/calls
+ * `postCallThreadMessage`) with `call_id` and `call_part`. A thread carries the call's state on them (`call`: who started
+ * it, who is in it now, who joined, when it ended), the inbox says when the last message is one (`last_is_call`, so its
+ * preview reads without "Brenda:"), and they never raise a toast (`incomingMessages` leaves them out, D11). Before 0054
+ * `call` is null and `last_is_call` false.
  */
 import { z } from "zod";
 import { withUser, withWorker, type Db } from "@/server/db";
@@ -63,6 +71,8 @@ import { toProfile, type AssistantProfile } from "@/lib/assistant-look";
 import { clip } from "@/lib/follow-ups";
 import { MENTION_LIMITS, otherAssistantLabels, type AssistantRepliesState, type MentionRef, type MentionView, type TaggableAssistant } from "@/lib/mentions";
 import type { Presence } from "@/lib/presence";
+import { retryWithout0054, schema0054Ready } from "@/server/lib/schema-0054";
+import { callHref, type CallLineView } from "@/lib/calls";
 
 /** `active`: still a member of the workspace (people who left stay in a named channel's or direct thread's list). */
 export type Participant = { membership_id: string; display_name: string; role: string; profile_id: string; avatar_key: string | null; presence: Presence; active: boolean };
@@ -89,6 +99,8 @@ export type ConversationSummary = {
   last_author_kind: AuthorKind | null;
   /** The last sender's own assistant's name when the last message is not the person's own words. */
   last_assistant_name: string | null;
+  /** Phase 8: the last message is a call's line or recap (its preview reads without "Brenda:"); false before 0054. */
+  last_is_call: boolean;
 };
 export type MessageRow = {
   id: string; sender_membership_id: string; sender_name: string; sender_profile_id: string; sender_avatar_key: string | null; body: string; created_at: string; deleted_at: string | null; edited_at: string | null;
@@ -113,6 +125,8 @@ export type MessageRow = {
   mention_reply: { mentionId: string; canWithdraw: boolean; askedBy?: { membershipId: string; firstName: string; isYou: boolean } | null; holding?: boolean } | null;
   /** Phase 7b: the commitment label everyone in the conversation sees on this message ("Noted", "Done"…); null without one and before 0048. */
   commitment_label: MessageLabel | null;
+  /** Phase 8: a call's line or recap in its thread, with the call's state now (drawn as a call line, not a bubble); null otherwise and before 0054. */
+  call: CallLineView | null;
 };
 export type Thread = {
   conversation: ConversationSummary & { people: Participant[] };
@@ -172,14 +186,14 @@ async function ensureChannels(db: Db, ctx: OrgContext) {
  * One statement for the inbox and a thread's header. `ready` (migration 0037) adds who wrote the last message and the
  * name of the last sender's assistant; before it they read as the person's.
  */
-const summarySql = (ready: boolean) => `
+const summarySql = (ready: boolean, ready54 = false) => `
   SELECT c.id, c.kind, c.team_id, c.last_message_at, c.archived_at, c.created_by,
          (c.kind = 'channel' AND (c.created_by = $2 OR app_has_role(c.organisation_id, 'owner', 'hr'))) AS can_manage,
          CASE c.kind WHEN 'organisation' THEN 'Everyone' WHEN 'team' THEN t.name WHEN 'channel' THEN c.title ELSE po.display_name END AS title,
          CASE c.kind WHEN 'organisation' THEN o.name WHEN 'team' THEN 'Team channel' WHEN 'channel' THEN (SELECT count(*)::text || ' people' FROM conversation_participants pp WHERE pp.conversation_id = c.id) ELSE NULLIF(concat_ws(', ', CASE mo.role WHEN 'manager' THEN 'Team lead' WHEN 'owner' THEN 'Organisation owner' WHEN 'hr' THEN 'HR' ELSE 'Staff' END, ot.teams), '') END AS subtitle,
          mo.id AS other_membership_id, po.id AS other_profile_id, po.avatar_key AS other_avatar_key, po.presence AS other_presence,
          lm.body AS last_body, lp.display_name AS last_sender_name, r.last_read_at,
-         lm.author_kind AS last_author_kind,
+         lm.author_kind AS last_author_kind, ${ready54 ? "COALESCE(lm.is_call, false)" : "false"} AS last_is_call,
          ${ready ? `CASE WHEN lm.author_kind = 'workspace' THEN COALESCE(wbs.assistant_name, 'Brenda') WHEN lm.author_kind <> 'person' THEN COALESCE(lap.name, 'Brenda') END` : "NULL::text"} AS last_assistant_name,
          GREATEST((SELECT count(*)::int FROM messages m
             WHERE m.conversation_id = c.id AND m.deleted_at IS NULL AND (m.sender_membership_id <> $2${ready ? " OR m.author_kind = 'workspace'" : ""})
@@ -193,7 +207,7 @@ const summarySql = (ready: boolean) => `
   LEFT JOIN profiles po ON po.id = mo.user_id
   LEFT JOIN LATERAL (SELECT string_agg(tt.name, ', ' ORDER BY tt.name) AS teams FROM team_members tm2 JOIN teams tt ON tt.id = tm2.team_id WHERE tm2.membership_id = mo.id AND tt.archived_at IS NULL) ot ON true
   LEFT JOIN conversation_reads r ON r.conversation_id = c.id AND r.membership_id = $2
-  LEFT JOIN LATERAL (SELECT CASE WHEN m.deleted_at IS NULL THEN m.body ELSE '' END AS body, m.sender_membership_id, ${ready ? "m.author_kind" : "'person'::text AS author_kind"} FROM messages m WHERE m.conversation_id = c.id ORDER BY m.created_at DESC LIMIT 1) lm ON true
+  LEFT JOIN LATERAL (SELECT CASE WHEN m.deleted_at IS NULL THEN m.body ELSE '' END AS body, m.sender_membership_id, ${ready ? "m.author_kind" : "'person'::text AS author_kind"}${ready54 ? ", m.call_id IS NOT NULL AS is_call" : ""} FROM messages m WHERE m.conversation_id = c.id ORDER BY m.created_at DESC LIMIT 1) lm ON true
   LEFT JOIN memberships lms ON lms.id = lm.sender_membership_id
   LEFT JOIN profiles lp ON lp.id = lms.user_id
   ${ready ? "LEFT JOIN assistant_profiles lap ON lap.membership_id = lm.sender_membership_id LEFT JOIN brenda_settings wbs ON wbs.organisation_id = c.organisation_id" : ""}
@@ -202,15 +216,17 @@ const summarySql = (ready: boolean) => `
 
 /** Every conversation the person can see: channels first, then direct threads, most recent activity first. */
 export async function inbox(ctx: OrgContext): Promise<{ channels: ConversationSummary[]; direct: ConversationSummary[]; archived: ConversationSummary[] }> {
-  return retryWithout0037(() => withUser(ctx.user.profileId, async (db) => {
+  return retryWithout0054(() => retryWithout0037(() => withUser(ctx.user.profileId, async (db) => {
     await ensureChannels(db, ctx);
     const ready = await schema0037Ready(db);
-    const rows = await db.query<ConversationSummary>(`${summarySql(ready)} ORDER BY c.last_message_at DESC NULLS LAST, c.created_at`, [ctx.org.id, ctx.membership.id]);
+    // Phase 8: whether the last message is a call's line or recap (0054; 0037 comes first, so both or neither).
+    const ready54 = ready && (await schema0054Ready(db));
+    const rows = await db.query<ConversationSummary>(`${summarySql(ready, ready54)} ORDER BY c.last_message_at DESC NULLS LAST, c.created_at`, [ctx.org.id, ctx.membership.id]);
     const channels = rows.filter((r) => r.kind !== "direct" && !r.archived_at).sort((a, b) => (a.kind === "organisation" ? -1 : b.kind === "organisation" ? 1 : a.title.localeCompare(b.title)));
     const archived = rows.filter((r) => r.kind !== "direct" && !!r.archived_at).sort((a, b) => a.title.localeCompare(b.title));
     const direct = rows.filter((r) => r.kind === "direct");
     return { channels, direct, archived };
-  }));
+  })));
 }
 
 /** Everyone the person could start a direct thread with (all active members except themself). */
@@ -299,6 +315,46 @@ const mentionJoins = (ready: boolean, ready43 = false) => (!ready ? "" : ready43
   : "LEFT JOIN assistant_mentions am ON am.reply_message_id = m.id");
 
 /**
+ * Phase 8 (owner decisions, 8 October 2026; migration 0054): a call's line or recap `m` with its call's state now, as one
+ * JSON column (`call`) for a statement whose `$2` is the caller's membership. Row-level security already limits the call
+ * to the conversation's readers. The times are made ISO and the link added in `callLineOf`. Before 0054: NULL.
+ */
+const callColumns = (ready54: boolean) => !ready54 ? "NULL::json AS call" : `
+     CASE WHEN m.call_id IS NULL OR cl.id IS NULL THEN NULL ELSE json_build_object(
+       'id', cl.id, 'part', m.call_part, 'kind', cl.kind, 'state', cl.state,
+       'startedBy', json_build_object('membershipId', cl.started_by, 'firstName', split_part(btrim(clp.display_name), ' ', 1)),
+       'startedAt', cl.created_at, 'answeredAt', cl.answered_at, 'endedAt', cl.ended_at, 'endReason', cl.end_reason,
+       'inRoom', clx.in_room, 'joinedCount', clx.joined_count, 'joinedNames', clx.names) END AS call`;
+const callJoins = (ready54: boolean) => !ready54 ? "" : `
+     LEFT JOIN calls cl ON cl.id = m.call_id
+     LEFT JOIN memberships clm ON clm.id = cl.started_by
+     LEFT JOIN profiles clp ON clp.id = clm.user_id
+     LEFT JOIN LATERAL (
+       SELECT count(*) FILTER (WHERE x.state = 'joined')::int AS in_room, count(*) FILTER (WHERE x.first_joined_at IS NOT NULL)::int AS joined_count,
+              COALESCE((SELECT json_agg(q.first ORDER BY q.at) FROM (
+                SELECT split_part(btrim(xp.display_name), ' ', 1) AS first, x2.first_joined_at AS at
+                FROM call_participants x2 JOIN memberships xm ON xm.id = x2.membership_id JOIN profiles xp ON xp.id = xm.user_id
+                WHERE x2.call_id = cl.id AND x2.first_joined_at IS NOT NULL ORDER BY x2.first_joined_at LIMIT 4) q), '[]'::json) AS names
+       FROM call_participants x WHERE x.call_id = cl.id) clx ON cl.id IS NOT NULL`;
+const isoOrNull = (v: unknown) => (typeof v === "string" && v ? new Date(v).toISOString() : null);
+/** The `call` column as the client draws it: ISO times, the call page's link (phase 8). */
+function callLineOf(raw: unknown, slug: string): CallLineView | null {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as Record<string, unknown> & { startedBy?: { membershipId?: string; firstName?: string } };
+  if (typeof r.id !== "string") return null;
+  return {
+    id: r.id, part: r.part === "recap" ? "recap" : "line", kind: r.kind === "group" ? "group" : "direct",
+    state: r.state === "ended" ? "ended" : r.state === "active" ? "active" : "ringing",
+    startedBy: { membershipId: String(r.startedBy?.membershipId ?? ""), firstName: String(r.startedBy?.firstName ?? "") },
+    startedAt: isoOrNull(r.startedAt) ?? new Date(0).toISOString(), answeredAt: isoOrNull(r.answeredAt), endedAt: isoOrNull(r.endedAt),
+    endReason: (typeof r.endReason === "string" ? r.endReason : null) as CallLineView["endReason"],
+    inRoom: Number(r.inRoom ?? 0), joinedCount: Number(r.joinedCount ?? 0),
+    joinedNames: Array.isArray(r.joinedNames) ? r.joinedNames.filter((x): x is string => typeof x === "string") : [],
+    href: callHref(slug, r.id),
+  };
+}
+
+/**
  * The notifications opening a conversation reads: someone mentioned you here, and your assistant's answers here; and
  * (phase 6) your assistant was tagged here by someone else, and someone else's assistant replied to you here.
  */
@@ -311,12 +367,14 @@ const MENTION_NOTIFICATION_TYPES = ["message.mention", "brenda.mention_reply", "
  */
 export async function thread(ctx: OrgContext, conversationId: string): Promise<Thread | null> {
   let kick: string[] = [];
-  const out = await retryWithout0050(() => retryWithout0041(() => retryWithout0037(() => withUser(ctx.user.profileId, async (db): Promise<Thread | null> => {
+  const out = await retryWithout0054(() => retryWithout0050(() => retryWithout0041(() => retryWithout0037(() => withUser(ctx.user.profileId, async (db): Promise<Thread | null> => {
     kick = [];
     const ready = await schema0037Ready(db);
     const ready41 = ready && (await schema0041Ready(db));
     const ready43 = ready41 && (await schema0043Ready(db));
-    const conv = await db.maybeOne<ConversationSummary>(`${summarySql(ready)} AND c.id = $3`, [ctx.org.id, ctx.membership.id, conversationId]);
+    // Phase 8: calls' lines and recaps (0054).
+    const ready54 = ready && (await schema0054Ready(db));
+    const conv = await db.maybeOne<ConversationSummary>(`${summarySql(ready, ready54)} AND c.id = $3`, [ctx.org.id, ctx.membership.id, conversationId]);
     if (!conv) return null;
     const people = await db.query<Participant>(
       conv.kind === "direct" || conv.kind === "channel"
@@ -332,7 +390,8 @@ export async function thread(ctx: OrgContext, conversationId: string): Promise<T
                 m.voice_key, m.voice_mime, m.voice_seconds,
                 m.reply_to_id, CASE WHEN rm.id IS NULL THEN NULL WHEN rm.deleted_at IS NOT NULL THEN '' ELSE rm.body END AS reply_body, rp.display_name AS reply_sender_name,
                 ${authorColumns(ready)},
-                ${mentionColumns(ready41, ready43)}
+                ${mentionColumns(ready41, ready43)},
+                ${callColumns(ready54)}
          FROM messages m
          JOIN memberships sm ON sm.id = m.sender_membership_id
          JOIN profiles p ON p.id = sm.user_id
@@ -342,12 +401,13 @@ export async function thread(ctx: OrgContext, conversationId: string): Promise<T
          LEFT JOIN profiles rp ON rp.id = rsm.user_id
          ${authorJoins(ready)}
          ${mentionJoins(ready41, ready43)}
+         ${callJoins(ready54)}
          WHERE m.conversation_id = $1
          ORDER BY m.created_at DESC LIMIT 200) x ORDER BY created_at`, [conversationId, ctx.membership.id]);
     // Phase 7b: the commitment labels on these messages, and whether commitments are noted here (both absent before 0048).
     const ready48 = await schema0048Ready(db);
     const labels = ready48 ? await labelsIn(db, conversationId, rows.map((r) => r.id)) : new Map<string, MessageLabel>();
-    const messages = rows.map((r) => ({ ...withAssistant(r), mentions: Array.isArray(r.mentions) ? r.mentions : [], mention_reply: r.mention_reply ?? null, commitment_label: labels.get(r.id) ?? null }));
+    const messages = rows.map((r) => ({ ...withAssistant(r), mentions: Array.isArray(r.mentions) ? r.mentions : [], mention_reply: r.mention_reply ?? null, commitment_label: labels.get(r.id) ?? null, call: callLineOf(r.call, ctx.org.slug) }));
     // Opening the thread reads it up to now and clears a "mark as unread".
     await db.query(
       `INSERT INTO conversation_reads(conversation_id, organisation_id, membership_id, last_read_at) VALUES ($1, $2, $3, now())
@@ -370,7 +430,7 @@ export async function thread(ctx: OrgContext, conversationId: string): Promise<T
     // Phase 7c: the person's own switch for @mentions of their assistant (false before 0050).
     const ownAssistantOff = (await abilitiesIn(db, ctx.org.id, ctx.membership.id)).personalOff.includes("mentions");
     return { conversation: { ...conv, unread: 0, marked_unread: false, people }, messages, mentions, assistantReplies, taggable, commitments, ownAssistantOff };
-  }))));
+  })))));
   if (kick.length) await kickMentions(kick.slice(0, MENTION_LIMITS.kickPerPage));
   return out;
 }
@@ -596,10 +656,14 @@ export type IncomingMessage = {
   assistant: AssistantProfile | null;
 };
 
-/** Messages from other people since `after`, in conversations the caller can read; feeds the toast. Withdrawn ones are left out. */
+/**
+ * Messages from other people since `after`, in conversations the caller can read; feeds the toast. Withdrawn ones are
+ * left out, and (phase 8, D11) a call's line or recap: the call rang already, or its recap comes as a notification.
+ */
 export async function incomingMessages(ctx: OrgContext, after: string): Promise<IncomingMessage[]> {
-  return retryWithout0037(() => withUser(ctx.user.profileId, async (db) => {
+  return retryWithout0054(() => retryWithout0037(() => withUser(ctx.user.profileId, async (db) => {
     const ready = await schema0037Ready(db);
+    const ready54 = ready && (await schema0054Ready(db));
     const rows = await db.query<IncomingMessage>(
       `SELECT m.id, m.conversation_id, c.kind, CASE c.kind WHEN 'organisation' THEN 'Everyone' WHEN 'team' THEN t.name WHEN 'channel' THEN c.title ELSE p.display_name END AS conversation_title,
               p.display_name AS sender_name, p.id AS sender_profile_id, p.avatar_key AS sender_avatar_key, m.body, m.created_at,
@@ -613,10 +677,11 @@ export async function incomingMessages(ctx: OrgContext, after: string): Promise<
        JOIN memberships sm ON sm.id = m.sender_membership_id JOIN profiles p ON p.id = sm.user_id
        ${ready ? "LEFT JOIN assistant_profiles ap ON ap.membership_id = m.sender_membership_id LEFT JOIN brenda_settings wbs ON wbs.organisation_id = m.organisation_id" : ""}
        WHERE m.organisation_id = $1 AND (m.sender_membership_id <> $2${ready ? " OR m.author_kind = 'workspace'" : ""}) AND m.deleted_at IS NULL AND m.created_at > $3::timestamptz
+         ${ready54 ? "AND m.call_id IS NULL" : ""}
          AND NOT EXISTS (SELECT 1 FROM conversation_reads r WHERE r.conversation_id = c.id AND r.membership_id = $2 AND r.muted_at IS NOT NULL)
        ORDER BY m.created_at DESC LIMIT 10`, [ctx.org.id, ctx.membership.id, after]);
     return rows.map(withAssistant);
-  }));
+  })));
 }
 
 // ---- Voice notes ----------------------------------------------------------------
@@ -733,29 +798,48 @@ function channelError(err: unknown): never {
   throw err;
 }
 
-/** Renames a channel, replaces its people, or archives and restores it. */
+/**
+ * Renames a channel, replaces its people, or archives and restores it. Phase 8 (fix review, 10 October 2026): after its
+ * people changed, a call running in it is settled at once, so anyone taken out of the channel is out of the call too.
+ */
 export async function updateChannel(ctx: OrgContext, conversationId: string, input: { title?: string; memberIds?: string[]; archived?: boolean }) {
-  return withUser(ctx.user.profileId, async (db) => {
+  const r = await withUser(ctx.user.profileId, async (db) => {
     try {
       if (input.memberIds) await db.query(`SELECT app_channel_set_members($1, $2::uuid[])`, [conversationId, input.memberIds]);
       if (input.title !== undefined || input.archived !== undefined) await db.query(`SELECT app_channel_update($1, $2, $3)`, [conversationId, input.title ?? null, input.archived ?? null]);
     } catch (err) { channelError(err); }
     return { id: conversationId };
   });
+  if (input.memberIds) await settleCallsIn(ctx, [conversationId]);
+  return r;
+}
+
+/** Calls in these conversations settle after their people changed (services/calls; imported when needed: calls imports messaging). */
+async function settleCallsIn(ctx: OrgContext, conversationIds: string[]) {
+  const { settleCallsAfterAccessChange } = await import("@/server/services/calls");
+  await settleCallsAfterAccessChange(ctx.org.id, { conversationIds });
 }
 
 /** Deletes a conversation for the caller: a channel is removed for everyone (creator, owner or HR); a direct thread is hidden for the caller only. */
 export async function deleteConversation(ctx: OrgContext, conversationId: string) {
-  return withUser(ctx.user.profileId, async (db) => {
+  const deletedChannels: string[] = [];
+  const r = await withUser(ctx.user.profileId, async (db) => {
     const conv = await db.maybeOne<{ id: string; kind: ConversationKind }>(`SELECT id, kind FROM conversations WHERE id = $1 AND organisation_id = $2`, [conversationId, ctx.org.id]);
     if (!conv) throw notFound("That conversation does not exist or you are not part of it.");
-    if (conv.kind === "channel") { try { await db.query(`SELECT app_channel_delete($1)`, [conversationId]); } catch (err) { channelError(err); } return { deleted: true as const, hidden: false as const }; }
+    if (conv.kind === "channel") {
+      try { await db.query(`SELECT app_channel_delete($1)`, [conversationId]); } catch (err) { channelError(err); }
+      // A call running in it ends once this commits (phase 8, fix review, 10 October 2026: nobody reads it any more).
+      deletedChannels.push(conversationId);
+      return { deleted: true as const, hidden: false as const };
+    }
     if (conv.kind === "direct") {
       await db.query(`INSERT INTO conversation_hides(conversation_id, organisation_id, membership_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`, [conversationId, ctx.org.id, ctx.membership.id]);
       return { deleted: false as const, hidden: true as const };
     }
     throw invalid("Team and organisation channels cannot be deleted; they follow the team.");
   });
+  if (deletedChannels.length) await settleCallsIn(ctx, deletedChannels);
+  return r;
 }
 
 /**

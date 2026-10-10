@@ -265,15 +265,16 @@ async function main() {
   });
 
   // ---- Policy and the work summary -----------------------------------------------------------------------
-  await check("get_policy: schedule, notice and agreement to recording from real data (staff)", async () => {
-    const o = (await runBrendaTool(ada, "get_policy", {})).out as { workSchedule: { workingDays: string[]; starts: string; ends: string; graceMinutes: number; timeZone: string; lateAfter: string }; monitoringNotice: { version: number; screenRecording: string; recordingsKeptForDays: number } | null; youAgreedToRecording: unknown; whoToAsk: string[]; agreedToRecording?: string };
+  // Phase 8 (owner decisions, 8 October 2026): the notice and how calls are handled; nothing about who agreed to what.
+  await check("get_policy: schedule, notice and calls from real data (staff)", async () => {
+    const o = (await runBrendaTool(ada, "get_policy", {})).out as { workSchedule: { workingDays: string[]; starts: string; ends: string; graceMinutes: number; timeZone: string; lateAfter: string }; monitoringNotice: { version: number; notice: string } | null; calls: { recorded: boolean; notes: string }; whoToAsk: string[] };
     const s = o.workSchedule;
     expect(s.workingDays.length > 0 && /^\d\d:\d\d$/.test(s.starts) && /^\d\d:\d\d$/.test(s.ends) && typeof s.graceMinutes === "number" && !!s.timeZone, JSON.stringify(s));
-    expect(!!o.monitoringNotice && o.youAgreedToRecording !== undefined && o.whoToAsk.some((w) => w.startsWith(owner.user.displayName)) && o.agreedToRecording === undefined, JSON.stringify(o).slice(0, 300));
-    return { days: s.workingDays.join(","), hours: `${s.starts}-${s.ends}`, lateAfter: s.lateAfter, notice: `v${o.monitoringNotice!.version}, ${o.monitoringNotice!.recordingsKeptForDays} days`, agreed: typeof o.youAgreedToRecording === "object" };
+    expect(!!o.monitoringNotice && o.calls?.recorded === false && o.whoToAsk.some((w) => w.startsWith(owner.user.displayName)), JSON.stringify(o).slice(0, 300));
+    return { days: s.workingDays.join(","), hours: `${s.starts}-${s.ends}`, lateAfter: s.lateAfter, notice: `v${o.monitoringNotice!.version}`, calls: o.calls.notes };
   });
-  await check("get_policy: organisation accounts also see who has agreed to recording", async () => {
-    const o = (await runBrendaTool(owner, "get_policy", {})).out as { agreedToRecording?: string }; expect(!!o.agreedToRecording, JSON.stringify(o).slice(0, 200)); return o.agreedToRecording;
+  await check("get_policy: organisation accounts get the same rules", async () => {
+    const o = (await runBrendaTool(owner, "get_policy", {})).out as Record<string, unknown>; expect(!!o.monitoringNotice && !Object.keys(o).some((k) => /agreed/i.test(k)), JSON.stringify(o).slice(0, 200)); return Object.keys(o).join(",");
   });
   type Summary = { scope: string; from: string; to: string; people: { name: string; hoursTracked: number; tasksCompleted: number; overdue: number; daysClockedIn: number }[] };
   await check("work_summary: staff see only themselves", async () => {

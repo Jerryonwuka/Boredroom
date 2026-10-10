@@ -48,10 +48,11 @@ type NavIcon = ComponentType<{ className?: string; "aria-hidden"?: boolean }>;
 const ICONS = {
   brenda: BrendaGlyph, dashboard: AnimatedLayoutDashboard, board: AnimatedKanban, myday: AnimatedCalendarDays, projects: AnimatedFolderKanban, team: AnimatedActivity,
   reviews: AnimatedClipboardCheck, timesheets: AnimatedHistory, people: AnimatedUsersRound, settings: AnimatedSettings, audit: AnimatedShieldCheck,
-  notifications: AnimatedBell, recordings: AnimatedVideo, messages: AnimatedMessageSquare, tasks: AnimatedListChecks, clock: AnimatedAlarmClock,
+  notifications: AnimatedBell, calls: AnimatedVideo, messages: AnimatedMessageSquare, tasks: AnimatedListChecks, clock: AnimatedAlarmClock,
   attendance: AnimatedClipboardList, docs: AnimatedFileText, todos: AnimatedListTodo,
   // Commitments (owner decision, 8 October 2026: phase 7b): lucide's Handshake, still (it has no animated twin yet).
   commitments: Handshake,
+  // Calls (owner decisions, 8 October 2026: phase 8) take the video icon Recordings had (screen recording is gone).
 } satisfies Record<string, NavIcon>;
 
 export const SIDEBAR_KEY = "boredroom-sidebar";

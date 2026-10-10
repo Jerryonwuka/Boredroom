@@ -61,6 +61,6 @@ function main() {
   } else {
     console.log(`Put these in .env.local to run the app on the new database:\n  DATABASE_ADMIN_URL=${adminUrl}\n  DATABASE_URL=${appUrl}\n(or re-run with --write-env to have that done for you)`);
   }
-  console.log("\nNot in the database: recording video files in var/storage. Copy that folder, or point STORAGE_* at a bucket. Then run: pnpm doctor");
+  console.log("\nFiles (evidence, voice notes, pictures) are not in the database; copy var/storage too (or point STORAGE_* at a bucket). Then run: pnpm doctor");
 }
 main();

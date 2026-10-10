@@ -14,7 +14,9 @@
  *
  * Never in the facts (decision 2): a task its holder made for themself (`created_by = assignee_membership_id`, their own
  * to-dos: no title, comment, history or time on it; a timer on one is "a to-do of their own"), the day plan, documents,
- * messages, chats with their assistant, attendance or recordings. Only the statements below are read.
+ * messages, chats with their assistant, attendance, or calls: never a call's transcript lines or its recap (fix review,
+ * 10 October 2026: phase 8 took screen recordings out and brought call notes in; tests/unit/follow-ups-lib.test.ts checks
+ * this file reads no call table). Only the statements below are read.
  *
  * Freshness (decision 4): a signal by the subject, visible to the asker, within the last working day (the last N
  * working hours, N the length of the organisation's working day); a completed task is always fresh. For the workspace

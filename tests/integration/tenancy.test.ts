@@ -27,8 +27,8 @@ describe("A01 cross-tenant isolation", () => {
   });
 
   it("company A staff cannot start a session on a company B task; organisation accounts cannot run timers at all", async () => {
-    await expect(startSession(a.employeeCtx, { taskId: b.taskIds.homepage, captureMode: "none" })).rejects.toMatchObject({ status: 404 });
-    await expect(startSession(a.ownerCtx, { taskId: a.taskIds.homepage, captureMode: "none" })).rejects.toMatchObject({ status: 403 });
+    await expect(startSession(a.employeeCtx, { taskId: b.taskIds.homepage })).rejects.toMatchObject({ status: 404 });
+    await expect(startSession(a.ownerCtx, { taskId: a.taskIds.homepage })).rejects.toMatchObject({ status: 403 });
   });
 
   it("organisation list only shows the caller's workspaces", async () => {
@@ -41,7 +41,7 @@ describe("A02 manager scope", () => {
   it("a manager cannot read work sessions of an employee outside their teams", async () => {
     // Ben is in David's team; move Ben out and check.
     await adminQuery("DELETE FROM team_members WHERE membership_id = $1", [a.employee2Ctx.membership.id]);
-    const s = await startSession(a.employee2Ctx, { taskId: a.taskIds.second, captureMode: "none" });
+    const s = await startSession(a.employee2Ctx, { taskId: a.taskIds.second });
     const asManager = await appQueryAs(a.manager.profileId, "SELECT id FROM work_sessions WHERE id = $1", [s.id]);
     expect(asManager).toHaveLength(0);
     const asHr = await appQueryAs(a.hr.profileId, "SELECT id FROM work_sessions WHERE id = $1", [s.id]);
@@ -102,8 +102,8 @@ describe("A19 offboarding", () => {
     const inv = await createInvitation(a.hrCtx, { email: victim.email, role: "employee", teamId: a.teamId, employeeCode: null }, { send: false });
     const { membershipId } = await acceptInvitation(victim.profileId, victim.email, inv.token!);
     const ctx = { ...a.employeeCtx, user: { ...a.employeeCtx.user, profileId: victim.profileId, email: victim.email, displayName: "Leaver" }, membership: { id: membershipId, role: "employee" as const, employee_code: "X" } };
-    const task = await createTask(a.managerCtx, { projectId: a.projectId, title: "Leaver task", expectedOutput: "Something", assigneeMembershipId: membershipId, category: "work", priority: "normal", captureRequirement: "none", addToMyDay: false });
-    const s = await startSession(ctx, { taskId: task.id, captureMode: "none" });
+    const task = await createTask(a.managerCtx, { projectId: a.projectId, title: "Leaver task", expectedOutput: "Something", assigneeMembershipId: membershipId, category: "work", priority: "normal", addToMyDay: false });
+    const s = await startSession(ctx, { taskId: task.id });
     // Simulate a session that started 20 minutes ago and last heartbeat 10 minutes ago.
     await adminQuery("ALTER TABLE session_intervals DISABLE TRIGGER session_intervals_immutable");
     await adminQuery("UPDATE session_intervals SET started_at = now() - interval '20 minutes' WHERE session_id = $1", [s.id]);

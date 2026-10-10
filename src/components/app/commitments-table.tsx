@@ -131,6 +131,8 @@ function DueCell({ c }: { c: CommitmentView }) {
 
 function WhereCell({ c }: { c: CommitmentView }) {
   const name = whereName(c);
+  // An action item from a call's recap (phase 8, owner decisions, 8 October 2026): "From a call", linking the call's page.
+  if (c.call) return <Link href={c.call.href} prefetch={false} className="link-inline">{name ? `${LOOP_WORDS.cards.fromCall} in ${name}` : LOOP_WORDS.cards.fromCall}</Link>;
   if (!name) return <span className="text-subtle" title={P.noMessage}>—<span className="sr-only">{P.noMessage}</span></span>;
   if (!c.message.href || c.message.withdrawn) return <span className="text-secondary" title={c.message.withdrawn ? P.withdrawn : undefined}>{name}</span>;
   return <Link href={c.message.href} prefetch={false} className="link-inline">{name}</Link>;
@@ -194,7 +196,8 @@ export function CommitmentsTable({ orgSlug, scope, filters, initial, timeZone, n
       <Menu align="end" label={`Actions for “${clip(c.title, 60)}”`}
         trigger={<IconButton aria-label={`Actions for “${clip(c.title, 60)}”`}><EllipsisVertical aria-hidden /></IconButton>}>
         {c.canAccept || c.canDecline || c.canDismiss ? <MenuItem onSelect={() => setAnswering(c)}>Answer…</MenuItem> : null}
-        {c.message.href && !c.message.withdrawn ? <MenuItem href={c.message.href}>{P.openMessage}</MenuItem> : null}
+        {c.call ? <MenuItem href={c.call.href}>{LOOP_WORDS.cards.fromCall}</MenuItem>
+          : c.message.href && !c.message.withdrawn ? <MenuItem href={c.message.href}>{P.openMessage}</MenuItem> : null}
         {c.todo ? <MenuItem href={c.todo.href}>{P.openTodo}</MenuItem> : null}
         {c.canMarkDone ? <MenuItem onSelect={() => void markDone(c)}>{P.markDone}</MenuItem> : null}
       </Menu>
@@ -228,7 +231,7 @@ export function CommitmentsTable({ orgSlug, scope, filters, initial, timeZone, n
       {/* Under 640px: one row each, nothing sideways. */}
       <ul className="-mx-2 space-y-1 sm:hidden" aria-label={LOOP_WORDS.page.title}>
         {items.map((c) => {
-          const line = [who(c), askedBy(c) ? `asked by ${askedBy(c)}` : null, whereName(c)].filter(Boolean).join(", ");
+          const line = [who(c), askedBy(c) ? `asked by ${askedBy(c)}` : null, c.call ? LOOP_WORDS.cards.fromCall : null, whereName(c)].filter(Boolean).join(", ");
           return (
             <li key={c.id} id={`commitment-item-${c.id}`} className={cn("flex min-w-0 items-start gap-2 rounded-xl px-2 py-3", highlight === c.id && "selected-marker bg-fill-1")}>
               <div className="min-w-0 flex-1">

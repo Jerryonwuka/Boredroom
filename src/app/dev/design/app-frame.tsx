@@ -30,7 +30,7 @@ import { StatCard } from "@/components/ui/stat-card";
 import { AnalyticsCard } from "@/components/ui/analytics-card";
 import { FilterSelect } from "@/components/ui/filter-control";
 import { DataTable } from "@/components/ui/table";
-import { Switch } from "@/components/ui/switch";
+import { LiveIndicator } from "@/components/ui/status-dot";
 import { AreaChart, BarChart } from "@/components/ui/charts";
 import { Menu, MenuItem, MenuSeparator } from "@/components/ui/menu";
 import { cn } from "@/lib/utils";
@@ -50,10 +50,10 @@ const PINNED = [{ label: "Website relaunch", icon: AnimatedFileText }, { label: 
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const PEOPLE = [
-  { id: "p1", name: "Ada Lovelace", role: "Design", status: "Working", tone: "success" as const, hours: "6h 40m", rec: true },
-  { id: "p2", name: "David Okafor", role: "Team lead", status: "In a meeting", tone: "warning" as const, hours: "5h 05m", rec: false },
-  { id: "p3", name: "Grace Hopper", role: "Engineering", status: "Away", tone: "neutral" as const, hours: "3h 12m", rec: true },
-  { id: "p4", name: "Brenda Ade", role: "Support", status: "Late", tone: "danger" as const, hours: "1h 48m", rec: false },
+  { id: "p1", name: "Ada Lovelace", role: "Design", status: "Working", tone: "success" as const, hours: "6h 40m", onCall: true },
+  { id: "p2", name: "David Okafor", role: "Team lead", status: "In a meeting", tone: "warning" as const, hours: "5h 05m", onCall: false },
+  { id: "p3", name: "Grace Hopper", role: "Engineering", status: "Away", tone: "neutral" as const, hours: "3h 12m", onCall: true },
+  { id: "p4", name: "Brenda Ade", role: "Support", status: "Late", tone: "danger" as const, hours: "1h 48m", onCall: false },
 ];
 
 export function SampleAppFrame() {
@@ -149,7 +149,7 @@ export function SampleAppFrame() {
 
               <SectionTitle className="mt-10" title="Team today" action={<Button variant="ghost" size="sm">View all</Button>} />
               <DataTable caption="Team today">
-                <thead><tr><th>Name</th><th>Role</th><th>Status</th><th className="text-right">Hours</th><th>Recording</th><th><span className="sr-only">Actions</span></th></tr></thead>
+                <thead><tr><th>Name</th><th>Role</th><th>Status</th><th className="text-right">Hours</th><th>Calls</th><th><span className="sr-only">Actions</span></th></tr></thead>
                 <tbody>
                   {PEOPLE.map((p) => (
                     <tr key={p.id}>
@@ -157,7 +157,7 @@ export function SampleAppFrame() {
                       <td className="text-secondary">{p.role}</td>
                       <td><Badge tone={p.tone} dot>{p.status}</Badge></td>
                       <td className="text-right tabular-nums">{p.hours}</td>
-                      <td><Switch aria-label={`Recording for ${p.name}`} defaultChecked={p.rec} /></td>
+                      <td>{p.onCall ? <LiveIndicator>On a call</LiveIndicator> : <span className="text-xs font-medium text-subtle">Not on a call</span>}</td>
                       <td className="w-10 text-right">
                         <Menu align="end" label={`Actions for ${p.name}`} trigger={<IconButton aria-label={`Actions for ${p.name}`}><Ellipsis aria-hidden /></IconButton>}>
                           <MenuItem icon={<MessageSquare />}>Message</MenuItem>

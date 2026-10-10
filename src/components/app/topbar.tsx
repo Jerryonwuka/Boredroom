@@ -150,7 +150,7 @@ function SettingsMenu({ orgSlug, attention }: { orgSlug: string; attention: numb
   const base = `/app/${orgSlug}`;
   return (
     <Menu align="end" label="Settings" trigger={<IconButton aria-label="Settings"><AnimatedSettings aria-hidden /></IconButton>}>
-      {/* No policy page any more (owner decision, 5 October 2026): working hours and recording rules are in Settings. */}
+      {/* No policy page any more (owner decision, 5 October 2026): working hours and the monitoring notice are in Settings. */}
       <MenuItem href={`${base}/settings`} icon={<AnimatedSettings aria-hidden />}>Organisation settings</MenuItem>
       <MenuItem href={`${base}/people`} icon={<AnimatedUsersRound aria-hidden />}>People and teams</MenuItem>
       <MenuItem href={`${base}/reviews`} icon={<AnimatedClipboardCheck aria-hidden />} kbd={attention ? (attention > 99 ? "99+" : attention) : undefined}>Review queue</MenuItem>

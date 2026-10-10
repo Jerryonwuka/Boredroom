@@ -175,7 +175,8 @@ describe("migration 0039", () => {
     // Phase 5 (owner decision, 8 October 2026): 0041 adds 'mention' after 0039's list (checked in mentions-lib.test.ts).
     // Phase 7b (owner decision, 8 October 2026): 0048 adds 'loose_ends' and 'commitments' (loops-migration.test.ts).
     // Phase 7c (owner decisions, 8–9 October 2026): 0050 adds 'standup' (loops-migration.test.ts).
-    expect(listed(/ai_usage_purpose_check CHECK \(purpose IN \(([^)]*)\)\)/)).toEqual(USAGE_PURPOSES.filter((p) => p !== "mention" && p !== "loose_ends" && p !== "commitments" && p !== "standup"));
+    // Phase 8 (owner decisions, 8 October 2026): 0054 adds 'call_recap' (loops-migration.test.ts).
+    expect(listed(/ai_usage_purpose_check CHECK \(purpose IN \(([^)]*)\)\)/)).toEqual(USAGE_PURPOSES.filter((p) => p !== "mention" && p !== "loose_ends" && p !== "commitments" && p !== "standup" && p !== "call_recap"));
     expect(LIMITED_PURPOSES).toContain("followup");
     expect(code).toMatch(new RegExp(`char_length\\(question\\) BETWEEN 1 AND ${FOLLOW_UP_LIMITS.questionMax}`));
     expect(code).toMatch(new RegExp(`char_length\\(reply_note\\) BETWEEN 1 AND ${FOLLOW_UP_LIMITS.noteMax}`));
@@ -197,5 +198,19 @@ describe("migration 0039", () => {
     // Every table and column it makes can be made again: IF NOT EXISTS everywhere, and constant defaults (metadata-only).
     for (const m of outside.matchAll(/\bCREATE\s+(?:UNIQUE\s+)?(TABLE|INDEX)\s+(\S+)/gi)) expect(m[2], m[0]).toMatch(/^IF$/i);
     for (const m of outside.matchAll(/\bADD COLUMN\s+(\S+)/gi)) expect(m[1], m[0]).toMatch(/^IF$/i);
+  });
+});
+
+describe("what a follow-up's facts never read", () => {
+  // Fix review, 10 October 2026 (phase 8): screen recordings are gone and calls carry Brenda's notes. A follow-up answers
+  // from tasks, comments, status history, submissions and time only: never a call's transcript lines, its recap or who
+  // said yes to notes, whose readers are only the people who were on the call.
+  it("reads no call table", () => {
+    const facts = readFileSync(join(process.cwd(), "src/server/services/follow-up-facts.ts"), "utf8");
+    const code = facts.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+    for (const t of ["call_transcript_lines", "call_recaps", "call_note_consents", "call_participants", "calls"]) {
+      expect(code, t).not.toMatch(new RegExp(`\\b(?:FROM|JOIN)\\s+${t}\\b`, "i"));
+    }
+    expect(code).not.toMatch(/call-notes|call-recap|services\/calls/);
   });
 });

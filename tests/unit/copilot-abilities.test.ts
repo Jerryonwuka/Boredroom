@@ -59,7 +59,8 @@ describe("which tools each ability governs", () => {
   it("names only real tools", () => {
     const names = new Set(TOOLS.map((x) => x.name));
     for (const n of Object.keys(TOOL_ABILITY)) expect(names.has(n), n).toBe(true);
-    expect(ABILITY_CATALOGUE).toHaveLength(11);
+    // Phase 8 (owner decisions, 8 October 2026): the twelfth is 'call_notes' (Brenda's notes on calls).
+    expect(ABILITY_CATALOGUE).toHaveLength(12);
   });
 });
 

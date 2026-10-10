@@ -12,7 +12,7 @@ import { SectionTitle } from "@/components/ui/card";
 import { DataTable } from "@/components/ui/table";
 import { api, isApiFailure } from "@/lib/api-client";
 import { money, bytes, dateOnly } from "@/lib/format";
-import { FEATURE_LABELS } from "@/lib/plans";
+import { FEATURE_LABELS, planFeatureKeys } from "@/lib/plans";
 import { cn } from "@/lib/utils";
 import type { orgBilling } from "@/server/admin/billing";
 
@@ -88,7 +88,7 @@ export function BillingCard({ orgSlug, data, notice, preselect }: { orgSlug: str
           const price = priceOf(p);
           const current = s?.plan_code === p.code;
           const chosen = !current && preselect === p.code;
-          const features = Object.entries(p.features).filter(([, v]) => v).map(([k]) => FEATURE_LABELS[k] ?? label(k.toLowerCase()));
+          const features = planFeatureKeys(p.features).map((k) => FEATURE_LABELS[k]);
           const cantPay = price > 0 && !data.paystack;
           const action = pending === p.id ? (price ? "Opening Paystack…" : "Switching…") : price ? (chosen ? `Continue with ${p.name}` : price > currentPrice ? `Upgrade to ${p.name}` : `Pay with Paystack`) : `Switch to ${p.name}`;
           return (

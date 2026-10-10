@@ -87,6 +87,8 @@ const F = {
   assignment: (by = OLU, title = "Pricing page") => ({ v: 1, kind: "assignment", task: { id: "t3", title, project: "Website relaunch", dueAt: later(24 * 5), estimateMinutes: 240, priority: "high", status: "todo" }, by, canStart: true }),
   routine: () => ({ v: 1, kind: "routine", name: "Friday roundup", lead: "6 things still owed.", sections: [{ id: "owed_to_you", label: "owed to you", count: 4 }, { id: "overdue", label: "overdue", count: 2 }] }),
   rollup: () => ({ v: 1, kind: "rollup", team: "Design", posted: 4, members: 6, blockers: 1, noUpdate: [ABA, FABRO], late: [] }),
+  // Calls (phase 8): the server's `call` facts (src/server/services/notice-facts.ts, contract C.7).
+  call: (o: Record<string, unknown> = {}) => ({ v: 1, kind: "call", callId: "ca110000-0000-4000-8000-000000000001", from: { ...ADA, membershipId: "b1a00000-0000-4000-8000-000000000001" }, where: null, direct: true, at: ago(4), live: false, callBack: { membershipId: "b1a00000-0000-4000-8000-000000000001" }, ...o }),
 };
 
 /** Every notification kind with its facts, as `{ kind: "notification", n }`. */
@@ -110,6 +112,9 @@ const withFacts: Record<string, Card> = {
   routine: { kind: "notification", n: N("15", "brenda.routine", F.routine()) },
   rollup: { kind: "notification", n: N("16", "brenda.standup_rollup", F.rollup()) },
   clockin: { kind: "notification", n: N("17", "brenda.clock_in", null) },
+  missed: { kind: "notification", n: N("17m", "call.missed", F.call()) },
+  missedLive: { kind: "notification", n: N("17l", "call.missed", F.call({ where: "#Design", direct: false, live: true, callBack: null })) },
+  recap: { kind: "notification", n: N("17r", "call.recap", null, { title: "Notes from your call with Ada", body: "We agreed the pricing page ships on Friday." }) },
   nudge: { kind: "notification", n: N("18", "brenda.nudge", null) },
   unknown: { kind: "notification", n: N("19", "billing.renewal", null) },
 };
@@ -162,11 +167,15 @@ describe("NotifyCards.classify", () => {
     ["review.approved", "together", "good", "good", false], ["brenda.commitment_accepted", "together", "good", "good", false], ["brenda.block_answered", "together", "good", "good", false],
     ["assistant.request", "request", "needs", "ask", true], ["brenda.followup_ask", "ask", "needs", "ask", true], ["brenda.commitment", "commitment", "needs", "ask", true], ["brenda.open_ask", "commitment", "needs", "ask", true],
     ["brenda.blocked_on", "blocked", "needs", "ask", true], ["brenda.standup", "standup", "needs", "ask", true],
-    ["brenda.mention_confirm", "confirm", "needs", "ask", true], ["brenda.replan", "confirm", "needs", "ask", true], ["review.requested", "confirm", "needs", "ask", true], ["adjustment.requested", "confirm", "needs", "ask", true], ["capture.exception", "confirm", "needs", "ask", true],
+    ["brenda.mention_confirm", "confirm", "needs", "ask", true], ["brenda.replan", "confirm", "needs", "ask", true], ["review.requested", "confirm", "needs", "ask", true], ["adjustment.requested", "confirm", "needs", "ask", true],
     ["brenda.reminder", "reminder", "needs", "time", false], ["task.assigned", "assignment", "needs", "time", false], ["brenda.commitment_due", "due", "needs", "time", false],
     ["brenda.nudge", "plain", "needs", "time", false], ["brenda.commitment_stalled", "plain", "needs", "time", false], ["task.blocked", "plain", "needs", "time", false], ["review.changes_requested", "plain", "needs", "time", false],
     ["brenda.routine", "routine", "plain", "report", false], ["brenda.routine_bundle", "routine", "plain", "report", false], ["brenda.standup_rollup", "rollup", "plain", "report", false],
     ["brenda.clock_in", "clockin", "good", "good", false],
+    // Calls (owner decisions, 8 October 2026: phase 8): a missed call has its own card, a call's notes the plain one.
+    ["call.missed", "call", "talk", "people", false], ["call.recap", "plain", "plain", "report", false],
+    // Screen recording is gone (phase 8): an old capture exception still unread draws the plain card.
+    ["capture.exception", "plain", "plain", "report", false],
     ["review.question", "plain", "talk", "people", false], ["brenda.commitment_declined", "plain", "talk", "people", false], ["brenda.block_not_me", "plain", "talk", "people", false],
     ["brenda.routine_failed", "plain", "plain", "report", false], ["brenda.standup_failed", "plain", "plain", "report", false],
     ["billing.renewal", "plain", "plain", "report", false], ["", "plain", "plain", "report", false],
@@ -263,6 +272,7 @@ describe("NotifyCards.card", () => {
       { kind: "notification", n: N("75", "brenda.commitment_accepted", F.commitment({ committer: L(BEN) })) },
       { kind: "notification", n: N("76", "task.assigned", F.assignment(L(OLU), title)) },
       { kind: "notification", n: N("77", "brenda.daily_report", F.report([L(FABRO)])) },
+      { kind: "notification", n: N("77c", "call.missed", F.call({ from: L(ADA) })) },
       { kind: "notification", n: N("78", "brenda.daily_report", { ...F.report(), localDate: "2026-10-07", trackedSeconds: 3600 * 9999 }) },
       ...["add_todo", "task_status", "task_comment", "set_reminder", "other"].map((k): Card => ({ ...fromState.request, n: N(`79${k}`, "assistant.request", F.request(L(BEN), k)), w: { ...reqW, sender: L(BEN) } })),
       { ...fromState.itemMessage, w: { ...(fromState.itemMessage.w as object), sender: L(OLU) } },
@@ -286,6 +296,8 @@ describe("NotifyCards.card", () => {
       { kind: "notification", n: N("92", "review.approved", { ...F.review(villain, evil), note: evil }, { href: "https://evil.example" }) },
       { kind: "notification", n: N("93", "billing.renewal", null, { title: evil, body: evil, href: "javascript:alert(1)" }) },
       { kind: "notification", n: N("94", "brenda.daily_report", F.report([villain])) },
+      { kind: "notification", n: N("94c", "call.missed", F.call({ from: villain, where: evil, direct: false, live: true }), { href: "javascript:alert(1)" }) },
+      { kind: "notification", n: N("94d", "call.missed", F.call({ from: villain, live: false, callId: `"><script>`, callBack: { membershipId: evil } })) },
       { ...fromState.request, n: N("95", "assistant.request", { ...F.request(villain), note: evil }), w: { ...reqW, sender: villain, note: evil, lines: [evil] } },
       { ...fromState.noted, w: { ...(fromState.noted.w as object), title: evil, what: evil, href: "javascript:alert(1)" } },
       { ...fromState.standup, w: { ...(fromState.standup.w as object), texts: { yesterday: evil, today: evil, blocked: evil }, href: "javascript:alert(1)" } },

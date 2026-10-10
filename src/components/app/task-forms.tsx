@@ -52,7 +52,7 @@ const OPEN = ["todo", "in_progress", "blocked"];
 
 type TaskLite = { id: string; version: number; status: string; archived: boolean; blockedReason: string | null };
 /** What the edit sheet starts from: the task as it stands, so saving one field never resets the others. */
-type TaskEditable = { reviewerId: string | null; assigneeId: string; estimateMinutes: number | null; dueAt: string | null; priority: string; captureRequirement: string };
+type TaskEditable = { reviewerId: string | null; assigneeId: string; estimateMinutes: number | null; dueAt: string | null; priority: string };
 
 /** An instant as the date picker's local "yyyy-mm-ddThh:mm". Only runs in the browser: the edit sheet opens on a click. */
 function localDateTime(iso: string | null) {
@@ -138,7 +138,7 @@ export function TaskActions({ orgSlug, task, isAssignee, canManage, members, cur
 
 /**
  * The task's edit form in a right-hand sheet (owner decision, 28 September 2026): reviewer, assignee, estimate, due,
- * priority, capture. Every field starts at the task's own value and only what changed is sent, so editing the reviewer
+ * priority. Every field starts at the task's own value and only what changed is sent, so editing the reviewer
  * cannot clear the due date or reset the priority. A refusal shows here, next to the field it is about.
  */
 function EditTaskSheet({ onClose, onSubmit, pending, error, fieldErrors, canManage, members, current }: { onClose: () => void; onSubmit: (body: Record<string, unknown>) => void; pending: boolean; error: string | null; fieldErrors: Record<string, string[]>; canManage: boolean; members: { id: string; display_name: string }[]; current: TaskEditable }) {
@@ -157,12 +157,10 @@ function EditTaskSheet({ onClose, onSubmit, pending, error, fieldErrors, canMana
     if (canManage) {
       const assignee = String(f.get("assigneeMembershipId") ?? current.assigneeId);
       if (assignee !== current.assigneeId) body.assigneeMembershipId = assignee;
-      const capture = String(f.get("captureRequirement") ?? current.captureRequirement);
-      if (capture !== current.captureRequirement) body.captureRequirement = capture;
     }
     onSubmit(body);
   };
-  const unplaced = error && !["reviewerMembershipId", "assigneeMembershipId", "estimateMinutes", "dueAt", "priority", "captureRequirement"].some((k) => fieldErrors[k]?.length);
+  const unplaced = error && !["reviewerMembershipId", "assigneeMembershipId", "estimateMinutes", "dueAt", "priority"].some((k) => fieldErrors[k]?.length);
   return (
     <Sheet open onClose={onClose} dismissible={false} title="Edit task" description="Only what you change is saved."
       footer={<><Button variant="secondary" onClick={onClose}>Cancel</Button><Button type="submit" form={formId} loading={pending}>{pending ? "Saving…" : "Save changes"}</Button></>}>
@@ -175,7 +173,6 @@ function EditTaskSheet({ onClose, onSubmit, pending, error, fieldErrors, canMana
           <Field label="Due" htmlFor="e-due" hint="Optional" error={fieldErrors.dueAt}><DatePicker mode="datetime" id="e-due" name="dueAt" defaultValue={due} /></Field>
         </div>
         <Field label="Priority" htmlFor="e-pri" error={fieldErrors.priority}><Select id="e-pri" name="priority" defaultValue={current.priority}><option value="low">Low</option><option value="normal">Normal</option><option value="high">High</option><option value="urgent">Urgent</option></Select></Field>
-        {canManage ? <Field label="Screen capture" htmlFor="e-cap" hint="Only applies if policy enables recording" error={fieldErrors.captureRequirement}><Select id="e-cap" name="captureRequirement" defaultValue={current.captureRequirement}><option value="none">Not requested</option><option value="optional">Optional</option><option value="required">Required on this task</option></Select></Field> : null}
       </form>
     </Sheet>
   );

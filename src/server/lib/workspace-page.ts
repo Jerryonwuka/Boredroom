@@ -21,7 +21,8 @@ export async function workspacePage(slug: string, currentPath: string): Promise<
   }
   if (!ctx.user.emailVerified) redirect(`/verify/pending?next=${encodeURIComponent(currentPath)}`);
   // One statement for counts and teams: on a distant database every round trip shows. No policy gate: the general
-  // sign-off is gone (owner decision, 5 October 2026); consent to screen recording is asked when a recorded session starts.
+  // sign-off is gone (owner decision, 5 October 2026) and nobody is asked to agree to anything (owner decision,
+  // 8 October 2026: phase 8, screens are no longer recorded).
   const { counts, teams } = await workspaceShell(ctx);
   return { ctx, counts, teams };
 }

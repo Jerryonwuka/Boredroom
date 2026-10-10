@@ -87,7 +87,9 @@ export type CommitmentView = {
   viewer: "committer" | "asker" | "supervisor";
   title: string; dueAt: string | null; dueWords: string | null; dueLabel: string | null;  // "Thu 9 Oct, 17:00" (org zone)
   committer: PersonRef; asker: PersonRef | null;
-  where: { conversationId: string; kind: "team" | "organisation" | "channel"; name: string | null };  // name null: viewer can't read it
+  // name null: viewer can't read it. "direct" (phase 8, owner decisions, 8 October 2026): an action item from a call in a
+  // direct thread (a detected commitment is never in one); its name is null.
+  where: { conversationId: string; kind: "team" | "organisation" | "channel" | "direct"; name: string | null };
   // quote ≤ 280, live, viewer's RLS; null once the message was edited after it was noted (`edited`: the card says so)
   message: { id: string; at: string; href: string | null; quote: string | null; withdrawn: boolean; edited?: boolean };
   agreement: { id: string; href: string | null; quote: string | null; edited?: boolean } | null;
@@ -101,6 +103,13 @@ export type CommitmentView = {
   /** Owners and HR hold no to-dos: Accept tracks it without one. */
   acceptMakesTodo: boolean;
   href: string;                      // /app/{slug}/commitments?c={id}
+  /**
+   * The call it came from (phase 8, owner decisions, 8 October 2026): an action item in the workspace assistant's recap
+   * of a call, which its person must accept. Its `message` is the recap in the call's thread, never quoted, and its link
+   * opens the call's page. Null for a commitment noted in a group chat (the server always sets it; optional only so views
+   * built by hand, in tests and fixtures, need not name it).
+   */
+  call?: { id: string; href: string } | null;
 };
 export type CommitmentScope = "mine" | "team" | "all";
 export type CommitmentFilters = {
@@ -348,6 +357,12 @@ export const LOOP_WORDS = {
     replan: (taskTitle: string) => `Re-plan “${taskTitle}”?`,
     replanBody: (label: string) => `It stalled again. Suggested new due date: ${label}. Nothing changes until you confirm.`,
     acceptInterrupted: "Accepted, but Boredroom couldn't confirm the to-do was added. Check your to-dos.",
+    // Phase 8 (owner decisions, 8 October 2026): an action item from a call's recap.
+    callCommitment: (W: string, title: string) => `${W} noted on your call that you'll “${title}”`,
+  },
+  // Phase 8 (owner decisions, 8 October 2026): where an action item from a call's recap came from.
+  cards: {
+    fromCall: "From a call",
   },
   thread: {
     // Only Boredroom's words (security review, 9 October 2026): the title is someone's own words (the committer may

@@ -88,7 +88,7 @@ async function backdate(taskIds: string[], by = "7 days") {
     SET session_replication_role = origin;`);
 }
 async function task(ctx: OrgContext, title: string, assignee: OrgContext) {
-  return (await createTask(ctx, { projectId: a.projectId, title, expectedOutput: `${title}, done.`, assigneeMembershipId: id(assignee), reviewerMembershipId: id(david), category: "work", priority: "normal", estimateMinutes: null, dueAt: null, captureRequirement: "none", addToMyDay: false })).id;
+  return (await createTask(ctx, { projectId: a.projectId, title, expectedOutput: `${title}, done.`, assigneeMembershipId: id(assignee), reviewerMembershipId: id(david), category: "work", priority: "normal", estimateMinutes: null, dueAt: null, addToMyDay: false })).id;
 }
 
 beforeAll(async () => {

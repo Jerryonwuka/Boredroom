@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Building2, ChevronRight, UsersRound, Wallet } from "lucide-react";
 import { AnimatedChevronRight } from "@/components/ui/animated-icons";
 import { requireAdmin } from "@/server/admin/auth";
-import { dashboardMetrics, activityByDay } from "@/server/admin/ops";
+import { dashboardMetrics, activityByDay, LIVEKIT_FREE_MINUTES_NOTE } from "@/server/admin/ops";
 import { paymentMetrics } from "@/server/admin/billing";
 import { marketingMetrics, waitlistByDay } from "@/server/admin/marketing";
 import { launchSettings } from "@/server/admin/settings";
@@ -109,8 +109,17 @@ export default async function AdminDashboard() {
             content: (
               <>
                 <AreaChart title="Daily activity, last 30 days" labels={activity.map((d) => dayLabel(d.day))} series={[{ label: "Sessions", values: activity.map((d) => d.sessions) }, { label: "Clock-ins", values: activity.map((d) => d.clock_ins) }, { label: "Tasks completed", values: activity.map((d) => d.tasks_completed) }]} format={num} />
+                {/* Calls (owner decisions, 8 October 2026: phase 8): "Not available" until migration 0054 is applied. */}
+                <dl className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  {[{ label: "Calls this month", value: m.calls ? num(m.calls.calls) : "Not available" }, { label: "Call minutes this month", value: m.calls ? num(m.calls.minutes) : "Not available" }].map((f) => (
+                    <div key={f.label} className="min-w-0 rounded-xl bg-fill-0 px-3 py-2.5">
+                      <dt className="type-metric-label">{f.label}</dt>
+                      <dd className="type-metric">{f.value}</dd>
+                    </div>
+                  ))}
+                </dl>
                 <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-                  <p className="text-meta font-normal text-secondary"><span className="tabular-nums">{num(m.usage.tasks)}</span> tasks open, <span className="tabular-nums">{num(m.usage.active_sessions)}</span> sessions open now, {bytes(m.usage.storage)} stored in <span className="tabular-nums">{num(m.usage.videos)}</span> recordings</p>
+                  <p className="text-meta font-normal text-secondary"><span className="tabular-nums">{num(m.usage.tasks)}</span> tasks open, <span className="tabular-nums">{num(m.usage.active_sessions)}</span> sessions open now, {bytes(m.usage.storage)} of files stored</p>
                   {more("/admin/usage", "Usage and activity")}
                 </div>
               </>
@@ -164,6 +173,7 @@ export default async function AdminDashboard() {
       </div>
       <PageNotes>
         <PageNote>Figures as of {formatDateTime(new Date())}, revenue in {pay.currency}.</PageNote>
+        <PageNote>{LIVEKIT_FREE_MINUTES_NOTE}</PageNote>
       </PageNotes>
     </>
   );

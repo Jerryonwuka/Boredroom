@@ -52,7 +52,11 @@ which signs the app out at once. The tray menu also has **Sign out of this compu
   `POST /api/orgs/:org/todos`, `/clock/in`, `/clock/out` and `/sessions/start`.
 - Her natural voice (when the person chose one, see "Her natural voice" below):
   `POST /api/orgs/:org/assistant/speech` with the reply's signed token and words, `as: "base64"`.
-- On the computer, it only opens Boredroom links in the browser. No files, keyboard, other apps or screen.
+- Calls (phase 8, see "Calls" below): `GET /api/orgs/:org/calls/now` every 4 seconds (2 while a call rings, 60 before
+  the server has calls), and `POST /api/orgs/:org/calls/:id/accept`, `/decline` and `POST /api/orgs/:org/calls` when the
+  person presses Accept, Decline or Call back.
+- On the computer, it only opens Boredroom links in the browser. No files, keyboard, other apps or screen. Since
+  phase 8 nothing records the screen anywhere in Boredroom, and the notch never uses the camera or microphone for calls.
 
 ## Talking to Brenda (hold to talk)
 
@@ -159,6 +163,70 @@ instead of waiting for the whole base64 answer, the change is in Rust:
 
 Rebuilding `src-tauri` restarts the notch, so this waits for the owner's go-ahead.
 
+## Calls
+
+Owner decisions, 8 October 2026, confirmed 10 October 2026 (phase 8, "build Phase 8, cook"): screen recording is gone and
+people call each other instead (one to one from a direct message, a team call or a group call from a channel, on every
+plan; video through LiveKit Cloud). The call itself always runs in the person's browser: WKWebView's limits on the
+camera, the microphone and screen sharing, the notch's size, and no Rust change in this phase. Up here the notch:
+
+- **Rings.** `pollCalls` in `main.js` asks `GET /calls/now` through the existing `api` command (the bearer token stays in
+  Rust) and asks again after each answer at the server's `pollMs`, clamped to 2 to 60 s: 4 s normally, 2 s while a call
+  rings, 60 s before migration 0054 or without LiveKit. A server from before phase 8 (404) is asked again in 5 minutes,
+  any other failure in 15 s; a 401 signs the notch out as everywhere. It starts after the first desktop state and stops
+  on signing out. Cost: one small JSON read every 4 s per signed-in notch (about 900 an hour, no rate limit on the
+  route); nothing about calls is added to the 20-second desktop state except each
+  teammate's `onCall`.
+- **Shows the incoming card** (`NotifyCards.ringCard`): the caller's assistant's face beside "Call" or "Call in #Design"
+  (the byline says where, the headline says who; fix review, 10 October 2026), "Ada Obi is calling", "You're on another call. Accepting leaves it." when it applies, a hairline running down to the ring's end,
+  "+1 more calling", then Decline, Message (three quick messages, the web's words, each a decline that sends it as the
+  person's own message) and Accept, the card's one orange button. An incoming call outranks every other card, the
+  morning opener and the summary (a notification it replaces stays unread in the bar). While the talk keys are held, or
+  the open card has something typed, pressed or awaiting a Confirm, the ring is one row at the top of that card instead
+  ("Ada is calling", a quiet Decline icon button, "Decline Ada's call", and Accept in white), so nothing typed is lost
+  (`Notify.ringAction`). The ring plays every 2.5 s while the card
+  shows; Esc silences it and the card stays; the card never folds on its own while the ring lives and closes when the
+  ring leaves `/calls/now` (answered elsewhere, cancelled, or the 30 s ran out).
+- **Answers and declines.** Accept is `POST /calls/:id/accept` (with `leaveOther` when the person is on another call),
+  then `open_in_browser` with `/app/:org/calls/:id?from=notch` (the web page shows Join, whose press turns its sound on),
+  and "Opening the call in your browser" for 3 s. Decline is `POST /calls/:id/decline` ("Declined." for 1.2 s; with a
+  quick message, "Sent and declined."). A call that ended meanwhile says "The call has ended."; any other refusal shows
+  the server's words on the card.
+- **Missed calls and notes** are notifications: a missed call has its own card (Join while the call is still on, Call
+  back for a direct call, else Open), a call's notes are the plain card from the workspace's assistant. On another call
+  (fix review, 10 October 2026), the missed card says "You're on another call." and its Join becomes "Leave it and
+  join", which leaves that call first, as Accept does; a Join the server refuses with 409 `IN_ANOTHER_CALL` (the ring poll
+  had not seen that call yet) turns into the same choice, never a dead end.
+- **On a call,** the compact bar says so first: the live dot, the call's clock in orange digits, "On a call in #Design";
+  a click opens the call in the browser. Teammates on a call carry a small phone mark on their faces ("on a call" in
+  their title).
+- **Quiet hours** ring nothing (the server does not ring anyone in quiet hours either; this is the belt and braces): no
+  card, no sound. A missed call waits in the bell and opens after quiet hours like any held card. The tray's sound switch
+  silences the ring as it silences every sound (a separate switch for calls up here needs a tray item, a Rust change; the
+  web has its own, Settings → Your assistant → Calls).
+- **One ringer** (fix review, 10 October 2026: the notch and a Boredroom tab rang at once, out of step). Each ring poll
+  says whether the notch rings aloud: `?ring=1` while the tray's sounds are on and quiet hours are off, else `?ring=0`
+  (turning the tray's sounds off asks again at once). The server remembers a `ring=1` from a desktop session for 20 s
+  against a keyed digest of the network it came from (`call_ringers`, migration 0054; never the address), and a browser
+  on the same network then shows its incoming card without a ring. A browser elsewhere still rings, and a notch that
+  stops polling (asleep, quit, signed out) hands the ring back to the browser within 20 s.
+
+What it does not do: join or show the call (no camera, microphone, screen share or LiveKit here), turn on Brenda's
+notes, or ring when the notch is hidden, the Mac is in Do Not Disturb or the app is not running (the web rings in any
+open Boredroom tab, and the missed call is in the bell either way).
+
+### Rust follow-ups (not done in phase 8; `src-tauri` unchanged)
+
+1. A native macOS notification and sound for an incoming call when the notch is hidden or muted, or the Mac is in Do Not
+   Disturb (`UNUserNotificationCenter` with a time-sensitive interruption level, Accept and Decline as its actions).
+2. Forward `idempotencyKey` as the `Idempotency-Key` header in the `api` command. `main.js` already passes it on Accept
+   and Decline (and on the phase 7b presses); the server's Accept and Decline are idempotent today without it.
+3. A 5-second timeout for `GET /calls/now` in the `api` command, so one slow answer cannot hold the ring poll (the poll
+   never stacks, but it waits for the answer before asking again).
+4. A pushed channel (the events stream, or a small WebSocket) instead of polling, so a ring arrives at once and an idle
+   notch asks nothing.
+5. `NSCameraUsageDescription` (and the microphone's for calls) in `Info.plist` only if calls ever move into the app.
+
 ## Look
 
 Boredroom's design system v4 (owner decision, 6 October 2026: the ElevenLabs app's design language, with orange kept as
@@ -216,7 +284,12 @@ late audio is dropped), `suspended` (the audio context never runs: the computer 
 `decode` (bytes that are not audio) and `listen` (the talk keys go down while it plays: it stops at once) show each
 fallback; the mock computer voice logs `speak` in the console. Serve this folder with any static server and open it
 (for example `python3 -m http.server 4517` in `desktop/`, then `http://127.0.0.1:4517/preview.html?card=speaking&natural`);
-it is not part of the app. A browser that wants a press before it plays sound shows "Press anywhere to start" first. To
+it is not part of the app. A browser that wants a press before it plays sound shows "Press anywhere to start" first.
+Calls (phase 8): `?state=call-incoming`, `call-incoming-group` ("+1 more calling"), `call-incoming-busy` (the ring as the
+strip on a follow-up ask that must stay), `call-waiting` (on another call), `call-missed` (Call back), `call-missed-live`
+(Join; `&busy` on another call: "Leave it and join"; `&busy=stale`: Join meets the 409 first), `on-call` (the bar with a running clock) and `call-recap`; `&accept=ended` answers Accept with 409 `CALL_ENDED`,
+`&hold` keeps it ringing past 30 s, `&calls=404` answers as a server from before phase 8; the mocked `open_in_browser`
+logs the call page it would open. The comment at the top of `preview.html` says what each one shows. To
 see it in WebKit, as the notch does, open the same address in Safari by hand (Develop › Show JavaScript Console for the
 logs); Safari also wants a press first, which the notch does not.
 

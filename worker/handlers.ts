@@ -330,14 +330,41 @@ const standupSweep: Handler = async () => {
   if (moved) console.log(`[worker] standup: ${JSON.stringify({ opened: r.opened, drafted, sent, released: r.released, lateNoted: r.lateNoted, missed: r.missed, cancelled: r.cancelled })}`);
 };
 
-const retentionDelete: Handler = async (payload) => {
-  const { deleteRecording } = await import("../src/server/services/recording");
-  await deleteRecording(payload.recordingId as string, (payload.reason as "retention" | "incident" | "offboarding") ?? "retention");
+// ---- Calls (owner decisions, 8 October 2026, confirmed 10 October 2026: phase 8) -------------------------------------------
+// Screen recording's jobs (recording.assemble, recording.retention_delete) went with it; the old recordings are deleted by
+// the owner's own script (db/scripts/delete-recordings.ts). Calls' jobs are idempotent and re-derivable from the calls
+// tables, and every timed move also happens on reads (services/calls), so a lost or late job never leaves a call wrong.
+// Each returns at once before migration 0054.
+
+/** `call.ring_timeout` (`callId`), 32 s after a call starts: the rings past their 30 seconds become missed calls. */
+const callRingTimeout: Handler = async (payload) => {
+  const callId = String(payload.callId ?? "");
+  if (!UUID.test(callId)) return;
+  const { settleCall } = await import("../src/server/services/calls");
+  await settleCall(callId);
 };
 
-const assembleRecording: Handler = async (payload) => {
-  const { assembleRecording: assemble } = await import("../src/server/services/recording");
-  await assemble(payload.recordingId as string);
+/**
+ * `call.sweep`: settles live calls (rings, silent devices, 15 minutes alone, the 4-hour cap), closes LiveKit rooms of
+ * ended calls, takes out of a room anyone Boredroom thinks has left, queues stuck recaps; `{ rooms: true }` (at most every
+ * 10 minutes) also deletes leftover `call-<uuid>` rooms. A line in the log only when something moved.
+ */
+const callSweep: Handler = async (payload) => {
+  const { sweepCalls } = await import("../src/server/services/calls");
+  const r = await sweepCalls({ rooms: payload.rooms === true });
+  if (r.settled || r.roomsClosed || r.recapsQueued || r.strayRooms) console.log(`[worker] calls: ${JSON.stringify(r)}`);
+};
+
+// Brenda's notes on calls (owner decisions, 8 October 2026: phase 8): the recap after a call, and the transcripts' deletion
+// 7 days after it (the recap stays).
+const callRecap: Handler = async (payload) => {
+  const { runCallRecap } = await import("../src/server/services/call-recap");
+  await runCallRecap(String(payload.callId));
+};
+const callTranscriptPurge: Handler = async () => {
+  const { purgeCallTranscripts } = await import("../src/server/services/call-notes");
+  const r = await purgeCallTranscripts();
+  if (r.lines) console.log(`[worker] call transcripts deleted: ${JSON.stringify(r)}`);
 };
 
 const scanDeliverable: Handler = async (payload) => {
@@ -391,8 +418,11 @@ export const handlers: Record<string, Handler> = {
   "standup.draft": standupDraft,
   "standup.rollup": standupRollup,
   "standup.sweep": standupSweep,
-  "recording.retention_delete": retentionDelete,
-  "recording.assemble": assembleRecording,
+  // Phase 8 (owner decisions, 8 October 2026): calls.
+  "call.ring_timeout": callRingTimeout,
+  "call.sweep": callSweep,
+  "call.recap": callRecap,
+  "call.transcript_purge": callTranscriptPurge,
   "deliverable.scan": scanDeliverable,
   "system.purge_expired": purgeExpired,
   "voice.history_forget": voiceHistoryForget,

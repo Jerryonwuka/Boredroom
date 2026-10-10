@@ -153,7 +153,7 @@ describe("answers in the thread", () => {
 
   it("facts narrower than the audience: a line in public, the answer only for David", async () => {
     const hidden = await createProject(david, { name: "Vendors", description: "Contracts", requiresDueDate: false, requiresEstimate: false, memberIds: [id(ben)] });
-    const task = await createTask(david, { projectId: hidden.id, title: "Vendor contract", expectedOutput: "Signed contract.", assigneeMembershipId: id(ben), reviewerMembershipId: id(david), category: "work", priority: "normal", estimateMinutes: null, dueAt: null, captureRequirement: "none", addToMyDay: false });
+    const task = await createTask(david, { projectId: hidden.id, title: "Vendor contract", expectedOutput: "Signed contract.", assigneeMembershipId: id(ben), reviewerMembershipId: id(david), category: "work", priority: "normal", estimateMinutes: null, dueAt: null, addToMyDay: false });
     await touch(task.id, "Waiting on legal.");
     const sent = await send(david, design, "@Ben's Brenda where is the vendor contract?", [BENS()]);
     expect(await processMention(sent.mentionId!, NO_MODEL)).toBe("answered");

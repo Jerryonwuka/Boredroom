@@ -8,7 +8,7 @@ Every external dependency sits behind an interface with a local adapter so the w
 - Create the restricted role: `CREATE ROLE boardroom_app LOGIN PASSWORD '…' NOSUPERUSER NOBYPASSRLS;` Migration `0005_rls.sql` grants it table privileges.
 - Set `DATABASE_ADMIN_URL` (migrations only, never in the web runtime) and `DATABASE_URL` (application role).
 - Run `pnpm db:migrate` from CI or an operator machine. Keep development and production separate.
-- Backups: enable point-in-time recovery; see `docs/runbooks.md` for the restore drill and tombstone re-application.
+- Backups: enable point-in-time recovery; see `docs/runbooks.md` for the restore drill (and, for a backup from before phase 8, deleting the old recordings again).
 
 ## Authentication
 
@@ -72,22 +72,30 @@ Another provider: implement `MailProvider.send` (and `verify` if it has a handsh
 
 Local: `STORAGE_PROVIDER=local` stores bytes under `STORAGE_LOCAL_DIR` (outside the web root). Keys are always server-generated and tenant-prefixed (`org/<id>/…`).
 
-Supabase private Storage: implement `StorageProvider` (`put/get/stream/size/delete/exists/concat`) against a private bucket with the service-role key on the server only. Do not enable public access or CDN caching for the bucket; playback and downloads always go through the app's signed 60-second URLs so restriction and deletion take effect immediately. Set lifecycle rules so backups of media expire on a defined schedule.
+It holds evidence uploads, voice notes and pictures. Supabase private Storage: implement `StorageProvider` (`put/get/stream/size/delete/exists`) against a private bucket with the service-role key on the server only. Do not enable public access or CDN caching for the bucket; downloads always go through the app's signed 60-second URLs so deletion takes effect immediately. Set lifecycle rules so backups expire on a defined schedule.
 
 ## Malware scanning
 
 `SCAN_PROVIDER=none` keeps uploaded files quarantined (`scan_status = pending`, downloads refused). For local demos set `SCAN_ALLOW_UNSCANNED=true` to mark them clean. For production implement `scanDeliverable` in `src/server/services/evidence.ts` against ClamAV or a scanning API and set `SCAN_PROVIDER=clamav`.
 
-## Media processing
+## Video calls: LiveKit Cloud
 
-The worker assembles chunked WebM/MP4 recordings by concatenating chunks from one recorder instance and validating the container header. No transcoding is performed; browsers play the assembled WebM directly. If you need MP4 derivatives, add an ffmpeg step in `assembleRecording` (worker environment must ship ffmpeg).
+Calls (phase 8, owner decision, 8 October 2026) carry sound, video and screen share through LiveKit Cloud; ringing, missed calls, history and Brenda's notes are Boredroom's own. The only file that talks to LiveKit is `src/server/lib/livekit.ts`: it signs tokens locally and lists, inspects and deletes rooms. It never creates ingress, egress, SIP or recordings, and never configures webhooks.
+
+- `LIVEKIT_URL`: the project's `wss://…livekit.cloud` address.
+- `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`: from the project's Settings → Keys. Server only; never in the browser, never committed.
+- Without the three, calls are off and every surface says so; `pnpm run doctor` and `/api/health` report it (never the values).
+- HTTPS is needed for camera, microphone and screen share (`http://localhost` is the one exception browsers allow).
+- What leaves the app: each call's sound and video go to LiveKit only to reach the people on that call; nothing is recorded or stored there (no egress, no recording). Brenda's notes are written on each consenting person's own device; only text reaches Boredroom's server, and no audio is sent to any speech service.
+- Plan: the free Build plan stops at 5,000 participant minutes a month; see `docs/runbooks.md`, "Calls: checking LiveKit".
+- The webhook (production, optional but recommended; fix review, 10 October 2026): LiveKit cannot revoke a join token, so Boredroom's last 2 minutes and anyone in a call's room without a place in the call is taken out. The heartbeats and the worker do it within seconds anyway; registering `https://<host>/api/livekit/webhook` (`docs/runbooks.md`, "Registering the LiveKit webhook in production") does it the moment they connect.
 
 ## Hosting
 
 - Web: any Node 22 host. Set `APP_ORIGIN` to the public HTTPS origin (used for links and the same-origin check). Set a strong `APP_SECRET`.
 - Worker: a separate long-running process with the same environment variables. Only one worker is needed for the pilot; more can run concurrently (jobs use `FOR UPDATE SKIP LOCKED`).
-- HTTPS is required for screen capture (`getDisplayMedia` only works in secure contexts).
+- HTTPS is required for calls: camera, microphone and screen share (`getUserMedia` and `getDisplayMedia` only work in secure contexts).
 
 ## Monitoring
 
-Wire `console.error` output from the API wrapper (`[requestId]` prefixed) and the worker into your error reporter with PII scrubbing. Watch: job backlog (`jobs` where state = 'pending'), dead jobs, upload failures (`recordings.upload_state = 'failed'`), stale sessions (`work_sessions.state = 'interrupted'`), storage bytes, retention lag (`recordings.expires_at < now() AND deleted_at IS NULL`).
+Wire `console.error` output from the API wrapper (`[requestId]` prefixed) and the worker into your error reporter with PII scrubbing. Watch: job backlog (`jobs` where state = 'pending'), dead jobs, stale sessions (`work_sessions.state = 'interrupted'`), storage bytes, calls left live (`calls.state <> 'ended'` older than 4 hours), call minutes against the LiveKit plan, and call transcripts older than 7 days after their recap.

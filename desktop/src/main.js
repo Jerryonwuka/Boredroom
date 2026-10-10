@@ -243,6 +243,34 @@
 // and signing out stop the natural voice as they stop Rust's. The card keeps its offer (`card.speech`), so Listen says it
 // in the same voice while the token lasts (30 minutes); after that, or without an offer, Listen uses the computer voice.
 // desktop/README.md writes down the Rust change for later (a native player, if WKWebView ever refuses Web Audio).
+//
+// Calls (owner decisions, 8 October 2026, confirmed 10 October 2026: phase 8, "build Phase 8, cook"; contract F). Screen
+// recording for tasks is gone; people call each other, one to one, in a group or as a team, on every plan, and the call
+// itself runs in the person's browser (WKWebView's camera, microphone and screen-share limits, the notch's size, and no
+// Rust change in this phase). Up here the notch rings, answers and declines:
+// - The ring poll (`pollCalls`): GET /calls/now through the existing `api` command, again after each answer at the
+//   server's `pollMs` clamped to 2 to 60 s (4 s, 2 s while ringing, 60 s before migration 0054 or without LiveKit), with
+//   setTimeout, never setInterval. A server from before phase 8 (404) is asked again in 5 minutes, any other failure in
+//   15 s; a 401 signs out as everywhere. Nothing while signed out, and nothing of it is kept after signing out.
+// - What a ring does (Notify.ringAction): the incoming card replaces whatever is open (an incoming call outranks every
+//   card, the morning opener and the summary, and never waits in the queue; a notification it replaces stays unread in
+//   the bar); while the talk keys are held, or a card has something typed, pressed or awaiting a Confirm, the ring is one
+//   row at the top of that card instead ("Ada is calling", a quiet Decline, Accept), so nothing typed is lost. Quiet hours
+//   ring nothing.
+// - The incoming card (NotifyCards.ringCard): the caller's assistant's face, "Ada is calling", where, the waiting line
+//   when the person is on another call, a hairline to the ring's end, Decline, Message (three quick messages, each a
+//   decline that sends it as the person's own message) and Accept, the card's one orange button. The ring sounds every
+//   2.5 s while the card shows (quiet hours and the tray's mute silence it; one ringer, fix review 10 October 2026: each
+//   poll says `?ring=1` while the notch can ring aloud, and a browser on the same network then stays silent); Esc
+//   silences it and the card stays; it never folds on its own while the ring lives, and closes when the ring leaves
+//   /calls/now (answered elsewhere, cancelled, timed out). Accept answers the call (POST /calls/:id/accept) and opens
+//   the call page in the browser (`?from=notch`, where Join turns its sound on), "Opening the call in your browser" for
+//   3 s; Decline says "Declined." for 1.2 s.
+// - A missed call is a notification card (Join while the call is still on, Call back for a direct call, else Open); the
+//   call's notes are the plain card. Both wait through quiet hours like any notification.
+// - On a call, the compact bar says so first: the live dot, the call's clock in orange digits, "On a call in #Design";
+//   a click opens the call in the browser. Teammates on a call carry a small phone mark on their faces.
+// desktop/README.md ("Calls") writes down what the notch does not do and the Rust follow-ups.
 
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
@@ -257,6 +285,8 @@ const WIDE = 420;
 // end card are 440 px wide (their root is `.nc`); the bar is 300 px while it names a sender or the mix of what is waiting.
 const WIDE_NOTICE = 440;
 const COMPACT_WIDE = 300;
+// On a call (phase 8, 8 October 2026): the live dot, the clock and "On a call in #Design" need a little more.
+const COMPACT_CALL = 340;
 const POLL_MS = 20_000;
 const PRESENCE_MS = 10 * 60_000;
 const CLOSE_AFTER_MS = 8_000;
@@ -415,10 +445,13 @@ const face = (o = {}) => {
 /** A teammate's small face: their own assistant (owner request, 9 October 2026), in its colour with its visor and eyes (Brenda when the server sends none), with a dot when their timer is running (orange), paused (amber) or interrupted (red). */
 const MATES = 8;
 const hue = (id) => `var(--mate-${[...String(id)].reduce((a, c) => a + c.charCodeAt(0), 0) % MATES})`;
-const who = (p) => `${esc(p.name)}${p.task ? `, ${esc(p.task)}` : ""}`;
+// A teammate on a call (phase 8, owner decisions, 8 October 2026: `team[].onCall`, who is in a call, never which) carries a
+// small phone mark and "on a call" in their title; nothing changes colour.
+const who = (p) => `${esc(p.name)}${p.task ? `, ${esc(p.task)}` : ""}${p.onCall === true ? ", on a call" : ""}`;
+const PHONE_MARK = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.832 16.568a1 1 0 0 0 1.213-.303l.355-.465A2 2 0 0 1 17 15h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2A18 18 0 0 1 2 4a2 2 0 0 1 2-2h3a2 2 0 0 1 2 2v3a2 2 0 0 1-.8 1.6l-.468.351a1 1 0 0 0-.292 1.233 14 14 0 0 0 6.392 6.384"/></svg>`;
 const mini = (p) => {
   const a = assistantOf(p.assistant);
-  return `<span class="face small mini" data-sphere="${esc(a.colour)}" data-visor="${esc(a.visor)}" data-eyes="${esc(a.eyes)}" style="--sphere-hi:${esc(a.face.hi)};--sphere-mid:${esc(a.face.mid)};--sphere-edge:${esc(a.face.edge)}" title="${who(p)}"><span class="eyes"><span></span><span></span></span>${p.state ? `<i class="st ${esc(p.state)}"></i>` : ""}</span>`;
+  return `<span class="face small mini" data-sphere="${esc(a.colour)}" data-visor="${esc(a.visor)}" data-eyes="${esc(a.eyes)}" style="--sphere-hi:${esc(a.face.hi)};--sphere-mid:${esc(a.face.mid)};--sphere-edge:${esc(a.face.edge)}" title="${who(p)}"><span class="eyes"><span></span><span></span></span>${p.state ? `<i class="st ${esc(p.state)}"></i>` : ""}${p.onCall === true ? `<i class="ph">${PHONE_MARK}</i>` : ""}</span>`;
 };
 const pad = (n) => String(n).padStart(2, "0");
 const hms = (s) => `${pad(Math.floor(s / 3600))}:${pad(Math.floor(s / 60) % 60)}:${pad(s % 60)}`;
@@ -464,8 +497,9 @@ const ICONS = {
 /** An icon; its class (`ic-<name>`) picks the small move it makes when its button is hovered or focused (style.css). */
 const icon = (name) => `<svg class="ic ic-${name}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name]}</svg>`;
 // The Reports and Policy pages are gone (owner decision, 5 October 2026): an older notification or answer that still
-// points at one gets no Open button.
-const removedPage = (href) => /^(?:https?:\/\/[^/]+)?\/app\/[^/?#]+\/(?:reports|policy)(?:[/?#]|$)/.test(String(href ?? ""));
+// points at one gets no Open button. So is Recordings (owner decisions, 8 October 2026: phase 8, screen recording taken
+// out; its old links redirect to Calls on the web, but nothing here points at it).
+const removedPage = (href) => /^(?:https?:\/\/[^/]+)?\/app\/[^/?#]+\/(?:reports|policy|recordings)(?:[/?#]|$)/.test(String(href ?? ""));
 /** How far the running session is through its estimate, 0 to 1, or null without one. */
 const estimateShare = () => { const t = data?.timer; return t?.estimateMinutes ? Math.min(1, elapsed() / (t.estimateMinutes * 60)) : null; };
 
@@ -514,7 +548,9 @@ function fit() {
   else if (!open) island.classList.remove("growing");
   const tuck = tucked && !open;
   island.classList.toggle("tucked", tuck);
-  const wide = open ? (el.firstElementChild?.classList.contains("nc") ? WIDE_NOTICE : WIDE) : barWide ? COMPACT_WIDE : COMPACT.w;
+  // A card drawn by notify-cards.js (`.nc`, the incoming call's too) is 440 px, whatever row sits above it (phase 8: the
+  // ring's strip on a card that must stay).
+  const wide = open ? (el.querySelector(":scope > .nc") ? WIDE_NOTICE : WIDE) : barWide === "call" ? COMPACT_CALL : barWide ? COMPACT_WIDE : COMPACT.w;
   el.style.width = `${wide}px`;
   const w = open ? wide : tuck ? TUCK.w : wide + (hovering ? PEEK : 0);
   const h = open ? Math.ceil(el.offsetHeight) : tuck ? TUCK.h : COMPACT.h;
@@ -565,8 +601,12 @@ document.addEventListener("visibilitychange", () => { if (config && !document.hi
 /** The card's glow and Brenda's mood follow what is showing. */
 function moodOf() {
   if (!config?.signedIn || !card) return data?.timer?.state === "running" ? { tone: "blue" } : {};
+  // Someone is calling (phase 8, 8 October 2026): she is alert, with the accent glow, until a press is answered.
+  if (card.kind === "call") return card.result ? {} : { mood: "alert", tone: "accent" };
   if (card.kind === "notification") {
     const t = card.n.type;
+    // A missed call (phase 8) is sad news, without a warning glow.
+    if (t === "call.missed") return { mood: "sad" };
     if (t === "brenda.clock_in") return { mood: "happy", tone: "ok" };
     if (t === "brenda.daily_report") return { mood: "happy", tone: "violet" };
     if (t.startsWith("review")) return { mood: "alert", tone: "warn" };
@@ -679,7 +719,11 @@ function openCard(c) {
 // Closing a card (Done, Esc, leaving it, opening a link or the chat in Boredroom) stops her (owner decision, 7 October 2026).
 // It never opens the next notification any more (owner decision, 9 October 2026: "never auto-chain"; the old
 // setTimeout(nextNotification, 600) is gone): what is unread stays in the bar. The pager keeps its place.
-function closeCard() { hush(); leavePager(); clearTimeout(leaveTimer); cancelHold(); card = null; error = null; restartCountdown(0); render(); }
+function closeCard() {
+  hush(); leavePager(); clearTimeout(leaveTimer); cancelHold(); card = null; error = null; restartCountdown(0); render();
+  // A call still ringing in the strip of the card that closed opens its own card now (phase 8, 8 October 2026).
+  if (stripRing && ringNow()) queueMicrotask(() => { callsSig = ""; applyCalls(); });
+}
 
 // Brenda opens the moment the pointer reaches her and folds away as soon as it leaves (owner decision, 5 October 2026;
 // a click in the menu bar strip does not reach her anyway). A card that is waiting on the person stays open: something
@@ -739,6 +783,8 @@ function leaveIsland() {
  * inbox empty kept the notch out for anyone with an old unread notification).
  */
 function idle() {
+  // Never while a call rings or the person is on one (phase 8, 8 October 2026): the bar says so.
+  if (callsShowing()) return false;
   return !!config?.signedIn && !card && !alwaysVisible && !data?.timer && !waitingAsk && !inbox().some((n) => nq.held.has(n.id) || !nq.known.has(n.id));
 }
 function updateTuck() {
@@ -765,6 +811,8 @@ function render() {
     try {
       html = `${cardView()}${error ? `<p class="err">${esc(error)}</p>` : ""}`;
       if (!/<[a-z]/i.test(html)) throw new Error("nothing to draw");
+      // A call ringing over a card that must stay (phase 8): its strip, at the top.
+      if (card && card.kind !== "call") html = `${ringStripHtml()}${html}`;
     } catch (err) {
       dropCard(`render: ${card?.kind ?? "card"}${card?.phase ? ` (${card.phase})` : ""}: ${err?.message ?? err}`);
       html = "";
@@ -775,7 +823,7 @@ function render() {
     catch (err) { report(`render: the bar: ${err?.message ?? err}`); barWide = false; html = `<div class="row" data-act="home" aria-label="Open ${esc(me().name)}">${face({ small: true })}<span class="tiny grow">${esc(me().name)}</span></div>`; }
   }
   el.classList.toggle("compact", signed && !card);
-  const key = !signed ? `link:${!!link}:${editingServer}` : card ? `${card.kind}:${card.phase ?? ""}:${card.n?.id ?? card.w?.id ?? card.u?.id ?? ""}` : "compact";
+  const key = !signed ? `link:${!!link}:${editingServer}` : card ? `${card.kind}:${card.phase ?? ""}:${card.n?.id ?? card.w?.id ?? card.u?.id ?? card.ring?.id ?? ""}` : "compact";
   // A follow-up's note keeps its words (they live on the card), its focus and its caret when the card is drawn again.
   const noting = document.activeElement?.id === "fnote" ? { from: document.activeElement.selectionStart, to: document.activeElement.selectionEnd } : null;
   // The pager keeps the keyboard on the island across its steps (← → Enter Esc; owner decision, 9 October 2026).
@@ -805,6 +853,7 @@ function render() {
   stepFace();
   updateTuck();
   armUndoClock();
+  syncRingSound();
 }
 
 /**
@@ -813,7 +862,8 @@ function render() {
  * carry none.
  */
 function paintWash() {
-  const family = isNotice(card) ? familyOf(card) : null;
+  // The incoming call waits on the person: the needs wash (phase 8, 8 October 2026).
+  const family = card?.kind === "call" ? "needs" : isNotice(card) ? familyOf(card) : null;
   if (family) island.dataset.family = family; else delete island.dataset.family;
   let mix = "";
   if (card?.kind === "summary" && cardsReady()) {
@@ -829,7 +879,7 @@ function teamView() {
   // A teammate without a name (the empty black island, 9 October 2026: `p.name.split` threw) shows without one.
   const team = (Array.isArray(data?.team) ? data.team : []).filter((p) => !!p && typeof p === "object");
   if (!team.length) return "";
-  return `<div class="team">${team.slice(0, 6).map((p) => `<button class="mate" style="--c:${hue(p.id)}" data-act="open-href" data-href="/app/${esc(config.workspaceSlug)}/workroom" title="${who(p)}">${mini(p)}<span class="nm">${esc(firstName(p.name))}</span><span class="tk">${p.task ? esc(p.task) : p.state ? esc(cap(String(p.state))) : "Not working"}</span></button>`).join("")}</div>`;
+  return `<div class="team">${team.slice(0, 6).map((p) => `<button class="mate" style="--c:${hue(p.id)}" data-act="open-href" data-href="/app/${esc(config.workspaceSlug)}/workroom" title="${who(p)}">${mini(p)}<span class="nm">${esc(firstName(p.name))}</span><span class="tk">${p.task ? esc(p.task) : p.state ? esc(cap(String(p.state))) : p.onCall === true ? "On a call" : "Not working"}</span></button>`).join("")}</div>`;
 }
 
 /**
@@ -847,8 +897,22 @@ function compactView() {
   const dot = data?.me?.presence ?? "active";
   if (waitingAsk && !list.some((x) => x.id === waitingAsk.nid)) waitingAsk = null; // answered, read or gone
   const total = unreadTotal();
-  let lead = "", text = "", trail = "", wide = false, label = "";
-  if (t) text = `<span class="clock ${t.state === "running" ? "live" : ""}" id="tclock">${hms(elapsed())}</span>&ensp;${esc(t.taskTitle)}`;
+  let lead = "", text = "", trail = "", wide = false, label = "", act = count || waitingAsk ? "nc-inbox" : "home", href = "";
+  // Calls first (phase 8, owner decisions, 8 October 2026; contract F.5): a ring with no card open (the card opens at
+  // once; the bar says it meanwhile, with Accept), then "On a call", ahead of the timer and of notification lines. The
+  // unread count stays on the right.
+  const ring = callsShowing() === "ring" ? ringNow() : null, active = calls?.active ?? null;
+  if ((ring || active) && cardsReady()) {
+    try {
+      const env = noticeEnv();
+      const parts = (ring ? NotifyCards.ringBar(ring, env) : NotifyCards.callBar(active, env)) ?? {};
+      lead = String(parts.lead ?? ""); text = String(parts.text ?? ""); trail = String(parts.trail ?? ""); wide = !!parts.wide; label = typeof parts.label === "string" ? parts.label : "";
+      if (text) { act = ring ? "call-show" : "call-open"; href = ring ? "" : boredroomPath(active.href) ?? ""; }
+    } catch (err) { report(`bar (call): ${err?.message ?? err}`); lead = trail = label = text = ""; wide = false; }
+  }
+  const onCall = !!text;
+  if (onCall) wide = true;
+  else if (t) text = `<span class="clock ${t.state === "running" ? "live" : ""}" id="tclock">${hms(elapsed())}</span>&ensp;${esc(t.taskTitle)}`;
   else if ((count || waitingAsk) && cardsReady()) {
     try {
       const env = noticeEnv();
@@ -867,14 +931,14 @@ function compactView() {
     // During quiet hours (phase 7a) the bar says until when, when it has nothing else to say.
     else text = quietNow() ? esc(quietWords()) : "All clear";
   }
-  barWide = wide;
+  barWide = onCall ? "call" : wide;
   const counted = /class="count"/.test(trail);
-  const badge = count && !counted && !/nc-stack/.test(trail) ? `<span class="count">${total}</span>` : "";
+  const badge = count && !counted && !/nc-stack/.test(trail) && act !== "call-show" ? `<span class="count">${total}</span>` : "";
   const working = wide ? [] : (Array.isArray(data?.team) ? data.team : []).filter((p) => p && (p.state === "running" || p.state === "paused")).slice(0, 3);
   const mood = waitingAsk && !t ? { mood: "think" } : moodOf();
-  const act = count || waitingAsk ? "nc-inbox" : "home";
   const said = `${label.trim() || plainOf(`${lead} ${text}`)}${badge ? `, ${total} unread` : ""}`;
-  return `<div class="row" data-act="${act}" aria-label="${esc(`Open ${me().name}${said ? `: ${said}` : ""}`)}">${face({ small: true, ...mood, dot })}${lead}<span class="tiny grow">${text}</span>${working.length ? `<span class="minis">${working.map(mini).join("")}</span>` : ""}${trail}${badge}</div>`;
+  const named = act === "call-open" ? `Open the call in your browser: ${said}` : act === "call-show" ? `Show the call: ${said}` : `Open ${me().name}${said ? `: ${said}` : ""}`;
+  return `<div class="row" data-act="${act}"${href ? ` data-href="${esc(href)}"` : ""} aria-label="${esc(named)}">${face({ small: true, ...mood, dot })}${lead}<span class="tiny grow">${text}</span>${working.length ? `<span class="minis">${working.map(mini).join("")}</span>` : ""}${trail}${badge}</div>`;
 }
 /** The words of some markup, for a label (parsed by the page, never run). */
 function plainOf(html) {
@@ -902,6 +966,8 @@ function linkView() {
 
 function cardView() {
   const b = data?.briefing;
+  // Someone is calling (phase 8, owner decisions, 8 October 2026): the incoming card.
+  if (card.kind === "call") return callView();
   // Notifications, the summary, the pager and the end card (owner decision, 9 October 2026: "A plus the grafts") are
   // drawn by notify-cards.js; if it is missing or a template throws, the cards as they were below.
   if (isNotice(card) && cardsReady()) {
@@ -1035,10 +1101,12 @@ const inbox = () => (Array.isArray(data?.notifications) ? data.notifications : [
 
 // Without notify-cards.js, a notification's place in the pager and whether it waits on the person, from its type alone
 // (the contract's table, A.4).
-const LOCAL_ASK = new Set(["brenda.followup_ask", "assistant.request", "brenda.commitment", "brenda.open_ask", "brenda.blocked_on", "brenda.standup", "brenda.mention_confirm", "brenda.replan", "review.requested", "adjustment.requested", "capture.exception"]);
+// Phase 8 (owner decisions, 8 October 2026): capture exceptions went with screen recording; a missed call is people's news,
+// a call's notes a report.
+const LOCAL_ASK = new Set(["brenda.followup_ask", "assistant.request", "brenda.commitment", "brenda.open_ask", "brenda.blocked_on", "brenda.standup", "brenda.mention_confirm", "brenda.replan", "review.requested", "adjustment.requested"]);
 const LOCAL_TIME = new Set(["brenda.reminder", "task.assigned", "brenda.commitment_due", "brenda.nudge", "brenda.commitment_stalled", "task.blocked", "review.changes_requested"]);
 const LOCAL_GOOD = new Set(["review.approved", "brenda.commitment_accepted", "brenda.block_answered", "brenda.clock_in"]);
-const LOCAL_PEOPLE = /^(?:message\.|task\.comment$|assistant\.|brenda\.mention_|brenda\.followup_(?:answer|batch)$|review\.question$|brenda\.commitment_declined$|brenda\.block_not_me$)/;
+const LOCAL_PEOPLE = /^(?:message\.|task\.comment$|assistant\.|brenda\.mention_|brenda\.followup_(?:answer|batch)$|review\.question$|brenda\.commitment_declined$|brenda\.block_not_me$|call\.missed$)/;
 function localNotice(n) {
   const t = n.type;
   const group = LOCAL_ASK.has(t) ? "ask" : LOCAL_TIME.has(t) ? "time" : LOCAL_GOOD.has(t) ? "good" : LOCAL_PEOPLE.test(t) ? "people" : "report";
@@ -1596,11 +1664,315 @@ function noticeOpts(c, env) {
     else if (c.phase === "skipped") o.result = { title: STANDUP_SAY.skipped, sub: STANDUP_SAY.skippedSub, tone: "", actions: `${c.canUnskip ? `<button class="btn ghost" data-act="su-unskip" ${off}>${icon("undo")}Undo</button>` : ""}<button class="btn primary" data-act="close" data-main ${off}>OK</button>` };
     else if (c.phase === "result") o.result = { title: c.result, sub: c.resultSub, tone: "", actions: closeOk };
     else if (c.phase === "gone") o.result = { title: STANDUP_SAY.title(e.team.name.trim()), sub: c.message, tone: "", actions: okButton(c) };
-  }
+  } else if (c.kind === "notification" && c.n?.type === "call.missed" && missedJoinLeaves(c)) o.leaveOther = true;
   if (c.pager && pager) o.nav = String(NotifyCards.nav(pager, pagerNoticeList(env), env) ?? "");
   else { const more = moreWaiting(c); if (more > 0) o.more = more; }
   if (c.doneWord) o.done = c.doneWord;
   return o;
+}
+
+// ---- calls -------------------------------------------------------------------------------------------------------
+// Owner decisions, 8 October 2026, confirmed 10 October 2026 (phase 8, calls; contract F; the header says what the person
+// sees). GET /calls/now is CallsNow (src/lib/calls.ts, which this page cannot import): { ready, available, me, ringing:
+// RingingCall[] (newest first, at most 3), active: ActiveCall | null, pollMs, serverNow }. Nothing from it is drawn
+// unchecked (NotifyCards.ringCard, ringStrip, ringBar and callBar check it again), and nothing about calls rides on the
+// 20-second desktop state except each teammate's `onCall`.
+
+/** The last answer, checked, or null (before the first answer, signed out, or a server from before phase 8). */
+let calls = null;
+let callsTimer = null, callsRun = 0;
+/** Rings answered or declined from here: never shown again, even before the server's next answer agrees. */
+const ringDone = new Set();
+/** Rings Esc silenced: the card stays, the sound stops. */
+const ringSilent = new Set();
+/** Rings already announced in the strip (one soft sound each, never the phone pattern over what the person is doing). */
+const ringBarred = new Set();
+let ringSoundTimer = null;
+/** The tray's sound switch (config.sounds, then brenda://sounds): the ring poll tells the server whether the notch rings aloud. */
+let soundsOn = true;
+let stripRing = null;        // the ring drawn as the strip on a card that must stay (Notify.ringAction's "bar"), or null
+let stripNote = null, stripNoteTimer = null;   // what Accept in the strip did, for 3 s
+let callsSig = "";           // what the bar or the strip last showed, so a poll that changes nothing draws nothing
+const CALL_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const CALL_RESULT = { opening: "Opening the call in your browser", ended: "The call has ended.", declined: "Declined.", sent: "Sent and declined." };
+
+/** GET /calls/now's answer as the notch keeps it, or null when it is not one. */
+function callsOf(r) {
+  if (!r || typeof r !== "object" || Array.isArray(r)) return null;
+  const ringing = (Array.isArray(r.ringing) ? r.ringing : [])
+    .filter((x) => !!x && typeof x === "object" && CALL_ID.test(String(x.id)) && !!x.caller && typeof x.caller === "object" && typeof x.caller.name === "string")
+    .slice(0, 3);
+  const a = r.active && typeof r.active === "object" && CALL_ID.test(String(r.active.id)) ? r.active : null;
+  return { ready: r.ready === true, available: r.available === true, ringing, active: a, pollMs: r.pollMs };
+}
+/** What rings for the person now, newest first, less what was answered or declined from here. */
+const ringsNow = () => (calls?.ringing ?? []).filter((x) => !ringDone.has(x.id));
+const ringNow = () => ringsNow()[0] ?? null;
+/** "ring" while something rings (and quiet hours are off), "active" on a call, else "". */
+const callsShowing = () => (ringNow() && !quietNow() ? "ring" : calls?.active ? "active" : "");
+
+/**
+ * The ring poll (contract F.1): GET /calls/now through the `api` command, then again after the server's pollMs (2 to 60 s;
+ * Notify.ringPollMs), 5 minutes after a 404 (a server from before phase 8) and 15 s after any other failure (a 401 has
+ * signed out already, in call()). setTimeout after each answer, never setInterval, so a slow answer never stacks polls.
+ *
+ * One ringer (fix review, 10 October 2026: the notch and the web tab rang at once, on their own timers): each poll says
+ * whether the notch rings aloud (`?ring=1`: the tray's sounds on and not in quiet hours; else `?ring=0`). While it does,
+ * a browser on the same network shows its card without a ring (the server remembers it for 20 s, so a notch that stops
+ * polling hands the ring back to the browser). Turning the tray's sounds off asks again at once.
+ */
+const ringsAloud = () => soundsOn && !quietNow();
+async function pollCalls() {
+  clearTimeout(callsTimer); callsTimer = null;
+  if (!config?.signedIn || !config.workspaceSlug) return;
+  const run = callsRun;
+  let next;
+  try {
+    const r = await call("GET", org(`/calls/now?ring=${ringsAloud() ? 1 : 0}`));
+    if (run !== callsRun || !config?.signedIn) return;
+    calls = callsOf(r);
+    next = Notify.ringPollMs(calls?.pollMs);
+  } catch (err) {
+    if (run !== callsRun || !config?.signedIn) return;
+    if (err?.status === 404) calls = null;
+    next = Notify.ringRetryMs(err?.status);
+  }
+  // What the server no longer rings is forgotten here too.
+  const live = new Set((calls?.ringing ?? []).map((x) => x.id));
+  for (const s of [ringDone, ringSilent, ringBarred]) for (const id of [...s]) if (!live.has(id)) s.delete(id);
+  try { applyCalls(); } catch (err) { report(`calls: ${err?.message ?? err}`); }
+  callsTimer = setTimeout(pollCalls, next);
+}
+/** Ask at once (after a press changed what rings or the call the person is on); a poll still on its way is dropped. */
+function kickCalls() { if (!config?.signedIn) return; callsRun++; pollCalls(); }
+/** Signed out (or signing in again): no poll, and nothing of the last person's calls stays. */
+function stopCalls() {
+  callsRun++;
+  clearTimeout(callsTimer); callsTimer = null;
+  calls = null; ringDone.clear(); ringSilent.clear(); ringBarred.clear();
+  stripRing = null; stripNote = null; clearTimeout(stripNoteTimer); callsSig = "";
+  clearInterval(ringSoundTimer); ringSoundTimer = null;
+}
+
+/**
+ * What the rings do to the island now (Notify.ringAction): the incoming card opens over whatever is open, or stays and
+ * follows the ring; the strip comes or goes on a card that must stay; the compact bar says what rings or that the person is
+ * on a call. Called after every poll, when quiet hours start or end, and when a call's result has folded away.
+ */
+function applyCalls() {
+  if (!config?.signedIn) return;
+  const ring = ringNow();
+  const isCall = card?.kind === "call";
+  if (isCall && card.result) return; // what a press did holds; its own timer folds it and asks again
+  const action = Notify.ringAction({ ringing: !!ring, cardKind: card?.kind ?? null, sticky: !!card && !isCall && stickyNow(), quiet: quietNow(), micOpen: micOpen() });
+  if (action === "show") {
+    stripRing = null;
+    if (isCall && card.ring.id === ring.id) {
+      // The same ring: its newest facts ("+1 more calling", the waiting line), drawn only when they changed.
+      const sig = `card:${ring.id}:${ringsNow().length}:${ring.inAnotherCall === true}:${ring.expiresAt}`;
+      card.ring = ring;
+      if (sig !== callsSig) { callsSig = sig; render(); }
+      return;
+    }
+    callsSig = "";
+    return showRing(ring);
+  }
+  if (isCall) { callsSig = ""; return closeCard(); } // the ring left: answered elsewhere, declined, cancelled or timed out
+  stripRing = action === "bar" ? ring.id : null;
+  if (action === "bar" && !ringBarred.has(ring.id)) { ringBarred.add(ring.id); if (!micOpen()) Sound.play("attention"); }
+  const sig = card ? `strip:${stripRing ?? ""}:${stripNote ?? ""}` : `bar:${callsShowing()}:${ring?.id ?? ""}:${calls?.active?.id ?? ""}:${calls?.active?.answeredAt ?? ""}`;
+  if (sig === callsSig) return;
+  callsSig = sig;
+  if (card) placeRingStrip(); else render();
+}
+
+/** The incoming card opens: she stops talking, the pager folds keeping its place, the ring sounds (render). */
+function showRing(ring) {
+  hush();
+  openCard({ kind: "call", phase: "ring", ring, origin: "auto", sticky: true, messages: false, keys: {} });
+}
+
+/** The incoming card's markup (NotifyCards.ringCard), or a plain one when notify-cards.js could not load. */
+function callView() {
+  const c = card, env = noticeEnv();
+  const more = Math.max(0, ringsNow().filter((x) => x.id !== c.ring.id).length);
+  if (cardsReady() && typeof NotifyCards.ringCard === "function") {
+    return String(NotifyCards.ringCard(c.ring, env, { more, messages: !!c.messages, result: c.result ? { title: c.result.title, tone: c.result.tone, actions: "" } : null }) ?? "");
+  }
+  const name = esc(String(c.ring.caller?.name ?? "Someone"));
+  return `<div class="row fade">${face({ who: c.ring.caller?.assistant, mood: c.result ? "" : "alert" })}<div class="grow"><p class="title">${c.result ? esc(c.result.title) : `${name} is calling`}</p></div></div>`
+    + (c.result ? "" : `<div class="actions"><button class="btn ghost" data-act="call-decline" ${busy ? "disabled" : ""}>Decline</button><button class="btn primary accent" data-act="call-accept" data-main ${busy ? "disabled" : ""}>Accept</button></div>`);
+}
+
+/** The strip's markup: the ring on a card that must stay, or what Accept in it did, or "". */
+function ringStripHtml() {
+  if (!card || card.kind === "call" || !cardsReady() || typeof NotifyCards.ringStrip !== "function") return "";
+  if (stripNote) return `<div class="nc-ringstrip note" role="status"><span class="nc-ringstrip-t">${esc(stripNote)}</span></div>`;
+  const r = stripRing ? ringsNow().find((x) => x.id === stripRing) : null;
+  if (!r || quietNow()) return "";
+  try { return String(NotifyCards.ringStrip(r, noticeEnv()) ?? ""); }
+  catch (err) { report(`ring strip: ${err?.message ?? err}`); return ""; }
+}
+/** The strip put in place (or taken away) without drawing the card again, so nothing typed in it is lost. */
+function placeRingStrip() {
+  if (!card || card.kind === "call") return;
+  const html = ringStripHtml();
+  const old = el.querySelector(":scope > .nc-ringstrip");
+  if (old) { if (html) old.outerHTML = html; else old.remove(); }
+  else if (html) el.insertAdjacentHTML("afterbegin", html);
+  fit();
+}
+function noteInStrip(text) {
+  stripNote = text; clearTimeout(stripNoteTimer);
+  placeRingStrip();
+  stripNoteTimer = setTimeout(() => { stripNote = null; callsSig = ""; placeRingStrip(); }, 3000);
+}
+
+/** The phone pattern every 2.5 s while the incoming card rings (not silenced, not in quiet hours: Sound's own switches too). */
+function syncRingSound() {
+  const on = card?.kind === "call" && !card.result && !ringSilent.has(card.ring.id) && !quietNow();
+  if (on && !ringSoundTimer) { Sound.play("ring"); ringSoundTimer = setInterval(() => Sound.play("ring"), 2500); }
+  else if (!on && ringSoundTimer) { clearInterval(ringSoundTimer); ringSoundTimer = null; }
+}
+
+/** The call's page in the person's browser (Rust's open_in_browser opens Boredroom's own address only). */
+function openCallPage(id) {
+  if (!CALL_ID.test(String(id))) return Promise.reject(new Error("That call isn't available."));
+  return invoke("open_in_browser", { path: `/app/${encodeURIComponent(config.workspaceSlug)}/calls/${id}?from=notch` });
+}
+/** What a press did, in place of the card's body and buttons, then the card folds and the rings are looked at again. */
+function callResult(c, title, tone, ms) {
+  c.result = { title, tone };
+  c.phase = "result";
+  c.sticky = true;
+  render();
+  clearTimeout(closeTimer);
+  closeTimer = setTimeout(() => { if (card === c) { closeCard(); callsSig = ""; applyCalls(); } }, ms);
+}
+const callEnded = (err) => err?.code === "CALL_ENDED";
+
+/**
+ * Accept (contract F.3): POST /calls/:id/accept (leaving the other call when the person is on one, as the card said), then
+ * the call's page in the browser, where Join turns its sound on. 409 CALL_ENDED says so; anything else shows the
+ * server's words on the card and keeps its buttons.
+ */
+async function acceptRing(ring) {
+  if (!ring || busy) return;
+  const c = card?.kind === "call" && card.ring.id === ring.id ? card : null;
+  busy = true; error = null;
+  if (c) render(); else placeRingStrip();
+  try {
+    await call("POST", org(`/calls/${ring.id}/accept`), { leaveOther: ring.inAnotherCall === true }, c ? { idempotencyKey: loopKey(c, "accept") } : {});
+  } catch (err) {
+    busy = false;
+    if (callEnded(err)) { ringDone.add(ring.id); if (c && card === c) return callResult(c, CALL_RESULT.ended, "", 3000); return noteInStrip(CALL_RESULT.ended); }
+    Sound.play("error");
+    if (c && card === c) { error = err?.message ?? "That didn't work. Try again."; return render(); }
+    return noteInStrip(err?.message ?? "That didn't work. Try again.");
+  }
+  busy = false;
+  ringDone.add(ring.id);
+  let opened = true;
+  try { await openCallPage(ring.id); } catch { opened = false; }
+  const words = opened ? CALL_RESULT.opening : "Open Boredroom's Calls page to join.";
+  kickCalls();
+  if (c && card === c) return callResult(c, words, opened ? "ok" : "", 3000);
+  noteInStrip(words);
+}
+
+/** Decline, or decline with one of the three quick messages (the person's own message, D7). */
+async function declineRing(c, message) {
+  if (!c || c.kind !== "call" || busy) return;
+  busy = true; error = null; render();
+  try {
+    await call("POST", org(`/calls/${c.ring.id}/decline`), message ? { message } : {}, { idempotencyKey: loopKey(c, message ? "decline-message" : "decline") });
+  } catch (err) {
+    busy = false;
+    if (callEnded(err)) { ringDone.add(c.ring.id); return card === c ? callResult(c, CALL_RESULT.ended, "", 3000) : undefined; }
+    Sound.play("error");
+    if (card === c) { error = err?.message ?? "That didn't work. Try again."; render(); }
+    return;
+  }
+  busy = false;
+  ringDone.add(c.ring.id);
+  Sound.play("hangup");
+  if (card === c) callResult(c, message ? CALL_RESULT.sent : CALL_RESULT.declined, message ? "ok" : "", 1200);
+}
+
+/**
+ * Decline from the ring strip on a card that must stay (fix review, 10 October 2026: the strip offered only Accept, so
+ * the person had to wait out the 30 s). The card underneath and anything typed in it stay; the strip says "Declined."
+ */
+async function declineStripRing(ring) {
+  if (!ring || busy) return;
+  busy = true; error = null;
+  placeRingStrip();
+  try {
+    await call("POST", org(`/calls/${ring.id}/decline`), {});
+  } catch (err) {
+    busy = false;
+    if (callEnded(err)) { ringDone.add(ring.id); return noteInStrip(CALL_RESULT.ended); }
+    Sound.play("error");
+    return noteInStrip(err?.message ?? "That didn't work. Try again.");
+  }
+  busy = false;
+  ringDone.add(ring.id);
+  Sound.play("hangup");
+  noteInStrip(CALL_RESULT.declined);
+  kickCalls();
+}
+
+/** A press on a missed call's card is done: the notification read, and the card folds (the pager keeps its place). */
+function missedDone(readId) {
+  if (readId) markRead(readId);
+  if (card?.pager && pager) { if (readId && pager.ids[pager.index] === readId && pager.index + 1 < pager.ids.length) pager = { ...pager, index: pager.index + 1 }; return foldPager(); }
+  closeCard();
+}
+/**
+ * Whether Join on a missed call that is still going leaves another call first (fix review, 10 October 2026: it was a dead
+ * end with 409): the ring poll's last answer has the person on a different call, or the server answered Join with
+ * IN_ANOTHER_CALL (the poll had not seen that call yet). The card then says "You're on another call." and its button
+ * is "Leave it and join" (NotifyCards' `leaveOther`).
+ */
+function missedJoinLeaves(c) {
+  const id = c?.n?.facts?.callId;
+  if (!CALL_ID.test(String(id))) return false;
+  return c.joinLeaves === id || (!!calls?.active && CALL_ID.test(String(calls.active.id)) && calls.active.id !== id);
+}
+/**
+ * Join, on a missed call that is still going (contract F.4): accepted as the person, then its page in the browser.
+ * `leaveOther` ("Leave it and join"): the person's other call is left first, as the incoming card's Accept does. A plain
+ * Join the server refuses with 409 IN_ANOTHER_CALL turns the card into that choice instead of a dead end.
+ */
+async function joinMissed(id, readId, leaveOther) {
+  if (!CALL_ID.test(String(id)) || busy) return;
+  const c = card;
+  busy = true; error = null; render();
+  try { await call("POST", org(`/calls/${id}/accept`), leaveOther ? { leaveOther: true } : {}); }
+  catch (err) {
+    busy = false;
+    if (!leaveOther && err?.code === "IN_ANOTHER_CALL" && c && card === c) { c.joinLeaves = id; return render(); }
+    error = callEnded(err) ? CALL_RESULT.ended : err?.message ?? "That didn't work. Try again.";
+    Sound.play("error");
+    return render();
+  }
+  busy = false;
+  await openCallPage(id).catch(() => {});
+  kickCalls();
+  missedDone(readId);
+}
+/** Call back, on a missed direct call (contract F.4): a new call to them (POST /calls { to }), then its page. */
+async function callBack(to, readId) {
+  if (!CALL_ID.test(String(to)) || busy) return;
+  busy = true; error = null; render();
+  let r;
+  try { r = await call("POST", org("/calls"), { to }); }
+  catch (err) { busy = false; error = err?.message ?? "That didn't work. Try again."; Sound.play("error"); return render(); }
+  busy = false;
+  const id = r?.call?.id;
+  if (CALL_ID.test(String(id))) await openCallPage(id).catch(() => {});
+  kickCalls();
+  missedDone(readId);
 }
 
 // ---- actions -----------------------------------------------------------------------------------------------------
@@ -1691,6 +2063,20 @@ el.addEventListener("click", async (e) => {
     if (act === "su-post") return decideStandup("post");
     if (act === "su-skip") return decideStandup("skip");
     if (act === "su-unskip") return unskipStandup();
+    // Calls (phase 8, owner decisions, 8 October 2026; contract F.3 to F.5): on the incoming card (or its strip, or the
+    // bar) Accept, Decline, Message and a quick message; on a missed call Join and Call back; the bar while ringing shows
+    // the card, and on a call opens the call in the browser.
+    if (act === "call-accept") return acceptRing(target.dataset.call ? ringsNow().find((x) => x.id === target.dataset.call) : card?.kind === "call" ? card.ring : null);
+    if (act === "call-decline") return card?.kind === "call" ? declineRing(card, null) : target.dataset.call ? declineStripRing(ringsNow().find((x) => x.id === target.dataset.call)) : undefined;
+    if (act === "call-message") { if (card?.kind === "call" && !card.result) { card.messages = !card.messages; render(); } return; }
+    if (act === "call-decline-msg") {
+      const words = cardsReady() && Array.isArray(NotifyCards.CALL_QUICK) ? NotifyCards.CALL_QUICK[Number(target.dataset.i)] : null;
+      return typeof words === "string" && card?.kind === "call" ? declineRing(card, words) : undefined;
+    }
+    if (act === "call-join") return joinMissed(target.dataset.call, target.dataset.readId, target.dataset.leaveOther === "1");
+    if (act === "call-back") return callBack(target.dataset.to, target.dataset.readId);
+    if (act === "call-show") { const r = ringNow(); return r ? showRing(r) : render(); }
+    if (act === "call-open") { const path = boredroomPath(target.dataset.href); if (path) await invoke("open_in_browser", { path }); return; }
     if (act === "read") {
       const id = target.dataset.id;
       await call("PATCH", org(`/notifications/${encodeURIComponent(id)}`));
@@ -1700,9 +2086,10 @@ el.addEventListener("click", async (e) => {
     }
     busy = true; render();
     const t = data?.timer;
-    // Start timer on a new task's card (9 October 2026) also reads its notification.
-    if (act === "start" && isNotice(card) && card.n) { await call("POST", org("/sessions/start"), { taskId: target.dataset.id, captureMode: "none" }); markRead(card.n.id); }
-    else if (act === "start") await call("POST", org("/sessions/start"), { taskId: target.dataset.id, captureMode: "none" });
+    // Start timer on a new task's card (9 October 2026) also reads its notification. No `captureMode` any more (phase 8,
+    // 8 October 2026: screen recording is gone; the server ignores it either way).
+    if (act === "start" && isNotice(card) && card.n) { await call("POST", org("/sessions/start"), { taskId: target.dataset.id }); markRead(card.n.id); }
+    else if (act === "start") await call("POST", org("/sessions/start"), { taskId: target.dataset.id });
     if (act === "pause" && t) await call("POST", org(`/sessions/${t.id}/pause`), { expectedVersion: t.version });
     if (act === "resume" && t) await call("POST", org(`/sessions/${t.id}/resume`), { expectedVersion: t.version });
     if (act === "stop" && t) await call("POST", org(`/sessions/${t.id}/stop`), { expectedVersion: t.version, note: "", outcome: "continue_later" });
@@ -1764,6 +2151,7 @@ function forgetNatural() {
 /** Signed out: nothing of the last person's notifications stays (owner decision, 9 October 2026). */
 function forgetNotices() {
   nq = Notify.initial(); readHere.clear(); leavePager(); pagerPlace = null; pagerSeen = new Set(); pagerNotes.clear(); pagerRun.clear(); waitingAsk = null; cancelHold();
+  stopCalls(); // nor of their calls: the ring poll stops (phase 8)
 }
 
 // ---- data --------------------------------------------------------------------------------------------------------
@@ -1838,6 +2226,9 @@ async function start() {
   loadCached();
   render();
   await refresh();
+  // The ring poll (phase 8, contract F.1): after the first desktop state, then at its own pace.
+  stopCalls();
+  pollCalls();
   if (!data) return;
   await presence();
   await refresh();
@@ -1902,6 +2293,13 @@ el.addEventListener("input", (e) => {
 // the next one's request. Tab moves through the buttons as ever.
 const isField = (t) => !!t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || !!t.isContentEditable);
 window.addEventListener("keydown", (e) => {
+  // On the incoming card (phase 8, contract F.3) Esc silences the ring and closes the quick messages; the card stays while
+  // the call rings (Decline is the way to say no).
+  if (e.key === "Escape" && card?.kind === "call" && !card.result) {
+    ringSilent.add(card.ring.id);
+    if (card.messages) { card.messages = false; render(); } else syncRingSound();
+    return;
+  }
   if (e.key === "Escape" && card) { if (TYPING.has(e.target.id)) e.target.blur(); return card.pager && pager ? foldPager() : closeCard(); }
   const field = isField(e.target);
   if ((e.key === "ArrowRight" || e.key === "ArrowLeft") && card?.pager && pager && !field && !busy && !e.metaKey && !e.altKey && !e.ctrlKey) {
@@ -2492,7 +2890,7 @@ async function takeOffer(i) {
     if (p.kind === "todo") await call("POST", org("/todos"), { title: p.title, description: p.description, dueAt: p.dueAt, assigneeMembershipId: p.assigneeMembershipId, estimateMinutes: p.estimateMinutes });
     if (p.kind === "clock_in") await call("POST", org("/clock/in"));
     if (p.kind === "clock_out") await call("POST", org("/clock/out"));
-    if (p.kind === "start_timer") await call("POST", org("/sessions/start"), { taskId: p.taskId, captureMode: "none" });
+    if (p.kind === "start_timer") await call("POST", org("/sessions/start"), { taskId: p.taskId });
     busy = false;
     markDone(msg, [p.at], o.done);
     Sound.play("success");
@@ -3825,7 +4223,7 @@ function applyQuiet() {
   Sound.setQuiet(on);
   // When quiet hours end, what waited through them opens: the summary, or its one card (owner decision, 9 October 2026).
   // The morning opener still comes first when it is due (review, same day): then what waited stays held for a later poll.
-  if (on !== wasQuiet) { wasQuiet = on; if (config?.signedIn && !card) render(); if (!on && !maybeBriefing({ poll: true })) arrive(); }
+  if (on !== wasQuiet) { wasQuiet = on; if (config?.signedIn && !card) render(); if (!on && !maybeBriefing({ poll: true })) arrive(); callsSig = ""; applyCalls(); }
   clearTimeout(quietTimer);
   const q = data?.quiet;
   if (!q || typeof q !== "object" || q.ready !== true) return;
@@ -4679,13 +5077,19 @@ listen("brenda://cursor", ({ payload }) => {
   stepFace();
   watchAdmiration();
 });
-listen("brenda://sounds", ({ payload }) => { Sound.setEnabled(payload); if (payload) Sound.play("tick"); });
+listen("brenda://sounds", ({ payload }) => { soundsOn = payload !== false; Sound.setEnabled(payload); if (payload) Sound.play("tick"); kickCalls(); });
 listen("brenda://always-visible", ({ payload }) => { alwaysVisible = !!payload; updateTuck(); });
 // Inter can arrive just after a card is drawn (font-display: swap): the island measures its content again when it does.
 document.fonts?.addEventListener?.("loadingdone", () => { if (config) fit(); });
 
-// The running timer in the compact bar and the timer card, and the timer card's estimate hairline.
+// The running timer in the compact bar and the timer card, and the timer card's estimate hairline. And the call's clock in
+// the bar while the person is on a call (phase 8): from when it was answered, else from when they joined.
 setInterval(() => {
+  const cc = document.getElementById("cclock"), a = calls?.active;
+  if (cc && a && cardsReady()) {
+    const from = Date.parse(a.answeredAt ?? "") || Date.parse(a.joinedAt ?? "");
+    if (Number.isFinite(from)) cc.textContent = NotifyCards.callClock((serverNow() - from) / 1000);
+  }
   if (!data?.timer) return;
   const c = document.getElementById("tclock"); if (c) c.textContent = hms(elapsed());
   const e = document.getElementById("testimate"), share = estimateShare(); if (e && share !== null) e.style.transform = `scaleX(${share.toFixed(3)})`;
@@ -4699,7 +5103,8 @@ listen("brenda://signed-out", () => { stopNatural(); forgetNatural(); config = {
   const bar = await invoke("menu_bar_height").catch(() => 0);
   if (bar > 0) COMPACT.h = Math.round(Math.min(40, Math.max(24, bar)));
   document.documentElement.style.setProperty("--compact-h", `${COMPACT.h}px`);
-  Sound.setEnabled(config.sounds !== false);
+  soundsOn = config.sounds !== false;
+  Sound.setEnabled(soundsOn);
   alwaysVisible = !!config.alwaysVisible;
   voice = await invoke("voice_status");
   if (config.signedIn) start(); else render();

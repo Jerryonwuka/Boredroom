@@ -16,13 +16,13 @@ describe("Workroom", () => {
     expect(room.rows.every((r) => workroomStatus(r, room.staleAfterSeconds, Date.now()) === "not_started")).toBe(true);
 
     // Ada starts the homepage task: active, on that task, clocked in.
-    const s = await startSession(a.employeeCtx, { taskId: a.taskIds.homepage, captureMode: "none" });
+    const s = await startSession(a.employeeCtx, { taskId: a.taskIds.homepage });
     room = await workroomView(a.ownerCtx);
     const ada = room.rows.find((r) => r.display_name === "Ada Employee")!;
     expect(workroomStatus(ada, room.staleAfterSeconds, new Date(room.serverNow).getTime())).toBe("active");
     expect(ada.task_title).toBe("Homepage design");
     expect(ada.first_start_today).not.toBeNull();
-    expect(ada.recording_live).toBe(false);
+    expect(ada.on_call).toBe(false); // "On a call" (phase 8): nobody is in a call here
     expect(room.rows[0].display_name).toBe("Ada Employee"); // running people sort first
 
     // Paused → paused; stopped → off the clock (still clocked in today).

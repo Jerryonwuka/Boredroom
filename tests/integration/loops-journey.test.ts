@@ -347,7 +347,7 @@ describe("loose ends, the person's own", () => {
 
 describe("blocked on whom", () => {
   it("Ben names Ada and his question; her assistant brings it; her answer is her comment and unblocks the task", async () => {
-    const t = await createTask(david, { projectId: a.projectId, title: "Landing copy", expectedOutput: "Copy for the landing page.", assigneeMembershipId: id(ben), reviewerMembershipId: id(david), category: "work", priority: "normal", estimateMinutes: 60, dueAt: null, captureRequirement: "none", addToMyDay: false });
+    const t = await createTask(david, { projectId: a.projectId, title: "Landing copy", expectedOutput: "Copy for the landing page.", assigneeMembershipId: id(ben), reviewerMembershipId: id(david), category: "work", priority: "normal", estimateMinutes: 60, dueAt: null, addToMyDay: false });
     const v1 = (await adminQuery<{ version: number }>("SELECT version FROM tasks WHERE id = $1", [t.id]))[0].version;
     await updateTask(ben, t.id, { expectedVersion: v1, status: "in_progress" });
     const v2 = (await adminQuery<{ version: number }>("SELECT version FROM tasks WHERE id = $1", [t.id]))[0].version;

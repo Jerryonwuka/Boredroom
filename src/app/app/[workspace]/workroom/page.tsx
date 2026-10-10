@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Hourglass, SquareCheckBig, Timer, Video } from "lucide-react";
+import { Hourglass, Phone, SquareCheckBig, Timer } from "lucide-react";
 import { workspacePage } from "@/server/lib/workspace-page";
 import { AppShell } from "@/components/app/shell";
 import { PageHeader } from "@/components/ui/card";
@@ -35,7 +35,8 @@ type Tab = (typeof TABS)[number];
  * Who is working right now, v4: the page title with underline tabs (Started today, Working now, Everyone), a Team
  * filter, four stat cards, then one 64px row per person: their face, what they are on, an orange dot while they work
  * (still: the "Live" line under the title is the one that breathes, so a full room stays calm), and the session clock
- * on the right in the foreground. A recording in progress is an orange badge. A row opens that person's whole day.
+ * on the right in the foreground. Someone on a call has an orange "On a call" badge (owner decision, 8 October 2026:
+ * phase 8; who is in a call, never which call). A row opens that person's whole day.
  * What the statuses mean is a page note at the bottom (owner request, 7 October 2026).
  */
 export default async function WorkroomPage({ params, searchParams }: { params: Promise<{ workspace: string }>; searchParams: Promise<{ team?: string; show?: string; tab?: string }> }) {
@@ -58,7 +59,7 @@ export default async function WorkroomPage({ params, searchParams }: { params: P
   const shown = tab === "all" ? rows : tab === "now" ? working : started;
   const c = { active: rows.filter((r) => r.status === "active").length, paused: rows.filter((r) => r.status === "paused").length };
   const totalToday = rows.reduce((a, r) => a + r.today_seconds, 0);
-  const live = rows.filter((r) => r.recording_live).length;
+  const onCall = rows.filter((r) => r.on_call).length;
   const href = (t: Tab) => { const p = new URLSearchParams(); if (t !== "today") p.set("tab", t); if (teamId) p.set("team", teamId); const s = p.toString(); return `${base}/workroom${s ? `?${s}` : ""}`; };
   // Today's times read as a time; anything from an earlier day keeps its date.
   const dayOf = (iso: string) => new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(iso));
@@ -90,7 +91,7 @@ export default async function WorkroomPage({ params, searchParams }: { params: P
           <StatCard label="Working now" value={c.active} icon={<Timer />} hint={<><span className="tabular-nums">{c.paused}</span> paused</>} />
           <StatCard label="Time today" value={hours(totalToday)} icon={<Hourglass />} hint={<><span className="tabular-nums">{started.length}</span> {started.length === 1 ? "person" : "people"} started</>} />
           <StatCard label="Done today" value={rows.reduce((a, r) => a + r.done_today, 0)} icon={<SquareCheckBig />} hint={<><span className="tabular-nums">{rows.reduce((a, r) => a + r.tasks_today, 0)}</span> tasks worked on</>} />
-          <StatCard label="Recording now" value={live} href={`${base}/recordings`} icon={<Video />} hint={<><span className="tabular-nums">{rows.reduce((a, r) => a + r.recordings_today, 0)}</span> recordings today</>} />
+          <StatCard label="On a call" value={onCall} icon={<Phone />} hint={onCall === 1 ? "person on a call now" : "people on a call now"} />
         </div>
       </div>
 
@@ -110,7 +111,7 @@ export default async function WorkroomPage({ params, searchParams }: { params: P
             return (
               <ListRow key={r.membership_id} href={`${base}/workroom/${r.membership_id}`}
                 leading={<Avatar profileId={r.membership_id} name={r.display_name} size={40} />}
-                title={<span className="inline-flex max-w-full items-center gap-2"><span className="truncate">{r.display_name}</span>{r.recording_live ? <LiveBadge /> : null}</span>}
+                title={<span className="inline-flex max-w-full items-center gap-2"><span className="truncate">{r.display_name}</span>{r.on_call ? <LiveBadge /> : null}</span>}
                 subtitle={r.task_title ?? (r.status === "clocked_out" ? `Last active ${r.last_activity_at ? relativeTime(r.last_activity_at, now) : "earlier today"}` : "No session today yet")}
                 meta={<><StatusDot tone={st.tone} pulse={false} className="ml-1" /><span className="truncate">{phrase}, {r.teams.join(", ") || "no team"}, {r.role === "manager" ? "team lead" : "staff"}</span></>}
                 trailing={

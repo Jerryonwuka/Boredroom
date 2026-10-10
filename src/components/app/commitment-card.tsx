@@ -237,14 +237,17 @@ export function CommitmentCard({ orgSlug, view: given, timeZone, now, compact = 
     <p className={cn("mt-1.5 whitespace-pre-wrap break-words text-meta font-normal", outcome.tone === "success" ? "text-success" : outcome.tone === "danger" ? "text-danger" : "text-secondary", outcome.working && "brenda-shimmer")}>{outcome.text}</p>
   ) : null;
 
-  const quote = c.message.withdrawn ? <p className="mt-1.5 text-meta font-normal text-secondary">{LOOP_WORDS.page.withdrawn}</p>
+  // An action item from a call's recap (phase 8, owner decisions, 8 October 2026): nothing is quoted; the line below links the call.
+  const quote = c.call ? null
+    : c.message.withdrawn ? <p className="mt-1.5 text-meta font-normal text-secondary">{LOOP_WORDS.page.withdrawn}</p>
     : c.message.edited ? <p className="mt-1.5 text-meta font-normal text-secondary">{LOOP_WORDS.page.edited}</p>
     : c.message.quote ? <Bubble>“{c.message.quote}”</Bubble>
     : <p className="mt-1.5 text-meta font-normal text-secondary">{LOOP_WORDS.page.noMessage}</p>;
   const where = c.where.name;
   const links = (
     <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
-      {c.message.href ? <QuietLink href={c.message.href}>{where ? `${LOOP_WORDS.page.openMessage} in ${where}` : LOOP_WORDS.page.openMessage}</QuietLink> : null}
+      {c.call ? <QuietLink href={c.call.href}>{where ? `${LOOP_WORDS.cards.fromCall} in ${where}` : LOOP_WORDS.cards.fromCall}</QuietLink>
+        : c.message.href ? <QuietLink href={c.message.href}>{where ? `${LOOP_WORDS.page.openMessage} in ${where}` : LOOP_WORDS.page.openMessage}</QuietLink> : null}
       {c.todo ? <QuietLink href={c.todo.href}>{LOOP_WORDS.page.openTodo}</QuietLink> : null}
     </div>
   );

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync, createReadStream, openSync, writeSync, closeSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync, createReadStream } from "node:fs";
 import { dirname, join, normalize, resolve } from "node:path";
 import type { Readable } from "node:stream";
 
@@ -14,8 +14,6 @@ export interface StorageProvider {
   size(key: string): Promise<number | null>;
   delete(key: string): Promise<void>;
   exists(key: string): Promise<boolean>;
-  /** Concatenates parts in order into a new object (same container/recorder instance). */
-  concat(destKey: string, partKeys: string[]): Promise<{ size: number }>;
 }
 
 const SAFE_KEY = /^[a-z0-9]+(?:\/[A-Za-z0-9._-]+)+$/;
@@ -43,20 +41,6 @@ export class LocalStorageProvider implements StorageProvider {
   async size(key: string) { const p = this.path(key); return existsSync(p) ? statSync(p).size : null; }
   async delete(key: string) { const p = this.path(key); rmSync(p, { force: true }); }
   async exists(key: string) { return existsSync(this.path(key)); }
-  async concat(destKey: string, partKeys: string[]) {
-    const dest = this.path(destKey);
-    mkdirSync(dirname(dest), { recursive: true });
-    const fd = openSync(dest, "w");
-    let size = 0;
-    try {
-      for (const k of partKeys) {
-        const buf = readFileSync(this.path(k));
-        writeSync(fd, buf);
-        size += buf.length;
-      }
-    } finally { closeSync(fd); }
-    return { size };
-  }
 }
 
 let provider: StorageProvider | null = null;

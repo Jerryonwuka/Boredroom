@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { ComponentType } from "react";
-import { AtSign, Bell, CalendarClock, CircleAlert, CircleCheck, ClipboardCheck, CreditCard, FileText, Handshake, Hourglass, MessageSquare, MessageSquareQuote, MessageSquareReply, Repeat, ShieldCheck, SquareCheckBig, Video } from "lucide-react";
+import { AtSign, Bell, CalendarClock, CircleAlert, CircleCheck, ClipboardCheck, CreditCard, FileText, Handshake, Hourglass, MessageSquare, MessageSquareQuote, MessageSquareReply, NotebookPen, PhoneMissed, Repeat, ShieldCheck, SquareCheckBig } from "lucide-react";
 import { workspacePage } from "@/server/lib/workspace-page";
 import { AppShell } from "@/components/app/shell";
 import { PageHeader } from "@/components/ui/card";
@@ -14,6 +14,7 @@ import { notificationsView } from "@/server/services/views";
 import { assistantProfiles } from "@/server/services/assistant-profile";
 import { ROUTINE_WORDS } from "@/lib/routines";
 import { LOOP_WORDS } from "@/lib/commitments";
+import { CALL_WORDS } from "@/lib/calls";
 import { formatDateTime, cn } from "@/lib/utils";
 import { MarkRead, MarkAllRead } from "./mark-read";
 
@@ -58,17 +59,23 @@ export const metadata = { title: "Notifications" };
  * "Blocked on someone else"), and a re-plan to confirm for a lead ("Re-plan", `brenda.replan`). Words from lib/commitments
  * (`LOOP_WORDS.notifications.kinds`); a handshake for commitments, an hourglass for blocks, a calendar clock for the
  * re-plan; the assistant tab. Each opens its card (Between assistants), the Commitments page or the follow-up.
+ *
+ * Calls (owner decisions, 8 October 2026: phase 8): a "Missed call" (`call.missed`, a phone with a slash) and "Call notes"
+ * (`call.recap`, a notebook), both in the Messages tab, each opening the call's page. Ringing is never stored (it is
+ * live: the overlay and the notch). Screen recording is gone, and with it the recording problem (`capture.exception`) and
+ * the incident kinds.
  */
 function kindsFor(personal: string, workspace: string): Record<string, string> {
   return {
     "message.direct": "Direct message", "message.mention": "Mention", "brenda.nudge": `From ${personal}`, "brenda.reminder": `Reminder from ${personal}`, "brenda.clock_in": `From ${personal}`,
     "brenda.daily_report": `Daily report from ${workspace}`, "brenda.followup_ask": `Follow-up from ${personal}`, "brenda.followup_answer": "Follow-up answer",
     "brenda.followup_batch": "Follow-up answers", "brenda.mention_reply": `Reply from ${personal}`, "brenda.mention_confirm": "Waiting for you",
-    "brenda.mention_private": `From ${personal}`, "capture.exception": "Recording problem", "adjustment.requested": "Time correction requested",
+    "brenda.mention_private": `From ${personal}`, "adjustment.requested": "Time correction requested",
     "assistant.message": "Passed-on message", "assistant.request": "Request to accept", "assistant.reply": "Reply", "assistant.outcome": "Request update",
     "assistant.tagged": "Your assistant in Messages", "assistant.thread_reply": "Reply in Messages",
     ...ROUTINE_WORDS.notifications.kinds,
     ...LOOP_WORDS.notifications.kinds,
+    ...CALL_WORDS.notifications.kinds,
   };
 }
 
@@ -82,7 +89,7 @@ const FILTERS = [
   { value: "brenda", label: "Brenda" },
 ] as const;
 type Filter = (typeof FILTERS)[number]["value"];
-const group = (type: string): Filter | null => (/^(task|review|adjustment)\./.test(type) ? "tasks" : type.startsWith("message.") ? "messages" : type.startsWith("brenda.") || type.startsWith("assistant.") ? "brenda" : null);
+const group = (type: string): Filter | null => (/^(task|review|adjustment)\./.test(type) ? "tasks" : type.startsWith("message.") || type.startsWith("call.") ? "messages" : type.startsWith("brenda.") || type.startsWith("assistant.") ? "brenda" : null);
 
 type Icon = ComponentType<{ className?: string; "aria-hidden"?: boolean }>;
 /** A line icon per kind, in the 32px square at the head of each row. A `brenda.*` glyph draws the person's own assistant,
@@ -103,15 +110,16 @@ function iconOf(type: string): Icon {
   if (type === "brenda.routine_failed") return CircleAlert;
   if (type === "brenda.routine" || type === "brenda.routine_bundle") return Repeat;
   if (type.startsWith("brenda.")) return BrendaGlyph as Icon;
+  // Calls (phase 8): a missed call, and the notes from a call.
+  if (type === "call.missed") return PhoneMissed;
+  if (type === "call.recap") return NotebookPen;
   if (type === "message.reported") return CircleAlert;
   if (type.includes("mention")) return AtSign;
   if (type.startsWith("message.")) return MessageSquare;
   if (type.startsWith("task.") || type.startsWith("review.")) return SquareCheckBig;
   if (type.startsWith("adjustment.")) return CalendarClock;
   if (type.startsWith("billing.")) return CreditCard;
-  if (type.startsWith("capture.")) return Video;
   if (type.startsWith("policy.")) return ShieldCheck;
-  if (type.startsWith("incident.")) return CircleAlert;
   if (type.includes("doc")) return FileText;
   return Bell;
 }

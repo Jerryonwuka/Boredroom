@@ -60,7 +60,7 @@ export function Pricing({ plans, waitlist, signedIn }: { plans: PublicPlan[]; wa
               <ul className="mt-6 flex-1 space-y-2.5 border-t border-border pt-5 text-sm font-normal text-foreground">
                 <li className="flex items-center gap-2.5"><Check className="size-4 shrink-0" aria-hidden /><span><strong className="font-semibold">{p.max_workspaces === null ? "Unlimited" : p.max_workspaces}</strong> workspace{p.max_workspaces === 1 ? "" : "s"}</span></li>
                 <li className="flex items-center gap-2.5"><Check className="size-4 shrink-0" aria-hidden /><span><strong className="font-semibold">{p.max_users === null ? "Unlimited" : p.max_users}</strong> people per workspace</span></li>
-                <li className="flex items-center gap-2.5"><Check className="size-4 shrink-0" aria-hidden /><span><strong className="font-semibold">{p.max_storage_bytes === null ? "Unlimited" : gb(p.max_storage_bytes)}</strong> recording storage</span></li>
+                <li className="flex items-center gap-2.5"><Check className="size-4 shrink-0" aria-hidden /><span><strong className="font-semibold">{p.max_storage_bytes === null ? "Unlimited" : gb(p.max_storage_bytes)}</strong> file storage</span></li>
                 {keys.map((k) => { const on = !!p.features[k]; return (
                   <li key={k} className={cn("flex items-center gap-2.5", !on && "text-subtle")}>
                     {on ? <Check className="size-4 shrink-0" aria-hidden /> : <Minus className="size-4 shrink-0" aria-hidden />}
@@ -75,7 +75,9 @@ export function Pricing({ plans, waitlist, signedIn }: { plans: PublicPlan[]; wa
           );
         })}
       </div>
-      <p className="mx-auto mt-8 max-w-2xl text-center text-sm font-normal text-secondary">Prices are per workspace. A person may own one workspace on Free, five on Pro and as many as they need on Enterprise; joining someone else&apos;s workspace is always free.</p>
+      {/* Calls are on every plan (owner decisions, 8 October 2026: phase 8); they have no flag, so they are said here. */}
+      <p className="mx-auto mt-8 max-w-2xl text-center text-sm font-normal text-secondary">Calls, with screen sharing, are on every plan.</p>
+      <p className="mx-auto mt-2 max-w-2xl text-center text-sm font-normal text-secondary">Prices are per workspace. A person may own one workspace on Free, five on Pro and as many as they need on Enterprise; joining someone else&apos;s workspace is always free.</p>
     </div>
   );
 }

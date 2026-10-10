@@ -3,7 +3,7 @@
 /**
  * Small live pieces for the management screens (Dashboard, Workroom, Attendance), v4 with the accent rules (owner
  * decision, 6 October 2026: orange marks what is live): a ticking elapsed clock (orange digits while it runs, unless a
- * crowded list asks for `quiet`), the recording badge (orange), the live-sync line (an orange breathing dot and "Live"),
+ * crowded list asks for `quiet`), the "On a call" badge (orange), the live-sync line (an orange breathing dot and "Live"),
  * the status dot (`tone="live"` for someone working) and a slow re-read.
  */
 import { useEffect, useState } from "react";
@@ -45,8 +45,8 @@ export function LiveClock({ seconds, serverNow, running, className, quiet = fals
   return <span role="timer" className={cn("font-mono tabular-nums", running ? (quiet ? "text-foreground" : "text-accent-text") : "text-secondary", className)}>{formatClock(seconds + extra)}</span>;
 }
 
-/** A screen recording in progress: a small orange badge with a breathing dot (recording is live: accent rules). */
-export function LiveBadge({ label = "Recording" }: { label?: string }) {
+/** Someone on a call right now (owner decision, 8 October 2026: phase 8): orange, it is live. A breathing dot. */
+export function LiveBadge({ label = "On a call" }: { label?: string }) {
   return <Badge tone="accent"><StatusDot tone="live" size={6} />{label}</Badge>;
 }
 

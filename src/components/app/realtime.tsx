@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 
 export type ChangeEvent = { table: string; op: string; id: string; at: string };
 export const CHANGE_EVENT = "boredroom:change";
+/** The calls tables whose changes the call components handle themselves (phase 8). */
+export const CALL_TABLES: ReadonlySet<string> = new Set(["calls", "call_participants", "call_note_consents"]);
 
 /**
  * Subscribes to the workspace event stream and refreshes server components when something changes. Reconnect
@@ -40,7 +42,12 @@ export function RealtimeRefresher({ orgSlug }: { orgSlug: string }) {
       es = new EventSource(`/api/orgs/${orgSlug}/events`);
       es.onmessage = (e) => {
         backoff = 1000;
-        try { const payload = JSON.parse(e.data) as ChangeEvent; window.dispatchEvent(new CustomEvent<ChangeEvent>(CHANGE_EVENT, { detail: payload })); } catch { /* keepalive or malformed */ }
+        let payload: ChangeEvent | null = null;
+        try { payload = JSON.parse(e.data) as ChangeEvent; window.dispatchEvent(new CustomEvent<ChangeEvent>(CHANGE_EVENT, { detail: payload })); } catch { /* keepalive or malformed */ }
+        // Calls (owner decisions, 8 October 2026: phase 8): the call components refresh themselves (CallHost, the
+        // call stage, CallButton), so a call starting in one channel does not refresh everyone's page. Only the Calls
+        // pages still refresh for these tables.
+        if (payload && CALL_TABLES.has(payload.table) && !location.pathname.includes("/calls")) return;
         schedule();
       };
       es.onopen = () => { backoff = 1000; };

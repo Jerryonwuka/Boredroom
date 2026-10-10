@@ -13,7 +13,7 @@ const TYPED = "Finish the homepage design by Friday";
 const FEED: { icon: Icon3DName; text: string; meta: string }[] = [
   { icon: "clock-in", text: "Ada clocked in", meta: "08:58, on time" },
   { icon: "stopwatch", text: "Ada started Homepage design", meta: "09:12" },
-  { icon: "screen-record", text: "Ben is recording his screen", meta: "Brand deck, revision 2" },
+  { icon: "video-people", text: "Ben is on a call with Ada", meta: "Brand deck, revision 2" },
   { icon: "day-checklist", text: "Chidi added 3 to-dos", meta: "from a voice note" },
   { icon: "card-check", text: "Ada sent Homepage design for a check", meta: "revision 2, Figma link" },
   { icon: "shield-check", text: "David approved it", meta: "both revisions kept" },

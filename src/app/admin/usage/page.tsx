@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Timer } from "lucide-react";
 import { requireAdmin } from "@/server/admin/auth";
-import { usageOverview, liveActivity, storageOverview } from "@/server/admin/ops";
+import { usageOverview, liveActivity, storageOverview, LIVEKIT_FREE_MINUTES_NOTE } from "@/server/admin/ops";
 import { PageHeader, Card, CardHeader, Ledger } from "@/components/ui/card";
 import { AnalyticsCard } from "@/components/ui/analytics-card";
 import { BarChart } from "@/components/ui/charts";
@@ -14,6 +14,7 @@ import { Filters, CsvLink } from "@/components/admin/actions";
 import { F, filterCls, linkCls, subCls, words } from "@/components/admin/fields";
 import { bytes, num, hours } from "@/lib/format";
 import { relativeTime, formatDateTime } from "@/lib/utils";
+import { PageNote, PageNotes } from "@/components/ui/page-notes";
 
 export const metadata = { title: "Usage and activity" };
 
@@ -26,7 +27,7 @@ export default async function UsagePage({ searchParams }: { searchParams: Promis
   const dayLabel = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
   return (
     <>
-      <PageHeader title="Usage and activity" description="What the platform is doing: sessions, clock-ins, tasks, recordings and storage, globally, by organisation and by plan." actions={<CsvLink href="/api/admin/export?kind=usage" />}
+      <PageHeader title="Usage and activity" description="What the platform is doing: sessions, clock-ins, tasks, calls and storage, globally, by organisation and by plan." actions={<CsvLink href="/api/admin/export?kind=usage" />}
         tabs={tabs} tabValue={tab} tabsLabel="Usage sections" />
 
       {tab === "overview" ? await (async () => {
@@ -38,7 +39,9 @@ export default async function UsagePage({ searchParams }: { searchParams: Promis
             <Filters>
               <F label="Period"><select name="days" defaultValue={String(days)} className={filterCls}><option value="7">Last 7 days</option><option value="30">Last 30 days</option><option value="90">Last 90 days</option></select></F>
             </Filters>
-            <Ledger items={[{ label: "Active today", value: num(u.totals.active_users), note: `${num(u.totals.mau)} in 30 days` }, { label: "Hours", value: hours(u.totals.hours), note: period }, { label: "Tasks created", value: num(u.totals.tasks_created), note: period }, { label: "Recordings", value: num(u.totals.videos), note: period }]} />
+            <Ledger items={[{ label: "Active today", value: num(u.totals.active_users), note: `${num(u.totals.mau)} in 30 days` }, { label: "Hours", value: hours(u.totals.hours), note: period }, { label: "Tasks created", value: num(u.totals.tasks_created), note: period }]} />
+            {/* Calls (owner decisions, 8 October 2026: phase 8): this calendar month, whatever the period; "Not available" until 0054. */}
+            <Ledger className="mt-3" items={[{ label: "Calls this month", value: u.calls ? num(u.calls.calls) : "Not available" }, { label: "Call minutes this month", value: u.calls ? num(u.calls.minutes) : "Not available", note: "Participant minutes" }]} />
             <AnalyticsCard className="my-6" label="Activity per day" metrics={[
               { key: "sessions", label: "Sessions", value: num(u.totals.sessions), hint: period, content: <BarChart title={`Sessions per day, ${period.toLowerCase()}`} labels={labels} values={u.byDay.map((d) => Number(d.sessions))} format={num} empty="No sessions in this period." /> },
               { key: "clock_ins", label: "Clock-ins", value: num(u.totals.clock_ins), hint: `${num(u.totals.clock_outs)} clocked out`, content: <BarChart title={`Clock-ins per day, ${period.toLowerCase()}`} labels={labels} values={u.byDay.map((d) => Number(d.clock_ins))} format={num} empty="No clock-ins in this period." /> },
@@ -59,6 +62,9 @@ export default async function UsagePage({ searchParams }: { searchParams: Promis
                 <ul className="grid gap-2.5">{u.byPlan.map((p) => <li key={p.plan} className="min-w-0"><p className="text-sm font-medium text-foreground">{p.plan}</p><p className={subCls}><span className="tabular-nums">{num(p.orgs)}</span> organisations, <span className="tabular-nums">{num(p.users)}</span> people, <span className="tabular-nums">{num(p.sessions)}</span> sessions</p></li>)}</ul>
               </Card>
             </div>
+            <PageNotes>
+              <PageNote>{LIVEKIT_FREE_MINUTES_NOTE}</PageNote>
+            </PageNotes>
           </>
         );
       })() : null}
@@ -101,21 +107,20 @@ export default async function UsagePage({ searchParams }: { searchParams: Promis
         const s = await storageOverview();
         return (
           <>
-            <Ledger items={[{ label: "Recordings", value: bytes(s.totals.recordings) }, { label: "Deliverables", value: bytes(s.totals.deliverables) }, { label: "Avatars", value: num(s.totals.avatars) }, { label: "Voice notes", value: num(s.totals.voice) }]} />
-            {s.growth.length ? <p className="mt-3 text-meta font-normal text-secondary">Recording growth by month: {s.growth.map((g) => `${g.month} ${bytes(g.bytes)}`).join(", ")}.</p> : null}
+            <Ledger items={[{ label: "Deliverables", value: bytes(s.totals.deliverables) }, { label: "Avatars", value: num(s.totals.avatars) }, { label: "Voice notes", value: num(s.totals.voice) }]} />
             <h2 className="type-section-title mb-3.5 mt-8">By organisation</h2>
             {s.byOrg.length === 0 ? <p className="text-sm font-normal text-secondary">No organisations yet.</p> : (
               <DataTable caption="Storage by organisation">
-                <thead><tr><th>Organisation</th><th>Plan</th><th>Recordings</th><th>Deliverables</th><th>Total</th><th>Quota</th></tr></thead>
+                <thead><tr><th>Organisation</th><th>Plan</th><th>Deliverables</th><th>Voice notes</th><th>Avatars</th><th>Quota</th></tr></thead>
                 <tbody>{s.byOrg.map((o) => {
                   const pct = o.quota ? Math.round((Number(o.total) / Number(o.quota)) * 100) : null;
                   return (
                     <tr key={o.id}>
                       <td><Link href={`/admin/organisations/${o.id}?tab=storage`} className={linkCls}>{o.name}</Link></td>
                       <td>{o.plan ?? <span className="text-secondary">None</span>}</td>
-                      <td className="tabular-nums">{bytes(o.recordings)}</td>
                       <td className="tabular-nums">{bytes(o.deliverables)}</td>
-                      <td className="tabular-nums">{bytes(o.total)}</td>
+                      <td className="tabular-nums">{num(o.voice)}</td>
+                      <td className="tabular-nums">{num(o.avatars)}</td>
                       <td>{pct === null ? <span className="text-secondary">Unlimited</span> : (
                         <span className="flex min-w-40 items-center gap-2">
                           <ProgressBar value={Number(o.total)} max={Number(o.quota)} label={`${o.name}: storage used of the quota`} valueText={`${pct}% of ${bytes(o.quota)}`} size="sm" tone="neutral" doneTone="accent" className="w-20" />

@@ -631,7 +631,7 @@ describe("who reads a conversation, item by item", () => {
     const benTodo = (await quickTodo(ben, { title: "Ben's dentist" })).id;
     // A task in a project Olu is not in: Ben holds it, David checks it.
     const internal = await createProject(david, { name: "Internal", description: "Back office", requiresDueDate: false, requiresEstimate: false, memberIds: [id(ben)] });
-    const payroll = (await createTask(david, { projectId: internal.id, title: "Payroll export", expectedOutput: "The export.", assigneeMembershipId: id(ben), reviewerMembershipId: id(david), category: "work", priority: "normal", estimateMinutes: null, dueAt: null, captureRequirement: "none", addToMyDay: false })).id;
+    const payroll = (await createTask(david, { projectId: internal.id, title: "Payroll export", expectedOutput: "The export.", assigneeMembershipId: id(ben), reviewerMembershipId: id(david), category: "work", priority: "normal", estimateMinutes: null, dueAt: null, addToMyDay: false })).id;
     const davidBen = await openDirect(david, id(ben));
     const vis = (c: OrgContext, conv: string, kind: string, item: string) =>
       appQueryAs(c.user.profileId, "SELECT app_visible_to_readers($1, $2, $3) AS ok", [conv, kind, item]).then((r) => r[0].ok);

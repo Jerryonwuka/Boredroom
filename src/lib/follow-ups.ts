@@ -79,8 +79,8 @@ type OpenStatusWord = Exclude<TaskStatusWord, "completed">;
 /**
  * Exactly what the subject's assistant shared, gathered under the asker's own permissions (row-level security as the
  * asker, never broader) and kept on the follow-up as it was at answer time. Never in here: the person's own to-dos
- * (a task they made for themself), their day plan, documents, messages, chats with their assistant, attendance or
- * recordings.
+ * (a task they made for themself), their day plan, documents, messages, chats with their assistant, attendance, or
+ * calls (no call's transcript or recap; fix review, 10 October 2026).
  */
 export type FollowUpFacts = {
   v: 1;

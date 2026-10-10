@@ -40,7 +40,7 @@ describe("clocking in and out", () => {
   });
 
   it("clocking out is refused while a timer runs, then records the time and how early it was", async () => {
-    const s = await startSession(a.employeeCtx, { taskId: a.taskIds.homepage, captureMode: "none" });
+    const s = await startSession(a.employeeCtx, { taskId: a.taskIds.homepage });
     await expect(clockOut(a.employeeCtx)).rejects.toMatchObject({ code: "SESSION_OPEN" });
     await stopSession(a.employeeCtx, s.id, { expectedVersion: s.version, note: "", outcome: "continue_later" });
     const out = await clockOut(a.employeeCtx);

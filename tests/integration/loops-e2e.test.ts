@@ -133,7 +133,7 @@ describe("the workspace notes commitments in a tracked channel", () => {
 
 describe("a task stalled a second time gets a re-plan the lead confirms", () => {
   it("the chase asks twice; the second answer suggests a new due date; nothing moves until David confirms", async () => {
-    const stalled = (await createTask(david, { projectId: a.projectId, title: "Pricing table", expectedOutput: "Pricing table, done.", assigneeMembershipId: id(ben), reviewerMembershipId: id(david), category: "work", priority: "normal", estimateMinutes: 240, dueAt: new Date(Date.now() - 86_400_000).toISOString(), captureRequirement: "none", addToMyDay: false })).id;
+    const stalled = (await createTask(david, { projectId: a.projectId, title: "Pricing table", expectedOutput: "Pricing table, done.", assigneeMembershipId: id(ben), reviewerMembershipId: id(david), category: "work", priority: "normal", estimateMinutes: 240, dueAt: new Date(Date.now() - 86_400_000).toISOString(), addToMyDay: false })).id;
     await adminQuery(`SET session_replication_role = replica;
       UPDATE tasks SET created_at = created_at - interval '10 days' WHERE id = '${stalled}';
       UPDATE task_status_history SET occurred_at = occurred_at - interval '10 days' WHERE task_id = '${stalled}';

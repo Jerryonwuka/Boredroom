@@ -150,6 +150,9 @@ describe("mentionIntent", () => {
     expect(mentionIntent("what's the grace period before you count as late?")).toEqual({ kind: "policy", topics: ["late"] });
     expect(mentionIntent("what time zone are we on?")).toEqual({ kind: "policy", topics: ["zone"] });
     expect(mentionIntent("are we recorded? what's the monitoring policy")).toEqual({ kind: "policy", topics: ["recording"] });
+    // Phase 8 (owner decisions, 8 October 2026): the topic stays; its answer says screens and calls are never recorded.
+    expect(mentionIntent("are our calls recorded?")).toEqual({ kind: "policy", topics: ["recording"] });
+    expect(mentionIntent("does Boredroom record calls")).toEqual({ kind: "policy", topics: ["recording"] });
     expect(mentionIntent("when do we start")).toEqual({ kind: "policy", topics: ["hours"] });
   });
 

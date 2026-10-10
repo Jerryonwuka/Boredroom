@@ -90,7 +90,7 @@ async function dueSoon(routineId: string) {
 /** A task of Ben's on Design with no progress for a week. */
 let stalled: string;
 async function stalledTask(title: string) {
-  const t = (await createTask(david, { projectId: a.projectId, title, expectedOutput: `${title}, done.`, assigneeMembershipId: id(ben), reviewerMembershipId: id(david), category: "work", priority: "normal", estimateMinutes: null, dueAt: null, captureRequirement: "none", addToMyDay: false })).id;
+  const t = (await createTask(david, { projectId: a.projectId, title, expectedOutput: `${title}, done.`, assigneeMembershipId: id(ben), reviewerMembershipId: id(david), category: "work", priority: "normal", estimateMinutes: null, dueAt: null, addToMyDay: false })).id;
   await adminQuery(`SET session_replication_role = replica;
     UPDATE tasks SET created_at = created_at - interval '7 days' WHERE id = '${t}';
     UPDATE task_status_history SET occurred_at = occurred_at - interval '7 days' WHERE task_id = '${t}';
@@ -119,7 +119,7 @@ describe("a routine from setup to its history, through the worker", () => {
 
   it("is set up paused, previews without sending anything, and is not scheduled until it is enabled", async () => {
     // Something Olu still owes: a task of hers past its due date.
-    const t = await createTask(david, { projectId: a.projectId, title: "Client deck", expectedOutput: "The deck, done.", assigneeMembershipId: id(olu), reviewerMembershipId: id(david), category: "work", priority: "normal", estimateMinutes: null, dueAt: null, captureRequirement: "none", addToMyDay: false });
+    const t = await createTask(david, { projectId: a.projectId, title: "Client deck", expectedOutput: "The deck, done.", assigneeMembershipId: id(olu), reviewerMembershipId: id(david), category: "work", priority: "normal", estimateMinutes: null, dueAt: null, addToMyDay: false });
     await adminQuery("UPDATE tasks SET due_at = now() - interval '2 days' WHERE id = $1", [t.id]);
 
     const v = await R.createRoutine(olu, { template: "still_owed", cadence: { kind: "daily" }, time: soon(LONDON), quietWhenEmpty: false });
@@ -219,7 +219,7 @@ describe("the templates' rules, through the worker", () => {
   });
 
   it("the afternoon check reports a thing once: the second run stays silent; a new change is reported again", async () => {
-    const blocked = (await createTask(david, { projectId: a.projectId, title: "Pricing page", expectedOutput: "Pricing, done.", assigneeMembershipId: id(ben), reviewerMembershipId: id(david), category: "work", priority: "normal", estimateMinutes: null, dueAt: null, captureRequirement: "none", addToMyDay: false })).id;
+    const blocked = (await createTask(david, { projectId: a.projectId, title: "Pricing page", expectedOutput: "Pricing, done.", assigneeMembershipId: id(ben), reviewerMembershipId: id(david), category: "work", priority: "normal", estimateMinutes: null, dueAt: null, addToMyDay: false })).id;
     const version = async () => (await adminQuery<{ version: number }>("SELECT version FROM tasks WHERE id = $1", [blocked]))[0].version;
     await updateTask(ben, blocked, { expectedVersion: await version(), status: "in_progress" });
     await updateTask(ben, blocked, { expectedVersion: await version(), status: "blocked", reason: "Waiting on Olu for the copy" });

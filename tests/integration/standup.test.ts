@@ -108,7 +108,7 @@ beforeAll(async () => {
   let [m] = await adminQuery<{ version: number }>("SELECT version FROM tasks WHERE id = $1", [a.taskIds.meeting]);
   await updateTask(ada, a.taskIds.meeting, { expectedVersion: m.version, status: "in_progress" });
   await completeTask(ada, a.taskIds.meeting, { note: "Notes shared" });
-  const s = await startSession(ada, { taskId: a.taskIds.homepage, captureMode: "none" });
+  const s = await startSession(ada, { taskId: a.taskIds.homepage });
   await stopSession(ada, s.id, { expectedVersion: s.version, note: "", outcome: "continue_later" });
   await adminQuery("ALTER TABLE session_intervals DISABLE TRIGGER session_intervals_immutable");
   await adminQuery("UPDATE session_intervals SET started_at = ended_at - interval '90 minutes' WHERE session_id = $1", [s.id]);
@@ -123,7 +123,7 @@ beforeAll(async () => {
   // Ben's own work (never in Ada's draft) and David's, blocked.
   [m] = await adminQuery<{ version: number }>("SELECT version FROM tasks WHERE id = $1", [a.taskIds.second]);
   await updateTask(ben, a.taskIds.second, { expectedVersion: m.version, status: "in_progress" });
-  davidTask = (await createTask(owner, { projectId: a.projectId, title: "Brand guidelines", expectedOutput: "A PDF of the guidelines.", assigneeMembershipId: id(david), reviewerMembershipId: null, category: "work", priority: "normal", estimateMinutes: 60, dueAt: null, captureRequirement: "none", addToMyDay: false })).id;
+  davidTask = (await createTask(owner, { projectId: a.projectId, title: "Brand guidelines", expectedOutput: "A PDF of the guidelines.", assigneeMembershipId: id(david), reviewerMembershipId: null, category: "work", priority: "normal", estimateMinutes: 60, dueAt: null, addToMyDay: false })).id;
   await blockedTask(david, davidTask, "Waiting for brand fonts");
 });
 

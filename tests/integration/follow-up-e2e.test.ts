@@ -82,7 +82,7 @@ beforeAll(async () => {
   olu = a.ownerCtx; mary = a.hrCtx; david = a.managerCtx; ada = a.employeeCtx; ben = a.employee2Ctx;
   await saveMyAssistant(olu, { name: "Max", colour: "blue", visor: "band", eyes: "round" });
   pricing = a.taskIds.second;
-  table = (await createTask(david, { projectId: a.projectId, title: "Pricing table", expectedOutput: "The table, done.", assigneeMembershipId: ben.membership.id, reviewerMembershipId: david.membership.id, category: "work", priority: "normal", estimateMinutes: null, dueAt: null, captureRequirement: "none", addToMyDay: false })).id;
+  table = (await createTask(david, { projectId: a.projectId, title: "Pricing table", expectedOutput: "The table, done.", assigneeMembershipId: ben.membership.id, reviewerMembershipId: david.membership.id, category: "work", priority: "normal", estimateMinutes: null, dueAt: null, addToMyDay: false })).id;
   listener = new Client({ connectionString: adminUrl() });
   await listener.connect();
   listener.on("notification", (n) => { try { heard.push(JSON.parse(n.payload ?? "{}")); } catch { /* not ours */ } });
@@ -262,7 +262,7 @@ describe("permission refusals", () => {
   });
 
   it("checks again when Confirm is pressed: work no longer shared since the card was prepared means nothing is created", async () => {
-    const shared = (await createTask(david, { projectId: a.projectId, title: "Shared review", expectedOutput: "Reviewed.", assigneeMembershipId: ada.membership.id, reviewerMembershipId: ben.membership.id, category: "work", priority: "normal", estimateMinutes: null, dueAt: null, captureRequirement: "none", addToMyDay: false })).id;
+    const shared = (await createTask(david, { projectId: a.projectId, title: "Shared review", expectedOutput: "Reviewed.", assigneeMembershipId: ada.membership.id, reviewerMembershipId: ben.membership.id, category: "work", priority: "normal", estimateMinutes: null, dueAt: null, addToMyDay: false })).id;
     const prepared = await runBrendaTool(ada, "follow_up", { people: ["Ben Okafor"], question: "What are you working on?" });
     expect(confirmOf(prepared.proposals)).toBeDefined();
     await adminQuery("UPDATE tasks SET archived_at = now() WHERE id = $1", [shared]);

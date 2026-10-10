@@ -13,9 +13,9 @@ import { api, isApiFailure } from "@/lib/api-client";
 export const DecisionDone = createContext<(() => void) | null>(null);
 
 /**
- * Generic decision form used by the review queue (time corrections, capture exceptions, incidents). v4: the choices as
+ * Generic decision form used by the review queue (time corrections). v4: the choices as
  * a segmented control, the note under it, the action (named after the choice) at the bottom right. An option marked
- * `danger` (deleting a recording) cannot be undone, so choosing it asks once more before anything is sent, in place
+ * `danger` (a deletion) cannot be undone, so choosing it asks once more before anything is sent, in place
  * (focus moves to Cancel): the form sits in a sheet, and a confirm dialog nested in it would close the sheet with it
  * (React passes a dialog's close event up its tree). One marked
  * `needsNote` (requesting changes, rejecting) makes the note required, as the server does. A saved decision says so in

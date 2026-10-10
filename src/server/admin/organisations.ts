@@ -23,8 +23,7 @@ const ORG_SELECT = `
          (SELECT count(*)::int FROM memberships m WHERE m.organisation_id = o.id AND m.status = 'active') AS users,
          p.code AS plan_code, p.name AS plan_name, s.status AS sub_status, s.current_period_end AS period_end, s.trial_ends_at,
          (SELECT MAX(COALESCE(ws.ended_at, ws.last_heartbeat_at)) FROM work_sessions ws WHERE ws.organisation_id = o.id) AS last_activity_at,
-         (COALESCE((SELECT SUM(received_bytes) FROM recordings r WHERE r.organisation_id = o.id AND r.deleted_at IS NULL), 0)
-          + COALESCE((SELECT SUM(size_bytes) FROM deliverables d WHERE d.organisation_id = o.id), 0))::bigint AS storage_bytes
+         COALESCE((SELECT SUM(size_bytes) FROM deliverables d WHERE d.organisation_id = o.id), 0)::bigint AS storage_bytes
   FROM organisations o
   LEFT JOIN LATERAL (SELECT pr.display_name, pr.email FROM memberships m JOIN profiles pr ON pr.id = m.user_id WHERE m.organisation_id = o.id AND m.role = 'owner' AND m.status = 'active' ORDER BY m.created_at LIMIT 1) ow ON true
   LEFT JOIN subscriptions s ON s.organisation_id = o.id
@@ -84,11 +83,13 @@ export async function organisationDetail(id: string) {
         `SELECT pt.id, pt.reference, pt.amount, pt.currency, pt.status, pt.paid_at, pt.created_at, pt.channel, p.name AS plan_name FROM payment_transactions pt LEFT JOIN plans p ON p.id = pt.plan_id WHERE pt.organisation_id = $1 ORDER BY pt.created_at DESC LIMIT 50`, [id]),
       db.query<{ id: string; action: string; target_type: string; target_label: string | null; reason: string | null; occurred_at: string; admin_email: string | null }>(
         `SELECT a.id, a.action, a.target_type, a.target_label, a.reason, a.occurred_at, u.email AS admin_email FROM platform_audit_events a LEFT JOIN auth_users u ON u.id = a.admin_user_id WHERE a.organisation_id = $1 ORDER BY a.occurred_at DESC LIMIT 50`, [id]),
-      db.one<{ sessions_30d: number; hours_30d: number; recordings: number; recording_bytes: number; deliverable_bytes: number; clock_ins_30d: number; active_users_7d: number }>(
+      // Storage is deliverables (bytes) plus voice notes and pictures (counted: their sizes are not kept in the
+      // database); phase 8 took the video files out (owner decision, 8 October 2026).
+      db.one<{ sessions_30d: number; hours_30d: number; voice_notes: number; avatars: number; deliverable_bytes: number; clock_ins_30d: number; active_users_7d: number }>(
         `SELECT (SELECT count(*)::int FROM work_sessions WHERE organisation_id = $1 AND started_at > now() - interval '30 days') AS sessions_30d,
                 COALESCE((SELECT SUM(EXTRACT(EPOCH FROM (COALESCE(ended_at, now()) - started_at)))/3600 FROM session_intervals WHERE organisation_id = $1 AND confirmation_status = 'confirmed' AND started_at > now() - interval '30 days'), 0)::float AS hours_30d,
-                (SELECT count(*)::int FROM recordings WHERE organisation_id = $1 AND deleted_at IS NULL) AS recordings,
-                COALESCE((SELECT SUM(received_bytes) FROM recordings WHERE organisation_id = $1 AND deleted_at IS NULL), 0)::bigint AS recording_bytes,
+                (SELECT count(*)::int FROM messages WHERE organisation_id = $1 AND voice_key IS NOT NULL AND deleted_at IS NULL) AS voice_notes,
+                (SELECT count(*)::int FROM memberships m JOIN profiles pr ON pr.id = m.user_id WHERE m.organisation_id = $1 AND m.status = 'active' AND pr.avatar_key IS NOT NULL) AS avatars,
                 COALESCE((SELECT SUM(size_bytes) FROM deliverables WHERE organisation_id = $1), 0)::bigint AS deliverable_bytes,
                 (SELECT count(*)::int FROM attendance_days WHERE organisation_id = $1 AND local_date > CURRENT_DATE - 30) AS clock_ins_30d,
                 (SELECT count(DISTINCT membership_id)::int FROM work_sessions WHERE organisation_id = $1 AND started_at > now() - interval '7 days') AS active_users_7d`, [id]),

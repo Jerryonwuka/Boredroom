@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { ToolSquare } from "@/components/ui/tool-tile";
 import { AssistantName } from "@/components/app/assistant-context";
 
-/** "Screen recording" reads as "screen recording" mid-sentence; "AI assistant" and "API access" keep their capitals. */
+/** "Report exports" reads as "report exports" mid-sentence; "AI assistant" and "API access" keep their capitals. */
 const midSentence = (s: string) => (/^[A-Z][a-z]/.test(s) ? s[0].toLowerCase() + s.slice(1) : s);
 
 /**

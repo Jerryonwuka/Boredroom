@@ -183,6 +183,9 @@ describe("the keys the facts are read by", () => {
     expect(k("brenda.reminder")).toBe("reminder");
     expect(k("brenda.routine")).toBe("routine");
     expect(k("brenda.standup_rollup")).toBe("rollup");
+    // Phase 8: a missed call has facts; a call's notes do not (the plain card).
+    expect(k("call.missed", "call")).toBe("call");
+    expect(k("call.recap", "call")).toBeNull();
     for (const t of ["brenda.followup_ask", "assistant.message", "assistant.reply", "brenda.commitment", "brenda.open_ask", "brenda.blocked_on", "brenda.standup", "brenda.nudge", "billing.trial", "x"]) expect(k(t)).toBeNull();
   });
 });

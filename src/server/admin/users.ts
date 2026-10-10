@@ -54,7 +54,7 @@ export async function userDetail(authUserId: string) {
     const user = await db.maybeOne<UserRow & { status_reason: string | null; status_changed_at: string | null; title: string | null; status_text: string | null; avatar_key: string | null; has_password: boolean; google: boolean; admin_role: string | null }>(
       `${USER_SELECT.replace("SELECT u.id AS auth_user_id,", "SELECT u.status_reason, u.status_changed_at, pr.title, pr.status_text, pr.avatar_key, (u.password_hash IS NOT NULL) AS has_password, EXISTS (SELECT 1 FROM auth_identities i WHERE i.user_id = u.id AND i.provider = 'google') AS google, (SELECT role FROM platform_admins a WHERE a.auth_user_id = u.id) AS admin_role, u.id AS auth_user_id,")} WHERE u.id = $1`, [authUserId]);
     if (!user) throw notFound("User not found.");
-    const [sessions, logins, clockIns, tasks, recordings, security, adminAudit] = await Promise.all([
+    const [sessions, logins, clockIns, tasks, security, adminAudit] = await Promise.all([
       db.query<{ id: string; created_at: string; last_seen_at: string; expires_at: string; revoked_at: string | null; user_agent: string | null; impersonation_id: string | null }>(`SELECT id, created_at, last_seen_at, expires_at, revoked_at, user_agent, impersonation_id FROM auth_sessions WHERE user_id = $1 ORDER BY created_at DESC LIMIT 30`, [authUserId]),
       db.query<{ occurred_at: string; action: string; metadata: Record<string, unknown> }>(`SELECT occurred_at, action, metadata FROM audit_events WHERE actor_user_id = $1 AND action LIKE 'auth.%' ORDER BY occurred_at DESC LIMIT 30`, [authUserId]),
       db.query<{ local_date: string; org_name: string; clock_in_at: string; clock_out_at: string | null; late_seconds: number }>(`SELECT ad.local_date::text, o.name AS org_name, ad.clock_in_at, ad.clock_out_at, ad.late_seconds FROM attendance_days ad JOIN memberships m ON m.id = ad.membership_id JOIN profiles pr ON pr.id = m.user_id JOIN organisations o ON o.id = ad.organisation_id WHERE pr.auth_user_id = $1 ORDER BY ad.local_date DESC LIMIT 30`, [authUserId]),
@@ -63,12 +63,11 @@ export async function userDetail(authUserId: string) {
                 (SELECT count(*)::int FROM tasks t JOIN memberships m ON m.id = t.assignee_membership_id JOIN profiles pr ON pr.id = m.user_id WHERE pr.auth_user_id = $1 AND t.status = 'completed') AS completed,
                 (SELECT count(*)::int FROM work_sessions ws JOIN profiles pr ON pr.id = ws.user_id WHERE pr.auth_user_id = $1 AND ws.started_at > now() - interval '30 days') AS sessions_30d,
                 COALESCE((SELECT SUM(EXTRACT(EPOCH FROM (COALESCE(i.ended_at, now()) - i.started_at)))/3600 FROM session_intervals i JOIN memberships m ON m.id = i.membership_id JOIN profiles pr ON pr.id = m.user_id WHERE pr.auth_user_id = $1 AND i.confirmation_status = 'confirmed' AND i.started_at > now() - interval '30 days'), 0)::float AS hours_30d`, [authUserId]),
-      db.one<{ count: number; bytes: number }>(`SELECT count(*)::int AS count, COALESCE(SUM(received_bytes), 0)::bigint AS bytes FROM recordings r JOIN memberships m ON m.id = r.membership_id JOIN profiles pr ON pr.id = m.user_id WHERE pr.auth_user_id = $1 AND r.deleted_at IS NULL`, [authUserId]),
       db.query<{ occurred_at: string; action: string; metadata: Record<string, unknown> }>(`SELECT occurred_at, action, metadata FROM audit_events WHERE actor_user_id = $1 AND action NOT LIKE 'auth.sign_in%' ORDER BY occurred_at DESC LIMIT 20`, [authUserId]),
       db.query<{ id: string; action: string; reason: string | null; occurred_at: string; admin_email: string | null }>(`SELECT a.id, a.action, a.reason, a.occurred_at, u.email AS admin_email FROM platform_audit_events a LEFT JOIN auth_users u ON u.id = a.admin_user_id WHERE a.target_type = 'user' AND a.target_id = $1 ORDER BY a.occurred_at DESC LIMIT 30`, [authUserId]),
     ]);
     const memberships = await db.query<{ id: string; organisation_id: string; org_name: string; role: string }>(`SELECT m.id, m.organisation_id, o.name AS org_name, m.role FROM memberships m JOIN profiles pr ON pr.id = m.user_id JOIN organisations o ON o.id = m.organisation_id WHERE pr.auth_user_id = $1 AND m.status = 'active' ORDER BY o.name`, [authUserId]);
-    return { user, sessions, logins, clockIns, tasks, recordings, security, adminAudit, memberships };
+    return { user, sessions, logins, clockIns, tasks, security, adminAudit, memberships };
   });
 }
 

@@ -124,7 +124,7 @@ describe("nothing that arrives through another assistant confirms", () => {
 
 describe("a routine does only what its preview showed", () => {
   it("a chase run asks follow-ups and nothing else: no messages, no requests, no change to anyone's task", async () => {
-    const stalled = (await createTask(david, { projectId: a.projectId, title: "Brand guidelines", expectedOutput: "The guidelines, done.", assigneeMembershipId: id(ben), reviewerMembershipId: id(david), category: "work", priority: "normal", estimateMinutes: null, dueAt: null, captureRequirement: "none", addToMyDay: false })).id;
+    const stalled = (await createTask(david, { projectId: a.projectId, title: "Brand guidelines", expectedOutput: "The guidelines, done.", assigneeMembershipId: id(ben), reviewerMembershipId: id(david), category: "work", priority: "normal", estimateMinutes: null, dueAt: null, addToMyDay: false })).id;
     await adminQuery(`SET session_replication_role = replica;
       UPDATE tasks SET created_at = created_at - interval '7 days' WHERE id = '${stalled}';
       UPDATE task_status_history SET occurred_at = occurred_at - interval '7 days' WHERE task_id = '${stalled}';

@@ -24,8 +24,8 @@ export const metadata = { title: "Your profile" };
 /**
  * The person's own page, v4 (owner brief, 6 October 2026: a settings-style page). One column of sections, each a card
  * of form rows: Profile (picture, name, title, status), Work status, Brenda (what she may do for you), Account,
- * Your workspaces, and Recording and privacy: what the workspace records about them, so the monitoring notice can be
- * read at any time without starting a recording, now that there is no Policy page.
+ * Your workspaces, and Privacy: the monitoring notice, readable at any time now that there is no Policy page, and what
+ * calls and Brenda's notes on calls keep (owner decisions, 8 October 2026: phase 8, A.3.3).
  *
  * The Brenda section is the person's own assistant (owner decision, 7 October 2026: personal assistants): titled with the
  * name they chose, drawn in their look, with a row that opens Settings, "Your assistant", to change the name and look.
@@ -100,57 +100,39 @@ export default async function ProfilePage({ params }: { params: Promise<{ worksp
           </SettingsGroup>
         </SettingsSection>
 
-        <RecordingAndPrivacy ctx={ctx} privacy={privacy} />
+        <Privacy ctx={ctx} privacy={privacy} />
       </div>
     </AppShell>
   );
 }
 
-const MODE: Record<string, string> = {
-  disabled: "Screen recording is off in this workspace: nothing of your screen is recorded.",
-  optional: "Recording is your choice: it starts only when you choose a screen, and you can stop it at any time.",
-  required_on_designated_tasks: "Some tasks need a recording while you work on them; on the rest, recording is your choice.",
-};
-
 /**
- * Recording and privacy (read only): the workspace's current monitoring notice, in full, with what it means in plain
- * words, and whether and when the person agreed to it. Agreeing happens in the prompt shown the first time a session
- * records their screen (components/app/capture.tsx); the organisation account, which sets the rules, does not record.
+ * Privacy (read only; owner decisions, 8 October 2026: phase 8, A.3.3): the workspace's current monitoring notice in
+ * full, what Boredroom never does, what calls keep, and how Brenda's notes on a call work. Nobody is asked to agree to
+ * anything, so there is no agreement row. Owners and HR get a link to publish a new version in Settings.
  */
-function RecordingAndPrivacy({ ctx, privacy }: { ctx: OrgContext; privacy: Awaited<ReturnType<typeof policyView>> }) {
-  const { policy, agreedAt } = privacy;
+function Privacy({ ctx, privacy }: { ctx: OrgContext; privacy: Awaited<ReturnType<typeof policyView>> }) {
+  const { policy } = privacy;
   const sets = ctx.membership.role === "owner" || ctx.membership.role === "hr";
-  if (!policy) {
-    return (
-      <SettingsSection id="recording" title="Recording and privacy">
-        <SettingsGroup><SettingsRow label="Recording" align="text"><span className="text-secondary">This workspace has no recording rules yet, so nothing of your screen is recorded.</span></SettingsRow></SettingsGroup>
-      </SettingsSection>
-    );
-  }
-  const recording = ctx.plan.features.VIDEO_RECORDING === true && policy.recording_mode !== "disabled";
-  const days = `${policy.retention_days} day${policy.retention_days === 1 ? "" : "s"}`;
-  const facts: [string, string][] = recording ? [
-    ["Recorded", "The screen, window or tab you choose, as video only, while your timer runs and the orange recording sign shows."],
-    ["Never recorded", "Sound, your keystrokes, screens you did not choose, or anything while no timer runs."],
-    ["Kept", `For ${days}, then deleted automatically.`],
-    ["Who can watch", "You, your team lead, your organisation's owner and HR, and anyone they give access to. Every viewing is logged, and you can flag a recording as sensitive to lock it."],
-  ] : [];
   return (
-    <SettingsSection id="recording" title="Recording and privacy"
-      description={sets ? <>The notice everyone in the workspace reads before their screen is recorded. You can change the rules in <Link href={`/app/${ctx.org.slug}/settings?section=recording`} className="link-inline">Settings</Link>.</> : "What this workspace may record about you, and the notice you are asked to agree to before it does."}>
+    <SettingsSection id="privacy" title="Privacy"
+      description={sets ? <>What Boredroom tracks, and what it never does. You can publish a new version of the notice in <Link href={`/app/${ctx.org.slug}/settings?section=notice`} className="link-inline">Settings</Link>.</> : "What Boredroom tracks, and what it never does."}>
       <SettingsGroup>
-        <SettingsRow label="Recording here" align="text">{recording ? MODE[policy.recording_mode] ?? MODE.optional : MODE.disabled}</SettingsRow>
-        {facts.map(([k, v]) => <SettingsRow key={k} label={k} align="text"><span className="text-secondary">{v}</span></SettingsRow>)}
-        {sets ? null : (
-          <SettingsRow label="Your agreement" align="text">
-            {agreedAt
-              ? <span className="flex flex-wrap items-center gap-2"><Badge tone="success" dot>Agreed</Badge><span className="text-secondary">on <time dateTime={agreedAt}>{formatDateTime(agreedAt, ctx.org.timezone)}</time></span></span>
-              : <span className="flex flex-wrap items-center gap-2"><Badge>Not agreed</Badge><span className="text-secondary">{recording ? "You will be asked the next time a session records your screen. Nothing is recorded until you agree." : "Nobody is asked while recording is off."}</span></span>}
+        {policy ? (
+          <SettingsRow stacked label="The monitoring notice" hint={<>Version <span className="tabular-nums">{policy.version}</span>{policy.effective_at ? <>, in effect since <time dateTime={policy.effective_at}>{formatDateTime(policy.effective_at, ctx.org.timezone)}</time></> : null}</>} align="text">
+            <div className="prompt-scroll max-h-96 overflow-y-auto whitespace-pre-wrap rounded-xl border border-border bg-fill-0 px-4 py-3 text-sm font-normal text-secondary">{policy.notice_text}</div>
           </SettingsRow>
+        ) : (
+          <SettingsRow label="The monitoring notice" align="text"><span className="text-secondary">This workspace has not published a monitoring notice yet.</span></SettingsRow>
         )}
-        <SettingsRow stacked label="The full notice" hint={<>Version <span className="tabular-nums">{policy.version}</span>{policy.effective_at ? <>, in effect since <time dateTime={policy.effective_at}>{formatDateTime(policy.effective_at, ctx.org.timezone)}</time></> : null}</>} align="text">
-          <div className="prompt-scroll max-h-96 overflow-y-auto whitespace-pre-wrap rounded-xl border border-border bg-fill-0 px-4 py-3 text-sm font-normal text-secondary">{policy.notice_text}</div>
+        <SettingsRow label="What Boredroom never does" align="text">
+          <ul className="space-y-1 text-secondary">
+            <li>It never records your screen.</li>
+            <li>It never records calls.</li>
+          </ul>
         </SettingsRow>
+        <SettingsRow label="Calls" align="text"><span className="text-secondary">Calls are on your Calls page: who called, when and for how long. Their sound and video are never kept.</span></SettingsRow>
+        <SettingsRow label="Notes on calls" align="text"><span className="text-secondary">Only when someone on the call turns them on, and only for the people who agree. Your own device writes your words down; no audio leaves it. Only the people on the call can read the transcript, and it is deleted 7 days after the recap. The recap stays.</span></SettingsRow>
       </SettingsGroup>
     </SettingsSection>
   );

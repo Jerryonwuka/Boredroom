@@ -90,11 +90,13 @@ describe("a lead in Everyone", () => {
 });
 
 describe("what every reader can see", () => {
-  it("the people list and the organisation's rules are public, without who agreed to recording", async () => {
+  it("the people list and the organisation's rules are public, with nothing personal in them", async () => {
     expect((await tool(olu, everyone, "list_people")).exposure).toBe("public");
     const p = await tool(olu, everyone, "get_policy");
     expect(p.exposure).toBe("public");
-    expect(JSON.stringify(p.out)).not.toMatch(/youAgreedToRecording|agreedToRecording/);
+    // Phase 8 (owner decisions, 8 October 2026): the notice and how calls are handled; nobody's agreement any more.
+    expect(p.out).toMatchObject({ calls: { recorded: false } });
+    expect(Object.keys(p.out as Record<string, unknown>).some((k) => /agreed/i.test(k))).toBe(false);
   });
 
   it("a task every reader of #design can view is public there; an own to-do never is; no tracked time", async () => {

@@ -37,6 +37,15 @@ function secret(): string {
   return s;
 }
 
+/**
+ * A keyed, one-way digest (HMAC-SHA256 with APP_SECRET, hex) of something that must not be stored as it is: a request's
+ * network address for the calls' one-ringer rule (fix review, 10 October 2026). Equal inputs give equal digests on one
+ * server; the input cannot be read back.
+ */
+export function keyedDigest(input: string): string {
+  return createHmac("sha256", secret()).update(input).digest("hex");
+}
+
 /** Signs an arbitrary payload with an expiry; used for short-lived media URLs. */
 export function signPayload(payload: Record<string, unknown>, ttlSeconds: number): string {
   const body = Buffer.from(JSON.stringify({ ...payload, exp: Math.floor(Date.now() / 1000) + ttlSeconds })).toString("base64url");

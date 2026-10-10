@@ -14,7 +14,7 @@ import { AdminAction, SheetButton } from "@/components/admin/actions";
 import { ChangeRoleForm } from "@/components/admin/user-forms";
 import { ImpersonateButton } from "@/components/admin/impersonate";
 import { ORG_ROLE, linkCls, subCls, words } from "@/components/admin/fields";
-import { bytes, dateOnly, num, hours } from "@/lib/format";
+import { dateOnly, num, hours } from "@/lib/format";
 import { formatDateTime, formatDuration, relativeTime } from "@/lib/utils";
 import type { Presence } from "@/lib/presence";
 
@@ -48,7 +48,6 @@ export default async function UserPage({ params }: { params: Promise<{ id: strin
             <h2 id="user-activity" className="sr-only">Activity</h2>
             <Ledger items={[{ label: "Open tasks", value: num(d.tasks.open) }, { label: "Completed", value: num(d.tasks.completed) }, { label: "Sessions, 30 days", value: num(d.tasks.sessions_30d) }, { label: "Hours, 30 days", value: hours(d.tasks.hours_30d) }]} />
             <p className="mt-3 flex flex-wrap items-center gap-x-2 text-meta font-normal text-secondary">
-              <span>Recordings: <span className="tabular-nums">{num(d.recordings.count)}</span>, {bytes(d.recordings.bytes)}.</span>
               <span className="inline-flex items-center gap-1.5">Now: {u.online ? <><StatusDot tone="live" />working</> : u.clocked_in ? "clocked in" : "not working"}</span>
             </p>
           </section>

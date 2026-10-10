@@ -8,7 +8,7 @@ import { EmptyState } from "@/components/ui/states";
 import { PlanForm } from "@/components/admin/billing-forms";
 import { EditSheet, SheetButton } from "@/components/admin/actions";
 import { words } from "@/components/admin/fields";
-import { FEATURE_LABELS } from "@/lib/plans";
+import { FEATURE_LABELS, planFeatureKeys } from "@/lib/plans";
 import { bytes, money, num } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { PageNote, PageNotes } from "@/components/ui/page-notes";
@@ -28,7 +28,8 @@ export default async function PlansPage() {
         {plans.length === 0 ? <EmptyState icon={Tags} title="No plans yet" description="Organisations choose from these on the pricing page." /> : (
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {plans.map((p) => {
-              const features = Object.entries(p.features).filter(([, v]) => v).map(([k]) => k);
+              // Only flags the app still has (fix review, 10 October 2026: VIDEO_RECORDING stays stored until migration 0055).
+              const features = planFeatureKeys(p.features);
               return (
                 <Card key={p.id} className={cn("flex min-w-0 flex-col", p.status === "archived" && "opacity-60")}>
                   <CardHeader title={<span className="flex flex-wrap items-center gap-2">{p.name}<Badge tone={PLAN_TONE[p.status] ?? "neutral"}>{words(p.status)}</Badge></span>} description={p.description ?? undefined} size="sm" className="mb-3"
@@ -41,7 +42,7 @@ export default async function PlansPage() {
                     <li>{p.max_storage_bytes ? `${bytes(p.max_storage_bytes)} of storage` : "Unlimited storage"}</li>
                     <li>{p.trial_days ? `${p.trial_days}-day trial` : "No trial"}</li>
                   </ul>
-                  {features.length ? <ul className="mt-4 flex flex-wrap gap-1.5">{features.map((k) => <li key={k}><Badge>{FEATURE_LABELS[k] ?? k.replace(/_/g, " ").toLowerCase()}</Badge></li>)}</ul> : null}
+                  {features.length ? <ul className="mt-4 flex flex-wrap gap-1.5">{features.map((k) => <li key={k}><Badge>{FEATURE_LABELS[k]}</Badge></li>)}</ul> : null}
                   <p className="mt-auto flex items-center justify-between gap-2 pt-4 text-meta font-normal text-secondary"><span><span className="tabular-nums text-foreground">{num(p.subscribers)}</span> organisation{p.subscribers === 1 ? "" : "s"} on it</span><MonoChip>{p.code}</MonoChip></p>
                 </Card>
               );

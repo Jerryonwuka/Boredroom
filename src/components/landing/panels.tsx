@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useInView, useReducedMotion } from "motion/react";
 import { LINE_ICON, type Icon3DName } from "@/components/ui/icon";
-import { Badge } from "@/components/ui/badge";
+import { PALETTE } from "@/lib/assistant-look";
 import { LiveIndicator } from "@/components/ui/status-dot";
 import { ToolSquare } from "@/components/ui/tool-tile";
 import { buttonVariants } from "@/components/ui/button";
@@ -12,21 +12,22 @@ import { cn } from "@/lib/utils";
 const EVENTS: { icon: Icon3DName; name: string; text: string }[] = [
   { icon: "clock-in", name: "Clocked in", text: "Ada, 08:58, on time" },
   { icon: "stopwatch", name: "Started", text: "Homepage design, estimate 2h 30m" },
-  { icon: "screen-record", name: "Recording", text: "Ben shares a window, segment 2" },
+  { icon: "video-people", name: "On a call", text: "Ada and Ben, design review" },
   { icon: "flag-alert", name: "Blocked", text: "Chidi, waiting on client copy" },
   { icon: "card-check", name: "Sent for check", text: "Revision 2 to David" },
   { icon: "shield-check", name: "Approved", text: "Task completed, history kept" },
 ];
 
-const SEGMENTS: [string, React.ReactNode][] = [
-  ["Segment 1, 24 min", <Badge key="1" tone="success" dot>Ready to watch</Badge>],
-  ["Segment 2, 6 min, sharing stopped", <Badge key="2" tone="warning" dot>Interrupted</Badge>],
-  ["Segment 3", <Badge key="3" tone="neutral">Recording</Badge>],
+/** The two people on the demo call: initials, and the ring in their own assistant's colour (Ada's Max is orange). */
+const CALLERS: { name: string; initials: string; ring: string }[] = [
+  { name: "Ada", initials: "AO", ring: PALETTE.orange.sphere.shade },
+  { name: "Ben", initials: "BA", ring: PALETTE.blue.sphere.shade },
 ];
 
 /**
- * Two feature cards side by side: recording by consent (the task's running timer and the recording mark in orange,
- * live; the segments' states in their status colours) and every change as it happens (the current event carries the
+ * Two feature cards side by side: calls (owner decisions, 8 October 2026: phase 8, in place of the old recording
+ * card): two call tiles with each person's assistant colour as the avatar ring, the call's running time in orange
+ * digits (live) and a quiet chip for Brenda's notes; and every change as it happens (the current event carries the
  * orange selected marker and moves down the list while the card is on screen; still under reduced motion).
  */
 export function Panels() {
@@ -45,26 +46,28 @@ export function Panels() {
         <Pane className="flex-1 p-5">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="min-w-0">
-              <p className="truncate text-sm font-medium text-secondary">Brand deck, revision 2</p>
-              <p className="mt-1 font-mono text-[32px] leading-none tabular-nums text-accent-text">0:47:31</p>
+              <p className="truncate text-sm font-medium text-secondary">#Design</p>
+              <p className="mt-1 font-mono text-[32px] leading-none tabular-nums text-accent-text">12:08</p>
             </div>
-            <LiveIndicator className="mt-0.5">Recording, 12:08</LiveIndicator>
+            <LiveIndicator className="mt-0.5">On a call</LiveIndicator>
           </div>
-          <div className="mt-5 flex flex-wrap gap-2">
-            <span className={cn(buttonVariants({ variant: "secondary", size: "xs" }), FAKE_BUTTON)}>Stop recording</span>
-            <span className={cn(buttonVariants({ variant: "secondary", size: "xs" }), FAKE_BUTTON)}>Pause</span>
-          </div>
-          <ul className="mt-5 space-y-1">
-            {SEGMENTS.map(([label, badge]) => (
-              <li key={label} className="flex items-center justify-between gap-3 rounded-xl bg-fill-0 px-3 py-2.5">
-                <span className="min-w-0 truncate text-sm font-medium text-foreground">{label}</span>
-                {badge}
+          <ul className="mt-5 grid grid-cols-2 gap-2" aria-label="People on the call">
+            {CALLERS.map((p) => (
+              <li key={p.name} className="relative grid aspect-[4/3] place-items-center rounded-xl bg-fill-1">
+                <span aria-hidden className="grid size-12 place-items-center rounded-full bg-background text-sm font-semibold text-foreground" style={{ boxShadow: `0 0 0 2px ${p.ring}` }}>{p.initials}</span>
+                <span className="absolute bottom-2 left-2.5 text-meta font-medium text-foreground">{p.name}</span>
               </li>
             ))}
           </ul>
+          <p className="mt-3 inline-flex h-7 items-center rounded-full bg-fill-0 px-3 text-meta font-normal text-secondary">Brenda is taking notes, from Ada and Ben</p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <span className={cn(buttonVariants({ variant: "secondary", size: "xs" }), FAKE_BUTTON)}>Mute</span>
+            <span className={cn(buttonVariants({ variant: "secondary", size: "xs" }), FAKE_BUTTON)}>Share screen</span>
+            <span className={cn(buttonVariants({ variant: "destructive", size: "xs" }), FAKE_BUTTON)}>Leave</span>
+          </div>
         </Pane>
-        <FeatureText title="Recording, only on a press">
-          Off until an owner turns it on. Even then nothing records until the person presses Record screen and picks what to share. An indicator shows the whole time, and stopping the share ends the segment honestly.
+        <FeatureText title="Calls, one press away">
+          Call anyone you can message, or ring the whole team from its channel, and share your screen, on every plan. Nothing is recorded, and Brenda only takes notes for the people who say yes.
         </FeatureText>
       </FeatureCard>
       <FeatureCard>

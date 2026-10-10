@@ -141,17 +141,20 @@ type ContextRow = SessionRow & EntitlementColumns & {
  * latency on a slow link) this was seven round trips (BEGIN, the session, the membership, three plan queries, COMMIT)
  * plus two transactions of their own for the platform settings; now three (BEGIN, this, COMMIT), on every route and page.
  */
-const CONTEXT_SQL = `WITH ${SESSION_CTES}, m AS (
+// Built on first use, not at import (phase 8, 10 October 2026: a module that auth imports now reaches this file too, so
+// at import time auth's SESSION_CTES may not be initialised yet).
+let contextSqlText: string | null = null;
+const contextSql = (): string => (contextSqlText ??= `WITH ${SESSION_CTES}, m AS (
        SELECT o.id AS org_id, o.slug, o.name AS org_name, o.timezone, o.current_policy_id, o.status AS org_status,
               m.id AS membership_id, m.role, m.employee_code
          FROM u JOIN memberships m ON m.user_id = u.profile_id JOIN organisations o ON o.id = m.organisation_id
         WHERE (o.slug = $2 OR o.id::text = $2) AND m.status = 'active'
         LIMIT 1
      )
-     SELECT u.*, m.*, e.* FROM u LEFT JOIN m ON true LEFT JOIN LATERAL (${entitlementsSql("m.org_id")}) e ON m.org_id IS NOT NULL`;
+     SELECT u.*, m.*, e.* FROM u LEFT JOIN m ON true LEFT JOIN LATERAL (${entitlementsSql("m.org_id")}) e ON m.org_id IS NOT NULL`);
 
 async function contextRowIn(db: Db, orgSlug: string, token: string): Promise<ContextRow | null> {
-  return db.maybeOne<ContextRow>(CONTEXT_SQL, [sha256(token), orgSlug]);
+  return db.maybeOne<ContextRow>(contextSql(), [sha256(token), orgSlug]);
 }
 
 /** The context from that row, or the error the caller gets (401, 404, 403), as orgContext always answered. */
@@ -169,7 +172,7 @@ function contextOf(row: ContextRow | null): OrgContext | AppError {
 
 /**
  * Resolves the organisation from its slug through the caller's active membership (RLS hides other orgs).
- * The session, the membership and the plan are one statement in one transaction (CONTEXT_SQL): on a distant database
+ * The session, the membership and the plan are one statement in one transaction (contextSql): on a distant database
  * each round trip is a large share of a page load, and this runs before every page. Deduplicated per request with
  * React's cache. No session token: 401 without asking the database.
  */

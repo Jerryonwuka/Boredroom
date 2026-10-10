@@ -70,11 +70,11 @@ describe("teams, leads and the team board", () => {
     expect(board?.isLead).toBe(true);
     expect(board?.members.map((m) => m.display_name)).toEqual(["Ben Employee", "Ada Employee"]);
     // Lead creates and assigns a task in the team's project.
-    const task = await createTask(ben, { projectId: t[0].project_id, title: "Set up CI", expectedOutput: "Green pipeline", assigneeMembershipId: a.employeeCtx.membership.id, category: "work", priority: "normal", captureRequirement: "none", addToMyDay: false });
+    const task = await createTask(ben, { projectId: t[0].project_id, title: "Set up CI", expectedOutput: "Green pipeline", assigneeMembershipId: a.employeeCtx.membership.id, category: "work", priority: "normal", addToMyDay: false });
     const after = await teamBoard(ben, team.id);
     expect(after?.tasks.map((x) => x.id)).toContain(task.id);
     // The lead cannot assign into a team they do not lead (David's Design project member without lead rights).
-    await expect(createTask(ben, { projectId: a.projectId, title: "Nope", expectedOutput: "x", assigneeMembershipId: a.managerCtx.membership.id, category: "work", priority: "normal", captureRequirement: "none", addToMyDay: false })).rejects.toMatchObject({ status: 403 });
+    await expect(createTask(ben, { projectId: a.projectId, title: "Nope", expectedOutput: "x", assigneeMembershipId: a.managerCtx.membership.id, category: "work", priority: "normal", addToMyDay: false })).rejects.toMatchObject({ status: 403 });
     // Staff see the board but are not leads.
     const adaBoard = await teamBoard(a.employeeCtx, team.id);
     expect(adaBoard?.isLead).toBe(false);

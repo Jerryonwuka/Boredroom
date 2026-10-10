@@ -11,11 +11,35 @@ import { runHealthChecks } from "@/server/lib/health";
 import { paystackConfigured } from "@/server/admin/billing";
 import { brevoConfigured } from "@/server/admin/marketing";
 import { issueSession } from "@/server/auth";
+import { schema0054Ready } from "@/server/lib/schema-0054";
 
 // ---- Dashboard -----------------------------------------------------------------------------------------------------
 
+/**
+ * Calls this month across the platform (owner decisions, 8 October 2026: phase 8): how many calls were started and how
+ * many participant minutes they used (each person's time in the call, rounded), the figure LiveKit Cloud's plan counts.
+ * Null before migration 0054 ("Not available"); its own transaction, so a failure never breaks the page around it.
+ */
+export type CallUsage = { calls: number; minutes: number } | null;
+export async function callUsageThisMonth(): Promise<CallUsage> {
+  try {
+    return await withSystem(async (db) => {
+      if (!(await schema0054Ready(db))) return null;
+      return db.one<{ calls: number; minutes: number }>(
+        `SELECT (SELECT count(*)::int FROM calls WHERE created_at >= date_trunc('month', now())) AS calls,
+                COALESCE((SELECT round(SUM(p.seconds_in_call) / 60.0) FROM call_participants p JOIN calls c ON c.id = p.call_id
+                          WHERE c.created_at >= date_trunc('month', now())), 0)::int AS minutes`);
+    });
+  } catch {
+    return null;
+  }
+}
+
+/** LiveKit Cloud's free plan, for the page note next to the call minutes. */
+export const LIVEKIT_FREE_MINUTES_NOTE = "LiveKit Cloud's free plan includes 5,000 participant minutes a month.";
+
 export async function dashboardMetrics() {
-  return withSystem(async (db) => {
+  const metrics = await withSystem(async (db) => {
     const platform = await db.one<{ orgs: number; active_orgs: number; new_today: number; new_week: number; new_month: number; users: number; active_users: number; online: number; clocked_in: number; suspended_orgs: number; suspended_users: number }>(
       `SELECT (SELECT count(*)::int FROM organisations) AS orgs,
               (SELECT count(*)::int FROM organisations WHERE status = 'active') AS active_orgs,
@@ -36,23 +60,26 @@ export async function dashboardMetrics() {
               (SELECT count(*)::int FROM subscriptions WHERE status = 'expired') AS expired,
               (SELECT count(*)::int FROM subscriptions WHERE status = 'cancelled') AS cancelled,
               (SELECT count(*)::int FROM subscriptions WHERE status IN ('payment_failed','past_due')) AS failed`);
-    const usage = await db.one<{ tasks: number; tasks_done: number; clock_ins: number; heartbeats: number; videos: number; storage: number; active_sessions: number }>(
+    // Storage is deliverables (bytes); voice notes and pictures are counted on the usage page (their sizes are not kept
+    // in the database). Screen recordings are gone (owner decision, 8 October 2026: phase 8).
+    const usage = await db.one<{ tasks: number; tasks_done: number; clock_ins: number; heartbeats: number; storage: number; active_sessions: number }>(
       `SELECT (SELECT count(*)::int FROM tasks WHERE archived_at IS NULL) AS tasks,
               (SELECT count(*)::int FROM tasks WHERE status = 'completed') AS tasks_done,
               (SELECT count(*)::int FROM attendance_days) AS clock_ins,
               (SELECT count(*)::int FROM work_sessions) AS heartbeats,
-              (SELECT count(*)::int FROM recordings WHERE deleted_at IS NULL) AS videos,
-              (COALESCE((SELECT SUM(received_bytes) FROM recordings WHERE deleted_at IS NULL), 0) + COALESCE((SELECT SUM(size_bytes) FROM deliverables), 0))::bigint AS storage,
+              COALESCE((SELECT SUM(size_bytes) FROM deliverables), 0)::bigint AS storage,
               (SELECT count(*)::int FROM work_sessions WHERE state IN ('running','paused','interrupted')) AS active_sessions`);
     const alerts = await db.one<{ failed_jobs: number; failed_payments_7d: number; paystack_errors: number; brevo_errors: number; storage_heavy: number }>(
       `SELECT (SELECT count(*)::int FROM jobs WHERE state = 'failed') AS failed_jobs,
               (SELECT count(*)::int FROM payment_transactions WHERE status = 'failed' AND created_at > now() - interval '7 days') AS failed_payments_7d,
               (SELECT count(*)::int FROM paystack_events WHERE error IS NOT NULL) AS paystack_errors,
               (SELECT count(*)::int FROM marketing_contacts WHERE brevo_error IS NOT NULL) AS brevo_errors,
-              (SELECT count(*)::int FROM (SELECT s.organisation_id FROM subscriptions s JOIN plans p ON p.id = s.plan_id WHERE p.max_storage_bytes IS NOT NULL AND (COALESCE((SELECT SUM(received_bytes) FROM recordings r WHERE r.organisation_id = s.organisation_id AND r.deleted_at IS NULL), 0) + COALESCE((SELECT SUM(size_bytes) FROM deliverables d WHERE d.organisation_id = s.organisation_id), 0)) > p.max_storage_bytes * 0.8) x) AS storage_heavy`);
+              (SELECT count(*)::int FROM (SELECT s.organisation_id FROM subscriptions s JOIN plans p ON p.id = s.plan_id WHERE p.max_storage_bytes IS NOT NULL AND COALESCE((SELECT SUM(size_bytes) FROM deliverables d WHERE d.organisation_id = s.organisation_id), 0) > p.max_storage_bytes * 0.8) x) AS storage_heavy`);
     const recentOrgs = await db.query<{ id: string; name: string; created_at: string; owner_email: string | null; plan: string | null }>(`SELECT o.id, o.name, o.created_at, (SELECT pr.email FROM memberships m JOIN profiles pr ON pr.id = m.user_id WHERE m.organisation_id = o.id AND m.role = 'owner' ORDER BY m.created_at LIMIT 1) AS owner_email, p.name AS plan FROM organisations o LEFT JOIN subscriptions s ON s.organisation_id = o.id LEFT JOIN plans p ON p.id = s.plan_id ORDER BY o.created_at DESC LIMIT 6`);
     return { platform, subs, usage, alerts, recentOrgs };
   });
+  const calls = await callUsageThisMonth();
+  return { ...metrics, calls };
 }
 
 // ---- Usage and live activity -------------------------------------------------------------------------------------------
@@ -68,8 +95,8 @@ export async function activityByDay(days = 30) {
 }
 
 export async function usageOverview(days = 30) {
-  return withSystem(async (db) => {
-    const totals = await db.one<{ active_users: number; mau: number; clock_ins: number; clock_outs: number; sessions: number; tasks_created: number; tasks_completed: number; videos: number; hours: number }>(
+  const overview = await withSystem(async (db) => {
+    const totals = await db.one<{ active_users: number; mau: number; clock_ins: number; clock_outs: number; sessions: number; tasks_created: number; tasks_completed: number; hours: number }>(
       `SELECT (SELECT count(DISTINCT user_id)::int FROM auth_sessions WHERE last_seen_at > now() - interval '1 day') AS active_users,
               (SELECT count(DISTINCT user_id)::int FROM auth_sessions WHERE last_seen_at > now() - interval '30 days') AS mau,
               (SELECT count(*)::int FROM attendance_days WHERE local_date > CURRENT_DATE - $1::int) AS clock_ins,
@@ -77,7 +104,6 @@ export async function usageOverview(days = 30) {
               (SELECT count(*)::int FROM work_sessions WHERE started_at > now() - ($1 || ' days')::interval) AS sessions,
               (SELECT count(*)::int FROM tasks WHERE created_at > now() - ($1 || ' days')::interval) AS tasks_created,
               (SELECT count(*)::int FROM tasks WHERE completed_at > now() - ($1 || ' days')::interval) AS tasks_completed,
-              (SELECT count(*)::int FROM recordings WHERE created_at > now() - ($1 || ' days')::interval AND deleted_at IS NULL) AS videos,
               COALESCE((SELECT SUM(EXTRACT(EPOCH FROM (COALESCE(ended_at, now()) - started_at)))/3600 FROM session_intervals WHERE confirmation_status = 'confirmed' AND started_at > now() - ($1 || ' days')::interval), 0)::float AS hours`, [String(days)]);
     const byDay = await db.query<{ day: string; sessions: number; clock_ins: number; tasks_completed: number }>(
       `SELECT d::date::text AS day,
@@ -91,7 +117,7 @@ export async function usageOverview(days = 30) {
               (SELECT count(*)::int FROM work_sessions ws WHERE ws.organisation_id = o.id AND ws.started_at > now() - ($1 || ' days')::interval) AS sessions,
               COALESCE((SELECT SUM(EXTRACT(EPOCH FROM (COALESCE(i.ended_at, now()) - i.started_at)))/3600 FROM session_intervals i WHERE i.organisation_id = o.id AND i.confirmation_status = 'confirmed' AND i.started_at > now() - ($1 || ' days')::interval), 0)::float AS hours,
               (SELECT count(*)::int FROM attendance_days a WHERE a.organisation_id = o.id AND a.local_date > CURRENT_DATE - $1::int) AS clock_ins,
-              (COALESCE((SELECT SUM(received_bytes) FROM recordings r WHERE r.organisation_id = o.id AND r.deleted_at IS NULL), 0) + COALESCE((SELECT SUM(size_bytes) FROM deliverables d WHERE d.organisation_id = o.id), 0))::bigint AS storage
+              COALESCE((SELECT SUM(size_bytes) FROM deliverables d WHERE d.organisation_id = o.id), 0)::bigint AS storage
        FROM organisations o LEFT JOIN subscriptions s ON s.organisation_id = o.id LEFT JOIN plans p ON p.id = s.plan_id ORDER BY sessions DESC, o.name LIMIT 100`, [String(days)]);
     const byPlan = await db.query<{ plan: string; orgs: number; users: number; sessions: number }>(
       `SELECT p.name AS plan, count(DISTINCT o.id)::int AS orgs, (SELECT count(*)::int FROM memberships m JOIN subscriptions s2 ON s2.organisation_id = m.organisation_id WHERE s2.plan_id = p.id AND m.status = 'active') AS users,
@@ -99,6 +125,8 @@ export async function usageOverview(days = 30) {
        FROM plans p LEFT JOIN subscriptions s ON s.plan_id = p.id LEFT JOIN organisations o ON o.id = s.organisation_id GROUP BY p.id, p.name, p.sort_order ORDER BY p.sort_order`, [String(days)]);
     return { days, totals, byDay, byOrg, byPlan };
   });
+  const calls = await callUsageThisMonth();
+  return { ...overview, calls };
 }
 
 export async function liveActivity(filter: { org?: string; state?: "working" | "paused" | "clocked_in" | "all" } = {}) {
@@ -121,19 +149,20 @@ export async function liveActivity(filter: { org?: string; state?: "working" | "
 
 export async function storageOverview() {
   return withSystem(async (db) => {
-    const totals = await db.one<{ recordings: number; deliverables: number; avatars: number; voice: number }>(
-      `SELECT COALESCE((SELECT SUM(received_bytes) FROM recordings WHERE deleted_at IS NULL), 0)::bigint AS recordings,
-              COALESCE((SELECT SUM(size_bytes) FROM deliverables), 0)::bigint AS deliverables,
+    // Deliverables in bytes; pictures and voice notes counted (their sizes are not kept in the database). Screen
+    // recordings, their storage and their growth are gone (owner decision, 8 October 2026: phase 8).
+    const totals = await db.one<{ deliverables: number; avatars: number; voice: number }>(
+      `SELECT COALESCE((SELECT SUM(size_bytes) FROM deliverables), 0)::bigint AS deliverables,
               (SELECT count(*)::int FROM profiles WHERE avatar_key IS NOT NULL) AS avatars,
               (SELECT count(*)::int FROM messages WHERE voice_key IS NOT NULL AND deleted_at IS NULL) AS voice`);
-    const byOrg = await db.query<{ id: string; name: string; plan: string | null; quota: number | null; recordings: number; deliverables: number; total: number }>(
+    const byOrg = await db.query<{ id: string; name: string; plan: string | null; quota: number | null; deliverables: number; voice: number; avatars: number; total: number }>(
       `SELECT o.id, o.name, p.name AS plan, p.max_storage_bytes AS quota,
-              COALESCE((SELECT SUM(received_bytes) FROM recordings r WHERE r.organisation_id = o.id AND r.deleted_at IS NULL), 0)::bigint AS recordings,
               COALESCE((SELECT SUM(size_bytes) FROM deliverables d WHERE d.organisation_id = o.id), 0)::bigint AS deliverables,
-              (COALESCE((SELECT SUM(received_bytes) FROM recordings r WHERE r.organisation_id = o.id AND r.deleted_at IS NULL), 0) + COALESCE((SELECT SUM(size_bytes) FROM deliverables d WHERE d.organisation_id = o.id), 0))::bigint AS total
+              (SELECT count(*)::int FROM messages mg WHERE mg.organisation_id = o.id AND mg.voice_key IS NOT NULL AND mg.deleted_at IS NULL) AS voice,
+              (SELECT count(*)::int FROM memberships m JOIN profiles pr ON pr.id = m.user_id WHERE m.organisation_id = o.id AND m.status = 'active' AND pr.avatar_key IS NOT NULL) AS avatars,
+              COALESCE((SELECT SUM(size_bytes) FROM deliverables d WHERE d.organisation_id = o.id), 0)::bigint AS total
        FROM organisations o LEFT JOIN subscriptions s ON s.organisation_id = o.id LEFT JOIN plans p ON p.id = s.plan_id ORDER BY total DESC LIMIT 100`);
-    const growth = await db.query<{ month: string; bytes: number }>(`SELECT to_char(date_trunc('month', created_at), 'YYYY-MM') AS month, SUM(received_bytes)::bigint AS bytes FROM recordings WHERE created_at > now() - interval '12 months' GROUP BY 1 ORDER BY 1`);
-    return { totals, byOrg, growth };
+    return { totals, byOrg };
   });
 }
 

@@ -200,7 +200,7 @@ describe("blocked on whom", () => {
   it("starting a session on a blocked task settles its “blocked on you” at once", async () => {
     await blocked(ada, a.taskIds.homepage);
     const v = await B.setBlock(ada, a.taskIds.homepage, { waitingOn: id(david), question: "Can you approve the layout?" });
-    await startSession(ada, { taskId: a.taskIds.homepage, captureMode: "none" });
+    await startSession(ada, { taskId: a.taskIds.homepage });
     const [row] = await adminQuery<{ status: string }>("SELECT status FROM task_blocks WHERE id = $1", [v.id]);
     expect(row.status).toBe("cleared");
   });

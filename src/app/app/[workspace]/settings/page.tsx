@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { Check, Clock, CreditCard, Laptop, ScreenShare, SlidersHorizontal } from "lucide-react";
+import { Check, Clock, CreditCard, FileText, Laptop, SlidersHorizontal } from "lucide-react";
 import { workspacePage } from "@/server/lib/workspace-page";
 import { AppShell } from "@/components/app/shell";
 import { PageHeader } from "@/components/ui/card";
@@ -9,8 +9,8 @@ import { Alert } from "@/components/ui/states";
 import { Badge } from "@/components/ui/badge";
 import { ProgressBar } from "@/components/ui/progress-arc";
 import { settingsView } from "@/server/services/views";
-import { OrgSettingsForm, ScheduleForm, PolicyForm, GrantsPanel, AssistantConnectionForm, RecordingSwitch, SettingsSection, SettingsGroup, SettingsRow, SettingsFooter } from "@/components/app/settings-forms";
-import { assistantStatus } from "@/server/services/orgs";
+import { OrgSettingsForm, ScheduleForm, PolicyForm, StandardNoticeButton, AssistantConnectionForm, SettingsSection, SettingsGroup, SettingsRow, SettingsFooter } from "@/components/app/settings-forms";
+import { assistantStatus, DEFAULT_NOTICE, noticeMentionsScreenRecording } from "@/server/services/orgs";
 import { brendaOverview } from "@/server/services/brenda";
 import { listDevices } from "@/server/services/desktop";
 import { BrendaOrgSettings } from "@/components/app/brenda";
@@ -40,6 +40,7 @@ import { ReportNotesSettings } from "@/components/app/report-notes-settings";
 import { assistantTalkPreferences, listMutes, reportNoteSettings } from "@/server/services/assistant-items";
 import { RoutinesSettings } from "@/components/app/routines-settings";
 import { QuietHoursSettings } from "@/components/app/quiet-hours-settings";
+import { CallSoundSettings } from "@/components/app/call-sound-settings";
 import { RoutinesWorkspaceSettings } from "@/components/app/routines-workspace-settings";
 import { listRoutines, quietHoursFor, routineSettingsFor } from "@/server/services/routines";
 import { ROUTINE_WORDS } from "@/lib/routines";
@@ -65,11 +66,11 @@ import { cn } from "@/lib/utils";
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Settings" };
 
-type SectionKey = "general" | "hours" | "recording" | "brenda" | "assistant" | "billing" | "desktop";
+type SectionKey = "general" | "hours" | "notice" | "brenda" | "assistant" | "billing" | "desktop";
 const SECTIONS: { key: SectionKey; label: string; icon: ReactNode }[] = [
   { key: "general", label: "General", icon: <SlidersHorizontal aria-hidden /> },
   { key: "hours", label: "Working hours", icon: <Clock aria-hidden /> },
-  { key: "recording", label: "Recording", icon: <ScreenShare aria-hidden /> },
+  { key: "notice", label: "Monitoring notice", icon: <FileText aria-hidden /> },
   { key: "brenda", label: "Brenda", icon: <BrendaGlyph aria-hidden /> },
   { key: "assistant", label: "Your assistant", icon: <BrendaGlyph aria-hidden /> },
   { key: "billing", label: "Billing", icon: <CreditCard aria-hidden /> },
@@ -80,16 +81,16 @@ const VOICE_UNREADABLE: VoiceConnectionStatus = {
   ready: false, source: "none", hint: null, connectedAt: null, month: null, monthError: null, low: false, workspaceMonth: 0,
   today: { used: 0, share: 0 }, sharedFull: false, historyBlocked: false, historyLeft: 0, personDailyLimit: 0,
 };
-const MODE_LABEL: Record<string, string> = { disabled: "Off", optional: "On, each person's choice", required_on_designated_tasks: "On, required on marked tasks" };
 
 /**
  * Settings, v4 (owner brief, 6 October 2026): the page header, then a left sub-navigation of sections (General,
- * Working hours, Recording, Brenda, Your assistant, Billing, Desktop; a scrolling row of the same items on a phone)
+ * Working hours, Monitoring notice, Brenda, Your assistant, Billing, Desktop; a scrolling row of the same items on a phone)
  * beside the chosen section. Each section is a set of cards of form rows: the label and a hint on the left, the control
  * on the right. The section is in the address (?section=), so links land on it: the billing banner, the Paystack
- * callback and the pricing page (?billing= or ?plan=) open Billing. Only owners change recording rules, grants and the
- * AI key. Every change is audited. That, and each section's explanations (time zone, consent, what is logged, what is
- * sent to Anthropic), are page notes at the bottom (owner request, 7 October 2026).
+ * callback and the pricing page (?billing= or ?plan=) open Billing. Only owners publish the monitoring notice and change the
+ * AI key. Every change is audited. That, and each section's explanations (time zone, what is logged, what is sent to
+ * Anthropic), are page notes at the bottom (owner request, 7 October 2026). The "Monitoring notice" section was
+ * "Recording" until phase 8 (owner decisions, 8 October 2026): old `?section=recording` links still land on it.
  *
  * Settings opens for everyone (owner decision, 7 October 2026: everyone customises their assistant in Settings). Staff
  * and team leads see one section, "Your assistant", which is where any other ?section= lands them; owners and HR see
@@ -159,6 +160,10 @@ const MODE_LABEL: Record<string, string> = { disabled: "Off", optional: "On, eac
  * HR (both manage it): the workspace's own ElevenLabs key (tested with one free request, stored encrypted, removable;
  * without one Boredroom's key is used within a daily share) and this month's usage (`voiceConnectionStatus`; a failed
  * read shows the card as not ready). Both show disabled under an info alert until migration 0053 is applied.
+ *
+ * Calls (owner decision, 10 October 2026: incoming calls get their own sound setting, separate from the assistant's
+ * chimes, on by default): "Your assistant" gains "Calls" after Quiet hours, one switch, "Ring for incoming calls",
+ * remembered in this browser (`call-sound-settings`).
  */
 export default async function SettingsPage({ params, searchParams }: { params: Promise<{ workspace: string }>; searchParams: Promise<{ section?: string; setup?: string; billing?: string; plan?: string }> }) {
   const { workspace } = await params;
@@ -169,7 +174,8 @@ export default async function SettingsPage({ params, searchParams }: { params: P
   const sections = admin ? SECTIONS : SECTIONS.filter((s) => s.key === "assistant");
   const home: SectionKey = admin ? "general" : "assistant";
   const base = `/app/${ctx.org.slug}`;
-  const section: SectionKey = sections.some((s) => s.key === sp.section) ? (sp.section as SectionKey) : admin && (sp.billing || sp.plan) ? "billing" : home;
+  const asked = sp.section === "recording" ? "notice" : sp.section;
+  const section: SectionKey = sections.some((s) => s.key === asked) ? (asked as SectionKey) : admin && (sp.billing || sp.plan) ? "billing" : home;
   const href = (k: SectionKey) => (k === home ? `${base}/settings` : `${base}/settings?section=${k}`);
   // The assistants are read with each section's own data, in parallel; the shell's read is the same cached one.
   let assistants: AssistantProfiles;
@@ -204,6 +210,8 @@ export default async function SettingsPage({ params, searchParams }: { params: P
         {/* What the assistant does on a schedule, then when it keeps quiet (owner decision, 8 October 2026: phase 7a). */}
         <RoutinesSettings orgSlug={ctx.org.slug} name={name} impersonated={!!ctx.user.impersonation} timeZone={quiet?.timezone ?? ctx.org.timezone} initial={routines} />
         <QuietHoursSettings orgSlug={ctx.org.slug} name={name} impersonated={!!ctx.user.impersonation} orgTimeZone={ctx.org.timezone} initial={quiet} />
+        {/* Whether this browser rings for incoming calls, apart from the assistant's chimes (owner decision, 10 October 2026). */}
+        <CallSoundSettings name={name} />
         <FollowUpPreferenceSettings orgSlug={ctx.org.slug} initial={followUps} name={name} impersonated={!!ctx.user.impersonation} />
         {/* Other people's assistants (phase 6): tagging the person's assistant in Messages, and whose assistants are muted. */}
         <AssistantTalkSettings orgSlug={ctx.org.slug} name={name} preferences={talk} mutes={mutes} impersonated={!!ctx.user.impersonation} />
@@ -224,16 +232,16 @@ export default async function SettingsPage({ params, searchParams }: { params: P
         {activity.readsHidden ? <PageNote section={`What ${name} did`}>What {name} read is hidden while someone else is signed in as this person.</PageNote> : null}
       </>
     );
-  } else if (section === "general" || section === "hours" || section === "recording") {
+  } else if (section === "general" || section === "hours" || section === "notice") {
     const [view, a] = await Promise.all([settingsView(ctx), assistantProfiles(ctx)]);
-    const { policy, schedule, grants, members, teams, counts: c } = view;
+    const { policy, schedule, counts: c } = view;
     assistants = a;
     if (section === "general") {
       const checklist = [
         { label: "Workspace created", done: true },
         { label: "Time zone and schedule set", done: !!schedule, href: href("hours"), go: "Working hours" },
         { label: "Teams defined and managers assigned", done: c.teams > 0, href: `${base}/people`, go: "People and teams" },
-        { label: "Recording rules reviewed", done: !!policy && policy.version >= 1, href: href("recording"), go: "Recording" },
+        { label: "Monitoring notice reviewed", done: !!policy && policy.version >= 1, href: href("notice"), go: "Monitoring notice" },
         { label: "At least one project", done: c.projects > 0, href: `${base}/projects`, go: "Projects" },
         { label: "Employees invited", done: c.members > 1, href: `${base}/people`, go: "People and teams" },
       ];
@@ -288,39 +296,27 @@ export default async function SettingsPage({ params, searchParams }: { params: P
       );
       notes = <PageNote section="Working hours and clocking">Times are in the organisation&apos;s time zone ({ctx.org.timezone}).</PageNote>;
     } else {
-      const recording = policy?.recording_mode ?? "disabled";
+      // Phase 8 (owner decisions, 8 October 2026: A.3.4, D12): the notice and the heartbeat facts. A notice that still
+      // describes screen recording gets an alert; owners can publish the new standard text in one press.
+      const outdated = noticeMentionsScreenRecording(policy?.notice_text);
       body = (
-        <>
-          <SettingsSection id="recording" title="Screen recording" description="When on, staff and team leads see Record screen in their timer."
-            action={<Badge tone={recording === "disabled" ? "neutral" : "success"} dot>{MODE_LABEL[recording] ?? "On"}</Badge>}>
+        <SettingsSection id="notice" title="Monitoring notice" description="What Boredroom tracks, in the words everyone reads in their profile. Publishing creates a new version."
+          action={policy ? <Badge>Version <span className="tabular-nums">{policy.version}</span></Badge> : null}>
+          <div className="grid gap-3">
+            {outdated ? (
+              <Alert tone="warning">
+                Your monitoring notice still describes screen recording, which Boredroom no longer does.
+                {isOwner ? <StandardNoticeButton orgSlug={ctx.org.slug} text={DEFAULT_NOTICE} reminderMinutesBeforeEnd={policy?.reminder_minutes_before_end ?? 30} /> : <> An owner can publish the new standard notice.</>}
+              </Alert>
+            ) : null}
+            {isOwner ? <PolicyForm orgSlug={ctx.org.slug} policy={policy} /> : <Alert tone="info">Only owners can publish notice versions.</Alert>}
             <SettingsGroup>
-              <SettingsRow label="Recording" hint="Switching publishes a new notice version, which each person agrees to once, the next time they record.">
-                {isOwner ? <RecordingSwitch orgSlug={ctx.org.slug} mode={recording} /> : <p className="text-sm font-normal text-secondary md:pt-2">Only owners can change this.</p>}
-              </SettingsRow>
+              <SettingsRow label="Heartbeat" hint="How often a running session checks in." align="text">Every <span className="tabular-nums">{policy?.heartbeat_seconds ?? 30}</span> seconds; stale after <span className="tabular-nums">{policy?.stale_after_seconds ?? 90}</span></SettingsRow>
             </SettingsGroup>
-          </SettingsSection>
-          <SettingsSection id="notice" title="Recording rules and notice" description="Publishing creates a new version."
-            action={policy ? <Badge>Version <span className="tabular-nums">{policy.version}</span></Badge> : null}>
-            <div className="grid gap-3">
-              {isOwner ? <PolicyForm orgSlug={ctx.org.slug} policy={policy} /> : <Alert tone="info">Only owners can publish policy versions.</Alert>}
-              <SettingsGroup>
-                <SettingsRow label="Agreed so far" hint="People who have agreed to the current version." align="text"><span className="tabular-nums">{c.acknowledged}</span> of <span className="tabular-nums">{c.members}</span></SettingsRow>
-                <SettingsRow label="Heartbeat" hint="How often a running session checks in." align="text">Every <span className="tabular-nums">{policy?.heartbeat_seconds ?? 30}</span> seconds; stale after <span className="tabular-nums">{policy?.stale_after_seconds ?? 90}</span></SettingsRow>
-              </SettingsGroup>
-            </div>
-          </SettingsSection>
-          <SettingsSection id="grants" title="Recording access" description="Supervisors (the owner, HR and a person's team lead) can watch their people's recordings. Grants extend playback to anyone else.">
-            <GrantsPanel orgSlug={ctx.org.slug} grants={grants} members={members} teams={teams} isOwner={isOwner} />
-          </SettingsSection>
-        </>
+          </div>
+        </SettingsSection>
       );
-      notes = (
-        <>
-          <PageNote section="Screen recording">Nothing records until a person presses Record screen, and the first time they do, they read the notice and agree to it before anything is captured.</PageNote>
-          <PageNote section="Recording rules and notice">Nobody signs the notice in advance; each person agrees to it once, at the moment they start a recorded session.</PageNote>
-          <PageNote section="Recording access">Every grant and every play is logged.</PageNote>
-        </>
-      );
+      notes = <PageNote section="Monitoring notice">Nobody signs the notice in advance. When a new version is published, everyone is told and can read it in their profile.</PageNote>;
     }
   } else if (section === "brenda") {
     const [ai, brenda, a, usage, collection, mentions, notesSetting, actSetting, routinesSetting, commitmentsSetting, abilities, voiceKey] = await Promise.all([assistantStatus(ctx), brendaOverview(ctx), assistantProfiles(ctx), usageSummary(ctx),
@@ -426,7 +422,7 @@ export default async function SettingsPage({ params, searchParams }: { params: P
 
   return (
     <AppShell ctx={ctx} counts={counts} teams={navTeams}>
-      <PageHeader title="Settings" description={admin ? "How the workspace runs: working hours, screen recording, Brenda, the plan, your assistant and your linked computers." : "Your assistant's name, look and voice in this workspace, whether it asks before acting, what it does for you and how you like it done, what it does on a schedule, when it keeps quiet, how it answers follow-ups about your work, and what other people's assistants may do."} divider />
+      <PageHeader title="Settings" description={admin ? "How the workspace runs: working hours, the monitoring notice, Brenda, the plan, your assistant and your linked computers." : "Your assistant's name, look and voice in this workspace, whether it asks before acting, what it does for you and how you like it done, what it does on a schedule, when it keeps quiet, how it answers follow-ups about your work, and what other people's assistants may do."} divider />
       {sp.setup && admin ? <Alert tone="success" className="mb-6" title="Workspace ready">Work through the setup list to finish.</Alert> : null}
       <div className="grid gap-6 md:grid-cols-[12.5rem_minmax(0,1fr)] md:gap-10">
         {/* Sub-navigation (spec §6): 32px items, r8, fill-1 and the orange marker for the open one, fill-0 on hover; a scrolling row on a phone. */}
