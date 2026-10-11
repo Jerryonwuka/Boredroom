@@ -411,6 +411,130 @@ Verification (the removal builder, 10 October 2026, on its own throwaway UTF-8 P
 
 **Fix review, server and removal (fixer A, 10 October 2026).** Every confirmed finding outside design is fixed (an earlier pass had started several; each was read again, finished and tested). Who is on a call follows who reads its conversation: someone taken out of a channel or a team, a deleted channel or an ended membership is out of a live call at once (`settleCallsAfterAccessChange`; `app_call_settle_at` on any settle; a device that still beats is told "left" and taken out of LiveKit's room), cannot join again, add words, switch notes, end the call for everyone or read its transcript or recap, is not sent the recap and cannot own an item; a ring to them is missed silently. LiveKit cannot revoke a join token, so tokens last 2 minutes, the webhook's `participant_joined` settles the call and takes out anyone without a place in it, and without webhooks a device's heartbeat compares the room with the call at most every 15 seconds (the sweep every minute). Notes, as the owner asked ("stop taking lines and skip the recap at once; one recap per call with size-limited input"): switching `call_notes` off turns notes off on every live call and skips every waiting recap; lines are refused once the workspace no longer offers notes; a call nobody else joined gets no recap; the model is asked at most once a call (`calls.recap_model_at`, set before asking), with at most 60,000 characters of transcript, and the switch is asked again when it answers; the person who turned notes on gets at most 20 recaps a day. Everyone asked "Include your words?" is told that a short version goes into the thread. Words spoken outside a speaker's own window are refused by the database (the disputed finding: real in the contract's SQL). A declined one-to-one call's line says "Declined call from Ada" and is read for the person who declined; a late join reads the missed-call notification and the notch's card stops offering Join; the notch's Join on a missed call while on another call offers "Leave it and join"; the recap message counts only the items sent to someone. The deletion script's confirmation names the host and the database (`--confirm=<host>/<database>`, the database as PostgreSQL reports it); its tombstone count matches the deletion and 0055's guard; the runbook says where to run it. The new standard notice no longer flags itself; billing and the Control Center's plans list only flags the app still has; `db:restore` revokes the recording tables' DELETE and UPDATE only where they exist and keeps the call tables append-only; `.rec-dot` left globals.css; comments and the build spec say recording is gone. Checks (own throwaway UTF-8 PostgreSQL on localhost:54401, stopped afterwards; never the app database): `pnpm lint` clean; type check clean except the 14 known errors in the stale `.next/types/validator.ts`; `pnpm test:unit` 73 files, 1,502 tests passed; `node --check` on the 5 notch scripts; integration, every file: 74 files, 885 tests, 863 passed, 5 skipped, 17 failed in 9 files, the same 17 the integrator found failing on the committed tree (Saturday: no team report; round3's to-do wording; tasks-page "handing tasks upwards"); every phase 8 suite passes, with new tests for each finding.
 
+## Owner request (11 October 2026): the first-run welcome
+
+"When new users login and create an account i need there to be a sort of set up, walkthrough guide, elevator pitch kind of
+thing, where they can set their names, images, choose settings, select brands [their Brendas], then maybe after, a 'you're
+all set up' message." Built as "the stage": a full-screen page per workspace, `/app/[workspace]/welcome`, with the live
+fur assistant on the left changing with every choice and one calm step card on the right: a three-beat pitch for the
+person's role, You (name, photo, theme), their assistant (name and look), How it helps (asks first or acts, when it
+speaks, the voice), What's seen (exactly what is and isn't seen about them), Team (owners and HR), then "You're all set"
+with one first action for the role and, on a Mac, the notch app. About two minutes; every step opens filled in and can be
+skipped; it resumes, opens on its own at most twice, and can be replayed from Settings.
+
+Decisions taken for the owner (each a default the owner can overturn with a one-line change):
+
+| # | Decision |
+|---|---|
+| D1 | The stage design with the judge's grafts; not a chat thread, not a checklist-first flow. |
+| D2 | The welcome is a page outside the app shell; once 0056 is applied the shell no longer mounts "Meet your assistant". |
+| D3 | It opens on its own only from a bare `/app/{slug}` or `/app/{slug}/home`, only while unfinished, at most twice; deep links and APIs are never taken over. |
+| D4 | Everyone who is a member when 0056 runs is marked done ('existing'). |
+| D5 | Progress lives in `assistant_private` (the person and the worker only), never where colleagues read. |
+| D6 | Theme: Dark and Light only ("Match my computer" is a follow-up). |
+| D7 | Staff's first action is "Write today's to-dos" (was "Plan today"; renamed in review, 11 October 2026, so it is not mistaken for the assistant's "Plan my day"), opening To-dos with the new row open. |
+| D8 | Natural voices play their free preview clips; only the computer voice says the person's name. |
+| D9 | Waitlist mode still lets in a pending invitation to that address or an enabled join code, by email or Google. |
+| D10 | One press confirms the email and joins (same browser, same account, valid invitation or code). |
+| D11 | A "Team lead" join code that names a team makes the joiner its lead; 0056 lets only a lead code or invitation take a lead seat. |
+| D12 | "Someone joined" notifications to owners, HR and the team's leads, never a word about setup. |
+| D13 | "Skip setup" asks once, then ends the automatic welcome for good. |
+| D14 | No steps for quiet hours, routines, follow-ups, abilities or the ring sound: Settings, in context. |
+| D15 | The Mac card only on "You're all set", on macOS: link an installed app until `DESKTOP_DOWNLOAD_URL` is set. |
+| D16 | Analytics: the progress columns and one `WELCOME_FINISHED` event without any person id; aggregate SQL in `docs/runbooks.md`. |
+| D17 | HR gets the Team step and the supervisor's "What's seen". |
+| D18 | Photos are re-encoded in the browser (512px square); the server strips JPEG, PNG and WebP metadata too, and the Google picture import gets the magic-byte check it lacked. |
+| D19 | Without the assistant on the plan: no "How it helps" step, and the pitch says only what is true without it. |
+| D20 | Step titles use the app's title template ("Step 2 of 4: Meet your assistant · Boredroom"). |
+| D21 | The founder's workspace form is one screen; the employee ID field goes (the server keeps OWN-001). |
+
+**Server (the server builder, 11 October 2026).** `db/migrations/0056_welcome.sql` (written, NOT applied: the lead
+reviews and applies it; it does not need 0055); `src/server/lib/schema-0056.ts` (the readiness check and fallback, as
+schema-0054); `src/lib/welcome.ts` (steps, rail, first actions, every word; shared with the client);
+`src/server/services/welcome.ts` (`welcomeState`, the gate `welcomeGatePath`, `welcomeView`, `markWelcome`,
+`finishWelcome`, `nextStepsFor`); routes `GET/PATCH /api/orgs/[org]/welcome`, `POST /api/orgs/[org]/welcome/done`,
+`GET /api/auth/status`; auth: `joiningAllowed`, `peekVerifyToken`, `next` through sign-up, resend and the verify link,
+`verifyEmail` answering `already`, the verify route's `sameUser`, Google sign-up for joiners in waitlist mode; orgs: lead
+seats by join code and `notifyJoined` in both ways of joining; `src/server/lib/image-meta.ts` (pictures stored without
+their metadata, for uploads and the Google import); the fixtures mark their members as from before the welcome; the
+workspace index and `/home` hold the gate, and `/home` carries Next steps; `WELCOME_FINISHED` in the platform events;
+`DESKTOP_DOWNLOAD_URL` in `.env.example`; "Migration 0056 (the welcome)" in `docs/runbooks.md` with the funnel SQL.
+
+Verification (the server builder, 11 October 2026, on its own throwaway UTF-8 PostgreSQL, localhost:54411; never the app
+database): `npx tsc --noEmit -p .` clean; ESLint clean on every file touched; new unit tests `welcome-lib` (35),
+`next-path` and `image-meta` (25) pass; new integration tests `welcome` (25), `welcome-before-0056` (11: every fallback,
+then 0056 applied twice by hand) and `onboarding-joins` (15: lead seats and the tightened policies, "someone joined", the
+waitlist for joiners by email and Google, the verify link's `next`, `already`, `peekVerifyToken`, pictures stored without
+their location) pass. The whole integration suite: 915 passed, 17 failed in 9 files, and the same 17 fail on a clean
+worktree of the committed tree (3be7eba) on the same database: they depend on the day (11 October 2026 is a Sunday, when no
+team report goes out) and on the model key in `.env.local`, not on this work. `notice-facts.test.ts` absorbs the new
+"someone joined" notifications (one line). A browser check on an isolated worktree stack (web :3111, database 54411): 25 of
+25 (a member from before goes straight to her page; a new member's bare workspace address opens the welcome, deep links
+never; two views stop the gate and Next steps offers "Finish your welcome"; finishing is idempotent with one anonymous
+event; the owner's bell and the team lead hear who joined).
+
+**Clients (the member and owner builders, 11 October 2026).** The welcome page with its own loading and error screens
+(`src/app/app/[workspace]/welcome/`) and `src/components/app/welcome/` (the step machine and frame, the stage with the
+character and the small faces loaded after the page, every step, the Team step, the Mac card, Next steps on her page,
+Settings' "Welcome and setup"); `assistant-preview.tsx` (the preview out of the editor, so the editor's controls no longer
+pull in the canvas engine); `lib/avatar-image.ts` (photos redrawn as a 512px square before upload, on the welcome and on Your
+profile); `lib/invite-emails.ts`; the shell (no "Meet your assistant" once 0056 is in); To-dos' `?add=1`; People's
+`?invite=1` and `?new=team`; the "New member" notification; sign-up (the founder's and the joiner's words, an invited
+address filled in and locked, joiners let in during the waitlist), the verify page (one press confirms and joins; "already
+confirmed"), "Check your inbox" moving on by itself (`verify-watch.tsx`) and the one-screen workspace form. e2e A03 follows
+the new way in (not run here: its config builds).
+
+**Integration (11 October 2026).** Fixed on the integrated stack: (1) before 0056 (the real database today) the welcome
+ended half way: its own Meet your assistant step marks the assistant's setup done, which the page read as "the welcome is
+done", so a reload, or the refresh after an act-mode choice, sent the person to her page and the tab's saved step was
+ignored; the page now sends a finished welcome home only once 0056 keeps the progress, and the tab's copy is used before
+it; (2) an act-mode choice on the welcome no longer refreshes the page (`refresh: false`, a new option of the shared
+act-mode store), so a late save can never replace "You're all set" with her page; (3) the Team step's join-link switch did
+not move when pressed in a new workspace (no code yet) until the server answered; it follows the press now; (4) a replay
+no longer greets the founder with "Acme is ready" (that is for the day it is made); (5) the fixture companies' "… joined as
+…" notifications start read, so a seeded supervisor's bell no longer opens on two to four of them; (6) four words typed in
+components moved into `WELCOME_WORDS`, and the runbook says exactly what happens before 0056.
+
+Checks (the integrator, on its own throwaway UTF-8 PostgreSQL, localhost:54414, and an isolated worktree stack on :3114,
+both removed afterwards; never the app database): `npx tsc --noEmit -p .` clean; ESLint clean on all 71 files touched;
+`pnpm test:unit` 79 files, 1,603 tests passed; the welcome's integration suites (welcome, welcome-before-0056,
+onboarding-joins, notice-facts, join-codes, assistant-profiles, tenancy) 103 passed; the whole integration suite, 77 files
+and 937 tests: 916 passed, 5 skipped, 16 failed in 8 files, and exactly the same 16 fail on a clean worktree of the
+committed tree (3be7eba) with the same settings (a Sunday, no model key). End-to-end journeys in headless Chrome with 0056
+applied, all passed: (1) a founder signs up with intent, confirms from the mail sink in a second tab (the first follows by
+itself), names the workspace on one screen, uploads a photo, makes Nova (purple, screen visor, square eyes), lets Nova speak
+always, reads the notice, makes a Design team, is stopped by a bad address, turns the join link on, sends two invitations
+and ends on "Open the dashboard"; (2) a staff joiner by join code, one press, "Keep Brenda", then Enter on "Plan today"
+opens To-dos with the new row open; (3) a staff joiner by email invitation, address locked, her lead named in the pitch,
+Max in teal; (4) a team lead by a lead code naming Design: made its lead, "Assign a first task" on Design's board, and the
+founder told "Tolu Bello joined as a team lead", "In Design."; (5) Skip setup asks once, lands on her page with Next steps
+and never opens again; (6) quit half way: the second opening resumes at the assistant with "Welcome back", the third opens
+her page with Next steps ("2 left"), hidden for good, brought back from Settings, then "Finish your welcome"; (7) members
+from before go straight to their pages with no Next steps, and the replay from Settings saves nothing and ends on a white
+"Back to Settings"; (8) every screen at 400px in dark (staff) and light (HR, with the Team step), and at 1440 in light: one
+h1, the title, no sideways scroll, the footer never covering a control; (9) reduced motion: no typing dots, no rise; (10) a
+second workspace: "You" ticked from the profile, three steps; (11) a plan without the assistant: no "How it helps", and her
+line and the pitch say only what is true. Before 0056 (a second database without it): the welcome works in full with its
+step kept in the tab, sends no progress request, finishing or skipping marks the assistant's setup done, and someone who
+leaves half way meets the old dialog, as before.
+
+Review fixes (11 October 2026): "You're all set" promises nothing about the assistant when the plan lacks it (its own lede
+and line, no Voice row, no Mac card); the step footer is sticky at every width (Continue in view on a 1366x768 laptop) and
+keeps the 500px column on What's seen; "Nobody else sees", with direct messages and calls "only the people in them", and
+presence on its own line as every colleague's; staff and leads get a fourth beat, "Fair by design", and a staff member
+with no lead is never promised one; the first action reads "Write today's to-dos"; the end screen names Settings once;
+the AI disclaimer is said once. Keyboard and saves: Enter on a checkbox or radio never submits a step (a switch flips),
+the Team step's draft and outcomes live in the flow (Back keeps them, the end screen reports them), finishing runs once,
+the browser's Back is held while a save runs and a late save never pulls the person on, How it helps waits for its saves
+(a refused one keeps the person there with its words), busy buttons are aria-disabled so focus stays, the step's position
+is in the focused title, the step form is POST, and hiding Next steps moves focus to a status. Automatic openings arrive
+as `?auto=1` and are counted once on screen, every time (the old per-tab count reopened it uncounted from the sidebar).
+Security: JPEGs are walked to their first EOI (appended images and their Exif dropped, APP2 kept only for ICC), anything
+unreadable is refused, never stored as it came; the avatar upload is read through a 2 MB cap (413 before buffering) and
+limited to 20 an hour; 0056's backfill runs only on the run that adds the columns; a lead join code that names a team
+says so in People and on the Team step, and the runbook lists the codes to review before deploying. Checks on a throwaway
+stack: typecheck, lint, unit (1,609) clean; the welcome's integration suites 161 passed; 12 journeys, 194 checks passed.
+
 ## Milestone status
 
 | Milestone | Status | Evidence |

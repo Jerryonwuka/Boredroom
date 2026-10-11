@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { ComponentType } from "react";
-import { AtSign, Bell, CalendarClock, CircleAlert, CircleCheck, ClipboardCheck, CreditCard, FileText, Handshake, Hourglass, MessageSquare, MessageSquareQuote, MessageSquareReply, NotebookPen, PhoneMissed, Repeat, ShieldCheck, SquareCheckBig } from "lucide-react";
+import { AtSign, Bell, CalendarClock, CircleAlert, CircleCheck, ClipboardCheck, CreditCard, FileText, Handshake, Hourglass, MessageSquare, MessageSquareQuote, MessageSquareReply, NotebookPen, PhoneMissed, Repeat, ShieldCheck, SquareCheckBig, UserPlus } from "lucide-react";
 import { workspacePage } from "@/server/lib/workspace-page";
 import { AppShell } from "@/components/app/shell";
 import { PageHeader } from "@/components/ui/card";
@@ -15,6 +15,7 @@ import { assistantProfiles } from "@/server/services/assistant-profile";
 import { ROUTINE_WORDS } from "@/lib/routines";
 import { LOOP_WORDS } from "@/lib/commitments";
 import { CALL_WORDS } from "@/lib/calls";
+import { WELCOME_WORDS } from "@/lib/welcome";
 import { formatDateTime, cn } from "@/lib/utils";
 import { MarkRead, MarkAllRead } from "./mark-read";
 
@@ -64,6 +65,10 @@ export const metadata = { title: "Notifications" };
  * (`call.recap`, a notebook), both in the Messages tab, each opening the call's page. Ringing is never stored (it is
  * live: the overlay and the notch). Screen recording is gone, and with it the recording problem (`capture.exception`) and
  * the incident kinds.
+ *
+ * Someone joined (owner request, 11 October 2026: the first-run welcome): owners, HR and the leads of the team they
+ * joined hear "Ada Obi joined as staff" ("New member", `member.joined`, a person with a plus), opening People or the
+ * team. It says who and as what, never anything about their setup. Under All only.
  */
 function kindsFor(personal: string, workspace: string): Record<string, string> {
   return {
@@ -76,6 +81,7 @@ function kindsFor(personal: string, workspace: string): Record<string, string> {
     ...ROUTINE_WORDS.notifications.kinds,
     ...LOOP_WORDS.notifications.kinds,
     ...CALL_WORDS.notifications.kinds,
+    "member.joined": WELCOME_WORDS.notifications.kind,
   };
 }
 
@@ -113,6 +119,7 @@ function iconOf(type: string): Icon {
   // Calls (phase 8): a missed call, and the notes from a call.
   if (type === "call.missed") return PhoneMissed;
   if (type === "call.recap") return NotebookPen;
+  if (type === "member.joined") return UserPlus;
   if (type === "message.reported") return CircleAlert;
   if (type.includes("mention")) return AtSign;
   if (type.startsWith("message.")) return MessageSquare;

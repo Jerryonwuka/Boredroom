@@ -123,6 +123,8 @@ import { LooseEndsPanel } from "@/components/app/loose-ends-list";
 import type { Person } from "@/components/app/loose-end-actions";
 import { cn } from "@/lib/utils";
 import type { Conversation, ConversationSummary } from "@/server/services/brenda-history";
+import type { NextSteps } from "@/lib/welcome";
+import { NextStepsCard } from "@/components/app/welcome/next-steps-card";
 
 export type HomeData = {
   orgSlug: string; firstName: string; role: "owner" | "hr" | "manager" | "employee";
@@ -168,6 +170,11 @@ export type HomeData = {
   standup?: DesktopStandup | null;
   /** Phase 7c: the abilities switched off for the person that her home's asks need. */
   off?: AbilityKey[];
+  /**
+   * Next steps after the welcome (owner request, 11 October 2026: the first-run welcome): what is left of the person's
+   * first things to do, derived from data (services/welcome `nextStepsFor`); null or absent, no card.
+   */
+  nextSteps?: NextSteps | null;
 };
 
 type Ask = { icon: React.ComponentType<{ "aria-hidden"?: boolean }>; label: string; prompt: string; /** Phase 7c: the ability it needs. */ ability?: AbilityKey };
@@ -572,6 +579,8 @@ export function BrendaHome({ data }: { data: HomeData }) {
               {role === "owner" ? <Link className={`${buttonVariants({ variant: "accent", size: "sm" })} mt-3`} href="/app/billing">Upgrade the plan</Link> : null}
             </div>
           )}
+          {/* Next steps after the welcome (owner request, 11 October 2026): the last thing in the column, only what is left. */}
+          {data.nextSteps ? <NextStepsCard orgSlug={data.orgSlug} steps={data.nextSteps} /> : null}
         </div>
       </section>
     </div>

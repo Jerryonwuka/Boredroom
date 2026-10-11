@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { withUser } from "@/server/db";
 import { storage } from "@/server/lib/storage";
+import { sniffImage, stripImageMetadata, type ImageType } from "@/server/lib/image-meta";
 import { invalid, notFound } from "@/server/lib/errors";
 import type { CurrentUser } from "@/server/auth";
 export { avatarUrl } from "@/lib/avatar";
@@ -51,22 +52,24 @@ export async function updateMyProfile(user: CurrentUser, input: z.infer<typeof p
 }
 
 const AVATAR_MAX = 2 * 1024 * 1024;
-const MAGIC: Record<string, (b: Buffer) => boolean> = {
-  "image/png": (b) => b.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])),
-  "image/jpeg": (b) => b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff,
-  "image/webp": (b) => b.subarray(0, 4).toString("latin1") === "RIFF" && b.subarray(8, 12).toString("latin1") === "WEBP",
-};
-const EXT: Record<string, string> = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp" };
+const EXT: Record<ImageType, string> = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp" };
 
-/** Stores a new avatar (PNG, JPEG or WebP, 2 MB or less, content checked) and forgets the old file. */
+/**
+ * Stores a new avatar (PNG, JPEG or WebP, 2 MB or less, content checked) and forgets the old file. The stored bytes carry
+ * no metadata (owner request, 11 October 2026: the first-run welcome, D18): a phone's JPEG says where it was taken, and
+ * colleagues are served the file. The checks (lib image-meta's `sniffImage`, moved from here) and their words are as before.
+ */
 export async function setMyAvatar(user: CurrentUser, file: { type: string; bytes: Buffer }) {
   const type = file.type.split(";")[0].trim().toLowerCase();
   if (file.bytes.length === 0) throw invalid("The image is empty.");
   if (file.bytes.length > AVATAR_MAX) throw invalid("Images must be 2 MB or smaller.");
-  if (!MAGIC[type]) throw invalid("Use a PNG, JPEG or WebP image.");
-  if (!MAGIC[type](file.bytes)) throw invalid("The file content does not match its declared type.");
+  if (!Object.hasOwn(EXT, type)) throw invalid("Use a PNG, JPEG or WebP image.");
+  if (!sniffImage(type, file.bytes)) throw invalid("The file content does not match its declared type.");
+  // A file that cannot be read without its metadata is refused, never stored as it came (review, 11 October 2026).
+  const clean = stripImageMetadata(type, file.bytes);
+  if (!clean) throw invalid("This image could not be read. Choose another one.");
   const key = `users/${user.profileId.replace(/-/g, "")}/avatar-${crypto.randomUUID()}.${EXT[type]}`;
-  await storage().put(key, file.bytes, type);
+  await storage().put(key, clean, type);
   const old = await withUser(user.profileId, async (db) => {
     const prev = await db.maybeOne<{ avatar_key: string | null }>(`SELECT avatar_key FROM profiles WHERE id = $1`, [user.profileId]);
     await db.query(`UPDATE profiles SET avatar_key = $2, avatar_mime = $3, updated_at = now() WHERE id = $1`, [user.profileId, key, type]);

@@ -2,9 +2,14 @@
 
 /**
  * "Meet your assistant" (owner decision, 7 October 2026: personal assistants). The first time a person opens a workspace
- * page with no saved setup (one per workspace: it is per membership), while the plan includes the assistant and nobody
- * is impersonating, `AppShell` mounts this and it opens at once, focus in the Name field. They give their assistant a
- * name, a colour, a visor and eyes with the live preview above, or keep Brenda.
+ * page with no saved setup (one per workspace: it is per membership), on every plan, while nobody is impersonating,
+ * `AppShell` mounts this and it opens at once, focus in the Name field. They give their assistant a name, a colour, a
+ * visor and eyes with the live preview above, or keep Brenda.
+ *
+ * Until migration 0056 is applied; the welcome replaces it (owner request, 11 October 2026: the first-run welcome,
+ * `/app/[workspace]/welcome`, whose "Meet your assistant" step uses the same editor). Once 0056 is in, `AppShell` no
+ * longer mounts this; before it, the shell keeps it exactly as it was, and finishing or skipping the welcome marks the
+ * assistant's setup done, so this never follows the welcome.
  *
  * Calm and skippable: "Keep Brenda", Escape and the close button all keep Brenda and mark setup done, so it never comes
  * back on the next page; a click on the overlay does nothing, so a stray click does not decide for them. If the skip
@@ -20,7 +25,8 @@ import { Alert } from "@/components/ui/states";
 import { successToast } from "@/components/ui/toast";
 import { api } from "@/lib/api-client";
 import { useAssistant } from "@/components/app/assistant-context";
-import { AssistantEditor, AssistantPreview, assistantBody, assistantFieldErrors, keepErrors, type AssistantFieldErrors } from "@/components/app/assistant-editor";
+import { AssistantEditor, assistantBody, assistantFieldErrors, keepErrors, type AssistantFieldErrors } from "@/components/app/assistant-editor";
+import { AssistantPreview } from "@/components/app/assistant-preview";
 import { assistantNameProblem, type AssistantProfile } from "@/lib/assistant-look";
 
 const ID = "setup";

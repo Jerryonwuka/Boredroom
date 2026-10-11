@@ -21,6 +21,7 @@ import { PageNotes } from "@/components/ui/page-notes";
 import { AssistantProvider } from "@/components/app/assistant-context";
 import { AssistantSetup } from "@/components/app/assistant-setup";
 import { assistantProfiles } from "@/server/services/assistant-profile";
+import { welcomeReady } from "@/server/services/welcome";
 import { DEFAULT_ASSISTANT_NAME } from "@/lib/assistant-look";
 
 export const ROLE_LABEL: Record<string, string> = { owner: "Organisation owner", hr: "HR administrator", manager: "Team lead", employee: "Staff" };
@@ -149,7 +150,8 @@ export async function AppShell({ ctx, counts, teams = [], children, bleed = fals
   // The workspace menu lists the person's workspaces; if that list cannot be read, it shows this one alone. The person's
   // own assistant and the workspace's are read alongside (owner decision, 7 October 2026: personal assistants), cached
   // per request so the page reads the same ones.
-  const [launch, admin, mine, assistants] = await Promise.all([launchSettings(), getAdmin(), listMyWorkspaces(ctx.user.profileId).catch(() => []), assistantProfiles(ctx)]);
+  // Whether the first-run welcome is in (migration 0056; owner request, 11 October 2026) is read alongside: never throws.
+  const [launch, admin, mine, assistants, welcomeOn] = await Promise.all([launchSettings(), getAdmin(), listMyWorkspaces(ctx.user.profileId).catch(() => []), assistantProfiles(ctx), welcomeReady()]);
   // Maintenance: administrators pass; everyone else sees the notice (unless app access was left on).
   if (launch.mode === "maintenance" && !launch.app_access && !admin) {
     return (
@@ -174,8 +176,10 @@ export async function AppShell({ ctx, counts, teams = [], children, bleed = fals
   const brenda = ctx.plan.features.AI_ASSISTANT === true;
   // "Meet your assistant" the first time a person enters the workspace, on every plan (she is there as the built-in helper
   // where the plan has no AI assistant, owner decision 7 October 2026), while nobody is impersonating them (an
-  // administrator must not choose for them).
-  const showSetup = !assistants.setupDone && !ctx.user.impersonation;
+  // administrator must not choose for them). Once migration 0056 is applied the welcome (/app/[workspace]/welcome) does this
+  // instead and the dialog is no longer mounted (owner request, 11 October 2026: the first-run welcome); before it, the
+  // dialog stays exactly as it was.
+  const showSetup = !assistants.setupDone && !ctx.user.impersonation && !welcomeOn;
   const workspaces = mine.map((w) => ({ slug: w.slug, name: w.name }));
   const notice = isOrg ? planNotice(ctx.plan, ctx.org.slug) : null;
   const nav = { items, orgSlug: ctx.org.slug, orgName: ctx.org.name, workspaces, isOrg, notice };

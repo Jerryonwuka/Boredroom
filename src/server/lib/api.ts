@@ -75,8 +75,17 @@ export function route<P = Record<string, string>>(fn: Handler<P>) {
  * it streams in, so a small form's endpoint never buffers a large body (review, 7 October 2026: the assistant routes).
  */
 async function readCapped(req: Request, maxBytes: number): Promise<string> {
-  if (Number(req.headers.get("content-length") ?? 0) > maxBytes) throw tooLarge();
-  if (!req.body) return "";
+  return new TextDecoder().decode(await readCappedBytes(req, maxBytes));
+}
+
+/**
+ * The body's bytes, refused (413, with `message` when given) once they pass `maxBytes`, the same way: an upload route
+ * reads its multipart body through this before parsing it, so an oversized body is never buffered whole (review, 11
+ * October 2026: the avatar upload read any size into memory before its 2 MB check).
+ */
+export async function readCappedBytes(req: Request, maxBytes: number, message?: string): Promise<Uint8Array> {
+  if (Number(req.headers.get("content-length") ?? 0) > maxBytes) throw tooLarge(message);
+  if (!req.body) return new Uint8Array(0);
   const reader = req.body.getReader();
   const chunks: Uint8Array[] = [];
   let size = 0;
@@ -84,13 +93,13 @@ async function readCapped(req: Request, maxBytes: number): Promise<string> {
     const { done, value } = await reader.read();
     if (done) break;
     size += value.byteLength;
-    if (size > maxBytes) { await reader.cancel().catch(() => undefined); throw tooLarge(); }
+    if (size > maxBytes) { await reader.cancel().catch(() => undefined); throw tooLarge(message); }
     chunks.push(value);
   }
   const all = new Uint8Array(size);
   let at = 0;
   for (const c of chunks) { all.set(c, at); at += c.byteLength; }
-  return new TextDecoder().decode(all);
+  return all;
 }
 
 /** Reads and checks a JSON (or form) body. `maxBytes` caps a JSON body for endpoints that only ever take a few short fields. */

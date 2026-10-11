@@ -3,7 +3,9 @@ import { NextResponse } from "next/server";
 import { route, parseBody } from "@/server/lib/api";
 import { signUp, signIn, SESSION_COOKIE, sessionCookieOptions } from "@/server/auth";
 
-const schema = z.object({ email: z.string().trim().toLowerCase().email(), password: z.string().min(10).max(200), displayName: z.string().trim().min(1).max(120) });
+// `next` (owner request, 11 October 2026: the first-run welcome): where the person was going. While registration is
+// closed it lets in someone joining by invitation or join code, and the verification link carries it (server/auth).
+const schema = z.object({ email: z.string().trim().toLowerCase().email(), password: z.string().min(10).max(200), displayName: z.string().trim().min(1).max(120), next: z.string().max(512).optional() });
 
 export const POST = route(async (req) => {
   const body = await parseBody(req, schema);

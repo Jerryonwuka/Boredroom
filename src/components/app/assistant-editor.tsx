@@ -1,12 +1,14 @@
 "use client";
 
 /**
- * The assistant editor (owner decision, 7 October 2026: personal assistants): the controls and the live preview shared by
- * "Meet your assistant" (assistant-setup) and Settings' "Your assistant" and "Workspace assistant" (assistant-settings).
+ * The assistant editor (owner decision, 7 October 2026: personal assistants): the controls shared by "Meet your
+ * assistant" (assistant-setup), Settings' "Your assistant" and "Workspace assistant" (assistant-settings) and, since
+ * 11 October 2026, the welcome's "Meet your assistant" step (owner request: the first-run welcome).
  *
- * - The preview is the animated character with the name under it and the three small faces beside it, so a choice shows
- *   at every size it is drawn. It sits on the canvas colour: no gradient and no glow (the home panel's exception does not
- *   reach here). A new colour, visor or eyes pleases her for a moment; under reduced motion she is redrawn still.
+ * - The preview (the animated character with the name under it and the three small faces beside it) moved to
+ *   assistant-preview (11 October 2026), so these controls never pull in the canvas character: the welcome draws her on
+ *   its own stage, loaded after the page. The option cards' small faces load after the page too (welcome/lazy-face), in
+ *   a box of their exact size, for the same reason (their face reads along through the engine's `attention`).
  * - Name: a text field checked on blur and on save with the server's own rule and words (lib/assistant-look), so the
  *   message the person sees before sending is the one the server would send back.
  * - Colour, visor and eyes are native radio groups (Tab into the group, arrow keys move the choice) with visually hidden
@@ -18,20 +20,20 @@
  *   the label on the left and the control on the right, as direct children of a settings card. The rows go side by side
  *   by the card's own width (the card is an `@container`, 42rem and up), not the window's: beside the sidebar and the
  *   settings menu a 960px window leaves the visor and eye cards too narrow for their words (review, 7 October 2026).
- * - Her voice (owner decision, 7 October 2026: phase 2): the preview is her, so it talks while she speaks (the Voice
- *   sample in Settings, or a reply read aloud); the small faces on the visor and eye cards are options, not her, and stay
- *   still (`quiet`). `quiet` on the preview keeps someone else's assistant still (the workspace's, in Settings).
+ * - Her voice (owner decision, 7 October 2026: phase 2): the small faces on the visor and eye cards are options, not her,
+ *   and stay still (`quiet`).
+ * - The welcome's two additions (owner request, 11 October 2026), off unless asked for (Settings keeps both off):
+ *   `nameCounter` puts "3 of 24" under the name field (not announced as it changes; it is in the field's description),
+ *   and `swatchLabels` writes each colour's word under its swatch, two rows of five, the chosen one's in the foreground.
  */
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import { BrendaCharacter, type BrendaCharacterHandle } from "@/components/app/brenda-character";
-import { BrendaFace } from "@/components/app/brenda-face";
-import { AssistantScope } from "@/components/app/assistant-context";
+import { useState, type ReactNode } from "react";
+import { LazyFace } from "@/components/app/welcome/lazy-face";
 import { SettingsRow } from "@/components/app/settings-forms";
 import { Field, Input } from "@/components/ui/input";
 import { isApiFailure } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import {
-  ASSISTANT_COLOURS, ASSISTANT_EYES, ASSISTANT_VISORS, DEFAULT_ASSISTANT_NAME, EYES, PALETTE, VISORS,
+  ASSISTANT_COLOURS, ASSISTANT_EYES, ASSISTANT_NAME_MAX, ASSISTANT_VISORS, EYES, PALETTE, VISORS,
   assistantNameProblem, lookOf, normaliseAssistantName, type AssistantLook, type AssistantProfile,
 } from "@/lib/assistant-look";
 
@@ -40,7 +42,7 @@ export type AssistantFieldErrors = Partial<Record<FieldKey, string>>;
 const FIELDS: FieldKey[] = ["name", "colour", "visor", "eyes"];
 
 export const NAME_HINT = "Up to 24 characters: letters, numbers, spaces, apostrophes, hyphens and full stops.";
-const REDUCE = "(prefers-reduced-motion: reduce)";
+const NAME_HINT_SHORT = "Letters, numbers and spaces.";
 
 // ---- Helpers shared by the dialog and Settings -----------------------------------------------------------------------
 
@@ -63,49 +65,6 @@ export function keepErrors(errors: AssistantFieldErrors, prev: AssistantProfile,
   const out: AssistantFieldErrors = {};
   for (const k of FIELDS) if (errors[k] && prev[k] === next[k]) out[k] = errors[k];
   return out;
-}
-
-// ---- The preview ---------------------------------------------------------------------------------------------------
-
-/**
- * The live preview: the character (not interactive, idle) with the name under it and the faces at 18, 26 and 34px beside
- * it, all drawn as `profile` (an AssistantScope, so anything inside names and draws this assistant). While the name field
- * is empty it shows Brenda's name; while it holds a name that would be refused, the last name that would not (Brenda
- * until there is one), so the preview never shows a name that cannot be saved (review, 7 October 2026). `quiet`: it never
- * talks while the person's own assistant speaks (a preview of another assistant).
- */
-export function AssistantPreview({ profile, size = 72, className, quiet = false }: { profile: AssistantProfile; size?: number; className?: string; quiet?: boolean }) {
-  const character = useRef<BrendaCharacterHandle>(null);
-  const typed = normaliseAssistantName(profile.name);
-  const valid = typed && !assistantNameProblem(typed) ? typed : null;
-  const [lastValid, setLastValid] = useState(valid ?? DEFAULT_ASSISTANT_NAME);
-  if (valid && valid !== lastValid) setLastValid(valid);
-  const name = !typed ? DEFAULT_ASSISTANT_NAME : valid ?? lastValid;
-  const look = lookOf(profile);
-  const shown: AssistantProfile = { ...look, name };
-  // A new choice pleases her for a moment (compared with the last look, so React's development double mount does not).
-  const key = `${look.colour}|${look.visor}|${look.eyes}`;
-  const last = useRef(key);
-  useEffect(() => {
-    if (last.current === key) return;
-    last.current = key;
-    if (!window.matchMedia(REDUCE).matches) character.current?.emote("pleased");
-  }, [key]);
-  return (
-    <AssistantScope profile={shown}>
-      <div className={cn("flex min-w-0 items-center gap-3", className)}>
-        <div className="flex min-w-0 max-w-56 flex-col items-center">
-          <BrendaCharacter ref={character} size={size} look={look} label={`${name}, preview`} state="idle" quiet={quiet} />
-          <p className="type-dialog-title -mt-1 max-w-full truncate text-center text-foreground">{name}</p>
-        </div>
-        <div aria-hidden className="flex shrink-0 items-end gap-3 pb-7">
-          <BrendaFace size="sm" look={look} quiet={quiet} />
-          <BrendaFace size="md" look={look} quiet={quiet} />
-          <BrendaFace size="lg" look={look} quiet={quiet} />
-        </div>
-      </div>
-    </AssistantScope>
-  );
 }
 
 // ---- The editor ----------------------------------------------------------------------------------------------------
@@ -139,11 +98,15 @@ const FOCUS_OUTSIDE = "has-[:focus-visible]:outline-2 has-[:focus-visible]:outli
 /** A radio laid over its whole option, invisible: the option is what you see and press, the radio what you tab to. */
 const HIDDEN_RADIO = "absolute inset-0 m-0 size-full cursor-pointer border-0 opacity-0 disabled:cursor-not-allowed";
 
-export function AssistantEditor({ value, onChange, idPrefix, disabled = false, error, layout = "stack" }: {
+export function AssistantEditor({ value, onChange, idPrefix, disabled = false, error, layout = "stack", nameCounter, swatchLabels = false }: {
   value: AssistantProfile; onChange: (next: AssistantProfile) => void; idPrefix: string; disabled?: boolean;
   error?: AssistantFieldErrors;
   /** "stack" (the dialog): labels over controls. "rows" (Settings): settings rows, for a settings card. */
   layout?: "stack" | "rows";
+  /** The welcome: words for "n of 24" under the name field (`WELCOME_WORDS.assistant.counter`); absent, no counter. */
+  nameCounter?: (length: number, max: number) => string;
+  /** The welcome: each colour's word under its swatch. */
+  swatchLabels?: boolean;
 }) {
   // The name is checked once the person leaves the field, then as they type; a save checks it too (the caller).
   const [touched, setTouched] = useState(false);
@@ -151,6 +114,12 @@ export function AssistantEditor({ value, onChange, idPrefix, disabled = false, e
   const nameError = error?.name ?? (touched ? assistantNameProblem(value.name) ?? undefined : undefined);
   const set = (patch: Partial<AssistantProfile>) => onChange({ ...value, ...patch });
   const nameId = `${idPrefix}-name`;
+  const counter = nameCounter ? nameCounter([...normaliseAssistantName(value.name)].length, ASSISTANT_NAME_MAX) : null;
+  // With the counter (the welcome), the rule is one short line beside it, so the step's Continue stays in view on a
+  // laptop; the full rule is in the error when a name breaks it (review, 11 October 2026).
+  const nameHint = counter ? (
+    <span className="flex items-start justify-between gap-3"><span className="min-w-0">{NAME_HINT_SHORT}</span><span className="shrink-0 tabular-nums">{counter}</span></span>
+  ) : NAME_HINT;
 
   const nameInput = (
     <Input id={nameId} name="name" value={value.name} onChange={(e) => set({ name: e.target.value })} onBlur={() => setTouched(true)}
@@ -159,18 +128,32 @@ export function AssistantEditor({ value, onChange, idPrefix, disabled = false, e
 
   const colours = (
     <Group layout={layout} legend="Colour" chosen={PALETTE[value.colour].label} error={error?.colour} errorId={`${idPrefix}-colour-error`}>
-      <div className="grid w-fit grid-cols-5 gap-2.5 p-1">
+      <div className={cn("grid w-fit grid-cols-5 p-1", swatchLabels ? "gap-x-1.5 gap-y-3" : "gap-2.5")}>
         {ASSISTANT_COLOURS.map((k) => {
           const p = PALETTE[k];
           const chosen = value.colour === k;
+          const swatch = (
+            <span aria-hidden
+              className={cn("pointer-events-none size-8 rounded-full border transition-[border-color,box-shadow] duration-75",
+                "peer-focus-visible:outline-2 peer-focus-visible:outline-offset-[6px] peer-focus-visible:outline-[var(--ring)]",
+                chosen ? "border-border-input shadow-[0_0_0_2px_var(--background),0_0_0_4px_var(--accent)]" : "border-border-input peer-hover:border-border-input-hover")}
+              style={{ background: `radial-gradient(circle at 32% 28%, ${p.face.hi} 0, ${p.face.mid} 62%)` }} />
+          );
+          const radio = <input type="radio" name={`${idPrefix}-colour`} value={k} checked={chosen} disabled={disabled} onChange={() => set({ colour: k })} className={cn(HIDDEN_RADIO, "peer rounded-full")} />;
+          if (swatchLabels) {
+            // The word under the dot names the swatch for everyone (the radio's name is the same word).
+            return (
+              <label key={k} className={cn("relative flex w-14 flex-col items-center gap-1.5 rounded-lg pt-1", disabled ? "cursor-not-allowed opacity-50" : "cursor-pointer")}>
+                {radio}
+                {swatch}
+                <span className={cn("pointer-events-none text-xs", chosen ? "text-foreground" : "text-secondary")}>{p.label}</span>
+              </label>
+            );
+          }
           return (
             <label key={k} title={p.label} className={cn("relative grid size-8 place-items-center rounded-full pointer-coarse:size-10", disabled ? "cursor-not-allowed opacity-50" : "cursor-pointer")}>
-              <input type="radio" name={`${idPrefix}-colour`} value={k} checked={chosen} disabled={disabled} onChange={() => set({ colour: k })} className={cn(HIDDEN_RADIO, "peer rounded-full")} />
-              <span aria-hidden
-                className={cn("pointer-events-none size-8 rounded-full border transition-[border-color,box-shadow] duration-75",
-                  "peer-focus-visible:outline-2 peer-focus-visible:outline-offset-[6px] peer-focus-visible:outline-[var(--ring)]",
-                  chosen ? "border-border-input shadow-[0_0_0_2px_var(--background),0_0_0_4px_var(--accent)]" : "border-border-input peer-hover:border-border-input-hover")}
-                style={{ background: `radial-gradient(circle at 32% 28%, ${p.face.hi} 0, ${p.face.mid} 62%)` }} />
+              {radio}
+              {swatch}
               <span className="sr-only">{p.label}</span>
             </label>
           );
@@ -188,7 +171,7 @@ export function AssistantEditor({ value, onChange, idPrefix, disabled = false, e
             on ? "border-accent bg-fill-1 text-foreground" : "border-border bg-background text-secondary hover:bg-fill-0 hover:text-foreground",
             disabled ? "cursor-not-allowed opacity-50" : "cursor-pointer")}>
             <input type="radio" name={`${idPrefix}-${field}`} value={k} checked={on} disabled={disabled} onChange={() => pick(k)} className={cn(HIDDEN_RADIO, "rounded-xl")} />
-            <BrendaFace size="md" look={faceLook(k)} quiet className="pointer-events-none" />
+            <LazyFace size="md" look={faceLook(k)} quiet className="pointer-events-none" />
             <span className="pointer-events-none max-w-full">{labels[k].label}</span>
           </label>
         );
@@ -210,7 +193,7 @@ export function AssistantEditor({ value, onChange, idPrefix, disabled = false, e
   if (layout === "rows") {
     return (
       <>
-        <SettingsRow label="Name" hint={NAME_HINT} htmlFor={nameId} error={nameError} sideBySideAt="container">{nameInput}</SettingsRow>
+        <SettingsRow label="Name" hint={nameHint} htmlFor={nameId} error={nameError} sideBySideAt="container">{nameInput}</SettingsRow>
         {colours}
         {visors}
         {eyes}
@@ -219,7 +202,7 @@ export function AssistantEditor({ value, onChange, idPrefix, disabled = false, e
   }
   return (
     <div className="grid gap-5">
-      <Field label="Name" htmlFor={nameId} description={NAME_HINT} error={nameError}>{nameInput}</Field>
+      <Field label="Name" htmlFor={nameId} description={nameHint} error={nameError}>{nameInput}</Field>
       {colours}
       {visors}
       {eyes}

@@ -8,17 +8,20 @@ import { Button } from "@/components/ui/button";
 import { Input, Textarea } from "@/components/ui/input";
 import { SETTINGS_GROUP, SettingsRow, SettingsFooter, SettingsAlert } from "@/components/app/settings-forms";
 import { api, isApiFailure } from "@/lib/api-client";
+import { AVATAR_INPUT_MAX, AVATAR_UPLOAD_MAX, avatarUpload, isAvatarType } from "@/lib/avatar-image";
 
 type Props = { profileId: string; displayName: string; title: string | null; statusText: string | null; avatarKey: string | null };
 
 const OFFLINE = "Cannot reach the server. Check your connection and try again.";
-const PICTURE_TYPES = ["image/png", "image/jpeg", "image/webp"];
-const PICTURE_MAX = 2 * 1024 * 1024;
 
 /**
  * Picture, name, job title and a short status, as settings rows (v4). Saved with one button in the footer; the picture
  * uploads on its own the moment it is chosen. Errors sit at the top of the card and on their fields; what went through
  * is said in the footer.
+ *
+ * The picture is redrawn in the browser first (owner request, 11 October 2026: the first-run welcome, D18): a centred
+ * 512px square, re-encoded, so a phone's photo of up to 20 MB fits and its location never leaves the device
+ * (lib/avatar-image). The 2 MB limit now applies to what is sent, after that.
  */
 export function ProfileForm(p: Props) {
   const router = useRouter();
@@ -33,12 +36,19 @@ export function ProfileForm(p: Props) {
   async function upload(file: File) {
     setError(null); setSaved(null);
     // Checked here first, so a wrong file is turned away at once instead of after the upload.
-    if (!PICTURE_TYPES.includes(file.type)) { setError("That file is not a PNG, JPEG or WebP image. Choose one of those."); if (fileRef.current) fileRef.current.value = ""; return; }
-    if (file.size > PICTURE_MAX) { setError(`That image is ${(file.size / 1048576).toFixed(1)} MB. Choose one under 2 MB, or make it smaller first.`); if (fileRef.current) fileRef.current.value = ""; return; }
+    if (!isAvatarType(file.type)) { setError("That file is not a PNG, JPEG or WebP image. Choose one of those."); if (fileRef.current) fileRef.current.value = ""; return; }
+    if (file.size > AVATAR_INPUT_MAX) { setError(`That image is ${(file.size / 1048576).toFixed(1)} MB. Choose one under 20 MB.`); if (fileRef.current) fileRef.current.value = ""; return; }
     setPending("avatar");
-    const url = URL.createObjectURL(file); setPreview(url);
+    // Redrawn as a 512px square without its metadata; a file this browser cannot read goes as it is only if the server
+    // would take it.
+    const square = await avatarUpload(file);
+    if (!square || square.size > AVATAR_UPLOAD_MAX) {
+      setPending(null); if (fileRef.current) fileRef.current.value = "";
+      setError("This browser couldn't read that image. Choose another one, or one under 2 MB."); return;
+    }
+    const url = URL.createObjectURL(square); setPreview(url);
     try {
-      const fd = new FormData(); fd.append("file", file);
+      const fd = new FormData(); fd.append("file", square);
       const res = await fetch("/api/me/avatar", { method: "POST", body: fd, credentials: "same-origin" }).catch(() => null);
       if (!res) throw new Error(`${OFFLINE} Your picture was not changed.`);
       const data = await res.json().catch(() => null);
@@ -59,7 +69,7 @@ export function ProfileForm(p: Props) {
       finally { setPending(null); }
     }}>
       {error ? <SettingsAlert>{error}</SettingsAlert> : null}
-      <SettingsRow label="Picture" hint="PNG, JPEG or WebP, up to 2 MB. Shown beside your name across the workspace." labelId="avatar">
+      <SettingsRow label="Picture" hint="PNG, JPEG or WebP. Shown beside your name across the workspace." labelId="avatar">
         <div className="flex flex-wrap items-center gap-4">
           <div className="relative" aria-busy={pending === "avatar"}>
             {preview ? (

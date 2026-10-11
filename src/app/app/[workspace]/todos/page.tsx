@@ -26,8 +26,11 @@ const serverNow = () => new Date().toISOString();
  * Staff and team leads only, like My Day. The organisation account holds no to-dos of its own (a quick to-do for
  * oneself is refused for owners and HR); what is handed up to them is on the Tasks page, so they are sent there.
  */
-export default async function TodosPage({ params }: { params: Promise<{ workspace: string }> }) {
-  const { workspace } = await params;
+export default async function TodosPage({ params, searchParams }: { params: Promise<{ workspace: string }>; searchParams: Promise<{ add?: string | string[] }> }) {
+  const [{ workspace }, sp] = await Promise.all([params, searchParams]);
+  // `?add=1` opens the new-to-do row with the cursor in it: "Plan today", the first action at the end of the welcome
+  // (owner request, 11 October 2026: the first-run welcome, D7).
+  const add = Array.isArray(sp.add) ? sp.add[0] : sp.add;
   const { ctx, counts, teams } = await workspacePage(workspace, `/app/${workspace}/todos`);
   const role = ctx.membership.role;
   if (role === "owner" || role === "hr") redirect(`/app/${ctx.org.slug}/tasks`);
@@ -57,6 +60,7 @@ export default async function TodosPage({ params }: { params: Promise<{ workspac
         assistantConfigured={aiConnected}
         timeZone={ctx.org.timezone}
         serverNow={serverNow()}
+        startAdding={add === "1"}
       />
       {/* Page notes (owner request, 7 October 2026): explanations at the bottom of the screen, small and grey. Past
           tasks' note shows while there are past tasks (the list refreshes after Clear). */}

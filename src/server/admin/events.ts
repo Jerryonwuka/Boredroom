@@ -13,7 +13,11 @@ export type PlatformEventType =
   | "SUBSCRIPTION_CREATED" | "SUBSCRIPTION_RENEWING" | "SUBSCRIPTION_EXPIRING" | "SUBSCRIPTION_EXPIRED" | "SUBSCRIPTION_CANCELLED"
   | "PAYMENT_SUCCESSFUL" | "PAYMENT_FAILED" | "PAYMENT_REFUNDED"
   | "WAITLIST_JOINED" | "WAITLIST_INVITED" | "WAITLIST_CONVERTED"
-  | "LAUNCH_MODE_CHANGED";
+  | "LAUNCH_MODE_CHANGED"
+  // Someone finished or skipped the first-run welcome (owner request, 11 October 2026). Aggregate only: the workspace,
+  // the role, the outcome, the step reached, the steps skipped and the seconds taken, never a person's id or name.
+  // Nothing handles it (automationsForEvent ignores types it does not map); the lead reads the funnel (docs/runbooks.md).
+  | "WELCOME_FINISHED";
 
 export async function emitEvent(db: Db, type: PlatformEventType, payload: Record<string, unknown> & { organisationId?: string | null; authUserId?: string | null; contactId?: string | null }) {
   const row = await db.one<{ id: string }>(

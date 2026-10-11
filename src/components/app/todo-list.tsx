@@ -75,6 +75,11 @@ type Props = {
   timeZone: string;
   /** The server's clock when the page was read; "overdue" is judged by it until the browser's own clock takes over. */
   serverNow: string;
+  /**
+   * Open with the new-to-do row showing and the cursor in it (`/todos?add=1`: "Plan today" at the end of the welcome,
+   * owner request 11 October 2026). The address drops `add` once open, so a refresh does not open it again.
+   */
+  startAdding?: boolean;
 };
 
 // "Overdue" needs the time now. Read during render it differed between the server and the browser, so the browser's
@@ -143,7 +148,7 @@ export function TodosBoard(props: Props) {
   return <Board {...props} />;
 }
 
-function Board({ orgSlug, today, initialSession, planned, ownTodos, fromLeads, doneToday, pastTasks, assignable, membershipId, assistantConfigured, timeZone, serverNow }: Props) {
+function Board({ orgSlug, today, initialSession, planned, ownTodos, fromLeads, doneToday, pastTasks, assignable, membershipId, assistantConfigured, timeZone, serverNow, startAdding = false }: Props) {
   const router = useRouter();
   const { name } = useAssistant().personal;
   const nowMs = useNow(serverNow);
@@ -152,8 +157,16 @@ function Board({ orgSlug, today, initialSession, planned, ownTodos, fromLeads, d
   const clock = useWorkClock({ orgSlug, initialSession, tasks: startable });
   const session = clock.session;
   // The new-to-do row: open or not, and a nudge that puts the cursor back in it when "+" is pressed while it is open.
-  const [adding, setAdding] = useState(false);
+  const [adding, setAdding] = useState(startAdding);
   const [addNudge, setAddNudge] = useState(0);
+  // Opened from the address (`?add=1`): forget it in the address once open (owner request, 11 October 2026).
+  useEffect(() => {
+    if (!startAdding) return;
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has("add")) return;
+    url.searchParams.delete("add");
+    window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+  }, [startAdding]);
   const addButton = useRef<HTMLButtonElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);

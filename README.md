@@ -112,6 +112,7 @@ docs                 providers, runbooks, walkthrough
 
 - **Organisation account**: created at `/signup?intent=org`, then `/onboarding`. Owners and HR land on the organisation dashboard, create teams, appoint team leads and share the organisation's join code or link from People. Organisation accounts supervise only: they cannot hold tasks or run timers.
 - **Staff account**: can only be created on the way into an organisation, via `/join` (code), `/join/[code]` (link) or `/invite/[token]` (email invitation). Team leads land on their team board; staff land on My Day, where a to-do is one line of text and Start is one click.
+- **The first-run welcome** (owner request, 11 October 2026): the first time anyone opens a workspace they get a two-minute welcome at `/app/[workspace]/welcome` (founders right after naming the workspace; people joining right after confirming their email, in one press): what Boredroom does for them, their name and photo, their own assistant's name and look, how it works with them, exactly what is and isn't seen about them, their team (owners and HR), then "You're all set" with one first action for their role. Every step opens filled in and can be skipped; it resumes where they left off, opens on its own at most twice, and can be replayed from Settings, Your assistant. Then their assistant's page. Nothing about anyone's setup is shown to anyone else. It needs migration 0056 (`docs/runbooks.md`); before it, new members get the old "Meet your assistant" dialog.
 
 ## The Workroom
 

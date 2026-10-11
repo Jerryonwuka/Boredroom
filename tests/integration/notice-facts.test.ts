@@ -354,6 +354,9 @@ describe("whose, how many, and when something fails", () => {
   });
 
   it("at most 20, newest first", async () => {
+    // "Someone joined" (owner request, 11 October 2026: the first-run welcome) reaches supervisors while the fixtures
+    // build, newer than the nudges below; read, they leave the newest unread to the nudges as before.
+    await adminQuery("UPDATE notifications SET read_at = now() WHERE type = 'member.joined'");
     await adminQuery(
       `INSERT INTO notifications(organisation_id, recipient_membership_id, type, title, deduplication_key, created_at)
        SELECT $1, $2, 'brenda.nudge', 'Nudge ' || g, 'test.nudge:' || g, now() - (g || ' minutes')::interval FROM generate_series(1, 25) g`, [org(), id(mary)]);

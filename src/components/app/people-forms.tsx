@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Check, Copy, Ellipsis, Link2, MessageSquare, Plus, RefreshCw, Users, UserX } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -34,6 +34,20 @@ function useForm() {
 }
 
 type Team = { id: string; name: string; member_count?: number };
+
+/**
+ * A sheet opened from the address (`?invite=1`, `?new=team`: the welcome's first actions, owner request, 11 October 2026)
+ * drops its parameter once open, so a refresh or Back does not open it again. `replaceState` keeps the Next router in step.
+ */
+function useDropParam(when: boolean, name: string) {
+  useEffect(() => {
+    if (!when) return;
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has(name)) return;
+    url.searchParams.delete(name);
+    window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+  }, [when, name]);
+}
 const ROLE_LABEL: Record<string, string> = { owner: "Organisation owner", hr: "HR administrator", manager: "Team lead", employee: "Staff" };
 
 /**
@@ -41,8 +55,9 @@ const ROLE_LABEL: Record<string, string> = { owner: "Organisation owner", hr: "H
  * header's one orange standout ("Add people", accent rules 6 October 2026) opens a side sheet; Cancel and Invite sit in
  * its footer; a green-dot toast confirms.
  */
-export function InviteForm({ orgSlug, teams, isOwner, label = "Invite someone" }: { orgSlug: string; teams: Team[]; isOwner: boolean; label?: string }) {
-  const [open, setOpen] = useState(false);
+export function InviteForm({ orgSlug, teams, isOwner, label = "Invite someone", defaultOpen = false }: { orgSlug: string; teams: Team[]; isOwner: boolean; label?: string; /** Open on arrival (`?invite=1`). */ defaultOpen?: boolean }) {
+  const [open, setOpen] = useState(defaultOpen);
+  useDropParam(defaultOpen, "invite");
   const { pending, error, fieldErrors, submit, reset } = useForm();
   const formId = useId();
   const close = () => { if (!pending) setOpen(false); };
@@ -177,9 +192,10 @@ export function InvitationRow({ orgSlug, id, email, role, team, state, expires, 
 }
 
 /** "Add new team" (owner decision, 26 September 2026: a pop-up with the one field that matters); opens the new team. */
-export function NewTeamForm({ orgSlug, variant = "accent" }: { orgSlug: string; variant?: "accent" | "primary" | "secondary" }) {
+export function NewTeamForm({ orgSlug, variant = "accent", defaultOpen = false }: { orgSlug: string; variant?: "accent" | "primary" | "secondary"; /** Open on arrival (`?new=team`). */ defaultOpen?: boolean }) {
   const router = useRouter();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(defaultOpen);
+  useDropParam(defaultOpen, "new");
   const { pending, error, fieldErrors, submit, reset } = useForm();
   const formId = useId();
   const close = () => { if (!pending) setOpen(false); };
@@ -237,8 +253,10 @@ export function JoinCodePanel({ orgSlug, joinCode, teams }: { orgSlug: string; j
             <Switch checked={joinCode.join_code_enabled} disabled={pending} onChange={(e) => patch({ enabled: e.target.checked })} hint={joinCode.join_code_enabled ? "Anyone with the code or link can join right now." : "Paused: the code and link are refused until you switch this back on."} className="py-0">
               <span className="flex items-center gap-2">Accepting joins<Badge tone={joinCode.join_code_enabled ? "success" : "danger"} dot>{joinCode.join_code_enabled ? "Open" : "Paused"}</Badge></span>
             </Switch>
+            {/* A lead code that names a team makes every joiner that team's lead (services/orgs joinWithCode), so it
+                says so where it is set (review, 11 October 2026). */}
             <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="People who join become" htmlFor="jc-role"><Select id="jc-role" value={joinCode.join_code_role} disabled={pending} onChange={(e) => patch({ role: e.target.value })}><option value="employee">Staff</option><option value="manager">Team lead</option></Select></Field>
+              <Field label="People who join become" htmlFor="jc-role" description={joinCode.join_code_role === "manager" && joinCode.join_code_team_id ? `Everyone who joins with this code becomes a lead of ${teams.find((t) => t.id === joinCode.join_code_team_id)?.name ?? "the team"}.` : undefined}><Select id="jc-role" value={joinCode.join_code_role} disabled={pending} onChange={(e) => patch({ role: e.target.value })}><option value="employee">Staff</option><option value="manager">Team lead</option></Select></Field>
               <Field label="And are placed in" htmlFor="jc-team"><Select id="jc-team" value={joinCode.join_code_team_id ?? ""} disabled={pending} onChange={(e) => patch({ teamId: e.target.value || null })}><option value="">No team yet (assign later)</option>{teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</Select></Field>
             </div>
           </div>

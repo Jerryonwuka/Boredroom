@@ -116,7 +116,7 @@ export function useActMode(orgSlug: string, initial?: ActState) {
       rev: () => e.rev,
       /** Resolves once every save asked for so far has finished (they never reject). */
       settled: () => e.chain,
-      set: (mode: ActMode, now: ActState, opts: { quiet?: boolean } = {}): Promise<ActModeSaveResult> => {
+      set: (mode: ActMode, now: ActState, opts: { quiet?: boolean; refresh?: boolean } = {}): Promise<ActModeSaveResult> => {
         if (!now.ready || now.locked) return Promise.resolve(null);
         const mine = ++e.rev;
         e.saving += 1;
@@ -135,8 +135,10 @@ export function useActMode(orgSlug: string, initial?: ActState) {
               result = { ok: true, state: r };
               e.snap = { ...e.snap, wanted: null };
               // The shell reads again what goes with the mode (whether an AI is connected, read only for 'auto'), so the
-              // drawer, the line under the box and the pill's tooltip say what holds (review, 8 October 2026).
-              router.refresh();
+              // drawer, the line under the box and the pill's tooltip say what holds (review, 8 October 2026). Not on a
+              // page without the shell that keeps its own state (`refresh: false`: the first-run welcome, whose page
+              // goes to her home once the welcome is finished; integration, 11 October 2026).
+              if (opts.refresh !== false) router.refresh();
             } catch (err) {
               if (e.rev !== mine) return;
               const message = failure(err);
@@ -168,7 +170,7 @@ export function useActMode(orgSlug: string, initial?: ActState) {
     canToggle,
     saving: snap.saving,
     said: snap.said,
-    set: (mode: ActMode, opts?: { quiet?: boolean }) => store.set(mode, state, opts),
+    set: (mode: ActMode, opts?: { quiet?: boolean; refresh?: boolean }) => store.set(mode, state, opts),
     toggle: () => {
       if (canToggle) { void store.set(state.mode === "auto" ? "ask" : "auto", state); return; }
       // Locked: say why where it can be seen, on touch too (the tooltip needs a hover; review, 8 October 2026).

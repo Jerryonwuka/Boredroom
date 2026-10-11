@@ -8,6 +8,7 @@ import { createOrganisation, createTeam, setTeamMember, createInvitation, accept
 import { createProject, createTask } from "@/server/services/tasks";
 import type { OrgContext } from "@/server/lib/api";
 import { resolveEntitlements } from "@/server/lib/entitlements";
+import { schema0056Ready } from "@/server/lib/schema-0056";
 
 export type FixtureUser = { profileId: string; authUserId: string; email: string; displayName: string; password: string };
 
@@ -38,6 +39,41 @@ export async function joinViaInvitation(inviter: OrgContext, user: FixtureUser, 
   return contextFor(user, inviter.org.slug);
 }
 
+/**
+ * The fixture companies' people have used Boredroom before (owner request, 11 October 2026: the first-run welcome): once
+ * migration 0056 is applied they are marked as it marks everyone already a member ('existing'), so seeded accounts and
+ * the browser tests open straight onto their pages. Rows already there keep their values; the assistant's setup is left
+ * as it is (assistant-profiles.test expects it not done). Before 0056 nothing is marked. Members that tests add later
+ * (joinViaInvitation) are new and get the welcome.
+ */
+export async function markWelcomeDone(membershipIds: string[]): Promise<void> {
+  if (!membershipIds.length) return;
+  await withSystem(async (db) => {
+    if (!(await schema0056Ready(db))) return;
+    await db.query(
+      `INSERT INTO assistant_private(membership_id, organisation_id, welcome_done_at, welcome_outcome)
+       SELECT m.id, m.organisation_id, now(), 'existing' FROM memberships m WHERE m.id = ANY($1::uuid[])
+       ON CONFLICT (membership_id) DO UPDATE
+         SET welcome_done_at = COALESCE(assistant_private.welcome_done_at, EXCLUDED.welcome_done_at),
+             welcome_outcome = COALESCE(assistant_private.welcome_outcome, EXCLUDED.welcome_outcome)`, [membershipIds]);
+  });
+}
+
+/**
+ * The fixture companies' "someone joined" notifications are history as well (integration of the first-run welcome,
+ * 11 October 2026): their people joined long before anyone looked, so a seeded owner's bell does not open on four unread
+ * "… joined as …" lines, and tests that count a supervisor's unread notifications see what they saw before. Marked read
+ * by each recipient (only a recipient may update their own notifications). Joins that tests make later notify as usual.
+ */
+export async function readFixtureJoins(recipients: OrgContext[], joinedMembershipIds: string[]): Promise<void> {
+  for (const r of recipients) {
+    await withUser(r.user.profileId, (db) => db.query(
+      `UPDATE notifications SET read_at = COALESCE(read_at, now())
+        WHERE type = 'member.joined' AND recipient_membership_id = $1 AND resource_id = ANY($2::uuid[])`,
+      [r.membership.id, joinedMembershipIds]));
+  }
+}
+
 export type CompanyFixture = {
   slug: string;
   owner: FixtureUser; hr: FixtureUser; manager: FixtureUser; employee: FixtureUser; employee2: FixtureUser;
@@ -62,6 +98,8 @@ export async function buildCompany(prefix: "a" | "b", opts: { names?: Partial<Re
   const employeeCtx = await joinViaInvitation(hrCtx, employee, "employee", team.id, "EMP-001");
   const employee2Ctx = await joinViaInvitation(hrCtx, employee2, "employee", team.id, "EMP-002");
   await setTeamMember(ownerCtx, team.id, managerCtx.membership.id, { isManager: true });
+  await markWelcomeDone([ownerCtx, hrCtx, managerCtx, employeeCtx, employee2Ctx].map((c) => c.membership.id));
+  await readFixtureJoins([ownerCtx, hrCtx, managerCtx], [hrCtx, managerCtx, employeeCtx, employee2Ctx].map((c) => c.membership.id));
   const project = await createProject(managerCtx, { name: "Website relaunch", description: "Marketing site refresh", requiresDueDate: false, requiresEstimate: false, memberIds: [employeeCtx.membership.id, employee2Ctx.membership.id] });
   const homepage = await createTask(managerCtx, { projectId: project.id, title: "Homepage design", expectedOutput: "Figma link to the approved homepage layout (desktop and mobile).", assigneeMembershipId: employeeCtx.membership.id, reviewerMembershipId: managerCtx.membership.id, category: "work", priority: "high", estimateMinutes: 240, dueAt: new Date(Date.now() + 3 * 86400000).toISOString(), addToMyDay: false });
   const meeting = await createTask(managerCtx, { projectId: project.id, title: "Client kickoff meeting", expectedOutput: "Meeting notes with agreed scope and next steps.", assigneeMembershipId: employeeCtx.membership.id, reviewerMembershipId: managerCtx.membership.id, category: "meeting", priority: "normal", estimateMinutes: 60, dueAt: null, addToMyDay: false });

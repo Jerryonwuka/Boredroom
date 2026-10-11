@@ -8,6 +8,7 @@ import { mail } from "@/server/lib/mail";
 import { verifyEmailMail, resetPasswordMail } from "@/server/lib/emails";
 import { contactRegistered } from "@/server/admin/marketing";
 import { registrationOpen } from "@/server/admin/settings";
+import { joiningTarget, safeNextPath } from "@/components/auth/next-path";
 
 /**
  * Local auth provider: email/password with verification and recovery.
@@ -46,9 +47,34 @@ async function rateLimit(db: Db, bucket: string, limit: number, windowSeconds: n
   if (row.hits > limit) throw rateLimited(message);
 }
 
-export async function signUp(input: { email: string; password: string; displayName: string; ip?: string }) {
-  if (!(await registrationOpen())) throw new AppError(403, "REGISTRATION_CLOSED", "Boredroom is not open for new accounts yet. Join the waitlist and we will email you when it is.");
+/**
+ * Whether `next` leads to a way into a workspace that is open to this address (owner request, 11 October 2026: the
+ * first-run welcome, D9): an invitation that is still pending and was sent to `email`, or a join code that is enabled.
+ * While Boredroom is in waitlist mode these people may still create an account, by email or with Google; everyone else
+ * meets the waitlist. The orgs service is imported when needed (it is not imported at load, so there is no cycle).
+ */
+export async function joiningAllowed(next: string | null | undefined, email: string): Promise<boolean> {
+  const target = joiningTarget(safeNextPath(next, ""));
+  if (!target) return false;
+  const { previewInvitation, previewJoinCode } = await import("@/server/services/orgs");
+  if (target.kind === "invite") {
+    const inv = await previewInvitation(target.token);
+    return !!inv && inv.state === "pending" && inv.email.trim().toLowerCase() === email.trim().toLowerCase();
+  }
+  const code = await previewJoinCode(target.code);
+  return !!code?.enabled;
+}
+
+const REGISTRATION_CLOSED = "Boredroom is not open for new accounts yet. Join the waitlist and we will email you when it is.";
+
+/**
+ * A new account. `next` (owner request, 11 October 2026: the first-run welcome) is where the person was going: while
+ * registration is closed it lets in someone joining by a pending invitation to this address or an enabled join code
+ * (D9), and the verification link carries it, so confirming on another device still leads into the workspace.
+ */
+export async function signUp(input: { email: string; password: string; displayName: string; ip?: string; next?: string | null }) {
   const email = input.email.trim().toLowerCase();
+  if (!(await registrationOpen()) && !(await joiningAllowed(input.next, email))) throw new AppError(403, "REGISTRATION_CLOSED", REGISTRATION_CLOSED);
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw invalid("Enter a valid email address.", { email: ["Enter a valid email address."] });
   if (input.password.length < 10) throw invalid("Password must be at least 10 characters.", { password: ["Use at least 10 characters."] });
   if (!input.displayName.trim()) throw invalid("Name is required.", { displayName: ["Name is required."] });
@@ -65,41 +91,74 @@ export async function signUp(input: { email: string; password: string; displayNa
     const profile = await db.one<{ id: string }>(
       `INSERT INTO profiles(auth_user_id, display_name, email) VALUES ($1, $2, $3) RETURNING id`,
       [authUser.id, input.displayName.trim(), email]);
-    await issueToken(db, authUser.id, email, "verify_email");
+    await issueToken(db, authUser.id, email, "verify_email", input.next);
     await contactRegistered(db, authUser.id, email, input.displayName).catch(() => undefined);
     return { authUserId: authUser.id, profileId: profile.id };
   });
 }
 
-async function issueToken(db: Db, authUserId: string, email: string, kind: keyof typeof TOKEN_TTL_MIN) {
+/**
+ * A single-use link by email. A verification link carries `next` when it is a safe path on this site (owner request,
+ * 11 October 2026: the first-run welcome), so the verify page can offer to join the workspace in the same press;
+ * anything else is left out. Recovery links never carry it.
+ */
+async function issueToken(db: Db, authUserId: string, email: string, kind: keyof typeof TOKEN_TTL_MIN, next?: string | null) {
   const token = randomToken(32);
   await db.query(
     `INSERT INTO auth_tokens(user_id, kind, token_hash, expires_at) VALUES ($1, $2, $3, now() + ($4 || ' minutes')::interval)`,
     [authUserId, kind, sha256(token), String(TOKEN_TTL_MIN[kind])]);
   const path = kind === "verify_email" ? "/verify" : "/recover/reset";
-  const url = `${appOrigin()}${path}?token=${token}`;
+  const goTo = kind === "verify_email" ? safeNextPath(next, "") : "";
+  const url = `${appOrigin()}${path}?token=${token}${goTo ? `&next=${encodeURIComponent(goTo)}` : ""}`;
   const body = kind === "verify_email" ? verifyEmailMail(url) : resetPasswordMail(url);
   await mail().send({ to: email, category: kind, subject: kind === "verify_email" ? "Confirm your Boredroom email" : "Choose a new Boredroom password", ...body });
   return token;
 }
 
-export async function resendVerification(email: string) {
+/** A new verification link; `next` travels in it as in signUp (owner request, 11 October 2026: the first-run welcome). */
+export async function resendVerification(email: string, next?: string | null) {
   return withSystem(async (db) => {
     await rateLimit(db, `verify:${email.toLowerCase()}`, 5, 3600);
     const u = await db.maybeOne<{ id: string; email_verified_at: string | null }>(`SELECT id, email_verified_at FROM auth_users WHERE email = $1`, [email]);
-    if (u && !u.email_verified_at) await issueToken(db, u.id, email, "verify_email");
+    if (u && !u.email_verified_at) await issueToken(db, u.id, email, "verify_email", next);
   });
 }
 
-export async function verifyEmail(token: string) {
+/**
+ * Confirms the email behind a verification link. `already` (owner request, 11 October 2026: the first-run welcome): the
+ * link was used before or has expired, but its account is confirmed anyway (a mail scanner, a second press, a second
+ * device), so the verify page can still go on, and join, instead of saying the link is broken. A link nobody knows, or
+ * one whose account is still unconfirmed, is refused as before (410).
+ */
+export async function verifyEmail(token: string): Promise<{ userId: string; already: boolean }> {
   return withSystem(async (db) => {
     const row = await db.maybeOne<{ user_id: string }>(
       `UPDATE auth_tokens SET used_at = now() WHERE token_hash = $1 AND kind = 'verify_email' AND used_at IS NULL AND expires_at > now() RETURNING user_id`,
       [sha256(token)]);
-    if (!row) throw new AppError(410, "TOKEN_INVALID", "This verification link is invalid or has expired.");
-    await db.query(`UPDATE auth_users SET email_verified_at = COALESCE(email_verified_at, now()) WHERE id = $1`, [row.user_id]);
-    return row.user_id;
+    if (row) {
+      await db.query(`UPDATE auth_users SET email_verified_at = COALESCE(email_verified_at, now()) WHERE id = $1`, [row.user_id]);
+      return { userId: row.user_id, already: false };
+    }
+    const known = await db.maybeOne<{ user_id: string }>(
+      `SELECT t.user_id FROM auth_tokens t JOIN auth_users u ON u.id = t.user_id
+        WHERE t.token_hash = $1 AND t.kind = 'verify_email' AND u.email_verified_at IS NOT NULL`, [sha256(token)]);
+    if (known) return { userId: known.user_id, already: true };
+    throw new AppError(410, "TOKEN_INVALID", "This verification link is invalid or has expired.");
   });
+}
+
+/**
+ * What a verification link is, without using it (owner request, 11 October 2026: the first-run welcome): whose it is,
+ * whether that account is confirmed, and whether the link itself is still unused and in date. Null for a link nobody
+ * knows. Read only: opening the page never confirms anything (mail scanners open links); the press does.
+ */
+export async function peekVerifyToken(token: string): Promise<{ authUserId: string; verified: boolean; usable: boolean } | null> {
+  if (!token) return null;
+  const row = await withSystem((db) => db.maybeOne<{ user_id: string; verified: boolean; usable: boolean }>(
+    `SELECT t.user_id, (u.email_verified_at IS NOT NULL) AS verified, (t.used_at IS NULL AND t.expires_at > now()) AS usable
+       FROM auth_tokens t JOIN auth_users u ON u.id = t.user_id
+      WHERE t.token_hash = $1 AND t.kind = 'verify_email'`, [sha256(token)]));
+  return row ? { authUserId: row.user_id, verified: row.verified, usable: row.usable } : null;
 }
 
 export async function requestPasswordRecovery(email: string, ip?: string) {

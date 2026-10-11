@@ -13,6 +13,7 @@ import type { OrgContext } from "@/server/lib/api";
 import { assertCanCreateWorkspace } from "@/server/services/workspace-limit";
 import { recordingColumnsGone, retryWithRecordingColumns } from "@/server/lib/schema-0055";
 import { resolveEntitlements, requireSeat } from "@/server/lib/entitlements";
+import { WELCOME_WORDS } from "@/lib/welcome";
 
 export const ROLES = ["owner", "hr", "manager", "employee"] as const;
 export type Role = (typeof ROLES)[number];
@@ -224,6 +225,7 @@ export async function acceptInvitation(userId: string, userEmail: string, token:
     }
     await audit(db, { organisationId: inv.organisation_id, actorMembershipId: membership.id, actorUserId: userId, action: "invitation.accepted", subjectType: "membership", subjectId: membership.id, subjectMembershipId: membership.id });
     const org = await db.one<{ slug: string }>(`SELECT slug FROM organisations WHERE id = $1`, [inv.organisation_id]);
+    await notifyJoined(db, { orgId: inv.organisation_id, orgSlug: org.slug, membershipId: membership.id, role: inv.role, teamId: inv.team_id });
     return { orgSlug: org.slug, membershipId: membership.id };
   });
 }
@@ -460,7 +462,11 @@ export async function previewJoinCode(code: string): Promise<JoinPreview | null>
   });
 }
 
-/** Staff joins with the organisation's code. The role comes from the code's configuration, never from the client. */
+/**
+ * Staff joins with the organisation's code. The role comes from the code's configuration, never from the client. A code
+ * for a team lead that names a team makes the joiner that team's lead, with lead access to its working project (owner
+ * request, 11 October 2026: the first-run welcome, D11; migration 0056 lets only such a code take a lead seat).
+ */
 export async function joinWithCode(userId: string, code: string) {
   const preview = await previewJoinCode(code);
   if (!preview) throw notFound("That organisation code is not valid.");
@@ -476,12 +482,43 @@ export async function joinWithCode(userId: string, code: string) {
     const membership = await db.one<{ id: string }>(`INSERT INTO memberships(organisation_id, user_id, employee_code, role) VALUES ($1, $2, $3, $4) RETURNING id`,
       [preview.organisationId, userId, employeeCode.code, preview.role]);
     if (preview.teamId) {
-      await db.query(`INSERT INTO team_members(organisation_id, team_id, membership_id, is_manager) VALUES ($1, $2, $3, false)`, [preview.organisationId, preview.teamId, membership.id]);
-      await syncTeamProjectMember(db, preview.organisationId, preview.teamId, membership.id, "contributor");
+      const lead = preview.role === "manager";
+      await db.query(`INSERT INTO team_members(organisation_id, team_id, membership_id, is_manager) VALUES ($1, $2, $3, $4)`, [preview.organisationId, preview.teamId, membership.id, lead]);
+      await syncTeamProjectMember(db, preview.organisationId, preview.teamId, membership.id, lead ? "lead" : "contributor");
     }
     await audit(db, { organisationId: preview.organisationId, actorMembershipId: membership.id, actorUserId: userId, action: "join_code.accepted", subjectType: "membership", subjectId: membership.id, subjectMembershipId: membership.id, metadata: { role: preview.role, teamId: preview.teamId } });
+    await notifyJoined(db, { orgId: preview.organisationId, orgSlug: preview.slug, membershipId: membership.id, role: preview.role, teamId: preview.teamId });
     return { orgSlug: preview.slug, membershipId: membership.id };
   });
+}
+
+/**
+ * "Someone joined" (owner request, 11 October 2026: the first-run welcome, D12): every other active owner and HR member,
+ * and every lead of the team they joined, hears who joined and as what, once each (someone who is both gets one, with
+ * People's link). Never a word about their setup. Inside the joining transaction, under the joiner's own RLS: they are a
+ * member by then, so they can see who to tell, and `app_notify` delivers.
+ */
+export async function notifyJoined(db: Db, j: { orgId: string; orgSlug: string; membershipId: string; role: Role; teamId: string | null }) {
+  const who = await db.one<{ name: string; team: string | null }>(
+    `SELECT pr.display_name AS name, (SELECT t.name FROM teams t WHERE t.id = $3 AND t.organisation_id = $2) AS team
+       FROM memberships m JOIN profiles pr ON pr.id = m.user_id WHERE m.id = $1`, [j.membershipId, j.orgId, j.teamId]);
+  const recipients = await db.query<{ id: string; supervisor: boolean }>(
+    `SELECT m.id, (m.role IN ('owner', 'hr')) AS supervisor
+       FROM memberships m
+      WHERE m.organisation_id = $1 AND m.status = 'active' AND m.id <> $2
+        AND (m.role IN ('owner', 'hr')
+             OR ($3::uuid IS NOT NULL AND EXISTS (SELECT 1 FROM team_members tm WHERE tm.team_id = $3 AND tm.membership_id = m.id AND tm.is_manager)))
+      ORDER BY m.created_at`, [j.orgId, j.membershipId, j.teamId]);
+  const N = WELCOME_WORDS.notifications;
+  for (const r of recipients) {
+    await notify(db, {
+      organisationId: j.orgId, recipientMembershipId: r.id, type: "member.joined",
+      title: N.title(who.name, j.role), body: who.team ? N.body(who.team) : undefined,
+      resourceType: "membership", resourceId: j.membershipId,
+      href: r.supervisor || !j.teamId ? `/app/${j.orgSlug}/people?tab=people` : `/app/${j.orgSlug}/teams/${j.teamId}`,
+      dedupKey: `member.joined:${j.membershipId}`,
+    });
+  }
 }
 
 /** Keeps a team's working project in step with team membership so leads can assign tasks to their people. */

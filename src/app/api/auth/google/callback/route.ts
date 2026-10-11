@@ -25,7 +25,8 @@ export async function GET(req: Request) {
   try {
     const claims = await completeGoogleSignIn(code, pending.nonce);
     const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "local";
-    const { token } = await signInWithGoogle(claims, { ip, userAgent: req.headers.get("user-agent") ?? undefined });
+    // `next` lets someone joining by invitation or join code in while registration is closed (owner request, 11 October 2026: D9).
+    const { token } = await signInWithGoogle(claims, { ip, userAgent: req.headers.get("user-agent") ?? undefined }, { next: pending.next });
     const res = NextResponse.redirect(`${process.env.APP_ORIGIN ?? url.origin}${safeNext(pending.next)}`, 302);
     res.cookies.set(SESSION_COOKIE, token, await sessionCookieOptions());
     res.cookies.set(OAUTH_COOKIE, "", { path: "/api/auth/google", maxAge: 0 });

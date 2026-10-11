@@ -9,11 +9,12 @@
 import { createPublicKey, verify as verifySignature, randomBytes, createHash } from "node:crypto";
 import { withSystem, isUniqueViolation, type Db } from "@/server/db";
 import { AppError } from "@/server/lib/errors";
-import { issueSession } from "@/server/auth";
+import { issueSession, joiningAllowed } from "@/server/auth";
 import { storage } from "@/server/lib/storage";
 import { contactRegistered } from "@/server/admin/marketing";
 import { registrationOpen } from "@/server/admin/settings";
 import { safeNextPath } from "@/components/auth/next-path";
+import { sniffImage, stripImageMetadata } from "@/server/lib/image-meta";
 
 export const OAUTH_COOKIE = "boredroom_oauth";
 const AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
@@ -127,9 +128,11 @@ export async function completeGoogleSignIn(code: string, nonce: string) {
 
 /**
  * Finds the account for a Google identity, links it to an existing account with the same address, or creates one.
- * Returns a session token. Google-created accounts have no password and are verified from the start.
+ * Returns a session token. Google-created accounts have no password and are verified from the start. While registration
+ * is closed, a new account is still made for someone on their way into a workspace (`opts.next`: a pending invitation to
+ * this address or an enabled join code; owner request, 11 October 2026: the first-run welcome, D9).
  */
-export async function signInWithGoogle(c: Claims, meta: { ip?: string; userAgent?: string }) {
+export async function signInWithGoogle(c: Claims, meta: { ip?: string; userAgent?: string }, opts: { next?: string | null } = {}) {
   const email = c.email?.trim().toLowerCase();
   if (!email || !c.email_verified) throw new AppError(401, "GOOGLE_EMAIL", "Google did not confirm an email address for this account.");
   return withSystem(async (db) => {
@@ -140,7 +143,7 @@ export async function signInWithGoogle(c: Claims, meta: { ip?: string; userAgent
     if (!user) {
       user = await db.maybeOne<{ id: string }>(`SELECT id FROM auth_users WHERE email = $1`, [email]);
       if (!user) {
-        if (!(await registrationOpen())) throw new AppError(403, "REGISTRATION_CLOSED", "Boredroom is not open for new accounts yet. Join the waitlist and we will email you when it is.");
+        if (!(await registrationOpen()) && !(await joiningAllowed(opts.next, email))) throw new AppError(403, "REGISTRATION_CLOSED", "Boredroom is not open for new accounts yet. Join the waitlist and we will email you when it is.");
         user = await db.one<{ id: string }>(`INSERT INTO auth_users(email, password_hash, email_verified_at) VALUES ($1, NULL, now()) RETURNING id`, [email]);
         await db.query(`INSERT INTO profiles(auth_user_id, display_name, email) VALUES ($1, $2, $3)`, [user.id, (c.name?.trim() || email.split("@")[0]).slice(0, 120), email]);
         await contactRegistered(db, user.id, email, c.name?.trim() || "").catch(() => undefined);
@@ -160,15 +163,22 @@ export async function signInWithGoogle(c: Claims, meta: { ip?: string; userAgent
   });
 }
 
-/** Best effort: the Google profile picture becomes the person's avatar on first sign-in. */
+/**
+ * Best effort: the Google profile picture becomes the person's avatar on first sign-in. The bytes must really be the
+ * PNG, JPEG or WebP the answer says (it had no such check), and are stored without their metadata (owner request,
+ * 11 October 2026: the first-run welcome, D18).
+ */
 async function importPicture(db: Db, userId: string, url: string) {
   const res = await fetch(url, { signal: AbortSignal.timeout(5_000) });
   if (!res.ok) return;
   const type = (res.headers.get("content-type") ?? "").split(";")[0].trim().toLowerCase();
   const ext: Record<string, string> = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp" };
   if (!ext[type]) return;
-  const bytes = Buffer.from(await res.arrayBuffer());
-  if (bytes.length === 0 || bytes.length > 2 * 1024 * 1024) return;
+  const raw = Buffer.from(await res.arrayBuffer());
+  if (raw.length === 0 || raw.length > 2 * 1024 * 1024 || !sniffImage(type, raw)) return;
+  // A picture that cannot be read without its metadata is not imported (review, 11 October 2026).
+  const bytes = stripImageMetadata(type, raw);
+  if (!bytes) return;
   const p = await db.maybeOne<{ id: string }>(`SELECT id FROM profiles WHERE auth_user_id = $1`, [userId]);
   if (!p) return;
   const key = `users/${p.id.replace(/-/g, "")}/avatar-${createHash("sha256").update(bytes).digest("hex").slice(0, 32)}.${ext[type]}`;

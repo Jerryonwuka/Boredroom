@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 import { workspacePage } from "@/server/lib/workspace-page";
 import { orgContext, type OrgContext } from "@/server/lib/api";
 import { AppShell } from "@/components/app/shell";
@@ -23,6 +24,7 @@ import { standupForDesktop } from "@/server/services/standup";
 import { abilitiesFor } from "@/server/services/abilities";
 import { abilityOff, type AbilityKey } from "@/lib/abilities";
 import type { DesktopStandup } from "@/lib/standup";
+import { nextStepsFor, welcomeGatePath } from "@/server/services/welcome";
 
 export const dynamic = "force-dynamic";
 
@@ -83,6 +85,10 @@ type Search = { ask?: string | string[]; tab?: string | string[]; chat?: string 
  * The person's abilities (`abilitiesFor`, never throws; everything on before 0050) leave out what is switched off for
  * them: the loose-ends block (`loose_ends`), and the quick asks and "More asks" that need catching up,
  * follow-ups, passing messages or routines. The opener already leaves out what is off (the server).
+ *
+ * The first-run welcome (owner request, 11 October 2026): a bare `/home` opens `/welcome` while it is unfinished
+ * (`welcomeGatePath`: at most twice, never impersonated, never before migration 0056), and Next steps (`nextStepsFor`)
+ * closes her column once the welcome is over: only what is left to do, derived from data.
  */
 export default async function HomePage({ params, searchParams }: { params: Promise<{ workspace: string }>; searchParams: Promise<Search> }) {
   const { workspace } = await params;
@@ -94,9 +100,15 @@ export default async function HomePage({ params, searchParams }: { params: Promi
   const ask = [sp.ask].flat()[0]?.replace(/^\s+/, "").replace(/\s+$/, " ").slice(0, 500) || undefined;
   const chatId = first(sp.chat);
   const { ctx, counts, teams } = await workspacePage(workspace, `/app/${workspace}/home`);
+  // The first-run welcome (owner request, 11 October 2026): only a bare /home is taken over (no query string: `?ask=`,
+  // `?chat=` and a notification's link are never), and only while it is unfinished and has opened fewer than twice.
+  if (Object.keys(sp).length === 0) {
+    const gate = await welcomeGatePath(ctx);
+    if (gate) redirect(gate);
+  }
   const role = ctx.membership.role;
   const aiEnabled = ctx.plan.features.AI_ASSISTANT === true;
-  const [history, chat, connected, followUpsReady, waiting, itemsReady, items, opener, openEnds, loops, standup, abilities] = await Promise.all([
+  const [history, chat, connected, followUpsReady, waiting, itemsReady, items, opener, openEnds, loops, standup, abilities, nextSteps] = await Promise.all([
     // Past chats are only shown while the plan includes Brenda (carrying one on needs her).
     aiEnabled ? listConversations(ctx) : Promise.resolve([]),
     aiEnabled && chatId ? getConversation(ctx, chatId) : Promise.resolve(null),
@@ -117,6 +129,8 @@ export default async function HomePage({ params, searchParams }: { params: Promi
     homeStandup(ctx),
     // Phase 7c: what is switched off for the person (never throws; everything on before 0050).
     abilitiesFor(ctx),
+    // The first-run welcome's Next steps (owner request, 11 October 2026): what is left, or null. A failed read leaves it out.
+    nextStepsFor(ctx).catch(() => null),
   ]);
   const off = HOME_ABILITIES.filter((k) => abilityOff(abilities, k) !== null);
   // Loose ends switched off: no block (the server's list is empty then anyway).
@@ -152,6 +166,7 @@ export default async function HomePage({ params, searchParams }: { params: Promi
     handOverPeople: people,
     standup,
     off,
+    nextSteps,
   };
   return (
     <AppShell ctx={ctx} counts={counts} teams={teams}>

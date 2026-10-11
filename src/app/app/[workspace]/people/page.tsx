@@ -29,8 +29,10 @@ const ROLE = { owner: "Organisation owner", hr: "HR administrator", manager: "Te
  * right, the screen's orange standout (accent rules, 6 October 2026: "Add people"); calm tables underneath. The People tab opens with the join code in a section card.
  * What team leads do and how joining works are the tab's page notes at the bottom (owner request, 7 October 2026).
  * Nobody is asked to agree to anything since phase 8 (owner decision, 8 October 2026), so the agreement column went.
+ * The welcome's first actions open a sheet from the address (owner request, 11 October 2026): `?tab=people&invite=1`
+ * opens "Add a person", `?tab=teams&new=team` opens "New team" (the header's, or the empty state's when there are none).
  */
-export default async function PeoplePage({ params, searchParams }: { params: Promise<{ workspace: string }>; searchParams: Promise<{ tab?: string }> }) {
+export default async function PeoplePage({ params, searchParams }: { params: Promise<{ workspace: string }>; searchParams: Promise<{ tab?: string; invite?: string; new?: string }> }) {
   const { workspace } = await params;
   const sp = await searchParams;
   const { ctx, counts, teams: navTeams } = await workspacePage(workspace, `/app/${workspace}/people`);
@@ -41,19 +43,21 @@ export default async function PeoplePage({ params, searchParams }: { params: Pro
   const base = `/app/${ctx.org.slug}`;
   const activeMembers = members.filter((m) => m.status !== "revoked");
   const pendingInvites = invitations.filter((i) => !i.accepted_at && !i.revoked_at && new Date(i.expires_at) >= new Date()).length;
+  const openInvite = sp.invite === "1" && tab !== "teams";
+  const openNewTeam = sp.new === "team" && tab === "teams";
   const countFor: Record<TabKey, number> = { teams: teams.length, people: activeMembers.length, invitations: pendingInvites };
   return (
     <AppShell ctx={ctx} counts={counts} teams={navTeams}>
       <PageHeader title="People and teams"
         description="Create teams and put a team lead on each. Add people with your join code or an invitation, then place them in a team."
-        actions={tab === "teams" ? (teams.length ? <NewTeamForm orgSlug={ctx.org.slug} /> : null) : tab === "people" ? <InviteForm orgSlug={ctx.org.slug} teams={teams} isOwner={isOwner} label="Add new person" /> : <InviteForm orgSlug={ctx.org.slug} teams={teams} isOwner={isOwner} label="Send an invitation" />}
+        actions={tab === "teams" ? (teams.length ? <NewTeamForm orgSlug={ctx.org.slug} defaultOpen={openNewTeam} /> : null) : tab === "people" ? <InviteForm orgSlug={ctx.org.slug} teams={teams} isOwner={isOwner} label="Add new person" defaultOpen={openInvite} /> : <InviteForm orgSlug={ctx.org.slug} teams={teams} isOwner={isOwner} label="Send an invitation" defaultOpen={openInvite} />}
         tabsLabel="Sections" tabValue={tab}
         tabs={TABS.map((t) => ({ value: t.key, label: t.label, count: countFor[t.key], href: `${base}/people?tab=${t.key}` }))} />
 
       {tab === "teams" ? (
         <section aria-labelledby="teams-heading">
           <h2 id="teams-heading" className="sr-only">Teams</h2>
-          {teams.length === 0 ? <EmptyState icon3d="people" title="No teams yet" description="Create teams such as Design, Tech or Branding, then open one to add people and choose its lead." action={<NewTeamForm orgSlug={ctx.org.slug} />} /> : (
+          {teams.length === 0 ? <EmptyState icon3d="people" title="No teams yet" description="Create teams such as Design, Tech or Branding, then open one to add people and choose its lead." action={<NewTeamForm orgSlug={ctx.org.slug} defaultOpen={openNewTeam} />} /> : (
             <DataTable caption="Teams">
               <thead><tr><th>Team</th><th>Team lead</th><th className="!text-right">Members</th><th><span className="sr-only">Open</span></th></tr></thead>
               <tbody>{teams.map((t) => (

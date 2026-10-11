@@ -43,6 +43,72 @@ The order (contract A.9):
 
 Neon's point-in-time history keeps the deleted rows until its restore window passes; old dumps in `var/backups` keep them until deleted by hand.
 
+## Migration 0056 (the welcome)
+
+The first-run welcome (owner request, 11 October 2026): the first time someone opens a workspace they get a two-minute
+welcome at `/app/<workspace>/welcome` (founders after naming the workspace), then their assistant's page.
+`db/migrations/0056_welcome.sql` is written, not applied: the lead reviews and applies it (`pnpm db:migrate`). It does not
+need 0055 (which waits in `db/pending`) and may run before it. It is additive and idempotent (safe to run twice): the
+backfill that marks existing members runs only on the run that adds the columns, so running it again by hand never marks
+anyone who joined since, or anyone part-way through the welcome, as done (review, 11 October 2026).
+
+What it does:
+
+- `assistant_private` gains the person's own welcome progress: `welcome_step`, `welcome_started_at`, `welcome_done_at`,
+  `welcome_outcome` ('done', 'skipped' or 'existing'), `welcome_skipped`, `welcome_shown` (how many times it opened on its
+  own; it opens at most twice) and `next_steps_hidden_at`, with one check constraint. 0047's policy covers them: the person
+  and the worker only. No manager, owner or HR ever reads anyone's setup.
+- **Every membership that exists when it runs is marked done** (`welcome_outcome = 'existing'`, done at the time their
+  assistant's setup was done, else now). Nobody already using Boredroom sees the welcome unless they replay it from
+  Settings, Your assistant.
+- The two self-join policies on `team_members` (`team_members_join_code`, `team_members_self_join`) gain one condition: a
+  joiner takes a team's lead seat only when their join code or invitation is for a team lead.
+
+**Before deploying this code (not 0056: the code alone does it), review the join codes already handed out.** A join code
+set to "Team lead" that names a team now makes everyone who joins with it that team's lead (lead access to the team's
+project and the team-lead views); before, they joined as an ordinary member. Join codes are reusable links. List the
+codes this affects, and for each either confirm it with the owner, switch it to Staff, or take the team off it (People,
+Join code); Settings and the welcome's Team step now say "People who join become a lead of {team}" where it applies
+(review, 11 October 2026):
+
+```sql
+-- Join codes that will make every joiner a team's lead (run as the admin role)
+SELECT o.slug, o.join_code_enabled, t.name AS team
+  FROM organisations o JOIN teams t ON t.id = o.join_code_team_id
+ WHERE o.join_code_role = 'manager' AND o.join_code IS NOT NULL;
+```
+
+Before it is applied, nothing breaks (server/lib/schema-0056): people still land in the welcome after joining or after
+creating a workspace, and it works in full with its progress kept in the browser tab; it never opens on its own; the
+progress API answers 503; finishing or skipping marks the assistant's setup done; and anyone whose assistant is not set
+up (someone who left the welcome half way, or an existing member who never did it) gets the old "Meet your assistant"
+dialog on their page, as before. Checked end to end on a throwaway database without 0056 (integration, 11 October 2026).
+Within 30 seconds of applying it, the running server picks it up.
+
+The funnel, aggregate only (run as the admin role; never shown in the app, never per person). One platform event,
+`WELCOME_FINISHED`, carries the workspace, role, outcome, step reached, steps skipped and seconds taken, without anyone's id.
+
+```sql
+-- Welcome funnel by role, last 30 days (aggregate; never per person)
+SELECT m.role,
+       count(*) FILTER (WHERE q.welcome_started_at IS NOT NULL) AS started,
+       count(*) FILTER (WHERE q.welcome_outcome = 'done') AS finished,
+       count(*) FILTER (WHERE q.welcome_outcome = 'skipped') AS skipped,
+       percentile_cont(0.5) WITHIN GROUP (ORDER BY extract(epoch FROM q.welcome_done_at - q.welcome_started_at))
+         FILTER (WHERE q.welcome_outcome = 'done') AS median_seconds
+  FROM assistant_private q JOIN memberships m ON m.id = q.membership_id
+ WHERE q.welcome_started_at > now() - interval '30 days'
+ GROUP BY m.role;
+-- Steps skipped
+SELECT s AS step, count(*) FROM assistant_private, unnest(welcome_skipped) s
+ WHERE welcome_started_at > now() - interval '30 days' GROUP BY s ORDER BY 2 DESC;
+-- Staff who planned within 24 hours of finishing
+SELECT count(*) FILTER (WHERE EXISTS (SELECT 1 FROM tasks t WHERE t.created_by = q.membership_id AND t.assignee_membership_id = q.membership_id
+                                        AND t.created_at <= q.welcome_done_at + interval '24 hours')) AS planned_24h, count(*) AS finished
+  FROM assistant_private q JOIN memberships m ON m.id = q.membership_id
+ WHERE m.role = 'employee' AND q.welcome_outcome IN ('done', 'skipped') AND q.welcome_done_at > now() - interval '30 days';
+```
+
 ## Calls: checking LiveKit
 
 Calls use LiveKit Cloud (owner decision, 8 October 2026). `GET /api/health` reports `calls`: "LiveKit configured" or what is missing (never the values); calls are optional, so it never fails the health check.

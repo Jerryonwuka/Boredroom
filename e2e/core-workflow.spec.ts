@@ -148,24 +148,30 @@ test("A03 invitation lifecycle in the browser with the local mail sink", async (
   await op.goto(`/invite/${token}`);
   await expect(op.getByText("Different email")).toBeVisible();
   await other.close();
-  // New account signs up, verifies via the sink, accepts.
+  // New account signs up, verifies via the sink, and joins in the same press (the first-run welcome, owner request,
+  // 11 October 2026): the invitation fixes the address, the verify link carries where they were going, and the
+  // confirm button names the organisation.
   const nb = await browser.newContext();
   const np = await nb.newPage();
   await np.goto(`/invite/${token}`);
   // Signed out, the invitation offers "Create account" as a link to sign-up.
   await np.getByRole("link", { name: "Create account" }).click();
   await np.getByLabel("Your name").fill("New Bie");
-  await np.getByLabel("Work email").fill("newbie@company-a.test");
+  const workEmail = np.getByLabel("Work email");
+  await expect(workEmail).toHaveValue("newbie@company-a.test");
+  await expect(workEmail).toHaveAttribute("readonly", "");
   await np.getByLabel("Password").fill(PASSWORD);
   await np.getByRole("button", { name: "Create account" }).click();
   await np.waitForURL(/verify\/pending/);
   const verifyMail = latestMailTo("newbie@company-a.test");
-  const verifyToken = /token=(\S+)/.exec(verifyMail!.text)![1];
-  await np.goto(`/verify?token=${verifyToken}`);
-  await np.getByRole("button", { name: "Confirm my email" }).click();
-  await np.goto(`/invite/${token}`);
-  await np.getByRole("button", { name: /Join Company A/ }).click();
-  // No policy sign-off any more (owner decision, 5 October 2026): joining lands on Brenda's page.
+  const verifyPath = /\/verify\?token=[^\s"<>]+/.exec(verifyMail!.text)![0];
+  expect(verifyPath).toContain("&next=%2Finvite%2F");
+  await np.goto(verifyPath);
+  await np.getByRole("button", { name: "Confirm email and join Company A" }).click();
+  await np.waitForURL(/\/app\/company-a\/welcome/);
+  // Skipping asks once, then lands on the assistant's page; the welcome never opens again by itself.
+  await np.getByRole("button", { name: "Skip setup" }).click();
+  await np.getByRole("dialog").getByRole("button", { name: "Skip setup" }).click();
   await np.waitForURL(/\/app\/company-a\/home/);
   // Reuse is rejected.
   await np.goto(`/invite/${token}`);

@@ -61,6 +61,9 @@ import { VoiceConnectionSettings } from "@/components/app/voice-connection-setti
 import { naturalVoiceView, voiceConnectionStatus } from "@/server/services/natural-voice";
 import { NATURAL_WORDS } from "@/lib/assistant-speech/natural-words";
 import type { NaturalVoiceView, VoiceConnectionStatus } from "@/lib/natural-voices";
+import { WelcomeSettings } from "@/components/app/welcome/welcome-settings";
+import { welcomeState } from "@/server/services/welcome";
+import { WELCOME_WORDS, passedSeen } from "@/lib/welcome";
 import { cn } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -164,8 +167,14 @@ const VOICE_UNREADABLE: VoiceConnectionStatus = {
  * Calls (owner decision, 10 October 2026: incoming calls get their own sound setting, separate from the assistant's
  * chimes, on by default): "Your assistant" gains "Calls" after Quiet hours, one switch, "Ring for incoming calls",
  * remembered in this browser (`call-sound-settings`).
+ *
+ * The first-run welcome (owner request, 11 October 2026): "Your assistant" ends with "Welcome and setup" (replay the
+ * welcome once it is done, finish it while it is not, and show Next steps again once hidden). On General, the setup
+ * list's "Monitoring notice reviewed" is ticked once the person went through "What's seen" in the welcome or a second
+ * notice version was published (it was "version 1 or more", always true), and the setup card's footer always links to the
+ * welcome. The orphaned "Workspace ready" alert (`?setup=`) went: the founder lands in the welcome instead.
  */
-export default async function SettingsPage({ params, searchParams }: { params: Promise<{ workspace: string }>; searchParams: Promise<{ section?: string; setup?: string; billing?: string; plan?: string }> }) {
+export default async function SettingsPage({ params, searchParams }: { params: Promise<{ workspace: string }>; searchParams: Promise<{ section?: string; billing?: string; plan?: string }> }) {
   const { workspace } = await params;
   const sp = await searchParams;
   const { ctx, counts, teams: navTeams } = await workspacePage(workspace, `/app/${workspace}/settings`);
@@ -184,13 +193,15 @@ export default async function SettingsPage({ params, searchParams }: { params: P
   // The open section's explanatory notes, shown at the bottom of the page after "Every change is audited."
   let notes: ReactNode = null;
   if (section === "assistant") {
-    const [a, activity, followUps, talk, mutes, ai, routines, quiet, abilities, preferences, natural] = await Promise.all([assistantProfiles(ctx), listActivity(ctx, { limit: 5 }), followUpPreference(ctx), assistantTalkPreferences(ctx), listMutes(ctx), aiConnected(ctx.org.id),
+    const [a, activity, followUps, talk, mutes, ai, routines, quiet, abilities, preferences, natural, welcome] = await Promise.all([assistantProfiles(ctx), listActivity(ctx, { limit: 5 }), followUpPreference(ctx), assistantTalkPreferences(ctx), listMutes(ctx), aiConnected(ctx.org.id),
       // Phase 7a: the person's routines and quiet hours (ready: false before 0046). A failed read: the card reads it itself.
       listRoutines(ctx).catch(() => null), quietHoursFor(ctx).catch(() => null),
       // Phase 7c: the abilities and the person's preferences (ready: false before 0050). A failed read: the card reads it itself.
       abilitiesView(ctx).catch((): AbilitiesView | null => null), listPreferences(ctx).catch((): PreferenceList | null => null),
       // Natural voice (9 October 2026): the person's choice (ready: false before 0053). A failed read: the card reads it itself.
-      naturalVoiceView(ctx).catch((): NaturalVoiceView | null => null)]);
+      naturalVoiceView(ctx).catch((): NaturalVoiceView | null => null),
+      // The welcome (owner request, 11 October 2026): replay or finish it, and bring back hidden next steps.
+      welcomeState(ctx)]);
     assistants = a;
     const { name } = a.personal;
     const now = new Date(); // the server's clock, so "Today" in the activity rows reads the same on both sides
@@ -216,6 +227,8 @@ export default async function SettingsPage({ params, searchParams }: { params: P
         {/* Other people's assistants (phase 6): tagging the person's assistant in Messages, and whose assistants are muted. */}
         <AssistantTalkSettings orgSlug={ctx.org.slug} name={name} preferences={talk} mutes={mutes} impersonated={!!ctx.user.impersonation} />
         <AssistantActivityCard orgSlug={ctx.org.slug} timeZone={ctx.org.timezone} name={name} items={activity.items} now={now.getTime()} />
+        {/* The first-run welcome, last (owner request, 11 October 2026): replay it, finish it, or show next steps again. */}
+        <WelcomeSettings orgSlug={ctx.org.slug} name={name} state={welcome} impersonated={!!ctx.user.impersonation} />
       </>
     );
     notes = (
@@ -233,7 +246,7 @@ export default async function SettingsPage({ params, searchParams }: { params: P
       </>
     );
   } else if (section === "general" || section === "hours" || section === "notice") {
-    const [view, a] = await Promise.all([settingsView(ctx), assistantProfiles(ctx)]);
+    const [view, a, welcome] = await Promise.all([settingsView(ctx), assistantProfiles(ctx), welcomeState(ctx)]);
     const { policy, schedule, counts: c } = view;
     assistants = a;
     if (section === "general") {
@@ -241,7 +254,9 @@ export default async function SettingsPage({ params, searchParams }: { params: P
         { label: "Workspace created", done: true },
         { label: "Time zone and schedule set", done: !!schedule, href: href("hours"), go: "Working hours" },
         { label: "Teams defined and managers assigned", done: c.teams > 0, href: `${base}/people`, go: "People and teams" },
-        { label: "Monitoring notice reviewed", done: !!policy && policy.version >= 1, href: href("notice"), go: "Monitoring notice" },
+        // Reviewed once the person went through "What's seen" in the welcome, or a notice was published after the first
+        // (owner request, 11 October 2026: "version ≥ 1" was always true, since every workspace starts with version 1).
+        { label: "Monitoring notice reviewed", done: passedSeen(welcome) || (!!policy && policy.version >= 2), href: href("notice"), go: "Monitoring notice" },
         { label: "At least one project", done: c.projects > 0, href: `${base}/projects`, go: "Projects" },
         { label: "Employees invited", done: c.members > 1, href: `${base}/people`, go: "People and teams" },
       ];
@@ -272,11 +287,15 @@ export default async function SettingsPage({ params, searchParams }: { params: P
                   </li>
                 ))}
               </ul>
-              {brendaCanHelp ? (
-                <SettingsFooter>
+              {/* The footer always holds the way back to the welcome (owner request, 11 October 2026), then the assistant's help. */}
+              <SettingsFooter>
+                <Link href={welcome.done ? `${base}/welcome?replay=1` : `${base}/welcome`} className={buttonVariants({ variant: "ghost", size: "sm" })}>
+                  {welcome.done ? WELCOME_WORDS.settings.replay : WELCOME_WORDS.settings.finish}
+                </Link>
+                {brendaCanHelp ? (
                   <Link href={`${base}/home?ask=${encodeURIComponent("Help me finish setting up this workspace: create our teams with their team leads, and invite the people who work here.")}`} className={buttonVariants({ variant: "secondary", size: "sm" })}><BrendaGlyph aria-hidden />Ask {assistants.personal.name} to set up teams and invitations</Link>
-                </SettingsFooter>
-              ) : null}
+                ) : null}
+              </SettingsFooter>
             </SettingsGroup>
           </SettingsSection>
           <SettingsSection id="attachments" title="Attachments" description="Files people attach to tasks and messages.">
@@ -423,7 +442,6 @@ export default async function SettingsPage({ params, searchParams }: { params: P
   return (
     <AppShell ctx={ctx} counts={counts} teams={navTeams}>
       <PageHeader title="Settings" description={admin ? "How the workspace runs: working hours, the monitoring notice, Brenda, the plan, your assistant and your linked computers." : "Your assistant's name, look and voice in this workspace, whether it asks before acting, what it does for you and how you like it done, what it does on a schedule, when it keeps quiet, how it answers follow-ups about your work, and what other people's assistants may do."} divider />
-      {sp.setup && admin ? <Alert tone="success" className="mb-6" title="Workspace ready">Work through the setup list to finish.</Alert> : null}
       <div className="grid gap-6 md:grid-cols-[12.5rem_minmax(0,1fr)] md:gap-10">
         {/* Sub-navigation (spec §6): 32px items, r8, fill-1 and the orange marker for the open one, fill-0 on hover; a scrolling row on a phone. */}
         <nav aria-label="Settings sections" className="-mx-1 min-w-0 md:sticky md:top-[calc(var(--header-height)+1.5rem)] md:mx-0 md:self-start">

@@ -10,8 +10,10 @@ import { workspaceAllowance } from "@/server/services/workspace-limit";
 export const metadata = { title: "Create workspace" };
 
 /**
- * Creating a workspace. A calm two-step form (the form draws its own heading with the step count); when a new
- * workspace cannot be created (the waitlist, or the plan's limit) the page says so instead of showing the form.
+ * Creating a workspace. One screen since the first-run welcome (owner request, 11 October 2026: the name, with the
+ * address and time zone as lines the founder can change; the form draws its own heading), then the workspace's
+ * two-minute welcome. When a new workspace cannot be created (the waitlist, or the plan's limit) the page says so
+ * instead of showing the form.
  */
 export default async function OnboardingPage() {
   const user = await getCurrentUser();
@@ -23,14 +25,14 @@ export default async function OnboardingPage() {
   // Said instead of the form, not after it: creating a workspace is refused while Boredroom is on its waitlist.
   if (!open) {
     return (
-      <AuthShell title="Create your workspace" subtitle="You will be its first owner." footer={back}>
+      <AuthShell title="Create your workspace" subtitle="You'll be its first owner." footer={back}>
         <Alert tone="info" title="New workspaces are not open yet">Boredroom is letting organisations in from the waitlist, so a new workspace cannot be created yet. To join an existing organisation, <Link className={AUTH_LINK} href="/join">enter its code</Link>.</Alert>
       </AuthShell>
     );
   }
   if (full) {
     return (
-      <AuthShell title="Create your workspace" subtitle="You will be its first owner." footer={back}>
+      <AuthShell title="Create your workspace" subtitle="You'll be its first owner." footer={back}>
         <Alert tone="warning">Your {allowance.plan} plan allows {allowance.limit} workspace{allowance.limit === 1 ? "" : "s"} and you already own {allowance.used}.{allowance.nextPlan ? ` Move one of your workspaces to ${allowance.nextPlan} from its Settings page to own more.` : ""}</Alert>
       </AuthShell>
     );

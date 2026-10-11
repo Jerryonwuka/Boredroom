@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input, Field } from "@/components/ui/input";
 import { Alert } from "@/components/ui/states";
 import { api } from "@/lib/api-client";
+import { welcomeAutoPath } from "@/lib/welcome";
 import { useSubmit } from "@/components/auth/forms";
 import { AUTH_LINK } from "@/components/auth/auth-shell";
 
@@ -46,7 +47,8 @@ export function JoinAccept({ code, orgName, orgSlug }: { code: string; orgName: 
       ) : null}
       <Button size="lg" className="w-full" loading={pending} onClick={async () => {
         const r = await run(() => api<{ orgSlug: string }>("/api/join/accept", { method: "POST", body: { code }, retries: 0 }));
-        if (r) go(`/app/${r.orgSlug}/home`); // straight in: no policy step (owner decision, 5 October 2026)
+        // Straight in, no policy step (owner decision, 5 October 2026), and into the welcome (owner request, 11 October 2026).
+        if (r) go(welcomeAutoPath(r.orgSlug));
       }}>{pending ? "Joining…" : `Join ${orgName}`}</Button>
     </div>
   );
