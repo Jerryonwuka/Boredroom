@@ -43,18 +43,39 @@ async function fetchResendEmail(inboxId: string, threadId: string, emailId: stri
   } catch { return null; }
 }
 
-/** Stores one received email from a Resend `inbox.email.received` webhook. Idempotent on the Resend email id. */
+/** Fetches a received email's body from the GA Received-emails API (GET /emails/receiving/:id). */
+async function fetchReceived(emailId: string): Promise<ResendEmail | null> {
+  const key = process.env.RESEND_API_KEY;
+  if (!key || !emailId) return null;
+  try {
+    const res = await fetch(`https://api.resend.com/emails/receiving/${emailId}`, { headers: { Authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(15_000) });
+    if (!res.ok) return null;
+    const body = (await res.json()) as { data?: ResendEmail } & ResendEmail;
+    return body.data ?? body;
+  } catch { return null; }
+}
+
+/**
+ * Stores one received email. Handles both inbound webhook shapes: `email.received` (GA; data holds the metadata,
+ * body fetched from /emails/receiving/:id) and `inbox.email.received` (Inbox beta; nested email + /inboxes/… fetch).
+ * Idempotent on the Resend email id.
+ */
 export async function ingestResend(payload: { type?: string; data?: Record<string, unknown> }): Promise<{ stored: boolean }> {
-  if (payload.type !== "inbox.email.received") return { stored: false };
+  const type = payload.type ?? "";
+  if (type !== "email.received" && type !== "inbox.email.received") return { stored: false };
   const data = (payload.data ?? {}) as Record<string, unknown>;
-  const inboxId = String(data.inbox_id ?? "");
-  const threadId = String(data.thread_id ?? "");
-  const hook = (data.email ?? {}) as ResendEmail;
+  const inbox = type === "inbox.email.received";
+  const inboxId = inbox ? String(data.inbox_id ?? "") : "";
+  const threadId = inbox ? String(data.thread_id ?? "") : "";
+  const hook = (inbox ? (data.email ?? {}) : data) as ResendEmail;
   const emailId = String(hook.id ?? data.email_id ?? "");
   if (!emailId) return { stored: false };
-  const full = (await fetchResendEmail(inboxId, threadId, emailId)) ?? hook;
+  const full = (inbox ? await fetchResendEmail(inboxId, threadId, emailId) : await fetchReceived(emailId)) ?? hook;
   const to = full.to ?? hook.to ?? [];
-  const toAddr = (to.find((a) => /@boredroom\.cc$/i.test(extractEmail(a))) ?? to[0] ?? "").trim();
+  const receivedFor = (data.received_for as string[] | undefined) ?? [];
+  const toAddr = (receivedFor.find((a) => /@boredroom\.cc$/i.test(extractEmail(a)))
+    ?? to.find((a) => /@boredroom\.cc$/i.test(extractEmail(a)))
+    ?? receivedFor[0] ?? to[0] ?? "").trim();
   await withSystem((db) => db.query(
     `INSERT INTO inbound_emails(provider, resend_inbox_id, resend_thread_id, resend_email_id, message_id, from_addr, to_addr, cc, subject, body_text, body_html, attachments, received_at)
      VALUES ('resend', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, COALESCE($12::timestamptz, now()))
