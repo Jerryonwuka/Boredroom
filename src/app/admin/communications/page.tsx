@@ -5,13 +5,16 @@ import { PageHeader, Card, CardHeader } from "@/components/ui/card";
 import { DataTable } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState, Alert } from "@/components/ui/states";
-import { Filters, Pager } from "@/components/admin/actions";
+import { Filters, Pager, JsonForm } from "@/components/admin/actions";
 import { F, filterCls, subCls, words } from "@/components/admin/fields";
 import { ComposeForm } from "@/components/admin/marketing-forms";
+import { listInbound, openInbound } from "@/server/admin/inbox";
+import Link from "next/link";
 import { formatDateTime, cn } from "@/lib/utils";
 import { PageNote, PageNotes } from "@/components/ui/page-notes";
 
 export const metadata = { title: "Communications" };
+export const dynamic = "force-dynamic";
 
 export default async function CommunicationsPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const admin = await requireAdmin("communications.view");
@@ -55,7 +58,47 @@ export default async function CommunicationsPage({ searchParams }: { searchParam
         {tab === "compose" ? (composing
           ? <Card className="max-w-3xl"><CardHeader title="Write an email" description="To one address, or to the owners of an organisation. Sent at once on the Boredroom design and logged." /><ComposeForm /></Card>
           : <Alert tone="info">Your role can read the log but not send.</Alert>) : null}
-        {tab === "inbox" ? <EmptyState icon={Inbox} tone="neutral" title="No inbox yet" description="Incoming mail needs a Brevo inbound route or a shared mailbox. Replies to platform emails go to the sender address in MAIL_FROM for now; this tab will list them once an inbound webhook is configured." /> : null}
+        {tab === "inbox" ? await (async () => {
+          const sel = sp.msg ? await openInbound(sp.msg).catch(() => null) : null;
+          const r = await listInbound({ q: sp.q, page: Number(sp.page ?? 1) });
+          return (
+            <>
+              <Filters>
+                <F label="Search"><input name="q" defaultValue={sp.q ?? ""} placeholder="Sender, address or subject" className={cn(filterCls, "w-64")} /></F>
+                <input type="hidden" name="tab" value="inbox" />
+              </Filters>
+              {sel ? (
+                <Card className="mb-6">
+                  <CardHeader title={sel.subject || "(no subject)"} description={`From ${sel.from_addr}  →  ${sel.to_addr}  ·  ${formatDateTime(sel.received_at)}`} />
+                  <div className="whitespace-pre-wrap break-words text-sm text-secondary">{sel.body_text || (sel.body_html ? "(HTML-only message — open in your mail client)" : "(no body captured)")}</div>
+                  {can(admin, "communications.send") ? (
+                    <div className="mt-4 border-t border-border pt-4">
+                      <p className="mb-2 text-meta text-secondary">Reply from <span className="font-medium text-foreground">{sel.to_addr}</span></p>
+                      <JsonForm path={`/api/admin/inbox/${sel.id}/reply`} submitLabel="Send reply" successMessage="Reply sent.">
+                        <textarea name="body" rows={6} required placeholder="Write your reply…" className={cn(filterCls, "w-full")} />
+                      </JsonForm>
+                    </div>
+                  ) : null}
+                  <div className="mt-3"><Link href="/admin/communications?tab=inbox" className="text-sm text-secondary underline">← Back to inbox</Link></div>
+                </Card>
+              ) : null}
+              {r.rows.length === 0 ? <EmptyState icon={Inbox} title="No mail received yet" description="Mail sent to any @boredroom.cc address appears here once Resend inbound is pointed at /api/inbound/resend (MX on boredroom.cc → Resend; webhook → this URL; RESEND_INBOUND_SECRET + RESEND_API_KEY set)." /> : (
+                <DataTable caption="Inbox">
+                  <thead><tr><th>From</th><th>Received at</th><th>Subject</th><th>When</th></tr></thead>
+                  <tbody>{r.rows.map((m) => (
+                    <tr key={m.id} className={m.read_at ? "" : "font-semibold"}>
+                      <td><Link href={`/admin/communications?tab=inbox&msg=${m.id}`} className="underline">{m.from_addr}</Link></td>
+                      <td className="text-secondary">{m.to_addr}</td>
+                      <td className="wrap max-w-[360px]">{m.subject || "(no subject)"}{m.snippet ? <span className={subCls}>{m.snippet}</span> : null}{m.replied_at ? <Badge tone="success" className="ml-1">Replied</Badge> : null}</td>
+                      <td className="tabular-nums">{formatDateTime(m.received_at)}</td>
+                    </tr>
+                  ))}</tbody>
+                </DataTable>
+              )}
+              <Pager page={r.page} pageSize={r.pageSize} total={r.total} />
+            </>
+          );
+        })() : null}
       </div>
       <PageNotes>
         {composing

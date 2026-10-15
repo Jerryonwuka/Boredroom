@@ -2,7 +2,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import nodemailer, { type Transporter } from "nodemailer";
 
-export type MailMessage = { to: string; subject: string; text: string; html?: string; category: string };
+export type MailMessage = { to: string; subject: string; text: string; html?: string; category: string; from?: string; headers?: Record<string, string> };
 
 export interface MailProvider {
   send(message: MailMessage): Promise<{ id: string }>;
@@ -46,13 +46,13 @@ export class SmtpMailProvider implements MailProvider {
   async send(message: MailMessage) {
     try {
       const info = await this.transporter.sendMail({
-        from: this.from,
+        from: message.from ?? this.from,
         to: message.to,
         subject: message.subject,
         text: message.text,
         ...(message.html ? { html: message.html } : {}),
         // Brevo shows this as the message's tag in its logs; other relays pass it through as a plain header.
-        headers: { "X-Mailin-Tag": message.category.replace(/[^A-Za-z0-9_-]/g, "_") },
+        headers: { "X-Mailin-Tag": message.category.replace(/[^A-Za-z0-9_-]/g, "_"), ...(message.headers ?? {}) },
       });
       return { id: info.messageId ?? `smtp-${Date.now()}` };
     } catch (err) {
