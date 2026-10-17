@@ -825,6 +825,16 @@ Also:
   card that opens the Workroom.
 - **Tucks away when idle** (no card, no timer, nothing unread) to a thin sliver, and peeks out when the pointer reaches
   the top of the screen around it. **Keep Brenda always visible** in the tray turns this off.
+- **Inside an app** (owner request, 17 October 2026: "not stagnant in the app"): while the front app is full screen (its
+  own Space, or two apps side by side) or its window covers the screen (maximised or zoomed), the notch hides
+  completely, with no bar and no sliver, even with a timer running or "always visible" on. It comes out when the pointer
+  touches the very top edge in the middle (the top 4 points, 140 either side of the centre; it works with the menu bar
+  hidden), when you hold Control+Command or Option+Space, and when a call rings or a card arrives on its own, and hides
+  again about half a second after the pointer leaves or the card closes. An ordinary window keeps the bar as before.
+  `island.rs` tells the page (`brenda://covered`) from the window server's list of Spaces and the front window's
+  bounds. The root cause of the old "nothing shows in apps": the notch window was made from the config before Brenda
+  became a menu-bar app, and macOS never lets such a window into other apps' full-screen Spaces (it stayed on the
+  ordinary desktops only); `lib.rs` now makes it after (`"create": false` in `tauri.conf.json`).
 - **Reactions:** click her face to poke her, three quick pokes make her dizzy, and resting the pointer on her gives her
   heart eyes.
 

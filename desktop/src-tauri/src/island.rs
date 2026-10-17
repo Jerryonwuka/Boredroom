@@ -6,6 +6,11 @@
 //! the island: a small thread reads the cursor about 30 times a second, compares it with the island's rectangle (which
 //! the page reports), and switches click-through on or off. The same thread tells the page where the cursor is, so
 //! Brenda's eyes can follow it. Until the page has reported a rectangle, the window ignores the mouse entirely.
+//!
+//! Inside an app (owner request, 17 October 2026: "not stagnant in the app"): a second small thread tells the page
+//! whether the front app is full screen (its own Space, or two side by side) or its window covers the screen (maximised
+//! or zoomed), as `brenda://covered`; the page then hides the notch completely until the pointer reaches the top edge or
+//! the look keys are held. The window is also made to follow the person into full-screen Spaces (see `join_this_space`).
 
 use serde::Serialize;
 use std::sync::{
@@ -15,12 +20,18 @@ use std::sync::{
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, WebviewWindow};
 
+use crate::look::Bounds;
+
 /// The panel: wide enough for the widest card plus the island's curved shoulders, tall enough for the longest.
 pub const PANEL_W: f64 = 480.0;
 pub const PANEL_H: f64 = 440.0;
 /// How far around the island still counts as on it, so a moving cursor reaches a button with the mouse already on.
 const HIT_MARGIN: f64 = 10.0;
 const TICK: Duration = Duration::from_millis(33);
+/// How often the covering check runs, and how many checks pass before the same answer is sent again (a page that loaded
+/// late still hears it).
+const COVER_TICK: Duration = Duration::from_millis(600);
+const COVER_REPEAT: u32 = 10;
 
 #[derive(Clone, Copy, Default)]
 struct Rect {
@@ -50,12 +61,13 @@ struct Cursor {
 /// island, so nothing under it is blocked.
 #[cfg(target_os = "macos")]
 const ISLAND_LEVEL: isize = 1000 + 1; // the screen-saver level, where macOS 26 draws each app's menu titles, plus one
+/// canJoinAllSpaces (1) | stationary (16) | ignoresCycle (64) | fullScreenAuxiliary (256)
+#[cfg(target_os = "macos")]
+const BEHAVIOUR: usize = 1 | 16 | 64 | 256;
 
 #[cfg(target_os = "macos")]
 fn above_menu_bar(window: &WebviewWindow) {
     use objc2::{msg_send, runtime::AnyObject};
-    // canJoinAllSpaces (1) | stationary (16) | ignoresCycle (64) | fullScreenAuxiliary (256)
-    const BEHAVIOUR: usize = 1 | 16 | 64 | 256;
     if let Ok(ns) = window.ns_window() {
         let ns = ns as *mut AnyObject;
         if !ns.is_null() {
@@ -108,7 +120,13 @@ unsafe fn keep_frames_where_put(ns: *mut objc2::runtime::AnyObject) {
 
 /// Puts the island back above the menu bar if something lowered it. The window framework re-applies its own
 /// "always on top" level (a plain floating level, under the menu bar) when the window is shown or refocused, which
-/// silently undid the level set at start; the poll below checks about once a second, on the main thread.
+/// silently undid the level set at start; the poll below checks about three times a second, on the main thread.
+///
+/// It also keeps the island on the Space on screen (`join_this_space`, owner report, 17 October 2026: "inside an app"
+/// the notch neither showed on hover nor for the look keys). The cause was the window itself: made from the config
+/// before Brenda became a menu-bar app, the window server never let it into full-screen Spaces (it listed it on the two
+/// ordinary desktops only), and ordering it in again did not change that; lib.rs now makes it after. This is the safety
+/// net: the behaviour put back if anything reset it, and the window ordered in when it is not on the Space showing.
 #[cfg(target_os = "macos")]
 fn keep_above_menu_bar(window: &WebviewWindow) {
     use objc2::{msg_send, runtime::AnyObject};
@@ -122,10 +140,29 @@ fn keep_above_menu_bar(window: &WebviewWindow) {
                     if level != ISLAND_LEVEL {
                         let _: () = msg_send![&*ns, setLevel: ISLAND_LEVEL];
                     }
+                    join_this_space(ns);
                 }
             }
         }
     });
+}
+
+/// The window on the Space showing now (main thread; see keep_above_menu_bar). Only while it is meant to be visible.
+#[cfg(target_os = "macos")]
+unsafe fn join_this_space(ns: *mut objc2::runtime::AnyObject) {
+    use objc2::msg_send;
+    let visible: bool = msg_send![&*ns, isVisible];
+    if !visible {
+        return;
+    }
+    let behaviour: usize = msg_send![&*ns, collectionBehavior];
+    if behaviour != BEHAVIOUR {
+        let _: () = msg_send![&*ns, setCollectionBehavior: BEHAVIOUR];
+    }
+    let here: bool = msg_send![&*ns, isOnActiveSpace];
+    if !here {
+        let _: () = msg_send![&*ns, orderFrontRegardless];
+    }
 }
 
 /// Moves the window's top-left corner to (x, top) in logical screen coordinates, measured from the top of the main screen.
@@ -152,6 +189,20 @@ pub fn menu_bar_height(window: WebviewWindow) -> f64 {
         let scale = m.scale_factor();
         ((m.work_area().position.y - m.position().y) as f64 / scale).max(0.0)
     }).unwrap_or(0.0)
+}
+
+/// Makes Brenda a menu-bar app (no Dock icon) at once, on the main thread, so the notch window made next may enter
+/// full-screen Spaces (lib.rs). The framework's own call is queued and lands after that window would be made.
+pub fn menu_bar_app_now() {
+    #[cfg(target_os = "macos")]
+    unsafe {
+        use objc2::{class, msg_send, runtime::AnyObject};
+        let ns_app: *mut AnyObject = msg_send![class!(NSApplication), sharedApplication];
+        if !ns_app.is_null() {
+            // NSApplicationActivationPolicyAccessory
+            let _: bool = msg_send![&*ns_app, setActivationPolicy: 1isize];
+        }
+    }
 }
 
 pub fn place(window: &WebviewWindow) -> tauri::Result<()> {
@@ -231,7 +282,63 @@ pub fn point_on_island(app: &AppHandle, p: (f64, f64)) -> bool {
     hit(r, p.0 - origin.x as f64 / scale, p.1 - origin.y as f64 / scale)
 }
 
+/// Whether the front app's window covers the notch's display (owner request, 17 October 2026): exactly full screen, or
+/// filling what is left of it beside the menu bar and the Dock (maximised or zoomed). Its middle must be on the display.
+pub(crate) fn covers(window: Bounds, display: Bounds, visible: Bounds) -> bool {
+    let (cx, cy) = (window.x + window.w / 2.0, window.y + window.h / 2.0);
+    let on = cx >= display.x && cx < display.x + display.w && cy >= display.y && cy < display.y + display.h;
+    on && (crate::guard::is_full_screen(window, display) || (window.w >= visible.w - 2.0 && window.h >= visible.h - 2.0))
+}
+
+/// Inside a full-screen or covering app now, on the notch's display: Some(true) or Some(false), or None when it cannot
+/// be told (the front app unknown, or Brenda herself in front while the person types to her), and the last answer stands.
+fn covered_now(app: &AppHandle, window: &WebviewWindow) -> Option<bool> {
+    let (Ok(origin), Ok(scale)) = (window.outer_position(), window.scale_factor()) else { return None };
+    let top = (origin.x as f64 / scale + PANEL_W / 2.0, origin.y as f64 / scale + 1.0);
+    let displays = crate::capture::displays();
+    let (id, display) = crate::capture::display_at(top, &displays)?;
+    // A full-screen Space: one app full screen, or two side by side (their windows do not cover the display alone).
+    if crate::capture::full_screen_space(id) == Some(true) {
+        return Some(true);
+    }
+    let snap = crate::capture::env_snapshot(app)?;
+    let front = snap.front?;
+    if front.pid == std::process::id() as i32 {
+        return None;
+    }
+    let visible = snap.visible.iter().find(|(v, _)| *v == id).map(|(_, b)| *b).unwrap_or(display);
+    let windows = crate::capture::window_list(false);
+    Some(windows.iter().find(|w| w.pid == front.pid && w.layer == 0 && w.alpha > 0.0).is_some_and(|w| covers(w.bounds, display, visible)))
+}
+
+/// Tells the page, as `brenda://covered`, whether the notch is inside a full-screen or covering app: at once when that
+/// changes, and again every few seconds. Nothing is read while the notch is hidden from the tray.
+fn watch_covered(app: AppHandle, window: WebviewWindow) {
+    std::thread::spawn(move || {
+        let mut last: Option<bool> = None;
+        let mut quiet: u32 = 0;
+        loop {
+            std::thread::sleep(COVER_TICK);
+            if !window.is_visible().unwrap_or(false) {
+                continue;
+            }
+            let now = covered_now(&app, &window).or(last).unwrap_or(false);
+            quiet += 1;
+            if Some(now) == last && quiet < COVER_REPEAT {
+                continue;
+            }
+            if last.is_some() && Some(now) != last {
+                eprintln!("[brenda] {}", if now { "inside a full-screen or covering app: the notch hides until the top edge or the look keys" } else { "back to an ordinary window: the notch as usual" });
+            }
+            last = Some(now);
+            quiet = 0;
+            let _ = window.emit("brenda://covered", now);
+        }
+    });
+}
+
 pub fn start(app: &AppHandle, window: WebviewWindow) {
+    watch_covered(app.clone(), window.clone());
     let _ = window.set_ignore_cursor_events(true);
     app.state::<Island>().ignoring.store(true, Ordering::Relaxed);
     let app = app.clone();
@@ -245,7 +352,8 @@ pub fn start(app: &AppHandle, window: WebviewWindow) {
             }
             ticks = ticks.wrapping_add(1);
             #[cfg(target_os = "macos")]
-            if ticks % 30 == 0 {
+            // About three times a second: the level, and the Space on screen (a full-screen app's included).
+            if ticks % 10 == 0 {
                 keep_above_menu_bar(&window);
             }
             let (Some((cx, cy)), Ok(origin), Ok(scale)) = (cursor_logical(&app), window.outer_position(), window.scale_factor()) else { continue };
@@ -268,4 +376,33 @@ pub fn start(app: &AppHandle, window: WebviewWindow) {
             let _ = window.emit("brenda://cursor", Cursor { x, y });
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const D: Bounds = Bounds { x: 0.0, y: 0.0, w: 1440.0, h: 900.0 };
+    /// Below a 30-point menu bar and beside a 64-point Dock.
+    const V: Bounds = Bounds { x: 0.0, y: 30.0, w: 1440.0, h: 806.0 };
+
+    #[test]
+    fn full_screen_and_zoomed_windows_cover_the_display() {
+        assert!(covers(D, D, V));
+        assert!(covers(Bounds { x: 0.0, y: 30.0, w: 1440.0, h: 806.0 }, D, V)); // zoomed
+        assert!(covers(Bounds { x: 0.0, y: 30.0, w: 1440.0, h: 870.0 }, D, V)); // filled past the Dock
+    }
+
+    #[test]
+    fn ordinary_windows_do_not() {
+        assert!(!covers(Bounds { x: 320.0, y: 80.0, w: 800.0, h: 642.0 }, D, V));
+        assert!(!covers(Bounds { x: 3.0, y: 30.0, w: 1033.0, h: 800.0 }, D, V));
+        // Full width, half height (tiled to the top half).
+        assert!(!covers(Bounds { x: 0.0, y: 30.0, w: 1440.0, h: 403.0 }, D, V));
+    }
+
+    #[test]
+    fn a_window_on_another_display_does_not() {
+        assert!(!covers(Bounds { x: 1440.0, y: -180.0, w: 1920.0, h: 1080.0 }, D, V));
+    }
 }

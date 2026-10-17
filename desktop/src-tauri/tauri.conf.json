@@ -12,6 +12,7 @@
     "windows": [
       {
         "label": "notch",
+        "create": false,
         "title": "Brenda",
         "width": 480,
         "height": 440,

@@ -318,6 +318,9 @@ mod other {
     pub fn window_list(_include_desktop: bool) -> Vec<crate::look::WindowInfo> {
         Vec::new()
     }
+    pub fn full_screen_space(_display_id: u32) -> Option<bool> {
+        None
+    }
     pub fn pointer_top_left() -> Option<(f64, f64)> {
         None
     }
@@ -582,6 +585,55 @@ mod mac {
                 });
             }
             out
+        })
+    }
+
+    /// Whether the Space showing on a display now is a full-screen one: an app full screen, or two side by side (owner
+    /// request, 17 October 2026: the notch hides inside full-screen apps). Split View's windows do not cover the display,
+    /// so their bounds cannot say it; the window server's own list of Spaces does. Its calls are private but read-only
+    /// and have been stable since macOS 10.10; anything unexpected answers None and the caller falls back on bounds.
+    pub fn full_screen_space(display_id: u32) -> Option<bool> {
+        use std::ffi::c_void;
+        #[link(name = "ColorSync", kind = "framework")]
+        extern "C" {
+            fn CGDisplayCreateUUIDFromDisplayID(display: u32) -> *const c_void;
+        }
+        #[link(name = "CoreGraphics", kind = "framework")]
+        extern "C" {
+            fn CGSMainConnectionID() -> i32;
+            fn CGSCopyManagedDisplaySpaces(cid: i32) -> *mut c_void;
+        }
+        #[link(name = "CoreFoundation", kind = "framework")]
+        extern "C" {
+            fn CFUUIDCreateString(alloc: *const c_void, uuid: *const c_void) -> *mut c_void;
+            fn CFRelease(cf: *const c_void);
+        }
+        /// The window server's "type" of a full-screen Space.
+        const FULL_SCREEN: i64 = 4;
+        autoreleasepool(|_| unsafe {
+            let uuid = CGDisplayCreateUUIDFromDisplayID(display_id);
+            if uuid.is_null() {
+                return None;
+            }
+            let text = CFUUIDCreateString(std::ptr::null(), uuid);
+            CFRelease(uuid);
+            // A CFString is toll-free bridged to NSString; Retained releases it.
+            let uuid: Retained<AnyObject> = Retained::from_raw(text as *mut AnyObject)?;
+            let uuid = uuid.downcast_ref::<NSString>()?.to_string();
+            let list: Retained<AnyObject> = Retained::from_raw(CGSCopyManagedDisplaySpaces(CGSMainConnectionID()) as *mut AnyObject)?;
+            let count: usize = msg_send![&*list, count];
+            for i in 0..count {
+                let d: Retained<AnyObject> = msg_send![&*list, objectAtIndex: i];
+                let id = object_for(&d, "Display Identifier").and_then(|o| o.downcast_ref::<NSString>().map(|s| s.to_string())).unwrap_or_default();
+                // "Main" when the displays share one set of Spaces (Displays have separate Spaces off).
+                if !(id.eq_ignore_ascii_case(&uuid) || (count == 1 && id == "Main")) {
+                    continue;
+                }
+                let current = object_for(&d, "Current Space")?;
+                let kind = object_for(&current, "type").and_then(|o| number(&o).map(|n| n.longLongValue()))?;
+                return Some(kind == FULL_SCREEN);
+            }
+            None
         })
     }
 
