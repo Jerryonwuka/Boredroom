@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-look-request-permission"
+description = "Enables the look_request_permission command without any pre-configured scope."
+commands.allow = ["look_request_permission"]
+
+[[permission]]
+identifier = "deny-look-request-permission"
+description = "Denies the look_request_permission command without any pre-configured scope."
+commands.deny = ["look_request_permission"]

@@ -84,10 +84,20 @@
  * it or, when it can't, says the same reply in the computer voice at once. Listen shows on a reply with an offer even in
  * a browser with no voice of its own. Voice off and quiet hours decide whether she speaks, as before; the offer only
  * decides how.
+ *
+ * Brenda points (owner request, 11 October 2026: "press the two buttons, ask Brenda a question about what I'm pointing at
+ * on my screen and she helps me out with it"; contract E.3). An `open` suggestion whose link carries `?point=<key>` is
+ * pressed as **Show me**: on the page already showing, the chat is put away and she points at the element at once
+ * (`pointAt`, brenda-pointer); on another page, it opens and she points when it arrives. When her answer brings such a
+ * suggestion for the page on screen and the element is there, she points straight away; Show me repeats it. A question
+ * asked with a look from Brenda for Mac (screen help, owner decisions 11 October 2026) carries `look: { app }` in Past
+ * chats, shown under the person's message as "{name} looked at your screen (Figma)" (phase 2, owner request 12 October
+ * 2026: she sees the whole screen under the pointer, not one window; contract E.7); the picture itself is never kept, and
+ * requests still send only role, content and tainted.
  */
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Check, Loader2, ShieldCheck, Square, Undo2, Volume2 } from "lucide-react";
+import { Check, Eye, Loader2, MousePointerClick, ShieldCheck, Square, Undo2, Volume2 } from "lucide-react";
 // Her reply rows' buttons are plain buttons styled with buttonVariants, so they carry the animated twins themselves.
 import { AnimatedAlarmClock, AnimatedArrowUpRight, AnimatedCheck, AnimatedPlay, AnimatedPlus } from "@/components/ui/animated-icons";
 import { buttonVariants } from "@/components/ui/button";
@@ -99,6 +109,7 @@ import { BrendaFace, type BrendaMood, type BrendaTone } from "@/components/app/b
 import { Markdown } from "@/components/app/docs-markdown";
 import { useAssistant } from "@/components/app/assistant-context";
 import { FollowUpStatusCard } from "@/components/app/follow-up-status-card";
+import { findShownTarget, pointAt, pointOfHref } from "@/components/app/brenda-pointer";
 import { AssistantItemStatusCard } from "@/components/app/assistant-item-status-card";
 import { ActModePill, useActMode } from "@/components/app/act-mode-pill";
 import { ACT_WORDS, undoOpen, type ActState, type UndoOffer } from "@/lib/act-mode";
@@ -133,7 +144,9 @@ export type ChatProposal = Proposal & { done?: string; why?: string };
  * `tainted`: the reply read other people's words; sent back with the conversation so the server keeps asking.
  * `speech`: the offer to say it in the person's natural voice (9 October 2026), in memory only (never saved).
  */
-export type BrendaMsg = { role: "user" | "assistant"; content: string; actions?: ChatAction[]; proposals?: ChatProposal[]; engine?: ChatResult["engine"]; note?: string | null; tainted?: boolean; speech?: SpeechOffer | null };
+export type BrendaMsg = { role: "user" | "assistant"; content: string; actions?: ChatAction[]; proposals?: ChatProposal[]; engine?: ChatResult["engine"]; note?: string | null; tainted?: boolean; speech?: SpeechOffer | null;
+  /** Screen help (11 October 2026): the person asked this with a look from Brenda for Mac at a window of `app`. User messages only. */
+  look?: { app: string } };
 /**
  * Her reply as the chat route answers it, with what act without asking adds (copilot's ChatResult gains the same) and
  * the natural voice's offer (contract D.3; null when the person has none, or it is unavailable).
@@ -434,6 +447,18 @@ class ConversationSaver {
   }
 }
 
+/**
+ * Brenda points (owner request, 11 October 2026; contract E.3): her answer's first "Show me" for the page on screen, when
+ * its element is there, is pointed at straight away. Anything else waits for the person to press Show me.
+ */
+function pointHere(proposals: Proposal[] | undefined) {
+  for (const p of proposals ?? []) {
+    if (p.kind !== "open") continue;
+    const point = pointOfHref(p.href);
+    if (point && point.pathname === window.location.pathname && findShownTarget<HTMLElement>(point.key, document, (el) => getComputedStyle(el))) { pointAt(point.key); return; }
+  }
+}
+
 export function useBrendaChat({ orgSlug, keysActive = true, visible = true, onLeave, initialText = "", initial = null, onSaved, timeZone }: {
   orgSlug: string; /** Y/N answer a Confirm while true. */ keysActive?: boolean;
   /** The organisation's time zone, for the times on a follow-up's card; this browser's when not given. */ timeZone?: string;
@@ -599,6 +624,8 @@ export function useBrendaChat({ orgSlug, keysActive = true, visible = true, onLe
         const { prefer: choice, visible: shown, alive, hushed: quietNow } = voice.current;
         // In the person's natural voice when the reply offers it (9 October 2026), else (or if it fails) the computer's.
         if (alive && shown && !quietNow && (choice === "always" || (choice === "voice" && spoken))) speech.speak(reply.content, { id: speechId(reply), natural: reply.speech });
+        // Brenda points (11 October 2026): a "Show me" for the page on screen points at once when the element is there.
+        if (alive && shown) pointHere(r.proposals);
         const asks = r.proposals?.some((p) => p.kind === "confirm");
         chime(asks ? "attention" : r.actions?.length ? "success" : "reply");
         // Waiting for a yes is her alert look; otherwise a reply pleases her and something done is a celebration.
@@ -623,7 +650,18 @@ export function useBrendaChat({ orgSlug, keysActive = true, visible = true, onLe
     const mine = epoch.current;
     const mark = markIn(mine);
     try {
-      if (p.kind === "open") { onLeave?.(); router.push(p.href); return; }
+      if (p.kind === "open") {
+        // Show me (11 October 2026): on the page already showing she points at once; elsewhere it opens and she points there.
+        // The same page with another section (Settings › Brenda for a card in Your assistant) opens that section, and she
+        // points once it has arrived: the path doesn't change, so the pointer is asked directly (it waits up to 4 s).
+        const point = pointOfHref(p.href);
+        onLeave?.();
+        if (point && point.pathname === window.location.pathname) {
+          if (!findShownTarget<HTMLElement>(point.key, document, (el) => getComputedStyle(el))) router.push(p.href);
+          pointAt(point.key);
+        } else router.push(p.href);
+        return;
+      }
       if (p.kind === "todo") { await api(`/api/orgs/${orgSlug}/todos`, { method: "POST", body: { title: p.title, description: p.description, dueAt: p.dueAt, assigneeMembershipId: p.assigneeMembershipId, estimateMinutes: p.estimateMinutes } }); mark(mi, pi, "Added"); }
       else if (p.kind === "clock_in") { await api(`/api/orgs/${orgSlug}/clock/in`, { method: "POST" }); mark(mi, pi, "Clocked in"); }
       else if (p.kind === "clock_out") { await api(`/api/orgs/${orgSlug}/clock/out`, { method: "POST" }); mark(mi, pi, "Clocked out"); }
@@ -884,7 +922,12 @@ export function BrendaMessages({ chat, onLeave, size = "md" }: { chat: BrendaCha
       {messages.map((m, mi) => (
         <div key={mi} className={cn("flex", m.role === "user" ? "justify-end" : "justify-start", lg && mi >= shown.count && "rise-in")}>
           {m.role === "user" ? (
-            <p className={cn("max-w-[85%] whitespace-pre-wrap break-words rounded-2xl bg-fill-1 font-normal text-foreground", lg ? "px-4 py-2.5" : "px-3.5 py-2", type)}>{m.content}</p>
+            <div className="flex max-w-[85%] flex-col items-end gap-1">
+              <p className={cn("max-w-full whitespace-pre-wrap break-words rounded-2xl bg-fill-1 font-normal text-foreground", lg ? "px-4 py-2.5" : "px-3.5 py-2", type)}>{m.content}</p>
+              {/* Asked with a look from Brenda for Mac (11 October 2026): the app under their pointer; never the picture.
+                  Phase 2 (12 October 2026): she sees the screen the pointer is on, so the words say "your screen". */}
+              {m.look?.app ? <p className="flex min-w-0 items-center gap-1 pr-1 text-meta font-normal text-secondary"><Eye className="size-3.5 shrink-0" aria-hidden /><span className="min-w-0 truncate">{name} looked at your screen ({m.look.app})</span></p> : null}
+            </div>
           ) : (
             <div className={cn("min-w-0 flex-1 space-y-3", type)}>
               <div className={cn("flex items-start", lg ? "gap-3" : "gap-2.5")}>
@@ -941,7 +984,7 @@ export function BrendaMessages({ chat, onLeave, size = "md" }: { chat: BrendaCha
                       </span>
                       {p.done ? <span className="inline-flex shrink-0 items-center gap-1 pr-1.5 text-xs font-medium text-success"><Check className="size-3.5" aria-hidden />{p.done}</span> : (
                         <button type="button" className={btn(p.kind === "open" ? "ghost" : "secondary", "sm")} onClick={() => void act(mi, pi, p)}>
-                          {p.kind === "todo" ? <><AnimatedPlus aria-hidden />Add</> : p.kind === "start_timer" ? <><AnimatedPlay aria-hidden />Start</> : p.kind === "open" ? <>Open<AnimatedArrowUpRight aria-hidden /></> : <><AnimatedAlarmClock aria-hidden />{p.kind === "clock_in" ? "Clock in" : "Clock out"}</>}
+                          {p.kind === "todo" ? <><AnimatedPlus aria-hidden />Add</> : p.kind === "start_timer" ? <><AnimatedPlay aria-hidden />Start</> : p.kind === "open" ? (pointOfHref(p.href) ? <><MousePointerClick aria-hidden />Show me</> : <>Open<AnimatedArrowUpRight aria-hidden /></>) : <><AnimatedAlarmClock aria-hidden />{p.kind === "clock_in" ? "Clock in" : "Clock out"}</>}
                         </button>
                       )}
                     </li>

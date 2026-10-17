@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-act-expect-answer"
+description = "Enables the act_expect_answer command without any pre-configured scope."
+commands.allow = ["act_expect_answer"]
+
+[[permission]]
+identifier = "deny-act-expect-answer"
+description = "Denies the act_expect_answer command without any pre-configured scope."
+commands.deny = ["act_expect_answer"]

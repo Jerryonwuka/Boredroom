@@ -103,12 +103,12 @@ export function TaskActions({ orgSlug, task, isAssignee, canManage, members, cur
       {error && mode !== "edit" && mode !== "block" ? <Alert tone="danger">{error}</Alert> : null}
       {blockError && mode !== "block" ? <Alert tone="danger">{blockError}</Alert> : null}
       <div className="flex flex-wrap items-center justify-end gap-2">
-        {(isAssignee || canManage) && task.status !== "completed" ? <EditButton iconOnly label="Edit task" aria-haspopup="dialog" className="size-8 rounded-[10px]" onClick={() => setMode("edit")} /> : null}
+        {(isAssignee || canManage) && task.status !== "completed" ? <EditButton iconOnly label="Edit task" aria-haspopup="dialog" className="size-8 rounded-[10px]" data-brenda-target="task-edit" onClick={() => setMode("edit")} /> : null}
         {/* "Delete", as in the task list and its sheet: the same action keeps one name (the task is archived; history stays). */}
         {canManage && task.status !== "in_progress" ? <ConfirmButton size="sm" variant="ghost" disabled={pending} title="Delete this task?" description="It leaves every list. Its history is kept, and nothing can be started on it again." confirmLabel="Delete task" onConfirm={() => patch({ archive: true })}>Delete</ConfirmButton> : null}
         {isAssignee && task.status === "in_progress" ? (
           <Popover label="Mark blocked" align="end" width={320} open={mode === "block"} onOpenChange={(o) => setMode(o ? "block" : null)}
-            trigger={<Button size="sm" variant="secondary">Mark blocked</Button>}>
+            trigger={<Button size="sm" variant="secondary" data-brenda-target="task-blocked">Mark blocked</Button>}>
             {/* Cancel closes through the popover, which hands the focus back to Mark blocked (as Escape does). */}
             {(close) => (
               <form id="block-form" className="grid gap-3" onSubmit={(e) => { e.preventDefault(); void markBlocked(); }}>

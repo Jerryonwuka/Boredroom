@@ -198,7 +198,8 @@
 //
 // Notifications, "A plus the grafts" (owner decision, 9 October 2026: the approved mockup, with the design judge's spec;
 // "build exactly that"). Every notification is one card at a time, drawn by notify-cards.js (`NotifyCards`: a short
-// headline, numbers as chips, the sender's assistant's face in the mood of the news, a wash in the colour of its kind);
+// headline, numbers as chips, the sender's assistant's face in the mood of the news; its kind shows in the byline's words
+// and the pager's dot, since the coloured wash was retired on 17 October 2026);
 // this page decides when one opens, how long it stays and what the bar says, with the pure rules in notify.js (`Notify`).
 // - Nothing chains any more: closing a card never opens the next one (today's closeCard() → setTimeout(nextNotification,
 //   600) is gone). What arrives is decided once, after each poll (`arrive`): one alone opens its card; two or more together,
@@ -236,8 +237,9 @@
 // words, for this person): the chat's answer, a Confirm's result and an Undo's summary. sayAloud() then asks the speech
 // route for the audio as base64 through Rust's `api` command (`as: "base64"`; the webview holds no token and its CSP allows
 // no media URL), and natural-voice.js plays it with Web Audio while her faces follow the measured level of what plays.
-// Anything that goes wrong (an audio context that will not run, a refusal such as a daily cap or the allowance running
-// low, ElevenLabs failing, no answer within 15 s, audio that will not decode) speaks with the computer voice at once, as
+// Anything that goes wrong (an audio context that will not run, a refusal such as the ElevenLabs plan running out of
+// credits (Boredroom sets no daily cap since 12 October 2026), ElevenLabs failing, no answer within 15 s, audio that will
+// not decode) speaks with the computer voice at once, as
 // before: the notch never goes silent, and an answer that comes late is dropped. Voice off and quiet hours decide whether
 // she speaks, as before; the offer only decides how. Stop, typing to her, a new question, closing the card, the talk keys
 // and signing out stop the natural voice as they stop Rust's. The card keeps its offer (`card.speech`), so Listen says it
@@ -271,6 +273,101 @@
 // - On a call, the compact bar says so first: the live dot, the call's clock in orange digits, "On a call in #Design";
 //   a click opens the call in the browser. Teammates on a call carry a small phone mark on their faces.
 // desktop/README.md ("Calls") writes down what the notch does not do and the Rust follow-ups.
+//
+// Screen help, phase 1 (owner decisions, 11 October 2026: "start building with your recommendations"; owner request the
+// same day: "press the two buttons, ask Brenda a question about what I'm pointing at on my screen and she helps me out
+// with it"; contract C). The person holds Control+Command (or presses Look on her card), Rust takes one picture of the
+// window in front of them with their pointer ringed, and this page shows it before anything leaves the Mac:
+// - Only on the person's own press. The first time, the consent card (look.js, the proposal's exact words) opens from the
+//   Look button or the tray's "Turn on screen help…", never from the keys; the choice is kept on this Mac only (Rust's
+//   `set_screen_help`), never in Boredroom. Then the Screen Recording step, "Allow Brenda in System Settings" when it was
+//   refused, and "Screen help is on". "Turn off on my Macs" in Boredroom (the desktop state's `look.offAt`) turns it off
+//   here on the next poll, once.
+// - A look (`brenda://look`): "Looking at Figma…" with the live dot (and, from the keys with voice on, the running time
+//   and the waveform of the question being said), then the preview: the picture with the ring at the pointer, the
+//   question (the words heard, or typed, or said with Option+Space into the field), "Nothing leaves your Mac until you
+//   press Send.", Never look at Figma, Don't send and Send. Send hands the question and the chat so far to Rust's
+//   `look_send`, which sends the picture itself and wipes it whatever happens; the answer is the reply card with a
+//   "Looked at Figma" pill, every action a Confirm. Don't send, Esc, closing the card or anything replacing it lets the
+//   picture go (`look_discard`). Past chats keep the question with `look: { app }`, never the picture.
+// - The page tells Rust what it must know: the workspace's rules after every poll (`set_look_rules`: available, why not,
+//   the never-look lists) and whether a Boredroom call is live after every ring poll (`set_call_state`; Rust refuses to
+//   look during one and asks Boredroom itself when the page has not said for 15 s).
+// - Nothing here works with the Rust of before (every look command is caught, and a missing `look_status` hides every look
+//   feature), nor with a server that sends no `look`. An `open` suggestion that points inside Boredroom (`?point=`) is drawn
+//   as Show me, which opens the page in the browser, where Brenda points at the thing (contract E).
+//
+// Brenda for Mac, phase 2 (owner request and rule, 12 October 2026; contract C). The owner tried phase 1 and asked for more:
+// no preview step, the whole screen under the pointer, her face by the pointer in her colour, smarter spoken answers, and
+// an actual assistant that does things on the screen and works on files. And one rule over all of it: "Brenda cannot take
+// any action except I explicitly give an instruction … if it's a core task, Brenda should confirm, oh, do you want me to
+// do this? And then I'll say, yes". Up here that means:
+// - Instant looks (a Rust whose `look_status` answers `v: 2`): hold Control+Command, ask, let go; the words heard go
+//   straight to `look_send` and the answer streams in (`text`, then `say` sentence by sentence, the first cutting off what
+//   was being said; Rust sends her `point`s straight to the companion). "Show me the picture first" (off by default)
+//   brings back phase 1's preview. For a minute after an answer the reply card's box asks a follow-up about the same
+//   pictures (`look_follow_up`); then it is an ordinary chat box again. Voice off on this Mac, or Look pressed: the looking
+//   card takes the question typed.
+// - Nothing here starts a task. One begins only as Rust's `asking` event, after the person's own words in a look, and this
+//   page only draws "I'll … Do you want me to do this?" with No and Yes, do it (neutral: no orange, no glow). Yes is
+//   `act_answer` and nothing else; Rust accepts it only from a real press, and Boredroom records it. A typed answer goes
+//   through the same grammar (act.js) and Rust reads it again; silence for a minute is no. While she works the notch tucks
+//   to the doing bar and never takes the keyboard; a step that sends, deletes, pays or can't be undone asks again (the
+//   step card); a file job runs in the background with its clock in the bar. The chat keeps the request, the proposal and
+//   one line of what came of it (as other people's words), nothing more.
+// - The page never calls the act or look routes (Rust does; the generic `api` command refuses them), and every new command
+//   is caught: today's Rust (no `act_status`, `look_status` v1) shows exactly phase 1.
+// - Screen help settings on this Mac (the tray's "Screen help settings…", or Settings on "Screen help is on"): her by the
+//   pointer, the picture first, "Let Brenda use my Mac" and "Let Brenda work on files", the last two each behind its own
+//   consent and macOS's own permission (act.js's words).
+//
+// Brenda for Mac, phase 3 (owner report and requests, 12 October 2026; companion2 contract A, D, E, F, J). The owner asked
+// her to open an app and she said she couldn't (the switch was off, and nothing could open anything); he pressed "Turn off
+// on my Macs" in Boredroom thinking it turned things on, and she disappeared; the ring's lines were wiggly; and "Brenda is
+// meant to assist you do anything you need it to do". Up here that means:
+// - One setup card, "Let Brenda help on this Mac" (help.js's words): three ticks, three promises, Read everything, then
+//   macOS's own steps in order (Screen Recording, Accessibility, Finder, the folders), then the done card. Every way in
+//   opens it (the tray, the settings card's switches, Look while off, the old consent events, the "Set up" and "Turn it
+//   on" buttons under her replies, and Boredroom's "Set up on my Mac" at the next poll); only its own "Turn these on"
+//   turns anything on, and Rust checks that press. Today's Rust has no `help_setup`: its three commands, one after another.
+// - Never just "I can't": a reply whose request needed a switch that is off carries `enable` (the switch named, and Turn
+//   it on), and one where she was asked how to turn things on carries `setup` (Set up). The person's words are kept ten
+//   minutes, in memory only, and the done card offers Ask again: the Look button's flow with those words, so the most it
+//   can lead to is a proposal that waits for a yes. With the front desk (helpers build; review, 16 October 2026) the
+//   words go as a request that asks first, as "Check with me before every task" does: Yes and No before anything runs.
+// - Plans (this build's Rust, `LookStatus.v` 3): "Getting that ready…" while Brenda for Mac finds what the plan names,
+//   then the sentence and its lines, one question and one yes; "Part 2 of 3"; a folder job's "Reading 4 of 14"; the step
+//   card again before a Boredroom change that reaches anyone else; the done card with what she saved.
+// - Help on this Mac (the settings card) says why the companion is hidden when it is, and this page tells Boredroom which
+//   abilities are on (`PUT /screen-help/mac`, for the person alone) so Settings › Your assistant can show it.
+// - Feature-detected throughout: `lookV2()` is `v >= 2`, `lookV3()` gates the `help_*` commands, plans and the companion's
+//   reasons; every new `invoke` is caught; with no `data.look.mac.ready`, nothing is reported.
+//
+// Brenda and her helpers, build 1 (the owner's approved brief, 12 October 2026: the doc "Brenda and her helpers", all
+// nine decisions "Agree", "proceed to build"; helpers contract F, M.2, Q). Permission rule v2 the same day replaces "always
+// confirm": "when you hold the keys and clearly ask for a routine task, the request is the permission, and she does it.
+// She still asks before anything destructive, anything sent, anything that costs money, or anything sensitive." Up here:
+// - The front desk (`runFront`, `front_send`): words heard with her keys, Option+Space or typed in the notch go to Rust,
+//   which matches common commands on the Mac ("Open Figma", "Turn the volume down", "Hide everything") or asks the
+//   router, and does routine things straight away. No Yes/No: the "Doing it" strip (the compact bar) shows the orange live
+//   dot and "Opening Figma", then the green check and "Opened Figma" (with Undo when it can be undone), and tucks away.
+//   The short line is said at once when the request was spoken (`sayLine`: a clip in her natural voice kept on this Mac,
+//   else the Mac's own voice at once, `speak_now`, and the natural clip fetched for next time). Only what deletes, sends,
+//   pays or touches security asks first (the neutral ask card); "Check with me before every task" (the person's own
+//   switch, default off) brings the Yes/No back for everything. Several files: "Which one?". Questions about the screen go
+//   on as looks; quick ones answer at once, hard ones after "Let me look properly."
+// - Helpers in the background (`brenda://job`): the Files helper and the Mac operator. The strip says "Organising your
+//   Desktop: 23 of 64" with Stop; the job card shows the orange progress bar, the note and Stop; the end card offers Undo,
+//   Open and Show in Finder. A job's Trash step asks ("Move 41 screenshots to the Trash?"). The Mac operator asks once per
+//   Mac before it clicks or types ("Let Brenda click and type for you?"), then works as phase 2's tasks do, titled with
+//   what it is doing, and pauses with "Click the app you want me to work in" when Brenda is in front.
+// - Errors recover by themselves and say what still works ("Simple things like opening apps still work.").
+// - Nothing here starts anything: every new command is Rust's and checks a real press or the person's own words; the
+//   page never calls the front desk's or the jobs' routes (Rust does; `api` refuses them), only `/assistant/front/line`
+//   (a short line's natural-voice offer) and `/brenda/mac-permission` ("Check with me").
+// - Feature-detected: `lookV4()` is this build's Rust; `frontOn()` also needs Boredroom's `look.front.ready` (migration
+//   0060) and Rust's own `front.ready`. With today's binary (v2), phase 3's (v3) or before 0060, nothing new shows and
+//   every flow is as before; every new `invoke` is caught.
 
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
@@ -287,6 +384,8 @@ const WIDE_NOTICE = 440;
 const COMPACT_WIDE = 300;
 // On a call (phase 8, 8 October 2026): the live dot, the clock and "On a call in #Design" need a little more.
 const COMPACT_CALL = 340;
+// The Doing it strip with Stop or Undo on it (helpers contract F.1): wide enough for "Screenshot saved to your Desktop".
+const COMPACT_STRIP = 380;
 const POLL_MS = 20_000;
 const PRESENCE_MS = 10 * 60_000;
 const CLOSE_AFTER_MS = 8_000;
@@ -326,7 +425,7 @@ let gaze = null;            // the caret in the ask box while the person types t
 // The boxes the person types in: the ask box, and a card's one-line note (`fnote`: a follow-up's note, phase 4; a reply to
 // a passed-on message or a reason for declining a request, phase 6, 8 October 2026). Typing in either keeps the notch
 // focused, cuts her off and has the face on the card read along.
-const TYPING = new Set(["ask", "fnote"]);
+const TYPING = new Set(["ask", "fnote", "lq", "aans", "dwq"]);
 let viewKey = "";           // which view is showing; content animates in only when it changes
 let wasOpen = false;
 let tucked = false, tuckTimer = null, alwaysVisible = false;
@@ -343,6 +442,31 @@ let talkWaiting = false, talkWaitTimer = null, talkLast = 0;
 // `listening` (the talk keys are down), 0 once they came up; she never speaks over an open microphone.
 const natural = { gen: 0, pending: false, stop: null, on: false };
 let micAt = 0;
+// Screen help (owner decisions, 11 October 2026; the header says what it does). `lookStatus`: Rust's LookStatus, or null
+// when this Rust has no look commands (every look feature is then hidden); `lookOffAt`: the "Turn off on my Macs" already
+// obeyed, so it turns off once; `lookGone`: looks let go here, whose late events are dropped (and their picture let go).
+let lookStatus = null;
+let lookOffAt = null;
+const lookGone = new Set();
+// When the desktop state last arrived (review, 11 October 2026): Rust trusts the rules it brings for 120 s, so a press after
+// that, offline, says "I can't reach Boredroom right now" instead of blaming the workspace.
+let lookSyncedAt = 0;
+const LOOK_RULES_MS = 120_000;
+// Phase 2 (owner rule, 12 October 2026; the header says what it does). `actStatus`: Rust's ActStatus, or null on a Rust
+// without act commands (every act feature hidden). `task`: the one task the notch is showing (Rust's TaskView, its phase,
+// step and note, whether its request was spoken), or null. `held`: the last look's pictures that Rust keeps for a minute
+// ({ lookId, until }), for a follow-up. `stream`: the look being answered now (its id, the sentences said, the words
+// streamed in). `companionLook`: the look last told to the companion. `expecting`: the Confirm Rust listens for.
+let actStatus = null;
+let task = null;
+let held = null, heldTimer = null;
+let stream = null;
+let companionLook = "";
+let expecting = null;
+let lastHeard = null; // the words of the last answer Rust heard ({ text, spoken }), for a stream it starts itself
+// The look that finished last ({ spoken, at }): Rust's `asking` can land just after its answer (integration, 12 October
+// 2026), and the plan and "Do you want me to do this?" must still be said under that look's speaking rule.
+let lastLook = null;
 // 15 s (review, 9 October 2026: the natural voice's latency on a slow link): over a phone's hotspot the speech route
 // took more than 8 s to answer, so the notch gave up on audio that was coming. Rust's `api` waits 20 s; her face shows
 // she is getting ready meanwhile, and Stop still ends it at once (the answer is kept for Listen again, never played).
@@ -493,6 +617,12 @@ const ICONS = {
   list: `<path d="M3 12h.01"/><path d="M3 18h.01"/><path d="M3 6h.01"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M8 6h13"/>`,
   users: `<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>`,
   calendar: `<path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/>`,
+  // Screen help (owner decisions, 11 October 2026): Look (lucide Eye) and Show me (lucide MousePointerClick, as the web's).
+  eye: `<path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/>`,
+  pointer: `<path d="M14 4.1 12 6"/><path d="m5.1 8-2.9-.8"/><path d="m6 12-1.9 2"/><path d="M7.2 2.2 8 5.1"/><path d="M9.037 9.69a.498.498 0 0 1 .653-.653l11 4.5a.5.5 0 0 1-.074.949l-4.349 1.041a1 1 0 0 0-.74.739l-1.04 4.35a.5.5 0 0 1-.95.074z"/>`,
+  // Phase 3 (12 October 2026): a plan's lines, by step (lucide Folder and FileText).
+  folder: `<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>`,
+  doc: `<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/>`,
 };
 /** An icon; its class (`ic-<name>`) picks the small move it makes when its button is hovered or focused (style.css). */
 const icon = (name) => `<svg class="ic ic-${name}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name]}</svg>`;
@@ -550,7 +680,7 @@ function fit() {
   island.classList.toggle("tucked", tuck);
   // A card drawn by notify-cards.js (`.nc`, the incoming call's too) is 440 px, whatever row sits above it (phase 8: the
   // ring's strip on a card that must stay).
-  const wide = open ? (el.querySelector(":scope > .nc") ? WIDE_NOTICE : WIDE) : barWide === "call" ? COMPACT_CALL : barWide ? COMPACT_WIDE : COMPACT.w;
+  const wide = open ? (el.querySelector(":scope > .nc") ? WIDE_NOTICE : WIDE) : barWide === "call" ? COMPACT_CALL : barWide === "strip" ? COMPACT_STRIP : barWide ? COMPACT_WIDE : COMPACT.w;
   el.style.width = `${wide}px`;
   const w = open ? wide : tuck ? TUCK.w : wide + (hovering ? PEEK : 0);
   const h = open ? Math.ceil(el.offsetHeight) : tuck ? TUCK.h : COMPACT.h;
@@ -574,6 +704,7 @@ function report(msg) {
 /** A card that cannot be drawn goes, so the island never stays open around nothing (owner decision, 9 October 2026). */
 function dropCard(why) {
   report(why);
+  letLookGo(null); // a look's picture goes with its card (screen help, 11 October 2026)
   if (card?.pager) leavePager();
   card = null;
   cancelHold();
@@ -603,6 +734,53 @@ function moodOf() {
   if (!config?.signedIn || !card) return data?.timer?.state === "running" ? { tone: "blue" } : {};
   // Someone is calling (phase 8, 8 October 2026): she is alert, with the accent glow, until a press is answered.
   if (card.kind === "call") return card.result ? {} : { mood: "alert", tone: "accent" };
+  // Screen help (owner decisions, 11 October 2026; contract C.2): her eyes turn to the window while she looks (the accent
+  // glow: she is looking now), alert over the picture waiting for Send, thinking while she answers, sad when she can't;
+  // the steps on this Mac carry the amber of something left to the person; the consent and on and off stay calm.
+  // Doing things on the Mac (owner rule, 12 October 2026; contract C.3): asking is neutral (alert, no glow, never orange);
+  // working thinks; a pause carries the amber of something left to the person; done pleases her; a failure or a refusal
+  // is sad; stopped, a no and no answer stay calm; the Mac's permission steps carry the amber, as the look's do.
+  if (card.kind === "act") {
+    if (card.phase === "asking" || card.phase === "step_ask") return { mood: "alert" };
+    if (card.phase === "confirming" || card.phase === "doing" || card.phase === "working") return { mood: "think", tone: "violet" };
+    if (card.phase === "paused") return { mood: "alert", tone: "warn" };
+    if (card.phase === "done") return { mood: "happy pleased", tone: "ok" };
+    if (card.phase === "refused" || (card.phase === "stopped" && card.failed)) return { mood: "sad" };
+    if (card.phase === "scoping") return { mood: "think" };
+    return {};
+  }
+  // Brenda and her helpers (helpers contract F.2): asking is neutral (alert, no glow, never orange); a refusal is sad; done
+  // and the consent please her; a running job thinks; a paused one carries the amber of something left to the person.
+  if (card.kind === "front") {
+    if (card.phase === "ask" || card.phase === "choose") return { mood: "alert" };
+    if (card.phase === "refused") return { mood: "sad" };
+    if (card.phase === "done" || card.phase === "consent") return { mood: "happy pleased" };
+    return {};
+  }
+  if (card.kind === "job") {
+    if (card.phase === "ask") return { mood: "alert" };
+    if (card.phase === "running") return job?.phase === "paused" ? { mood: "alert", tone: "warn" } : { mood: "think", tone: "violet" };
+    if (card.phase === "done") return { mood: "happy pleased", tone: "ok" };
+    if (card.phase === "failed") return { mood: "sad" };
+    return {};
+  }
+  // The setup card (phase 3, companion2 A.1): calm; macOS's steps carry the amber of something left to the person, as the
+  // look's and the act's did; done pleases her.
+  if (card.kind === "help") {
+    if (card.phase === "setup") return {};
+    if (card.phase === "done") return { mood: "happy pleased", tone: "ok" };
+    return { mood: "alert", tone: "warn" };
+  }
+  if (card.kind === "look") {
+    if (card.phase === "missed") return { mood: "sad" };
+    if (card.phase === "looking") return { mood: "look", tone: "accent" };
+    if (card.phase === "preview") return { mood: "alert", tone: "accent" };
+    if (card.phase === "sending") return { mood: "think", tone: "violet" };
+    if (card.phase === "refused") return card.reason === "error" || card.reason === "send" ? { mood: "sad", tone: "bad" } : { mood: "sad" };
+    if (card.phase === "permission" || card.phase === "denied") return { mood: "alert", tone: "warn" };
+    if (card.phase === "never") return { mood: "happy" };
+    return {};
+  }
   if (card.kind === "notification") {
     const t = card.n.type;
     // A missed call (phase 8) is sad news, without a warning glow.
@@ -709,6 +887,7 @@ function scheduleClose() {
  * hover-open); opening a tucked ask again ends its "waiting on you" (owner decision, 9 October 2026).
  */
 function openCard(c) {
+  letLookGo(c);
   if (!c.pager) leavePager();
   if (waitingAsk && c.n?.id && c.n.id === waitingAsk.nid) waitingAsk = null;
   c.openedAt ??= Date.now();
@@ -720,9 +899,12 @@ function openCard(c) {
 // It never opens the next notification any more (owner decision, 9 October 2026: "never auto-chain"; the old
 // setTimeout(nextNotification, 600) is gone): what is unread stays in the bar. The pager keeps its place.
 function closeCard() {
+  letLookGo(null);
   hush(); leavePager(); clearTimeout(leaveTimer); cancelHold(); card = null; error = null; restartCountdown(0); render();
   // A call still ringing in the strip of the card that closed opens its own card now (phase 8, 8 October 2026).
   if (stripRing && ringNow()) queueMicrotask(() => { callsSig = ""; applyCalls(); });
+  // "Set up on my Mac" pressed in Boredroom while a card had to stay opens now, while it is still fresh (phase 3).
+  if (setupPending) queueMicrotask(openPendingSetup);
 }
 
 // Brenda opens the moment the pointer reaches her and folds away as soon as it leaves (owner decision, 5 October 2026;
@@ -741,7 +923,10 @@ function setHover(on) {
   island.classList.toggle("hover", on);
   clearTimeout(leaveTimer);
   pagerLeft = !on && !!card?.pager;
-  if (on && !card && config?.signedIn && data) { tucked = false; openCard({ kind: "home", origin: "hover" }); }
+  // A task under way (phase 2): the pointer on the bar opens its card (doing or working) instead of the day card.
+  // Brenda and her helpers (helpers contract F.1): a Files job's strip opens the job's card; the front desk's strip holds
+  // (its done line stays while the pointer rests on it, and its Stop and Undo are on it).
+  if (on && !card && config?.signedIn && data) { tucked = false; if (front && ["routing", "doing", "done"].includes(front.phase)) render(); else if (!(fileJobLive() && openJobCard("hover")) && !(task && !ASKING.has(task.phase) && openTaskCard("hover"))) openCard({ kind: "home", origin: "hover" }); }
   else if (on && card) {
     card.touched = true; // Enter may press its main action from now on (review, 9 October 2026)
     pauseHold();
@@ -785,7 +970,9 @@ function leaveIsland() {
 function idle() {
   // Never while a call rings or the person is on one (phase 8, 8 October 2026): the bar says so.
   if (callsShowing()) return false;
-  return !!config?.signedIn && !card && !alwaysVisible && !data?.timer && !waitingAsk && !inbox().some((n) => nq.held.has(n.id) || !nq.known.has(n.id));
+  // Never while a task is under way (phase 2): the doing or working bar stays in view.
+  // Nor while the front desk or a Files job works (helpers contract F.1): the strip stays in view.
+  return !!config?.signedIn && !card && !task && !front && !fileJobLive() && !alwaysVisible && !data?.timer && !waitingAsk && !inbox().some((n) => nq.held.has(n.id) || !nq.known.has(n.id));
 }
 function updateTuck() {
   clearTimeout(tuckTimer);
@@ -825,22 +1012,27 @@ function render() {
   el.classList.toggle("compact", signed && !card);
   const key = !signed ? `link:${!!link}:${editingServer}` : card ? `${card.kind}:${card.phase ?? ""}:${card.n?.id ?? card.w?.id ?? card.u?.id ?? card.ring?.id ?? ""}` : "compact";
   // A follow-up's note keeps its words (they live on the card), its focus and its caret when the card is drawn again.
-  const noting = document.activeElement?.id === "fnote" ? { from: document.activeElement.selectionStart, to: document.activeElement.selectionEnd } : null;
+  // So does a look's question (screen help, 11 October 2026: the words heard arrive while the person may be typing).
+  const notingId = ["fnote", "lq"].includes(document.activeElement?.id) ? document.activeElement.id : null;
+  const noting = notingId ? { from: document.activeElement.selectionStart, to: document.activeElement.selectionEnd } : null;
   // The pager keeps the keyboard on the island across its steps (← → Enter Esc; owner decision, 9 October 2026).
   const keepKeys = !!card?.pager && document.activeElement === el;
   el.innerHTML = html;
-  if (noting) { const n = document.getElementById("fnote"); if (n && !n.disabled) { n.focus(); try { n.setSelectionRange(noting.from, noting.to); } catch { /* not a text field any more */ } } }
+  if (noting) { const n = document.getElementById(notingId); if (n && !n.disabled) { n.focus(); try { n.setSelectionRange(noting.from, noting.to); } catch { /* not a text field any more */ } } }
   if (keepKeys) el.focus({ preventScroll: true });
   el.setAttribute("aria-label", me().name); // the notch is named after the person's assistant (Brenda while signed out)
   const m = moodOf();
   island.dataset.tone = m.tone ?? "";
+  // A task's question (phase 2): its grey hairline runs on under the pointer, as Rust's minute does.
+  // So does the front desk's and a job's question (helpers contract F.2).
+  island.classList.toggle("asking", (card?.kind === "act" && (card.phase === "asking" || card.phase === "step_ask" || card.phase === "paused"))
+    || (card?.kind === "front" && (card.phase === "ask" || card.phase === "choose")) || (card?.kind === "job" && card.phase === "ask"));
   paintWash();
   if (key !== viewKey) {
     viewKey = key;
     drawnAt = Date.now();
     el.classList.remove("enter", "steady", "step"); island.classList.remove("step"); void el.offsetWidth;
-    // A pager step slides the way the person went and its wash fades again (owner decision, 9 October 2026); anything
-    // else blurs in as before.
+    // A pager step slides the way the person went (owner decision, 9 October 2026); anything else blurs in as before.
     if (stepDir && card?.pager) { el.style.setProperty("--dx", `${stepDir > 0 ? 8 : -8}px`); el.classList.add("step"); island.classList.add("step"); }
     else el.classList.add("enter");
   } else { el.classList.remove("step"); el.classList.add("enter", "steady"); } // the same view drawn again (busy, a poll, a sent reply): no second blur-in (review, 8 October 2026)
@@ -854,15 +1046,18 @@ function render() {
   updateTuck();
   armUndoClock();
   syncRingSound();
+  syncExpect(); // a look's Confirm can be answered on her keys while it shows (phase 2, contract B.6.6)
+  scheduleMacReport(); // what is on here, to Boredroom for the person alone, when it changed (phase 3, companion2 A.6)
+  markScrollers();
 }
 
 /**
- * The island's wash and countdown colour follow the open notification's kind (owner decision, 9 October 2026: "A plus
- * the grafts"; style.css draws them from `data-family` and, for the summary, `--mix`). Brenda's own cards and the bar
- * carry none.
+ * The island's `data-family` and, for the summary, `--mix` follow the open notification's kind (owner decision, 9 October
+ * 2026: "A plus the grafts"). They are still set, but since 17 October 2026 (design system v4) style.css draws nothing
+ * from them: the coloured wash is retired and the countdown is neutral. Brenda's own cards and the bar carry none.
  */
 function paintWash() {
-  // The incoming call waits on the person: the needs wash (phase 8, 8 October 2026).
+  // The incoming call waits on the person: the needs family (phase 8, 8 October 2026).
   const family = card?.kind === "call" ? "needs" : isNotice(card) ? familyOf(card) : null;
   if (family) island.dataset.family = family; else delete island.dataset.family;
   let mix = "";
@@ -911,7 +1106,13 @@ function compactView() {
     } catch (err) { report(`bar (call): ${err?.message ?? err}`); lead = trail = label = text = ""; wide = false; }
   }
   const onCall = !!text;
+  // Brenda and her helpers (helpers contract F.1): the Doing it strip while the front desk or a Files job works, then a
+  // task under way (phase 2, 12 October 2026; contract A.7.1, A.8.3): the doing or working bar, before the timer.
+  const fb = onCall ? null : frontBar();
+  const tb = onCall || fb ? null : taskBar();
   if (onCall) wide = true;
+  else if (fb) { text = fb.text; label = fb.label; act = fb.act; trail = fb.trail; wide = true; }
+  else if (tb) { text = tb.text; label = tb.label; act = "act-show"; wide = true; }
   else if (t) text = `<span class="clock ${t.state === "running" ? "live" : ""}" id="tclock">${hms(elapsed())}</span>&ensp;${esc(t.taskTitle)}`;
   else if ((count || waitingAsk) && cardsReady()) {
     try {
@@ -931,7 +1132,7 @@ function compactView() {
     // During quiet hours (phase 7a) the bar says until when, when it has nothing else to say.
     else text = quietNow() ? esc(quietWords()) : "All clear";
   }
-  barWide = onCall ? "call" : wide;
+  barWide = onCall ? "call" : fb?.trail ? "strip" : wide;
   const counted = /class="count"/.test(trail);
   const badge = count && !counted && !/nc-stack/.test(trail) && act !== "call-show" ? `<span class="count">${total}</span>` : "";
   const working = wide ? [] : (Array.isArray(data?.team) ? data.team : []).filter((p) => p && (p.state === "running" || p.state === "paused")).slice(0, 3);
@@ -1015,7 +1216,7 @@ function cardView() {
       ${waitingView()}
       ${teamView()}
       ${askBox()}
-      <div class="actions">${talkButton()}<button class="btn ghost" data-act="close">Later</button><button class="btn" data-act="open-href" data-href="/app/${esc(config.workspaceSlug)}/tasks">Tasks</button>${first && !data.timer && data.clock ? `<button class="btn primary accent" data-act="start" data-id="${esc(first.id)}" ${busy ? "disabled" : ""}>Start ${esc(firstTitle.length > 22 ? `${firstTitle.slice(0, 21)}…` : firstTitle)}</button>` : ""}</div>`;
+      <div class="actions">${talkButton()}${lookButton()}<button class="btn ghost" data-act="close">Later</button><button class="btn" data-act="open-href" data-href="/app/${esc(config.workspaceSlug)}/tasks">Tasks</button>${first && !data.timer && data.clock ? `<button class="btn primary accent" data-act="start" data-id="${esc(first.id)}" ${busy ? "disabled" : ""}>Start ${esc(firstTitle.length > 22 ? `${firstTitle.slice(0, 21)}…` : firstTitle)}</button>` : ""}</div>`;
   }
   // Before the first poll has answered, or when the state carries no briefing: a small day card, never an empty island
   // (owner decision, 9 October 2026).
@@ -1032,12 +1233,18 @@ function cardView() {
       return `${inboxStrip()}<div class="row fade">${face({ ...moodOf(), dot: data.me?.presence })}<div class="grow"><p class="title">${esc(t.taskTitle)}</p><p class="sub"><span class="status"><span class="d ${esc(t.state)}"></span>${state}</span>${t.estimateMinutes ? `, estimated ${dur(t.estimateMinutes)}` : ""}</p></div><span class="big ${live ? "live" : "dim"}" id="tclock" role="timer">${hms(elapsed())}</span>${t.taskVersion ? `<button class="ring-btn" data-act="progress" title="Add 10% progress" aria-label="Add 10% progress">${ring(t.progress)}</button>` : ""}</div>
         ${share !== null ? `<div class="est fade" aria-hidden="true"><i id="testimate" style="transform:scaleX(${share.toFixed(3)})"></i></div>` : ""}
         ${askBox()}
-        <div class="actions">${talkButton()}<button class="btn ghost" data-act="briefing">Today</button>${live ? `<button class="btn" data-act="pause" ${busy ? "disabled" : ""}>${icon("pause")}Pause</button>` : `<button class="btn primary accent" data-act="resume" ${busy ? "disabled" : ""}>${icon("play")}Resume</button>`}<button class="btn danger" data-act="stop" ${busy ? "disabled" : ""}>${icon("stop")}Stop</button></div>`;
+        <div class="actions">${talkButton()}${lookButton()}<button class="btn ghost" data-act="briefing">Today</button>${live ? `<button class="btn" data-act="pause" ${busy ? "disabled" : ""}>${icon("pause")}Pause</button>` : `<button class="btn primary accent" data-act="resume" ${busy ? "disabled" : ""}>${icon("play")}Resume</button>`}<button class="btn danger" data-act="stop" ${busy ? "disabled" : ""}>${icon("stop")}Stop</button></div>`;
     }
     card = { kind: "briefing", origin: card.origin, openedAt: card.openedAt };
     return cardView();
   }
   if (card.kind === "voice") return voiceView();
+  if (card.kind === "look") return lookView();
+  if (card.kind === "act") return actView();
+  if (card.kind === "help") return helpView();
+  // Brenda and her helpers (helpers contract F.2): the front desk's cards and a job's.
+  if (card.kind === "front") return frontView();
+  if (card.kind === "job") return jobView();
   if (card.kind === "drop") return dropView();
   if (card.kind === "followup_ask") return followUpAskView();
   if (card.kind === "followup_answer") return followUpAnswerView();
@@ -1062,7 +1269,7 @@ function dayCardView() {
   const first = firstName(data?.me?.displayName ?? config?.displayName);
   return `${inboxStrip()}<div class="row fade">${face({ ...moodOf(), dot: data?.me?.presence })}<div class="grow"><p class="title">${greet}${first ? `, ${esc(first)}` : ""}.</p>${data ? "" : `<p class="sub">Getting your day from Boredroom…</p>`}</div></div>
     ${askBox()}
-    <div class="actions">${talkButton()}<button class="btn ghost" data-act="close">Later</button></div>`;
+    <div class="actions">${talkButton()}${lookButton()}<button class="btn ghost" data-act="close">Later</button></div>`;
 }
 
 // ---- notifications: one at a time, the summary and the pager -----------------------------------------------------
@@ -1146,7 +1353,8 @@ function waitsOf(c) {
   if (c.kind === "loop" || c.kind === "standup") return c.phase === "open";
   return c.kind === "notification" && LOCAL_ASK.has(c.n?.type);
 }
-/** The wash's and the countdown's colour: the card's family, "mix" for the summary, "good" for All caught up. */
+/** The island's `data-family`: the card's family, "mix" for the summary, "good" for All caught up (nothing draws it since
+ * 17 October 2026; the countdown is neutral). */
 function familyOf(c) {
   if (c.kind === "summary") return "mix";
   if (c.kind === "caught_up") return c.left ? "needs" : "good";
@@ -1726,7 +1934,7 @@ async function pollCalls() {
   clearTimeout(callsTimer); callsTimer = null;
   if (!config?.signedIn || !config.workspaceSlug) return;
   const run = callsRun;
-  let next;
+  let next, known = true;
   try {
     const r = await call("GET", org(`/calls/now?ring=${ringsAloud() ? 1 : 0}`));
     if (run !== callsRun || !config?.signedIn) return;
@@ -1735,8 +1943,13 @@ async function pollCalls() {
   } catch (err) {
     if (run !== callsRun || !config?.signedIn) return;
     if (err?.status === 404) calls = null;
+    known = err?.status === 404;
     next = Notify.ringRetryMs(err?.status);
   }
+  // Screen help (contract B.5): Rust never looks during a Boredroom call. An answer (or a server from before phase 8,
+  // which has no calls) says at once whether one is live; after any other failure the page says nothing, and Rust asks
+  // Boredroom itself once the last word is 15 s old (and refuses to look if it cannot tell).
+  if (known) tellCallState();
   // What the server no longer rings is forgotten here too.
   const live = new Set((calls?.ringing ?? []).map((x) => x.id));
   for (const s of [ringDone, ringSilent, ringBarred]) for (const id of [...s]) if (!live.has(id)) s.delete(id);
@@ -1750,6 +1963,9 @@ function stopCalls() {
   callsRun++;
   clearTimeout(callsTimer); callsTimer = null;
   calls = null; ringDone.clear(); ringSilent.clear(); ringBarred.clear();
+  // Screen help (contract B.5): Rust is told nothing here. start() stops the poll before its first answer too, and a
+  // "not live" said then would vouch for 15 s for a call nobody had checked (integration review, 11 October 2026: a page
+  // reloaded during a call, then a failed first poll, could look). Signing out clears Rust's own word (look::forget).
   stripRing = null; stripNote = null; clearTimeout(stripNoteTimer); callsSig = "";
   clearInterval(ringSoundTimer); ringSoundTimer = null;
 }
@@ -2077,6 +2293,97 @@ el.addEventListener("click", async (e) => {
     if (act === "call-back") return callBack(target.dataset.to, target.dataset.readId);
     if (act === "call-show") { const r = ringNow(); return r ? showRing(r) : render(); }
     if (act === "call-open") { const path = boredroomPath(target.dataset.href); if (path) await invoke("open_in_browser", { path }); return; }
+    // Screen help (owner decisions, 11 October 2026; contract C.2): Look on her card, the consent's and the Mac's steps,
+    // the preview's Send, Don't send and Never look at, OK on a refusal, and Show me on a reply that points inside
+    // Boredroom (it opens the page in the browser, where she points; no browser opens on its own).
+    if (act === "look") return lookPressed();
+    // "Use my screen" under a chat reply (review, 12 October 2026): the person's press starts a look carrying their words.
+    if (act === "use-screen") { screenAsk = card?.screenAsk?.words ? { words: card.screenAsk.words, at: Date.now() } : null; return lookPressed(); }
+    if (act === "look-turn-on") return lookTurnOn();
+    if (act === "look-not-now" || act === "look-ok") return closeCard();
+    if (act === "look-continue") return lookAskPermission();
+    if (act === "look-open-settings") return void invoke("look_open_privacy_settings").catch(() => {});
+    if (act === "look-check") return lookCheckAgain();
+    if (act === "look-send") return sendLook();
+    if (act === "look-discard") return closeCard();
+    if (act === "look-never") return neverLookHere();
+    if (act === "look-show") {
+      const path = boredroomPath(target.dataset.href);
+      if (path && Look.points(path)) await invoke("open_in_browser", { path });
+      return closeCard();
+    }
+    // Phase 2 (owner rule, 12 October 2026; contract C.3, C.4): the act cards' presses. Yes is `act_answer` and nothing else
+    // (Rust takes it only from a real press); Stop is always allowed; the opt-ins open their consent before anything.
+    if (act === "act-yes") return answerTask("yes", "button");
+    if (act === "act-no") return answerTask("no", "button");
+    if (act === "act-stop") return void invoke("act_stop", { taskId: task?.id ?? null }).catch(() => {});
+    if (act === "act-continue") return void invoke("act_continue", { taskId: task?.id ?? null }).catch((err) => { error = err?.message ?? String(err); render(); });
+    if (act === "act-reveal") return void invoke("act_reveal", { taskId: target.dataset.id }).catch(() => {});
+    if (act === "act-open-output") return void invoke("act_open_output", { taskId: target.dataset.id }).catch(() => {});
+    if (act === "act-ok" || act === "act-not-now") return closeCard();
+    if (act === "act-show") return openTaskCard("user") || render();
+    // Phase 3 (companion2 A.4, D, M.7): a refusal because a switch is off offers Turn it on (the setup card, never the
+    // switch); "Show the 14" lists a folder job's files (names that stay on this Mac); a plan that could not be got ready
+    // opens Files and Folders in System Settings.
+    if (act === "act-turn-on") return openHelp({ focus: target.dataset.which === "files" ? "files" : "mac" });
+    if (act === "act-names") { if (card?.kind === "act") { card.showNames = !card.showNames; render(); } return; }
+    if (act === "act-privacy") return helpOpenPrivacy("files");
+    if (act === "look-switch") return settingsSwitch(target.dataset.key);
+    if (act === "look-settings") return openLook({ phase: "settings" });
+    if (act === "look-off-here") return lookOffHere();
+    if (act === "look-keep") return lookTurnOn();
+    if (act === "look-read") return openLook({ phase: "consent" });
+    // The setup card and macOS's steps (phase 3, companion2 A.1; help.js's words). Only Turn these on, Continue and the
+    // other step's presses reach Rust, which checks each is the person's own; everything else here only draws.
+    if (act === "help-tick") { if (card?.kind === "help" && card.phase === "setup") { card.rows = Help.toggleTick(card.rows, target.dataset.which); card.note = null; render(); } return; }
+    if (act === "help-read") { if (card?.kind === "help") { card.read = !card.read; render(); } return; }
+    if (act === "help-not-now") { setupPending = null; return closeCard(); }
+    if (act === "help-turn-on") return helpTurnOn();
+    if (act === "help-go") return helpGo();
+    if (act === "help-skip") return helpNext();
+    if (act === "help-check") return helpCheck();
+    if (act === "help-open") return helpOpenPrivacy(target.dataset.pane);
+    if (act === "help-again") return askAgain();
+    if (act === "help-step") return openHelp({ step: target.dataset.step, back: "settings" });
+    // Under her reply (companion2 A.4): Turn it on / Allow it, Set up, and Set up {name} on this Mac. Each opens the setup
+    // card with the person's last words kept for Ask again; none turns anything on.
+    if (act === "help-enable") { const w = target.dataset.which; return openHelp(w === "accessibility" ? { step: "accessibility", request: card?.heard } : { focus: w, request: card?.heard }); }
+    if (act === "help-setup") return openHelp({ focus: target.dataset.which === "all" ? null : target.dataset.which, request: card?.heard });
+    if (act === "help-screen") return openHelp({ focus: "look", request: card?.screenAsk?.words ?? card?.heard });
+    // Brenda and her helpers (helpers contract F, Q.2): the strip's Stop and Undo, the ask card's No and verb, the chooser,
+    // what was found, a refusal's way out, the click consent, a job's Stop, answer, Undo, Open and Show in Finder, the
+    // recent jobs, and the settings card's new rows. Each is a press Rust checks; nothing here starts anything.
+    if (act === "front-show") return fileJobLive() ? void openJobCard("user") : openCard({ kind: "home", origin: "user" });
+    // Stop while Claude-busy's own retry waits: it doesn't go (review, 16 October 2026).
+    if (act === "front-stop" && front?.retrying) { clearTimeout(frontTimer); front = null; return render(); }
+    if (act === "front-stop") return void invoke("front_stop").catch(() => {});
+    if (act === "front-undo") return frontUndo();
+    if (act === "front-yes") return frontAnswer("yes");
+    if (act === "front-no") return frontAnswer("no");
+    if (act === "front-choose") return frontChoose(Number(target.dataset.i));
+    if (act === "front-none") return frontChoose(null);
+    if (act === "front-more") return frontMore(Number(target.dataset.i), target.dataset.reveal === "1");
+    if (act === "front-reveal") return frontMore(null, true);
+    if (act === "front-others") { if (card?.kind === "front") { card.showOthers = !card.showOthers; card.sticky = true; render(); } return; }
+    if (act === "front-ok" || act === "job-ok") return closeCard();
+    if (act === "front-retry") return frontRetry();
+    if (act === "job-folder") return void invoke("job_show_folder", { jobId: card?.jobId ?? null }).catch(() => {});
+    if (act === "front-enable") return frontEnable(target.dataset.which);
+    if (act === "consent-yes") return clickConsent(true);
+    if (act === "consent-no") return clickConsent(false);
+    if (act === "click-off") return clickConsent(false);
+    if (act === "job-show") return void openJobCard("user");
+    if (act === "job-stop") return void invoke("job_stop", { jobId: card?.jobId ?? job?.id ?? null }).catch(() => {});
+    if (act === "job-yes") return jobAnswer("yes");
+    if (act === "job-no") return jobAnswer("no");
+    if (act === "job-undo") return jobUndo(target.dataset.id);
+    if (act === "job-open") return void invoke("job_open_output", { jobId: card?.jobId ?? null, index: Number(target.dataset.i) }).catch(() => {});
+    if (act === "job-reveal") return void invoke("job_reveal_output", { jobId: card?.jobId ?? null, index: Number(target.dataset.i) }).catch(() => {});
+    if (act === "job-settings") return helpOpenPrivacy("files");
+    if (act === "jobs-recent") return openRecentJobs();
+    if (act === "folder-add") return filesFolder(true);
+    if (act === "folder-remove") return filesFolder(false, target.dataset.name);
+    if (act === "drop-work") { if (card?.kind === "drop") { card.working = true; card.sticky = true; render(); document.getElementById("dwq")?.focus(); } return; }
     if (act === "read") {
       const id = target.dataset.id;
       await call("PATCH", org(`/notifications/${encodeURIComponent(id)}`));
@@ -2137,11 +2444,21 @@ async function signedOut() {
   stopNatural(); // her natural voice too (contract G.2): Rust's sign_out stops only its own
   forgetNatural(); // and nothing of the last person's spoken replies stays
   config = await invoke("sign_out"); // which also stops her; its `spoken` ends her talking face
+  lookStatus = null; lookOffAt = null; // Rust's sign_out turns screen help off: consent is the signed-in person's (contract B.11)
+  forgetPhase2(); // and the opt-ins to act and work on files, with any task (phase 2)
   data = null; card = null; link = null; talk = []; chat = newChat(); cached = null;
   talkWaiting = false; clearTimeout(talkWaitTimer); clearTimeout(closeTimer);
   forgetNotices();
   applyQuiet(); // no one's quiet hours while signed out
   render();
+}
+/** Signed out (phase 2): no task, no held pictures, no stream; the next person's Rust state is asked again on start. */
+function forgetPhase2() {
+  actStatus = null; task = null; held = null; clearTimeout(heldTimer); stream = null; companionLook = ""; expecting = null; lastHeard = null; lastLook = null;
+  // Phase 3: nothing of the last person's words or setup stays (setupSeen stays: it is only which press was acted on).
+  keptRequest = null; setupPending = null; clearTimeout(macReport.timer); Object.assign(macReport, { timer: null, sig: "", pending: "", at: 0 });
+  // Brenda and her helpers: no request, no job and none of the last person's short-line clips stay.
+  front = null; job = null; clearTimeout(frontTimer); lineCache.clear();
 }
 /** Signed out: none of the last person's natural-voice audio stays, nor any still on its way (fix review, 9 October 2026). */
 function forgetNatural() {
@@ -2176,6 +2493,8 @@ async function refresh() {
     if (readHere.size) { const sent = new Set((Array.isArray(data.notifications) ? data.notifications : []).map((n) => n?.id)); for (const id of [...readHere]) if (!sent.has(id)) readHere.delete(id); }
     keepCached();
     applyQuiet();
+    lookSyncedAt = Date.now();
+    syncLook(); // screen help: the workspace's rules to Rust, and "Turn off on my Macs" obeyed (contract C.2)
     // The pointer reached the bar before there was a day to show (the empty island, 9 October 2026): it opens now.
     if (first && hovering && !card && config?.signedIn) { tucked = false; openCard({ kind: "home", origin: "hover" }); }
     else if (!card) render();
@@ -2222,8 +2541,23 @@ async function presence() {
   try { const r = await call("POST", org("/brenda/presence")); if (r.clockedIn) await refresh(); } catch { /* not allowed or offline */ }
 }
 
+/** The notch was reloaded during a task (phase 2): the bar or the question comes back from Rust's ActStatus. */
+function restoreTask() {
+  const t = actStatus?.task;
+  if (!t || !lookV2()) return;
+  task = { id: t.id, kind: t.kind, plan: t.plan, question: Act.QUESTION, phase: t.phase, step: t.step, note: "", startedAt: t.startedAt ?? Date.now(), escAt: 0, spoken: false, file: null, output: null, steps: [], lines: null, names: [] };
+  if (ASKING.has(t.phase) || t.phase === "scoping") openAct({ phase: t.phase, sticky: true });
+}
+
 async function start() {
   loadCached();
+  // Screen help (contract C.2): what this Mac's Rust says about it; null (an older Rust) hides every look feature.
+  lookStatus = await invoke("look_status").then(lookStatusOf).catch(() => null);
+  // Phase 2 (contract C.3): what this Mac's Rust says about doing things and working on files; null (today's Rust) hides it.
+  actStatus = await invoke("act_status").then(Act.statusOf).catch(() => null);
+  restoreTask();
+  // Brenda and her helpers (helpers contract P.2): a job still running comes back to the strip after a reload.
+  if (lookV4()) invoke("job_list").then(restoreJobs).catch(() => {});
   render();
   await refresh();
   // The ring poll (phase 8, contract F.1): after the first desktop state, then at its own pace.
@@ -2245,10 +2579,10 @@ async function start() {
 const mic = icon("mic");
 
 /** Typing to Brenda: the same chat as talking, without the spoken reply. The send button lights up orange once there are words. */
-function askBox(placeholder) {
+function askBox(placeholder, follow = false) {
   if (data && !data.brendaEnabled) return "";
   const name = me().name;
-  return `<form class="ask fade" data-ask><input class="field" id="ask" name="q" maxlength="4000" placeholder="${esc(placeholder ?? `Ask ${name}…`)}" autocomplete="off" spellcheck="true" aria-label="${esc(`Message ${name}`)}"><button class="btn accent icon-send" aria-label="Send" title="Send">${icon("send")}</button></form>`;
+  return `<form class="ask fade" data-ask${follow ? " data-follow" : ""}><input class="field" id="ask" name="q" maxlength="4000" placeholder="${esc(placeholder ?? `Ask ${name}…`)}" autocomplete="off" spellcheck="true" aria-label="${esc(`Message ${name}`)}"><button class="btn accent icon-send" aria-label="Send" title="Send">${icon("send")}</button></form>`;
 }
 
 el.addEventListener("submit", (e) => {
@@ -2258,10 +2592,21 @@ el.addEventListener("submit", (e) => {
   if (e.target.closest("[data-item]")) { e.preventDefault(); return card?.declining ? decideItem("decline") : sendItemReply(); }
   // In an open ask's reason box (phase 7b) it declines.
   if (e.target.closest("[data-loop]")) { e.preventDefault(); return decideLoop("decline"); }
+  // In a look's question (screen help, 11 October 2026) it sends, once Send may be pressed.
+  if (e.target.closest("[data-look]")) { e.preventDefault(); return sendLook(); }
+  // Phase 2 (12 October 2026): the asking card's box answers (the grammar reads it, then Rust again); a dropped file's box
+  // asks her to work on it.
+  if (e.target.closest("[data-answer]")) { e.preventDefault(); return answerTyped(); }
+  if (e.target.closest("[data-dropwork]")) { e.preventDefault(); return dropWork(); }
   const form = e.target.closest("[data-ask]");
   if (!form) return;
   e.preventDefault();
   const q = form.q.value.trim();
+  // A follow-up about the same screen while Rust still holds its pictures (contract A.12); after that, ordinary chat.
+  if (q && form.hasAttribute("data-follow") && followUpOpen()) return void runLook({ via: "follow", question: q, spoken: false, app: card.looked });
+  // Brenda and her helpers (helpers contract A.7, Q.2.3): typed in the notch, a request goes to the front desk (questions
+  // come back as ordinary chat, `lane: "chat"`).
+  if (q && frontOn()) return void runFront({ lookId: null, text: q, spoken: false });
   if (q) ask(q, { spoken: false });
 });
 // While the person is typing, the card stays open even if the pointer leaves it. (A follow-up's ask is sticky anyway; its
@@ -2271,7 +2616,9 @@ el.addEventListener("focusin", (e) => {
   // 9 October 2026); focus leaving for another app is a leave (below).
   if (isNotice(card)) { pauseHold(); clearTimeout(leaveTimer); }
   if (card && e.target !== el) card.touched = true;
-  if (e.target.id === "fnote") return void invoke("focus_notch").catch(() => {});
+  // Never while a screen task runs (phase 2, contract C.3): the keyboard stays with the app she works in.
+  if (screenBusy()) return;
+  if (["fnote", "lq", "aans", "dwq"].includes(e.target.id)) return void invoke("focus_notch").catch(() => {});
   if (e.target.id === "ask" && card) { card.sticky = true; clearTimeout(closeTimer); invoke("focus_notch").catch(() => {}); }
 });
 el.addEventListener("focusout", (e) => { if (e.target.id === "ask" && card && !e.target.value.trim() && !(card.proposals ?? []).some((p) => p.kind === "confirm")) { card.sticky = false; scheduleClose(); } });
@@ -2279,12 +2626,27 @@ el.addEventListener("focusout", (e) => { if (e.target.id === "ask" && card && !e
 // does (owner decision, 9 October 2026). Asked a moment later, so a card drawn again can take the focus back first.
 el.addEventListener("focusout", () => { if (isNotice(card)) setTimeout(() => { if (card && !hovering && !focusInside()) leaveIsland(); }, 0); });
 window.addEventListener("blur", () => { if (isNotice(card)) setTimeout(() => { if (card && !hovering && !focusInside()) leaveIsland(); }, 0); });
-el.addEventListener("pointerdown", (e) => { if (TYPING.has(e.target.id)) invoke("focus_notch").catch(() => {}); });
+el.addEventListener("pointerdown", (e) => { if (TYPING.has(e.target.id) && !screenBusy()) invoke("focus_notch").catch(() => {}); });
+/**
+ * More below (integration, 12 October 2026): a list that scrolls inside a card (the setup card's middle, Help on this
+ * Mac's five switches, a folder plan's names) fades at its foot while there is more under the fold, and stops fading once
+ * scrolled to the end. Without it the fifth switch ("Show me the picture first") and the setup card's promises and "Read
+ * everything" sat below a fold with no sign of it (macOS shows its scroll bars only while scrolling).
+ */
+function scrollers() { return ".hs-mid, .sw-list, .act-names, .act-mid"; } // a function, so a render before this line can use it
+function markMore(node) {
+  if (node.scrollHeight - node.scrollTop - node.clientHeight > 2) node.setAttribute("data-more", "");
+  else node.removeAttribute("data-more");
+}
+function markScrollers() { for (const n of el.querySelectorAll(scrollers())) markMore(n); }
+el.addEventListener("scroll", (e) => { if (e.target instanceof Element && e.target.matches(scrollers())) markMore(e.target); }, true);
 // Typing to her cuts her off (owner decision, 7 October 2026: her voice), as on the web; so does typing a follow-up's note,
 // which is kept on the card as it is typed.
 el.addEventListener("input", (e) => {
   if (TYPING.has(e.target.id) && aloud()) hush();
   if (e.target.id === "fnote" && noteCard()) { card.note = e.target.value; showCount(); if (card.kind === "item") showSend(); syncHold(); }
+  // A look's question is kept on the card as it is typed; Send lights up once there are words.
+  if (e.target.id === "lq" && card?.kind === "look") { card.question = e.target.value; showLookSend(); }
 });
 // Keys while the notch has focus: Esc folds the card away; on a Confirm, Y confirms and N declines (not while typing).
 // Notifications (owner decision, 9 October 2026: "A plus the grafts"): Esc folds the pager and keeps its place; ← and →
@@ -2300,6 +2662,16 @@ window.addEventListener("keydown", (e) => {
     if (card.messages) { card.messages = false; render(); } else syncRingSound();
     return;
   }
+  // A task's cards (phase 2, contract A.1, C.3): Esc in the notch on a question is No; on the doing card or a pause, Stop.
+  // Y and N are never used for tasks (a stray key would be an answer).
+  if (e.key === "Escape" && card?.kind === "act" && task) {
+    if (card.phase === "asking" || card.phase === "step_ask") { e.preventDefault(); return void answerTask("no", "button"); }
+    if (card.phase === "doing" || card.phase === "paused" || card.phase === "scoping") { e.preventDefault(); return void invoke("act_stop", { taskId: task.id }).catch(() => {}); }
+  }
+  // The front desk's and a job's questions (helpers contract P.4): Esc is No, and None of these on the chooser.
+  if (e.key === "Escape" && card?.kind === "front" && card.phase === "ask") { e.preventDefault(); return void frontAnswer("no"); }
+  if (e.key === "Escape" && card?.kind === "front" && card.phase === "choose") { e.preventDefault(); return void frontChoose(null); }
+  if (e.key === "Escape" && card?.kind === "job" && card.phase === "ask") { e.preventDefault(); return void jobAnswer("no"); }
   if (e.key === "Escape" && card) { if (TYPING.has(e.target.id)) e.target.blur(); return card.pager && pager ? foldPager() : closeCard(); }
   const field = isField(e.target);
   if ((e.key === "ArrowRight" || e.key === "ArrowLeft") && card?.pager && pager && !field && !busy && !e.metaKey && !e.altKey && !e.ctrlKey) {
@@ -2425,7 +2797,9 @@ function talkEnded() {
 // measures them for her faces. Every failure speaks with the computer voice at once: the notch never goes silent.
 
 /** The talk keys are down, or the listening card is open: the microphone is (about to be) open. */
-const micOpen = () => (micAt > 0 && Date.now() - micAt < 1_500) || (card?.kind === "voice" && (card.phase === "listening" || card.phase === "transcribing"));
+// A look's own recording counts too (screen help, contract C.2: the looking card while its microphone is open).
+const micOpen = () => (micAt > 0 && Date.now() - micAt < 1_500) || (card?.kind === "voice" && (card.phase === "listening" || card.phase === "transcribing"))
+  || (card?.kind === "look" && card.phase === "looking" && !!card.listening && !card.released);
 /**
  * The same words, as the server cleans them for speech (src/lib/natural-voices.ts `speechText`: control, zero-width and
  * direction characters removed, whitespace collapsed, trimmed).
@@ -2459,13 +2833,13 @@ function stopNatural() {
   if (stop) stop();
   // Hushed while the audio was on its way: nothing plays, so the warmed context goes back to sleep (review, 9 October 2026).
   else if (waiting) NaturalVoice.release();
-  if (natural.on) { natural.on = false; queueMicrotask(talkEnded); }
+  if (natural.on) { natural.on = false; queueMicrotask(talkEnded); companionSpeaking(false); }
 }
 
 /**
  * Asks Boredroom for `offer`'s audio and plays it (contract G.2). Before asking, the audio context must be running (so a
  * webview that will not play never spends the workspace's characters); no answer within 15 s, a refusal (VOICE_UNAVAILABLE:
- * a daily cap, the allowance running low, ElevenLabs failing; nothing else is told apart up here), audio that will not
+ * the ElevenLabs plan out of credits, ElevenLabs failing; nothing else is told apart up here), audio that will not
  * decode or a context that will not run: the computer voice says `text` at once. A context that is only slow to wake
  * (a Bluetooth output) costs that one utterance; one that truly will not run turns the natural voice off for the rest of
  * the run (NaturalVoice decides, contract G.3; review, 9 October 2026). Whatever stops it before it plays lets the context
@@ -2514,9 +2888,9 @@ async function sayNaturally(text, offer, gen) {
   if (micOpen()) { natural.pending = false; talkWaiting = false; clearTimeout(talkWaitTimer); NaturalVoice.release(); return showTalking(); }
   natural.stop = NaturalVoice.play({
     audioBase64: r.audio,
-    onStart: () => { if (gen !== natural.gen) return; natural.pending = false; natural.on = true; talkStarted(); },
+    onStart: () => { if (gen !== natural.gen) return; natural.pending = false; natural.on = true; talkStarted(); companionSpeaking(true); },
     onLevel: (level) => { if (gen === natural.gen && natural.on) talkLevel(level); },
-    onEnd: () => { if (gen !== natural.gen) return; natural.stop = null; natural.on = false; talkEnded(); },
+    onEnd: () => { if (gen !== natural.gen) return; natural.stop = null; natural.on = false; talkEnded(); companionSpeaking(false); },
     onFail: fallback,
   });
 }
@@ -2709,14 +3083,24 @@ function voiceView() {
     const note = c.msg?.note ? `<p class="cap note">${esc(c.msg.note)}</p>` : "";
     // The header: what was asked and, while she acts without asking, the mode's pill beside it (the reply keeps the
     // card's full width under them).
-    const pill = modePill();
+    // An answer to a look (screen help, 11 October 2026) carries a neutral "Looked at Figma" pill beside the question.
+    const pill = `${c.looked ? `<span class="pill looked">${icon("eye")}${esc(Look.words({ app: c.looked }).looked)}</span>` : ""}${modePill()}`;
     const said = `<p class="said">“${esc(c.heard)}”</p>`;
-    return `<div class="row fade top">${face(moodOf())}<div class="grow">${pill ? `<div class="said-row">${said}${pill}</div>` : said}<div class="reply">${md(c.reply)}</div>${note}</div></div>
+    // Never just "I can't" (phase 3, companion2 A.4): the switch that is off and Turn it on, or Set up, or (asked in chat
+    // for something on this Mac while seeing the screen is off) Set up {name} on this Mac. It is the card's one orange
+    // button: Show me turns white beside it. None of them turns anything on; each opens the setup card.
+    const offer = helpOfferOf(c);
+    // The fixed line names the switch, unless her reply already did (review, 12 October 2026: the same sentence twice).
+    const offerLine = offer?.line && !(offer.names ?? []).some((n) => String(c.reply ?? "").toLowerCase().includes(n.toLowerCase())) ? `<p class="cap help-line fade">${esc(offer.line)}</p>` : "";
+    const screenBtn = c.screenAsk && !offer ? `<button class="btn ghost" data-act="close">Not now</button><button class="btn primary" data-act="use-screen" title="${esc(`${me().name} sees the screen this card is on, then asks before doing anything`)}">${icon("eye")}Use my screen</button>` : "";
+    const offerBtn = offer ? `<button class="btn primary accent" data-act="${offer.act}" data-which="${esc(offer.which)}"${offer.title ? ` title="${esc(offer.title)}"` : ""}>${esc(offer.button)}</button>` : "";
+    return `<div class="row fade top">${face(moodOf())}<div class="grow">${pill ? `<div class="said-row">${said}${pill}</div>` : said}<div class="reply">${md(c.reply)}</div>${note}${offerLine}</div></div>
       ${c.actions?.length ? `<ul class="list fade">${shownLines(c.actions, confirms.length ? 2 : 4).map(({ a, i }) => doneLine(a, i)).join("")}</ul>` : ""}
       ${offers.length ? `<ul class="list fade">${offers.map(({ p, i }) => `<li><span class="t">${offerLabel(p)}</span>${p.done ? `<span class="k ok end">${esc(p.done)}</span>` : `<button class="btn" data-act="offer" data-i="${i}" ${busy ? "disabled" : ""}>${icon(OFFER[p.kind].icon)}${OFFER[p.kind].label}</button>`}</li>`).join("")}</ul>` : ""}
       ${confirms.map((p, i) => confirmView(p, i, confirms.findIndex(prefWord) === i)).join("")}
-      ${!confirms.length ? askBox("Ask a follow-up…") : ""}
-      ${!confirms.length ? `<div class="actions">${listenButton()}${opens.map((p) => `<button class="btn" data-act="open-href" data-href="${esc(p.href)}">${esc(p.label)}${icon("open")}</button>`).join("")}<button class="btn ghost" data-act="open-chat" title="Carry on with this chat on ${esc(`${me().name}'s`)} page in Boredroom">Open chat</button><button class="btn ghost" data-act="close">Done</button></div>` : ""}`;
+      ${confirms.length && offer ? `<div class="actions">${offerBtn}</div>` : ""}
+      ${!confirms.length && followUpOpen() ? `<p class="cap fade">${esc(Look.words().v2.followUp)}</p>${askBox(Look.words().v2.followPlaceholder, true)}` : !confirms.length ? askBox("Ask a follow-up…") : ""}
+      ${!confirms.length ? `<div class="actions">${listenButton()}${c.screenAsk || offer ? "" : lookButton()}${opens.map((p, i, list) => openButton(p, i, list, !!offer)).join("")}<button class="btn ghost" data-act="open-chat" title="Carry on with this chat on ${esc(`${me().name}'s`)} page in Boredroom">Open chat</button>${screenBtn || `<button class="btn ghost" data-act="close">${offer ? "Not now" : "Done"}</button>`}${offerBtn}</div>` : ""}`;
   }
   if (c.phase === "off") {
     return `<div class="row fade">${face(moodOf())}<div class="grow"><p class="title">Talk to ${esc(me().name)}</p><p class="sub">Hold <kbd>${esc(voice.shortcut)}</kbd>, say what you need, let go. I only listen while you hold the keys, and your voice is turned into text on this computer. The first time, I download a 148 MB speech model.</p></div></div>
@@ -2749,6 +3133,9 @@ const prefWord = (p) => (typeof p?.tool === "string" && Object.hasOwn(PREF_WORDS
 
 /** One Confirm (`i`: its place on the card, `standout`: it is the card's one orange button). */
 function confirmView(p, i, standout) {
+  // From a look on a v2 Mac (owner rule, 12 October 2026; contract A.6.5, 0b.6): the same Confirm, asked as "Do you want me
+  // to do this?" with No and Yes, which her keys can answer too (Rust hears it; the press below is still the Confirm path).
+  if (card?.looked && lookV2() && !prefWord(p)) return askedConfirmView(p, i);
   const pref = prefWord(p);
   const why = whyOf(p);
   // A preference goes to nobody but the person: "Only you", when the server's readback does not say it already.
@@ -2761,41 +3148,31 @@ function confirmView(p, i, standout) {
   return `<div class="confirm${pref ? " pref" : ""} fade">${head}${rb}${detail}<div class="actions">${i === 0 ? listenButton() : ""}<button class="btn ghost" data-act="not-now" data-token="${esc(p.token)}">Not now${i === 0 ? " <kbd>N</kbd>" : ""}</button><button class="btn primary${pref && standout ? " accent" : ""}" data-act="confirm" data-token="${esc(p.token)}" ${described ? `aria-describedby="${described}"` : ""} ${busy ? "disabled" : ""}>${icon("check")}${pref ?? "Confirm"}${i === 0 ? " <kbd>Y</kbd>" : ""}</button></div></div>`;
 }
 
+/** A look's Confirm on a v2 Mac: the summary, "Do you want me to do this?", No and Yes (Y and N on the first, as before). */
+function askedConfirmView(p, i) {
+  const why = whyOf(p);
+  const rb = readbackView(p, `rb${i}`);
+  const detail = p.detail ? `<div class="detail" tabindex="0" aria-label="The full message">${esc(p.detail)}</div>` : "";
+  return `<div class="confirm fade"><p class="sub">${icon("shield")}<span>${esc(p.summary)}${why ? `<span class="why">${esc(why)}</span>` : ""}</span></p><p class="sub act-q">${esc(Act.QUESTION)}</p>${rb}${detail}<div class="actions">${i === 0 ? listenButton() : ""}<button class="btn ghost" data-act="not-now" data-token="${esc(p.token)}">No${i === 0 ? " <kbd>N</kbd>" : ""}</button><button class="btn primary" data-act="confirm" data-token="${esc(p.token)}" ${rb ? `aria-describedby="rb${i}"` : ""} ${busy ? "disabled" : ""}>${icon("check")}Yes${i === 0 ? " <kbd>Y</kbd>" : ""}</button></div></div>`;
+}
+
 /**
  * The text (spoken or typed) goes to Brenda's chat with the last few turns. The answer is read aloud as the person chose
  * (`speakPref`; by default a spoken question gets a spoken reply), and Listen on the card reads it on demand.
  */
-async function ask(text, { spoken = true } = {}) {
+async function ask(text, { spoken = true, sent = false } = {}) {
   hush(); // a new question cuts her off
   if (Date.now() - talkAt > TALK_MEMORY_MS) { talk = []; chat = newChat(); }
   talk.push({ role: "user", content: text });
   talkAt = Date.now();
-  if (!spoken) Sound.play("send");
+  if (!spoken && !sent) Sound.play("send"); // `sent`: the front desk played it already (helpers contract A.7)
   openCard({ kind: "voice", phase: "thinking", heard: text, sticky: true });
   try {
     if (data && !data.brendaEnabled) throw new Error("Brenda isn't part of your workspace's plan yet.");
     // Only the words go back to her, and whether an answer of hers read other people's words (acting without asking,
     // 8 October 2026: Boredroom then still asks before acting in this chat).
     const r = await call("POST", org("/assistant/chat"), { messages: talk.slice(-12).map(({ role, content, tainted }) => ({ role, content, ...(role === "assistant" ? { tainted: tainted !== false } : {}) })) });
-    // Kept whole (what she did and offered too) for Past chats.
-    const msg = { role: "assistant", content: r.reply, actions: r.actions ?? [], proposals: r.proposals ?? [], engine: r.engine, note: r.note ?? null, tainted: !!r.tainted };
-    keepAct(r.act); // the mode as Boredroom read it for this answer: the pill follows it at once
-    talk.push(msg);
-    const needsYes = msg.proposals.some((p) => p.kind === "confirm");
-    // What she says: the server's speakable version (B3 in the phase 2 contract; "" when nothing in it can be said), or
-    // the plain words from an older server.
-    const spokenText = typeof r.spoken === "string" ? r.spoken.trim() : plain(r.reply);
-    // A line with Undo keeps the card open longer (review, 8 October 2026: it folded away with its Undo in about 16 s).
-    const closeAfter = (r.actions ?? []).some(undoable) ? UNDO_CLOSE_MS : REPLY_CLOSE_MS;
-    // Her natural voice (contract G.2): the answer's `speech` offer rides on the card beside the words it says, never in
-    // the kept answer (Past chats keep no token).
-    const speech = offerOf(r);
-    openCard({ kind: "voice", phase: "reply", heard: text, spoken, spokenText, speech, reply: r.reply, actions: r.actions, proposals: msg.proposals.map((p, at) => ({ ...p, at })), msg, sticky: needsYes, closeAfter });
-    Sound.play(needsYes ? "attention" : r.actions?.length ? "success" : "reply");
-    if (speaksFor(spoken)) sayAloud(spokenText, speech);
-    if (!spoken) document.getElementById("ask")?.focus(); // typed: carry straight on with a follow-up
-    if (r.actions?.length) refresh();
-    saveChat();
+    showChatReply(text, spoken, r);
   } catch (err) {
     talk.pop();
     // While she acts without asking, a lost answer may still have done something (review, 8 October 2026): say so, so
@@ -2804,6 +3181,37 @@ async function ask(text, { spoken = true } = {}) {
     openCard({ kind: "voice", phase: "error", title: `${me().name} couldn't answer`, message, closeAfter: REPLY_CLOSE_MS });
     Sound.play("error");
   }
+}
+
+/**
+ * A chat answer on the reply card: kept for Past chats, read aloud under the person's rule, its Undo, Confirms and offers
+ * drawn (the ask box's, and the front desk's Boredroom lane: helpers contract Q.2.4). `text` is already in the talk.
+ */
+function showChatReply(text, spoken, r) {
+  // Kept whole (what she did and offered too) for Past chats.
+  const msg = { role: "assistant", content: r.reply, actions: r.actions ?? [], proposals: r.proposals ?? [], engine: r.engine, note: r.note ?? null, tainted: !!r.tainted };
+  keepAct(r.act); // the mode as Boredroom read it for this answer: the pill follows it at once
+  talk.push(msg);
+  const needsYes = msg.proposals.some((p) => p.kind === "confirm");
+  // What she says: the server's speakable version (B3 in the phase 2 contract; "" when nothing in it can be said), or
+  // the plain words from an older server.
+  const spokenText = typeof r.spoken === "string" ? r.spoken.trim() : plain(r.reply);
+  // A line with Undo keeps the card open longer (review, 8 October 2026: it folded away with its Undo in about 16 s).
+  const closeAfter = (r.actions ?? []).some(undoable) ? UNDO_CLOSE_MS : REPLY_CLOSE_MS;
+  // Her natural voice (contract G.2): the answer's `speech` offer rides on the card beside the words it says, never in
+  // the kept answer (Past chats keep no token).
+  const speech = offerOf(r);
+  // She was asked for something on this Mac (review, 12 October 2026): "Use my screen" starts a look with the same words,
+  // only from the person's press, and only where looks of this kind exist (a newer Rust).
+  const screenAsk = r.screen === true && lookV2() && lookOffered() ? { words: text } : null;
+  // Phase 3 (companion2 A.4): Set up and Turn it on under the reply (only where there is a setup card to open).
+  const help = helpOffersOf(r);
+  openCard({ kind: "voice", phase: "reply", heard: text, spoken, spokenText, speech, reply: r.reply, actions: r.actions, proposals: msg.proposals.map((p, at) => ({ ...p, at })), msg, sticky: needsYes || !!screenAsk || !!help.setup || !!help.enable, closeAfter, screenAsk, ...help });
+  Sound.play(needsYes ? "attention" : r.actions?.length ? "success" : "reply");
+  if (speaksFor(spoken)) sayAloud(spokenText, speech);
+  if (!spoken) document.getElementById("ask")?.focus(); // typed: carry straight on with a follow-up
+  if (r.actions?.length) refresh();
+  saveChat();
 }
 
 /**
@@ -3083,6 +3491,8 @@ function forSaving(messages) {
     ...(m.proposals?.length ? { proposals: m.proposals.map((p) => (p.kind === "confirm" ? { kind: p.kind, summary: p.summary, tool: p.tool, ...(p.detail ? { detail: p.detail } : {}), ...(p.done ? { done: p.done } : {}), ...(whyOf(p) ? { why: whyOf(p) } : {}), ...keptReadback(p) } : p)) } : {}),
     ...(m.engine ? { engine: m.engine } : {}),
     ...(m.note ? { note: m.note } : {}),
+    // A question asked with a look keeps which app she looked at (screen help, contract C.5), never the picture.
+    ...(m.role === "user" && typeof m.look?.app === "string" && m.look.app.trim() ? { look: { app: clip(m.look.app.trim(), 80) } } : {}),
     // False included (review, 8 October 2026): a reply with no flag counts as having read other people's words.
     ...(m.role === "assistant" ? { tainted: m.tainted !== false } : {}),
   }));
@@ -3326,6 +3736,12 @@ listen("brenda://voice", ({ payload: e }) => {
     return;
   }
   if (!config?.signedIn) return;
+  // A look's own recording (screen help, contract B.10): its events carry `lookId` and belong to the look's card, never to
+  // the talk keys' (Option+Space never carries one).
+  // An answer's recording (phase 2, contract B.10): her keys or Option+Space while a question waits. Its words are Rust's
+  // to read (the act's `heard`): never a question to her, never a note.
+  if (e.answer === true || e.forConfirm || e.taskId) return answerVoice(e);
+  if (e.lookId) return lookVoice(e);
   // Voice switched off for the workspace (phase 7c, 8–9 October 2026): a press of the talk keys says so once and does
   // nothing else (no listening card, no words into a note, nothing asked).
   if (voiceOff() && TALK_PHASES.includes(e.phase)) return voiceRefused(e);
@@ -3352,7 +3768,8 @@ listen("brenda://voice", ({ payload: e }) => {
     openCard({ kind: "voice", phase: "transcribing", sticky: true, startedAt, endedAt: Date.now() });
     return Wave.process();
   }
-  if (e.phase === "heard") return ask(e.text);
+  // Brenda and her helpers (helpers contract Q.2.3): Option+Space's words go to the front desk on this build's Rust.
+  if (e.phase === "heard") return frontOn() ? void runFront({ lookId: null, text: e.text, spoken: true }) : ask(e.text);
   if (e.phase === "too-short") return card?.kind === "voice" ? closeCard() : undefined;
   if (e.phase === "limit") return;
   if (e.phase === "off") return openCard({ kind: "voice", phase: "off", sticky: true });
@@ -3397,6 +3814,2396 @@ listen("brenda://voice-status", ({ payload }) => {
   if (!voice.enabled) { card.phase = "off"; card.sticky = false; render(); scheduleClose(); }
 });
 
+// ---- screen help: Brenda looks when you press -----------------------------------------------------------------------
+// Owner decisions, 11 October 2026 ("start building with your recommendations"; the owner's request the same day: "press
+// the two buttons, ask Brenda a question about what I'm pointing at on my screen and she helps me out with it"; contract
+// C, the header says what the person sees). Rust owns the keys, the picture and sending it (look.rs); this page shows each
+// step and decides nothing about what may be looked at. The words are look.js's (`Look`). The picture reaches this page
+// only as the small preview Rust drew (a data URL, checked by Look.safeImage), lives on the card until Send, Don't send
+// or the card goes, and is never saved: Past chats keep `look: { app }` on the question, nothing more.
+
+/** Rust's LookStatus as this page keeps it, or null when it is not one (an older Rust answers nothing). */
+function lookStatusOf(s) {
+  if (!s || typeof s !== "object" || typeof s.supported !== "boolean") return null;
+  return {
+    supported: s.supported,
+    unsupportedReason: s.unsupportedReason === "macos" || s.unsupportedReason === "platform" ? s.unsupportedReason : null,
+    permission: s.permission === "granted" || s.permission === "denied" ? s.permission : "unknown",
+    on: s.on === true,
+    onAt: typeof s.onAt === "number" && Number.isFinite(s.onAt) ? s.onAt : null,
+    keys: Look.keysOf(s),
+    available: s.available === true,
+    // Phase 2 (contract B.11): v2 looks at once and streams; the consent the person gave on this Mac (1: phase 1's, so the
+    // update card shows before the next look); "Show me the picture first" (off by default); her by the pointer (on).
+    // Phase 3 (companion2 J.0): this build's Rust answers 3; any later one counts as at least that.
+    v: Number.isInteger(s.v) && s.v >= 1 && s.v <= 99 ? s.v : 1,
+    consent: Number.isInteger(s.consent) ? s.consent : s.on === true ? 1 : 0,
+    preview: s.preview === true,
+    companion: s.companion !== false,
+    keysLabel: typeof s.keysLabel === "string" && s.keysLabel.length <= 12 ? s.keysLabel : "⌃ ⌘",
+    // Phase 3 (companion2 F): whether the companion shows now and why not (this build's Rust; null from today's).
+    companionShown: typeof s.companionShown === "boolean" ? s.companionShown : null,
+    companionWhy: typeof s.companionWhy === "string" && Help.WHYS.includes(s.companionWhy) ? s.companionWhy : null,
+    // Brenda and her helpers (helpers contract P.6): this build's Rust (v4) says whether its front desk is ready, the
+    // person's "Check with me" as it was last told, the one-time click consent, the folders it works in, the live job.
+    front: frontStatusOf(s.front),
+  };
+}
+/** `LookStatus.front` (v4) as this page keeps it, or null (an older Rust sends none). */
+function frontStatusOf(f) {
+  if (!f || typeof f !== "object") return null;
+  const folders = (Array.isArray(f.folders) ? f.folders : []).filter((x) => !!x && typeof x === "object" && typeof x.name === "string" && !!x.name).slice(0, 13)
+    .map((x) => ({ source: x.source === "added" ? "added" : "named", name: x.name.slice(0, 1024), title: typeof x.title === "string" ? x.title.slice(0, 80) : x.name.slice(0, 80), state: ["granted", "denied", "unknown"].includes(x.state) ? x.state : "unknown" }));
+  return { ready: f.ready === true, checkEvery: f.checkEvery === true, clickConsent: f.clickConsent === true, folders, jobLive: typeof f.jobLive === "string" && f.jobLive ? f.jobLive : null };
+}
+/** A Rust that looks at once and streams the answer (phase 2, contract C.0); otherwise phase 1's flow, exactly. */
+const lookV2 = () => (lookStatus?.v ?? 1) >= 2;
+/** This build's Rust (companion2 J.0: `LookStatus.v` 3): `help_*` commands, plans and the companion's reasons. */
+const lookV3 = () => (lookStatus?.v ?? 1) >= 3;
+/** This build's Rust (helpers contract F.0: `LookStatus.v` 4): the front desk's and the jobs' commands and events. */
+const lookV4 = () => (lookStatus?.v ?? 1) >= 4;
+/** The front desk is on: a v4 Rust that was told `front.ready`, and Boredroom has migration 0060 (Front.frontOn). */
+const frontOn = () => lookV4() && Front.frontOn(lookStatus, data);
+/** The look keys' words ("Control+Command"), as Rust names them. */
+const lookKeys = () => Look.keysOf(lookStatus);
+/** Screen help is offered here: this Rust has it (macOS 14 or later) and Boredroom says it is available to this person. */
+const lookOffered = () => !!lookStatus?.supported && data?.look?.available === true;
+/** The cards that wait on the person (they stay while the pointer leaves); the rest fold on their own. */
+const LOOK_STAYS = new Set(["consent", "permission", "denied", "looking", "preview", "sending", "consent-update", "settings"]);
+/** When the last `brenda://look` event arrived (Look's own failure then gives way to what Rust said). */
+let lookEventAt = 0;
+
+/** Look on her card (contract C.3): a ghost eye beside the talk control, only where screen help is offered. */
+function lookButton() {
+  if (!lookOffered()) return "";
+  const w = Look.words({ name: me().name, keys: lookKeys(), v: lookV2() ? 2 : 1 });
+  return `<button class="btn ghost icon look-btn" data-act="look" aria-label="${esc(w.button.label)}" title="${esc(w.button.title)}">${icon("eye")}</button>`;
+}
+
+/**
+ * An `open` suggestion on a reply. One that points inside Boredroom (`?point=`, contract C.6) is Show me, the card's one
+ * orange button (the first such one; the ask box's Send takes the orange while it holds words); the rest open as before.
+ */
+function openButton(p, i, list, plain = false) {
+  const path = boredroomPath(p.href);
+  if (path && Look.points(path)) {
+    // White when the card has a setup offer, its one orange button (phase 3, companion2 J.3).
+    const first = !plain && list.findIndex((x) => Look.points(boredroomPath(x.href) ?? "")) === i;
+    return `<button class="btn${first ? " accent" : ""}" data-act="look-show" data-href="${esc(path)}" title="${esc(p.label)}">${icon("pointer")}${esc(Look.words().show)}</button>`;
+  }
+  return `<button class="btn" data-act="open-href" data-href="${esc(p.href)}">${esc(p.label)}${icon("open")}</button>`;
+}
+
+/** Whether a Boredroom call is live, to Rust (contract B.5); an older Rust leaves it unread. */
+function tellCallState() {
+  invoke("set_call_state", { live: Look.liveOf(calls, ringsNow()) }).catch(() => {});
+}
+
+/**
+ * After every poll (contract C.2): the workspace's rules to Rust (available or why not, the workspace's and the person's
+ * never-look lists; Rust trusts them for 120 s), and "Turn off on my Macs" pressed in Boredroom after it was turned on
+ * here turns it off, once, with the off card.
+ */
+function syncLook() {
+  const l = data?.look;
+  scheduleMacReport(); // phase 3 (companion2 A.6): every ten minutes, and when something changed
+  if (!l || typeof l !== "object" || !lookStatus?.supported) return;
+  const neverLook = (Array.isArray(l.neverLook) ? l.neverLook : [])
+    .filter((r) => !!r && typeof r.name === "string" && !!r.name.trim() && (r.source === "workspace" || r.source === "you"))
+    .slice(0, 100)
+    .map((r) => ({ name: r.name.slice(0, 255), bundleId: typeof r.bundleId === "string" && r.bundleId ? r.bundleId.slice(0, 255) : null, source: r.source }));
+  // Phase 2 (contract C.3): whether on-screen actions and file work are available here, and which looks this server takes
+  // (today's Rust leaves both unread). Brenda and her helpers (helpers contract F.0, Q.2.1): whether Boredroom has the
+  // front desk (0060) and the person's "Check with me before every task" (today's and phase 3's Rust leave it unread).
+  const front = l.front && typeof l.front === "object" ? { ready: l.front.ready === true, checkEvery: l.front.checkEvery === true } : null;
+  invoke("set_look_rules", { available: l.available === true, reason: typeof l.reason === "string" ? l.reason : null, neverLook, actAvailable: l.act?.available === true, serverV: Number.isInteger(l.v) ? l.v : 1, ...(front ? { front } : {}) })
+    .then((s) => { const st = lookStatusOf(s); if (st) lookStatus = st; })
+    .catch(() => {});
+  if (lookStatus.on && typeof l.offAt === "string" && l.offAt !== lookOffAt && Look.shouldTurnOff(lookStatus.onAt, l.offAt, offsetMs)) {
+    lookOffAt = l.offAt;
+    invoke("set_screen_help", { enabled: false })
+      .then((s) => { lookStatus = lookStatusOf(s) ?? { ...lookStatus, on: false }; showLookOff("settings"); })
+      .catch(() => {});
+  }
+  // Phase 3 (owner request, 12 October 2026; companion2 0b.3, A.5): "Set up on my Mac" pressed in Boredroom opens the
+  // setup card here once, within 15 minutes of the press; it turns nothing on (the card asks). A card that must stay (a
+  // question, a task) keeps the screen, and the setup opens when it closes. Boredroom hears that this Mac opened it.
+  else if (Help.setupFresh(l.setupAt, loadSetupSeen(), serverNow())) {
+    keepSetupSeen(l.setupAt);
+    if (card?.kind === "help") { /* already open */ }
+    else if (card && stickyNow()) setupPending = { at: l.setupAt };
+    else openHelp({});
+    void reportMacState({ setupSeen: l.setupAt });
+  }
+  syncCompanionLook();
+}
+
+/** "Screen help is off" (contract C.4.5), unless the person is in the middle of something else that must stay. */
+function showLookOff(from) {
+  if (!config?.signedIn || (card && card.kind !== "look" && stickyNow())) return render();
+  openLook({ phase: "off", from, closeAfter: Look.T.OFF_MS });
+}
+
+/**
+ * A look card opens over whatever is open, and the notch comes out of hiding for it. It counts as opened by a press
+ * (`origin: "user"`, integration review, 11 October 2026): most follow one (Continue, Never look at, Send), and the
+ * card that replaces a taller one shrinks out from under the pointer, which as a hover card folded it 120 ms later
+ * ("Screen help is on" flashed and went). A press's card stays 3 s after the pointer leaves (Notify.leaveFold).
+ */
+function openLook(c) {
+  tucked = false;
+  openCard({ kind: "look", origin: "user", sticky: LOOK_STAYS.has(c.phase), ...c });
+}
+/** A refusal or a failure (contract C.4.9): the permission card for a missing permission, else calm words and OK. */
+function openLookRefused(reason, o = {}) {
+  // Asked once and refused: macOS won't ask again, so straight to System Settings (review, 11 October 2026).
+  if (reason === "permission") return openLook({ phase: lookStatus?.permission === "denied" ? "denied" : "permission" });
+  // Boredroom couldn't be reached: ask again now, so the next press works as soon as it can be (review, 11 October 2026).
+  if (reason === "offline" || reason === "offline_send") void refresh();
+  if (reason === "error" || reason === "send" || reason === "never") Sound.play("error");
+  openLook({ phase: "refused", reason: typeof reason === "string" ? reason : "", app: o.app ?? null, source: o.source ?? null, message: o.message ?? "", closeAfter: Look.T.REFUSED_MS });
+}
+
+/**
+ * The picture goes when its card does (Don't send, Esc, OK, anything opening over it, a card that could not be drawn):
+ * `look_discard` for a look still looking or waiting for Send. A card for the same look (the looking card turning into
+ * the preview) keeps it; one that was sent is already gone from Rust.
+ */
+function letLookGo(next) {
+  const c = card;
+  // Phase 2 (contract A.12): the pictures held for a follow-up go when their reply card does (a follow-up keeps them).
+  if (held && c?.kind === "voice" && c.phase === "reply" && c.looked && next !== c && next?.kind !== "look" && !(next?.kind === "voice" && next.msg === c.msg)) {
+    invoke("look_drop_held").catch(() => {});
+    held = null; clearTimeout(heldTimer);
+  }
+  if (c?.kind !== "look" || !c.lookId || (c.phase !== "looking" && c.phase !== "preview")) return;
+  if (next === c || (next?.kind === "look" && next.lookId === c.lookId)) return;
+  if (!lookGone.has(c.lookId)) invoke("look_discard", { lookId: c.lookId }).catch(() => {});
+  lookGone.add(c.lookId);
+}
+
+/**
+ * The words a "Use my screen" press carries into the look it starts (review, 12 October 2026): sent once Rust says it is
+ * looking, within 20 seconds of the press; otherwise forgotten.
+ */
+let screenAsk = null;
+const SCREEN_ASK_MS = 20_000;
+
+/** Look pressed on her card (contract C.3): the consent first, then the Mac's permission, then the look itself. */
+async function lookPressed() {
+  const pressedAt = Date.now();
+  const s = await invoke("look_status").then(lookStatusOf).catch(() => null);
+  if (s) lookStatus = s;
+  if (!lookStatus?.supported) return openLookRefused("unsupported");
+  // The last desktop state is too old for Rust to trust: Boredroom can't be reached (review, 11 October 2026).
+  if (Date.now() - lookSyncedAt > LOOK_RULES_MS) return openLookRefused("offline");
+  if (data?.look?.available !== true) return openLookRefused("not_available");
+  // Phase 3 (companion2 A.1): screen help off, the setup card opens focused on seeing (it asks before anything turns on).
+  if (!lookStatus.on) return openHelp({ focus: "look" });
+  // The consent changed since it was given (phase 2, contract E.1.1): the update card first.
+  if (lookV2() && lookStatus.consent < 2) return openLook({ phase: "consent-update" });
+  if (lookStatus.permission === "denied") return openLook({ phase: "denied" });
+  if (lookStatus.permission !== "granted") return openLook({ phase: "permission" });
+  try { await invoke("look_now"); }
+  catch (err) {
+    // What Rust said with an event (a refusal, the looking card) stands; a press it would not take says why.
+    if (lookEventAt >= pressedAt) return;
+    openLookRefused("error", { message: err?.message ?? "Try again in a moment." });
+  }
+}
+/** Turn on screen help (the consent's orange button): on this Mac only, then the Mac's permission if it is still needed. */
+async function lookTurnOn() {
+  busy = true; render();
+  try {
+    const s = lookStatusOf(await invoke("set_screen_help", { enabled: true }));
+    busy = false;
+    if (s) lookStatus = s;
+    if (!lookStatus?.on) throw new Error("Screen help couldn't be turned on. Try again.");
+    Sound.play("success");
+    openLook({ phase: lookStatus.permission === "granted" ? "on" : "permission" });
+  } catch (err) { busy = false; error = err?.message ?? String(err); Sound.play("error"); render(); }
+}
+/** Continue on the permission card: macOS asks once (its own prompt); granted, she is on; otherwise System Settings. */
+async function lookAskPermission() {
+  busy = true; render();
+  try {
+    const s = lookStatusOf(await invoke("look_request_permission"));
+    busy = false;
+    if (s) lookStatus = s;
+    openLook({ phase: lookStatus?.permission === "granted" ? "on" : "denied" });
+  } catch (err) { busy = false; error = err?.message ?? String(err); Sound.play("error"); render(); }
+}
+/** Check again on "Allow Brenda in System Settings". */
+async function lookCheckAgain() {
+  const s = await invoke("look_status").then(lookStatusOf).catch(() => null);
+  if (s) lookStatus = s;
+  if (lookStatus?.permission === "granted") { Sound.play("success"); return openLook({ phase: "on" }); }
+  if (card?.kind === "look" && card.phase === "denied") { card.note = Look.words().denied.stillOff; render(); }
+}
+
+/** The looking card or the preview, whichever the look is at now (contract C.4.6: the keys must be up for the preview). */
+function showLookCard(c) {
+  const phase = c.phase === "looking" || c.phase === "preview" ? (Look.previewModel(c).shows ? "preview" : "looking") : c.phase;
+  const opening = card?.kind !== "look" || card.lookId !== c.lookId || card.phase !== phase;
+  const next = { ...c, phase, sticky: true };
+  if (opening) {
+    if (phase === "preview" && c.phase !== "preview") Sound.play("attention");
+    openLook(next);
+    // Pressed on her card, or held with no microphone, the question is typed: the field takes the keyboard.
+    if (phase === "preview" && (next.source === "button" || next.typed) && !next.question) document.getElementById("lq")?.focus();
+  } else { card = next; render(); }
+}
+
+// Rust's look events (contract A.4).
+listen("brenda://look", ({ payload: e }) => {
+  if (!config?.signedIn || !e || typeof e !== "object") return;
+  lookEventAt = Date.now();
+  const id = typeof e.lookId === "string" && e.lookId ? e.lookId : null;
+  // Phase 2 (contract B.3.3, B.11): the answer streaming in, and the minute Rust holds the pictures for a follow-up. These
+  // belong to a look already sent (so already in lookGone), and never start anything.
+  if (e.phase === "sending") {
+    // A request the front desk sent on as a look (helpers contract A.5, P.4): its sending card opens only now, so "Open
+    // Figma" never flashes "looking" on its way to the strip.
+    if (stream?.via === "front" && !stream.opened && (!stream.id || !id || stream.id === id)) {
+      if (!stream.id && id) stream.id = id;
+      stream.opened = true;
+      openLook({ phase: "sending", lookId: stream.id, source: stream.source ?? "keys", question: stream.question, app: stream.app ?? null, looked: stream.where, image: null, reply: "" });
+      return;
+    }
+    if (stream && !stream.id && id) { stream.id = id; return; }
+    // A stream Rust started itself (contract 0.5: an answer that was really a new request, with the pictures still held):
+    // the person's own words, heard by Rust; its answer comes as `result`.
+    if (!stream && id && lookV2()) {
+      stream = { id, says: 0, text: "", question: lastHeard?.text ?? "", spoken: lastHeard?.spoken === true, where: held?.where ?? null, via: "rust", at: Date.now() };
+      openLook({ phase: "sending", lookId: id, source: "keys", question: stream.question, app: null, looked: stream.where, image: null, reply: "" });
+    }
+    return;
+  }
+  if (e.phase === "result") {
+    const s = stream && stream.id === id ? stream : null;
+    if (!s) return;
+    stream = null;
+    try { finishLook(s, e.result); } catch (err) { openLookRefused("send", { message: err?.message ?? "" }); }
+    return;
+  }
+  if (e.phase === "text") {
+    if (stream && (!stream.id || stream.id === id) && typeof e.d === "string") { stream.text = (stream.text + e.d).slice(0, 40_000); showStreamed(); }
+    return;
+  }
+  if (e.phase === "say") {
+    if (!stream || (stream.id && stream.id !== id)) return;
+    const said = Look.says(stream.says, e.text);
+    if (!said) return;
+    stream.says++;
+    if (speaksFor(stream.spoken)) sayStreamed(said.text, e.speech, said.first);
+    return;
+  }
+  if (e.phase === "point") return; // Rust has pointed already (contract 0b.16); the reply says what it is
+  if (e.phase === "held") {
+    const until = typeof e.until === "number" ? e.until : Date.parse(e.until);
+    const max = Date.now() + 60_000;
+    held = { lookId: id, until: Number.isFinite(until) && until > Date.now() ? Math.min(until, max) : max, where: stream?.where ?? (card?.kind === "voice" ? card.looked : null) ?? null };
+    clearTimeout(heldTimer);
+    heldTimer = setTimeout(dropHeld, Math.max(0, held.until - Date.now()));
+    if (card?.kind === "voice" && card.phase === "reply" && card.looked && (!card.lookId || card.lookId === id)) {
+      card.closeAfter = Math.max(card.closeAfter ?? 0, held.until - Date.now());
+      render(); scheduleClose();
+    }
+    return;
+  }
+  if (e.phase === "dropped") return dropHeld();
+  // A look already let go here: its late picture is let go too, unseen.
+  if (id && lookGone.has(id)) { if (e.phase === "preview") invoke("look_discard", { lookId: id }).catch(() => {}); return; }
+  const mine = !!id && card?.kind === "look" && card.lookId === id;
+  const source = e.source === "button" ? "button" : "keys";
+  if (e.phase === "looking") {
+    hush();
+    const listening = e.listening === true && !voiceOff();
+    // Keys held but the microphone didn't open (voice off on this Mac, the model not ready, the microphone busy): the
+    // looking card and the preview say to type instead (review, 11 October 2026).
+    const micWhy = source === "keys" && !listening ? Look.micWords(e.mic) : null;
+    // Phase 2: over the desktop (`desktop`) or the whole screen (no app); Look pressed, the question is typed on this card.
+    const app = { name: Look.appName(e.app), bundleId: null, desktop: e.desktop === true || e.app?.desktop === true, screen: !e.app?.name };
+    const typed = !!micWhy || (lookV2() && source === "button");
+    // "Use my screen": the words of the person's request go with this look at once (they pressed for exactly this).
+    const carried = source === "button" && screenAsk && Date.now() - screenAsk.at < SCREEN_ASK_MS ? Look.cleanQuestion(screenAsk.words) : "";
+    screenAsk = null;
+    openLook({ phase: "looking", lookId: id, source, app, listening, released: false, question: carried, startedAt: listening ? Date.now() : null, endedAt: null, dictMessage: lookV2() && micWhy ? Look.words().v2.voiceOff : micWhy, typed });
+    if (carried && lookV2()) { queueMicrotask(() => runLook({ lookId: id, question: carried, spoken: false, app, source })); return; }
+    if (typed && lookV2()) queueMicrotask(() => document.getElementById("lq")?.focus());
+    if (listening) { Sound.play("listen"); Wave.start(0); }
+    return;
+  }
+  if (e.phase === "preview") {
+    const image = Look.safeImage(e.image);
+    if (!id || !image) {
+      if (id) { lookGone.add(id); invoke("look_discard", { lookId: id }).catch(() => {}); }
+      return openLookRefused("error", { message: "The picture couldn't be shown." });
+    }
+    const base = mine ? card : { kind: "look", phase: "looking", lookId: id, source, question: "", released: source === "button" };
+    const bundleId = typeof e.app?.bundleId === "string" && e.app.bundleId ? e.app.bundleId.slice(0, 255) : null;
+    return showLookCard({ ...base, source, image, width: Number(e.width) || 0, height: Number(e.height) || 0, pointer: Look.pointOf(e.pointer), app: { name: Look.appName(e.app), bundleId } });
+  }
+  if (e.phase === "released") {
+    if (!mine) return;
+    return showLookCard({ ...card, released: true, endedAt: card.endedAt ?? Date.now() });
+  }
+  // Phase 2: the consent changed since it was given (the update card), and a hold while a question waits (the asking card
+  // says "Answer this one first").
+  if (e.phase === "refused" && e.reason === "consent_update") return openLook({ phase: "consent-update" });
+  if (e.phase === "refused" && e.reason === "answer_first") return openActRefused("answer_first");
+  if (e.phase === "refused") return openLookRefused(e.reason, { app: e.app?.name ?? null, source: e.source });
+  if (e.phase === "cancelled") {
+    if (id) lookGone.add(id);
+    if (!mine) return;
+    if (e.reason === "timeout") return openLook({ phase: "gone", closeAfter: Look.T.GONE_MS });
+    return closeCard();
+  }
+  if (e.phase === "error" && stream?.via === "rust" && (!id || stream.id === id)) { stream = null; return openLookRefused("send", { message: e.message }); }
+  if (e.phase === "error") {
+    if (id) lookGone.add(id);
+    if (id && !mine && card?.kind === "look" && card.lookId) return; // another look's card is showing
+    return openLookRefused("error", { message: e.message });
+  }
+});
+// The tray turned screen help on or off, or a permission was checked: what Rust says now. Turned off from the tray, the off
+// card says so (contract C.2).
+listen("brenda://look-status", ({ payload }) => {
+  const s = lookStatusOf(payload);
+  if (!s) return;
+  const was = lookStatus?.on === true;
+  lookStatus = s;
+  if (!config?.signedIn) return;
+  if (was && !s.on && !(card?.kind === "look" && card.phase === "off")) return showLookOff("tray");
+  render();
+});
+// The tray's "Turn on screen help…" (today's binary): the setup card opens focused on seeing (phase 3, companion2 J.2);
+// it never turns help on by itself. This build's tray sends `brenda://help-setup` with the focus instead.
+listen("brenda://look-consent", () => {
+  if (!config?.signedIn) return;
+  if (lookStatus && !lookStatus.supported) return openLookRefused("unsupported");
+  openHelp({ focus: "look" });
+});
+listen("brenda://help-setup", ({ payload }) => {
+  if (!config?.signedIn) return;
+  openHelp({ focus: Help.ABILITIES.includes(payload?.focus) ? payload.focus : null });
+});
+
+/**
+ * A look's own recording (contract B.10, C.2): the waveform and the time on the looking card while the keys are held, then
+ * the words heard into the question (never sent from here: Send does that). While the workspace has voice switched off
+ * the words are never used, as the talk keys' are not.
+ */
+function lookVoice(e) {
+  const c = card;
+  if (c?.kind !== "look" || c.lookId !== e.lookId || (c.phase !== "looking" && c.phase !== "preview")) return;
+  const off = voiceOff();
+  if (e.phase === "listening") {
+    if (off) return;
+    if (!c.listening) { c.listening = true; c.startedAt ??= Date.now(); render(); Wave.start(e.level ?? 0); }
+    Wave.level(e.level ?? 0);
+    return;
+  }
+  if (e.phase === "transcribing") {
+    if (!c.listening) return;
+    Sound.play("heard");
+    Wave.process();
+    return showLookCard({ ...c, transcribing: true, endedAt: c.endedAt ?? Date.now() });
+  }
+  if (e.phase === "heard") {
+    const next = { ...c, transcribing: false };
+    if (off) next.dictMessage = `Voice is switched off for ${me().name}. Type your question instead.`;
+    else {
+      const input = document.getElementById("lq");
+      const words = Look.cleanQuestion(e.text);
+      // Brenda and her helpers (helpers contract A.1, Q.2.2): the words go to the front desk, which does routine things at
+      // once and sends questions on as looks. With "Show me the picture first" on, a question comes back `needsPreview`
+      // and waits on the preview as before; anything it did instead closes this card (its `matched`).
+      if (frontOn() && words && (c.phase === "looking" || c.phase === "preview")) {
+        const question = Look.joinQuestion(input?.value ?? c.question, words);
+        return void runFront({ lookId: c.lookId, text: question, spoken: true, app: c.app, source: c.source, preview: !!lookStatus.preview, previewCard: { ...next, question, spoken: true, dictMessage: null } });
+      }
+      // Phase 2 (contract A.2.2): the words go at once, unless the person asked to see the picture first.
+      if (lookV2() && !lookStatus.preview && c.phase === "looking") {
+        if (!words) return lookMissed(c);
+        return void runLook({ lookId: c.lookId, question: Look.joinQuestion(input?.value ?? c.question, words), spoken: true, app: c.app, source: c.source });
+      }
+      if (words) { next.question = Look.joinQuestion(input?.value ?? c.question, words); next.spoken = true; next.dictMessage = null; Sound.play("tick"); }
+    }
+    return showLookCard(next);
+  }
+  if (e.phase === "too-short" && lookV2() && !lookStatus.preview && c.phase === "looking" && c.listening) return lookMissed(c);
+  if (e.phase === "too-short" || e.phase === "cancelled") return showLookCard({ ...c, transcribing: false, listening: e.phase === "cancelled" ? false : c.listening });
+  const why = { off: Look.words().dictation.off, "needs-model": Look.words().dictation.notReady, error: e.message || Look.words().dictation.missed };
+  if (e.phase in why) return showLookCard({ ...c, transcribing: false, dictMessage: off ? null : why[e.phase] });
+}
+
+/** Send lights up once there are words and nothing is still being written out. */
+function showLookSend() {
+  const b = document.getElementById("lsend");
+  if (!b || card?.kind !== "look") return;
+  const q = document.getElementById("lq")?.value ?? card.question;
+  b.disabled = !Look.previewModel({ ...card, question: q, busy }).canSend;
+}
+
+/**
+ * Send (contract C.5): the question and the chat so far go to Rust's `look_send`, which sends the picture with them and
+ * wipes it whatever happens. The answer opens as the reply card with "Looked at Figma"; it counts as having read other
+ * people's words (`tainted`), so this chat keeps asking before it acts. A 401 signs out as everywhere.
+ */
+async function sendLook() {
+  const c = card;
+  if (c?.kind !== "look" || busy) return;
+  // Phase 2: a question typed on the looking card (voice off on this Mac, or Look pressed) goes at once (contract A.2.6).
+  if (c.phase === "looking" && lookV2()) {
+    const question = Look.cleanQuestion(document.getElementById("lq")?.value ?? c.question);
+    if (!question) return;
+    // Brenda and her helpers (helpers contract A.7): typed here, the words are a request like any other.
+    if (frontOn()) return runFront({ lookId: c.lookId, text: question, spoken: false, app: c.app, source: c.source });
+    return runLook({ lookId: c.lookId, question, spoken: false, app: c.app, source: c.source });
+  }
+  if (c.phase !== "preview") return;
+  const question = Look.cleanQuestion(document.getElementById("lq")?.value ?? c.question);
+  if (!Look.previewModel({ ...c, question }).canSend) return;
+  // The picture leaves this page's memory as it leaves for Boredroom (runLook draws the sending card without it). A
+  // preview the front desk asked for carries its lane (helpers contract J.5: "now" or "think").
+  return runLook({ lookId: c.lookId, question, spoken: !!c.spoken, app: c.app, source: c.source, lane: c.lane });
+}
+
+/** Nothing was heard (phase 2, contract A.2.2): the picture is let go, nothing left the Mac. */
+function lookMissed(c) {
+  if (c?.lookId) { lookGone.add(c.lookId); invoke("look_discard", { lookId: c.lookId }).catch(() => {}); }
+  openLook({ phase: "missed", closeAfter: 3_000 });
+}
+/** Turn off screen help (the settings card, or the update card's Turn it off): on this Mac, at once. */
+async function lookOffHere() {
+  try {
+    lookStatus = lookStatusOf(await invoke("set_screen_help", { enabled: false })) ?? { ...lookStatus, on: false };
+    actStatus = await invoke("act_status").then(Act.statusOf).catch(() => actStatus);
+    showLookOff("here");
+  } catch (err) { error = err?.message ?? String(err); Sound.play("error"); render(); }
+}
+
+/**
+ * Never look at Figma (contract C.4.7): the picture is let go first, then the app joins the person's own never-look list
+ * in Boredroom (as the person, through the `api` command), and Rust is told at once.
+ */
+async function neverLookHere() {
+  const c = card;
+  if (c?.kind !== "look" || c.phase !== "preview" || busy) return;
+  const app = { name: Look.appName(c.app), bundleId: c.app?.bundleId ?? null };
+  lookGone.add(c.lookId);
+  invoke("look_discard", { lookId: c.lookId }).catch(() => {});
+  busy = true; render();
+  try {
+    const mine = await call("GET", org("/screen-help/me")).catch(() => null);
+    const before = Array.isArray(mine?.neverLook) ? mine.neverLook : (Array.isArray(data?.look?.neverLook) ? data.look.neverLook : []).filter((r) => r?.source === "you");
+    const list = Look.addRule(before, app);
+    await call("PUT", org("/screen-help/me"), { neverLook: list });
+    busy = false;
+    if (data?.look && typeof data.look === "object") {
+      const workspace = (Array.isArray(data.look.neverLook) ? data.look.neverLook : []).filter((r) => r?.source === "workspace");
+      data.look = { ...data.look, neverLook: [...workspace, ...list.map((r) => ({ ...r, source: "you" }))] };
+      syncLook();
+    }
+    Sound.play("success");
+    openLook({ phase: "never", app, closeAfter: Look.T.NEVER_MS });
+  } catch (err) {
+    busy = false;
+    openLookRefused("never", { message: err?.message ?? "" });
+  }
+}
+
+/** The look cards (contract C.4). Every word is look.js's and goes through esc(); the picture is Rust's checked data URL. */
+function lookView() {
+  const c = card, name = me().name, keys = lookKeys();
+  const w = Look.words({ name, keys, app: c.app, from: c.from });
+  const m = moodOf();
+  const ok = (label = "OK") => `<div class="actions"><button class="btn primary" data-act="look-ok" data-main>${esc(label)}</button></div>`;
+  const plainCard = (title, sub, actions) => `<div class="row fade">${face(m)}<div class="grow"><p class="title wrap">${esc(title)}</p>${sub ? `<p class="sub">${esc(sub)}</p>` : ""}</div></div>${actions}`;
+  if (c.phase === "consent") {
+    // The consent that is true of this Mac's Rust (phase 2, 12 October 2026): v2's, or phase 1's for today's binary.
+    const k = Look.consent(name, keys, lookV2() ? 2 : 1);
+    const para = (p) => {
+      if (p.lead) return `<p class="sub"><b>${esc(p.lead)}</b> ${esc(p.text)}</p>`;
+      const t = esc(p.text), kk = esc(p.keys ?? "");
+      return `<p class="sub">${kk && t.includes(kk) ? t.replace(kk, `<b>${kk}</b>`) : t}</p>`;
+    };
+    return `<div class="row fade">${face(m)}<div class="grow"><p class="title wrap" id="ltitle">${esc(k.title)}</p></div></div>
+      <div class="look-consent fade" tabindex="0" role="region" aria-labelledby="ltitle">${k.paras.map(para).join("")}<p class="sub">${esc(k.fixed)}</p></div>
+      <div class="actions"><button class="btn ghost" data-act="look-not-now">${esc(k.notNow)}</button><button class="btn primary accent" data-act="look-turn-on" ${busy ? "disabled" : ""}>${esc(k.turnOn)}</button></div>
+      <p class="cap look-foot fade">${esc(k.footer)}</p>`;
+  }
+  if (c.phase === "permission") {
+    return plainCard(w.permission.title, w.permission.sub, `<div class="actions"><button class="btn ghost" data-act="look-not-now">${esc(w.permission.notNow)}</button><button class="btn primary accent" data-act="look-continue" ${busy ? "disabled" : ""}>${esc(w.permission.go)}</button></div>`);
+  }
+  if (c.phase === "denied") {
+    return `${plainCard(w.denied.title, w.denied.sub, "")}${c.note ? `<p class="cap fade">${esc(c.note)}</p>` : ""}
+      <div class="actions"><button class="btn ghost" data-act="look-not-now">${esc(w.denied.notNow)}</button><button class="btn" data-act="look-check">${esc(w.denied.check)}</button><button class="btn primary accent" data-act="look-open-settings">${esc(w.denied.open)}</button></div>`;
+  }
+  if (c.phase === "on") return plainCard(w.on.title, w.on.sub, lookV2() ? `<div class="actions"><button class="btn ghost" data-act="look-settings">${esc(Look.settingsWords(name).open)}</button><button class="btn primary" data-act="look-ok" data-main>${esc(w.on.ok)}</button></div>` : ok(w.on.ok));
+  // Phase 2 (contract A.11, E.1.1): screen help's settings on this Mac, and the update card after the consent changed.
+  if (c.phase === "settings") return settingsView(m);
+  if (c.phase === "consent-update") {
+    const u = Look.consentUpdate(name);
+    return `${plainCard(u.title, u.sub, "")}
+      <div class="actions"><button class="link" data-act="look-read">${esc(u.read)}</button><span class="grow"></span><button class="btn ghost" data-act="look-off-here">${esc(u.off)}</button><button class="btn primary" data-act="look-keep" ${busy ? "disabled" : ""}>${esc(u.keep)}</button></div>`;
+  }
+  if (c.phase === "missed") return plainCard(w.v2.missed, "", "");
+  if (c.phase === "off") return plainCard(w.off.title, w.off.sub, ok(w.off.ok));
+  if (c.phase === "looking" && lookV2() && c.typed && !c.listening) {
+    // Phase 2 (contract A.2.6, A.2.7): voice off on this Mac, or Look pressed: the question is typed here and Enter sends it.
+    const why = c.dictMessage ? `<p class="cap">${esc(c.dictMessage)}</p>` : "";
+    return `<div class="row fade">${face(m)}<div class="grow"><p class="title">${esc(w.looking.title)}</p>${why}</div><span class="mic"><span class="rec-dot"></span></span></div>
+      <form class="fu-note fade" data-look><div class="fu-field"><input class="field" id="lq" name="q" maxlength="${Look.QUESTION_MAX}" value="${esc(c.question ?? "")}" placeholder="${esc(w.v2.typePlaceholder)}" aria-label="${esc(w.v2.typeLabel)}" aria-describedby="fdict" autocomplete="off" spellcheck="true">${talkKeys()}</div><div class="fu-meta"><div class="grow" id="fdict">${dictView()}</div></div></form>
+      <div class="actions"><button class="btn ghost" data-act="look-discard">${esc(w.preview.discard)}</button><button class="btn primary accent" id="lsend" data-act="look-send">${icon("send")}${esc(w.v2.send)}</button></div>`;
+  }
+  if (c.phase === "looking" && lookV2() && c.transcribing) {
+    // Let go (contract A.2.2): her words are being written out on the Mac.
+    return `<div class="row fade">${face(m)}<div class="grow"><p class="title shimmer">${esc(w.v2.getting)}</p><p class="cap">${esc(w.looking.title)}</p></div>${c.startedAt ? `<span class="mic"><span class="clock">${mss(voiceSeconds(c))}</span></span>` : ""}</div>
+      <div class="wave fade" aria-hidden="true"><canvas id="wave"></canvas></div>`;
+  }
+  if (c.phase === "looking") {
+    // Her eyes on the window, the live dot (she is looking now) and, while the keys are held with voice on, the time and
+    // the waveform of the question being said, as the voice card draws them.
+    const sub = c.source === "button" || c.released ? w.looking.button : w.looking.keys;
+    const why = !c.listening && c.dictMessage ? `<p class="cap">${esc(c.dictMessage)}</p>` : "";
+    return `<div class="row fade">${face(m)}<div class="grow"><p class="title">${esc(w.looking.title)}</p><p class="cap">${esc(sub)}</p>${why}</div><span class="mic"><span class="rec-dot"></span>${c.listening ? `<span class="clock${c.released ? "" : " live"}" id="vtime" role="timer">${mss(voiceSeconds(c))}</span>` : ""}</span></div>
+      ${c.listening ? `<div class="wave${c.released ? "" : " live"} fade" aria-hidden="true"><canvas id="wave"></canvas></div>` : ""}`;
+  }
+  if (c.phase === "preview") {
+    const pm = Look.previewModel({ ...c, busy });
+    const ratio = c.width > 0 && c.height > 0 ? ` width="${Math.round(c.width)}" height="${Math.round(c.height)}"` : "";
+    // Rust draws the ring into the picture at the picture's own scale, which the card shows at about a quarter: the card
+    // marks the same spot at a size the eye finds (where the pointer is in the picture's pixels, as a share of it).
+    const ptr = Look.pointOf(c.pointer);
+    const mark = ptr && c.width > 0 && c.height > 0 && ptr.x < c.width && ptr.y < c.height
+      ? `<i class="look-mark" aria-hidden="true" style="left:${((ptr.x / c.width) * 100).toFixed(2)}%;top:${((ptr.y / c.height) * 100).toFixed(2)}%"></i>` : "";
+    const title = pm.waiting ? `<p class="title shimmer">${esc(w.preview.waiting)}</p>` : `<p class="title">${esc(w.preview.title)}</p>`;
+    return `<div class="row fade">${face(m)}<div class="grow look-head">${title}<span class="pill">${esc(Look.appName(c.app))}</span></div></div>
+      <figure class="look-shot fade"><span class="look-frame"><img src="${esc(Look.safeImage(c.image) ?? "")}" alt="${esc(w.preview.alt)}"${ratio}>${mark}</span><figcaption class="cap">${esc(Look.previewCaption(c.source, c.pointer, name))}</figcaption></figure>
+      <form class="fu-note fade" data-look><div class="fu-field"><input class="field" id="lq" name="q" maxlength="${Look.QUESTION_MAX}" value="${esc(c.question ?? "")}" placeholder="${esc(w.preview.placeholder)}" aria-label="${esc(w.preview.label)}" aria-describedby="fhold fdict lnote" autocomplete="off" spellcheck="true" ${busy ? "disabled" : ""}>${talkKeys()}</div><div class="fu-meta"><div class="grow" id="fdict">${dictView()}</div><span class="cap" id="fcount"></span></div></form>
+      <p class="cap fade" id="lnote">${esc(w.preview.nothingLeaves)}</p>
+      <div class="actions"><button class="btn ghost look-never" data-act="look-never" ${busy ? "disabled" : ""}>${esc(w.preview.never)}</button><button class="btn ghost" data-act="look-discard">${esc(w.preview.discard)}</button><button class="btn primary accent" id="lsend" data-act="look-send" ${pm.canSend ? "" : "disabled"}>${icon("send")}${esc(w.preview.send)}</button></div>`;
+  }
+  if (c.phase === "sending" && c.reply) {
+    // Phase 2 (contract A.2.3): her answer fills in as it streams, under the question and where she looked.
+    const looked = c.looked ? `<span class="pill looked">${icon("eye")}${esc(Look.words({ app: c.looked }).looked)}</span>` : "";
+    return `<div class="row fade top">${face(m)}<div class="grow"><div class="said-row"><p class="said">“${esc(c.question)}”</p>${looked}${modePill()}</div><div class="reply" id="lreply">${md(c.reply)}</div></div></div>`;
+  }
+  if (c.phase === "sending") {
+    const pill = modePill();
+    const title = `<p class="title shimmer">${esc(w.sending.title)}</p>`;
+    return `<div class="row fade top">${face(m)}<div class="grow">${pill ? `<div class="said-row">${title}${pill}</div>` : title}<p class="said">“${esc(c.question)}”</p></div></div>`;
+  }
+  if (c.phase === "refused") {
+    const r = Look.refusalWords(c.reason, { name, app: c.app, source: c.source, message: c.message }) ?? Look.refusalWords("", {});
+    return plainCard(r.title, r.sub, ok());
+  }
+  if (c.phase === "gone") return `<div class="row fade">${face(m)}<div class="grow"><p class="title">${esc(w.gone)}</p></div></div>`;
+  if (c.phase === "never") return `<div class="row fade">${face(m)}<div class="grow"><p class="sub">${esc(w.never.done)}</p></div></div>`;
+  return "";
+}
+
+// ---- Brenda for Mac, phase 2: instant looks, the stream, and doing things only when asked ---------------------------
+// Owner request and rule, 12 October 2026 (the header says what the person sees; contract C.3). Rust owns the keys, the
+// pictures, the stream, the companion, the yes and every step; Boredroom records the request and the yes and refuses
+// anything without them. This page shows each moment and passes presses on. It has no way to start a task: nothing here
+// calls the act or look routes, a task appears only as Rust's `asking` event, and the only thing Yes does is
+// `act_answer`, which Rust accepts only from a real press.
+
+/** Rust's v2 look, streamed (`look_send`, `look_follow_up`, or a dropped file's `act_file_from_drop`). */
+async function runLook(o) {
+  const question = Look.cleanQuestion(o.question);
+  if (!question) return;
+  const via = o.via === "follow" || o.via === "drop" ? o.via : "look";
+  hush();
+  if (Date.now() - talkAt > TALK_MEMORY_MS) { talk = []; chat = newChat(); }
+  const messages = Look.messagesFor(talk, question);
+  // Where she looked, as the reply's pill and Past chats say it: an app's name, "your desktop" or "your screen".
+  const place = Look.placeOf(o.app);
+  const where = via === "drop" ? null : place === "desktop" ? "your desktop" : place === "screen" ? "your screen" : Look.appName(o.app);
+  const spoken = !!o.spoken;
+  Sound.play("send");
+  const s = { id: o.lookId ?? null, says: 0, text: "", question, spoken, where, via, at: Date.now() };
+  stream = s;
+  if (o.lookId) lookGone.add(o.lookId); // the picture is Rust's to send and wipe from here on
+  openLook({ phase: "sending", lookId: o.lookId ?? null, source: o.source ?? "keys", question, app: o.app ?? null, looked: where, image: null, reply: "" });
+  try {
+    const r = via === "follow" ? await invoke("look_follow_up", { question, messages })
+      : via === "drop" ? await invoke("act_file_from_drop", { question })
+      : await invoke("look_send", { lookId: o.lookId, question, messages, ...(lookV4() && (o.lane === "now" || o.lane === "think") ? { lane: o.lane } : {}) });
+    finishLook(s, r);
+  } catch (err) {
+    if (stream === s) stream = null;
+    if (err?.status === 401) return signedOut();
+    if (err?.code === "LOOK_OFFLINE") return openLookRefused("offline_send");
+    // A dropped file's job refused before it was proposed (files off, too big, …): the act refusal's words.
+    if (via === "drop" && typeof err?.reason === "string") return openActRefused(err.reason, err);
+    openLookRefused("send", { message: err?.message ?? "Can't reach Boredroom." });
+  }
+}
+
+/**
+ * A look's answer has come (`look_send`'s, a follow-up's, a dropped file's, or the `result` of a stream Rust started for
+ * a new request): it joins the chat, and the reply card opens, unless she proposed something, when the asking card stays.
+ */
+function finishLook(s, r) {
+  if (!r || typeof r !== "object" || typeof r.reply !== "string") throw new Error("Boredroom's answer couldn't be read.");
+  // Once per look (helpers contract P.3: a front request's answer may come both as the look's `result` and as
+  // `front_send`'s own).
+  if (s.finished) return;
+  s.finished = true;
+  const { question, spoken, where } = s;
+  if (question) talk.push({ role: "user", content: question, ...(where ? { look: { app: where } } : {}) });
+  talkAt = Date.now();
+  // Kept whole for Past chats, as ask() keeps an answer; always `tainted` (a look read the screen: contract 0.5, phase 1).
+  const msg = { role: "assistant", content: r.reply, actions: r.actions ?? [], proposals: r.proposals ?? [], engine: r.engine, note: r.note ?? null, tainted: true };
+  keepAct(r.act);
+  talk.push(msg);
+  const needsYes = msg.proposals.some((p) => p.kind === "confirm");
+  const spokenText = typeof r.spoken === "string" ? r.spoken.trim() : plain(r.reply);
+  // While Rust holds the pictures for a follow-up, the reply stays as long (contract A.12).
+  const holding = lookV2() && !!held && held.lookId === s.id ? Math.max(0, held.until - Date.now()) : 0;
+  const closeAfter = Math.max((r.actions ?? []).some(undoable) ? UNDO_CLOSE_MS : REPLY_CLOSE_MS, holding);
+  const speech = offerOf(r);
+  const said = s.says > 0;
+  if (stream === s) stream = null;
+  lastLook = { spoken, at: Date.now() };
+  if (task && task.phase === "scoping" && card?.kind === "act") {
+    // A plan still getting ready on this Mac (phase 3, companion2 D.3): its card stays; the sentence and the question are
+    // said once the lines come (the `asking` event), under this look's speaking rule.
+    task.spoken = spoken;
+  } else if (task && task.phase === "asking" && card?.kind === "act") {
+    // She proposed (contract A.6): the asking card stays over everything. Her plan and "Do you want me to do this?" are
+    // said after whatever she said first, under the person's speaking rule.
+    task.spoken = spoken;
+    if (speaksFor(spoken)) sayAloud(said ? `${task.plan} ${Act.QUESTION}` : spokenText, said ? null : speech);
+  } else {
+    // Phase 3 (companion2 A.4, D.2.4): a plan that needed a switch that is off, or a question about how to turn things on.
+    const help = helpOffersOf(r);
+    openCard({ kind: "voice", phase: "reply", heard: question, spoken, spokenText, speech, reply: r.reply, actions: r.actions, proposals: msg.proposals.map((p, at) => ({ ...p, at })), msg, sticky: needsYes || aloud() || !!help.setup || !!help.enable, closeAfter, looked: where ?? undefined, lookId: s.id, ...help });
+    Sound.play(needsYes ? "attention" : r.actions?.length ? "success" : "reply");
+    // The sentences already said as they streamed are not said again (contract C.3).
+    if (!said && speaksFor(spoken)) sayAloud(spokenText, speech);
+  }
+  if (r.actions?.length) refresh();
+  saveChat();
+}
+
+/** The stream's words so far, drawn in place on the sending card (the light Markdown, escaped), so typing is never lost. */
+function showStreamed() {
+  if (card?.kind !== "look" || card.phase !== "sending" || !stream) return;
+  const first = !card.reply;
+  card.reply = stream.text;
+  const r = document.getElementById("lreply");
+  if (r && !first) { r.innerHTML = md(card.reply); fit(); return; }
+  render();
+}
+
+/** The held pictures went (a minute passed, the card closed, a new look): the follow-up line goes too (contract A.12). */
+function dropHeld() {
+  clearTimeout(heldTimer);
+  if (!held) return;
+  held = null;
+  if (card?.kind === "voice" && card.phase === "reply" && card.looked) render();
+}
+/** The reply card asks follow-ups about the same pictures while Rust holds them, a minute at most. */
+const followUpOpen = () => lookV2() && !!held && Date.now() < held.until && card?.kind === "voice" && card.phase === "reply" && !!card.looked && (!card.lookId || card.lookId === held.lookId);
+
+// ---- her sentences as they stream in (contract B.10 `speak_queue`, C.3) -----------------------------------------------
+// The first sentence of a look cuts off whatever was being said, the rest follow in order. The computer voice queues in
+// Rust (`speak_queue`); her natural voice fetches each sentence's audio as soon as it arrives and plays them one at a
+// time here. A sentence the natural voice cannot say (no offer, a refusal, no answer in 15 s, audio that will not decode)
+// is said by the computer voice, and so is everything after it, so the order never breaks. Stop, a new question, the talk
+// keys and signing out end it all (`natural.gen` moves on).
+const sayQ = { gen: -1, items: [], playing: false, mode: "computer", rustSaid: 0 };
+
+/** Says one streamed sentence (the first of a look: `first`). */
+function sayStreamed(text, speech, first) {
+  if (!text || voiceOff()) return;
+  if (first) {
+    stopNatural();
+    // The voice is chosen by the first sentence: her natural voice when it carries an offer, else the computer's.
+    Object.assign(sayQ, { gen: natural.gen, items: [], playing: false, mode: naturalOffer(speech, text) ? "natural" : "computer", rustSaid: 0 });
+    talkWaiting = true; waitToTalk(NATURAL_WAIT_MS + 2_000); showTalking();
+  }
+  if (sayQ.gen !== natural.gen) return; // hushed since this look began
+  if (sayQ.mode === "computer") return sayByComputer(text);
+  // In the natural voice every sentence waits its turn; one without an offer is said by the computer voice at its turn,
+  // and so is everything after it (playQueued), so two voices never overlap.
+  const o = naturalOffer(speech, text);
+  const item = { text, audio: null };
+  item.ready = o ? fetchNatural(o).then((a) => { item.audio = a; }, (err) => { if (err?.message && err.message !== "suspended") report(`natural voice: the computer voice spoke instead (${err.message})`); }) : Promise.resolve();
+  sayQ.items.push(item);
+  if (!sayQ.playing) playQueued(sayQ.gen);
+}
+/** One sentence in the computer voice, queued in Rust (an older Rust without `speak_queue`: `speak`). */
+function sayByComputer(text) {
+  const first = sayQ.rustSaid === 0;
+  sayQ.rustSaid++;
+  talkWaiting = true; waitToTalk();
+  invoke("speak_queue", { text, first }).catch(() => (first ? invoke("speak", { text }) : null)).catch(() => { talkWaiting = false; showTalking(); });
+}
+/** A sentence's natural audio (base64), kept for Listen again; throws when it cannot be had. */
+async function fetchNatural(offer) {
+  const kept = naturalKept.get(offer.token);
+  if (kept) return kept;
+  if (!(await NaturalVoice.warm())) throw new Error("suspended");
+  const run = naturalRun;
+  let timer = null;
+  try {
+    const asked = call("POST", offer.path, { token: offer.token, text: offer.text, as: "base64" });
+    asked.then((late) => keepNatural(offer.token, late?.audio, run), () => {});
+    const r = await Promise.race([asked, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("no answer in 15 s")), NATURAL_WAIT_MS); })]);
+    if (typeof r?.audio !== "string" || !r.audio) throw new Error("no audio");
+    return r.audio;
+  } finally { clearTimeout(timer); }
+}
+/** Plays the next queued sentence in the natural voice, or hands it and the rest to the computer voice. */
+async function playQueued(gen) {
+  if (gen !== natural.gen || sayQ.gen !== gen) return;
+  const item = sayQ.items.shift();
+  if (!item) { sayQ.playing = false; return; }
+  sayQ.playing = true;
+  natural.pending = true;
+  await item.ready;
+  if (gen !== natural.gen) return;
+  natural.pending = false;
+  const toComputer = () => {
+    sayQ.mode = "computer"; sayQ.playing = false;
+    if (natural.on) { natural.on = false; talkEnded(); companionSpeaking(false); }
+    NaturalVoice.release();
+    for (const t of [item.text, ...sayQ.items.splice(0).map((x) => x.text)]) sayByComputer(t);
+  };
+  if (micOpen()) { sayQ.items = []; sayQ.playing = false; talkWaiting = false; NaturalVoice.release(); return showTalking(); }
+  if (!item.audio) return toComputer();
+  natural.stop = NaturalVoice.play({
+    audioBase64: item.audio,
+    onStart: () => { if (gen !== natural.gen) return; if (!natural.on) { natural.on = true; talkStarted(); companionSpeaking(true); } },
+    onLevel: (level) => { if (gen === natural.gen && natural.on) talkLevel(level); },
+    onEnd: () => {
+      if (gen !== natural.gen) return;
+      natural.stop = null;
+      if (sayQ.items.length) return void playQueued(gen);
+      sayQ.playing = false; natural.on = false; talkEnded(); companionSpeaking(false);
+    },
+    onFail: () => { if (gen !== natural.gen) return; natural.stop = null; toComputer(); },
+  });
+}
+/** The companion talks while her natural voice plays (Rust's own voice drives it itself; contract B.10). */
+function companionSpeaking(on) { if (lookV2()) invoke("companion_speaking", { on: !!on }).catch(() => {}); }
+/** The companion wears the person's own assistant (contract C.3): told on start and whenever the look changes. */
+function syncCompanionLook() {
+  if (!lookV2() || !config?.signedIn) return;
+  const a = me();
+  const look = { colour: a.colour, face: a.face, visor: a.visor, eyes: a.eyes, name: a.name };
+  const json = JSON.stringify(look);
+  if (json === companionLook) return;
+  companionLook = json;
+  invoke("companion_set_look", { look }).catch(() => { companionLook = ""; });
+}
+
+// ---- tasks: asking, doing, working, and how they end (contract A.6 to A.10) ----------------------------------------
+
+/** Doing things on the Mac is offered here: a v2 Rust with act commands, and Boredroom says it is available. */
+const actOffered = () => lookV2() && !!actStatus?.supported && data?.look?.act?.available === true;
+/** The task's phases that wait on the person (the card stays over everything; contract A.6.1). */
+const ASKING = new Set(["asking", "step_ask", "paused"]);
+/** A screen task is under way (the notch never takes the keyboard then: contract C.3). */
+const screenBusy = () => !!task && task.kind !== "file" && ["confirming", "running", "step_ask", "paused"].includes(task.phase);
+/** Esc stops her unless Rust said it could not have the key for the live task (then the cards say Stop; contract B.6.4). */
+const escOk = () => !(actStatus?.task && actStatus.escRegistered === false);
+/** The look keys' symbols (⌃ ⌘), as Rust names them. */
+const keysLabel = () => lookStatus?.keysLabel || "⌃ ⌘";
+
+/** An act card opens over whatever is open, and the notch comes out of hiding for it. */
+function openAct(c) {
+  tucked = false;
+  openCard({ kind: "act", origin: "user", ...c });
+}
+/** A refusal from the act table (contract A.10), with OK; it closes after 10 s. */
+function openActRefused(reason, o = {}) {
+  // Phase 3 (companion2 A.4): Accessibility missing opens its setup step ("Allow it"), never a dead end.
+  if (reason === "accessibility") return openHelp({ step: "accessibility" });
+  if (reason === "answer_first" && card?.kind === "act" && ASKING.has(card.phase)) { card.note = Act.refusal("answer_first").title; return render(); }
+  Sound.play("error");
+  openAct({ phase: "refused", reason: typeof reason === "string" ? reason : "", app: o.app ?? null, n: o.n ?? null, pages: o.pages ?? null, message: o.message ?? "", closeAfter: Act.T.REFUSED_MS });
+}
+
+/** What the chat keeps when a task ends (contract C.3): one short line of what came of it, as other people's words. */
+function endTask(kind, e = {}) {
+  const t = task;
+  task = null;
+  // The Mac operator's job ends with its task (helpers contract P.3: act's done, stopped or failed end it).
+  if (job?.helper === "operator" && t && job.taskId === t.id) job = null;
+  restartCountdown(0);
+  const line = Act.chatLine(kind, e, t);
+  if (line && talk.length) { talk.push({ role: "assistant", content: line, tainted: true }); talkAt = Date.now(); saveChat(); }
+  render();
+}
+
+/** Answers the open proposal or step question: No needs nothing; Yes is the person's press, which Rust checks (B.6.3). */
+async function answerTask(answer, via, text) {
+  const t = task;
+  if (!t || !(t.phase === "asking" || t.phase === "step_ask")) return;
+  if (answer === "no" && t.phase === "step_ask") t.saidNo = true;
+  if (card?.kind === "act") { card.answering = answer; card.note = null; render(); }
+  try { await invoke("act_answer", { taskId: t.id, answer, via, ...(via === "typed" ? { text } : {}) }); }
+  catch (err) {
+    if (card?.kind === "act") { card.answering = null; card.note = err?.message ?? "I couldn't take that answer. Try again."; render(); }
+  }
+}
+/** Enter in the asking card's box: the typed words, read by the grammar here and again by Rust (contract 0.5). */
+function answerTyped() {
+  const box = document.getElementById("aans");
+  const text = String(box?.value ?? "").replace(/\s+/g, " ").trim().slice(0, 200);
+  if (!text || !task) return;
+  const v = Act.typedAnswer(text, me().name);
+  if (card?.kind === "act") { card.heard = text; card.verdict = v.verdict; }
+  lastHeard = { text, spoken: false };
+  answerTask(v.answer, "typed", text);
+}
+
+listen("brenda://act", ({ payload: e }) => {
+  if (!config?.signedIn || !e || typeof e !== "object") return;
+  const ph = typeof e.phase === "string" ? e.phase : typeof e.t === "string" ? e.t : "";
+  const mine = (id) => !!task && (!id || id === task.id);
+  // A refusal (contract A.10): Rust's words for why not. One that names the live task (a cap, the clock, the screen gone)
+  // ends it; "answer this one first" and "still on the last job" leave the task as it is.
+  if (ph === "refused") {
+    const ends = !!task && (!e.taskId || e.taskId === task.id) && !ASKING.has(task.phase) && !["answer_first", "busy_task", "busy"].includes(e.reason);
+    openActRefused(e.reason, { app: e.app?.name ?? e.app ?? null, n: e.n, pages: e.pages, message: e.message });
+    if (ends) endTask("stopped", { why: e.reason });
+    return;
+  }
+  if (ph === "status") { const s = Act.statusOf(e.status ?? e); if (s) { actStatus = s; if ((card?.kind === "look" && card.phase === "settings") || card?.kind === "act") render(); } return; }
+  // Phase 3 (companion2 D.3, M.7): a plan's sentence while Brenda for Mac finds what it names on this Mac (read-only,
+  // nothing done); the question comes with the lines once Boredroom has them. Nothing to answer yet, so no buttons.
+  if (ph === "scoping") {
+    const plan = Act.scopingWords(e.plan).plan;
+    const id = typeof e.taskId === "string" ? e.taskId : "";
+    if (!plan.startsWith("I'll ") || !id) return;
+    hush();
+    // Its steps, when Rust passes the TaskView along (only so "Nothing was opened." can be said if it can't be got ready).
+    const view = Act.taskOf(e.task);
+    task = { id, kind: "plan", plan, question: Act.QUESTION, phase: "scoping", steps: view?.id === id && view.kind === "plan" ? view.steps : [], lines: null, names: [], spoken: !!stream?.spoken || (!!lastLook && Date.now() - lastLook.at < 5_000 && lastLook.spoken), step: 0, note: "" };
+    openAct({ phase: "scoping", sticky: true });
+    return;
+  }
+  if (ph === "asking") {
+    const t = Act.taskOf(e.task);
+    if (!t) return;
+    hush();
+    // Usually the look is still streaming (its answer then says the plan). When its answer came first, the look has
+    // finished: the plan and the question are said here, under that look's speaking rule (integration, 12 October 2026).
+    // A plan that was getting ready keeps how it was asked (phase 3).
+    const scoped = task?.phase === "scoping" && task.id === t.id ? task : null;
+    const late = !stream && !!lastLook && Date.now() - lastLook.at < 5_000;
+    task = { ...t, phase: "asking", shownAt: Date.now(), spoken: scoped ? scoped.spoken : late ? lastLook.spoken : !!stream?.spoken, step: 0, note: "",
+      // A folder job's files, by name, for "Show the 14" (phase 3): local to this Mac, never sent before the yes.
+      names: Act.localNames(e.local?.names) };
+    Sound.play("attention");
+    openAct({ phase: "asking", sticky: true });
+    restartCountdown(Math.max(1_000, (t.answerBy ?? Date.now() + Act.ANSWER_MS) - Date.now()));
+    // A plan whose look finished while it was getting ready: said here (a look still streaming says it as it ends).
+    if ((late || (scoped && !stream)) && speaksFor(task.spoken)) sayAloud(`${task.plan} ${Act.QUESTION}`, null);
+    return;
+  }
+  if (ph === "heard") {
+    if (e.forConfirm) return heardForConfirm(e);
+    lastHeard = { text: String(e.text ?? "").slice(0, 4000), spoken: card?.listening === true || card?.transcribing === true };
+    if (!mine(e.taskId) || card?.kind !== "act") return;
+    Object.assign(card, { heard: String(e.text ?? "").slice(0, 200), verdict: ["yes", "no", "unclear"].includes(e.verdict) ? e.verdict : "unclear", listening: false, transcribing: false });
+    if (card.phase === "step_ask" && card.verdict !== "yes") task.saidNo = true;
+    return render();
+  }
+  if (!mine(e.taskId)) return;
+  if (ph === "confirming") { task.phase = "confirming"; restartCountdown(0); return openAct({ phase: "confirming", sticky: true }); }
+  if (ph === "running") {
+    const was = task.phase;
+    // A plan says which part it is on ("Part 2 of 3") and, for opening something or a Boredroom change, what (M.7).
+    const part = e.part && typeof e.part === "object" ? e.part : null;
+    const step = part && Array.isArray(task.steps) ? task.steps[(Number(part.k) || 0) - 1] ?? null : null;
+    const note = step && (step.kind === "open" || step.kind === "boredroom") ? Act.partNote(step) || Act.noteOf(e.note) : Act.noteOf(e.note);
+    Object.assign(task, { phase: "running", step: Number.isInteger(e.step) ? e.step : task.step, note: note || task.note, part, startedAt: task.startedAt ?? Date.now() });
+    task.escAt ??= Date.now();
+    restartCountdown(0);
+    // After the yes: "You said yes." for a second, then the notch tucks to the doing bar so it never covers her work.
+    if (was === "asking" || was === "confirming") { Sound.play("success"); return openAct({ phase: "doing", saidYes: true, closeAfter: Act.T.SAID_YES_MS }); }
+    if (was === "step_ask" || was === "paused") return closeCard();
+    if (card?.kind === "act" && card.phase === "working") { card.phase = "doing"; return render(); }
+    if (card?.kind === "act" && card.phase === "doing") return render();
+    if (!card) render();
+    return;
+  }
+  if (ph === "step_ask") {
+    const a = e.ask && typeof e.ask === "object" ? e.ask : {};
+    Object.assign(task, { phase: "step_ask", ask: { kind: a.kind, what: a.what, because: a.because } });
+    hush(); Sound.play("attention");
+    openAct({ phase: "step_ask", sticky: true });
+    restartCountdown(Act.ANSWER_MS);
+    return;
+  }
+  if (ph === "paused") { Object.assign(task, { phase: "paused", why: e.why }); Sound.play("attention"); openAct({ phase: "paused", sticky: true }); restartCountdown(Act.ANSWER_MS); return; }
+  if (ph === "working") {
+    const was = task.phase;
+    // A plan's folder job (phase 3, M.7): how far it has read ("Reading 4 of 14"), its clock from Rust's start.
+    const folder = e.folder && typeof e.folder === "object" ? { name: String(e.folder.name ?? ""), done: Number.isInteger(e.folder.done) ? e.folder.done : 0, of: Number.isInteger(e.folder.of) ? e.folder.of : 0 } : null;
+    Object.assign(task, { phase: "working", kind: task.kind === "plan" ? "plan" : "file", folder, file: e.file && typeof e.file === "object" ? e.file : task.file, output: e.output && typeof e.output === "object" ? e.output : task.output, startedAt: Number.isFinite(e.startedAt) ? e.startedAt : was === "working" && task.startedAt ? task.startedAt : Date.now() });
+    restartCountdown(0);
+    if (was === "asking" || was === "confirming") { Sound.play("success"); return openAct({ phase: "working", saidYes: true, closeAfter: Act.T.SAID_YES_MS }); }
+    if (card?.kind === "act" && card.phase === "doing") card.phase = "working";
+    return render();
+  }
+  if (ph === "done") {
+    const t = task;
+    const d = t.kind === "plan" || e.kind === "plan" ? Act.planDoneCard(e) : Act.doneCard(e, t);
+    Sound.play("success");
+    openAct({ phase: "done", done: d, doneEvt: { kind: e.kind, doc: e.doc ?? null }, taskId: t.id, closeAfter: d.kind === "screen" || (d.kind === "plan" && !d.outputs.length && !d.doc) ? Act.T.DONE_MS : 15_000 });
+    if (speaksFor(t.spoken)) sayAloud(d.said, null);
+    return endTask("done", e);
+  }
+  // Rust sends the model's cannot_continue as `stopped` with why "cannot" and its reason.
+  if (ph === "stopped" && e.why === "cannot") { openAct({ phase: "stopped", words: Act.cannotCard(e.reason), closeAfter: Act.T.REFUSED_MS }); return endTask("cannot", e); }
+  if (ph === "stopped") {
+    const t = task;
+    const s = Act.stoppedCard(e, { name: me().name, kind: t.kind, saidNo: !!t.saidNo });
+    if (!["signout", "quit"].includes(e.why)) openAct({ phase: "stopped", words: s, closeAfter: Act.T.REFUSED_MS });
+    return endTask("stopped", e);
+  }
+  if (ph === "cannot") { openAct({ phase: "stopped", words: Act.cannotCard(e.reason), closeAfter: Act.T.REFUSED_MS }); return endTask("cannot", e); }
+  if (ph === "said_no" || ph === "expired") {
+    // A new request first (its own question follows), then unclear ("I didn't catch a clear yes"), then no (review, 12 October 2026).
+    const kind = ph === "expired" ? "expired" : e.verdict === "new_request" || e.newRequest === true ? "new_request" : e.verdict === "unclear" ? "unclear" : e.verdict === "unresolved" ? "unresolved" : "no";
+    const o = Act.outcome(kind);
+    openAct({ phase: "said_no", words: o, closeAfter: o.ms });
+    return endTask(ph === "expired" ? "expired" : "said_no", { verdict: kind === "unclear" ? "unclear" : "no" });
+  }
+  // A plan Brenda for Mac could not get ready (phase 3, companion2 D.3): Boredroom's words; the task has already ended.
+  if (ph === "unresolved") {
+    const u = Act.unresolvedCard(e, task);
+    openAct({ phase: "unresolved", words: u, closeAfter: Act.T.REFUSED_MS });
+    return endTask("unresolved", e);
+  }
+  if (ph === "failed") {
+    Sound.play("error");
+    const started = !["asking", "confirming"].includes(task.phase);
+    openAct({ phase: "stopped", failed: true, words: Act.failedCard(e, { kind: task.kind, started }), closeAfter: Act.T.REFUSED_MS });
+    return endTask("failed", e);
+  }
+});
+/** Rust heard a yes or a no for a look's Confirm card (contract B.6.6): the card's own Confirm path, only on a clear yes. */
+function heardForConfirm(e) {
+  const c = card?.kind === "voice" && card.phase === "reply" ? (card.proposals ?? []).find((p) => p.kind === "confirm" && !p.done && String(p.token).slice(0, 16) === e.forConfirm) : null;
+  if (!c) return;
+  if (e.verdict === "yes") return confirmProposal(c.token);
+  if (e.verdict === "no") return declineConfirms(c.token);
+  error = "I didn't catch a clear yes."; showError();
+}
+/** While a look's reply shows a Confirm, Rust listens for a yes or no to it on her keys (contract B.6.6); then it stops. */
+function syncExpect() {
+  if (!lookV2()) return;
+  const c = card?.kind === "voice" && card.phase === "reply" && card.looked ? (card.proposals ?? []).find((p) => p.kind === "confirm" && !p.done) : null;
+  const id = c ? String(c.token).slice(0, 16) : null;
+  if (id === expecting) return;
+  expecting = id;
+  invoke("act_expect_answer", { expect: id ? { id, kind: "confirm" } : null }).catch(() => {});
+}
+
+/** An answer's recording (her keys or Option+Space while a question waits; contract B.10): the waveform, never a question to her. */
+function answerVoice(e) {
+  const c = card;
+  const on = (c?.kind === "act" && ASKING.has(c.phase)) || (c?.kind === "voice" && c.phase === "reply");
+  if (e.phase === "listening") {
+    if (!on || c.kind !== "act") return;
+    if (!c.listening) { c.listening = true; c.heard = null; c.startedAt = Date.now(); c.endedAt = null; render(); Wave.start(e.level ?? 0); }
+    Wave.level(e.level ?? 0);
+    return;
+  }
+  if (e.phase === "transcribing") { if (on && c.kind === "act" && c.listening) { c.transcribing = true; c.endedAt = Date.now(); Wave.process(); render(); } return; }
+  // The words heard come as the act's `heard` (with Rust's verdict); anything else ends the recording.
+  if (on && c.kind === "act" && (c.listening || c.transcribing) && e.phase !== "heard") { c.listening = false; c.transcribing = false; render(); }
+}
+
+/** The bar while a task is under way (contract A.7.1, A.8.3): the live dot and what she is doing; a click opens its card. */
+function taskBar() {
+  if (!task) return null;
+  if (task.phase === "scoping") { const w = Act.scopingWords(task.plan); return { text: `<span class="shimmer">${esc(w.wait)}</span>`, label: w.wait }; }
+  // A plan's folder job (phase 3, M.7): "Reading 4 of 14, 1:05", then "Saving “…”…".
+  if (task.phase === "working" && task.folder) {
+    const w = Act.folderWorkingWords({ folder: task.folder, output: task.output, ms: Date.now() - (task.startedAt ?? Date.now()), escRegistered: actStatus?.escRegistered });
+    return { text: w.saving ? `<span class="rec-dot act-dot"></span>&ensp;${esc(w.bar)}` : `<span class="rec-dot act-dot"></span>&ensp;${esc(w.reading)}, <span class="clock" id="aclock">${esc(Act.elapsed(Date.now() - (task.startedAt ?? Date.now())))}</span>`, label: w.bar };
+  }
+  if (task.phase === "working") {
+    const w = Act.workingWords({ file: task.file, output: task.output, ms: Date.now() - (task.startedAt ?? Date.now()), escRegistered: actStatus?.escRegistered });
+    const file = esc(w.title.replace(/^Working on /, ""));
+    return { text: `<span class="rec-dot act-dot"></span>&ensp;Working on ${file}, <span class="clock" id="aclock">${esc(Act.elapsed(Date.now() - (task.startedAt ?? Date.now())))}</span>`, label: w.bar };
+  }
+  if (task.phase === "running" || task.phase === "confirming") {
+    const w = Act.doingWords({ escRegistered: escOk(), step: task.step, part: task.part });
+    // The Mac operator (helpers contract F.2): its job's doing line ("Filling in the form") instead.
+    const bar = task.kind === "operator" && task.doingTitle ? task.doingTitle : w.bar;
+    return { text: `<span class="rec-dot act-dot"></span>&ensp;${esc(bar)}`, label: bar };
+  }
+  if (ASKING.has(task.phase)) return { text: esc(task.phase === "paused" ? "I paused" : Act.QUESTION), label: Act.QUESTION };
+  return null;
+}
+/** The card the bar opens for the task now. */
+function openTaskCard(origin = "hover") {
+  if (!task) return false;
+  const phase = task.phase === "working" ? "working" : task.phase === "running" || task.phase === "confirming" ? "doing" : task.phase;
+  openCard({ kind: "act", phase, origin, sticky: ASKING.has(phase) || phase === "scoping" });
+  return true;
+}
+
+/** The act cards (contract C.4): at most one orange button, and none while she asks, asks again or waits after a pause. */
+function actView() {
+  const c = card, name = me().name;
+  const m = moodOf();
+  const t = task;
+  const ok = (label = "OK") => `<div class="actions"><button class="btn primary" data-act="act-ok" data-main>${esc(label)}</button></div>`;
+  const plainCard = (title, sub, actions, extra = "") => `<div class="row fade top">${face(m)}<div class="grow"><p class="title full">${esc(title)}</p>${sub ? `<p class="sub">${esc(sub)}</p>` : ""}${extra}</div></div>${actions}`;
+  const answerBox = (w) => {
+    const wave = c.listening || c.transcribing
+      ? `<div class="dict"><span class="mic"><span class="rec-dot"></span></span><span class="cap${c.transcribing ? " shimmer" : ""}">${esc(c.transcribing ? "Getting your words…" : w.listening)}</span></div><div class="wave${c.transcribing ? "" : " live"}" aria-hidden="true"><canvas id="wave"></canvas></div>`
+      : c.heard ? `<p class="said">“${esc(c.heard)}”</p>` : "";
+    return `${wave}<form class="act-answer fade" data-answer><input class="field" id="aans" name="a" maxlength="200" placeholder="${esc(w.placeholder)}" aria-label="${esc(w.label)}" autocomplete="off" spellcheck="false" ${c.answering ? "disabled" : ""}></form>`;
+  };
+  // Neutral, as the card is (contract A.6.4): "Answer this one first", or why an answer didn't go.
+  const note = c.note ? `<p class="cap act-note">${esc(c.note)}</p>` : "";
+  // The consents and the Mac's permission steps live on the setup card now (phase 3, help.js); their words, under its
+  // Read everything.
+  if (c.phase === "refused") {
+    const r = Act.refusal(c.reason, { name, app: c.app, n: c.n, pages: c.pages, message: c.message });
+    // Never just "off" (phase 3, companion2 A.4): a switch that is off offers Turn it on, which opens the setup card.
+    const which = c.reason === "use_mac_off" ? "mac" : c.reason === "files_off" ? "files" : null;
+    if (which && lookStatus?.supported) return plainCard(r.title, r.sub, `<div class="actions"><button class="btn ghost" data-act="act-ok">OK</button><button class="btn primary accent" data-act="act-turn-on" data-which="${which}" data-main>${esc(Help.enableWords(which, name).button)}</button></div>`);
+    return plainCard(r.title, r.sub, ok());
+  }
+  if (c.phase === "unresolved") {
+    const u = c.words ?? {};
+    const settings = u.settings === "files" && canOpenPrivacy("files") ? `<button class="btn" data-act="act-privacy">${esc(u.open)}</button>` : "";
+    return plainCard(u.title ?? "", u.sub ?? "", `<div class="actions">${settings}<button class="btn primary" data-act="act-ok" data-main>${esc(u.ok ?? "OK")}</button></div>`);
+  }
+  if (c.phase === "said_no") return `<div class="row fade">${face(m)}<div class="grow"><p class="title wrap">${esc(c.words?.title ?? "")}</p></div></div>`;
+  if (c.phase === "stopped") {
+    const w = c.words ?? {};
+    return plainCard(w.title ?? "Stopped.", w.sub ?? "", ok(), w.last ? `<p class="cap">${esc(w.last)}</p>` : "");
+  }
+  if (c.phase === "done") {
+    const d = c.done ?? {};
+    // A plan's done card (phase 3, M.7): what she saved, Show in Finder and Open for it, or the Boredroom document.
+    if (d.kind === "plan") {
+      const doc = d.doc && boredroomPath(d.doc.href);
+      const actions = d.outputs?.length
+        ? `<div class="actions"><button class="btn" data-act="act-reveal" data-id="${esc(c.taskId)}">${esc(d.reveal)}</button><button class="btn" data-act="act-open-output" data-id="${esc(c.taskId)}">${esc(d.open)}${icon("open")}</button><button class="btn primary" data-act="act-ok" data-main>${esc(d.ok)}</button></div>`
+        : `<div class="actions">${doc ? `<button class="btn" data-act="open-href" data-href="${esc(doc)}">${esc(d.open)}${icon("open")}</button>` : ""}<button class="btn primary" data-act="act-ok" data-main>${esc(d.ok)}</button></div>`;
+      return plainCard(d.title ?? "Done.", d.sub ?? "", actions);
+    }
+    const actions = d.kind === "file"
+      ? `<div class="actions"><button class="btn" data-act="act-reveal" data-id="${esc(c.taskId)}">${esc(d.reveal)}</button><button class="btn" data-act="act-open-output" data-id="${esc(c.taskId)}">${esc(d.open)}${icon("open")}</button><button class="btn primary" data-act="act-ok" data-main>${esc(d.ok)}</button></div>`
+      : d.kind === "doc"
+        ? `<div class="actions">${boredroomPath(c.doneEvt?.doc?.href) ? `<button class="btn" data-act="open-href" data-href="${esc(boredroomPath(c.doneEvt.doc.href))}">${esc(d.open)}${icon("open")}</button>` : ""}<button class="btn primary" data-act="act-ok" data-main>${esc(d.ok)}</button></div>`
+        : ok(d.ok);
+    return plainCard(d.title ?? "Done.", d.sub ?? "", actions);
+  }
+  // The live phases need the task.
+  if (!t) return plainCard("That task has already ended.", "", ok());
+  // A plan getting ready (phase 3, companion2 D.3, M.7): the sentence, and "Getting that ready…"; nothing to answer yet.
+  if (c.phase === "scoping") {
+    const w = Act.scopingWords(t.plan);
+    return `<div class="row fade top">${face({ mood: "alert" })}<div class="grow"><p class="title full act-plan">${esc(w.plan)}</p><p class="sub shimmer">${esc(w.wait)}</p></div></div>`;
+  }
+  if (c.phase === "asking") {
+    const w = Act.askCard(t, { keysLabel: keysLabel() });
+    // A plan's lines (phase 3, M.7, J.3): exactly what each part touches, as text, one per row with a small neutral icon;
+    // a folder job's files by name on request (they stay on this Mac).
+    const names = Array.isArray(t.names) ? t.names : [];
+    const lines = w.lines.length ? `<ul class="list act-lines fade">${w.lines.map((l) => `<li class="wrap"><span class="act-li">${icon(l.icon)}</span><span class="t">${esc(l.text)}</span></li>`).join("")}</ul>` : "";
+    const which = names.length ? `<p class="cap act-which"><button class="link toggle" data-act="act-names" aria-expanded="${!!c.showNames}" aria-controls="anames">${icon("chevron")}${esc(Act.showWhich(names.length, !!c.showNames))}</button></p>${c.showNames ? `<ul class="list act-names" id="anames">${names.map((n) => `<li><span class="t">${esc(n)}</span></li>`).join("")}</ul>` : ""}` : "";
+    // Neutral on purpose (contract A.4, A.6.1): her alert face with no glow, no orange, white Yes beside a ghost No.
+    // A plan's lines scroll inside the card, with the fade while more sits below, so Yes and No always stay in view
+    // (review, 12 October 2026: a four-step plan pushed them under the 440 px fold, and macOS hides scroll bars).
+    const mid = lines ? `<div class="act-mid fade" tabindex="0" role="region" aria-label="What I'll do">${lines}${which}</div>` : which;
+    return `<div class="row fade top">${face({ mood: "alert" })}<div class="grow"><p class="title full act-plan">${esc(w.plan)}</p>${w.file ? `<p class="cap act-file">${esc(w.file)}</p>` : ""}${lines ? "" : `<p class="sub act-q">${esc(w.question)}</p>`}${w.risky && !lines ? `<p class="cap">${esc(w.risky)}</p>` : ""}</div></div>
+      ${mid}${lines ? `<p class="sub act-q fade">${esc(w.question)}</p>${w.risky ? `<p class="cap fade">${esc(w.risky)}</p>` : ""}` : ""}
+      ${answerBox(w)}
+      <p class="cap act-hint fade">${esc(w.hint)}</p>${note}
+      <div class="actions act-pinned"><button class="btn ghost" data-act="act-no" ${c.answering ? "disabled" : ""}>${esc(w.no)}</button><button class="btn primary" data-act="act-yes" ${c.answering ? "disabled" : ""}>${icon("check")}${esc(w.yes)}</button></div>`;
+  }
+  if (c.phase === "confirming") {
+    const w = Act.askCard(t);
+    return `<div class="row fade top">${face(m)}<div class="grow"><p class="title shimmer">${esc(w.wait)}</p><p class="said">${esc(t.plan)}</p></div></div>`;
+  }
+  if (c.phase === "step_ask") {
+    const w = Act.stepCard(t.ask);
+    const a = Act.askCard(t, { keysLabel: keysLabel() });
+    return `<div class="row fade top">${face({ mood: "alert" })}<div class="grow"><p class="title full act-plan">${esc(w.title)}</p><p class="sub act-q">${esc(w.question)}</p><p class="cap">${esc(w.because)}</p></div></div>
+      ${answerBox(a)}${note}
+      <div class="actions"><button class="btn ghost" data-act="act-no" ${c.answering ? "disabled" : ""}>${esc(w.no)}</button><button class="btn primary" data-act="act-yes" ${c.answering ? "disabled" : ""}>${icon("check")}${esc(w.yes)}</button></div>`;
+  }
+  if (c.phase === "paused") {
+    // Brenda in front during the Mac operator (helpers contract L.1, S.6): which app to click, then Carry on.
+    const w = t.why === "own_front" || t.why === "own_window" ? frontWords().job.ownWindow : Act.pausedWords(t.why);
+    return plainCard(w.title, w.sub, `<div class="actions"><button class="btn ghost" data-act="act-stop">${esc(w.stop)}</button><button class="btn primary" data-act="act-continue">${esc(w.go)}</button></div>`);
+  }
+  if (c.phase === "doing") {
+    const w = Act.doingWords({ escRegistered: escOk(), step: t.step, note: t.note, part: t.part });
+    // "I'm using your mouse and keyboard" only while she is (a plan's opening and Boredroom parts use neither).
+    const first = Date.now() - (t.escAt ?? Date.now()) < Act.T.ESC_HINT_MS && (!t.part || t.part.kind === "screen");
+    // The Mac operator's doing card is titled with its job (helpers contract F.2: "Filling in the form").
+    const title = t.kind === "operator" && t.doingTitle ? t.doingTitle : w.title;
+    return `${c.saidYes ? `<p class="cap fade act-yes-line">${esc(Act.askCard(t).saidYes)}</p>` : ""}<div class="row fade top">${face(m)}<div class="grow"><div class="act-head"><p class="title">${esc(title)}</p><span class="act-step"><span class="rec-dot"></span><span class="num">${esc(w.step)}</span></span></div>${w.note ? `<p class="sub">${esc(w.note)}</p>` : ""}${first ? `<p class="cap">${esc(w.first)}</p>` : ""}</div></div>
+      <div class="actions"><button class="btn" data-act="act-stop">${icon("stop")}${esc(w.stop)}${w.kbd ? ` <kbd>${esc(w.kbd)}</kbd>` : ""}</button></div>`;
+  }
+  if (c.phase === "working" && t.folder) {
+    // A plan's folder job (phase 3, M.7): "Working on Documents", how far it has read, where it will save.
+    const w = Act.folderWorkingWords({ folder: t.folder, output: t.output, ms: Date.now() - (t.startedAt ?? Date.now()), escRegistered: actStatus?.escRegistered });
+    return `${c.saidYes ? `<p class="cap fade act-yes-line">${esc(Act.askCard(t).saidYes)}</p>` : ""}<div class="row fade top">${face(m)}<div class="grow"><div class="act-head"><p class="title">${esc(w.title)}</p><span class="act-step"><span class="rec-dot"></span><span class="clock" id="aclock">${esc(Act.elapsed(Date.now() - (t.startedAt ?? Date.now())))}</span></span></div><p class="sub">${esc(w.sub)}</p></div></div>
+      <div class="actions"><button class="btn" data-act="act-stop">${icon("stop")}${esc(w.stop)}</button></div>`;
+  }
+  if (c.phase === "working") {
+    const w = Act.workingWords({ file: t.file, output: t.output, ms: Date.now() - (t.startedAt ?? Date.now()), escRegistered: actStatus?.escRegistered });
+    return `${c.saidYes ? `<p class="cap fade act-yes-line">${esc(Act.askCard(t).saidYes)}</p>` : ""}<div class="row fade top">${face(m)}<div class="grow"><div class="act-head"><p class="title">${esc(w.title)}</p><span class="act-step"><span class="rec-dot"></span><span class="clock" id="aclock">${esc(Act.elapsed(Date.now() - (t.startedAt ?? Date.now())))}</span></span></div><p class="sub">${esc(w.sub)}</p></div></div>
+      <div class="actions"><button class="btn" data-act="act-stop">${icon("stop")}${esc(w.stop)}</button></div>`;
+  }
+  return "";
+}
+
+// ---- help on this Mac: the one setup card, the settings card, and what Boredroom is told (phase 3) --------------------
+// Owner report and requests, 12 October 2026 (companion2 contract A, F; the header says what the person sees; the words
+// are help.js's). Setup is not a task: nothing here turns anything on except "Turn these on" and the steps' Continue, the
+// person's own presses, which Rust checks (`help_setup` on this build's Rust; today's `set_screen_help`,
+// `act_set_use_mac` and `act_set_file_work`, each refusing a press that was not real). Every other way in only opens the
+// card. Turning anything off is at once and needs no card.
+
+/** Doing things and file work exist on this Mac and in this workspace (the setup card's two lower rows). */
+const actsHere = () => !!actStatus?.supported && data?.look?.act?.available === true;
+/** The person's words kept for Ask again (companion2 A.4: ten minutes, in memory only, never saved). */
+let keptRequest = null;
+/** The last "Set up on my Mac" this Mac acted on (localStorage `brenda.setupSeen`; memory when storage is blocked). */
+let setupSeen = null;
+/** A "Set up on my Mac" that arrived while another card had to stay: it opens when that card closes, while fresh. */
+let setupPending = null;
+const SETUP_SEEN_KEY = "brenda.setupSeen";
+function loadSetupSeen() {
+  if (setupSeen) return setupSeen;
+  try { setupSeen = localStorage.getItem(SETUP_SEEN_KEY) || null; } catch { /* storage blocked: memory only */ }
+  return setupSeen;
+}
+function keepSetupSeen(at) {
+  setupSeen = at;
+  try { localStorage.setItem(SETUP_SEEN_KEY, at); } catch { /* storage blocked: memory only */ }
+}
+function openPendingSetup() {
+  const p = setupPending;
+  setupPending = null;
+  if (!p || card || !config?.signedIn) return;
+  if (serverNow() - Date.parse(p.at) <= Help.SETUP_FRESH_MS) openHelp({});
+}
+
+/** Which abilities are on here, as the setup card reads them (rows Boredroom or this Rust doesn't offer are hidden). */
+function abilitiesNow() {
+  const acts = actsHere();
+  return { look: lookStatus?.on === true, mac: acts && actStatus.useMac === true, files: acts && actStatus.fileWork === true, offer: { mac: acts, files: acts } };
+}
+
+/**
+ * Opens the setup card (companion2 A.1). `focus`: "look", "mac" or "files" (that row pre-ticked, and seeing when it is
+ * off), or nothing (every ability that is off pre-ticked); `step`: straight to one of macOS's steps (the settings card's
+ * pills, "Allow it"); `request`: the person's last words, kept for Ask again; `back: "settings"` returns to Help on this
+ * Mac after a step. With everything already on, it goes on to whatever macOS still needs, then the done card.
+ */
+function openHelp(o = {}) {
+  if (!config?.signedIn || !lookStatus) return; // an older Rust without screen help: there is nothing to set up
+  if (o.request) keptRequest = Help.keptOf({ words: o.request, at: Date.now() });
+  if (!lookStatus.supported) return openLookRefused("unsupported");
+  if (data?.look && data.look.available !== true) return openLookRefused("not_available");
+  if (o.step) return helpSteps(o.step, { back: o.back ?? null, only: !!o.back });
+  const focus = Help.ABILITIES.includes(o.focus) ? o.focus : null;
+  // Opened for something the person asked for: every ability that is off is ticked, so one setup covers the request
+  // (review, 12 October 2026). With nothing on yet, the same (Help.setupTicks).
+  const rows = Help.setupTicks(abilitiesNow(), focus, { request: !!o.request });
+  if (Help.ABILITIES.every((a) => !rows[a].shown || rows[a].on)) return helpSteps(null);
+  tucked = false;
+  openCard({ kind: "help", phase: "setup", origin: "user", sticky: true, focus, rows, read: false, note: null });
+}
+
+/**
+ * macOS's steps after "Turn these on" (companion2 A.1's table), from what Rust says now; `from` starts at one of them
+ * (a pill on the settings card: that step only, then back to the settings card).
+ */
+function helpSteps(from = null, o = {}) {
+  let steps = Help.setupSteps(lookStatus, actsHere() ? actStatus : null, lookStatus?.v, { finderAsked: !!o.finderAsked });
+  if (from) {
+    const i = steps.findIndex((s) => s === from || s === `${from}-denied`);
+    if (from === "finder" && actStatus?.finder === "denied") steps = ["finder-denied"];
+    else if (i >= 0) steps = o.only ? [steps[i]] : steps.slice(i);
+    else if (o.only) steps = [];
+  }
+  showHelpStep(steps, o.back ?? null);
+}
+function showHelpStep(steps, back = null) {
+  if (!steps.length || (steps[0] === "done" && back === "settings")) return openLook({ phase: "settings" });
+  const [step, ...rest] = steps;
+  const kept = step === "done" && !!Help.keptOf(keptRequest);
+  tucked = false;
+  openCard({ kind: "help", phase: step, origin: "user", sticky: step !== "done" || kept, rest, back, note: null, result: null, closeAfter: 15_000 });
+}
+/** Skip, OK: on to the next step. */
+function helpNext() {
+  const c = card;
+  if (c?.kind !== "help") return;
+  if (c.phase === "done") return closeCard();
+  showHelpStep(c.rest ?? ["done"], c.back ?? null);
+}
+
+/** Today's binary turns each ability on with its own command (each checks the press itself). */
+async function turnOnOld(a) {
+  if (a === "look") {
+    const s = lookStatusOf(await invoke("set_screen_help", { enabled: true }));
+    if (s) lookStatus = s;
+    if (!lookStatus?.on) throw new Error(Help.setupWords().errors.failed);
+  } else if (a === "mac") {
+    const s = Act.statusOf(await invoke("act_set_use_mac", { enabled: true }));
+    if (s) actStatus = s;
+    if (!actStatus?.useMac) throw new Error(Help.setupWords().errors.failed);
+  } else if (a === "files") {
+    const s = Act.statusOf(await invoke("act_set_file_work", { enabled: true }));
+    if (s) actStatus = s;
+    if (!actStatus?.fileWork) throw new Error(Help.setupWords().errors.failed);
+  }
+}
+const notAPress = (err) => /NOT_A_PRESS$/.test(String(err?.code ?? ""));
+
+/**
+ * "Turn these on" (a real press; companion2 A.1). This build's Rust: `help_setup` with the ticks, which turns on what is
+ * asked without a prompt, never turns anything off, and greets by the pointer. Today's: screen help, then "Do things",
+ * then "Work on my files" (which makes macOS ask about Finder at once), awaited one after another with nothing else
+ * between, so each is still the same press. A press Rust did not take falls back to a card with its own Continue.
+ */
+async function helpTurnOn() {
+  const c = card;
+  if (c?.kind !== "help" || c.phase !== "setup" || busy) return;
+  const want = Help.toTurnOn(c.rows);
+  if (!want.length) return;
+  const w = Help.setupWords(me().name, keysLabel());
+  const done = [];
+  busy = true; c.note = null; render();
+  try {
+    if (lookV3()) {
+      const r = await invoke("help_setup", { look: c.rows.look.ticked === true, mac: c.rows.mac.shown && c.rows.mac.ticked === true, files: c.rows.files.shown && c.rows.files.ticked === true });
+      const ls = lookStatusOf(r?.look); if (ls) lookStatus = ls;
+      const as = Act.statusOf(r?.act); if (as) actStatus = as;
+    } else {
+      for (const a of want) { await turnOnOld(a); done.push(a); }
+    }
+    busy = false;
+    Sound.play("success");
+    helpSteps(null, { finderAsked: want.includes("files") });
+  } catch (err) {
+    busy = false;
+    Sound.play("error");
+    if (!lookV3() && notAPress(err)) {
+      const left = want.filter((a) => !done.includes(a));
+      return openCard({ kind: "help", phase: "again", origin: "user", sticky: true, left, rest: [], note: null, finderAsked: want.includes("files") });
+    }
+    if (card === c) { c.note = err?.message === w.errors.needsLook ? w.errors.needsLook : w.errors.failed; render(); }
+  }
+}
+
+/** Continue on one of macOS's steps (a real press, which Rust checks), and Continue on the fallback card. */
+async function helpGo() {
+  const c = card;
+  if (c?.kind !== "help" || busy) return;
+  const rest = c.rest ?? ["done"];
+  busy = true; c.note = null; render();
+  try {
+    if (c.phase === "screen") {
+      const s = lookStatusOf(await invoke("look_request_permission"));
+      if (s) lookStatus = s;
+      busy = false;
+      if (lookStatus?.permission !== "granted") return showHelpStep(["screen-denied", ...rest], c.back);
+    } else if (c.phase === "accessibility") {
+      const s = Act.statusOf(await invoke("act_request_accessibility"));
+      if (s) actStatus = s;
+      busy = false;
+      if (actStatus?.accessibility !== "granted") return showHelpStep(["accessibility-denied", ...rest], c.back);
+    } else if (c.phase === "finder") {
+      const s = Act.statusOf(await invoke("help_request_finder"));
+      if (s) actStatus = s;
+      busy = false;
+      if (actStatus?.finder === "denied") return showHelpStep(["finder-denied", ...rest], c.back);
+    } else if (c.phase === "folders") {
+      const s = Act.statusOf(await invoke("help_request_folders", { which: [...Help.FOLDERS] }));
+      if (s) actStatus = s;
+      busy = false;
+      c.result = Help.folderLines(actStatus?.folders, me().name);
+      Sound.play(c.result.denied ? "tick" : "success");
+      return render();
+    } else if (c.phase === "again") {
+      for (const a of c.left ?? []) await turnOnOld(a);
+      busy = false;
+      Sound.play("success");
+      return helpSteps(null, { finderAsked: !!c.finderAsked });
+    }
+    busy = false;
+    Sound.play("success");
+    showHelpStep(rest, c.back);
+  } catch (err) {
+    busy = false;
+    Sound.play("error");
+    if (card === c) { c.note = err?.message || Help.setupWords().errors.failed; render(); }
+  }
+}
+
+/** Check again on "Allow Brenda in System Settings". */
+async function helpCheck() {
+  const c = card;
+  if (c?.kind !== "help") return;
+  if (c.phase === "screen-denied") {
+    const s = await invoke("look_status").then(lookStatusOf).catch(() => null);
+    if (s) lookStatus = s;
+    if (lookStatus?.permission === "granted") { Sound.play("success"); return showHelpStep(c.rest ?? ["done"], c.back); }
+  }
+  if (c.phase === "accessibility-denied") {
+    const s = await invoke("act_status").then(Act.statusOf).catch(() => null);
+    if (s) actStatus = s;
+    if (actStatus?.accessibility === "granted") { Sound.play("success"); return showHelpStep(c.rest ?? ["done"], c.back); }
+  }
+  if (card === c) { c.note = Help.stepWords(me().name)[c.phase]?.stillOff ?? null; render(); }
+}
+
+/** System Settings, at a fixed privacy pane only (`help_open_privacy`; today's Rust has two of them). */
+const canOpenPrivacy = (pane) => lookV3() || pane === "screen" || pane === "accessibility";
+function helpOpenPrivacy(pane) {
+  if (!["screen", "accessibility", "automation", "files"].includes(pane)) return;
+  if (lookV3()) return void invoke("help_open_privacy", { pane }).catch(() => {});
+  if (pane === "screen") return void invoke("look_open_privacy_settings").catch(() => {});
+  if (pane === "accessibility") return void invoke("act_open_accessibility_settings").catch(() => {});
+}
+
+/**
+ * Ask again (companion2 A.4): the person's own words, kept from the reply that opened the setup, go into the Look
+ * button's flow (a real press; the words sent as a typed question). The most it can lead to is a proposal that waits
+ * for their yes.
+ */
+function askAgain() {
+  const k = Help.keptOf(keptRequest);
+  keptRequest = null;
+  if (!k) return closeCard();
+  // Brenda and her helpers (helpers contract Q.2.9): the front desk takes the words as a typed request. Review, 16
+  // October 2026: words kept up to ten minutes are not a fresh request, so this one asks first (`check`), whatever
+  // "Check with me" says: the done card shows "You asked: …", and Yes or No comes before anything runs.
+  if (frontOn()) return void runFront({ lookId: null, text: k.words, spoken: false, check: true });
+  screenAsk = { words: k.words, at: Date.now() };
+  return lookPressed();
+}
+
+/** A reply's offers (`setup`, `enable`), only where this Mac has a setup card to open. */
+function helpOffersOf(r) {
+  if (!lookStatus?.supported) return { setup: null, enable: null, enableNeeds: [] };
+  const s = Help.setupOf(r?.setup);
+  return { setup: s === undefined ? null : { which: s ?? "all" }, enable: Help.enableOf(r?.enable), enableNeeds: Help.enableNeedsOf(r?.enable) };
+}
+/** The one offer a reply card shows, if any: Turn it on / Allow it, Set up, or Set up {name} on this Mac. */
+function helpOfferOf(c) {
+  if (!lookStatus?.supported || !config?.signedIn) return null;
+  const name = me().name;
+  if (c.enable) {
+    const needs = Array.isArray(c.enableNeeds) ? c.enableNeeds : [c.enable];
+    const e = Help.enableWords(c.enable, name, needs);
+    // What the reply may already say instead of the fixed line: the switches' own labels, or Accessibility.
+    const names = needs.map((x) => (x === "mac" ? "Do things when I ask" : x === "files" ? "Work on my files" : "Accessibility"));
+    if (e) return { act: "help-enable", which: c.enable, button: e.button, line: e.line, names };
+  }
+  if (c.setup) { const w = Help.offerWords(name); return { act: "help-setup", which: c.setup.which ?? "all", button: w.setup, title: w.setupTitle }; }
+  if (c.screenAsk && !lookStatus.on) return { act: "help-screen", which: "look", button: Help.offerWords(name).screenOff };
+  return null;
+}
+
+/** The setup card and macOS's steps (companion2 A.1, J.3): one orange button (Turn these on, or Ask again). */
+function helpView() {
+  const c = card, name = me().name, keys = keysLabel();
+  const m = moodOf();
+  const sw = Help.stepWords(name, keys);
+  const note = c.note ? `<p class="cap act-note fade" role="status">${esc(c.note)}</p>` : "";
+  const dis = busy ? "disabled" : "";
+  const plain = (title, sub, actions, extra = "") => `<div class="row fade top">${face(m)}<div class="grow"><p class="title full">${esc(title)}</p>${sub ? `<p class="sub">${esc(sub)}</p>` : ""}${extra}</div></div>${note}${actions}`;
+  const settingsBtn = (pane, label, cls = "btn primary") => (canOpenPrivacy(pane) ? `<button class="${cls}" data-act="help-open" data-pane="${pane}">${esc(label)}</button>` : "");
+  if (c.phase === "setup") {
+    const w = Help.setupWords(name, keys);
+    const rows = c.rows;
+    const label = Help.turnOnLabel(rows, name);
+    const row = (a) => {
+      const r = rows[a];
+      if (!r.shown) return "";
+      return `<label class="hs-row${r.disabled && !r.on ? " off" : ""}"><input type="checkbox" class="hs-box" data-act="help-tick" data-which="${a}" ${r.ticked ? "checked" : ""} ${r.disabled ? "disabled" : ""} aria-describedby="hs-${a}"><span class="grow"><span class="hs-label">${esc(w.rows[a].label)}</span><span class="cap hs-sub" id="hs-${a}">${esc(w.rows[a].sub)}</span></span>${r.on ? `<span class="pill">${esc(w.on)}</span>` : ""}</label>`;
+    };
+    const needs = rows.mac.needsLook || rows.files.needsLook ? `<p class="cap hs-needs">${esc(w.needsLook)}</p>` : "";
+    const para = (p) => {
+      if (p.lead) return `<p class="sub"><b>${esc(p.lead)}</b> ${esc(p.text)}</p>`;
+      const t = esc(p.text), kk = esc(p.keys ?? "");
+      return `<p class="sub">${kk && t.includes(kk) ? t.replace(kk, `<b>${kk}</b>`) : t}</p>`;
+    };
+    const read = c.read ? `<div class="hs-read" id="hsread">${Help.readEverything(name, keys, lookV2() ? 2 : 1).map((s) => `<p class="hs-h">${esc(s.heading)}</p>${s.paras.map(para).join("")}`).join("")}</div>` : "";
+    return `<div class="row fade">${face(m)}<div class="grow"><p class="title wrap" id="hstitle">${esc(w.title)}</p><p class="sub">${esc(w.lead)}</p></div></div>
+      <div class="look-consent hs-mid fade" tabindex="0" role="region" aria-labelledby="hstitle">
+        <div class="hs-rows">${row("look")}${row("mac")}${row("files")}</div>${needs}
+        <ul class="hs-promises">${w.promises.map((t) => `<li class="cap">${esc(t)}</li>`).join("")}</ul>
+        <p><button class="link toggle" data-act="help-read" aria-expanded="${!!c.read}" aria-controls="hsread">${icon("chevron")}${esc(c.read ? w.less : w.read)}</button></p>${read}
+      </div>${note}
+      <div class="actions"><button class="btn ghost" data-act="help-not-now">${esc(w.notNow)}</button><button class="btn primary accent" data-act="help-turn-on" ${label && !busy ? "" : "disabled"}>${esc(label ?? w.turnOnMany)}</button></div>
+      <p class="cap look-foot fade">${esc(w.footer)}</p>`;
+  }
+  const go = (s) => `<div class="actions"><button class="btn ghost" data-act="help-skip">${esc(s.skip)}</button><button class="btn primary" data-act="help-go" data-main ${dis}>${esc(s.go)}</button></div>`;
+  if (c.phase === "screen" || c.phase === "accessibility" || c.phase === "finder") return plain(sw[c.phase].title, sw[c.phase].sub, go(sw[c.phase]));
+  if (c.phase === "screen-denied" || c.phase === "accessibility-denied") {
+    const s = sw[c.phase];
+    return plain(s.title, s.sub, `<div class="actions"><button class="btn ghost" data-act="help-skip">${esc(s.skip)}</button><button class="btn" data-act="help-check">${esc(s.check)}</button>${settingsBtn(c.phase === "screen-denied" ? "screen" : "accessibility", s.open)}</div>`);
+  }
+  if (c.phase === "finder-denied") {
+    const s = sw["finder-denied"];
+    return plain(s.title, s.sub, `<div class="actions">${settingsBtn("automation", s.open, "btn")}<button class="btn primary" data-act="help-skip" data-main>${esc(s.ok)}</button></div>`);
+  }
+  if (c.phase === "folders") {
+    const s = sw.folders;
+    if (!c.result) return plain(s.title, s.sub, go(s));
+    const lines = `<ul class="list fade">${c.result.lines.map((l) => `<li><span class="t">${esc(l)}</span></li>`).join("")}</ul>`;
+    return `${plain(s.title, c.result.denied ? s.denied : "", "")}${c.result.lines.length ? lines : ""}<div class="actions">${c.result.denied ? settingsBtn("files", s.open, "btn") : ""}<button class="btn primary" data-act="help-skip" data-main>${esc(s.ok)}</button></div>`;
+  }
+  if (c.phase === "again") {
+    const s = sw.again;
+    const first = Help.setupWords(name).rows[(c.left ?? [])[0]]?.label ?? "";
+    return plain(s.title(first), s.sub, go(s));
+  }
+  if (c.phase === "done") {
+    const s = sw.done;
+    const lines = Help.doneLines(lookStatus, actsHere() ? actStatus : null, name);
+    const k = Help.keptOf(keptRequest);
+    const list = lines.length ? `<ul class="list fade">${lines.map((l) => `<li><span class="act-li">${icon("check")}</span><span class="t">${esc(l)}</span></li>`).join("")}</ul>` : "";
+    const again = k ? `<p class="said fade">${esc(s.asked(k.words))}</p>` : "";
+    const actions = k
+      ? `<div class="actions"><button class="btn ghost" data-act="help-skip">${esc(s.ok)}</button><button class="btn primary accent" data-act="help-again" data-main>${esc(s.again)}</button></div>`
+      : `<div class="actions"><button class="btn primary" data-act="help-skip" data-main>${esc(s.ok)}</button></div>`;
+    return `${plain(s.title, s.sub, "")}${list}${again}${actions}`;
+  }
+  return "";
+}
+
+/**
+ * A switch on Help on this Mac (companion2 A.3). Turning an ability on opens the setup card focused on it (consent first,
+ * never the switch itself); turning anything off is at once. Seeing your screen off turns doing and files off too (Rust).
+ */
+async function settingsSwitch(which) {
+  const s = lookStatus;
+  if (!s) return;
+  try {
+    // Brenda and her helpers (helpers contract F.3): "Check with me before every task", saved in Boredroom first.
+    if (which === "check-every") return setCheckEvery(!(s.front?.checkEvery === true));
+    if (which === "companion") lookStatus = lookStatusOf(await invoke("look_set_options", { companion: !s.companion })) ?? lookStatus;
+    else if (which === "preview") lookStatus = lookStatusOf(await invoke("look_set_options", { preview: !s.preview })) ?? lookStatus;
+    else if (which === "look") {
+      if (!s.on) return openHelp({ focus: "look" });
+      lookStatus = lookStatusOf(await invoke("set_screen_help", { enabled: false })) ?? { ...s, on: false };
+      actStatus = await invoke("act_status").then(Act.statusOf).catch(() => actStatus);
+    } else if (which === "use-mac") {
+      if (!actStatus?.useMac) return openHelp({ focus: "mac" });
+      actStatus = Act.statusOf(await invoke("act_set_use_mac", { enabled: false })) ?? { ...actStatus, useMac: false };
+    } else if (which === "files") {
+      if (!actStatus?.fileWork) return openHelp({ focus: "files" });
+      actStatus = Act.statusOf(await invoke("act_set_file_work", { enabled: false })) ?? { ...actStatus, fileWork: false };
+    }
+    Sound.play("tick");
+  } catch (err) { error = err?.message ?? "That couldn't be changed. Try again."; Sound.play("error"); }
+  render();
+}
+/**
+ * Help on this Mac (companion2 A.3; words M.4): five switches, white when on, their state in words for screen readers,
+ * an amber pill where macOS still needs to say yes (it opens that step), and why the companion is hidden when it is (F).
+ */
+function settingsView(m) {
+  const name = me().name;
+  const w = Look.settingsWords(name, keysLabel());
+  // Permission rule v2 (helpers contract S.8): on this build's Rust the two switches say what they do now.
+  const v4 = frontOn() ? Front.WORDS(name).settings : null;
+  const sw = (key, label, sub, on, extra = "") => `<div class="sw-row"><div class="grow"><p class="title">${esc(label)}</p><p class="cap">${esc(sub)}</p>${extra}</div><button class="sw" role="switch" aria-checked="${on}" data-act="look-switch" data-key="${key}" aria-label="${esc(label)}"><i></i><span class="sr">${esc(on ? w.on : w.offWord)}</span></button></div>`;
+  const pill = (step, words) => `<button class="pill warn" data-act="help-step" data-step="${step}">${esc(words)}</button>`;
+  const ls = lookStatus ?? {};
+  const acts = actsHere();
+  const lookPill = ls.on && ls.permission !== "granted" ? pill("screen", w.look.needs) : "";
+  const axPill = acts && actStatus.useMac && actStatus.accessibility !== "granted" ? pill("accessibility", w.useMac.needs) : "";
+  let filesPill = "";
+  if (acts && actStatus.fileWork) {
+    const denied = Help.FOLDERS.find((f) => actStatus.folders?.[f] === "denied");
+    filesPill = actStatus.finder === "denied" ? pill("finder", w.files.finderNo) : denied ? pill("folders", w.files.folderNo(Help.FOLDER_NAMES[denied])) : "";
+  }
+  const why = Help.companionWhyOf(lookStatus);
+  const cw = Help.companionWords(why, name);
+  // Nothing on (review, 12 October 2026: the owner's card offered only "Turn off help on this Mac"): Set up is the
+  // card's one primary button, Turn off is not shown, and the companion's hidden line links to the same setup.
+  const anyOn = ls.on === true || (acts && (actStatus.useMac === true || actStatus.fileWork === true));
+  const setUp = `<button class="link" data-act="help-setup" data-which="all">${esc(w.setUp)}</button>`;
+  const companionExtra = why === "screen_help_off" ? `<p class="cap">${setUp}</p>` : "";
+  const actions = anyOn
+    ? `<button class="btn ghost" data-act="look-off-here">${esc(w.off)}</button><button class="btn primary" data-act="look-ok" data-main>${esc(w.done)}</button>`
+    : `<button class="btn ghost" data-act="look-ok">${esc(w.done)}</button><button class="btn primary" data-act="help-setup" data-which="all" data-main>${esc(w.setUp)}</button>`;
+  return `<div class="row fade">${face(m)}<div class="grow"><p class="title">${esc(w.title)}</p></div></div>
+    <div class="sw-list fade">
+      ${sw("look", w.look.label, w.look.sub, ls.on === true, lookPill)}
+      ${acts ? sw("use-mac", w.useMac.label, v4 ? v4.useMacSub : w.useMac.sub, actStatus.useMac, axPill) : ""}
+      ${acts ? sw("files", w.files.label, v4 ? v4.filesSub : w.files.sub, actStatus.fileWork, filesPill) : ""}
+      ${sw("companion", w.companion.label, cw.sentence, ls.companion !== false, companionExtra)}
+      ${sw("preview", w.preview.label, w.preview.sub, ls.preview === true)}
+      ${frontSettingsRows()}
+    </div>
+    ${card?.note ? `<p class="cap act-note fade" role="status">${esc(card.note)}</p>` : ""}
+    <p class="cap fade">${esc(w.note)}</p>
+    <div class="actions">${actions}</div>`;
+}
+
+listen("brenda://look-settings", () => { if (config?.signedIn && lookStatus?.supported) openLook({ phase: "settings" }); });
+// Today's tray: "Let Brenda use my Mac…" and "Let Brenda work on files…" open the setup card focused on that ability.
+listen("brenda://act-consent", ({ payload }) => {
+  if (!config?.signedIn || !actStatus?.supported) return;
+  openHelp({ focus: payload?.which === "files" ? "files" : "mac" });
+});
+// The companion's setting, and (this build's Rust) whether it shows now and why not (companion2 F).
+listen("brenda://companion", ({ payload }) => {
+  if (!lookStatus) return;
+  lookStatus = { ...lookStatus, companion: payload?.on !== false,
+    ...(typeof payload?.shown === "boolean" ? { companionShown: payload.shown } : {}),
+    ...(Help.WHYS.includes(payload?.why) ? { companionWhy: payload.why } : {}) };
+  if (card?.kind === "look" && card.phase === "settings") render();
+  scheduleMacReport();
+});
+
+// ---- what this Mac tells Boredroom (phase 3, companion2 A.6, 0b.2) -----------------------------------------------------
+// Owner request, 12 October 2026: the person sees in Boredroom which of these are on, on each of their Macs; their
+// workspace still sees nothing (the row is the person's own, readable by them alone). Only the abilities, macOS's
+// permissions and whether the companion shows: no names, no paths, nothing seen or done. Through the generic `api`
+// command (not an act or look route), only once Boredroom says it takes it (`data.look.mac.ready`), at start, 2 s after
+// anything changes, right after acting on "Set up on my Mac", and every ten minutes. Failures are silent.
+const MAC_REPORT_MS = 10 * 60_000;
+const macReport = { timer: null, sig: "", pending: "", at: 0 };
+const macReportOn = () => !!config?.signedIn && !!lookStatus && data?.look?.mac?.ready === true;
+function scheduleMacReport() {
+  if (!macReportOn()) return;
+  const sig = JSON.stringify(Help.macStateBody(lookStatus, actStatus).state);
+  if (sig !== macReport.sig) {
+    if (sig === macReport.pending) return;
+    macReport.pending = sig;
+    clearTimeout(macReport.timer);
+    macReport.timer = setTimeout(() => { macReport.timer = null; macReport.pending = ""; void reportMacState(); }, macReport.at ? 2_000 : 0);
+    return;
+  }
+  if (!macReport.timer && Date.now() - macReport.at >= MAC_REPORT_MS) void reportMacState();
+}
+async function reportMacState(o = {}) {
+  if (!macReportOn()) return;
+  const body = Help.macStateBody(lookStatus, actStatus, o.setupSeen ?? null);
+  macReport.sig = JSON.stringify(body.state);
+  macReport.at = Date.now();
+  try { await call("PUT", org("/screen-help/mac"), body); } catch { /* silent (companion2 A.6) */ }
+}
+
+// ---- Brenda and her helpers: the front desk, the Doing it strip and jobs (helpers contract A, F, M.2, Q) ---------------
+// The owner's approved brief, 12 October 2026 (the header says what the person sees; the words are front.js's). Rust holds
+// the request (its own transcript of the keys, or typed words with a real press, and a fresh nonce), decides the lane,
+// classifies every action and runs it; Boredroom records it. This page shows each moment and passes presses on: Yes and
+// No are `front_answer` / `job_answer`, a row of the chooser `front_choose`, Stop `front_stop` / `job_stop`, Undo
+// `front_undo` / `job_undo`, each checked by Rust. Nothing here calls the front desk's or the jobs' routes.
+
+/** The request the front desk is on now (one at a time), or null. */
+let front = null;
+/** The helper job on this Mac: the live one, or the last one while its end card is up; null otherwise. */
+let job = null;
+/** The strip's done line tucks away after 3 s, or 8 s with Undo (helpers contract F.1); held while the pointer is on it. */
+let frontTimer = null;
+const FRONT_DONE_MS = 3_000;
+const FRONT_UNDO_MS = 8_000;
+/** Stop shows on a front sequence that runs longer than this (F.1). */
+const FRONT_SLOW_MS = 1_000;
+/** Claude busy: the one retry by itself comes after this long (review, 16 October 2026). */
+const FRONT_RETRY_MS = 3_000;
+/** The done line is said only when the sequence took longer than this (C.1: no chatter). */
+const FRONT_SPEAK_DONE_MS = 1_500;
+/** A job's end card stays this long (60 s with Undo, as a done line's). */
+const JOB_END_MS = 15_000;
+const JOB_LIVE = new Set(["running", "paused", "asking"]);
+const FILE_KINDS = new Set(["open_file", "reveal_file", "find_files"]);
+const nonceOk = (n) => typeof n === "string" && /^[0-9a-f]{32}$/.test(n);
+const jobIdOk = (id) => typeof id === "string" && /^[0-9A-Za-z-]{8,64}$/.test(id);
+/** The short-line clips kept on this Mac (M.2); a blocked storage keeps them for this run only. */
+const lineCache = Front.LineCache((() => { try { return window.localStorage; } catch { return null; } })());
+/** The person's natural voice for short lines (the desktop state's `assistant.naturalVoice`), or null. */
+const naturalVoiceOf = () => { const v = data?.assistant?.naturalVoice; return v && typeof v === "object" ? v : null; };
+const frontWords = () => Front.WORDS(me().name, keysLabel());
+/** A Files job is live on this Mac (the Mac operator shows as phase 2's task bar instead). */
+const fileJobLive = () => !!job && job.helper !== "operator" && JOB_LIVE.has(job.phase);
+
+/**
+ * A request for the front desk (helpers contract P.4, Q.2): the words heard with her keys (`lookId`: the look Rust holds
+ * the pictures for), Option+Space's, or typed in the notch with a real press. Rust matches common commands on the Mac or
+ * asks the router; what happens next comes as `brenda://front` events and `front_send`'s answer. A Rust that wasn't told
+ * the front desk is ready answers FRONT_NOT_READY: then the request goes as before (a look, or the chat).
+ */
+async function runFront(o) {
+  const text = Look.cleanQuestion(o.text);
+  if (!text) return;
+  hush();
+  if (Date.now() - talkAt > TALK_MEMORY_MS) { talk = []; chat = newChat(); }
+  const messages = Look.messagesFor(talk, text);
+  const place = Look.placeOf(o.app);
+  const where = !o.lookId ? null : place === "desktop" ? "your desktop" : place === "screen" ? "your screen" : Look.appName(o.app);
+  const spoken = !!o.spoken;
+  clearTimeout(frontTimer);
+  const f = { nonce: null, text, spoken, startedAt: Date.now(), phase: "sent", line: "", actions: [], lookId: o.lookId ?? null, undo: false, retried: o.retried === true, check: o.check === true };
+  front = f;
+  // A question with pictures goes on as a look: its stream waits here, and its sending card opens only when Rust starts
+  // sending (the look's `sending`), so a command never flashes a looking card.
+  const s = o.lookId ? { id: o.lookId, says: 0, text: "", question: text, spoken, where, via: "front", source: o.source ?? "keys", app: o.app ?? null, at: Date.now(), opened: false } : null;
+  if (s) stream = s;
+  if (!spoken) Sound.play("send");
+  let r;
+  try {
+    r = await invoke("front_send", { lookId: o.lookId ?? null, text, messages, ...(o.preview ? { preview: true } : {}), ...(o.check ? { check: true } : {}) });
+  } catch (err) {
+    if (front === f) front = null;
+    if (stream === s) stream = null;
+    if (err?.status === 401) return signedOut();
+    // Rust wasn't told the front desk is ready (or has no front desk): the request goes as it did before.
+    if (err?.code === "FRONT_NOT_READY" || /not found|unknown command/i.test(String(err?.message ?? err ?? ""))) return frontFallback(o, text, spoken);
+    return frontRefused({ code: err?.code, status: err?.status, message: err?.message, title: err?.title, sub: err?.sub }, f);
+  }
+  if (!r || typeof r !== "object") { if (front === f) front = null; if (stream === s) stream = null; return render(); }
+  if (nonceOk(r.nonce) && !f.nonce) f.nonce = r.nonce;
+  frontResult(f, s, r, o);
+}
+
+/** As before the front desk (helpers contract F.0): a look with the same words and pictures, or the chat. */
+function frontFallback(o, text, spoken) {
+  if (o.lookId && o.previewCard) return showLookCard(o.previewCard);
+  if (o.lookId) return runLook({ lookId: o.lookId, question: text, spoken, app: o.app, source: o.source });
+  return ask(text, { spoken });
+}
+
+/** `front_send`'s answer (helpers contract P.3), by lane. The events have drawn most of it already. */
+function frontResult(f, s, r, o) {
+  const lane = typeof r.lane === "string" ? r.lane : "";
+  const text = f.text, spoken = f.spoken;
+  const mine = front === f;
+  if (lane !== "look" && stream === s) stream = null;
+  if (lane === "mac") {
+    // Rust's events drew the strip; a result with no `done` event still ends it.
+    if (mine && !["done", "ask", "choose", "found", "refused"].includes(f.phase)) {
+      if (r.outcome === "done") frontDone(f, { line: r.summary, undo: r.undo === true });
+      else { front = null; render(); }
+    }
+    return;
+  }
+  if (lane === "look") {
+    if (mine) front = null;
+    if (r.screen === true) {
+      if (stream === s) stream = null;
+      // The front desk needs the screen but holds no picture (typed): phase 2's Use my screen, carrying the words.
+      talk.push({ role: "user", content: text }); talkAt = Date.now();
+      return openCard({ kind: "voice", phase: "reply", heard: text, spoken, spokenText: "", speech: null, reply: "I'll need to see your screen for that.", actions: [], proposals: [], msg: null, sticky: true, closeAfter: REPLY_CLOSE_MS, screenAsk: lookOffered() ? { words: text } : null });
+    }
+    if (r.needsPreview === true) {
+      if (stream === s) stream = null;
+      const lane2 = r.look?.lane === "think" ? "think" : "now";
+      if (o.previewCard) return showLookCard({ ...o.previewCard, lane: lane2 });
+      return;
+    }
+    if (s && r.result && typeof r.result === "object") {
+      if (stream === s) stream = null;
+      try { finishLook(s, r.result); } catch (err) { openLookRefused("send", { message: err?.message ?? "" }); }
+    }
+    return;
+  }
+  if (mine) front = null;
+  if (lane === "boredroom" && r.result && typeof r.result === "object") {
+    talk.push({ role: "user", content: text }); talkAt = Date.now();
+    try { showChatReply(text, spoken, r.result); } catch (err) { talk.pop(); openCard({ kind: "voice", phase: "error", title: `${me().name} couldn't answer`, message: err?.message ?? "", closeAfter: REPLY_CLOSE_MS }); }
+    return;
+  }
+  if (lane === "job") { if (r.job && (!job || job.id !== r.job.id)) jobStarted(r.job, {}); return render(); }
+  if (lane === "chat") return ask(text, { spoken, sent: true });
+  if (lane === "ask" && typeof r.question === "string" && r.question.trim()) {
+    // The router asked one short question back (helpers contract A.3): a reply card; they answer by asking again.
+    const q = r.question.trim().slice(0, 200);
+    talk.push({ role: "user", content: text }, { role: "assistant", content: q, tainted: false }); talkAt = Date.now();
+    openCard({ kind: "voice", phase: "reply", heard: text, spoken, spokenText: q, speech: null, reply: q, actions: [], proposals: [], msg: null, closeAfter: REPLY_CLOSE_MS });
+    Sound.play("reply");
+    if (speaksFor(spoken)) sayAloud(q, null);
+    return saveChat();
+  }
+  if (lane === "enable") return frontEnableReply(text, spoken, r.enable?.which);
+  if (lane === "refused") return frontRefused({ ...(r.error ?? {}), title: r.error?.title, sub: r.error?.sub, enable: r.enable }, f);
+  render();
+}
+
+/** A switch or a permission is off (helpers contract B.4 `enable`): phase 3's offer, never "I can't". */
+function frontEnableReply(text, spoken, which) {
+  const w = which === "files" ? "files" : which === "accessibility" ? "accessibility" : "mac";
+  const e = Help.enableWords(w, me().name, [w]);
+  const line = e?.line ?? "";
+  openCard({ kind: "voice", phase: "reply", heard: text, spoken, spokenText: line, speech: null, reply: line, actions: [], proposals: [], msg: null, sticky: true, closeAfter: REPLY_CLOSE_MS, enable: w, enableNeeds: [w], setup: null });
+  Sound.play("reply");
+  if (speaksFor(spoken)) sayAloud(line, null);
+}
+
+/** Why it didn't happen, in words the person can act on (helpers contract L.2, S.5), with the way out when there is one. */
+function frontRefused(e, f) {
+  if (front === f || !f) front = null;
+  clearTimeout(frontTimer);
+  const m = Front.refusedModel(e ?? {}, me().name);
+  // Review, 16 October 2026: Claude busy recovers by itself once: the strip says "Claude is busy, trying again…" and
+  // the same words go again a few seconds later (typed, no pictures: the hold's are gone). Only then the card.
+  if (m.why === "busy" && f?.text && !f.retried) {
+    const again = { text: f.text, spoken: f.spoken, phase: "routing", retrying: true, startedAt: Date.now(), line: "", actions: [], undo: false };
+    front = again;
+    showStrip();
+    frontTimer = setTimeout(() => { if (front === again) { front = null; void runFront({ lookId: null, text: again.text, spoken: again.spoken, retried: true, check: f.check }); } }, FRONT_RETRY_MS);
+    return;
+  }
+  if (e?.code === "FRONT_OFFLINE" || e?.code === "LOOK_OFFLINE" || e?.status === 0) void refresh();
+  Sound.play("error");
+  tucked = false;
+  openCard({ kind: "front", phase: "refused", origin: "user", model: m, request: f?.text ?? null, check: f?.check === true, closeAfter: Act.T.REFUSED_MS });
+}
+
+/** Try again on the refused card (a real press): the same words once more, as the request they were (review, 16 October 2026). */
+function frontRetry() {
+  const c = card;
+  if (c?.kind !== "front" || c.phase !== "refused" || !c.model?.retry || !c.request) return closeCard();
+  closeCard();
+  void runFront({ lookId: null, text: c.request, spoken: false, retried: true, check: c.check === true });
+}
+
+/** The card the request came from gives way to the strip (the pictures stay Rust's: nothing is let go from here). */
+function frontLeaveCard(f) {
+  if (f?.lookId) lookGone.add(f.lookId);
+  const c = card;
+  if (!c) return;
+  const waiting = (c.proposals ?? []).some((p) => p.kind === "confirm" && !p.done);
+  if (c.kind === "look" || c.kind === "front" || (["home", "briefing", "voice", "help"].includes(c.kind) && !waiting)) closeCard();
+}
+
+/** The strip while the front desk works or after it is done (helpers contract F.1); the notch comes out of hiding. */
+function showStrip() {
+  tucked = false;
+  if (!card) render();
+}
+
+/** Doing (helpers contract F.1): the strip, and Stop on it once the sequence has run a second. */
+function frontDoing(f) {
+  f.doingAt = Date.now();
+  showStrip();
+  setTimeout(() => { if (front === f && f.phase === "doing" && !card) render(); }, FRONT_SLOW_MS + 50);
+}
+/** Done (helpers contract A.1.5, F.1): the green check and the line, Undo when it can be undone, then it tucks away. */
+function frontDone(f, o) {
+  clearTimeout(frontTimer);
+  Object.assign(f, { phase: "done", line: String(o.line ?? "").slice(0, 200), undo: o.undo === true, doneAt: Date.now() });
+  if (card?.kind === "front" && ["ask", "choose"].includes(card.phase)) closeCard();
+  showStrip();
+  armFrontTuck(f);
+}
+function armFrontTuck(f) {
+  clearTimeout(frontTimer);
+  frontTimer = setTimeout(function tuck() {
+    if (front !== f) return;
+    if (hovering && !card) { frontTimer = setTimeout(tuck, 1_000); return; }
+    front = null; render();
+  }, f.undo ? FRONT_UNDO_MS : FRONT_DONE_MS);
+}
+
+/** What Past chats keep of a front request (helpers contract Q.2.10): the words, then the done line; never a file it found. */
+function keepFrontTurn(f) {
+  if (!f?.text || !f.line) return;
+  const found = (f.actions ?? []).some((a) => FILE_KINDS.has(a?.kind));
+  if (Date.now() - talkAt > TALK_MEMORY_MS) { talk = []; chat = newChat(); }
+  talk.push({ role: "user", content: f.text }, { role: "assistant", content: found ? frontWords().strip.done : f.line, tainted: false });
+  talkAt = Date.now();
+  saveChat();
+}
+
+/**
+ * A short line said at once (helpers contract K.4, M.2): only when the request was spoken and the person's speaking rule
+ * says so. Her natural voice from a clip kept on this Mac when she has said it before; otherwise the Mac's own voice at once
+ * (`speak_now`; `speak` on a Rust without it), and the natural clip fetched in the background for next time. A line the
+ * server made comes with its own offer (`offer`) and plays as her streamed sentences do.
+ */
+function sayLine(text, spoken, offer = null) {
+  const t = String(text ?? "").replace(/\s+/g, " ").trim().slice(0, 200);
+  if (!t || !speaksFor(spoken)) return;
+  if (offer && naturalOffer(offer, t)) return sayAloud(t, offer);
+  const key = Front.lineKey(naturalVoiceOf(), t);
+  const kept = key ? lineCache.get(key) : null;
+  if (kept && typeof NaturalVoice === "object" && NaturalVoice?.supported) return void playLine(t, kept);
+  sayNow(t);
+  if (key) void fetchLine(key, t);
+}
+/** The Mac's own voice, at once. */
+function sayNow(t) {
+  stopNatural();
+  talkWaiting = true; waitToTalk(); showTalking();
+  invoke("speak_now", { text: t }).catch(() => invoke("speak", { text: t })).catch(() => { talkWaiting = false; showTalking(); });
+}
+/** A kept clip in her natural voice; anything that goes wrong says it in the Mac's own voice at once. */
+async function playLine(text, audio) {
+  stopNatural();
+  const gen = natural.gen;
+  talkWaiting = true; waitToTalk(); showTalking();
+  if (talking) talkEnded();
+  invoke("stop_speaking").catch(() => {});
+  natural.pending = true;
+  const fallback = () => { if (gen !== natural.gen) return; natural.pending = false; natural.stop = null; NaturalVoice.release(); sayNow(text); };
+  if (!(await NaturalVoice.warm())) return fallback();
+  if (gen !== natural.gen) return;
+  if (micOpen()) { natural.pending = false; talkWaiting = false; NaturalVoice.release(); return showTalking(); }
+  natural.stop = NaturalVoice.play({
+    audioBase64: audio,
+    onStart: () => { if (gen !== natural.gen) return; natural.pending = false; natural.on = true; talkStarted(); companionSpeaking(true); },
+    onLevel: (level) => { if (gen === natural.gen && natural.on) talkLevel(level); },
+    onEnd: () => { if (gen !== natural.gen) return; natural.stop = null; natural.on = false; talkEnded(); companionSpeaking(false); },
+    onFail: fallback,
+  });
+}
+/** Fetches a short line's natural clip for next time (helpers contract M.2): one at a time per line; failures are silent. */
+const linesAsked = new Set();
+async function fetchLine(key, text) {
+  if (linesAsked.has(key) || typeof NaturalVoice !== "object" || !NaturalVoice?.supported) return;
+  linesAsked.add(key);
+  try {
+    const r = await call("POST", org("/assistant/front/line"), { text });
+    const o = offerOf({ speech: r?.speech });
+    if (!o || !sameWords(o.text, text)) return;
+    const a = await call("POST", o.path, { token: o.token, text: o.text, as: "base64" });
+    if (typeof a?.audio === "string" && a.audio) lineCache.put(key, a.audio);
+  } catch { /* silent (M.2): the Mac's own voice said it */ }
+  finally { linesAsked.delete(key); }
+}
+
+// Rust's front desk events (helpers contract P.3).
+listen("brenda://front", ({ payload: e }) => {
+  if (!config?.signedIn || !e || typeof e !== "object") return;
+  const ph = typeof e.phase === "string" ? e.phase : "";
+  if (ph === "status") {
+    const fs = frontStatusOf(e.front);
+    if (fs && lookStatus) { lookStatus = { ...lookStatus, front: fs }; if (card?.kind === "look" && card.phase === "settings") render(); }
+    return;
+  }
+  const n = nonceOk(e.nonce) ? e.nonce : null;
+  // Rust is on one request at a time: a nonce this page has not seen is that request (the page was reloaded, or a request
+  // began elsewhere on the Mac, such as a hold of her keys over a card).
+  if (!front || (n && front.nonce && front.nonce !== n)) front = { nonce: n, text: "", spoken: false, startedAt: Date.now(), phase: "sent", line: "", actions: [], lookId: null, undo: false };
+  const f = front;
+  if (n && !f.nonce) f.nonce = n;
+  const W = frontWords();
+  if (ph === "matched") {
+    f.actions = (Array.isArray(e.actions) ? e.actions : []).filter((a) => a && typeof a.kind === "string").slice(0, 3).map((a) => ({ kind: a.kind, label: String(a.label ?? "").slice(0, 80) }));
+    f.risk = e.risk === "ask" ? "ask" : "routine";
+    frontLeaveCard(f);
+    if (stream?.via === "front") stream = null; // a command, not a look: no sending card
+    if (f.risk === "routine") {
+      f.phase = "doing"; f.line = String(e.say ?? "").slice(0, 200);
+      frontDoing(f);
+      // The line at once (helpers contract K.4): she says what she is doing as she does it.
+      sayLine(f.line, f.spoken, e.speech ?? null);
+    } else f.phase = "waiting";
+    return;
+  }
+  if (ph === "routing") {
+    f.phase = "routing";
+    f.routingAt = Date.now();
+    frontLeaveCard(f);
+    // Stop shows on "One moment" after a second (review, 16 October 2026), as on a slow sequence.
+    setTimeout(() => { if (front === f && f.phase === "routing" && !card) render(); }, FRONT_SLOW_MS + 50);
+    return showStrip();
+  }
+  if (ph === "doing") {
+    if (card?.kind === "front" && card.phase === "ask") closeCard();
+    const was = f.phase;
+    Object.assign(f, { phase: "doing", line: typeof e.line === "string" && e.line ? e.line.slice(0, 200) : f.line, k: Number(e.k) || 0, of: Number(e.of) || 0 });
+    if (stream?.via === "front") stream = null;
+    if (was !== "doing") return frontDoing(f);
+    return showStrip();
+  }
+  if (ph === "ask") {
+    f.phase = "ask";
+    frontLeaveCard(f);
+    hush();
+    const m = Front.askModel(e, me().name, keysLabel());
+    Sound.play("attention");
+    tucked = false;
+    openCard({ kind: "front", phase: "ask", origin: "user", sticky: true, model: m, nonce: f.nonce });
+    restartCountdown(m.waitMs);
+    if (f.spoken) sayLine(`${m.title}${m.because ? ` ${m.because}` : ""}`, true);
+    return;
+  }
+  if (ph === "choose" || ph === "found") {
+    f.phase = ph;
+    frontLeaveCard(f);
+    if (stream?.via === "front") stream = null;
+    const m = ph === "choose" ? Front.chooseModel(e) : Front.foundModel(e);
+    Sound.play(ph === "choose" ? "attention" : "reply");
+    tucked = false;
+    openCard({ kind: "front", phase: ph, origin: "user", sticky: ph === "choose", model: m, nonce: f.nonce, closeAfter: 30_000 });
+    if (ph === "choose") { restartCountdown(Front.ASK_MS); if (f.spoken) sayLine(m.title, true); }
+    return;
+  }
+  if (ph === "done") {
+    if (stream?.via === "front") stream = null;
+    const m = Front.doneModel(e);
+    const took = Date.now() - f.startedAt;
+    Sound.play("success");
+    keepFrontTurn(Object.assign(f, { line: m.title }));
+    if (m.card) {
+      // More than the strip can hold (F.2): Show the others, Show in Finder.
+      f.phase = "done"; f.undo = m.undo;
+      frontLeaveCard(f);
+      tucked = false;
+      openCard({ kind: "front", phase: "done", origin: "user", model: m, nonce: f.nonce, closeAfter: m.undo ? UNDO_CLOSE_MS : REPLY_CLOSE_MS });
+      front = null;
+    } else frontDone(f, { line: m.title, undo: m.undo });
+    if (took > FRONT_SPEAK_DONE_MS) sayLine(m.title, f.spoken);
+    return;
+  }
+  if (ph === "refused" || ph === "failed") {
+    if (stream?.via === "front") stream = null;
+    if (f.lookId) lookGone.add(f.lookId);
+    return frontRefused({ title: e.title, sub: e.sub, enable: e.enable, why: e.why, app: e.app, folder: e.folder, code: e.code, message: e.message }, f);
+  }
+  if (ph === "said_no") {
+    // Rust says which of S.3's lines it was (`line`: silence, unclear or no); a `verdict` names it instead (integration,
+    // 16 October 2026: the two sides named it differently).
+    const said = typeof e.line === "string" ? [W.ask.silence, W.ask.unclear, W.ask.no].find((x) => x === e.line.trim()) : null;
+    const words = e.verdict === "silence" || e.verdict === "expired" ? W.ask.silence : e.verdict === "unclear" ? W.ask.unclear : said ?? W.ask.no;
+    front = null; clearTimeout(frontTimer);
+    tucked = false;
+    openCard({ kind: "front", phase: "said", origin: "user", words, closeAfter: 2_500 });
+    if (f.spoken) sayLine(words, true);
+    return;
+  }
+  if (ph === "undone") {
+    Sound.play("tick");
+    if (card?.kind === "front" && card.phase === "done") closeCard();
+    return frontDone(f, { line: typeof e.line === "string" && e.line ? e.line : "Undone.", undo: false });
+  }
+  if (ph === "consent") {
+    // The first time the Mac operator would click or type on this Mac (helpers contract I.6, S.7): asked once, here.
+    f.phase = "consent";
+    frontLeaveCard(f);
+    hush();
+    Sound.play("attention");
+    tucked = false;
+    openCard({ kind: "front", phase: "consent", origin: "user", sticky: true, model: Front.consentModel(me().name), nonce: f.nonce });
+  }
+});
+
+/** Yes or No on the front ask card (a real press; Rust checks it, and records the yes). */
+async function frontAnswer(answer) {
+  const c = card;
+  if (c?.kind !== "front" || c.phase !== "ask" || c.answering) return;
+  c.answering = answer; c.note = null; render();
+  try { await invoke("front_answer", { nonce: c.nonce ?? front?.nonce ?? null, answer, via: "button" }); }
+  catch (err) { if (card === c) { c.answering = null; c.note = err?.message ?? "I couldn't take that answer. Try again."; render(); } }
+}
+/** A row of the chooser, or None of these (null). */
+function frontChoose(index) {
+  const c = card;
+  if (c?.kind !== "front" || c.phase !== "choose") return;
+  invoke("front_choose", { nonce: c.nonce ?? front?.nonce ?? null, index }).catch(() => {});
+  if (index === null) { front = null; closeCard(); }
+}
+/** Open or Show in Finder on a found row, a done card's others, or the result itself (`index` null). */
+function frontMore(index, reveal) {
+  const c = card;
+  invoke("front_more", { nonce: c?.nonce ?? front?.nonce ?? null, index, reveal: !!reveal }).catch(() => {});
+}
+/** Undo on the strip or the done card (helpers contract G.11: a screenshot's file back to the Trash). */
+async function frontUndo() {
+  const nonce = card?.kind === "front" ? card.nonce : front?.nonce;
+  if (!nonceOk(nonce)) return;
+  clearTimeout(frontTimer);
+  try {
+    const r = await invoke("front_undo", { nonce });
+    if (card?.kind === "front" && card.phase === "done") closeCard();
+    const f = front ?? { nonce, text: "", spoken: false, startedAt: Date.now(), actions: [] };
+    front = f;
+    Sound.play("tick");
+    frontDone(f, { line: typeof r?.line === "string" && r.line ? r.line : "Undone.", undo: false });
+  } catch (err) {
+    error = err?.message || frontWords().job.undoGone;
+    if (front) { front.undo = false; armFrontTuck(front); }
+    Sound.play("error");
+    render();
+  }
+}
+/** The click consent's two buttons (a real press; Allow also needs Accessibility, which Rust checks). */
+async function clickConsent(allow) {
+  const c = card;
+  if (busy) return;
+  busy = true; render();
+  try {
+    const s = await invoke("click_consent", { allow: !!allow });
+    busy = false;
+    const fs = frontStatusOf(s?.front ?? s);
+    if (fs && lookStatus) lookStatus = { ...lookStatus, front: fs };
+    if (!allow) {
+      if (c?.kind === "front" && c.phase === "consent") { front = null; openCard({ kind: "front", phase: "said", origin: "user", words: frontWords().job.notClick, closeAfter: 2_500 }); }
+      else render();
+      return;
+    }
+    Sound.play("success");
+    if (card === c && c?.phase === "consent") closeCard(); else render();
+  } catch (err) {
+    busy = false;
+    // Accessibility first (helpers contract I.6): its setup step, then the consent again.
+    if (allow && /ACCESSIBILITY/i.test(String(err?.code ?? ""))) return openHelp({ step: "accessibility" });
+    if (card === c && c) { c.note = err?.message ?? "That couldn't be changed. Try again."; render(); }
+    else { error = err?.message ?? "That couldn't be changed. Try again."; render(); }
+  }
+}
+/** A refusal's way out (helpers contract S.5): the setup card at that switch or step, or System Settings at that pane. */
+function frontEnable(which) {
+  const request = card?.request ?? null;
+  if (which === "mac" || which === "files") return openHelp({ focus: which, request });
+  if (which === "accessibility") return openHelp({ step: "accessibility", request });
+  if (which === "screen") return openHelp({ step: "screen", request });
+  if (which === "folder") return helpOpenPrivacy("files");
+  if (which === "finder") return helpOpenPrivacy("automation");
+}
+
+// ---- jobs (helpers contract G, P.3 `brenda://job`) ------------------------------------------------------------------
+
+/** A job began (the router chose a helper and Rust created it): the strip; the Mac operator as phase 2's task. */
+function jobStarted(j, e) {
+  if (!j || typeof j !== "object" || !jobIdOk(j.id)) return;
+  const f = front;
+  const spoken = !!f?.spoken;
+  const helper = j.helper === "operator" ? "operator" : "files";
+  const doing = String(j.doing ?? j.title ?? "").replace(/\s+/g, " ").trim().slice(0, 80);
+  job = { id: j.id, helper, title: String(j.title ?? "").slice(0, 80), doing, phase: "running", done: 0, of: 0, note: "", startedAt: Date.now(), spoken, taskId: typeof j.taskId === "string" ? j.taskId : j.id };
+  if (f) { frontLeaveCard(f); front = null; }
+  clearTimeout(frontTimer);
+  if (helper === "operator") {
+    // Phase 2's computer use, titled with what it is doing (helpers contract F.2, I.1): Running at once, no proposal.
+    task = { id: job.taskId, kind: "operator", plan: doing ? `I'll ${doing.charAt(0).toLowerCase()}${doing.slice(1)}.` : "", doingTitle: doing, question: Act.QUESTION, phase: "running", step: 0, note: "", startedAt: Date.now(), escAt: Date.now(), spoken, file: null, output: null, steps: [], lines: null, names: [] };
+    restartCountdown(0);
+  }
+  showStrip();
+  // Her line for the job (A.4.1), in her natural voice when it came with an offer.
+  sayLine(typeof e?.say === "string" && e.say ? e.say : doing ? `${doing}.` : "", spoken, e?.speech ?? null);
+}
+
+/** The job's card: running, or what it asks, from the strip or its hover (F.1). */
+function openJobCard(origin = "hover") {
+  if (!job) return false;
+  if (job.helper === "operator") return openTaskCard(origin);
+  if (job.phase === "asking" && job.ask) { openCard({ kind: "job", phase: "ask", origin, sticky: true, jobId: job.id, model: Front.jobAskModel(job.ask) }); return true; }
+  if (!JOB_LIVE.has(job.phase)) return false;
+  openCard({ kind: "job", phase: "running", origin, jobId: job.id });
+  return true;
+}
+
+let jobPaint = null;
+/** Progress arrives up to ten times a second: drawn at most every 150 ms, in place when only the numbers moved. */
+function paintJob() {
+  if (jobPaint) return;
+  jobPaint = setTimeout(() => {
+    jobPaint = null;
+    if (card?.kind === "job" && card.phase === "running" && job) {
+      const m = Front.jobCardModel(job);
+      const bar = document.getElementById("jbar"), cnt = document.getElementById("jcount"), note = document.getElementById("jnote");
+      if (bar && cnt && note) {
+        bar.style.width = `${m.pct ?? 0}%`; bar.parentElement?.setAttribute("aria-valuenow", String(m.pct ?? 0));
+        cnt.textContent = m.count ?? ""; note.textContent = m.note;
+        return;
+      }
+      return render();
+    }
+    if (!card) render();
+  }, 150);
+}
+
+listen("brenda://job", ({ payload: e }) => {
+  if (!config?.signedIn || !e || typeof e !== "object") return;
+  const ph = typeof e.phase === "string" ? e.phase : "";
+  if (ph === "started") return jobStarted(e.job, e);
+  const id = typeof e.jobId === "string" ? e.jobId : null;
+  if (!jobIdOk(id)) return;
+  // An end for a job this page had lost (reloaded meanwhile): its card still shows, so Undo is still offered.
+  if (!job || job.id !== id) {
+    if (!["done", "stopped", "failed", "undone"].includes(ph)) return;
+    job = { id, helper: "files", title: "", doing: "", phase: "running", done: 0, of: 0, note: "", startedAt: Date.now(), spoken: false, taskId: id };
+  }
+  const j = job;
+  if (ph === "progress") {
+    Object.assign(j, { done: Math.max(0, Number(e.done) || 0), of: Math.max(0, Number(e.of) || 0) });
+    if (typeof e.note === "string" && e.note.trim()) j.note = e.note.trim().slice(0, 60);
+    if (j.phase === "paused") j.phase = "running";
+    return paintJob();
+  }
+  if (ph === "ask") {
+    j.phase = "asking";
+    j.ask = e.ask && typeof e.ask === "object" ? e.ask : {};
+    const m = Front.jobAskModel(j.ask);
+    hush();
+    Sound.play("attention");
+    tucked = false;
+    openCard({ kind: "job", phase: "ask", origin: "user", sticky: true, jobId: id, model: m });
+    restartCountdown(Number.isFinite(e.waitMs) && e.waitMs > 0 ? Math.min(e.waitMs, Front.JOB_ASK_MS) : Front.JOB_ASK_MS);
+    if (j.spoken) sayLine(m.title, true);
+    return;
+  }
+  if (ph === "paused") { j.phase = "paused"; j.why = typeof e.why === "string" ? e.why : "sleep"; if (card?.kind === "job" && card.jobId === id && card.phase === "running") return render(); return showStrip(); }
+  if (ph === "resumed") { j.phase = "running"; j.why = null; return paintJob(); }
+  if (ph === "done" || ph === "stopped" || ph === "failed" || ph === "undone") {
+    if (ph === "undone" && card?.kind === "job" && card.jobId === id && card.phase === "undone") return; // drawn by Undo already
+    j.phase = ph;
+    const m = Front.jobEndModel({ ...e, phase: ph, ms: ph === "done" ? (Number.isFinite(e.ms) ? e.ms : Date.now() - j.startedAt) : e.ms }, me().name);
+    j.undo = m.undo;
+    Sound.play(ph === "failed" ? "error" : ph === "done" ? "success" : "tick");
+    tucked = false;
+    openCard({ kind: "job", phase: ph, origin: "user", jobId: id, model: m, closeAfter: m.undo ? UNDO_CLOSE_MS : JOB_END_MS });
+    // The summary is said under the speaking rule (helpers contract A.4.4), with its own natural-voice offer.
+    if (ph === "done" && j.spoken) sayLine(m.title, true, e.speech ?? null);
+    if (ph === "failed" || ph === "stopped") { if (j.spoken && ph === "failed") sayLine(m.title, true); }
+  }
+});
+
+/** Yes or No on a job's ask card (a real press). */
+async function jobAnswer(answer) {
+  const c = card;
+  if (c?.kind !== "job" || c.phase !== "ask" || c.answering) return;
+  c.answering = answer; c.note = null; render();
+  try {
+    await invoke("job_answer", { jobId: c.jobId, answer, via: "button" });
+    if (job?.id === c.jobId && job.phase === "asking") job.phase = "running";
+    if (card === c) { if (answer === "yes") openCard({ kind: "job", phase: "running", origin: "user", jobId: c.jobId }); else closeCard(); }
+  } catch (err) { if (card === c) { c.answering = null; c.note = err?.message ?? "I couldn't take that answer. Try again."; render(); } }
+}
+/** Undo on a job's end card or the recent jobs (a real press): every change it made goes back, where it can. */
+async function jobUndo(id) {
+  if (!jobIdOk(id) || busy) return;
+  busy = true; render();
+  try {
+    const r = await invoke("job_undo", { jobId: id });
+    busy = false;
+    if (job?.id === id) { job.phase = "undone"; job.undo = false; }
+    Sound.play("tick");
+    openCard({ kind: "job", phase: "undone", origin: "user", jobId: id, model: Front.jobEndModel({ phase: "undone", restored: r?.restored, skipped: r?.skipped }, me().name), closeAfter: JOB_END_MS });
+  } catch (err) {
+    busy = false;
+    if (card) { card.note = err?.message || frontWords().job.undoGone; if (card.model) card.model = { ...card.model, undo: false }; }
+    Sound.play("error");
+    render();
+  }
+}
+/** "Jobs on this Mac" (helpers contract F.2): the live job and the last three finished here, from Rust (`job_list`). */
+async function openRecentJobs() {
+  const list = await invoke("job_list").catch(() => null);
+  tucked = false;
+  openCard({ kind: "job", phase: "recent", origin: "user", list: jobBriefsOf(list), closeAfter: REPLY_CLOSE_MS });
+}
+/** Rust's JobBrief list as this page keeps it. */
+function jobBriefsOf(list) {
+  return (Array.isArray(list) ? list : []).filter((x) => x && jobIdOk(x.id)).slice(0, 4).map((x) => ({
+    id: x.id, helper: x.helper === "operator" ? "operator" : "files", title: String(x.title ?? x.doing ?? "").slice(0, 80),
+    state: ["running", "paused", "asking", "done", "stopped", "failed", "undone"].includes(x.state) ? x.state : "done",
+    at: Number.isFinite(x.at) ? x.at : Date.parse(x.at ?? "") || null, undo: x.undo === true,
+    done: Number(x.done) || 0, of: Number(x.of) || 0,
+  }));
+}
+/** A recent job's state and when, in words (S.6): "Done, 14:05", "Stopped, yesterday", "Running, 23 of 64". */
+function jobWhen(b) {
+  const word = { running: "Running", paused: "Paused", asking: "Waiting for you", done: "Done", stopped: "Stopped", failed: "Couldn't finish", undone: "Undone" }[b.state];
+  if (JOB_LIVE.has(b.state)) return b.of > 0 ? `${word}, ${b.done} of ${b.of}` : word;
+  if (!b.at) return word;
+  const d = new Date(b.at), now = new Date();
+  const day = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const diff = Math.round((day(now) - day(d)) / 86_400_000);
+  return `${word}, ${diff === 0 ? hhmm(d) : diff === 1 ? "yesterday" : `${d.getDate()} ${d.toLocaleString("en-GB", { month: "long" })}`}`;
+}
+/** After a reload: the live job comes back from Rust (`job_list`), so its strip shows again. */
+function restoreJobs(list) {
+  const live = jobBriefsOf(list).find((b) => JOB_LIVE.has(b.state));
+  if (!live || job) return;
+  job = { id: live.id, helper: live.helper, title: live.title, doing: live.title, phase: live.state, done: live.done, of: live.of, note: "", startedAt: live.at ?? Date.now(), spoken: false, taskId: live.id };
+  render();
+}
+
+/** "Check with me before every task" (helpers contract F.3, N.2): saved in Boredroom for the person, then told to Rust. */
+async function setCheckEvery(on) {
+  const fs = lookStatus?.front;
+  if (!fs) return;
+  const was = fs.checkEvery;
+  const c = card;
+  lookStatus = { ...lookStatus, front: { ...fs, checkEvery: on } };
+  if (c) c.note = null;
+  render();
+  try {
+    const r = await call("PUT", org("/brenda/mac-permission"), { checkEveryTask: on });
+    const v = typeof r?.checkEveryTask === "boolean" ? r.checkEveryTask : on;
+    if (data?.look && typeof data.look === "object") data.look = { ...data.look, front: { ...(data.look.front ?? {}), ready: data.look.front?.ready === true, checkEvery: v } };
+    if (lookStatus?.front) lookStatus = { ...lookStatus, front: { ...lookStatus.front, checkEvery: v } };
+    Sound.play("tick");
+    syncLook(); // set_look_rules gives Rust the new value
+  } catch {
+    if (lookStatus?.front) lookStatus = { ...lookStatus, front: { ...lookStatus.front, checkEvery: was } };
+    if (card === c && c) c.note = frontWords().settings.check.error;
+    Sound.play("error");
+  }
+  render();
+}
+/** Folders I work in (helpers contract F.3, 0b.23): Add a folder… (macOS's own folder picker) and Remove. */
+async function filesFolder(add, name) {
+  const c = card;
+  try {
+    const s = add ? await invoke("files_add_folder") : await invoke("files_remove_folder", { name });
+    const fs = frontStatusOf(s?.front ?? s);
+    if (fs && lookStatus) lookStatus = { ...lookStatus, front: fs };
+    if (c) c.note = null;
+    Sound.play("tick");
+  } catch (err) {
+    if (c) c.note = err?.message || (add ? frontWords().settings.folders.refusedSystem : "That couldn't be changed. Try again.");
+    Sound.play("error");
+  }
+  render();
+}
+
+/** The compact bar while the front desk or a Files job works (helpers contract F.1), or null. */
+function frontBar() {
+  const f = front && ["routing", "doing", "done"].includes(front.phase) ? front : null;
+  const j = !f && fileJobLive() ? job : null;
+  if (!f && !j) return null;
+  const W = frontWords();
+  const m = f
+    ? Front.stripModel({ kind: "front", phase: f.phase, line: f.line, undo: f.undo, retrying: f.retrying === true, slow: f.phase === "doing" ? Date.now() - (f.doingAt ?? f.startedAt) > FRONT_SLOW_MS : f.phase === "routing" && (f.retrying === true || Date.now() - (f.routingAt ?? f.startedAt) > FRONT_SLOW_MS) })
+    : Front.stripModel({ kind: "job", phase: j.phase === "paused" ? "paused" : "doing", line: j.doing, k: j.done, of: j.of, paused: j.why ?? (j.phase === "paused" ? "sleep" : undefined) });
+  const dot = m.dot === "live" ? `<span class="rec-dot act-dot"></span>&ensp;`
+    : m.dot === "done" ? `<span class="strip-ok" aria-hidden="true">${icon("check")}</span>`
+      : m.dot === "paused" ? `<span class="strip-paused" aria-hidden="true"></span>` : "";
+  const words = f?.phase === "routing" ? `<span class="shimmer">${esc(m.text)}</span>` : esc(m.text);
+  const count = m.count ? `, <span class="num">${esc(m.count)}</span>` : "";
+  const stop = m.stop ? `<button class="btn ghost strip-btn" data-act="${f ? "front-stop" : "job-stop"}" aria-label="${esc(`Stop: ${m.text}`)}">${esc(W.strip.stop)}</button>` : "";
+  const undo = m.undo ? `<button class="btn ghost strip-btn" data-act="front-undo" aria-label="${esc(`Undo: ${m.text}`)}">${icon("undo")}${esc(W.strip.undo)}</button>` : "";
+  const status = m.dot === "done" ? "Done: " : m.dot === "paused" ? "" : "";
+  return { text: `${dot}${words}${count}`, label: `${status}${m.text}${m.count ? `, ${m.count}` : ""}`, trail: `${stop}${undo}`, act: j ? "job-show" : "front-show" };
+}
+
+/** The front desk's cards (helpers contract F.2): neutral asks, the chooser, what was found, done, refused, the consent. */
+function frontView() {
+  const c = card, name = me().name;
+  const m = moodOf();
+  const note = c.note ? `<p class="cap act-note fade" role="status">${esc(c.note)}</p>` : "";
+  const plainCard = (title, sub, actions, extra = "") => `<div class="row fade top">${face(m)}<div class="grow"><p class="title full">${esc(title)}</p>${sub ? `<p class="sub">${esc(sub)}</p>` : ""}${extra}</div></div>${note}${actions}`;
+  const rowText = (o) => `<span class="fr-text"><span class="t">${esc(o.name)}</span>${o.meta ? `<span class="fr-meta">${esc(o.meta)}</span>` : ""}</span>`;
+  if (c.phase === "ask") {
+    // Neutral on purpose (helpers contract F.2, Q.3): her alert face, no glow, no orange; a ghost No beside a white verb.
+    const a = c.model ?? {};
+    return `<div class="row fade top">${face({ mood: "alert" })}<div class="grow"><p class="title full act-plan">${esc(a.title)}</p>${a.because ? `<p class="sub act-q">${esc(a.because)}</p>` : ""}</div></div>
+      <p class="cap act-hint fade">${esc(a.hint)}</p>${note}
+      <div class="actions"><button class="btn ghost" data-act="front-no" ${c.answering ? "disabled" : ""}>${esc(a.no)}</button><button class="btn primary" data-act="front-yes" ${c.answering ? "disabled" : ""}>${icon("check")}${esc(a.yes)}</button></div>`;
+  }
+  if (c.phase === "choose") {
+    const k = c.model ?? { options: [] };
+    const rows = `<ul class="list fr-list fade">${k.options.map((o) => `<li class="fr-row"><button class="rowlink" data-act="front-choose" data-i="${o.i}" aria-label="${esc(`Open ${o.name}${o.meta ? `, ${o.meta}` : ""}`)}">${rowText(o)}<span class="k">${icon("open")}</span></button></li>`).join("")}</ul>`;
+    return `<div class="row fade top">${face({ mood: "alert" })}<div class="grow"><p class="title full act-plan">${esc(k.title)}</p></div></div>${rows}${note}
+      <div class="actions"><button class="btn ghost" data-act="front-none">${esc(k.none)}</button></div>`;
+  }
+  if (c.phase === "found") {
+    const k = c.model ?? { options: [] };
+    const rows = `<ul class="list fr-list fade">${k.options.map((o) => `<li class="fr-row">${rowText(o)}<span class="fr-btns"><button class="btn ghost icon" data-act="front-more" data-i="${o.i}" data-reveal="0" aria-label="${esc(`${k.open}: ${o.name}`)}" title="${esc(k.open)}">${icon("open")}</button><button class="btn ghost icon" data-act="front-more" data-i="${o.i}" data-reveal="1" aria-label="${esc(`${k.reveal}: ${o.name}`)}" title="${esc(k.reveal)}">${icon("folder")}</button></span></li>`).join("")}</ul>`;
+    return `<div class="row fade top">${face(m)}<div class="grow"><p class="title full">${esc(k.title)}</p></div></div>${rows}${note}
+      <div class="actions"><button class="btn primary" data-act="front-ok" data-main>${esc(k.ok)}</button></div>`;
+  }
+  if (c.phase === "done") {
+    const d = c.model ?? {};
+    const others = d.others?.length
+      ? `<p class="cap fr-others fade"><button class="link toggle" data-act="front-others" aria-expanded="${!!c.showOthers}" aria-controls="frothers">${icon("chevron")}${esc(c.showOthers ? d.hideOthers : d.othersLabel)}</button></p>${c.showOthers ? `<ul class="list fr-list fade" id="frothers">${d.others.map((o) => `<li class="fr-row">${rowText(o)}<span class="fr-btns"><button class="btn ghost icon" data-act="front-more" data-i="${o.i}" data-reveal="0" aria-label="${esc(`${d.open}: ${o.name}`)}" title="${esc(d.open)}">${icon("open")}</button></span></li>`).join("")}</ul>` : ""}`
+      : "";
+    const head = `<div class="row fade top">${face(m)}<div class="grow"><p class="title full fr-done"><span class="strip-ok" aria-hidden="true">${icon("check")}</span>${esc(d.title)}</p></div></div>`;
+    return `${head}${others}${note}
+      <div class="actions">${d.undo ? `<button class="btn ghost" data-act="front-undo">${icon("undo")}${esc(d.undoLabel)}</button>` : ""}${d.show ? `<button class="btn" data-act="front-reveal">${esc(d.reveal)}</button>` : ""}<button class="btn primary" data-act="front-ok" data-main>${esc(d.ok)}</button></div>`;
+  }
+  if (c.phase === "refused") {
+    const r = c.model ?? { title: "", sub: "", enable: null, ok: "OK" };
+    const way = r.enable ? `<button class="btn primary${r.enable.accent ? " accent" : ""}" data-act="front-enable" data-which="${esc(r.enable.which)}">${esc(r.enable.button)}</button>`
+      : r.retry && c.request ? `<button class="btn primary" data-act="front-retry" data-main>${esc(r.retry)}</button>` : "";
+    return plainCard(r.title, r.sub, `<div class="actions">${way ? `<button class="btn ghost" data-act="front-ok">${esc(r.ok)}</button>${way}` : `<button class="btn primary" data-act="front-ok" data-main>${esc(r.ok)}</button>`}</div>`);
+  }
+  if (c.phase === "said") return `<div class="row fade">${face(m)}<div class="grow"><p class="title wrap">${esc(c.words ?? "")}</p></div></div>`;
+  if (c.phase === "consent") {
+    // Her happy face, the three promises, and the card's one orange button (helpers contract S.7, Q.3).
+    const k = c.model ?? Front.consentModel(name);
+    return `<div class="row fade top">${face({ mood: "happy" })}<div class="grow"><p class="title full act-plan" id="cctitle">${esc(k.title)}</p><p class="sub">${esc(k.lead)}</p></div></div>
+      <ul class="hs-promises fade" aria-labelledby="cctitle">${k.promises.map((t) => `<li class="cap">${esc(t)}</li>`).join("")}</ul>${note}
+      <div class="actions"><button class="btn ghost" data-act="consent-no" ${busy ? "disabled" : ""}>${esc(k.notNow)}</button><button class="btn primary accent" data-act="consent-yes" ${busy ? "disabled" : ""}>${esc(k.allow)}</button></div>
+      <p class="cap look-foot fade">${esc(k.footer)}</p>`;
+  }
+  return "";
+}
+
+/** A job's cards (helpers contract F.2, S.6): running (the orange progress bar, Stop), its ask, how it ended, recent jobs. */
+function jobView() {
+  const c = card, name = me().name;
+  const m = moodOf();
+  const W = Front.WORDS(name, keysLabel());
+  const note = c.note ? `<p class="cap act-note fade" role="status">${esc(c.note)}</p>` : "";
+  if (c.phase === "running") {
+    if (!job || job.id !== c.jobId) return `<div class="row fade">${face(m)}<div class="grow"><p class="title">${esc(W.strip.done)}</p></div></div><div class="actions"><button class="btn primary" data-act="job-ok" data-main>${esc(W.job.ok)}</button></div>`;
+    const k = Front.jobCardModel({ ...job, paused: job.phase === "paused" ? job.why ?? "sleep" : null });
+    const paused = job.phase === "paused";
+    const status = paused ? `<span class="pill warn">${esc(k.sub)}</span>` : "";
+    return `<div class="row fade top">${face(m)}<div class="grow"><div class="act-head"><p class="title">${esc(k.title)}</p><span class="act-step${paused ? " paused" : ""}">${paused ? "" : `<span class="rec-dot"></span>`}<span class="clock" id="jclock">${esc(k.elapsed)}</span></span></div>
+        <div class="job-progress"><div class="bar job-bar" role="progressbar" aria-label="${esc(k.title)}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${k.pct ?? 0}"><i id="jbar" style="width:${k.pct ?? 0}%"></i></div><span class="num job-count" id="jcount">${esc(k.count ?? "")}</span></div>
+        <p class="sub" id="jnote">${esc(k.note)}</p>${status}${paused ? "" : `<p class="cap">${esc(W.job.sub)}</p>`}</div></div>${note}
+      <div class="actions"><button class="btn ghost" data-act="job-stop">${icon("stop")}${esc(W.job.stop)}</button></div>`;
+  }
+  if (c.phase === "ask") {
+    const a = c.model ?? {};
+    return `<div class="row fade top">${face({ mood: "alert" })}<div class="grow"><p class="title full act-plan">${esc(a.title)}</p>${a.because ? `<p class="sub act-q">${esc(a.because)}</p>` : ""}<p class="cap">${esc(a.wait)}</p></div></div>${note}
+      <div class="actions"><button class="btn ghost" data-act="job-no" ${c.answering ? "disabled" : ""}>${esc(a.no)}</button><button class="btn primary" data-act="job-yes" ${c.answering ? "disabled" : ""}>${esc(a.yes)}</button></div>`;
+  }
+  if (c.phase === "recent") {
+    const list = Array.isArray(c.list) ? c.list : [];
+    const rows = list.length
+      ? `<ul class="list fr-list fade">${list.map((b) => `<li class="fr-row"><span class="fr-text"><span class="t">${esc(b.title)}</span><span class="fr-meta">${esc(jobWhen(b))}</span></span>${b.undo && !JOB_LIVE.has(b.state) ? `<button class="btn ghost" data-act="job-undo" data-id="${esc(b.id)}" aria-label="${esc(`${W.job.undo}: ${b.title}`)}">${icon("undo")}${esc(W.job.undo)}</button>` : ""}</li>`).join("")}</ul>`
+      : `<p class="sub fade">${esc(W.job.recent.empty)}</p>`;
+    return `<div class="row fade">${face(m)}<div class="grow"><p class="title">${esc(W.job.recent.title)}</p></div></div>${rows}${note}
+      <div class="actions"><button class="btn primary" data-act="job-ok" data-main>${esc(W.job.ok)}</button></div>`;
+  }
+  // done, stopped, failed, undone
+  const k = c.model ?? {};
+  const outs = k.outputs?.length
+    ? `<ul class="list fr-list fade">${k.outputs.map((o) => `<li class="fr-row"><span class="fr-text"><span class="t">${esc(o.name)}</span>${o.folder ? `<span class="fr-meta">${esc(o.folder)}</span>` : ""}</span><span class="fr-btns"><button class="btn ghost icon" data-act="job-open" data-i="${o.i}" aria-label="${esc(`${k.open}: ${o.name}`)}" title="${esc(k.open)}">${icon("open")}</button><button class="btn ghost icon" data-act="job-reveal" data-i="${o.i}" aria-label="${esc(`${k.reveal}: ${o.name}`)}" title="${esc(k.reveal)}">${icon("folder")}</button></span></li>`).join("")}</ul>`
+    : "";
+  const undo = k.undo ? `<button class="btn ghost" data-act="job-undo" data-id="${esc(c.jobId)}" ${busy ? "disabled" : ""}>${icon("undo")}${esc(k.undoLabel)}</button>` : "";
+  const settings = k.settings ? `<button class="btn" data-act="job-settings">${esc(k.settings.label)}</button>` : "";
+  const folder = k.folder ? `<button class="btn" data-act="job-folder" aria-label="${esc(`${k.folder.label}: ${k.folder.title}`)}">${icon("folder")}${esc(k.folder.label)}</button>` : "";
+  return `<div class="row fade top">${face(m)}<div class="grow"><p class="title full act-plan">${esc(k.title)}</p>${k.sub ? `<p class="sub">${esc(k.sub)}</p>` : ""}</div></div>${outs}${note}
+    <div class="actions">${undo}${folder}${settings}<button class="btn primary" data-act="job-ok" data-main>${esc(k.ok ?? "OK")}</button></div>`;
+}
+
+/** The settings card's new rows (helpers contract F.3, S.8), this build's Rust only. */
+function frontSettingsRows() {
+  const r = lookV4() ? Front.settingsRows(lookStatus, me().name) : null;
+  if (!r) return "";
+  const W = frontWords().settings;
+  const check = `<div class="sw-row"><div class="grow"><p class="title">${esc(r.check.label)}</p><p class="cap">${esc(r.check.sub)}</p></div><button class="sw" role="switch" aria-checked="${r.check.on}" data-act="look-switch" data-key="check-every" aria-label="${esc(r.check.label)}"><i></i><span class="sr">${esc(r.check.on ? "On" : "Off")}</span></button></div>`;
+  const click = `<div class="sw-row"><div class="grow"><p class="title">${esc(r.click.label)}</p><p class="cap">${esc(r.click.words)}</p></div>${r.click.button ? `<button class="btn ghost" data-act="click-off">${esc(r.click.button)}</button>` : ""}</div>`;
+  const rows = r.folders.rows.map((x) => `<li class="fr-row"><span class="fr-text"><span class="t">${esc(x.words)}</span></span>${x.remove ? `<button class="btn ghost" data-act="folder-remove" data-name="${esc(x.name)}" aria-label="${esc(`${x.remove}: ${x.title}`)}">${esc(x.remove)}</button>` : ""}</li>`).join("");
+  const folders = `<div class="sw-row fr-folders"><div class="grow"><p class="title">${esc(r.folders.label)}</p><p class="cap">${esc(r.folders.sub)}</p>${rows ? `<ul class="list fr-list">${rows}</ul>` : ""}<p class="cap">${r.folders.add ? `<button class="link" data-act="folder-add">${esc(r.folders.add)}</button>` : esc(r.folders.full ?? W.folders.refusedFull)}</p></div></div>`;
+  const jobs = `<div class="sw-row"><div class="grow"><p class="title">${esc(r.jobs)}</p></div><button class="btn ghost" data-act="jobs-recent">${esc(frontWords().choose.open)}</button></div>`;
+  return `${check}${click}${folders}${jobs}`;
+}
+
 // ---- dropping a file on Brenda ----------------------------------------------------------------------------------
 
 const kb = (n) => (n < 1024 * 1024 ? `${Math.max(1, Math.round(n / 1024))} KB` : `${(n / 1048576).toFixed(1)} MB`);
@@ -3414,7 +6221,8 @@ function dropView() {
       <ul class="list">${c.files.map((f) => `<li><span class="t">${esc(f.name)}</span><span class="k ${f.problem ? "bad" : ""}">${esc(f.problem ?? kb(f.size))}</span></li>`).join("")}</ul>
       ${ok.length ? `<select class="field" id="droptask" data-act="drop-task" aria-label="Task">${tasks.map((t) => `<option value="${esc(t.id)}" ${t.id === c.taskId ? "selected" : ""}>${esc(t.title)}${t.id === data?.timer?.taskId ? " (timer running)" : ""}</option>`).join("")}</select>
       <input class="field" id="dropnote" maxlength="2000" placeholder="Note for your reviewer (optional)" autocomplete="off">` : ""}
-      <div class="actions"><button class="btn ghost" data-act="close">Cancel</button>${ok.length ? `<button class="btn primary" data-act="drop-send" ${busy ? "disabled" : ""}>Send for review</button>` : ""}</div>`;
+      ${c.working ? `<form class="ask fade" data-dropwork><input class="field" id="dwq" name="w" maxlength="2000" placeholder="What should I make from it?" aria-label="${esc(`What ${me().name} should make from it`)}" autocomplete="off" spellcheck="true"><button class="btn accent icon-send" aria-label="Ask" title="Ask">${icon("send")}</button></form>` : ""}
+      <div class="actions">${fileWorkOn() && !c.working ? `<button class="btn ghost" data-act="drop-work">${esc(`Ask ${me().name} to work on it`)}</button>` : ""}<button class="btn ghost" data-act="close">Cancel</button>${ok.length ? `<button class="btn primary" data-act="drop-send" ${busy ? "disabled" : ""}>Send for review</button>` : ""}</div>`;
   }
   if (c.phase === "uploading") {
     const p = Math.round((c.done / Math.max(1, c.total)) * 100);
@@ -3425,6 +6233,18 @@ function dropView() {
       <div class="actions"><button class="btn" data-act="open-href" data-href="/app/${esc(config.workspaceSlug)}/tasks/${esc(c.taskId)}">Open task</button><button class="btn primary" data-act="close">Done</button></div>`;
   }
   return "";
+}
+
+/** "Let Brenda work on files" is on here (phase 2): a dropped file can be the file she works on. */
+const fileWorkOn = () => actOffered() && actStatus?.fileWork === true;
+/**
+ * Enter in the drop card's box (phase 2, contract C.3): the person's own words about the file they dropped go to Rust
+ * (`act_file_from_drop`, a real press), which asks Boredroom; anything to do comes back as a proposal and waits for a yes.
+ */
+function dropWork() {
+  const q = Look.cleanQuestion(document.getElementById("dwq")?.value ?? "");
+  if (!q || !fileWorkOn()) return;
+  return runLook({ via: "drop", question: q, spoken: false, app: null });
 }
 
 async function sendDrop() {
@@ -3785,9 +6605,19 @@ function dictate(e) {
     Object.assign(c, { dictating: "listening", dictMessage: null, startedAt: Date.now(), endedAt: null });
     syncHold(); // saying a line keeps the card (9 October 2026)
     showDictation(); Wave.start(e.level ?? 0);
+    if (c.kind === "look") showLookSend(); // Send waits for the words
     return true;
   }
-  if (e.phase === "transcribing") { Sound.play("heard"); Object.assign(c, { dictating: "transcribing", endedAt: Date.now() }); showDictation(); Wave.process(); return true; }
+  if (e.phase === "transcribing") { Sound.play("heard"); Object.assign(c, { dictating: "transcribing", endedAt: Date.now() }); showDictation(); Wave.process(); if (c.kind === "look") showLookSend(); return true; }
+  if (e.phase === "heard" && c.kind === "look") {
+    // A look's question keeps up to 4,000 characters, and the words are never sent to her from here (Send does that).
+    const input = document.getElementById("lq");
+    c.question = Look.joinQuestion(input?.value ?? c.question, e.text);
+    c.dictating = null;
+    if (input) input.value = c.question;
+    showDictation(); showLookSend(); Sound.play("tick");
+    return true;
+  }
   if (e.phase === "heard") {
     const input = document.getElementById("fnote");
     const before = String(input?.value ?? c.note ?? "").trim();
@@ -3798,11 +6628,14 @@ function dictate(e) {
     return true;
   }
   if (e.phase === "limit") return true;
-  const why = { "too-short": null, off: "Voice is off, so type the line instead.", "needs-model": "Voice is still getting ready. Type the line for now.", error: e.message || "I didn't catch that. Type the line instead." };
+  const why = c.kind === "look"
+    ? { "too-short": null, off: Look.words().dictation.off, "needs-model": Look.words().dictation.notReady, error: e.message || Look.words().dictation.missed }
+    : { "too-short": null, off: "Voice is off, so type the line instead.", "needs-model": "Voice is still getting ready. Type the line for now.", error: e.message || "I didn't catch that. Type the line instead." };
   if (!(e.phase in why)) return false;
   if (e.phase === "error") Sound.play("error");
   Object.assign(c, { dictating: null, dictMessage: why[e.phase] });
   showDictation();
+  if (c.kind === "look") showLookSend();
   return true;
 }
 
@@ -3906,7 +6739,9 @@ const sameItem = (c) => card?.kind === "item" && card.w.id === c.w.id;
  * Whether the open card has a one-line box the person is filling: a follow-up's note, a reply, a reason for declining a
  * request or (phase 7b) an open ask.
  */
-const noteCard = () => (card?.kind === "followup_ask" && card.phase === "ask") || ((card?.kind === "item" || card?.kind === "loop") && card.phase === "open" && !!(card.replying || card.declining));
+// A look's preview too (screen help, contract C.2): Option+Space then writes into its question, never to her.
+const noteCard = () => (card?.kind === "followup_ask" && card.phase === "ask") || ((card?.kind === "item" || card?.kind === "loop") && card.phase === "open" && !!(card.replying || card.declining))
+  || (card?.kind === "look" && card.phase === "preview");
 
 /** A waiting item's card title, in the contract's words. */
 function itemTitle(w) {
@@ -4285,7 +7120,7 @@ function openerView() {
     ${counts.length ? `<ul class="list counts fade" aria-labelledby="otitle">${counts.map(countRow).join("")}</ul>` : ""}
     ${actions.length ? `<div class="starts fade" role="group" aria-label="Start with">${actions.join("")}</div>` : ""}
     ${askBox()}
-    <div class="actions">${talkButton()}<button class="btn ghost" data-act="close">Later</button></div>`;
+    <div class="actions">${talkButton()}${lookButton()}<button class="btn ghost" data-act="close">Later</button></div>`;
 }
 
 /** An ask's words in the ask box, focused with the caret at the end, for the person to send or change (never sent here). */
@@ -5085,6 +7920,12 @@ document.fonts?.addEventListener?.("loadingdone", () => { if (config) fit(); });
 // The running timer in the compact bar and the timer card, and the timer card's estimate hairline. And the call's clock in
 // the bar while the person is on a call (phase 8): from when it was answered, else from when they joined.
 setInterval(() => {
+  // A file job's clock in the bar and its card (phase 2, contract A.8.3).
+  const ac = document.getElementById("aclock");
+  if (ac && task?.startedAt) ac.textContent = Act.elapsed(Date.now() - task.startedAt);
+  // A Files job's clock on its card (helpers contract S.6), while it runs.
+  const jc = document.getElementById("jclock");
+  if (jc && job?.startedAt && job.phase === "running") jc.textContent = Front.elapsed(Date.now() - job.startedAt);
   const cc = document.getElementById("cclock"), a = calls?.active;
   if (cc && a && cardsReady()) {
     const from = Date.parse(a.answeredAt ?? "") || Date.parse(a.joinedAt ?? "");
@@ -5095,7 +7936,7 @@ setInterval(() => {
   const e = document.getElementById("testimate"), share = estimateShare(); if (e && share !== null) e.style.transform = `scaleX(${share.toFixed(3)})`;
 }, 1000);
 
-listen("brenda://signed-out", () => { stopNatural(); forgetNatural(); config = { ...config, signedIn: false }; data = null; card = null; talk = []; chat = newChat(); cached = null; talkWaiting = false; clearTimeout(talkWaitTimer); forgetNotices(); applyQuiet(); render(); });
+listen("brenda://signed-out", () => { stopNatural(); forgetNatural(); config = { ...config, signedIn: false }; lookStatus = null; lookOffAt = null; forgetPhase2(); data = null; card = null; talk = []; chat = newChat(); cached = null; talkWaiting = false; clearTimeout(talkWaitTimer); forgetNotices(); applyQuiet(); render(); });
 
 (async () => {
   config = await invoke("get_config");

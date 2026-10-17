@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_NOTICE, PREVIOUS_DEFAULT_NOTICE, noticeMentionsScreenRecording } from "@/server/services/orgs";
+import { DEFAULT_NOTICE, PHASE8_DEFAULT_NOTICE, PREVIOUS_DEFAULT_NOTICE, isStandardNotice, noticeMentionsScreenRecording } from "@/server/services/orgs";
 
 // The monitoring notice's Settings alert (owner decisions, 8 October 2026: phase 8, D12; fix review, 10 October 2026):
 // owners and HR are told only while their notice still describes screen recording as something Boredroom does. The new
@@ -58,5 +58,28 @@ describe("noticeMentionsScreenRecording", () => {
 
   it("is false for nothing at all", () => {
     for (const t of [null, undefined, "", "   "]) expect(noticeMentionsScreenRecording(t)).toBe(false);
+  });
+});
+
+// Screen help on Brenda for Mac (owner decisions, 11 October 2026; contract F.3, D.14): the standard notice gains a third
+// paragraph; phase 8's text stays standard (welcome's "standard", never flagged) and Settings offers the new one.
+describe("the standard notice with screen help", () => {
+  it("is the contract's text, word for word", () => {
+    expect(DEFAULT_NOTICE).toBe(`Boredroom records the tasks you plan, the work sessions you start and stop, and the progress notes and evidence you submit. Timers only run when you start them. Heartbeats show whether your browser is connected; they are not a measure of productivity.
+
+Boredroom does not record your screen, and calls are never recorded: their sound and video pass through our video provider only to reach the people on the call. If someone turns on Brenda's notes during a call, you choose for yourself. Only the words of people who agree are written down, by their own device, and the transcript is deleted 7 days after the recap.
+
+If your organisation allows it, Brenda for Mac can look at a person's screen, but only when that person asks her to, with her keys or her Look button. The picture is not kept, and your organisation cannot see it or whether it was used. It is not monitoring and is not used to assess anyone's work.
+
+Unlogged or uncertain time leads to a clarification request, not an automatic penalty.`);
+    expect(PHASE8_DEFAULT_NOTICE).toBe(DEFAULT_NOTICE.replace(/\n\nIf your organisation allows it, Brenda for Mac can look[^\n]*/, ""));
+  });
+
+  it("both standard texts are standard and never flagged; anything else is not standard", () => {
+    for (const t of [DEFAULT_NOTICE, PHASE8_DEFAULT_NOTICE, `  ${PHASE8_DEFAULT_NOTICE.replace(/\n/g, "\r\n")} `]) {
+      expect(isStandardNotice(t)).toBe(true);
+      expect(noticeMentionsScreenRecording(t)).toBe(false);
+    }
+    for (const t of [PREVIOUS_DEFAULT_NOTICE, `${DEFAULT_NOTICE} Extra.`, "", null, undefined]) expect(isStandardNotice(t)).toBe(false);
   });
 });

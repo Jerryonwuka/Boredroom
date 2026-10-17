@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-front-choose"
+description = "Enables the front_choose command without any pre-configured scope."
+commands.allow = ["front_choose"]
+
+[[permission]]
+identifier = "deny-front-choose"
+description = "Denies the front_choose command without any pre-configured scope."
+commands.deny = ["front_choose"]

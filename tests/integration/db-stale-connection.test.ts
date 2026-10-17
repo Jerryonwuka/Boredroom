@@ -18,8 +18,9 @@ afterEach(() => { setStaleConnectionCheckForTests(null); vi.restoreAllMocks(); }
 afterAll(() => { setStaleConnectionCheckForTests(null); });
 
 describe("the pool's idle connections", () => {
-  it("are kept for 10 minutes, and one always", () => {
-    expect(internals().options).toMatchObject({ min: 1, idleTimeoutMillis: 600_000 });
+  // Four always since Brenda and her helpers (owner brief, 12 October 2026: "warm connections"; contract K.5.4).
+  it("are kept for 10 minutes, and four always", () => {
+    expect(internals().options).toMatchObject({ min: 4, idleTimeoutMillis: 600_000 });
   });
 
   it("an idle connection that answers its BEGIN is used as it is (no new connection)", async () => {

@@ -258,7 +258,7 @@ export function NewConversation({ orgSlug, people }: { orgSlug: string; people: 
   const ITEM_2 = "h-auto items-start py-2 [&>svg]:mt-0.5";
   return (
     <>
-      <Menu align="end" label="New" className="w-72" trigger={<Button size="md"><Plus aria-hidden />New</Button>}>
+      <Menu align="end" label="New" className="w-72" trigger={<Button size="md" data-brenda-target="messages-new"><Plus aria-hidden />New</Button>}>
         <MenuItem icon={<Hash aria-hidden />} className={ITEM_2} onSelect={() => open("channel")}><span className="block">New channel</span><span className="block text-meta font-normal text-secondary">A room for a topic or a group</span></MenuItem>
         <MenuItem icon={<MessageSquarePlus aria-hidden />} className={ITEM_2} onSelect={() => open("person")}><span className="block">Message someone</span><span className="block text-meta font-normal text-secondary">A direct thread with a teammate</span></MenuItem>
       </Menu>

@@ -804,6 +804,28 @@ html[data-brenda-chat] #workspace-sidebar, html:has([data-brenda-chat-view]) #wo
 .brenda-float > canvas:focus-visible { outline: none; }
 .brenda-float:has(> canvas:focus-visible) { outline: 2px solid var(--foreground); outline-offset: 3px; }
 
+/* Brenda points (owner request, 11 October 2026; components/app/brenda-pointer.tsx, docs/design-system.md "Brenda
+   points"): a fixed layer above sheets and dialogs that never takes a press. Her face glides from her floating button to
+   beside the element (600ms ease-out), then a 2px orange ring is drawn round it (450ms) with a pill naming it; held 3
+   seconds, faded over 400ms. Orange only for the ring: it marks the one thing to do. The pill is solid fill-1 with a
+   hairline, no glow. Reduced motion: no glide, no drawing; the face, a still ring and the pill at once. */
+.brenda-point { position: fixed; inset: 0; z-index: var(--z-toast); pointer-events: none; overflow: hidden; transition: opacity var(--point-fade, 400ms) var(--ease-out); }
+.brenda-point.fading { opacity: 0; }
+.brenda-point > * { position: absolute; left: 0; top: 0; will-change: transform; }
+.brenda-point-face { display: block; line-height: 0; }
+.brenda-point-face.gliding { transition: transform var(--point-glide, 600ms) var(--ease-out); }
+.brenda-point-ring { overflow: visible; fill: none; stroke: var(--accent); stroke-width: 2px; stroke-linecap: round; }
+.brenda-point-ring > * { stroke-dasharray: 1; stroke-dashoffset: 1; animation: brenda-point-draw var(--point-draw, 450ms) var(--ease-out) forwards; }
+.brenda-point-pill { display: inline-flex; align-items: center; height: 28px; max-width: calc(100vw - 16px); padding: 0 12px; border-radius: 9999px; border: 1px solid var(--border); background: var(--surface); color: var(--foreground); box-shadow: var(--elev-natural-xs); font-size: 13px; line-height: 16px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; animation: fade-in 200ms var(--ease-out) both; }
+@keyframes brenda-point-draw { to { stroke-dashoffset: 0; } }
+.brenda-point.still .brenda-point-ring > * { animation: none; stroke-dashoffset: 0; }
+.brenda-point.still .brenda-point-pill { animation: none; }
+@media (prefers-reduced-motion: reduce) {
+  .brenda-point, .brenda-point-face.gliding { transition: none; }
+  .brenda-point-ring > * { animation: none; stroke-dashoffset: 0; }
+  .brenda-point-pill { animation: none; }
+}
+
 /* ---------------------------------------------------------------------------------------------------------------
    6. Landing page (`.lp`: src/app/page.tsx, src/components/landing), v4 for marketing (owner request, 6 October 2026).
    The app's tokens and parts on the same canvas (no landing palette of its own), display type at marketing sizes, and
@@ -919,10 +941,18 @@ html[data-motion="paused"] :is(.marquee-track, .lp-mq-y-track) { animation-play-
   --lp-hero-tint: var(--lp-tint-light, #c94c3d);
   --lp-glow-top: 12%; --lp-glow-halo: 7%; --lp-glow-wide: 6%; --lp-drift: 10%; --lp-grain: 0.03;
 }
-/* Under 360px the longest flipped line ("team is waiting on") fits only at 34px; the lead steps down with it, so the
+/* The h1 is the visible headline (owner request, 17 October 2026: SEO analysis, A3): the category line, "Remote team
+   management software", in the display face at a quiet size and the secondary grey, then the display line "that knows
+   what your / team is {doing}". On phones the display line steps down to 32px so "that knows what your" keeps to one line
+   and the hero is no taller than before (the category line costs what the smaller line saves). */
+.lp-hero-kicker { display: block; margin-bottom: 8px; font-family: var(--font-display); font-size: 19px; line-height: 26px; font-weight: 400; letter-spacing: -0.01em; color: var(--secondary); text-wrap: balance; }
+@media (min-width: 640px) { .lp-hero-kicker { margin-bottom: 10px; font-size: 24px; line-height: 30px; } }
+@media (max-width: 639px) { .lp-hero-title { font-size: 32px; line-height: 36px; } }
+/* Under 360px the longest flipped line ("team is waiting on") fits only at 28px; the lead steps down with it, so the
    gap to the headline stays small. */
 @media (max-width: 359px) {
-  .lp-hero-title { font-size: 34px; line-height: 38px; }
+  .lp-hero-title { font-size: 28px; line-height: 32px; }
+  .lp-hero-kicker { font-size: 17px; line-height: 24px; }
   .lp-hero .lp-lead { font-size: 16px; line-height: 24px; }
 }
 @media (min-width: 640px) {
@@ -1007,6 +1037,9 @@ html[data-motion="paused"] .lp-hero-drift::before, html[data-motion="paused"] .l
 .lp-flip-line[data-glide] { transition: transform 300ms var(--ease-out); } /* not as it is built: that move is the same frame's, unseen */
 .lp-flip-cell { display: inline-grid; justify-items: start; }
 .lp-flip-word { grid-area: 1 / 1; opacity: 0; transform: translateY(10px); }
+/* The words are drawn, not written (owner request, 17 October 2026: SEO analysis, A3): the h1's text stays "team is
+   doing" whichever word shows (flip-words.tsx). */
+.lp-flip-word::before { content: attr(data-word); }
 .lp-flip-word[data-state="on"] { opacity: 1; transform: none; transition: opacity 300ms var(--ease-out), transform 300ms var(--ease-out); }
 .lp-flip-word[data-state="out"] { opacity: 0; transform: translate(40px, -40px) scale(2); transition: opacity 400ms var(--ease-out), transform 400ms var(--ease-out); }
 
@@ -1021,4 +1054,39 @@ html[data-motion="paused"] .lp-hero-drift::before, html[data-motion="paused"] .l
   .lp-hero-drift::before, .lp-hero-drift::after { animation: none; }
   .lp-flip-line, .lp-flip-word[data-state] { transition: none; }
   .lp-scroll-card, .lp-scroll-title { transform: none !important; }
+}
+
+/* ---- Public pages v2 (owner feedback, 17 October 2026: pages v2: the public pages "just look like HTML files", so they
+   take the home page's product layout; docs/design-system.md "Public pages v2"; parts in src/components/marketing). The
+   section title one step under the home page's (`.lp-h2` stays 48px there): the pages' H1s are long, and a 48px H2 under
+   a 48–52px H1 flattens the hierarchy. Links in running text as `.link-inline`. Accordions (FeatureAccordion,
+   FaqAccordion) are native <details>: the marker hidden, the Plus turning to ×, and the height animated only where the
+   browser can (::details-content with interpolate-size). The peek mask fades a cut-off picture (DashboardPeek). ---- */
+@layer components {
+.mk-h2 { font-family: var(--font-display); font-size: 30px; line-height: 36px; font-weight: 400; letter-spacing: -0.025em; color: var(--foreground); text-wrap: balance; }
+@media (min-width: 640px) { .mk-h2 { font-size: 36px; line-height: 42px; } }
+@media (min-width: 1024px) { .mk-h2 { font-size: 40px; line-height: 46px; } }
+.mk-links a:not([data-plain]) { color: var(--foreground); font-weight: 500; text-decoration-line: underline; text-decoration-color: var(--border-input-hover); text-decoration-thickness: 1px; text-underline-offset: 3px; border-radius: 2px; transition: text-decoration-color var(--duration-fast) var(--ease-out); }
+.mk-links a:not([data-plain]):hover { text-decoration-color: var(--accent); }
+.mk-links a:not([data-plain]):focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+}
+.mk-acc summary { list-style: none; }
+.mk-acc summary::-webkit-details-marker { display: none; }
+.mk-acc-plus { transition: transform 150ms var(--ease-out); }
+.mk-acc details[open] > summary .mk-acc-plus { transform: rotate(45deg); }
+@supports (interpolate-size: allow-keywords) {
+  .lp { interpolate-size: allow-keywords; }
+  .mk-acc details::details-content { height: 0; overflow: clip; transition: height 200ms var(--ease-out), content-visibility 200ms allow-discrete; }
+  .mk-acc details[open]::details-content { height: auto; }
+}
+.mk-acc-fig:not([hidden]) { animation: mk-fade 200ms var(--ease-out); }
+/* Below 1024px a picture sits inline under its row: with every row closed, none shows (review fix, 17 October 2026).
+   The two-column layout keeps the last picture in its side column. */
+@media (width < 64rem) { .mk-acc:not(:has(> details[open])) > .mk-acc-fig { display: none; } }
+@keyframes mk-fade { from { opacity: 0; } }
+/* The fade sits at --peek-h (the box's max height), measured from the top, so a picture shorter than that is not faded. */
+.mk-peek { -webkit-mask-image: linear-gradient(to bottom, #000 calc(var(--peek-h, 100%) - 96px), transparent var(--peek-h, 100%)); mask-image: linear-gradient(to bottom, #000 calc(var(--peek-h, 100%) - 96px), transparent var(--peek-h, 100%)); }
+@media (prefers-reduced-motion: reduce) {
+  .mk-acc-plus, .mk-acc details::details-content { transition: none !important; }
+  .mk-acc-fig:not([hidden]) { animation: none; }
 }

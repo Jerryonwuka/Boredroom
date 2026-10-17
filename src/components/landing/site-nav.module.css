@@ -1,9 +1,9 @@
 /* The landing page's notch navigation (owner request, 10 October 2026; markup: site-nav.tsx). A black island hung
    from the top centre with flared shoulders, as on a MacBook and as in Brenda desktop's own notch, so it stays black
-   in both themes and its contents use the dark tokens (`data-theme="dark"` on the notch). From 768px up it is open at
-   the top of the page (the logo, the five links, the theme toggle and the call to action) and folds to a small notch
+   in both themes and its contents use the dark tokens (`data-theme="dark"` on the notch). From 1152px up it is open at
+   the top of the page (the logo, the seven section links, the theme toggle and the call to action) and folds to a small notch
    once the page scrolls (the "B." mark and, inside a linked section, that section's name); a mouse over it, keyboard
-   focus inside it, or a tap on a touch screen opens it again. Below 768px it is a bar at the top of the page and a
+   focus inside it, or a tap on a touch screen opens it again. Below 1152px it is a bar at the top of the page and a
    compact notch (the mark and the menu button) once the page scrolls; the menu grows the notch out and down into a
    sheet. Only its height, padding, corner radius and the widths of the folding groups move (the groups fold through
    grid tracks, so no width is measured); their contents only fade. Folding runs in two steps (review fix, 10 October
@@ -134,7 +134,10 @@
 
 /* ---- Phones: a bar at the top, a compact notch once scrolled; the menu grows it out and down into a sheet ---- */
 .phoneOnly { display: none; }
-@media (max-width: 767.98px) {
+/* 1024px, not 768px (owner request, 17 October 2026: SEO analysis): seven section links need the width, so tablets get
+   the bar and its menu too. 1152px, not 1024px (owner feedback, 17 October 2026: pages v2): the mega-menu chevrons add
+   about 80px, so the open notch (about 984px in waitlist mode, 1030px live) needs more than a 1024px screen leaves. */
+@media (max-width: 1151.98px) {
   /* The bar: the full width less the page's 16px sides (a length, so it can move to and from the compact width). */
   .notch {
     width: calc(100% - 32px);
@@ -170,8 +173,73 @@
 .panelInner { min-height: 0; overflow: clip; }
 .panelScroll { max-height: calc(100dvh - 72px); overflow-y: auto; overscroll-behavior: contain; padding: 4px 8px 12px; }
 .notch[data-menu] .panel { grid-template-rows: 1fr; visibility: visible; transition: grid-template-rows 360ms var(--ease), visibility 0s; }
-@media (min-width: 768px) { .panel { display: none; } }
+@media (min-width: 1152px) { .panel { display: none; } }
+
+/* The sheet's section groups (below 1152px): a section row's chevron expands its pages under it (grid rows 0fr → 1fr). */
+.chevron { transition: transform 150ms var(--ease); }
+[aria-expanded="true"] > .chevron { transform: rotate(180deg); }
+.group {
+  display: grid;
+  grid-template-rows: 0fr;
+  visibility: hidden;
+  transition: grid-template-rows 200ms var(--ease), visibility 0s linear 200ms;
+}
+.group[data-open] { grid-template-rows: 1fr; visibility: visible; transition: grid-template-rows 200ms var(--ease), visibility 0s; }
+.groupInner { min-height: 0; overflow: clip; }
+
+/* ---- Mega-menus (owner feedback, 17 October 2026: pages v2; markup: site-nav-client.tsx). In the open notch from 1152px
+   the notch grows down into the open panel: a black backdrop hung under the row (`.megaBack`, the notch's width, the
+   notch's edge hairline, rounded at the foot), whose height follows the open panel's (measured: --mega-h), so moving
+   from one menu to the next morphs one shape; the row's own bottom inset line is the divider, and the notch's lower
+   corners go square while a panel is open. Each panel (`.mega`) is positioned over the backdrop from inside its menu
+   item (its containing block is the notch, so the folding groups' clip does not cut it). Opening: the backdrop grows
+   in 240ms; the content fades in 150ms after 60ms, rising 4px (or sliding 8px in from the side of the menu it
+   replaces). Closing: the content fades in 90ms, then the backdrop closes in 200ms and the corners round again. ---- */
+.megaBack {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 1;
+  height: 0;
+  opacity: 0;
+  pointer-events: none;
+  background: black;
+  border-radius: 0 0 22px 22px;
+  box-shadow: 0 0 0 1px var(--edge), 0 24px 48px -24px rgb(0 0 0 / 0.6);
+  transition: height 200ms var(--ease) 90ms, opacity 0s linear 290ms;
+}
+.notch[data-mega] .megaBack { height: var(--mega-h, 0px); opacity: 1; transition: height 240ms var(--ease), opacity 0s; }
+.notch[data-state="open"][data-mega] { border-radius: 0; transition: border-radius 150ms var(--ease); }
+.mega {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 2;
+  padding: 8px;
+  white-space: normal;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 90ms linear, visibility 0s linear 90ms;
+}
+.mega[data-state="open"] {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transition: visibility 0s;
+  animation: mega-rise 150ms var(--ease) 60ms backwards;
+}
+.mega[data-state="open"][data-from="left"] { animation-name: mega-from-left; animation-delay: 30ms; }
+.mega[data-state="open"][data-from="right"] { animation-name: mega-from-right; animation-delay: 30ms; }
+@keyframes mega-rise { from { opacity: 0; transform: translate3d(0, 4px, 0); } }
+@keyframes mega-from-left { from { opacity: 0; transform: translate3d(-8px, 0, 0); } }
+@keyframes mega-from-right { from { opacity: 0; transform: translate3d(8px, 0, 0); } }
+.megaInner { color: var(--foreground); }
+@media (max-width: 1151.98px) { .mega, .megaBack { display: none; } }
 
 @media (prefers-reduced-motion: reduce) {
-  .notch, .row, .logo, .logo > span, .fold, .label, .panel { transition: none !important; }
+  .notch, .row, .logo, .logo > span, .fold, .label, .panel, .group, .chevron, .mega, .megaBack { transition: none !important; }
+  .mega[data-state="open"] { animation: none; }
 }

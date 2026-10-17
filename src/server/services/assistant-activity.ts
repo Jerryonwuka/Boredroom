@@ -18,18 +18,30 @@ import { withUser } from "@/server/db";
 import type { OrgContext } from "@/server/lib/api";
 import { invalid } from "@/server/lib/errors";
 import { retryWithout0037, schema0037Ready } from "@/server/lib/schema-0037";
+import { schema0058Ready } from "@/server/lib/schema-0058";
+import { schema0060Ready } from "@/server/lib/schema-0060";
+import { actOutcome, actSummary, type ConfirmVia, type EndReason } from "@/lib/act";
 
-export const ACTIVITY_KINDS = ["all", "actions", "reads", "problems"] as const;
+// "mac" (phase 2, owner request 12 October 2026; contract D.11): what she did on the person's Mac, only for them.
+export const ACTIVITY_KINDS = ["all", "actions", "reads", "problems", "mac"] as const;
 export type ActivityKind = (typeof ACTIVITY_KINDS)[number];
 export type ActivityItem = {
   id: string; tool: string; summary: string;
   outcome: "done" | "confirmed" | "refused" | "failed";
-  source: "chat" | "confirm" | "automatic" | "read";
+  /** "mac": a task on the person's Mac (phase 2), whose id is "task:<uuid>" and whose tool is mac_screen, mac_file or (phase 3) mac_plan. */
+  source: "chat" | "confirm" | "automatic" | "read" | "mac";
   /** The page it is about (detail.href) when it is inside this workspace; else null. */
   href: string | null;
   createdAt: string;
   /** Done without a Confirm press because the person chose Act without asking (detail.auto; 8 October 2026). */
   auto?: boolean;
+  /** A task on the Mac: how the person said yes (null: they never did), and whether it is still going. */
+  detail?: { via: ConfirmVia | null; live: boolean };
+  /**
+   * Brenda and her helpers (owner brief, 12 October 2026; contract N.3): a request the person made on their Mac (id
+   * "request:<uuid>", tool mac_request): their own words, shown as "You asked: “…”" above what she did.
+   */
+  asked?: string;
 };
 export type ActivityPage = { items: ActivityItem[]; nextCursor: string | null; readsAvailable: boolean; readsHidden: boolean };
 
@@ -120,19 +132,58 @@ export const PRIVATE_TOOLS: ReadonlySet<string> = new Set(["send_message", "mark
   // The async standup (fix review, 9 October 2026): a refusal's words can say a draft was skipped or name the team.
   "standup", "standup_action"]);
 
+/**
+ * What owners and HR read in Settings › Brenda's log for an action her done line describes (owner decision 1, 11 October
+ * 2026: screen help; contract D.8): generic words for every action, look or not ("Added a to-do", "Set a reminder"), so
+ * the log never shows what a person asked for, and so a look's action reads exactly as the same action asked for in
+ * words (generic words only for looks would themselves give a look away). The person's own Activity page keeps the full
+ * words (`personalSummary` in the row's detail). Call sites that already give their own `logged` words keep them.
+ */
+export const OWNER_WORDS: Readonly<Record<string, string>> = Object.freeze({
+  todo: "Added a to-do",
+  assign: "Assigned a task",
+  update: "Changed a task",
+  comment: "Commented on a task",
+  submit: "Sent a task for review",
+  reminder: "Set a reminder",
+  reminder_cancel: "Cancelled a reminder",
+  complete: "Marked a task done",
+  clock_in: "Clocked in",
+  clock_out: "Clocked out",
+  timer_start: "Started the timer",
+  timer_pause: "Paused the timer",
+  timer_resume: "Resumed the timer",
+  timer_stop: "Stopped the timer",
+  team: "Created a team",
+  invite: "Sent an invitation",
+  status: "Set the work status",
+  plan: "Arranged the day",
+  doc: "Saved a document",
+  doc_update: "Changed a document",
+});
+/** A to-do the person made for someone else (copilot's create_todos passes it as its `logged`). */
+export const OWNER_WORDS_TODO_FOR_SOMEONE = "Created a task for a teammate";
+export const OWNER_WORDS_OTHER = "Did something they asked for";
+
+/** The owner-visible words for a done line's kind (OWNER_WORDS), or "Did something they asked for". */
+export function ownerWords(kind: string): string {
+  return Object.hasOwn(OWNER_WORDS, kind) ? OWNER_WORDS[kind] : OWNER_WORDS_OTHER;
+}
+
 /** The model-facing words of the tainted-turn refusal (copilot.ts TAINT_ERROR), recognised in rows logged before this change. */
 const TAINTED = /^Not done: you read other people's messages/;
 
 /**
  * A row that did not go through, in the person's words: "Didn't add 2 to-dos: you had just read messages, so ask again",
  * "Couldn't clock you in: …". `error` is the tool's own words (left out for PRIVATE_TOOLS, which may list the person's
- * conversations); `tainted`: refused because she had just read other people's messages.
+ * conversations); `tainted`: refused because she had just read other people's messages. `leadOnly` (review, 11 October
+ * 2026): a look's refusal or failure, whose error may quote what she read from the picture, keeps only the lead words.
  */
-export function problemSummary(tool: string, outcome: "refused" | "failed", error: string, opts: { input?: Record<string, unknown>; tainted?: boolean } = {}): string {
+export function problemSummary(tool: string, outcome: "refused" | "failed", error: string, opts: { input?: Record<string, unknown>; tainted?: boolean; leadOnly?: boolean } = {}): string {
   const lead = `${outcome === "failed" ? "Couldn't" : "Didn't"} ${attemptOf(tool, opts.input)}`;
   if (opts.tainted || TAINTED.test(error)) return `${lead}: you had just read messages, so ask again`;
   const why = error.replace(/\s+/g, " ").trim();
-  if (PRIVATE_TOOLS.has(tool) || !why) return lead;
+  if (PRIVATE_TOOLS.has(tool) || opts.leadOnly || !why) return lead;
   return `${lead}: ${why.length > 240 ? `${why.slice(0, 239).trimEnd()}…` : why}`;
 }
 
@@ -180,7 +231,48 @@ const KIND_SQL: Record<ActivityKind, string> = {
   actions: "AND a.source <> 'read' AND a.outcome IN ('done', 'confirmed')",
   reads: "AND a.source = 'read'",
   problems: "AND a.outcome IN ('refused', 'failed')",
+  mac: "AND false",
 };
+
+type RequestActivityRow = { id: string; request_text: string; lane: string; outcome: string; summary: string | null; confirmed_via: ConfirmVia | null; job_title: string | null; created_at: string; stamp: string };
+
+/** The outcome line of a request on the Mac (S.9): what she did, "Started a job: …", "You said no", "Undone". */
+export function requestOutcomeWords(r: Pick<RequestActivityRow, "lane" | "outcome" | "summary" | "job_title">): string {
+  if (r.outcome === "undone") return "Undone";
+  if (r.outcome === "said_no") return "You said no";
+  if (r.lane === "job" && r.job_title) return `Started a job: ${r.job_title}`;
+  if (r.summary?.trim()) return r.summary.trim();
+  switch (r.outcome) {
+    case "pending": return "In progress";
+    case "refused": return "Couldn't do that";
+    case "failed": return "Couldn't finish";
+    case "stopped": return "Stopped";
+    default: return r.lane === "look" ? "Looked at your screen" : r.lane === "ask" ? "Asked what you meant" : "Done";
+  }
+}
+
+/** A request on the person's Mac as an Activity row (contract N.3). */
+export function requestActivityItem(r: Omit<RequestActivityRow, "stamp">, base: string): ActivityItem {
+  return {
+    id: `request:${r.id}`, tool: "mac_request", summary: requestOutcomeWords(r),
+    outcome: r.outcome === "failed" ? "failed" : r.outcome === "refused" || r.outcome === "said_no" ? "refused" : "done",
+    source: "mac", href: r.lane === "job" ? `${base}home/jobs` : null, createdAt: r.created_at,
+    detail: { via: r.confirmed_via ?? null, live: r.outcome === "pending" }, asked: r.request_text,
+  };
+}
+
+type TaskActivityRow = { id: string; kind: "screen" | "file" | "plan"; plan_text: string; summary: string | null; end_reason: EndReason | null; ended_at: string | null; confirmed_via: ConfirmVia | null; created_at: string; stamp: string };
+
+/** A task on the person's Mac as an Activity row (phase 2; contract D.11). A plan (phase 3, contract D.6) is mac_plan. */
+export function taskActivityItem(r: Omit<TaskActivityRow, "stamp">): ActivityItem {
+  const live = !r.ended_at;
+  return {
+    id: `task:${r.id}`, tool: r.kind === "file" ? "mac_file" : r.kind === "plan" ? "mac_plan" : "mac_screen",
+    summary: actSummary({ end_reason: live ? null : r.end_reason, plan: r.plan_text, summary: r.summary, live, kind: r.kind }),
+    outcome: live ? "done" : actOutcome(r.end_reason), source: "mac", href: null, createdAt: r.created_at,
+    detail: { via: r.confirmed_via ?? null, live },
+  };
+}
 
 /** The person's own activity, newest first, paged by an opaque cursor. Always personal, whatever the role. */
 export async function listActivity(ctx: OrgContext, opts: { kind?: ActivityKind; cursor?: string | null; limit?: number } = {}): Promise<ActivityPage> {
@@ -209,14 +301,47 @@ export async function listActivity(ctx: OrgContext, opts: { kind?: ActivityKind;
        FROM brenda_actions a
        WHERE ${where}
        ORDER BY a.created_at DESC, a.id DESC LIMIT $${params.length}`, params);
-    const page = rows.slice(0, limit);
-    const items: ActivityItem[] = page.map((r) => ({
-      id: r.id, tool: r.tool, summary: rowSummary({ ...r, personalSummary: r.personal_summary }, true), outcome: r.outcome, source: r.source,
-      href: typeof r.href === "string" && r.href.startsWith(base) && !r.href.includes("//") ? r.href : null,
-      createdAt: r.created_at,
-      ...(r.auto ? { auto: true } : {}),
-    }));
+    // Tasks on the person's Mac (phase 2, owner request 12 October 2026; contract D.11): theirs alone (row-level security),
+    // never while someone else is signed in as them, nothing before 0058. Merged with her actions by time.
+    let tasks: TaskActivityRow[] = [];
+    if ((kind === "all" || kind === "mac") && !readsHidden && (await schema0058Ready(db))) {
+      const tp: unknown[] = [ctx.org.id, ctx.membership.id];
+      let tw = `t.organisation_id = $1 AND t.membership_id = $2`;
+      if (after) { tp.push(after.at, after.id); tw += ` AND (t.created_at, t.id) < ($3::timestamptz, $4::uuid)`; }
+      tp.push(limit + 1);
+      tasks = await db.query<TaskActivityRow>(
+        `SELECT t.id, t.kind, t.plan_text, t.summary, t.end_reason, t.ended_at, t.confirmed_via, t.created_at,
+                to_char(t.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US') || 'Z' AS stamp
+         FROM assistant_tasks t WHERE ${tw} AND t.kind <> 'job' ORDER BY t.created_at DESC, t.id DESC LIMIT $${tp.length}`, tp);
+    }
+    // Requests on the person's Mac (Brenda and her helpers, owner brief 12 October 2026; contract N.3): theirs alone, kept
+    // 30 days, never while someone else is signed in as them, nothing before 0060. Jobs themselves are on the Jobs page.
+    let requests: RequestActivityRow[] = [];
+    if ((kind === "all" || kind === "mac") && !readsHidden && (await schema0060Ready(db))) {
+      const rp: unknown[] = [ctx.org.id, ctx.membership.id];
+      let rw = `q.organisation_id = $1 AND q.membership_id = $2`;
+      if (after) { rp.push(after.at, after.id); rw += ` AND (q.created_at, q.id) < ($3::timestamptz, $4::uuid)`; }
+      rp.push(limit + 1);
+      requests = await db.query<RequestActivityRow>(
+        `SELECT q.id, q.request_text, q.lane, q.outcome, q.summary, q.confirmed_via, t.job ->> 'title' AS job_title, q.created_at,
+                to_char(q.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US') || 'Z' AS stamp
+         FROM mac_requests q LEFT JOIN assistant_tasks t ON t.id = q.job_id
+         WHERE ${rw} ORDER BY q.created_at DESC, q.id DESC LIMIT $${rp.length}`, rp);
+    }
+    type Merged = { at: string; id: string; item: () => ActivityItem };
+    const merged: Merged[] = [
+      ...rows.map((r): Merged => ({ at: r.stamp, id: r.id, item: () => ({
+        id: r.id, tool: r.tool, summary: rowSummary({ ...r, personalSummary: r.personal_summary }, true), outcome: r.outcome, source: r.source,
+        href: typeof r.href === "string" && r.href.startsWith(base) && !r.href.includes("//") ? r.href : null,
+        createdAt: r.created_at,
+        ...(r.auto ? { auto: true } : {}),
+      }) })),
+      ...tasks.map((r): Merged => ({ at: r.stamp, id: r.id, item: () => taskActivityItem(r) })),
+      ...requests.map((r): Merged => ({ at: r.stamp, id: r.id, item: () => requestActivityItem(r, base) })),
+    ].sort((x, y) => (x.at === y.at ? (x.id < y.id ? 1 : x.id > y.id ? -1 : 0) : x.at < y.at ? 1 : -1));
+    const page = merged.slice(0, limit);
+    const items: ActivityItem[] = page.map((m) => m.item());
     const last = page[page.length - 1];
-    return { items, nextCursor: rows.length > limit && last ? encodeCursor(last.stamp, last.id) : null, readsAvailable, readsHidden };
+    return { items, nextCursor: merged.length > limit && last ? encodeCursor(last.at, last.id) : null, readsAvailable, readsHidden };
   }));
 }

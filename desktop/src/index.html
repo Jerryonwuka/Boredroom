@@ -7,25 +7,35 @@
   <!-- Inter and Geist Mono ship with the app (src/fonts); preloaded so the first card is drawn in them. -->
   <link rel="preload" href="fonts/inter-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="fonts/geist-mono-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <!-- Her face first (face.css, shared with the companion by the pointer; 12 October 2026), then the notch. -->
+  <link rel="stylesheet" href="face.css">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <!-- The island grows and shrinks inside a fixed, transparent window; the content inside keeps its own width. main.js
        names the notch after the person's assistant on every render (personal assistants, 7 October 2026). -->
   <div id="island" class="island">
-    <!-- Notifications, "A plus the grafts" (owner decision, 9 October 2026): the wash, a light from the top edge in the
-         colour of the open notification's kind (style.css), under the card. -->
+    <!-- Notifications, "A plus the grafts" (owner decision, 9 October 2026): the wash, once a light from the top edge in
+         the colour of the open notification's kind. Retired in v4 (17 October 2026; style.css hides it); the element
+         stays because main.js still sets its family. -->
     <i id="wash" class="wash" aria-hidden="true"></i>
     <main id="notch" class="notch compact" aria-live="polite" aria-label="Brenda"></main>
     <i id="countdown" class="countdown" aria-hidden="true"></i>
   </div>
   <!-- Classic scripts sharing one scope, in this order: the sounds, the notification cards' markup (NotifyCards), the
        queue's rules (Notify), her natural voice's player (NaturalVoice; owner decision, 9 October 2026: natural voice
-       (ElevenLabs)), then the notch itself. -->
+       (ElevenLabs)), screen help's words and rules (Look; owner decisions, 11 October 2026), the words and rules for doing
+       things on the Mac only when asked (Act; owner rule, 12 October 2026), the one setup card's words and rules (Help;
+       owner report and requests, 12 October 2026), the front desk's and the helpers' words and rules (Front; the owner's
+       approved brief "Brenda and her helpers", 12 October 2026), then the notch itself. -->
   <script src="sound.js"></script>
   <script src="notify-cards.js"></script>
   <script src="notify.js"></script>
   <script src="natural-voice.js"></script>
+  <script src="look.js"></script>
+  <script src="act.js"></script>
+  <script src="help.js"></script>
+  <script src="front.js"></script>
   <script src="main.js"></script>
 </body>
 </html>

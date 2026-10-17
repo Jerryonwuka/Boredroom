@@ -19,6 +19,9 @@
  * Every nav icon is animated (owner request, 7 October 2026; components/ui/animated-icons): it plays while its item is
  * hovered or focused from the keyboard, once when its item becomes the current page (Brenda's face squints happily),
  * never on a loop, and not at all under reduced motion. The current page's icon is still the orange one.
+ *
+ * Brenda points (owner request, 11 October 2026; lib/brenda-targets): each item whose page the catalogue knows carries
+ * `data-brenda-target="nav-<segment>"` (the first part of its path after the workspace), so she can point at it.
  */
 import { useEffect, useRef, useState, useSyncExternalStore, type ComponentType } from "react";
 import Link from "next/link";
@@ -37,6 +40,7 @@ import { Menu, MenuItem, MenuLabel, MenuSeparator } from "@/components/ui/menu";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { Logo } from "@/components/logo";
 import { BrendaGlyph } from "@/components/app/brenda-glyph";
+import { isTargetKey } from "@/lib/brenda-targets";
 
 export type NavItem = { href: string; label: string; icon: keyof typeof ICONS; badge?: number; /** Section label shown above the first item of each group. */ group?: string };
 export type Workspace = { slug: string; name: string };
@@ -97,6 +101,12 @@ function groupsOf(items: NavItem[]) {
   return groups;
 }
 
+/** The key Brenda points at for a nav item: `nav-` and the first part of its path after `/app/<slug>/`, when the catalogue knows it. */
+function navTarget(href: string): string | undefined {
+  const key = `nav-${href.split("/")[3] ?? ""}`;
+  return isTargetKey(key) ? key : undefined;
+}
+
 const ITEM = "relative flex h-8 items-center gap-2 rounded-lg px-2 text-sm font-medium transition-colors duration-75 [&>svg]:size-[18px] [&>svg]:shrink-0";
 // The rail's collapsed look (only inside the desktop sidebar, never in the phone sheet): the icon alone, centred.
 const ITEM_RAIL = "in-data-[sidebar=collapsed]:w-8 in-data-[sidebar=collapsed]:px-[7px]";
@@ -123,7 +133,7 @@ export function WorkspaceNav({ items, variant = "rail" }: { items: NavItem[]; va
                 const active = pathname === it.href || pathname.startsWith(it.href + "/");
                 return (
                   <li key={it.href}>
-                    <Link href={it.href} aria-current={active ? "page" : undefined} data-tip={collapsed ? (it.badge ? `${it.label}, ${it.badge}` : it.label) : undefined} data-tip-side="right"
+                    <Link href={it.href} aria-current={active ? "page" : undefined} data-brenda-target={navTarget(it.href)} data-tip={collapsed ? (it.badge ? `${it.label}, ${it.badge}` : it.label) : undefined} data-tip-side="right"
                       className={cn(ITEM, active ? "bg-fill-1 text-foreground [&>svg]:text-accent" : "text-secondary hover:bg-fill-1 hover:text-foreground", rail ? ITEM_RAIL : "pointer-coarse:h-10")}>
                       <Icon aria-hidden />
                       <span className={cn("min-w-0 flex-1 truncate", rail && "in-data-[sidebar=collapsed]:sr-only")}>{it.label}</span>

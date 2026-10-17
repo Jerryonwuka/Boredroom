@@ -128,6 +128,11 @@ function Privacy({ ctx, privacy }: { ctx: OrgContext; privacy: Awaited<ReturnTyp
         <SettingsRow label="What Boredroom never does" align="text">
           <ul className="space-y-1 text-secondary">
             <li>It never records your screen.</li>
+            {/* Screen help on Brenda for Mac (owner decisions, 11 October 2026): only when the person asks, with her keys or her
+                Look button; the picture is never kept (review, 11 October 2026: Past chats keep her answer, so not "what she saw").
+                Phase 2 (owner rule, 12 October 2026: "Brenda cannot take any action except I explicitly give an instruction";
+                contract E.7): her mouse, keyboard and file work only when the person asks and says yes. */}
+            <li>It never looks at your screen unless you press Brenda&apos;s keys, never uses your mouse, keyboard or files unless you ask Brenda and say yes, and never keeps what she saw.</li>
             <li>It never records calls.</li>
           </ul>
         </SettingsRow>

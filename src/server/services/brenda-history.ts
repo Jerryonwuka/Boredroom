@@ -94,6 +94,10 @@ const messageSchema = z.object({
   proposals: z.array(proposalSchema).max(20).optional(),
   engine: text(40).optional(),
   note: told(2000).nullable().optional(),
+  // Screen help (owner decisions, 11 October 2026): a question asked with a look at the person's screen keeps a note of
+  // which app was in front of them ("Brenda looked at a window (Figma)"), on their own message only. The picture never
+  // reaches this schema's output: z.object drops what it does not name, so a stray `image` is never stored.
+  look: z.object({ app: told(80) }).optional(),
 });
 
 /** The whole conversation, oldest first; past the limit only the newest messages are kept. */
@@ -142,9 +146,11 @@ export async function parseConversationBody<T>(req: Request, schema: z.ZodType<T
  */
 export function stripTokens(messages: ParsedMessage[]): StoredMessage[] {
   return messages.map((m) => {
-    const { tainted, actions, proposals, ...rest } = m;
+    const { tainted, actions, proposals, look, ...rest } = m;
     return {
       ...rest,
+      // A look's note stays on the person's own message only (contract D.10).
+      ...(look && m.role === "user" && look.app.trim() ? { look: { app: look.app.replace(/\s+/g, " ").trim() } } : {}),
       // Kept as it was sent, false included (review, 8 October 2026): a reply with no flag counts as having read other
       // people's words when the chat is reopened (the earlier-taint floor fails closed).
       ...(typeof tainted === "boolean" ? { tainted } : {}),

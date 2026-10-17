@@ -208,6 +208,29 @@ pub fn debug_log(msg: String) {
     }
 }
 
+/// Whether (x, y), in window coordinates, is on the island (with its margin).
+fn hit(r: Rect, x: f64, y: f64) -> bool {
+    r.w > 0.0 && x >= r.x - HIT_MARGIN && x <= r.x + r.w + HIT_MARGIN && y >= r.y - HIT_MARGIN && y <= r.y + r.h + HIT_MARGIN
+}
+
+/// Whether the cursor is over the island now (Brenda Look's "real press" check, owner decisions, 11 October 2026: a
+/// look, turning screen help on and the permission prompt only follow a press on Brenda herself).
+pub fn cursor_on_island(app: &AppHandle) -> bool {
+    cursor_logical(app).is_some_and(|p| point_on_island(app, p))
+}
+
+/// Whether a point (logical points from the top-left of the main screen) is on the island: a screen task never clicks
+/// Brenda's own island (owner rule, 12 October 2026: a press on Brenda is only ever the person's).
+pub fn point_on_island(app: &AppHandle, p: (f64, f64)) -> bool {
+    let Some(window) = app.get_webview_window("notch") else { return false };
+    if !window.is_visible().unwrap_or(false) {
+        return false;
+    }
+    let (Ok(origin), Ok(scale)) = (window.outer_position(), window.scale_factor()) else { return false };
+    let r = *app.state::<Island>().rect.lock().unwrap();
+    hit(r, p.0 - origin.x as f64 / scale, p.1 - origin.y as f64 / scale)
+}
+
 pub fn start(app: &AppHandle, window: WebviewWindow) {
     let _ = window.set_ignore_cursor_events(true);
     app.state::<Island>().ignoring.store(true, Ordering::Relaxed);
@@ -234,7 +257,7 @@ pub fn start(app: &AppHandle, window: WebviewWindow) {
             last = (x, y);
             let state = app.state::<Island>();
             let r = *state.rect.lock().unwrap();
-            let on = r.w > 0.0 && x >= r.x - HIT_MARGIN && x <= r.x + r.w + HIT_MARGIN && y >= r.y - HIT_MARGIN && y <= r.y + r.h + HIT_MARGIN;
+            let on = hit(r, x, y);
             if std::env::var_os("BRENDA_DEBUG_CURSOR").is_some() && y < 120.0 {
                 eprintln!("[brenda] cursor {x:.0},{y:.0} island {:.0},{:.0} {:.0}x{:.0} on={on} ignoring={}", r.x, r.y, r.w, r.h, state.ignoring.load(Ordering::Relaxed));
             }

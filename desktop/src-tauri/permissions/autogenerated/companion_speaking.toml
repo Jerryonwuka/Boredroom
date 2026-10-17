@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-companion-speaking"
+description = "Enables the companion_speaking command without any pre-configured scope."
+commands.allow = ["companion_speaking"]
+
+[[permission]]
+identifier = "deny-companion-speaking"
+description = "Denies the companion_speaking command without any pre-configured scope."
+commands.deny = ["companion_speaking"]

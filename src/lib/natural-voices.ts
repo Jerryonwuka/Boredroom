@@ -50,10 +50,8 @@ export type NaturalVoiceReason =
   | "voice_off"
   | "no_key"
   | "key_rejected"
-  | "person_cap"
-  | "workspace_cap"
-  /** Boredroom's key only: today's share of the key, shared by every workspace on it, is used up (9 October 2026, review). */
-  | "shared_cap"
+  // person_cap, workspace_cap and shared_cap went with Boredroom's own limits (owner request, 12 October 2026: "remove the
+  // limit for ElevenLabs voice"). The only allowance is ElevenLabs' own: its refusal for credits is allowance_low.
   | "allowance_low"
   | "upstream";
 
@@ -73,6 +71,7 @@ export type NaturalVoiceView = {
   /** ISO, when the key's monthly allowance resets (for "allowance_low"). */
   resetAt: string | null;
   usedToday: number;
+  /** @deprecated Always 0: Boredroom sets no daily limit (owner request, 12 October 2026). Kept for older pages and the notch. */
   personDailyLimit: number;
   /** A key exists (the workspace's or Boredroom's), so the samples can play; without one they are not offered. */
   samples: boolean;
@@ -97,9 +96,9 @@ export type VoiceConnectionStatus = {
   low: boolean;
   /** Characters this workspace spoke since the 1st (our counters). */
   workspaceMonth: number;
-  /** This workspace today, and today's share. */
+  /** This workspace today. `share` is always 0 (no daily share since the owner's request, 12 October 2026). */
   today: { used: number; share: number };
-  /** Boredroom's key only: today's share of the key, shared by every workspace on it, is used up. */
+  /** @deprecated Always false: there is no daily share any more (owner request, 12 October 2026). */
   sharedFull: boolean;
   /**
    * The workspace's own key cannot delete what was said from its ElevenLabs history (no History access), so the key's
@@ -112,6 +111,7 @@ export type VoiceConnectionStatus = {
    * history (no id from ElevenLabs, no History access for a day, ElevenLabs failing). 0 on Boredroom's key.
    */
   historyLeft: number;
+  /** @deprecated Always 0: Boredroom sets no daily limit (owner request, 12 October 2026). */
   personDailyLimit: number;
 };
 

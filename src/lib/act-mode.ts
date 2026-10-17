@@ -58,7 +58,16 @@ export const ASK_REASONS = ["tainted", "tainted_earlier", "broadcast_everyone", 
   "others_words_todo",
   // Phase 7c (owner decisions, 8–9 October 2026): what the person's assistant remembers about them is always their own
   // press, whatever the mode ("How I like things done").
-  "preference_consent"] as const;
+  "preference_consent",
+  // Screen help (owner decisions, 11 October 2026): everything prepared from a look at the person's screen waits for their
+  // Confirm, in every mode: what she saw is other people's words as far as acting goes.
+  "looked",
+  // Brenda for Mac (owner permission rule, 12 October 2026: "if it's a core task, Brenda should confirm, oh, do you want
+  // me to do this?"): from her notch every Boredroom change waits for the person's yes, whatever the mode.
+  "on_mac",
+  // Brenda and her helpers (owner brief, 12 October 2026; decision 9): the person turned on "Check with me before every
+  // task", so even their own to-dos, reminders and timer from their Mac wait for their yes.
+  "check_every"] as const;
 export type AskReason = (typeof ASK_REASONS)[number];
 export const isAskReason = (v: unknown): v is AskReason => (ASK_REASONS as readonly unknown[]).includes(v);
 
@@ -95,6 +104,10 @@ export function whyStillAsking(reason: AskReason, o: { name: string; people?: nu
     case "others_words_todo": return "Still asking: this to-do comes from words in a conversation, so you confirm it first.";
     // Owner decisions, 8–9 October 2026 (phase 7c): remembering or forgetting a preference always waits for the person.
     case "preference_consent": return `Still asking: what ${o.name} remembers about you is always your call.`;
+    // Owner decisions, 11 October 2026 (screen help): an action from a look always waits for the person's own press.
+    case "looked": return `Still asking: this came from what ${o.name} saw on your screen.`;
+    case "on_mac": return `Still asking: from your Mac, ${o.name} always checks with you first.`;
+    case "check_every": return `Still asking: you asked ${o.name} to check with you before every task.`;
   }
 }
 

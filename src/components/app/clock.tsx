@@ -67,12 +67,12 @@ export function ClockButtons({ orgSlug, status, timerOpen, size = "lg", timing }
   return (
     <div className="flex flex-col items-start gap-2.5">
       {status === "not_in" ? (
-        <Button size={size} variant="accent" loading={pending} aria-describedby={describedBy} onClick={() => call("in")}>
+        <Button size={size} variant="accent" loading={pending} aria-describedby={describedBy} data-brenda-target="clock-button" onClick={() => call("in")}>
           {pending ? null : <LogIn aria-hidden />}{pending ? "Clocking in…" : state.tone === "danger" ? "Clock in, very late" : state.tone === "warning" ? "Clock in, late" : "Clock in"}
         </Button>
       ) : null}
       {status === "in" ? (
-        <Button size={size} variant={state.until ? "danger" : "secondary"} loading={pending} aria-describedby={describedBy} data-tip={timerOpen ? "Stop your timer first" : state.message ?? undefined} onClick={() => call("out")}>
+        <Button size={size} variant={state.until ? "danger" : "secondary"} loading={pending} aria-describedby={describedBy} data-tip={timerOpen ? "Stop your timer first" : state.message ?? undefined} data-brenda-target="clock-button" onClick={() => call("out")}>
           {pending ? null : <LogOut aria-hidden />}{pending ? "Clocking out…" : state.until ? <>Clock out, day ends <span className="tabular-nums">{state.until}</span></> : "Clock out"}
         </Button>
       ) : null}

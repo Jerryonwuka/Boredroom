@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-act-stop"
+description = "Enables the act_stop command without any pre-configured scope."
+commands.allow = ["act_stop"]
+
+[[permission]]
+identifier = "deny-act-stop"
+description = "Denies the act_stop command without any pre-configured scope."
+commands.deny = ["act_stop"]

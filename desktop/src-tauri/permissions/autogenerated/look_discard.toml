@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-look-discard"
+description = "Enables the look_discard command without any pre-configured scope."
+commands.allow = ["look_discard"]
+
+[[permission]]
+identifier = "deny-look-discard"
+description = "Denies the look_discard command without any pre-configured scope."
+commands.deny = ["look_discard"]

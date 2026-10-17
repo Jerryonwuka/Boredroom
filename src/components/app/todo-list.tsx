@@ -238,7 +238,7 @@ function Board({ orgSlug, today, initialSession, planned, ownTodos, fromLeads, d
 
       <section aria-labelledby="todo-heading">
         <SectionTitle id="todo-heading" title="Your to-dos for today" className="mb-3"
-          action={<Button ref={addButton} size="icon-sm" aria-label="Add a to-do" aria-expanded={adding} aria-controls="new-todo" onClick={openAdd}><Plus aria-hidden /></Button>} />
+          action={<Button ref={addButton} size="icon-sm" aria-label="Add a to-do" aria-expanded={adding} aria-controls="new-todo" data-brenda-target="todos-add" onClick={openAdd}><Plus aria-hidden /></Button>} />
 
         {/* The new-to-do row keeps one place in the tree whether or not the list is empty, so the refresh after the
             first to-do is added never remounts it (and never drops drafts still waiting in it). */}

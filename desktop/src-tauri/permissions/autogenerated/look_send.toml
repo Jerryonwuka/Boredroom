@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-look-send"
+description = "Enables the look_send command without any pre-configured scope."
+commands.allow = ["look_send"]
+
+[[permission]]
+identifier = "deny-look-send"
+description = "Denies the look_send command without any pre-configured scope."
+commands.deny = ["look_send"]

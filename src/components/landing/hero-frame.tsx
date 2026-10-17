@@ -38,7 +38,8 @@ function Sidebar({ active }: { active: NavKey }) {
   return (
     <aside className="hidden w-60 shrink-0 flex-col border-r border-border bg-sidebar md:flex">
       <div className="flex h-[50px] shrink-0 items-center justify-between pl-[18px] pr-3">
-        <LogoArt height={16} />
+        {/* Below the fold: lazy, and named for the image check (SEO analysis, 17 October 2026: A6, A10). */}
+        <LogoArt height={16} alt="Boredroom" loading="lazy" />
         <span className={ICON_BTN}><PanelLeft /></span>
       </div>
       <div className="min-h-0 flex-1 overflow-hidden px-3 pt-1">
@@ -144,43 +145,66 @@ function HeroBox() {
   );
 }
 
-/** Brenda's home in a team lead's workspace, on a Stage (it sits below the fold, so it fades in as it arrives). */
+/**
+ * Brenda's home in a team lead's workspace, on a Stage (it sits below the fold, so it fades in as it arrives). The
+ * picture is named for assistive technology (owner request, 17 October 2026: SEO analysis, A6: a meaningful picture
+ * hidden from screen readers gets a description), as the dashboard card's viewport is.
+ */
+const HOME_LABEL = "Brenda's home in a team lead's workspace: her greeting, quick asks such as “Who's working?” and “Who's late?”, the box to ask her anything, and cards to summarise the week, chase work and write a doc.";
+
+/**
+ * Her home panel itself, without the app frame (owner feedback, 17 October 2026: pages v2): the purple glow, her face,
+ * the greeting and headline, a lead's quick asks, her box and `cards` of a lead's three cards (0 to 3). The home page's
+ * frame below draws it with all three; the public pages' `BrendaHomePanel` (components/marketing/visuals) puts it on a
+ * stage of its own. Hidden from assistive technology by whoever places it (inside a named role="img").
+ */
+export function BrendaHomePanelBody({ cards = 3, className }: { cards?: number; className?: string }) {
+  const shown = CARDS.slice(0, Math.max(0, Math.min(3, cards)));
+  return (
+    <div style={TINT} className={cn("brenda-panel flex flex-col p-3 sm:p-4 lg:p-5", className)}>
+      <div className="flex flex-col items-center px-1 pb-8 pt-10 text-center sm:pb-10 sm:pt-14">
+        <BrendaFace size="lg" look={LOOK} quiet />
+        <p className="mt-5 text-sm font-medium text-secondary">Good afternoon, David.</p>
+        <p className="type-headline mt-1 sm:text-[32px] sm:leading-10">What do you want to do today?</p>
+      </div>
+      <div className="@container mx-auto w-full max-w-[720px]">
+        <div className="mb-3 flex flex-wrap gap-2">
+          {QUICK.map((a) => (
+            <span key={a.label} className="brenda-glass-pill inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded-full bg-[color:var(--brenda-fill)] px-3 text-meta font-medium text-foreground [&_svg]:size-3.5 [&_svg]:text-secondary">
+              {a.label}<a.icon />
+            </span>
+          ))}
+        </div>
+        <HeroBox />
+        {shown.length ? (
+          <ul className="mt-3 grid gap-3 @xl:grid-cols-3">
+            {shown.map((c) => (
+              <li key={c.title} className="flex min-w-0 flex-col rounded-2xl border border-border bg-[color:var(--brenda-fill)] p-4">
+                <span className="flex items-start justify-between gap-3">
+                  <span className="grid size-8 shrink-0 place-items-center rounded-lg border border-border bg-background text-secondary [&_svg]:size-4"><c.icon /></span>
+                  <span className="inline-flex h-6 shrink-0 items-center rounded-full bg-fill-1 px-2.5 text-xs font-medium text-foreground">{c.action}</span>
+                </span>
+                <span className="mt-3 text-sm font-semibold text-foreground">{c.title}</span>
+                <span className="mt-0.5 text-meta font-normal text-secondary">{c.line}</span>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 export function BrendaHomeFrame() {
   return (
     <Stage>
+      <div role="img" aria-label={HOME_LABEL}>
       <AppFrame active="brenda" crumb="Brenda">
         <div className="p-3 sm:p-4">
-          <div style={TINT} className="brenda-panel flex flex-col p-3 sm:p-4 lg:p-5">
-            <div className="flex flex-col items-center px-1 pb-8 pt-10 text-center sm:pb-10 sm:pt-14">
-              <BrendaFace size="lg" look={LOOK} quiet />
-              <p className="mt-5 text-sm font-medium text-secondary">Good afternoon, David.</p>
-              <p className="type-headline mt-1 sm:text-[32px] sm:leading-10">What do you want to do today?</p>
-            </div>
-            <div className="@container mx-auto w-full max-w-[720px]">
-              <div className="mb-3 flex flex-wrap gap-2">
-                {QUICK.map((a) => (
-                  <span key={a.label} className="brenda-glass-pill inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded-full bg-[color:var(--brenda-fill)] px-3 text-meta font-medium text-foreground [&_svg]:size-3.5 [&_svg]:text-secondary">
-                    {a.label}<a.icon />
-                  </span>
-                ))}
-              </div>
-              <HeroBox />
-              <ul className="mt-3 grid gap-3 @xl:grid-cols-3">
-                {CARDS.map((c) => (
-                  <li key={c.title} className="flex min-w-0 flex-col rounded-2xl border border-border bg-[color:var(--brenda-fill)] p-4">
-                    <span className="flex items-start justify-between gap-3">
-                      <span className="grid size-8 shrink-0 place-items-center rounded-lg border border-border bg-background text-secondary [&_svg]:size-4"><c.icon /></span>
-                      <span className="inline-flex h-6 shrink-0 items-center rounded-full bg-fill-1 px-2.5 text-xs font-medium text-foreground">{c.action}</span>
-                    </span>
-                    <span className="mt-3 text-sm font-semibold text-foreground">{c.title}</span>
-                    <span className="mt-0.5 text-meta font-normal text-secondary">{c.line}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
+          <BrendaHomePanelBody />
         </div>
       </AppFrame>
+      </div>
     </Stage>
   );
 }

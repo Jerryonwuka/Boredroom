@@ -161,7 +161,7 @@ export function AssistantDrawer({ orgSlug, isOrg, firstName, floating = false, t
   return (
     <>
       {floating ? (
-        <button ref={fabRef} type="button" aria-label={name} aria-expanded={open} aria-controls="assistant-drawer" data-tip={`${name}. Drag to move`}
+        <button ref={fabRef} type="button" aria-label={name} aria-expanded={open} aria-controls="assistant-drawer" data-tip={`${name}. Drag to move`} data-brenda-target="ask-assistant"
           onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={() => { drag.current = null; }}
           onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpen((v) => !v); } }}
           style={pos ? { left: pos.x, top: pos.y, right: "auto", bottom: "auto" } : undefined}

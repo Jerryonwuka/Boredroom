@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-front-undo"
+description = "Enables the front_undo command without any pre-configured scope."
+commands.allow = ["front_undo"]
+
+[[permission]]
+identifier = "deny-front-undo"
+description = "Denies the front_undo command without any pre-configured scope."
+commands.deny = ["front_undo"]

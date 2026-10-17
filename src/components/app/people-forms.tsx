@@ -63,7 +63,7 @@ export function InviteForm({ orgSlug, teams, isOwner, label = "Invite someone", 
   const close = () => { if (!pending) setOpen(false); };
   return (
     <>
-      <Button size="sm" variant="accent" onClick={() => { reset(); setOpen(true); }} aria-haspopup="dialog"><Plus aria-hidden />{label}</Button>
+      <Button size="sm" variant="accent" onClick={() => { reset(); setOpen(true); }} aria-haspopup="dialog" data-brenda-target="people-invite"><Plus aria-hidden />{label}</Button>
       <Sheet open={open} onClose={close} title="Add a person" description="They get an email link that creates their account with this role and team. For quick joining, share the join code instead."
         footer={<><Button variant="secondary" disabled={pending} onClick={close}>Cancel</Button><Button type="submit" form={formId} loading={pending}>{pending ? "Sending…" : "Invite"}</Button></>}>
         <form id={formId} className="grid gap-5" onSubmit={(e) => { e.preventDefault(); const f = new FormData(e.currentTarget); void submit(() => api(`/api/orgs/${orgSlug}/invitations`, { method: "POST", body: { email: f.get("email"), role: f.get("role"), teamId: f.get("teamId") || null, employeeCode: f.get("employeeCode") || null } }), () => { successToast(`Invitation sent to ${String(f.get("email"))}`); setOpen(false); }); }}>

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-act-file-from-drop"
+description = "Enables the act_file_from_drop command without any pre-configured scope."
+commands.allow = ["act_file_from_drop"]
+
+[[permission]]
+identifier = "deny-act-file-from-drop"
+description = "Denies the act_file_from_drop command without any pre-configured scope."
+commands.deny = ["act_file_from_drop"]

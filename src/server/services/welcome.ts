@@ -25,7 +25,7 @@ import { retryWithout0056, schema0056Known, schema0056Ready } from "@/server/lib
 import { aiConnected, assistantProfiles, assistantSchemaReady } from "@/server/services/assistant-profile";
 import { naturalVoiceView } from "@/server/services/natural-voice";
 import { myTeams, policyView } from "@/server/services/views";
-import { DEFAULT_NOTICE, noticeMentionsScreenRecording } from "@/server/services/orgs";
+import { isStandardNotice, noticeMentionsScreenRecording } from "@/server/services/orgs";
 import { listDevices } from "@/server/services/desktop";
 import { emitEvent } from "@/server/admin/events";
 import { ASK_STATE } from "@/lib/act-mode";
@@ -271,14 +271,15 @@ function teamDataOf(ctx: OrgContext, r: PeopleRow): WelcomeTeamData {
   };
 }
 
-const sameText = (a: string, b: string) => a.replace(/\s+/g, " ").trim() === b.replace(/\s+/g, " ").trim();
-
-/** The monitoring notice in force: its words, whether they are today's standard notice, and whether they still describe screen recording. */
+/**
+ * The monitoring notice in force: its words, whether they are one of Boredroom's standard texts (today's, or phase 8's
+ * before screen help: owner decisions, 11 October 2026; contract D.14), and whether they still describe screen recording.
+ */
 async function noticeOf(ctx: OrgContext): Promise<WelcomeNotice> {
   try {
     const { policy } = await policyView(ctx);
     const text = policy?.notice_text ?? null;
-    return { text, version: policy?.version ?? null, standard: !!text && sameText(text, DEFAULT_NOTICE), outdated: noticeMentionsScreenRecording(text) };
+    return { text, version: policy?.version ?? null, standard: isStandardNotice(text), outdated: noticeMentionsScreenRecording(text) };
   } catch {
     return { text: null, version: null, standard: false, outdated: false };
   }

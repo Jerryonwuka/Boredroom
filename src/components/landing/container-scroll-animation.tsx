@@ -13,8 +13,9 @@ import { DashboardGlow, DashboardRim } from "@/components/landing/dashboard-glow
  * still (globals.css §6 also holds it flat before this script wakes up).
  *
  * The title is server-rendered (`SectionTitle`) and only rides up a little. The picture is `role="img"` with `label`;
- * whatever is inside it is a drawing (`inert`, hidden from assistive technology). Scroll-linked: nothing runs while the
- * page is still.
+ * whatever is inside it is a drawing (`inert`, hidden from assistive technology) and holds no controls at all: the
+ * dashboard's metric strip is drawn in its static form (review fix, 17 October 2026: no tabs inside a picture).
+ * Scroll-linked: nothing runs while the page is still.
  *
  * The orange light behind the card (owner request, 10 October 2026) is `DashboardGlow`: flat behind the card, under it
  * in paint order, warming as the card straightens; `DashboardRim` is the warm line on the card's own top edge, so it

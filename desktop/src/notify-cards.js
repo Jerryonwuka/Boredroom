@@ -156,9 +156,10 @@ const NotifyCards = (() => {
   const STATUS ={ todo: "To do", in_progress: "In progress", blocked: "Blocked", in_review: "In review", completed: "Done" };
 
   // ---- kinds ----------------------------------------------------------------------------------------------------------
-  // Owner decision, 9 October 2026 (the contract's A.4 table): each type's template, its family (the wash and the dot:
-  // talk violet, needs orange, good green, plain a white haze), its group in the pager's order (asks, then what has a
-  // time, people, reports, good news last), whether it waits on the person, and the word the summary says for it.
+  // Owner decision, 9 October 2026 (the contract's A.4 table): each type's template, its family (the dot since 17 October
+  // 2026, when the wash was retired: talk and plain two greys, needs orange, good green), its group in the pager's order
+  // (asks, then what has a time, people, reports, good news last), whether it waits on the person, and the word the
+  // summary says for it.
 
   const T = (template, family, group, waits, word) => ({ template, family, group, waits, word });
   const TYPES = {
@@ -1118,7 +1119,8 @@ const NotifyCards = (() => {
   // ---- several at once: the summary, the pager's footer and the end card ---------------------------------------------------
 
   const FAMILY_ORDER = ["needs", "talk", "plain", "good"];
-  /** The summary's wash: every kind waiting, side by side in proportion (rounded to one decimal, zero kinds left out). */
+  /** The summary's `--mix` (still set on the island; nothing draws it since the wash was retired on 17 October 2026): every
+   * kind waiting, side by side in proportion (rounded to one decimal, zero kinds left out). */
   function mix(counts) {
     const c = counts && typeof counts === "object" ? counts : {};
     const strength = { needs: ".36", talk: ".36", plain: ".13", good: ".36" };

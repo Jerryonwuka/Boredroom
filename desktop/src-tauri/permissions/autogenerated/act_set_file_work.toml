@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-act-set-file-work"
+description = "Enables the act_set_file_work command without any pre-configured scope."
+commands.allow = ["act_set_file_work"]
+
+[[permission]]
+identifier = "deny-act-set-file-work"
+description = "Denies the act_set_file_work command without any pre-configured scope."
+commands.deny = ["act_set_file_work"]

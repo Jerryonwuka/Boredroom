@@ -1,8 +1,10 @@
-Inter and Geist Mono (the woff2 files in this folder, from @fontsource-variable/inter 5.3.0 and
-@fontsource-variable/geist-mono). Both are licensed under the SIL Open Font License 1.1, copied below.
+Inter, Geist Mono and Geist (the woff2 files in this folder, from @fontsource-variable/inter 5.3.0,
+@fontsource-variable/geist-mono and @fontsource-variable/geist). All three are licensed under the SIL Open Font
+License 1.1, copied below.
 
 Inter: Copyright 2016 The Inter Project Authors (https://github.com/rsms/inter)
 Geist Mono: Copyright 2024 The Geist Project Authors (https://github.com/vercel/geist-font.git) GeistMono-Italic[wght].ttf: Copyright 2024 The Geist Project Authors (https://github.com/vercel/geist-font.git)
+Geist: Copyright 2024 The Geist Project Authors (https://github.com/vercel/geist-font.git)
 
 This Font Software is licensed under the SIL Open Font License, Version 1.1.
 This license is copied below, and is also available with a FAQ at:

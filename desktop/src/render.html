@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Brenda's document</title>
+<!-- PDF output for a file job (owner request, 12 October 2026: "help you work on a file and it does that in the background";
+     contract B.9.4, C.1, should). Rust loads this page in a hidden A4 window only after the person said yes to the job, sets the
+     server's HTML with Render.set() (render.js; a file, as the app's CSP allows no inline script) and asks WebKit for a PDF of it. The HTML is the server's markdownToHtml (every text node
+     escaped, a fixed set of tags, no attributes); this page keeps only those tags and drops every attribute again, so nothing
+     in a document can run, load or link. No invoke, no listen, no network. -->
+<style>
+  @page { size: A4; margin: 20mm 18mm; }
+  html { background: #fff; }
+  body { margin: 0; padding: 20mm 18mm; color: #111; font: 11pt/1.4 "Inter Variable", "Inter", -apple-system, "Helvetica Neue", Arial, sans-serif; -webkit-print-color-adjust: exact; }
+  @media print { body { padding: 0; } }
+  h1 { font-size: 18pt; line-height: 1.25; margin: 0 0 10pt; }
+  h2 { font-size: 14pt; line-height: 1.3; margin: 16pt 0 6pt; }
+  h3 { font-size: 12pt; line-height: 1.3; margin: 12pt 0 4pt; }
+  p { margin: 0 0 8pt; }
+  ul, ol { margin: 0 0 8pt; padding-left: 18pt; }
+  li { margin: 0 0 3pt; }
+  code { font: 10pt/1.4 ui-monospace, "SF Mono", Menlo, monospace; background: #f2f2f4; padding: 0 3pt; border-radius: 3pt; }
+  pre { font: 9.5pt/1.45 ui-monospace, "SF Mono", Menlo, monospace; background: #f6f6f8; padding: 8pt 10pt; border-radius: 4pt; white-space: pre-wrap; margin: 0 0 8pt; }
+  pre code { background: none; padding: 0; }
+  table { border-collapse: collapse; width: 100%; margin: 0 0 10pt; font-size: 10pt; }
+  th, td { border: 0.5pt solid #cfcfd4; padding: 4pt 6pt; text-align: left; vertical-align: top; }
+  th { background: #f2f2f4; font-weight: 600; }
+  blockquote { margin: 0 0 8pt; padding-left: 10pt; border-left: 2pt solid #d9d9de; color: #444; }
+  hr { border: 0; border-top: 0.5pt solid #d9d9de; margin: 12pt 0; }
+  h1, h2, h3 { break-after: avoid; } tr, li { break-inside: avoid; }
+</style></head>
+<body><script src="render.js"></script></body></html>

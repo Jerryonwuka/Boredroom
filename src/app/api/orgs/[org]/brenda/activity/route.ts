@@ -3,8 +3,9 @@ import { activityQuerySchema, listActivity } from "@/server/services/assistant-a
 
 /**
  * What the person's own assistant did or read for them, newest first, a page at a time (owner decision, 8 October 2026:
- * personal assistants, phase 3). `?kind=all|actions|reads|problems&cursor=<opaque>&limit=30`. Always the caller's own,
- * whatever their role. Not gated by the plan: a record of what happened stays readable, as past chats are.
+ * personal assistants, phase 3). `?kind=all|actions|reads|problems|mac&cursor=<opaque>&limit=30`. Always the caller's own,
+ * whatever their role. Not gated by the plan: a record of what happened stays readable, as past chats are. `mac` (phase 2,
+ * owner request 12 October 2026): what she did on their Mac, kept 30 days and shown only to them (tasks also show in `all`).
  */
 export const GET = route<{ org: string }>(async (req, { params }) => {
   const ctx = await orgContext(params.org);

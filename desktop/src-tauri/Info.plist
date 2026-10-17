@@ -4,5 +4,13 @@
 <dict>
   <key>NSMicrophoneUsageDescription</key>
   <string>Brenda listens only while you hold the talk shortcut, and turns what you say into text on this computer.</string>
+  <key>NSAppleEventsUsageDescription</key>
+  <string>Brenda asks Finder which files and folders you've selected, and empties the Trash only when you ask and say yes.</string>
+  <key>NSDocumentsFolderUsageDescription</key>
+  <string>Brenda works on files in your Documents folder only when you ask her to, and never deletes anything.</string>
+  <key>NSDesktopFolderUsageDescription</key>
+  <string>Brenda works on files on your Desktop, and saves screenshots there, only when you ask her to.</string>
+  <key>NSDownloadsFolderUsageDescription</key>
+  <string>Brenda works on files in your Downloads folder only when you ask her to, and never deletes anything.</string>
 </dict>
 </plist>

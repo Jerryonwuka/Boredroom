@@ -115,7 +115,8 @@ describe("what catch-up takes", () => {
 
 describe("the Activity list's query", () => {
   it("defaults to everything, 30 at a time, and reads the limit from the address", () => {
-    expect([...ACTIVITY_KINDS]).toEqual(["all", "actions", "reads", "problems"]);
+    // "mac": what Brenda did on the person's Mac, only for them (owner rule, 12 October 2026; contract D.11).
+    expect([...ACTIVITY_KINDS]).toEqual(["all", "actions", "reads", "problems", "mac"]);
     expect(activityQuerySchema.parse({})).toEqual({ kind: "all", limit: 30 });
     expect(activityQuerySchema.parse({ kind: "reads", limit: "5", cursor: "abc" })).toEqual({ kind: "reads", limit: 5, cursor: "abc" });
   });

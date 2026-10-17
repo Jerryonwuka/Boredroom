@@ -10,11 +10,11 @@
  *   free request to ElevenLabs before it is stored; the server's refusal shows on the field) and Remove, through a
  *   confirm. The key is never shown again: only its hint comes back.
  * - Usage this month, from the workspace's own key's subscription (characters used of the allowance, with a bar, and
- *   the reset date), which key is in use, this workspace's characters today against today's share and this month, and
- *   the daily limit for each person. On Boredroom's key only this workspace's own counters show: the key's usage is every
- *   workspace's together (review, 9 October 2026), so a warning says when it is nearly used up this month or today's
- *   shared allowance is gone. Under 10% of the allowance left, a warning says assistants use the computer voice until it
- *   resets; a subscription that could not be read says so; a key that cannot delete what was said from its ElevenLabs
+ *   the reset date), which key is in use, and this workspace's characters today and this month. Boredroom sets no daily
+ *   limit or share (owner request, 12 October 2026: "remove the limit for ElevenLabs voice"): only ElevenLabs' own refusal
+ *   for credits stops the natural voice, and then a warning says assistants use the computer voice until the plan resets.
+ *   On Boredroom's key only this workspace's own counters show: the key's usage is every workspace's together (review, 9
+ *   October 2026). A subscription that could not be read says so; a key that cannot delete what was said from its ElevenLabs
  *   history says so too (its holder could read it there), and so does what could not be deleted in the last 30 days (fix
  *   review, 9 October 2026). Both for the workspace's own key only: Boredroom's key is Boredroom's to fix.
  *
@@ -114,7 +114,7 @@ export function VoiceConnectionSettings({ orgSlug, status: initial, timeZone }: 
   );
 }
 
-/** Usage this month: the key's allowance, which key, this workspace today and this month, each person's limit. */
+/** Usage this month: the key's allowance, which key, this workspace today and this month (no daily limit: owner request, 12 October 2026). */
 function VoiceUsage({ status, timeZone }: { status: VoiceConnectionStatus; timeZone?: string }) {
   const titleId = useId();
   const { month } = status;
@@ -123,7 +123,6 @@ function VoiceUsage({ status, timeZone }: { status: VoiceConnectionStatus; timeZ
     <SettingsGroup role="group" aria-labelledby={titleId}>
       <div className="px-5 py-3"><h3 id={titleId} className="text-sm font-medium text-foreground">{W.usage}</h3></div>
       {status.low ? <SettingsAlert tone="warning">{status.source === "environment" ? W.lowShared : W.low(resets)}</SettingsAlert> : null}
-      {!status.low && status.sharedFull ? <SettingsAlert tone="warning">{W.sharedFull}</SettingsAlert> : null}
       {status.historyBlocked ? <SettingsAlert tone="warning">{W.historyBlocked}</SettingsAlert> : null}
       {status.historyLeft > 0 ? <SettingsAlert tone="warning">{W.historyLeft(status.historyLeft)}</SettingsAlert> : null}
       {status.monthError ? <SettingsAlert tone="warning">{status.monthError === "key_rejected" ? W.monthRejected : W.monthUpstream}</SettingsAlert> : null}
@@ -140,8 +139,7 @@ function VoiceUsage({ status, timeZone }: { status: VoiceConnectionStatus; timeZ
         </>
       ) : null}
       <SettingsRow label={W.keyInUse} align="text">{status.source === "organisation" ? W.organisationKey : W.boredroomKey}</SettingsRow>
-      <SettingsRow label={W.workspace} align="text"><span className="tabular-nums">{W.workspaceValue(status.today.used, status.today.share, status.workspaceMonth)}</span></SettingsRow>
-      <SettingsRow label={W.person} align="text"><span className="tabular-nums">{W.personValue(status.personDailyLimit)}</span></SettingsRow>
+      <SettingsRow label={W.workspace} align="text"><span className="tabular-nums">{W.workspaceValue(status.today.used, status.workspaceMonth)}</span></SettingsRow>
     </SettingsGroup>
   );
 }

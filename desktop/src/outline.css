@@ -1,0 +1,14 @@
+/* The soft outline round the window Brenda just captured (screen help, owner decisions, 11 October 2026; contract B.9,
+   C.7). Phase 2 (12 October 2026: she sees the whole screen under the pointer): Rust shows it round that display, inset
+   4 points, for the same 700 ms; nothing else changed. Rust shows this page in its own transparent, click-through window, 8 points bigger than the captured window on
+   every side, and replays the flash by toggling `flash` on <html>; it hides the window again 900 ms later. No script and
+   no IPC here. Orange because it marks what is live (she is looking now), never decoration; under reduced motion a still
+   ring for as long as Rust shows it. */
+html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: transparent; }
+.ring { position: fixed; inset: 4px; box-sizing: border-box; border-radius: 12px; border: 2px solid rgb(255 108 2 / .85); opacity: 0; pointer-events: none; }
+html.flash .ring { animation: flash 700ms ease-out; }
+@keyframes flash { 0% { opacity: 0; } 15% { opacity: 1; } 60% { opacity: 1; } 100% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .ring { opacity: 1; }
+  html.flash .ring { animation: none; }
+}

@@ -49,20 +49,22 @@ describe("naturalVoiceNote: why the computer voice speaks instead", () => {
     ["not_ready", "Natural voices need a database update first. Max uses the computer voice until then."],
     ["no_key", "Natural voices aren't set up for this workspace yet, so Max uses the computer voice."],
     ["key_rejected", "ElevenLabs refused the workspace's key, so Max uses the computer voice. An owner or HR can check it in Settings."],
-    ["person_cap", "You've used today's natural voice, so Max uses the computer voice until tomorrow."],
-    ["workspace_cap", "Your workspace has used today's natural voice, so Max uses the computer voice until tomorrow."],
-    ["shared_cap", "Today's natural voice allowance, shared by the workspaces on Boredroom's key, is used up, so Max uses the computer voice until tomorrow."],
     ["upstream", "ElevenLabs didn't answer just now, so Max used the computer voice."],
   ];
   it.each(cases)("%s", (reason, words) => {
     expect(naturalVoiceNote(reason, "Max")).toBe(words);
   });
 
-  it("allowance_low names the reset date when it has one", () => {
+  // No limit of Boredroom's (owner request, 12 October 2026): only ElevenLabs' own refusal for credits stops the voice.
+  it("allowance_low is ElevenLabs' own plan running out, with the reset date when it has one", () => {
     expect(naturalVoiceNote("allowance_low", "Max", "2026-11-09T07:47:00Z", "UTC"))
-      .toBe("This month's natural voice allowance is nearly used up, so Max uses the computer voice until it resets on 9 November 2026.");
-    expect(naturalVoiceNote("allowance_low", "Max", null)).toBe("This month's natural voice allowance is nearly used up, so Max uses the computer voice until it resets.");
-    expect(naturalVoiceNote("allowance_low", "Max", "not a date")).toBe("This month's natural voice allowance is nearly used up, so Max uses the computer voice until it resets.");
+      .toBe("Your ElevenLabs plan has run out of credits, so Max uses the computer voice until it resets on 9 November 2026.");
+    expect(naturalVoiceNote("allowance_low", "Max", null)).toBe("Your ElevenLabs plan has run out of credits, so Max uses the computer voice until it resets.");
+    expect(naturalVoiceNote("allowance_low", "Max", "not a date")).toBe("Your ElevenLabs plan has run out of credits, so Max uses the computer voice until it resets.");
+  });
+
+  it("the old cap reasons say nothing (they are never given any more)", () => {
+    for (const gone of ["person_cap", "workspace_cap", "shared_cap"]) expect(naturalVoiceNote(gone as NaturalVoiceReason, "Max")).toBeNull();
   });
 
   it("says nothing for Voice off, no voice chosen or none at all", () => {
@@ -75,8 +77,15 @@ describe("naturalVoiceNote: why the computer voice speaks instead", () => {
     expect(NATURAL_WORDS.privacy).toBe("Natural voices are made by ElevenLabs: the words your assistant says are sent to ElevenLabs to turn into speech.");
     expect(formatResetDate("2026-11-09T07:47:00Z", "UTC")).toBe("9 November 2026");
     expect(NATURAL_WORDS.connection.usedValue(1234, 38373)).toBe("1,234 of 38,373");
-    expect(NATURAL_WORDS.connection.workspaceValue(312, 1237, 4560)).toBe("312 today of a 1,237 share; 4,560 this month");
-    expect(NATURAL_WORDS.connection.personValue(2000)).toBe("Up to 2,000 characters a day");
+    expect(NATURAL_WORDS.connection.workspaceValue(312, 4560)).toBe("312 characters today; 4,560 this month");
+    // No daily limit or share (owner request, 12 October 2026): no words promise one.
+    expect("person" in NATURAL_WORDS.connection).toBe(false);
+    expect("personValue" in NATURAL_WORDS.connection).toBe(false);
+    expect("sharedFull" in NATURAL_WORDS.connection).toBe(false);
+    expect(NATURAL_WORDS.connection.description).toBe("Natural voices for everyone's assistant, from ElevenLabs. Without a key of your own, Boredroom's key is used.");
+    expect(NATURAL_WORDS.connection.removeDescription).toBe("The stored key is deleted. Boredroom's key is used again, or the computer voice when there isn't one.");
+    expect(NATURAL_WORDS.connection.low("9 November 2026")).toBe("Your ElevenLabs plan has run out of credits, so assistants use the computer voice until it resets on 9 November 2026. A bigger plan in your ElevenLabs account fixes it sooner.");
+    expect(JSON.stringify(NATURAL_WORDS)).not.toMatch(/daily share|a day each|characters a day|until tomorrow/);
     expect(NATURAL_WORDS.connection.organisationLine("…ab12", "9 October 2026")).toBe("Your workspace's key, ending …ab12, connected 9 October 2026");
   });
 
@@ -331,9 +340,6 @@ describe("the controller's natural voice", () => {
   });
 
   it.each([
-    [409, "person_cap"],
-    [409, "workspace_cap"],
-    [409, "shared_cap"],
     [409, "allowance_low"],
     [502, "upstream"],
     [502, "key_rejected"],

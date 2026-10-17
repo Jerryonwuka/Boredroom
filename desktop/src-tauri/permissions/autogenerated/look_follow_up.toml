@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-look-follow-up"
+description = "Enables the look_follow_up command without any pre-configured scope."
+commands.allow = ["look_follow_up"]
+
+[[permission]]
+identifier = "deny-look-follow-up"
+description = "Denies the look_follow_up command without any pre-configured scope."
+commands.deny = ["look_follow_up"]

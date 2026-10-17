@@ -125,14 +125,136 @@
      (the call's notes, the plain card). &accept=ended answers Accept with the server's 409 CALL_ENDED ("The call has
      ended."); &hold keeps it ringing past 30 s; &calls=404 answers /calls/now as a server from before phase 8 does (the
      notch asks again in 5 minutes). Every other state answers /calls/now as before migration 0054 (60 s, nothing rings).
-     ?state=lead shows Chidi on a call (a phone on his face, "On a call"). -->
-<html lang="en"><head><meta charset="utf-8"><title>Brenda notch preview</title><link rel="stylesheet" href="src/style.css">
+     ?state=lead shows Chidi on a call (a phone on his face, "On a call").
+     Screen help (owner decisions, 11 October 2026: "start building with your recommendations"; contract C.8). The look-
+     states mock the nine look commands as Rust answers them (look_status: supported, on per &on=0|1, the Screen Recording
+     permission per &permission=granted|unknown|denied) and send `brenda://look` and `brenda://voice` (with `lookId`) the
+     way Rust does. The picture is a sample "window" drawn on a canvas here (a title bar, a side panel, a red badge and an
+     Export button) with Rust's ring at the pointer, as a data URL; nothing is captured. look_send answers after 900 ms with
+     a canned reply and one Confirm (with its "Still asking" line under &mode=auto), or &send=limit|switched_off|failed with
+     the server's errors; it logs what it was sent, never the picture. Every other state answers the look commands as
+     today's Rust does: they do not exist, so no look feature shows. The states:
+     ?state=look-consent (the first-time consent from the tray's "Turn on screen help…"; &name=Max for a renamed
+     assistant), look-permission (the Screen Recording step; &permission=denied presses Continue and gets the "Allow Brenda
+     in System Settings" card; &asked=1: macOS asked before and it was refused, so Look opens that card straight away), look-on (the consent's Turn on pressed: "Screen help is on"), look-holding (Control+Command
+     held: "Looking at Figma…", the live dot, the time and the waveform; &mic=off|needs-model|busy: no microphone, so it
+     says to type), look-preview (the keys let go: the picture with the
+     ring, the words heard, Send; &pointer=none: the pointer was off the window; &source=button: Look pressed on her card,
+     no pointer, nothing heard; &typed=… types the question), look-sending ("Brenda is looking…"), look-reply (the answer
+     with "Looked at Figma" and its Confirm; &mode=auto adds the "Still asking" line), look-refused&reason=on_call|
+     call_unknown|offline|never_look|own_window|no_window|busy|unsupported|not_available|permission|error|send (never_look
+     takes &source=fixed|workspace|you; error is a capture failure, &message= its words; send is Send meeting &send=failed,
+     or &send=limit|switched_off|offline),
+     look-off (&from=settings: "Turn off on my Macs" pressed in Boredroom after it was turned on here; &from=tray), look-timeout
+     (the preview waited too long: "I let that picture go."), look-point (a reply with Show me; the mocked open_in_browser
+     logs the URL; &press presses it), look-call (a ring arrives while the preview shows: the strip on top of it).
+     Brenda for Mac, phase 2 (owner request and rule, 12 October 2026; contract C.7). The look- and act- states below mock the
+     v2 Rust: `look_status` answers `v: 2` (with `consent`, `preview`, `companion`), `act_status` answers per &mac=on|off,
+     &files=on|off, &ax=granted|denied|unknown and &finder=granted|denied|unknown, and every B.11 command answers as Rust would,
+     sending `brenda://look` (`sending`, `text`, `say`, `point`, `held`, `dropped`), `brenda://act` and `brenda://voice`
+     (`answer: true`) events. Nothing is captured, clicked or typed: the console logs what Rust would do ("companion: …",
+     "act_answer …"). &v=2 turns any phase 1 look- state into v2; &old on any of these is today's binary (no `act_status`,
+     `look_status` v1) and today's server (no `look.v`, no `look.act`): every new feature hides and the look is phase 1's.
+     ?state=look-instant (hold, listening, the words, then the answer streaming in with two `say` sentences and a `point`;
+     &natural speaks them in the natural voice, one after another; &desktop: over the desktop, "Looking at your desktop…";
+     &mic=off: voice off on this Mac, the question typed on the looking card, &typed=… types it and sends),
+     look-followup (the answer, then a follow-up typed in the reply card's box within the minute; &expire=5: Rust drops the
+     pictures after 5 s, the line and box go), look-consent-update (a hold under the phase 1 consent: "Screen help works
+     differently now"), look-settings (the tray's "Screen help settings…"; &mac=on&ax=denied shows "Needs Accessibility"),
+     look-preview-on ("Show me the picture first" on: phase 1's preview, then Send streams the answer).
+     act-consent-mac, act-consent-files, act-accessibility (the consent's button pressed, then the Accessibility step; &ax=denied
+     presses Continue and gets "Allow Brenda in System Settings"), act-finder (the Finder step; &finder=denied: "Finder said
+     no"), act-asking (a request with her keys, then "I'll … Do you want me to do this?"; &kind=screen|file, &risky=1, &name=Max,
+     &answer=button|voice-yes|voice-no|voice-unclear|typed-yes|timeout|new-request; timeout waits 8 s here, a minute in the app),
+     act-confirming (Yes pressed, "One moment…"), act-doing (Yes, then a step a second with notes, &steps=6; the pointer rests on
+     the doing bar after 3 s to open its card), act-step-ask (&kind=send|submit|delete|pay|share|publish|sign_in|accept_terms|
+     overwrite|quit|other), act-paused (&why=moved|typed|focus), act-done (&kind=screen|file|doc), act-stopped (&why=esc|keys|
+     button|tray|locked|call|share|display|paused_timeout|offline, or step-no: No on the step card), act-cannot, act-failed,
+     act-idle&idle (the v2 Rust, nothing happening: with &card=drop&files=on the drop card offers "Ask Brenda to work on
+     it"), act-refused&reason=use_mac_off|files_off|act_not_available|forbidden_app|payment_page|on_call|sharing|busy_task|answer_first|
+     cap|too_big|time|display_gone|locked|offline|file_unresolved|file_too_big|file_type|file_scan|file_long|file_failed|
+     pdf_unavailable|ACT_LIMIT, act-working (a file job ticking in the bar, its card opened by the pointer after 3 s; &finish=1
+     ends it), confirm-voice (a look's Confirm, "Do you want me to do this?", answered "yes" with her keys).
+     act-consent-mac, act-consent-files, act-accessibility and act-finder now open phase 3's setup card (today's tray events).
+     Brenda for Mac, phase 3 (owner report and requests, 12 October 2026; companion2 contract J.4). &binary=2 is today's Rust
+     (no help_*, LookStatus.v 2, no plans), &binary=3 this build's (help_setup, help_request_finder, help_request_folders,
+     help_open_privacy, LookStatus v3 with the companion's reasons, ActStatus with folders and plans); these states default
+     to 3, every older one to 2. The desktop state carries `look.mac.ready` (&ready=0: before 0059, nothing reported) and the
+     console logs every PUT /screen-help/mac body. ?state=help-setup (the tray's "Set up Brenda on this Mac…"; &focus=look|
+     mac|files, &on=look,mac what is on already, &name=Max, &read opens Read everything, &untick unticks seeing, &press
+     presses Turn these on; &binary=2 runs set_screen_help, act_set_use_mac and act_set_file_work one after another),
+     help-steps (Turn these on pressed with nothing granted; &to=screen|accessibility|finder|folders|folders-result|done
+     presses Continue up to that step; &screen=denied, &ax=denied, &finder=denied and &folders=documents:denied are what
+     macOS answers), help-done (&request=open%20Figma: the words kept, so Ask again shows), help-settings (Help on this
+     Mac; &companion=idle|setting_off|screen_help_off|call|sharing|… is why the companion shows or not, &mac=on&ax=denied,
+     &folders=documents:denied the pills), setup-from-web ("Set up on my Mac" pressed in Boredroom 30 s ago: the card opens
+     at the first poll, once), reply-enable (&which=mac|files|accessibility: her reply with the switch named and Turn it
+     on / Allow it; once the setup has turned that switch on, Ask again sends the same words and gets the plan, which
+     waits for Yes: open Figma, the folder job, or the mixed plan; &binary=2, today's Rust, gets phase 2's "I'll open
+     Figma from the Dock." instead), reply-setup (&which=all|files: "how do I turn on the features…", Set up),
+     reply-use-screen-off (asked in her box while seeing is off: Set up Brenda on this Mac), plan-scoping ("Getting that ready…"), plan-asking
+     (&steps=open|open-file|folder|mix, &others=2; the folder plan's Show the 14), plan-running (Part 1 of 3, the doing
+     card after 9 s), plan-folder-working (Reading 5 of 14; &finish=1 reads all 14), plan-boredroom-ask (the plan reaches a
+     message to Ada: the step card), plan-done (&kind=open|folder|mix, &skipped=2), plan-unresolved (&why=app_none|forbidden|
+     quarantined|outside|folder_denied|file_none|timeout).
+     Brenda and her helpers (the owner's approved brief, 12 October 2026; helpers contract Q.4). &binary=4 is that build's
+     Rust (LookStatus v4 with `front`; front_send, front_answer, front_choose, front_more, front_undo, front_stop, speak_now,
+     click_consent, files_add_folder, files_remove_folder and the job_* commands, sending `brenda://front`, `brenda://job`
+     and, for the Mac operator, `brenda://act`); these states default to it, and &binary=2 or &binary=3 sends the same
+     request on today's or phase 3's Rust, where nothing new shows (the look answers as before). The desktop state carries
+     `look.front` (&ready=0: before 0060, nothing new shows; &check=1: "Check with me before every task" on) and, with
+     &natural, `assistant.naturalVoice`, so short lines are fetched for next time (`/assistant/front/line`, logged). Each
+     state holds her keys and says the words, as Rust would: ?state=front-doing ("Open Figma": the strip, the line said at
+     once, Stop after a second; &finish=1 finishes; &cmd=arrange|volume|hide|quit says "Put Slack and Figma side by side",
+     "Turn the volume down", "Hide everything" or "Quit Spotify" instead), front-done (Opened Figma, then the strip tucks away; &undo=1 "Take a
+     screenshot of this" with Undo; &others=2 "Find last week's invoice and open it": the newest opens and the done card
+     offers Show the others), front-routing ("One moment" while the router decides), front-ask (&what=trash|wifi|check: the
+     neutral ask card; Yes runs it, No says "Okay, I won't."), front-choose ("Open the Q3 deck": Which one?), front-found
+     (Found 3 files, Open and Show in Finder), front-refused&why=app_none|not_open|installer|accessibility|screen|secure|
+     nothing_selected|no_box|finder_denied|wifi_admin|offline|no_credit|busy|failed (Allow it on a missing permission; Try
+     again on busy, failed and offline, and busy first tries once more by itself), job-running
+     ("Organise my desktop": the strip at 23 of 64, the job card when the pointer rests on it; &bar=1 keeps the strip,
+     &finish=1 runs to the end), job-paused (&why=sleep|offline), job-ask ("Delete my old screenshots": Move 41 screenshots
+     to the Trash?), job-done (&outputs=1 a new file with Open and Show in Finder), job-stopped (Stop pressed on the card),
+     job-failed, job-undone (Undo pressed), job-replay (Rust's own `brenda://job` events from a test driver's
+     `window.__replay`, see p4Replay), jobs-recent (Jobs on this Mac), consent-click ("Fill in this form": Let Brenda
+     click and type for you?), settings-v4 (&check=1&click=1&added=Projects; &scroll=end shows the new rows; &press presses
+     Check with me; &save=error refuses the save, so the switch goes back with its error line), operator-doing (the consent
+     pressed, then the Mac operator's doing bar and card, titled "Filling in the form"), operator-paused-own ("Click the app
+     you want me to work in, then press Carry on."; &carry=1 presses Carry on and the steps go on), look-think ("What does this error mean?": "Let me look properly.", then
+     the answer), reply-quick ("Remind me at 3 to call Ada": done at once, with Undo) and reply-confirm ("Message Ada that
+     I'm done": the send_message Confirm). Nothing is opened, clicked, typed, moved or deleted: the console logs what Rust
+     would do.
+     desktop/companion-preview.html shows the companion and the ring themselves (the clean ring: ?state=pointing&shape=
+     box|circle&look=white|orange|blue|yellow&bg=light|dark&reduced=1&old&hold=1). -->
+<html lang="en"><head><meta charset="utf-8"><title>Brenda notch preview</title><link rel="stylesheet" href="src/face.css"><link rel="stylesheet" href="src/style.css">
 <style>html,body{background:#3b3b3b!important;height:100%;overflow:hidden!important} body::before{content:"";position:fixed;inset:0 0 auto;height:40px;background:rgb(0 0 0 / .28);box-shadow:inset 0 -1px 0 rgb(255 255 255 / .075)} #stage{position:relative;width:480px;height:440px;margin:0 auto;outline:1px dashed rgb(255 255 255 / .1)}</style></head>
 <body><div id="stage"><div id="island" class="island"><i id="wash" class="wash" aria-hidden="true"></i><main id="notch" class="notch compact"></main><i id="countdown" class="countdown"></i></div></div>
 <script>
 const q = new URLSearchParams(location.search);
 const state = q.get("state") || "briefing";
+// &still: no transitions or animations, so a headless screenshot never lands mid-way (helpers contract Q.0).
+if (q.has("still")) document.head.insertAdjacentHTML("beforeend", "<style>*,*::before,*::after{transition:none!important;animation-duration:0s!important;animation-delay:0s!important}</style>");
 const now = new Date().toISOString();
+// Screen help (contract C.8): the look- states (see the comment at the top).
+const taskState = state.startsWith("act-") ? state.slice(4) : state === "confirm-voice" ? "confirm-voice" : null;
+// Phase 3 (companion2 contract J.4): the setup, the reply offers and the plans (see the comment at the top).
+// Brenda and her helpers (helpers contract Q.4): the front desk, jobs, the click consent and the new settings rows.
+const p4 = /^(front-|job-|jobs-|operator-)/.test(state) || ["consent-click", "settings-v4", "look-think", "reply-quick", "reply-confirm"].includes(state) ? state : null;
+const p3 = !p4 && (/^(help-|plan-|reply-)/.test(state) || state === "setup-from-web") ? state : null;
+const lookState = p4 ? "p4" : state.startsWith("look-") ? state.slice(5) : taskState ? "act" : p3 ? "p3" : null;
+// Phase 2 (contract C.7): the v2 Rust and server, unless &old (today's binary and server).
+const V2_LOOKS = ["instant", "followup", "consent-update", "settings", "preview-on", "use-screen"];
+const v2 = !!lookState && !q.has("old") && (q.get("v") === "2" || !!taskState || !!p3 || !!p4 || V2_LOOKS.includes(lookState));
+// Which Rust (phase 3): &binary=2 is today's (no `help_*`, `LookStatus.v` 2, no plans), &binary=3 this build's. The phase 3
+// states default to 3, every older state to 2, so they look exactly as before.
+// &binary=4 is the helpers build's Rust (LookStatus v4 with `front`, the front desk's and the jobs' commands); the helpers
+// states default to 4, and &binary=2 or &binary=3 shows them on today's or phase 3's Rust, where nothing new shows.
+const binary = !v2 ? 1 : q.get("binary") === "2" ? 2 : q.get("binary") === "3" ? 3 : q.get("binary") === "4" ? 4 : p4 ? 4 : p3 ? 3 : 2;
+// What is on already in a phase 3 state (&on=look,mac,files; &on=0 nothing), else each state's own.
+const P3_ON = { "help-settings": "look,mac,files", "reply-enable": q.get("which") === "mac" ? "look" : "look,mac", "reply-setup": "look", "plan-": "look,mac,files" };
+const p3On = (a) => { const v = q.get("on") ?? P3_ON[state] ?? (p3?.startsWith("plan-") ? P3_ON["plan-"] : p4 ? "look,mac,files" : ""); return v === "1" || v.split(",").includes(a); };
+const p3Folders = (dflt) => { const f = { documents: dflt, desktop: dflt, downloads: dflt }; for (const kv of (q.get("folders") ?? "").split(",")) { const [k, v] = kv.split(":"); if (k in f && ["granted", "denied", "unknown"].includes(v)) f[k] = v; } return f; };
 // ?state=n-bar&bar=timer runs the timer beside the count (9 October 2026); ?bug=throw has none, so the pointer opens the day card.
 const timed = (["timer", "paused", "compact", "lead"].includes(state) || ((state === "n-bar" || q.has("n-bar")) && (q.get("bar") ?? q.get("n-bar")) === "timer")) && q.get("bug") !== "throw";
 // The person's assistant and the workspace's, as the desktop state carries them: resolved, with the face colours from
@@ -472,7 +594,7 @@ const fuNotes = asks[state] ? [{ id: "n9", type: "brenda.followup_ask", resource
   : mentions[state] ? [mentions[state]] : itemNotes[state] ? [itemNotes[state]] : [];
 const sample = {
   serverNow: now, me: { displayName: "Ada Employee", role: "employee", presence: "active" }, workspace: { slug: "company-a", name: "Company A" }, brendaEnabled: true,
-  settings: { autoClockIn: true, reminders: true }, prefs: { autoClockIn: true, reminders: true }, assistant: { personal, workspace, speak: q.get("speak") || "voice", ...(act ? { act } : {}) },
+  settings: { autoClockIn: true, reminders: true }, prefs: { autoClockIn: true, reminders: true }, assistant: { personal, workspace, speak: q.get("speak") || "voice", ...(act ? { act } : {}), ...(p4 && q.has("natural") ? { naturalVoice: { id: "preview", speed: "normal" } } : {}) },
   clock: { status: "in", workingDay: true, startAt: now, endAt: now, clockInAt: now, lateSeconds: 0 },
   timer: timed ? { id: "s1", version: 3, state: state === "paused" ? "paused" : "running", taskId: "t1", taskTitle: "KITA onboarding flow", confirmedSeconds: 2832, openIntervalStartedAt: state === "paused" ? null : now, serverNow: now, estimateMinutes: 180, progress: 60, taskVersion: 4 } : null,
   // Quiet hours (phase 7a): nothing due today, so the compact bar has only "Quiet until …" to say.
@@ -489,6 +611,20 @@ const sample = {
   ...(q.has("old") ? {} : { opener: ["opener", "quiet"].includes(state) ? openerSample : null, quiet: quietSample, routineRuns: { ready: true, recent: runsSample } }),
   // Notifications, "A plus the grafts" (9 October 2026): the n- states' people, notifications and lists.
   ...(nData ?? {}),
+  // Screen help (contract A.10): the desktop state's `look`, only in the look- states (the others are an older server's).
+  ...(lookState ? { look: {
+    ready: true, eligible: true, available: true, reason: null, availableFrom: null,
+    neverLook: [{ name: "Notion", bundleId: "notion.id", source: "workspace" }, { name: "Mail", bundleId: "com.apple.mail", source: "you" }],
+    offAt: lookState === "off" && q.get("from") !== "tray" ? new Date().toISOString() : null,
+    // Phase 2 (contract D.4): this server takes v2 looks and tasks (&acts=off: the workspace switched them off).
+    ...(v2 ? { v: 2, act: { ready: true, available: q.get("acts") !== "off", reason: q.get("acts") === "off" ? "switched_off" : null } } : {}),
+    // Phase 3 (companion2 G.3): "Set up on my Mac" pressed in Boredroom 30 s ago (setup-from-web), and 0059 applied
+    // (&ready=0: not yet, so nothing is reported).
+    ...(p3 ? { setupAt: state === "setup-from-web" ? new Date(Date.now() - 30_000).toISOString() : null, mac: { ready: q.get("ready") !== "0" } } : {}),
+    // Brenda and her helpers (helpers contract F.0): 0060 applied (&ready=0: not yet, so nothing new shows) and the
+    // person's "Check with me before every task" (&check=1).
+    ...(p4 ? { setupAt: null, mac: { ready: true }, front: { ready: q.get("ready") !== "0", checkEvery: q.get("check") === "1" || q.get("what") === "check" } } : {}),
+  } } : {}),
 };
 // ?bug=throw (with ?state=lead): a teammate whose name is null, which the day card's team row used to throw on.
 if (bug === "throw") sample.team = [...(sample.team ?? []), { id: "m9", name: null, state: "running", task: "Unnamed work", assistant: NP.olu.assistant }];
@@ -559,12 +695,12 @@ const saved = [];
 // Calls (phase 8, contract F.7): what rings, the call Jeremiah is on, and how GET /calls/now answers (CallsNow). The ring
 // starts when the page loads (call-incoming-busy: 2.5 s in, once the ask card is open and a reply picked) and stops 30 s
 // later, as the server's does (&hold keeps it).
-const RANG = T0 + (state === "call-incoming-busy" ? 2500 : 0);
+const RANG = T0 + (state === "call-incoming-busy" ? 2500 : state === "look-call" ? 4000 : 0);
 const callPerson = (p) => ({ membershipId: p.membershipId, name: p.name, firstName: p.name.split(" ")[0], profileId: p.membershipId, avatarKey: null, assistant: p.assistant });
 const whereOf = (kind, name, c) => ({ conversationId: c, kind, name, href: `${NW}/messages?c=${c}` });
 const DESIGN_AT = whereOf("team", "#Design", "c1000000-0000-4000-8000-000000000010");
 const ringOf = (id, kind, p, where) => ({ id, kind, caller: callPerson(p), where, rangAt: new Date(RANG).toISOString(), expiresAt: new Date(RANG + 30_000).toISOString(), href: `${NW}/calls/${id}`, inAnotherCall: state === "call-waiting" });
-let callRinging = ["call-incoming", "call-incoming-busy", "call-waiting"].includes(state) ? [ringOf(CALL_A, "direct", NP.ada, whereOf("direct", "Ada Obi", "c1000000-0000-4000-8000-000000000001"))]
+let callRinging = ["call-incoming", "call-incoming-busy", "call-waiting", "look-call"].includes(state) ? [ringOf(CALL_A, "direct", NP.ada, whereOf("direct", "Ada Obi", "c1000000-0000-4000-8000-000000000001"))]
   : state === "call-incoming-group" ? [ringOf(CALL_G, "group", NP.ben, DESIGN_AT), ringOf(CALL_B, "direct", NP.ada, whereOf("direct", "Ada Obi", "c1000000-0000-4000-8000-000000000001"))] : [];
 let callActive = state === "on-call" ? { id: CALL_G, kind: "group", where: DESIGN_AT, startedAt: minsAgo(13), answeredAt: new Date(T0 - (12 * 60 + 4) * 1000).toISOString(), joinedAt: minsAgo(12), inRoom: 3, href: `${NW}/calls/${CALL_G}` }
   : state === "call-waiting" ? { id: CALL_B, kind: "direct", where: whereOf("direct", "Ben Okafor", "c1000000-0000-4000-8000-000000000002"), startedAt: minsAgo(6), answeredAt: minsAgo(6), joinedAt: minsAgo(6), inRoom: 2, href: `${NW}/calls/${CALL_B}` } : null;
@@ -576,14 +712,798 @@ let busyCall = state === "call-missed-live" && q.has("busy") ? { id: CALL_A, kin
 if (busyCall && q.get("busy") !== "stale") callActive = busyCall;
 let lastRingSaid = null;
 const callsNow = () => {
-  if (!callState) return { ready: false, available: false, me: null, ringing: [], active: null, pollMs: 60_000, serverNow: new Date().toISOString(), ringsOnDesktop: false };
+  if (!callState && state !== "look-call") return { ready: false, available: false, me: null, ringing: [], active: null, pollMs: 60_000, serverNow: new Date().toISOString(), ringsOnDesktop: false };
   const t = Date.now();
   const ringing = t < RANG ? [] : callRinging.filter((r) => q.has("hold") || Date.parse(r.expiresAt) > t);
   return { ready: true, available: true, me: meP.membershipId, ringing, active: callActive, pollMs: ringing.length ? 2000 : 4000, serverNow: new Date().toISOString(), ringsOnDesktop: false };
 };
+// ---- screen help (owner decisions, 11 October 2026; contract C.8) ------------------------------------------------------
+// The nine look commands as Rust answers them, the Mac's side of a look, and the sample picture. Outside the look- states
+// they do not exist (Tauri rejects an unknown command), as with today's Rust.
+const LOOK_CMDS = new Set(["look_status", "set_screen_help", "look_request_permission", "look_open_privacy_settings", "look_now", "look_send", "look_discard", "set_call_state", "set_look_rules"]);
+const lookMac = {
+  on: p3 ? p3On("look") : lookState ? (q.get("on") ?? (["consent", "on"].includes(lookState) ? "0" : "1")) !== "0" : false,
+  onAt: Date.now() - 3_600_000,
+  // look-permission starts before the Mac was asked (&asked=1: asked before and refused); &permission=denied is what asking gets.
+  permission: state === "help-steps" ? "unknown" : lookState === "permission" ? (q.get("asked") === "1" ? "denied" : q.get("permission") === "granted" ? "granted" : "unknown") : (["granted", "unknown", "denied"].includes(q.get("permission")) ? q.get("permission") : p3 && ["granted", "unknown", "denied"].includes(q.get("screen")) ? q.get("screen") : "granted"),
+  available: false, live: null, held: null, seq: 0, ruled: false,
+  // Phase 2: the consent given (1: phase 1's, so the update card shows), the picture first, her by the pointer.
+  consent: lookState === "consent-update" || q.get("consent") === "1" ? 1 : binary >= 3 ? 3 : 2,
+  preview: lookState === "preview-on" || q.get("preview") === "1",
+  companion: q.get("companion") !== "0" && q.get("companion") !== "setting_off",
+  // Phase 3 (companion2 F): &companion=<reason> is why this build's Rust says she is hidden (help-settings).
+  companionWhy: /^[a-z_]{3,20}$/.test(q.get("companion") ?? "") ? q.get("companion") : null,
+};
+const companionWhyNow = () => (!lookMac.companion ? "setting_off" : !lookMac.on ? "screen_help_off" : lookMac.companionWhy ?? "idle");
+const lookStatusNow = () => ({ supported: true, unsupportedReason: null, permission: lookMac.permission, on: lookMac.on, onAt: lookMac.on ? lookMac.onAt : null, keys: "Control+Command", keysLabel: "⌃ ⌘", armed: lookMac.on && lookMac.permission === "granted" && lookMac.available, available: lookMac.available,
+  ...(v2 ? { v: binary, consent: lookMac.on ? lookMac.consent : 0, preview: lookMac.preview, companion: lookMac.companion } : {}),
+  ...(binary >= 3 ? { companionShown: ["idle", "exchange", "act", "typing", "still", "pressing"].includes(companionWhyNow()), companionWhy: companionWhyNow() } : {}),
+  ...(binary >= 4 ? { front: frontMacNow() } : {}) });
+const lookEvent = (payload) => window.__h?.["brenda://look"]?.({ payload });
+const lookVoice_ = (payload) => window.__h?.["brenda://voice"]?.({ payload });
+const LOOK_W = 1440, LOOK_H = 900, LOOK_POINTER = { x: 1236, y: 214 };
+const lookPointer = () => (q.get("pointer") === "none" ? null : LOOK_POINTER);
+const lookId = () => `a1b2c3d4e5f6${String(++lookMac.seq).padStart(4, "0")}`;
+/**
+ * The sample "window", drawn here as Rust would send its preview: the picture scaled to fit 720 by 440, Rust's ring
+ * (white under orange, 15 px in the picture's own pixels) at the pointer, JPEG at 0.7, as a data URL.
+ */
+function lookPicture(pointer) {
+  const s = Math.min(720 / LOOK_W, 440 / LOOK_H), w = Math.round(LOOK_W * s), h = Math.round(LOOK_H * s);
+  const cv = document.createElement("canvas"); cv.width = w; cv.height = h;
+  const g = cv.getContext("2d");
+  const X = (v) => v * s;
+  g.fillStyle = "#1e1e1e"; g.fillRect(0, 0, w, h);
+  g.fillStyle = "#2c2c2c"; g.fillRect(0, 0, w, X(56));
+  [["#ff5f57", 28], ["#febc2e", 52], ["#28c840", 76]].forEach(([c, x]) => { g.fillStyle = c; g.beginPath(); g.arc(X(x), X(28), X(7), 0, Math.PI * 2); g.fill(); });
+  g.fillStyle = "#e6e6e6"; g.font = `${X(22)}px -apple-system, Helvetica, sans-serif`; g.textAlign = "center"; g.fillText("Onboarding flow, Figma", w / 2, X(36));
+  g.textAlign = "left";
+  g.fillStyle = "#252525"; g.fillRect(0, X(56), X(260), h - X(56));
+  g.fillStyle = "#9a9a9a"; g.font = `${X(18)}px -apple-system, Helvetica, sans-serif`;
+  ["Pages", "Welcome", "Sign up", "Pick a plan", "Done"].forEach((t, i) => { if (i === 2) { g.fillStyle = "#3a3a3a"; g.fillRect(X(12), X(118 + i * 44) - X(24), X(236), X(36)); g.fillStyle = "#ffffff"; } else g.fillStyle = "#9a9a9a"; g.fillText(t, X(28), X(118 + i * 44)); });
+  g.fillStyle = "#e9e9ec"; g.fillRect(X(260), X(56), X(900), h - X(56));
+  g.fillStyle = "#ffffff"; g.fillRect(X(430), X(140), X(560), X(640));
+  g.fillStyle = "#d9d9de"; g.fillRect(X(470), X(190), X(300), X(28)); g.fillRect(X(470), X(240), X(420), X(18)); g.fillRect(X(470), X(272), X(380), X(18));
+  g.fillStyle = "#ff6c02"; g.fillRect(X(470), X(660), X(200), X(54));
+  g.fillStyle = "#2c2c2c"; g.fillRect(X(1160), X(56), LOOK_W * s - X(1160), h - X(56));
+  g.fillStyle = "#e6e6e6"; g.font = `bold ${X(18)}px -apple-system, Helvetica, sans-serif`; g.fillText("Export", X(1184), X(110));
+  g.fillStyle = "#e5484d"; g.beginPath(); g.arc(X(1400), X(104), X(13), 0, Math.PI * 2); g.fill();
+  g.fillStyle = "#ffffff"; g.font = `bold ${X(16)}px -apple-system, Helvetica, sans-serif`; g.textAlign = "center"; g.fillText("!", X(1400), X(110)); g.textAlign = "left";
+  g.fillStyle = "#3a3a3a"; g.fillRect(X(1184), X(140), X(232), X(40)); g.fillStyle = "#cfcfcf"; g.font = `${X(16)}px -apple-system, Helvetica, sans-serif`; g.fillText("PNG    2x", X(1198), X(166));
+  g.fillStyle = "#4b4b4b"; g.fillRect(X(1184), X(196), X(232), X(40)); g.fillStyle = "#ffffff"; g.textAlign = "center"; g.fillText("Export Onboarding", X(1300), X(222)); g.textAlign = "left";
+  if (pointer) {
+    // Rust's ring (contract A.3): a white ring 4 px wide under an orange one 2 px wide, radius 15, no fill.
+    g.lineWidth = Math.max(1, X(4)); g.strokeStyle = "#ffffff"; g.beginPath(); g.arc(X(pointer.x), X(pointer.y), X(15), 0, Math.PI * 2); g.stroke();
+    g.lineWidth = Math.max(1, X(2)); g.strokeStyle = "#ff6c02"; g.beginPath(); g.arc(X(pointer.x), X(pointer.y), X(15), 0, Math.PI * 2); g.stroke();
+  }
+  return cv.toDataURL("image/jpeg", 0.7);
+}
+/** The picture is ready (Rust's `preview`). */
+const lookPreview = (id, source, pointer) => lookEvent({ phase: "preview", lookId: id, source, app: { name: "Figma", bundleId: "com.figma.Desktop" }, image: lookPicture(pointer), width: LOOK_W, height: LOOK_H, pointer });
+async function lookMock(cmd, args) {
+  if (!lookState) throw `Command ${cmd} not found`; // today's Rust has none of them
+  if (cmd === "look_status") return lookStatusNow();
+  if (cmd === "set_screen_help") { lookMac.on = !!args.enabled; if (lookMac.on) { lookMac.onAt = Date.now(); lookMac.consent = binary >= 3 ? 3 : 2; } else { macAct.useMac = false; macAct.fileWork = false; } console.log("set_screen_help", lookMac.on); return lookStatusNow(); }
+  if (cmd === "look_request_permission") { await wait(500); lookMac.permission = (p3 ? q.get("screen") : q.get("permission")) === "denied" ? "denied" : "granted"; console.log("look_request_permission:", lookMac.permission); return lookStatusNow(); }
+  if (cmd === "look_open_privacy_settings") { console.log("open System Settings: Privacy & Security, Screen Recording"); return; }
+  if (cmd === "set_look_rules") {
+    lookMac.available = !!args.available;
+    if (binary >= 4 && args.front) { frontMac.ready = args.front.ready === true; frontMac.checkEvery = args.front.checkEvery === true; }
+    if (!lookMac.ruled) { lookMac.ruled = true; console.log("set_look_rules", JSON.stringify(args)); }
+    return lookStatusNow();
+  }
+  if (cmd === "set_call_state") { if (lookMac.live !== !!args.live) { lookMac.live = !!args.live; console.log("set_call_state", lookMac.live); } return; }
+  if (cmd === "look_discard") { console.log("look_discard", args.lookId); if (lookMac.held === args.lookId) lookMac.held = null; return; }
+  if (cmd === "look_now") {
+    // Look on her card: the front window, no pointer, no recording; the preview at once.
+    const id = lookId(); lookMac.held = id;
+    setTimeout(() => { lookEvent({ phase: "looking", lookId: id, source: "button", app: { name: "Figma" }, listening: false }); setTimeout(() => lookPreview(id, "button", null), 250); }, 0);
+    return;
+  }
+  if (cmd === "look_send" && v2) {
+    if (args.lookId !== lookMac.held) throw { status: 0, message: "That picture is gone. Look again." };
+    lookMac.held = null;
+    return v2Send(args.question, { lookId: args.lookId, messages: args.messages });
+  }
+  if (cmd === "look_send") {
+    // What Rust sends, less the picture (never logged): the question and the chat so far.
+    console.log("look sent", JSON.stringify({ lookId: args.lookId, question: args.question, messages: args.messages }));
+    if (args.lookId !== lookMac.held) throw { status: 0, message: "That picture is gone. Look again." };
+    lookMac.held = null;
+    await wait(lookState === "sending" ? 60_000 : 900);
+    const s = q.get("send") ?? (lookState === "refused" && q.get("reason") === "send" ? "failed" : null);
+    const name = personal.name;
+    if (s === "limit") throw { status: 429, code: "LOOK_LIMIT", message: `You've used today's 200 requests to ${name}, so ${name} can't look now. Try again tomorrow.` };
+    if (s === "switched_off") throw { status: 403, code: "LOOK_SWITCHED_OFF", message: "Your workspace has switched off screen help." };
+    if (s === "failed") throw { status: 502, code: "LOOK_FAILED", message: `Claude couldn't be reached just now, so ${name} has no answer for that.` };
+    if (s === "offline") throw { status: 0, code: "LOOK_OFFLINE", message: "I can't reach Boredroom right now, so I didn't send it." };
+    const said = "That's the Export button in Figma's right-hand panel. Pick PDF, then press Export.";
+    const why = act?.effective === "auto" ? { why: `Still asking: this came from what ${name} saw on your screen.` } : {};
+    return withSpeech({ reply: said, spoken: said, engine: "claude", actions: [], proposals: [{ kind: "confirm", token: "preview-look-token", summary: "Add “Export the onboarding frame as PDF” to your to-dos", tool: "create_todos", ...why }], note: null, tainted: true, ...(act ? { act } : {}) }, "/api/orgs/company-a/assistant/chat");
+  }
+  return {};
+}
+// ---- phase 2 (owner request and rule, 12 October 2026; contract C.7): the v2 Rust's other commands and events ----------
+const V2_CMDS = new Set(["look_set_options", "look_follow_up", "look_drop_held", "speak_queue", "companion_set_look", "companion_speaking",
+  "act_status", "act_set_use_mac", "act_set_file_work", "act_request_accessibility", "act_open_accessibility_settings", "act_answer", "act_stop",
+  "act_continue", "act_expect_answer", "act_file_from_drop", "act_reveal", "act_open_output"]);
+const actEvent = (payload) => window.__h?.["brenda://act"]?.({ payload });
+const kindQ = q.get("kind");
+const fileTask = taskState === "working" || (["asking", "done", "confirming"].includes(taskState) && (kindQ === "file" || kindQ === "doc"));
+const okPerm = (v) => ["granted", "denied", "unknown"].includes(v);
+const macAct = p3 || p4 ? {
+  // Phase 3: help-steps starts with nothing granted (each Continue gets &screen, &ax, &finder, &folders); the others as asked.
+  useMac: p3On("mac"), fileWork: p3On("files"),
+  accessibility: state === "help-steps" ? "unknown" : okPerm(q.get("ax")) ? q.get("ax") : state === "reply-enable" && q.get("which") === "accessibility" ? "denied" : "granted",
+  finder: state === "help-steps" ? "unknown" : okPerm(q.get("finder")) ? q.get("finder") : "granted",
+  folders: p3Folders(state === "help-steps" ? "unknown" : "granted"),
+  task: null, step: 0, timers: [],
+} : {
+  useMac: q.get("mac") ? q.get("mac") === "on" : !!taskState && !["consent-mac", "accessibility"].includes(taskState),
+  fileWork: q.get("files") ? q.get("files") === "on" : !!taskState && !["consent-files", "finder"].includes(taskState),
+  accessibility: ["granted", "denied", "unknown"].includes(q.get("ax")) ? q.get("ax") : taskState && !["consent-mac", "accessibility"].includes(taskState) ? "granted" : "unknown",
+  finder: taskState === "finder" ? "unknown" : ["granted", "denied", "unknown"].includes(q.get("finder")) ? q.get("finder") : "unknown",
+  folders: p3Folders("granted"),
+  task: null, step: 0, timers: [],
+};
+const actStatusNow = () => ({ supported: true, available: true, useMac: macAct.useMac, useMacAt: macAct.useMac ? Date.now() - 60_000 : null, fileWork: macAct.fileWork, fileWorkAt: null,
+  accessibility: macAct.accessibility, finder: macAct.finder, escRegistered: !!macAct.task && ["scoping", "asking", "confirming", "running", "step_ask", "paused", "working"].includes(macAct.task.phase),
+  task: macAct.task ? { id: macAct.task.id, kind: macAct.task.kind, phase: macAct.task.phase, plan: macAct.task.plan, step: macAct.step, startedAt: macAct.task.startedAt ?? null } : null,
+  // This build's Rust (phase 3): what macOS answered for each folder, and that it runs plans.
+  ...(binary >= 3 ? { folders: { ...macAct.folders }, plans: 1 } : {}) });
+const later = (fn, ms) => { const t = setTimeout(fn, ms); macAct.timers.push(t); return t; };
+const clearLater = () => { for (const t of macAct.timers) clearTimeout(t); macAct.timers = []; };
+/** What she proposes for a request (Boredroom's propose_task, as the TaskView Rust passes on). */
+function proposalFor(question) {
+  const words = String(question);
+  const kind = /summar|brief|report|pdf/i.test(words) || fileTask ? "file" : "screen";
+  const risky = q.get("risky") === "1" || /email|send/i.test(words);
+  const doc = kindQ === "doc";
+  // Today's binary after reply-enable's setup: no plans, so phase 2's screen task opens Figma from the Dock (contract 0b.9).
+  if (state === "reply-enable" && binary < 3 && enableOn() && /figma/i.test(words)) return { id: `7c9e6679-7425-40de-944b-e07fc1f9${String(++lookMac.seq).padStart(4, "0")}`, kind: "screen", plan: "I'll open Figma from the Dock.", question: "Do you want me to do this?", planSha256: "d".repeat(64), answerBy: new Date(Date.now() + 60_000).toISOString(), risky: false, stepCap: 20, file: null, output: null };
+  if (!/rename|invoice|summar|brief|email|send|fill/i.test(words) && !taskState) return null;
+  if (taskState === "confirm-voice") return null;
+  const id = `7c9e6679-7425-40de-944b-e07fc1f9${String(++lookMac.seq).padStart(4, "0")}`;
+  const answerBy = new Date(Date.now() + (q.get("answer") === "timeout" ? 8_000 : 60_000)).toISOString();
+  if (/first three/i.test(words)) return { id, kind: "screen", plan: "I'll rename the first three files to Invoice-01 to Invoice-03.", question: "Do you want me to do this?", planSha256: "a".repeat(64), answerBy, risky: false, stepCap: 20, file: null, output: null };
+  if (kind === "file") return { id, kind, plan: doc ? "I'll write a one-page brief of “Q3 report.pdf” and save it in Boredroom as “Q3 brief”." : "I'll write a one-page brief of “Q3 report.pdf” and save it next to it as “Q3 report (Brenda brief).md”.", question: "Do you want me to do this?", planSha256: "b".repeat(64), answerBy, risky, stepCap: null,
+    file: { source: "finder_selection", name: "Q3 report.pdf" }, output: doc ? { format: "doc", name: "Q3 brief" } : { format: "md", name: "Q3 report (Brenda brief).md" } };
+  return { id, kind, plan: risky ? "I'll write a reply to Ada saying the deck is ready, and send it from Mail." : "I'll rename these 6 files to Invoice-01 to Invoice-06.", question: "Do you want me to do this?", planSha256: "c".repeat(64), answerBy, risky, stepCap: 20, file: null, output: null };
+}
+const REQUEST = {
+  screen: "Rename these files to Invoice-01 to Invoice-06",
+  file: "Summarise this PDF into a one-page brief",
+};
+const STEP_NOTES = ["Opening Finder…", "Selecting the 6 files…", "Renaming Invoice-01…", "Renaming Invoice-02…", "Renaming Invoice-03…", "Checking the names…"];
+/** Rust's side of a v2 look: `sending`, the words in pieces, a `say` per sentence, one `point`, then `held`, and the answer. */
+async function v2Send(question, { lookId, follow = false, drop = false } = {}) {
+  const id = lookId ?? `f0110a${String(++lookMac.seq).padStart(10, "0")}`;
+  console.log("look sent (v2)", JSON.stringify({ lookId: lookId ?? null, question, source: follow ? "follow_up" : drop ? "drop" : "keys" }));
+  await wait(300);
+  lookEvent({ phase: "sending", lookId: id });
+  // Phase 3: a reply that offers Turn it on or Set up, or a plan.
+  // Ask again after the setup (integration, 12 October 2026): once the switch the reply named is on, the same words get
+  // the plan Boredroom would propose (mac: open Figma; files: the folder job; accessibility: the mixed plan).
+  if (state === "reply-enable" && enableOn() && binary >= 3) return planPropose();
+  if ((state === "reply-enable" && !enableOn()) || state === "reply-setup") return p3Reply(id);
+  if (p3?.startsWith("plan-")) return planPropose();
+  const task = proposalFor(question);
+  if (task) {
+    await wait(900);
+    macAct.task = { ...task, phase: "asking" };
+    macAct.step = 0;
+    console.log("companion: asking (Rust)");
+    actEvent({ phase: "asking", task });
+    if (q.get("answer") === "timeout") later(() => { if (macAct.task?.id === task.id && macAct.task.phase === "asking") { macAct.task = null; console.log("companion: idle (no answer)"); actEvent({ phase: "expired", taskId: task.id }); } }, 8_000);
+    const said = `${task.plan} Do you want me to do this?`;
+    return withSpeech({ reply: said, spoken: said, engine: "claude", actions: [], proposals: [], note: null, tainted: true }, "/api/orgs/company-a/assistant/chat");
+  }
+  const sentences = follow ? ["It's under Format, the second one down.", "Pick PDF there, then press Export Onboarding."]
+    : taskState === "confirm-voice" ? ["I can add that to your to-dos for tomorrow."]
+    : ["That's the Export button in Figma's right-hand panel, and the red badge means the frame has a warning.", "Pick PDF under Format, then press Export Onboarding."];
+  for (const [i, sentence] of sentences.entries()) {
+    for (const piece of sentence.match(/\S+\s*/g) ?? []) { await wait(40); lookEvent({ phase: "text", lookId: id, d: piece }); }
+    if (i < sentences.length - 1) lookEvent({ phase: "text", lookId: id, d: " " });
+    lookEvent({ phase: "say", lookId: id, text: sentence, speech: naturalMode ? { path: "/api/orgs/company-a/assistant/speech", token: `preview-say-${id}-${i}`, text: sentence } : null });
+    if (i === 0 && taskState !== "confirm-voice") { lookEvent({ phase: "point", lookId: id, label: "Export" }); console.log("companion: pointing at Export (Rust flies her there and rings it)"); }
+  }
+  const expire = Number(q.get("expire")) > 0 ? Number(q.get("expire")) * 1000 : 60_000;
+  setTimeout(() => lookEvent({ phase: "held", lookId: id, until: Date.now() + expire }), 30);
+  setTimeout(() => { lookEvent({ phase: "dropped" }); console.log("look: the held pictures were wiped"); }, expire + 30);
+  const full = sentences.join(" ");
+  const proposals = taskState === "confirm-voice" ? [{ kind: "confirm", token: "preview-look-token", summary: "Add “Export the onboarding frame as PDF” to your to-dos for tomorrow", tool: "create_todos" }] : [];
+  return withSpeech({ reply: full, spoken: full, engine: "claude", actions: [], proposals, note: null, tainted: true }, "/api/orgs/company-a/assistant/chat");
+}
+/** After a yes (Rust records it with Boredroom, then works): the steps this state shows. */
+function yesFlow(t) {
+  macAct.task = { ...t, phase: "confirming" };
+  actEvent({ phase: "confirming", taskId: t.id });
+  if (taskState === "confirming") return;
+  later(() => {
+    if (t.kind === "file") {
+      macAct.task.phase = "working"; macAct.task.startedAt = Date.now();
+      console.log("companion: file job dot on (Rust)");
+      actEvent({ phase: "working", taskId: t.id, file: t.file, output: t.output, startedAt: Date.now() });
+      // Esc is hers during a file job too (review, 12 October 2026): Rust says so once it is registered.
+      actEvent({ phase: "status", status: actStatusNow() });
+      const ms = taskState === "working" ? (q.get("finish") === "1" ? 9_000 : 0) : 1_800;
+      if (ms) later(() => fileDone(t), ms);
+      return;
+    }
+    macAct.task.phase = "running"; macAct.task.startedAt = Date.now();
+    runSteps(t, 1);
+  }, 800);
+}
+function fileDone(t) {
+  macAct.task = null;
+  const doc = kindQ === "doc";
+  actEvent({ phase: "done", taskId: t.id, kind: "file", summary: doc ? "I've saved your brief in Boredroom." : "I've saved your brief next to the PDF.", steps: 1,
+    ...(doc ? { doc: { href: "/app/company-a/docs/d1", title: "Q3 brief" } } : { output: { name: "Q3 report (Brenda brief).md", folder: "Documents" } }) });
+}
+function runSteps(t, n) {
+  if (!macAct.task || macAct.task.id !== t.id) return;
+  macAct.step = n;
+  const total = Math.max(1, Math.min(12, Number(q.get("steps")) || (taskState === "doing" ? 6 : 3)));
+  const note = STEP_NOTES[(n - 1) % STEP_NOTES.length];
+  console.log(`companion: doing, step ${n}: ${note} (Rust posts the approved actions)`);
+  actEvent({ phase: "running", taskId: t.id, step: n, note });
+  if (n === 1) actEvent({ phase: "status", status: actStatusNow() });
+  const next = (fn) => later(fn, 1000);
+  if (taskState === "done" && n >= 1) return next(() => { macAct.task = null; actEvent({ phase: "done", taskId: t.id, kind: "screen", summary: "Renamed 6 files in Finder.", steps: 7 }); });
+  if (taskState === "step-ask" && n >= 2) return next(() => { macAct.task.phase = "step_ask"; const kind = kindQ && kindQ !== "screen" ? kindQ : "send"; actEvent({ phase: "step_ask", taskId: t.id, ask: { kind, what: kind === "delete" ? "move the 3 old drafts to the Bin" : kind === "pay" ? "press Pay £12.00 on the checkout page" : "press Send on the email to Ada", question: "", because: "" } }); });
+  if (taskState === "paused" && n >= 2) return next(() => { macAct.task.phase = "paused"; actEvent({ phase: "paused", taskId: t.id, why: q.get("why") ?? "moved" }); });
+  if (taskState === "stopped" && n >= 3) {
+    if (q.get("why") === "step-no") return next(() => { macAct.task.phase = "step_ask"; actEvent({ phase: "step_ask", taskId: t.id, ask: { kind: "send", what: "press Send on the email to Ada" } }); later(() => pressNotch('[data-act="act-no"]'), 1500); });
+    return next(() => { macAct.task = null; actEvent({ phase: "stopped", taskId: t.id, why: q.get("why") ?? "esc", step: n + 1, note }); });
+  }
+  if (taskState === "cannot" && n >= 2) return next(() => { macAct.task = null; actEvent({ phase: "stopped", taskId: t.id, why: "cannot", step: n, note, reason: "Finder asked for an administrator password, and I never type those" }); });
+  if (taskState === "failed" && n >= 2) return next(() => { macAct.task = null; actEvent({ phase: "failed", taskId: t.id, code: "ACT_FAILED", message: "Claude couldn't be reached just now, so I stopped." }); });
+  if (n >= total) return next(() => { macAct.task = null; console.log("companion: done (Rust)"); actEvent({ phase: "done", taskId: t.id, kind: "screen", summary: "Renamed 6 files in Finder.", steps: total + 1 }); });
+  next(() => runSteps(t, n + 1));
+}
+async function v2Mock(cmd, args) {
+  if (!v2) throw `Command ${cmd} not found`; // today's Rust has none of them
+  if (cmd !== "companion_speaking" && cmd !== "act_expect_answer") console.log(cmd, JSON.stringify(args ?? {}));
+  if (cmd === "look_set_options") { if (typeof args.preview === "boolean") lookMac.preview = args.preview; if (typeof args.companion === "boolean") lookMac.companion = args.companion; return lookStatusNow(); }
+  if (cmd === "look_follow_up") return v2Send(args.question, { follow: true, messages: args.messages });
+  if (cmd === "look_drop_held") return;
+  if (cmd === "speak_queue") { speakingFeed.queue(args.text, !!args.first); return; }
+  if (cmd === "companion_set_look" || cmd === "companion_speaking") return;
+  if (cmd === "act_expect_answer") { if (args.expect) console.log("act_expect_answer", JSON.stringify(args.expect)); return; }
+  if (cmd === "act_status") return actStatusNow();
+  if (cmd === "act_set_use_mac") { macAct.useMac = !!args.enabled; return actStatusNow(); }
+  // Today's Rust asks macOS about Finder as file work turns on (&finder=denied: Finder says no).
+  if (cmd === "act_set_file_work") { if (args.enabled) await wait(500); macAct.fileWork = !!args.enabled; if (args.enabled && macAct.finder === "unknown" && binary < 3) macAct.finder = q.get("finder") === "denied" ? "denied" : "granted"; return actStatusNow(); }
+  if (cmd === "act_request_accessibility") { await wait(500); macAct.accessibility = q.get("ax") === "denied" ? "denied" : "granted"; return actStatusNow(); }
+  if (cmd === "act_open_accessibility_settings") { console.log("open System Settings: Privacy & Security, Accessibility"); return; }
+  if (cmd === "act_reveal" || cmd === "act_open_output") return;
+  if (cmd === "act_stop" && args.taskId === OP_ID && frontMac.live?.helper === "operator") {
+    for (const t of frontMac.timers) clearTimeout(t);
+    frontMac.live = null; frontMac.opPaused = false;
+    return actEvent({ phase: "stopped", taskId: OP_ID, why: "button", step: frontMac.opStep ?? 1, note: null });
+  }
+  if (cmd === "act_stop") {
+    const t = macAct.task; clearLater();
+    if (!t) return;
+    macAct.task = null;
+    actEvent(t.kind === "file" ? { phase: "stopped", taskId: t.id, why: "button", step: 0, note: null } : { phase: "stopped", taskId: t.id, why: "button", step: macAct.step + 1, note: STEP_NOTES[(macAct.step - 1 + STEP_NOTES.length) % STEP_NOTES.length] });
+    return;
+  }
+  if (cmd === "act_continue") {
+    // The Mac operator (helpers contract I.5): its own-window pause, Carry on (a real press) resumes it.
+    if (args.taskId === OP_ID && frontMac.live?.helper === "operator" && frontMac.opPaused) return frontMac.opResume();
+    const t = macAct.task; if (t?.phase === "paused") { t.phase = "running"; runSteps(t, macAct.step + 1); } return;
+  }
+  if (cmd === "act_answer") {
+    const t = macAct.task;
+    if (!t || args.taskId !== t.id) throw { status: 404, code: "ACT_NOT_FOUND", message: "That task is gone." };
+    // Rust's own checks (contract B.6.3): a typed yes must pass the grammar.
+    const verdict = args.via === "typed" ? Act.verdict(args.text, personal.name) : args.answer;
+    return answerFlow(t, verdict === "yes" && args.answer === "yes" ? "yes" : verdict === "unclear" ? "unclear" : "no");
+  }
+  if (cmd === "act_file_from_drop") return v2Send(args.question, { drop: true });
+}
+/** What Rust does with an answer (contract B.6.3): a yes starts, a no or an unclear ends it; at a step, a no stops the task. */
+function answerFlow(t, verdict) {
+  if (t.phase === "step_ask" && t.kind === "plan") {
+    if (verdict === "yes") { t.phase = "running"; return macAct.planResume?.(); }
+    clearLater(); macAct.task = null;
+    actEvent({ phase: "stopped", taskId: t.id, why: "said_no", step: macAct.step + 1, note: null });
+    return;
+  }
+  if (t.kind === "plan" && verdict === "yes") return yesPlan(t);
+  if (t.phase === "step_ask") {
+    if (verdict === "yes") { t.phase = "running"; return runSteps(t, macAct.step + 1); }
+    clearLater(); macAct.task = null;
+    actEvent({ phase: "stopped", taskId: t.id, why: "said_no", step: macAct.step + 1, note: STEP_NOTES[(macAct.step - 1 + STEP_NOTES.length) % STEP_NOTES.length] });
+    return;
+  }
+  if (verdict === "yes") return yesFlow(t);
+  clearLater(); macAct.task = null;
+  actEvent({ phase: "said_no", taskId: t.id, verdict });
+}
+// ---- phase 3 (owner report and requests, 12 October 2026; companion2 contract J.4): this build's Rust's new commands ------
+const P3_CMDS = new Set(["help_setup", "help_request_finder", "help_request_folders", "help_open_privacy"]);
+async function p3Mock(cmd, args) {
+  if (binary < 3) throw `Command ${cmd} not found`; // today's Rust has none of them
+  console.log(cmd, JSON.stringify(args ?? {}));
+  if (cmd === "help_setup") {
+    await wait(300);
+    if ((args.mac || args.files) && !args.look && !lookMac.on) throw { status: 0, code: "HELP_NEEDS_LOOK", message: "Seeing your screen needs to be on for that." };
+    if (args.look && !lookMac.on) { lookMac.on = true; lookMac.onAt = Date.now(); lookMac.consent = 3; }
+    if (args.mac) macAct.useMac = true;
+    if (args.files) macAct.fileWork = true;
+    console.log("companion: greet (Rust: a hop by the pointer, 3 s)");
+    return { look: lookStatusNow(), act: actStatusNow() };
+  }
+  if (cmd === "help_request_finder") { await wait(500); macAct.finder = q.get("finder") === "denied" ? "denied" : "granted"; return actStatusNow(); }
+  if (cmd === "help_request_folders") { await wait(700); const f = p3Folders("granted"); for (const k of args.which ?? []) if (k in macAct.folders) macAct.folders[k] = f[k] === "unknown" ? "granted" : f[k]; return actStatusNow(); }
+  if (cmd === "help_open_privacy") { console.log(`open System Settings: Privacy & Security, ${args.pane}`); return; }
+}
+/** Whether the switch reply-enable names is on now (after the setup turned it on). */
+const enableWhich = () => (q.get("which") === "files" ? "files" : q.get("which") === "accessibility" ? "accessibility" : "mac");
+const enableOn = () => ({ mac: macAct.useMac, files: macAct.fileWork, accessibility: macAct.accessibility === "granted" })[enableWhich()] === true;
+/** A look's answer that offers the setup (reply-enable, reply-setup), as Boredroom's result carries it. */
+function p3Reply() {
+  const which = q.get("which");
+  if (state === "reply-enable") {
+    const w = which === "files" ? "files" : which === "accessibility" ? "accessibility" : "mac";
+    // Review, 12 October 2026: she says only what she'll do once it's on; the fixed line under her reply names the switch.
+    const said = w === "accessibility" ? "I'll make the new file as soon as it's allowed." : w === "files" ? "I'll summarise it as soon as you turn this on." : "I'll open Figma as soon as you turn this on.";
+    const needs = (q.get("needs") ?? "").split(",").filter((x) => ["mac", "files", "accessibility"].includes(x));
+    return withSpeech({ reply: said, spoken: said, engine: "claude", actions: [], proposals: [], note: null, tainted: true, enable: { which: w, ...(needs.length > 1 ? { needs } : {}) } }, "/api/orgs/company-a/assistant/chat");
+  }
+  const said = "Press Set up below and your Mac walks you through it. I'll ask before I turn anything on, and before I do anything for you.";
+  return withSpeech({ reply: said, spoken: said, engine: "claude", actions: [], proposals: [], note: null, tainted: true, setup: { which: which === "files" || which === "mac" || which === "look" ? which : "all" } }, "/api/orgs/company-a/assistant/chat");
+}
+const PLAN_NAMES = ["Q3 report.pdf", "Board minutes, September.docx", "Pricing notes.txt", "Supplier contract.pdf", "Hiring plan.docx", "Roadmap draft.md", "Invoice 1042.pdf", "Offsite agenda.docx", "Brand guide.pdf", "Team survey results.pdf", "Notes from Ada.txt", "Budget 2027.docx", "Client brief, Landing v2.pdf", "Meeting notes.txt"];
+const hashOf = (s) => "0".repeat(64 - String(s.length).length) + s.length; // the page never checks it (Rust does)
+/** The plan each plan- state proposes (&steps=open|open-file|folder|mix; plan-boredroom-ask adds a message to Ada). */
+/** The message to Ada in plan-boredroom-ask; &long=1 a long one, shown whole (review, 12 October 2026: never clipped). */
+const ADA_SAYS = q.has("long") ? "Landing v2 is started: the hero, pricing and FAQ are in, the footer is next, and I'd love your eyes on the pricing table before 4pm today" : "Landing v2 is started";
+function planFor() {
+  const kind = q.get("steps") ?? (state === "reply-enable" ? ({ mac: "open", files: "folder", accessibility: "mix" })[enableWhich()] : state === "plan-folder-working" ? "folder" : state === "plan-boredroom-ask" || state === "plan-running" ? "mix" : state === "plan-done" ? ({ folder: "folder", mix: "mix" }[q.get("kind")] ?? "open") : state === "plan-unresolved" ? ({ folder_denied: "folder", file_none: "open-file", timeout: "folder" }[q.get("why")] ?? "open") : "open");
+  const id = `9b2f6c1e-1d2a-4c3b-9e8f-7a6b5c4d${String(++lookMac.seq).padStart(4, "0")}`;
+  const none = { source: "none", name: "" };
+  const appStep = (i, name) => ({ i, kind: "open", target: "app", name, url: "", folder: none, words: [], kinds: [], sinceDays: 0 });
+  const others = Number(q.get("others")) > 0 ? Number(q.get("others")) : 0;
+  const ask = state === "plan-boredroom-ask";
+  const P = {
+    open: { heard: "Open Figma", plan: "I'll open Figma.", steps: [appStep(0, q.get("why") === "forbidden" ? "1Password" : q.get("why") === "quarantined" ? "Arc" : "Figma")], lines: ["Open Figma (Applications)"], summary: "Opened Figma." },
+    "open-file": { heard: "Find the invoice from last week and open it", plan: "I'll find the invoice from last week and open it.", steps: [{ i: 0, kind: "open", target: "file", name: "", url: "", folder: none, words: ["invoice"], kinds: ["pdf"], sinceDays: 7 }],
+      lines: [`Open “Invoice 1042.pdf” from Downloads, changed 8 October${others ? ` (the newest of ${others + 1} like it)` : ""}`], summary: "Opened “Invoice 1042.pdf”." },
+    folder: { heard: "Look through my documents and summarise them", plan: "I'll read the documents in your Documents folder and write a one-page summary of each into “Documents summary.docx”.",
+      steps: [{ i: 0, kind: "folder", folder: { source: "named", name: "documents" }, kinds: ["any"], recursive: false, sinceDays: 0, words: [], perFile: true, job: "write a one-page summary of each", output: { format: "docx", name: "Documents summary.docx" } }],
+      lines: ["Read the 14 documents in Documents (PDF, Word, text, 38 MB) and save “Documents summary.docx” there"], names: PLAN_NAMES, summary: "I've written a summary of each of the 14 documents in Documents into Documents summary.docx.", outputs: [{ name: "Documents summary.docx", folder: "Documents" }] },
+    mix: { heard: ask ? "Open Figma, make a new file called Landing v2, remind me at 3 to review it and tell Ada it's started" : "Open Figma, make a new file called Landing v2 and remind me at 3 to review it",
+      plan: ask ? "I'll open Figma, make a new file called “Landing v2”, remind you at 3pm to review it and tell Ada it's started." : "I'll open Figma, make a new file called “Landing v2” and remind you at 3pm to review it.",
+      steps: [appStep(0, "Figma"), { i: 1, kind: "screen", goal: "Make a new design file and name it “Landing v2”." }, { i: 2, kind: "boredroom", summary: "Remind you at 15:00: review Landing v2", outward: false },
+        ...(ask ? [{ i: 3, kind: "boredroom", summary: `Message Ada Obi: “${ADA_SAYS}”`, outward: true }] : [])],
+      lines: ["Open Figma (Applications)", "On your screen: Make a new design file and name it “Landing v2”.", "Remind you at 15:00: review Landing v2", ...(ask ? [`Message Ada Obi: “${ADA_SAYS}” (I'll ask again before it goes)`] : [])],
+      summary: ask ? "Opened Figma, set a reminder for 15:00 and sent Ada Obi a message. Made a new design file called “Landing v2”." : "Opened Figma and set a reminder for 15:00. Made a new design file called “Landing v2”." },
+  }[kind] ?? null;
+  const answerBy = new Date(Date.now() + 75_000).toISOString();
+  const base = { id, kind: "plan", v: 2, plan: P.plan, question: "Do you want me to do this?", answerBy, risky: ask, stepCap: 20, file: null, output: null, steps: P.steps };
+  return { ...P, scoped: { ...base, needsScope: true, lines: null, planSha256: "" }, ready: { ...base, needsScope: false, lines: P.lines, planSha256: hashOf(P.plan) } };
+}
+const UNRESOLVED = {
+  app_none: { message: "I couldn't find an app called “Figmaa” on this Mac.", settings: null },
+  forbidden: { message: "I don't open 1Password. It's one of the apps I never look at or work in.", settings: null },
+  quarantined: { message: "I don't open Arc yet: it came from the internet and hasn't been opened before. Open it once yourself first.", settings: null },
+  outside: { message: "I only open apps from your Applications folders, and Figma isn't in one.", settings: null },
+  folder_denied: { message: "Your Mac hasn't let Brenda into Documents. Allow it in System Settings › Privacy & Security › Files and Folders, then ask me again.", settings: "files" },
+  file_none: { message: "I couldn't find anything like that in Downloads.", settings: null },
+  timeout: { message: "That took too long to find on your Mac, so I stopped. Try naming the folder.", settings: null },
+};
+/** Rust's side of a plan (companion2 I.4.2): `scoping`, the lines from Boredroom, then `asking`; the look's answer says it. */
+async function planPropose() {
+  const P = planFor();
+  window.__plan = P;
+  await wait(500);
+  macAct.task = { ...P.scoped, phase: "scoping" };
+  console.log("companion: asking pill with the sentence (Rust), scoping on this Mac");
+  actEvent({ phase: "scoping", taskId: P.scoped.id, plan: P.scoped.plan, task: P.scoped });
+  if (state === "plan-unresolved") later(() => { macAct.task = null; actEvent({ phase: "unresolved", taskId: P.scoped.id, ...(UNRESOLVED[q.get("why")] ?? UNRESOLVED.app_none) }); }, 1500);
+  else if (state !== "plan-scoping") later(() => {
+    macAct.task = { ...P.ready, phase: "asking" };
+    actEvent({ phase: "asking", task: P.ready, ...(P.names ? { local: { names: P.names } } : {}) });
+    if (state.startsWith("plan-") && !["plan-asking", "plan-scoping"].includes(state)) later(() => pressNotch('[data-act="act-yes"]'), 1500);
+  }, 1400);
+  const said = `${P.plan} Do you want me to do this?`;
+  return withSpeech({ reply: said, spoken: said, engine: "claude", actions: [], proposals: [], note: null, tainted: true }, "/api/orgs/company-a/assistant/chat");
+}
+/** Rust's note for an open part ("Opening Figma…"; plan.rs `open_note`). */
+const openNote = (s) => s.target === "app" ? `Opening ${s.name}…` : s.target === "url" ? `Opening ${(() => { try { return new URL(s.url).host.replace(/^www\./, ""); } catch { return "the page"; } })()}…` : s.target === "reveal" ? `Showing ${s.name || "it"} in Finder…` : s.target === "file" && window.__plan?.lines?.[0]?.match(/“(.+?)”/) ? `Opening ${window.__plan.lines[0].match(/“(.+?)”/)[1]}…` : "Opening it…";
+/** After the yes (companion2 D.5): each part in order, Rust's events as it would send them. */
+function yesPlan(t) {
+  macAct.task = { ...t, phase: "confirming" };
+  actEvent({ phase: "confirming", taskId: t.id });
+  later(() => runPart(t, 0), 800);
+}
+function runPart(t, i) {
+  if (!macAct.task || macAct.task.id !== t.id) return;
+  const P = window.__plan, steps = t.steps, of = steps.length;
+  const slow = state === "plan-running" ? 2600 : 1200;
+  if (i >= of) {
+    macAct.task = null;
+    const skipped = Number(q.get("skipped")) > 0 ? Number(q.get("skipped")) : 0;
+    console.log("companion: done (Rust)");
+    return actEvent({ phase: "done", taskId: t.id, kind: "plan", summary: P.summary, steps: of, ...(P.outputs ? { outputs: P.outputs } : {}), ...(skipped ? { skipped } : {}) });
+  }
+  const s = steps[i];
+  macAct.step = i + 1;
+  const part = { k: i + 1, of, kind: s.kind };
+  if (s.kind === "boredroom" && s.outward) {
+    macAct.task.phase = "step_ask";
+    macAct.planResume = () => { macAct.task.phase = "running"; actEvent({ phase: "running", taskId: t.id, step: i + 1, note: "", part }); later(() => runPart(t, i + 1), slow); };
+    return actEvent({ phase: "step_ask", taskId: t.id, ask: { i, kind: "send", what: `go ahead with “${s.summary.replace(/“/g, "‘").replace(/”/g, "’")}”`, question: "", because: "" } });
+  }
+  if (s.kind === "folder") {
+    const startedAt = Date.now();
+    macAct.task.phase = "working";
+    const stopAt = state === "plan-folder-working" && q.get("finish") !== "1" ? 4 : 14;
+    const tick = (done) => {
+      if (!macAct.task || macAct.task.id !== t.id) return;
+      actEvent({ phase: "working", taskId: t.id, output: s.output, startedAt, folder: { name: "Documents", done, of: 14 } });
+      if (done >= 14) return later(() => runPart(t, i + 1), 900);
+      if (done < stopAt) later(() => tick(done + 1), 500);
+    };
+    actEvent({ phase: "status", status: actStatusNow() });
+    return tick(0);
+  }
+  macAct.task.phase = "running";
+  const note = s.kind === "screen" ? "Clicking New design file…" : s.kind === "boredroom" ? "Making the change in Boredroom…" : s.kind === "open" ? openNote(s) : "";
+  if (s.kind === "open") console.log(`open (mocked, Rust: NSWorkspace ${s.target === "reveal" ? "activateFileViewerSelectingURLs" : "openURL"}): ${s.target === "app" ? `/Applications/${s.name}.app` : s.target === "url" ? s.url : s.name || s.words.join(" ")}`);
+  console.log(`companion: doing, part ${i + 1} of ${of} (${s.kind})`);
+  actEvent({ phase: "running", taskId: t.id, step: i + 1, note, part });
+  if (i === 0) actEvent({ phase: "status", status: actStatusNow() });
+  later(() => runPart(t, i + 1), slow);
+}
+/** The phase 3 states' runs (see the comment at the top). */
+function phase3Run() {
+  const focus = q.get("focus");
+  const openSetup = () => {
+    if (binary >= 3) return window.__h?.["brenda://help-setup"]?.({ payload: { focus: ["look", "mac", "files"].includes(focus) ? focus : null } });
+    if (focus === "mac" || focus === "files") return window.__h?.["brenda://act-consent"]?.({ payload: { which: focus } });
+    if (focus === "look") return window.__h?.["brenda://look-consent"]?.({ payload: null });
+    return openHelp({}); // today's tray has no "Set up…": the settings card's switches or a reply's Set up open it this way
+  };
+  // Presses Continue on each of macOS's steps until the card shows &to= (or a step without Continue).
+  const stepTo = (to) => { if (!to) return; const tick = setInterval(() => { if (card?.kind !== "help" || card.phase === to || (to === "folders-result" && card.phase === "folders" && card.result)) return clearInterval(tick); const b = document.querySelector('[data-act="help-go"]:not([disabled])') ?? (card.phase === "folders" && card.result ? document.querySelector('[data-act="help-skip"]') : null); if (b) b.click(); else clearInterval(tick); }, 900); };
+  if (state === "help-setup") {
+    openSetup();
+    if (q.has("read")) setTimeout(() => pressNotch('[data-act="help-read"]'), 900);
+    if (q.has("untick")) setTimeout(() => document.querySelector('[data-which="look"]')?.click(), 900);
+    if (q.has("press")) setTimeout(() => pressNotch('[data-act="help-turn-on"]'), 1200);
+    return;
+  }
+  if (state === "help-steps") { openSetup(); setTimeout(() => { pressNotch('[data-act="help-turn-on"]'); stepTo(q.get("to")); }, 1000); return; }
+  if (state === "help-done") { openHelp({ request: q.get("request") || null }); return setTimeout(() => pressNotch('[data-act="help-turn-on"]'), 900); }
+  if (state === "help-settings") return window.__h?.["brenda://look-settings"]?.({ payload: null });
+  if (state === "setup-from-web") return; // the first poll opens it
+  if (state === "reply-enable") return lookHoldV2({ heard: q.get("which") === "files" ? "Summarise the PDF I've selected" : "Open Figma for me" });
+  if (state === "reply-setup") return lookHoldV2({ heard: "How do I turn on the features so that I can look through my documents and summarise them and maybe open up" });
+  if (state === "reply-use-screen-off") return void setTimeout(() => ask("Open Figma for me", { spoken: false }), 300);
+  if (p3?.startsWith("plan-")) {
+    const P = planFor(); lookMac.seq--;
+    // The pointer rests on the doing or working bar: its card opens ("Part 2 of 3", "Reading 5 of 14").
+    if (state === "plan-running" || state === "plan-folder-working") setTimeout(pointAtBar, state === "plan-running" ? 9000 : 11000);
+    return lookHoldV2({ heard: P.heard });
+  }
+}
+// ---- Brenda and her helpers (the owner's approved brief, 12 October 2026; helpers contract Q.4): the v4 Rust ---------
+// The front desk's and the jobs' commands as this build's Rust answers them, sending `brenda://front` and `brenda://job`
+// (and, for the Mac operator, phase 2's `brenda://act`) the way it would. Nothing is opened, clicked, typed, moved or
+// deleted: the console logs what Rust would do ("open (mocked)…"). Outside the helpers states, and with &binary=2 or 3,
+// none of these commands exist (Tauri rejects an unknown command), as with today's and phase 3's Rust.
+const P4_CMDS = new Set(["front_send", "front_answer", "front_choose", "front_more", "front_undo", "front_stop", "speak_now", "click_consent",
+  "files_add_folder", "files_remove_folder", "job_stop", "job_answer", "job_continue", "job_undo", "job_open_output", "job_reveal_output", "job_show_folder", "job_list"]);
+const frontEvent = (payload) => window.__h?.["brenda://front"]?.({ payload });
+const jobEvent = (payload) => window.__h?.["brenda://job"]?.({ payload });
+const frontMac = {
+  ready: false, checkEvery: q.get("check") === "1" || q.get("what") === "check", clickConsent: q.get("click") === "1",
+  added: (q.get("added") ?? "").split(",").map((x) => x.trim()).filter(Boolean).slice(0, 10),
+  live: null, pending: null, jobs: [], seq: 0, timers: [],
+};
+const frontMacNow = () => ({
+  ready: frontMac.ready, checkEvery: frontMac.checkEvery, clickConsent: frontMac.clickConsent,
+  folders: [
+    ...["desktop", "documents", "downloads"].map((k) => ({ source: "named", name: k, title: k[0].toUpperCase() + k.slice(1), state: macAct.folders?.[k] ?? "granted" })),
+    ...frontMac.added.map((n) => ({ source: "added", name: `/Users/ada/${n}`, title: n, state: "granted" })),
+  ],
+  apps: 214, jobLive: frontMac.live?.id ?? null,
+});
+const hex32 = () => Array.from({ length: 32 }, () => "0123456789abcdef"[Math.floor(Math.random() * 16)]).join("");
+const p4Later = (fn, ms) => { const t = setTimeout(fn, ms); frontMac.timers.push(t); return t; };
+const JOB_ID = "9b2f1c3e-6d4a-4e8b-9f10-2a3b4c5d6e7f";
+const OP_ID = "4c1e8d2a-7b3f-4a9e-8c21-5d6e7f8a9b0c";
+const ymd = (daysAgo) => new Date(Date.now() - daysAgo * 86_400_000).toISOString().slice(0, 10);
+const Q3 = [{ name: "Q3 deck.key", where: "Downloads", when: ymd(4) }, { name: "Q3 deck (final).key", where: "Documents", when: ymd(9) }, { name: "Q3 board deck.pptx", where: "Desktop", when: ymd(40) }];
+const INVOICES = [{ name: "Invoice 0412 Acme.pdf", where: "Downloads", when: ymd(5) }, { name: "Invoice 0409 Acme.pdf", where: "Downloads", when: ymd(6) }, { name: "Invoice 0402 Northwind.pdf", where: "Documents", when: ymd(7) }];
+/** &cmd= on front-doing and front-done: other routine things matched on the Mac (the brief's everyday table). */
+const P4_CMDS_SAID = {
+  arrange: { heard: "Put Slack and Figma side by side", kind: "arrange", label: "Slack and Figma", say: "Putting Slack and Figma side by side.", done: "Slack and Figma are side by side." },
+  volume: { heard: "Turn the volume down", kind: "volume", label: "Volume", say: "Volume down.", done: "Volume down." },
+  hide: { heard: "Hide everything", kind: "hide_all", label: "Everything", say: "Hiding everything.", done: "Hid everything." },
+  quit: { heard: "Quit Spotify", kind: "quit_app", label: "Spotify", say: "Quitting Spotify.", done: "Quit Spotify." },
+};
+const p4Cmd = Object.hasOwn(P4_CMDS_SAID, q.get("cmd") ?? "") ? P4_CMDS_SAID[q.get("cmd")] : null;
+/** A routine thing done on the Mac: matched, then done after `ms`. */
+function p4Routine(nonce, { kind, label, say, done, undo = false, ms = 450, others = null, show = false }) {
+  frontEvent({ phase: "matched", nonce, actions: [{ kind, label }], say, risk: "routine", speech: null });
+  console.log(`front: ${kind} ${label} (mocked; Rust: direct macOS action, never a click)`);
+  return new Promise((resolve) => {
+    if (state === "front-doing" && q.get("finish") !== "1") { frontMac.pending = { nonce, resolve, line: done }; return; }
+    p4Later(() => { frontEvent({ phase: "done", nonce, line: done, undo, others, show }); resolve({ v: 1, nonce, lane: "mac", outcome: "done", summary: done.replace(/\.$/, ""), undo }); }, ms);
+  });
+}
+/** What one of the front desk's asks does with the answer (Rust's `front_answer`). */
+let p4Ask = null;
+/** The Files helper's run (Rust's jobs.rs): progress up to `stopAt`, then what the state shows. */
+function p4FilesJob(nonce, job, { of = 64, stopAt = of, then = "done", note = "Moving files" } = {}) {
+  frontMac.live = { ...job, phase: "running" };
+  jobEvent({ phase: "started", job, say: `${job.doing}.`, speech: null });
+  console.log(`job: ${job.helper} "${job.title}" (mocked; Rust: fixed file actions, every change in the Undo manifest)`);
+  const started = Date.now();
+  const tick = (k) => {
+    if (!frontMac.live || frontMac.live.id !== job.id) return;
+    jobEvent({ phase: "progress", jobId: job.id, done: k, of, note: k < 4 ? "Looking at Desktop" : k < 8 ? "Making folders" : note });
+    if (k < stopAt) return p4Later(() => tick(k + 1), then === "hold" || then === "paused" ? 120 : 45);
+    if (then === "hold") return;
+    if (then === "paused") return p4Later(() => jobEvent({ phase: "paused", jobId: job.id, why: q.get("why") === "offline" ? "offline" : "sleep" }), 600);
+    // The question as this build's Rust words it from the files themselves (review, 16 October 2026), never the model's.
+    if (then === "ask") return p4Later(() => { frontMac.live.phase = "asking"; jobEvent({ phase: "ask", jobId: job.id, ask: { kind: "delete", question: "Move 41 screenshots to the Trash?", because: "“Screenshot 2026-09-02 at 09.14.22.png”, “Screenshot 2026-09-02 at 09.20.05.png” and 39 more. You can put them back from the Trash.", count: 41 }, waitMs: 600_000 }); }, 500);
+    if (then === "failed") return p4Later(() => { frontMac.live = null; jobEvent({ phase: "failed", jobId: job.id, code: "AI_FAILED", message: "I couldn't reach Claude just now", undo: true }); }, 500);
+    p4Later(() => p4JobDone(job, started), 500);
+  };
+  p4Later(() => tick(0), 700);
+  return { v: 1, nonce, lane: "job", job };
+}
+function p4JobDone(job, started) {
+  frontMac.live = null;
+  const outputs = q.get("outputs") === "1" ? [{ i: 0, name: "Desktop summary.md", folder: "Desktop" }] : [];
+  const summary = job.title.startsWith("Clear") ? "I moved 41 screenshots to the Trash." : outputs.length ? "I organised your Desktop and wrote a summary of what's where." : "I moved 64 files into 7 folders on your Desktop.";
+  frontMac.jobs.unshift({ id: job.id, helper: job.helper, title: job.title, doing: job.doing, state: "done", at: Date.now(), undo: true });
+  // `folder`: Show in Finder for the folder the job changed (review, 16 October 2026).
+  jobEvent({ phase: "done", jobId: job.id, summary, speech: null, outputs, undo: true, ms: Math.max(12_000, Date.now() - started), folder: "Desktop" });
+}
+/**
+ * ?state=job-replay: `brenda://job` events exactly as the helpers build's Rust emitted them, set on `window.__replay` by a
+ * test driver before the request ({ events, undo }: the integrator's run of the real Files runner and fileops on a temp
+ * Desktop, 16 October 2026), played 120 ms apart (&every=ms); Undo answers with that run's own counts. Without them, nothing runs.
+ */
+function p4Replay(nonce) {
+  const r = window.__replay;
+  const events = Array.isArray(r?.events) ? r.events : [];
+  const started = events.find((e) => e?.phase === "started");
+  if (!started) return { v: 1, nonce, lane: "chat" };
+  const job = started.job;
+  frontMac.live = { ...job, phase: "running" };
+  console.log(`job: replaying ${events.length} events from Rust's own run (no file here is touched)`);
+  events.forEach((e, i) => p4Later(() => {
+    if (e.phase === "done" || e.phase === "stopped" || e.phase === "failed") {
+      frontMac.live = null;
+      frontMac.jobs.unshift({ id: job.id, helper: job.helper, title: job.title, doing: job.doing, state: e.phase, at: Date.now(), undo: e.undo === true });
+    }
+    jobEvent(e);
+  }, 300 + i * Math.max(20, Number(q.get("every") ?? 120) || 120)));
+  return { v: 1, nonce, lane: "job", job };
+}
+/** The Mac operator (phase 2's computer use as a job, helpers contract I): steps a second apart. */
+function p4Operator(nonce) {
+  const job = { id: OP_ID, helper: "operator", title: "Fill in this form", doing: "Filling in the form", taskId: OP_ID };
+  frontMac.live = { ...job, phase: "running" };
+  jobEvent({ phase: "started", job, say: "Filling in the form.", speech: null });
+  console.log("companion: doing (Rust; the Mac operator on claude-sonnet-5-5)");
+  const notes = ["Clicking the Name field…", "Typing your name…", "Clicking the Email field…", "Typing your email…"];
+  const step = (n) => {
+    if (!frontMac.live) return;
+    frontMac.opStep = n;
+    actEvent({ phase: "running", taskId: OP_ID, step: n, note: notes[(n - 1) % notes.length] });
+    // Brenda in front and the front couldn't be handed back (helpers contract L.1): it pauses once, at step 2.
+    if (state === "operator-paused-own" && n === 2 && !frontMac.opResumed) { frontMac.opPaused = true; return p4Later(() => actEvent({ phase: "paused", taskId: OP_ID, why: "own_front" }), 900); }
+    if (n < 4) p4Later(() => step(n + 1), 1000);
+  };
+  frontMac.opResume = () => { frontMac.opPaused = false; frontMac.opResumed = true; console.log("act_continue (mocked; Rust: the next front() hands back to the app the person clicked)"); p4Later(() => step((frontMac.opStep ?? 1) + 1), 300); };
+  p4Later(() => step(1), 600);
+  return { v: 1, nonce, lane: "job", job };
+}
+/** The front desk's answer to the words this state sends (Rust's `front_send`). */
+async function p4FrontSend(args) {
+  const nonce = hex32();
+  const text = String(args.text ?? "");
+  console.log("front_send", JSON.stringify({ lookId: args.lookId ?? null, text, preview: !!args.preview, check: !!args.check }));
+  await wait(140); // whisper is done; the matcher takes under 10 ms
+  if (!frontMac.ready) throw { status: 503, code: "FRONT_NOT_READY", message: "This needs a database update first." };
+  const routed = () => { frontEvent({ phase: "routing", nonce }); console.log("front: routing (Rust posts the words, never a picture, to the router: claude-haiku-5-5)"); };
+  if (state === "front-doing" || (state === "front-done" && q.get("undo") !== "1" && q.get("others") !== "2")) return p4Routine(nonce, p4Cmd ? { kind: p4Cmd.kind, label: p4Cmd.label, say: p4Cmd.say, done: p4Cmd.done } : { kind: "open_app", label: "Figma", say: "Opening Figma.", done: "Opened Figma." });
+  if (state === "front-done" && q.get("undo") === "1") return p4Routine(nonce, { kind: "screenshot", label: "Screenshot", say: "Taking a screenshot.", done: "Screenshot saved to your Desktop.", undo: true, ms: 700 });
+  if (state === "front-done" && q.get("others") === "2") {
+    routed(); await wait(700);
+    return p4Routine(nonce, { kind: "open_file", label: "invoice", say: "Looking for invoice.", done: "Opened Invoice 0412 Acme.pdf.", others: INVOICES.slice(1), ms: 500 });
+  }
+  if (state === "front-routing") { routed(); return new Promise(() => {}); }
+  if (state === "front-ask") {
+    const what = q.get("what") ?? "trash";
+    const A = {
+      trash: { kind: "empty_trash", label: "Trash", say: "Emptying the Trash.", ask: { question: "Empty the Trash for good?", because: "This can't be undone.", yes: "Empty the Trash" }, done: "The Trash is empty." },
+      wifi: { kind: "wifi", label: "Wi-Fi", say: "Turning Wi-Fi off.", ask: { question: "Turn off Wi-Fi?", because: "You'll lose your connection until it's back on.", yes: "Turn off Wi-Fi" }, done: "Wi-Fi is off." },
+      check: { kind: "open_app", label: "Figma", say: "Opening Figma.", ask: { question: "I'll open Figma.", because: "Do you want me to do this?", yes: "Yes, do it" }, done: "Opened Figma." },
+    }[what] ?? null;
+    if (!A) return {};
+    frontEvent({ phase: "matched", nonce, actions: [{ kind: A.kind, label: A.label }], say: A.say, risk: "ask" });
+    await wait(60);
+    frontEvent({ phase: "ask", nonce, ...A.ask, waitMs: 60_000 });
+    return new Promise((resolve) => { p4Ask = { nonce, resolve, A }; });
+  }
+  if (state === "front-choose") {
+    routed(); await wait(600);
+    frontEvent({ phase: "matched", nonce, actions: [{ kind: "open_file", label: "Q3" }], say: "Looking for Q3.", risk: "routine" });
+    await wait(400);
+    frontEvent({ phase: "choose", nonce, question: "Which one?", options: Q3 });
+    return new Promise((resolve) => { p4Ask = { nonce, resolve, choose: Q3 }; });
+  }
+  if (state === "front-found") {
+    routed(); await wait(600);
+    frontEvent({ phase: "matched", nonce, actions: [{ kind: "find_files", label: "invoice" }], say: "Looking for invoice.", risk: "routine" });
+    await wait(400);
+    frontEvent({ phase: "found", nonce, title: "Found 3 files", options: INVOICES });
+    return { v: 1, nonce, lane: "mac", outcome: "done", summary: "Found 3 files", undo: false };
+  }
+  if (state === "front-refused") {
+    const why = q.get("why") ?? "app_none";
+    // busy: the page tries once more by itself ("Claude is busy, trying again…"), then shows Try again; failed: Try again.
+    if (why === "no_credit" || why === "busy" || why === "failed") { routed(); await wait(500); return { v: 1, nonce, lane: "refused", error: why === "no_credit" ? { code: "AI_NO_CREDIT", message: "Boredroom's AI account has run out of credit. Simple things like “open Figma” still work." } : why === "failed" ? { code: "AI_FAILED", message: "I couldn't reach Claude just now. Try again in a moment." } : { code: "AI_BUSY", message: "Claude is busy just now. Try again in a moment." } }; }
+    if (why === "offline") { routed(); await wait(900); frontEvent({ phase: "refused", nonce, ...Front.refusedModel({ why: "offline" }) }); return { v: 1, nonce, lane: "refused", error: { code: "FRONT_OFFLINE", message: "I can't reach Boredroom right now." } }; }
+    const R = { app_none: ["open_app", "Figmaa", { why: "app_none", name: "Figmaa" }], not_open: ["quit_app", "Spotify", { why: "app_not_open", app: "Spotify" }], installer: ["open_app", "Install macOS", { why: "installer", app: "Install macOS" }],
+      accessibility: ["minimise", "Figma", { why: "accessibility" }], screen: ["screenshot", "Screenshot", { why: "screen" }], secure: ["type_text", "", { why: "secure" }], nothing_selected: ["copy_selection", "", { why: "nothing_selected" }],
+      no_box: ["type_text", "", { why: "no_box" }], finder_denied: ["empty_trash", "Trash", { why: "finder_denied" }], wifi_admin: ["wifi", "Wi-Fi", { why: "wifi_admin" }] }[why] ?? ["open_app", "Figmaa", { why: "app_none", name: "Figmaa" }];
+    frontEvent({ phase: "matched", nonce, actions: [{ kind: R[0], label: R[1] }], say: "", risk: why === "finder_denied" || why === "wifi_admin" ? "ask" : "routine" });
+    await wait(200);
+    // Rust sends its own words (S.5) and, for a missing permission, what to turn on.
+    const m = Front.refusedModel(R[2]);
+    frontEvent({ phase: "refused", nonce, title: m.title, sub: m.sub, ...(m.enable ? { enable: { which: m.enable.which } } : {}) });
+    return { v: 1, nonce, lane: "mac", outcome: "refused" };
+  }
+  if (state === "job-replay") { routed(); await wait(650); return p4Replay(nonce); }
+  if (p4?.startsWith("job-")) {
+    routed(); await wait(650);
+    if (state === "job-ask") return p4FilesJob(nonce, { id: JOB_ID, helper: "files", title: "Clear out old screenshots", doing: "Clearing out old screenshots" }, { of: 41, stopAt: 41, then: "ask", note: "Looking at Desktop" });
+    const then = { "job-running": q.get("finish") === "1" ? "done" : "hold", "job-paused": "paused", "job-failed": "failed", "job-stopped": "hold" }[state] ?? "done";
+    return p4FilesJob(nonce, { id: JOB_ID, helper: "files", title: "Organise your Desktop", doing: "Organising your Desktop" }, { of: 64, stopAt: then === "hold" || then === "paused" ? 23 : then === "failed" ? 30 : 64, then });
+  }
+  if (state === "consent-click" || p4?.startsWith("operator-")) {
+    routed(); await wait(650);
+    if (!frontMac.clickConsent) { frontEvent({ phase: "consent", nonce }); return new Promise((resolve) => { p4Ask = { nonce, resolve, consent: true }; }); }
+    return p4Operator(nonce);
+  }
+  if (state === "reply-quick" || state === "reply-confirm") {
+    routed(); await wait(800);
+    const until = new Date(Date.now() + 600_000).toISOString();
+    const result = state === "reply-quick"
+      ? { reply: "Reminder set for Mon 12 Oct, 15:00: call Ada.", spoken: "Reminder set for three o'clock: call Ada.", engine: "claude", actions: [{ kind: "reminder", summary: "Reminder set for Mon 12 Oct, 15:00: call Ada", undo: { token: "preview-undo-reminder", until } }], proposals: [], note: null, tainted: false }
+      : { reply: "Here's the message to Ada.", spoken: "Here's the message to Ada. Do you want me to send it?", engine: "claude", actions: [], proposals: [{ kind: "confirm", token: "preview-token-456", summary: "Send to Ada: “I'm done”", tool: "send_message", readback: { to: ["Ada Obi"] } }], note: null, tainted: false };
+    return { v: 1, nonce, lane: "boredroom", result: withSpeech(result, "/api/orgs/company-a/assistant/chat") };
+  }
+  if (state === "look-think") {
+    const id = args.lookId;
+    lookEvent({ phase: "sending", lookId: id });
+    lookEvent({ phase: "say", lookId: id, text: "Let me look properly.", speech: null });
+    console.log("look: think harder (claude-opus-5-5), after the line");
+    await wait(900);
+    const sentences = ["That red badge means the export failed: the frame has an image Figma couldn't load.", "Re-link the image in the right-hand panel, then export again."];
+    for (const [i, sentence] of sentences.entries()) {
+      for (const piece of sentence.match(/\S+\s*/g) ?? []) { await wait(35); lookEvent({ phase: "text", lookId: id, d: piece }); }
+      if (i < sentences.length - 1) lookEvent({ phase: "text", lookId: id, d: " " });
+      lookEvent({ phase: "say", lookId: id, text: sentence, speech: null });
+    }
+    setTimeout(() => lookEvent({ phase: "held", lookId: id, until: Date.now() + 60_000 }), 30);
+    const full = sentences.join(" ");
+    return { v: 1, nonce, lane: "look", result: { reply: full, spoken: full, speech: null, engine: "claude", actions: [], proposals: [], note: null, tainted: true } };
+  }
+  return { v: 1, nonce, lane: "chat" };
+}
+async function p4Mock(cmd, args) {
+  if (binary < 4 || !p4) throw `Command ${cmd} not found`; // today's and phase 3's Rust have none of them
+  if (!["speak_now", "job_list"].includes(cmd)) console.log(cmd, JSON.stringify(args ?? {}));
+  if (cmd === "front_send") return p4FrontSend(args);
+  if (cmd === "speak_now") { console.log("speak_now (the Mac's own voice, at once)", args.text); speakingFeed.say(args.text); return; }
+  if (cmd === "front_stop") {
+    for (const t of frontMac.timers) clearTimeout(t);
+    const p = frontMac.pending; frontMac.pending = null;
+    if (p) { frontEvent({ phase: "refused", nonce: p.nonce, why: "stopped", title: "Stopped", sub: "What I did before that stays done." }); p.resolve({ v: 1, nonce: p.nonce, lane: "mac", outcome: "stopped" }); }
+    return;
+  }
+  if (cmd === "front_answer") {
+    const a = p4Ask; p4Ask = null;
+    if (!a || !a.A) return;
+    if (args.answer !== "yes") { frontEvent({ phase: "said_no", nonce: a.nonce, verdict: "no" }); return a.resolve({ v: 1, nonce: a.nonce, lane: "mac", outcome: "said_no" }); }
+    frontEvent({ phase: "doing", nonce: a.nonce, k: 1, of: 1, line: a.A.say });
+    console.log(`front: ${a.A.kind} (mocked, after the person's yes; Rust records it)`);
+    await wait(700);
+    frontEvent({ phase: "done", nonce: a.nonce, line: a.A.done, undo: false });
+    return a.resolve({ v: 1, nonce: a.nonce, lane: "mac", outcome: "done", summary: a.A.done.replace(/\.$/, "") });
+  }
+  if (cmd === "front_choose") {
+    const a = p4Ask; p4Ask = null;
+    if (!a?.choose) return;
+    if (args.index === null) { frontEvent({ phase: "said_no", nonce: a.nonce, verdict: "no" }); return a.resolve({ v: 1, nonce: a.nonce, lane: "mac", outcome: "said_no" }); }
+    const pick = a.choose[args.index];
+    frontEvent({ phase: "doing", nonce: a.nonce, k: 1, of: 1, line: `Opening ${pick.name}.` });
+    console.log(`open (mocked, Rust: NSWorkspace openURL): ~/${pick.where}/${pick.name}`);
+    await wait(400);
+    frontEvent({ phase: "done", nonce: a.nonce, line: `Opened ${pick.name}.` });
+    return a.resolve({ v: 1, nonce: a.nonce, lane: "mac", outcome: "done", summary: `Opened ${pick.name}` });
+  }
+  if (cmd === "front_more") { console.log(`${args.reveal ? "reveal" : "open"} (mocked; Rust re-checks the path): match ${args.index ?? "(the result)"}`); return; }
+  if (cmd === "front_undo") { await wait(300); console.log("undo (mocked): the screenshot went to the Trash, unchanged since"); return { ok: true, line: "Put the screenshot in the Trash." }; }
+  if (cmd === "click_consent") {
+    await wait(200);
+    frontMac.clickConsent = !!args.allow;
+    const a = p4Ask;
+    if (a?.consent) { p4Ask = null; if (args.allow) setTimeout(() => a.resolve(p4Operator(a.nonce)), 300); else a.resolve({ v: 1, nonce: a.nonce, lane: "mac", outcome: "said_no" }); }
+    return lookStatusNow();
+  }
+  if (cmd === "files_add_folder") { await wait(300); if (frontMac.added.length >= 10) throw { status: 0, code: "FILES_FOLDERS_FULL", message: "You can add up to 10 folders." }; frontMac.added.push("Clients"); console.log("files_add_folder (mocked; Rust: NSOpenPanel, folders only)"); return lookStatusNow(); }
+  if (cmd === "files_remove_folder") { frontMac.added = frontMac.added.filter((n) => `/Users/ada/${n}` !== args.name); return lookStatusNow(); }
+  if (cmd === "job_stop") {
+    for (const t of frontMac.timers) clearTimeout(t);
+    const live = frontMac.live; frontMac.live = null;
+    if (!live) return;
+    if (live.helper === "operator") return actEvent({ phase: "stopped", taskId: OP_ID, why: "button", step: 2, note: null });
+    frontMac.jobs.unshift({ id: live.id, helper: live.helper, title: live.title, doing: live.doing, state: "stopped", at: Date.now(), undo: true });
+    jobEvent({ phase: "stopped", jobId: live.id, why: "button", summary: "", undo: true });
+    return;
+  }
+  if (cmd === "job_answer") {
+    const live = frontMac.live;
+    if (!live || live.phase !== "asking") return;
+    if (args.answer !== "yes") { frontMac.live = null; jobEvent({ phase: "stopped", jobId: live.id, why: "said_no", undo: false }); return; }
+    live.phase = "running";
+    console.log("job: trash (mocked, after the person's yes for exactly those 41; Rust checks the refs' SHA-256)");
+    let k = 0;
+    const tick = () => { if (!frontMac.live) return; k += 7; jobEvent({ phase: "progress", jobId: live.id, done: Math.min(41, k), of: 41, note: "Moving to the Trash" }); if (k < 41) p4Later(tick, 150); else p4Later(() => p4JobDone(live, Date.now() - 14_000), 400); };
+    p4Later(tick, 200);
+    return;
+  }
+  if (cmd === "job_undo") {
+    await wait(600);
+    if (state === "job-replay" && window.__replay?.undo) { console.log("job_undo (replayed): Rust's own Undo of that run"); return window.__replay.undo; }
+    console.log("job_undo (mocked): every move reversed from the manifest"); return { restored: 64, skipped: 1 };
+  }
+  if (cmd === "job_open_output" || cmd === "job_reveal_output") { console.log(`${cmd} (mocked): output ${args.index}`); return; }
+  if (cmd === "job_show_folder") { console.log("job_show_folder (mocked; Rust opens the folder the job changed, re-checked, in Finder)"); return; }
+  if (cmd === "job_continue") return;
+  if (cmd === "job_list") {
+    const live = frontMac.live ? [{ id: frontMac.live.id, helper: frontMac.live.helper, title: frontMac.live.title, doing: frontMac.live.doing, state: frontMac.live.phase, at: Date.now() - 12_000, undo: false }] : [];
+    const past = state === "jobs-recent" && !frontMac.jobs.length ? [
+      { id: "1a2b3c4d-0000-4000-8000-000000000001", helper: "files", title: "Organise your Desktop", doing: "Organising your Desktop", state: "done", at: Date.now() - 2 * 3_600_000, undo: true },
+      { id: "1a2b3c4d-0000-4000-8000-000000000002", helper: "files", title: "Rename these photos by date", doing: "Renaming photos by date", state: "stopped", at: Date.now() - 26 * 3_600_000, undo: true },
+      { id: "1a2b3c4d-0000-4000-8000-000000000003", helper: "operator", title: "Fill in this form", doing: "Filling in the form", state: "done", at: Date.now() - 4 * 86_400_000, undo: false },
+    ] : frontMac.jobs;
+    return [...live, ...past].slice(0, 4);
+  }
+}
 window.__TAURI__ = {
   core: { invoke: async (cmd, args = {}) => {
     const path = String(args.path ?? "");
+    // Brenda and her helpers (helpers contract Q.4): the v4 Rust's commands, or (outside &binary=4) none.
+    if (P4_CMDS.has(cmd)) return p4Mock(cmd, args);
+    // A short line's natural-voice offer (M.2), and "Check with me before every task" (N.2), as the server answers them.
+    if (cmd === "api" && path.endsWith("/assistant/front/line")) { console.log("front/line", args.body?.text); return { speech: naturalMode ? { path: "/api/orgs/company-a/assistant/speech", token: "preview-line", text: args.body?.text ?? "" } : null }; }
+    if (cmd === "api" && path.endsWith("/brenda/mac-permission")) { await wait(400); console.log("mac-permission", args.method, JSON.stringify(args.body ?? null)); if (q.get("save") === "error") throw { status: 503, code: "FRONT_NOT_READY", message: "This needs a database update first." }; return { ready: true, checkEveryTask: args.body?.checkEveryTask === true, impersonated: false }; }
+    if (P3_CMDS.has(cmd)) return p3Mock(cmd, args);
+    // Phase 2 (contract C.7): the v2 Rust's other commands, or (without v2) none, as today's Rust.
+    if (V2_CMDS.has(cmd)) return v2Mock(cmd, args);
+    // Screen help (contract A.5, C.8): the nine look commands, or (outside the look- states) none, as today's Rust.
+    if (LOOK_CMDS.has(cmd)) return lookMock(cmd, args);
+    // Phase 3 (companion2 A.6): what this Mac tells Boredroom, for the person alone (logged, never stored here).
+    if (cmd === "api" && path.endsWith("/screen-help/mac")) { console.log("screen-help/mac", JSON.stringify(args.body)); return { saved: true, ready: true }; }
+    if (cmd === "api" && path.endsWith("/screen-help/me")) {
+      await wait(400);
+      console.log("screen-help/me", args.method, args.body ?? "");
+      return { ready: true, neverLook: args.method === "PUT" ? args.body?.neverLook ?? [] : [{ name: "Mail", bundleId: "com.apple.mail" }], offAt: null };
+    }
     if (cmd === "api" && /\/calls\/now(\?|$)/.test(path)) {
       // One ringer (fix review, 10 October 2026): the poll says whether the notch rings aloud (?ring=1 or ?ring=0).
       const rings = /[?&]ring=1\b/.test(path);
@@ -610,6 +1530,11 @@ window.__TAURI__ = {
       // What the notch sends back (acting without asking: an earlier answer's `tainted` rides on it).
       console.log("chat sent", JSON.stringify(args.body?.messages));
       const said = args.body?.messages?.at(-1)?.content ?? "";
+      // "Use my screen" (review, 12 October 2026): asked in her ordinary box for something on the Mac.
+      if (state === "reply-use-screen-off") return withSpeech({ reply: "I can open Figma for you once I can see your screen.", spoken: "I can open Figma for you once I can see your screen.", engine: "claude", actions: [], proposals: [], note: null, tainted: false, screen: true }, path);
+      if (lookState === "use-screen") return withSpeech({ reply: "I'll need to see your screen for that.", spoken: "I'll need to see your screen for that.", engine: "claude", actions: [], proposals: [], note: null, tainted: false, screen: true }, path);
+      // Show me (contract C.6): an answer that points inside Boredroom.
+      if (lookState === "point") return withSpeech({ reply: "Press **New task** at the top right of Tasks, then pick who it's for.", spoken: "Press New task at the top right of Tasks, then pick who it's for.", engine: "claude", actions: [], proposals: [{ kind: "open", label: "New task", href: "/app/company-a/tasks?point=tasks-new" }], note: null, ...(act ? { act } : {}) }, path);
       const r = state === "readback" ? replies.readback : state === "still-asking" ? replies.still : /give|assign/i.test(said) ? replies.confirm : autoStates.includes(state) ? replies.auto() : /add|start/i.test(said) ? replies.offer : replies.reply;
       return withSpeech({ ...r, ...(act ? { act } : {}) }, path);
     }
@@ -619,6 +1544,7 @@ window.__TAURI__ = {
       const done = (actions) => (naturalMode ? withSpeech({ actions, error: null, spoken: actions.map((x) => x.summary).join(". ") }, path) : { actions, error: null });
       if (args.body?.token === "preview-token-456") return done([{ kind: "message", summary: "Sent Ada Obi a message" }]);
       if (args.body?.token === "preview-token-789") return done([{ kind: "message", summary: "Sent a message to #Design" }]);
+      if (args.body?.token === "preview-look-token") return done([{ kind: "todo", summary: "Added “Export the onboarding frame as PDF” to your to-dos" }]);
       if (args.body?.token === "preview-token-790") return done([{ kind: "follow_up", summary: "Asked 8 people's assistants about “Landing page”" }]);
       return done([{ kind: "todo", summary: "Created “Review the brand deck” for Ada" }]);
     }
@@ -690,7 +1616,7 @@ window.__TAURI__ = {
 try { if (!q.has("keep")) localStorage.clear(); } catch {}
 // The follow-up states open their card first, not the morning briefing (?state=waiting shows the briefing).
 // So do a routine's card and the readback (phase 7a); quiet hours keep the opener for when they end.
-try { if (asks[state] || answers[state] || state === "batch" || mentions[state] || itemNotes[state] || autoStates.includes(state) || routineCardShown || state === "readback") localStorage.setItem(`brenda-briefing:company-a:${new Date().toDateString()}`, "1"); } catch {}
+try { if (asks[state] || answers[state] || state === "batch" || mentions[state] || itemNotes[state] || autoStates.includes(state) || routineCardShown || state === "readback" || lookState) localStorage.setItem(`brenda-briefing:company-a:${new Date().toDateString()}`, "1"); } catch {}
 // The notifications states (9 October 2026) open what arrived, not the morning opener; nor do the two regressions.
 try { if (nState) localStorage.setItem(`brenda-briefing:khronocorp:${new Date().toDateString()}`, "1"); if (bug) localStorage.setItem(`brenda-briefing:company-a:${new Date().toDateString()}`, "1"); } catch {}
 </script>
@@ -698,6 +1624,10 @@ try { if (nState) localStorage.setItem(`brenda-briefing:khronocorp:${new Date().
 <script src="src/notify-cards.js"></script>
 <script src="src/notify.js"></script>
 <script src="src/natural-voice.js"></script>
+<script src="src/look.js"></script>
+<script src="src/act.js"></script>
+<script src="src/help.js"></script>
+<script src="src/front.js"></script>
 <script src="src/main.js"></script>
 <script>
 // Preview only: feed the cursor the way Rust does, in stage coordinates, and open the card named by ?card=.
@@ -716,9 +1646,11 @@ const speakingFeed = (() => {
     pending = every = end = null;
     if (live) { live = false; voiceEvent(interrupted ? { phase: "spoken", interrupted: true } : { phase: "spoken" }); }
   }
+  let endsAt = 0, extra = 0;
   function speakFor(ms, synthetic) {
     stop(true);
     live = true;
+    endsAt = Date.now() + ms;
     if (synthetic) voiceEvent({ phase: "speaking", synthetic: true });
     else { voiceEvent({ phase: "speaking", level: 0 }); every = setInterval(() => voiceEvent({ phase: "speaking", level: level() }), 30); }
     end = setTimeout(() => stop(false), ms);
@@ -727,7 +1659,15 @@ const speakingFeed = (() => {
     speakFor,
     stop: () => stop(true),
     /** The mock `speak`: a moment to render, then about as long as the words take to say. */
-    say(text) { stop(true); pending = setTimeout(() => speakFor(Math.min(8000, 600 + String(text ?? "").length * 55), q.has("synthetic")), 700); },
+    say(text) { stop(true); extra = 0; pending = setTimeout(() => speakFor(Math.min(8000, 600 + String(text ?? "").length * 55) + extra, q.has("synthetic")), 700); },
+    /** The mock `speak_queue` (phase 2): the first cuts off and starts, the rest follow on (one `spoken` at the end). */
+    queue(text, first) {
+      const ms = Math.min(8000, String(text ?? "").length * 55);
+      if (first || (!live && !pending)) return this.say(text);
+      if (pending) { extra += ms; return; }
+      const left = Math.max(0, endsAt - Date.now());
+      clearTimeout(end); endsAt = Date.now() + left + ms; end = setTimeout(() => stop(false), left + ms);
+    },
   };
 })();
 let talkEvery = null;
@@ -843,6 +1783,219 @@ if (state === "call-incoming-busy") setTimeout(() => { if (card?.kind === "follo
 if (nState === "n-bar" && ["one", "two", "many", "timer"].includes(barKind)) setTimeout(() => closeCard(), 1500);
 if (bug === "throw") setTimeout(pointAtBar, 1500);
 if (bug === "empty") setTimeout(pointAtBar, 500);
+// Screen help (contract C.8): what each look- state does once the first poll has answered, as Rust and a person would.
+// Control+Command held: Rust's `looking`, the look's recording's levels (with `lookId`), the picture as the hold starts;
+// let go after 1.6 s: `released`, then the words written out and heard.
+function lookHold({ release = true, heard = "What is this, and why is it red?", pointer = lookPointer() } = {}) {
+  const id = lookId(); lookMac.held = id;
+  // &mic=off|needs-model|busy: the keys are held but the microphone didn't open (Rust's `looking` says why).
+  const mic = q.get("mic");
+  if (mic) {
+    lookEvent({ phase: "looking", lookId: id, source: "keys", app: { name: "Figma" }, listening: false, mic });
+    setTimeout(() => lookPreview(id, "keys", pointer), 350);
+    if (release) setTimeout(() => lookEvent({ phase: "released", lookId: id }), 1600);
+    return id;
+  }
+  lookEvent({ phase: "looking", lookId: id, source: "keys", app: { name: "Figma" }, listening: true });
+  const levels = setInterval(() => lookVoice_({ phase: "listening", level: speech(), lookId: id }), 70);
+  setTimeout(() => lookPreview(id, "keys", pointer), 350);
+  if (!release) return id;
+  setTimeout(() => {
+    clearInterval(levels);
+    lookEvent({ phase: "released", lookId: id });
+    lookVoice_({ phase: "transcribing", lookId: id });
+    setTimeout(() => lookVoice_({ phase: "heard", text: heard, lookId: id }), 900);
+  }, 1600);
+  return id;
+}
+/** Runs `then` once the preview shows with Send pressable (or after 6 s). */
+function whenLookReady(then) {
+  const started = Date.now();
+  const tick = setInterval(() => {
+    const ready = card?.kind === "look" && card.phase === "preview" && !document.getElementById("lsend")?.disabled;
+    if (ready || Date.now() - started > 6000) { clearInterval(tick); then(); }
+  }, 100);
+}
+function lookPreviewState() {
+  if (q.get("source") === "button") lookPressed(); else lookHold();
+  const typed = q.get("typed");
+  if (typed) setTimeout(() => { const f = document.getElementById("lq"); if (f) { f.value = typed; f.dispatchEvent(new Event("input", { bubbles: true })); f.focus(); } }, q.get("source") === "button" ? 700 : 2900);
+}
+// Phase 2 (contract C.7): Control+Command held on a v2 Rust: `looking` (her companion listening), the recording's levels,
+// then let go: `released`, the words written out and heard; the page sends them at once.
+function lookHoldV2({ heard = "What is this, and why is it red?", release = true } = {}) {
+  const id = lookId(); lookMac.held = id;
+  const app = { name: q.has("desktop") ? "Finder" : "Figma" };
+  const over = q.has("desktop") ? { desktop: true } : {}; // Rust: `desktop: true` beside the app, over the desktop
+  const mic = q.get("mic");
+  if (mic) {
+    lookEvent({ phase: "looking", lookId: id, source: "keys", app, listening: false, mic, ...over });
+    if (release) setTimeout(() => lookEvent({ phase: "released", lookId: id }), 1600);
+    const typed = q.get("typed");
+    if (typed) setTimeout(() => { const f = document.getElementById("lq"); if (f) { f.value = typed; f.dispatchEvent(new Event("input", { bubbles: true })); f.form?.requestSubmit(); } }, 2400);
+    return id;
+  }
+  console.log("companion: listening (Rust)");
+  lookEvent({ phase: "looking", lookId: id, source: "keys", app, listening: true, ...over });
+  const levels = setInterval(() => lookVoice_({ phase: "listening", level: speech(), lookId: id }), 70);
+  if (!release) return id;
+  setTimeout(() => {
+    clearInterval(levels);
+    console.log("companion: thinking (Rust)");
+    lookEvent({ phase: "released", lookId: id });
+    lookVoice_({ phase: "transcribing", lookId: id });
+    setTimeout(() => lookVoice_({ phase: "heard", text: heard, lookId: id }), 900);
+  }, 1600);
+  return id;
+}
+/** Runs `then` once the card is `kind` in `phase` (or after 12 s). */
+function whenCard(kind, phase, then) {
+  const started = Date.now();
+  const tick = setInterval(() => { if ((card?.kind === kind && card.phase === phase) || Date.now() - started > 12_000) { clearInterval(tick); then(); } }, 100);
+}
+/** An answer said with her keys while the question waits (Rust: no picture; the words are the answer's). */
+function sayAnswer(text, verdict) {
+  const t = macAct.task;
+  if (!t) return;
+  voiceEvent({ phase: "listening", level: 0, answer: true, taskId: t.id });
+  const every = setInterval(() => voiceEvent({ phase: "listening", level: speech(), answer: true, taskId: t.id }), 70);
+  setTimeout(() => {
+    clearInterval(every);
+    voiceEvent({ phase: "transcribing", answer: true, taskId: t.id });
+    setTimeout(() => {
+      actEvent({ phase: "heard", taskId: t.id, text, verdict });
+      setTimeout(() => {
+        if (verdict !== "no" || q.get("answer") !== "new-request") return answerFlow(t, verdict);
+        // No, with four words or more: Rust treats them as a new request (contract 0.5), with the pictures still held.
+        clearLater(); macAct.task = null;
+        actEvent({ phase: "said_no", taskId: t.id, verdict: "no", newRequest: true });
+        // Rust sends the words itself with the pictures still held; its answer comes as the look's `result`.
+        setTimeout(() => { const id = `f0110a${String(++lookMac.seq).padStart(10, "0")}`; v2Send("Only rename the first three", { lookId: id }).then((result) => lookEvent({ phase: "result", lookId: id, result })); }, 900);
+      }, 1000);
+    }, 800);
+  }, 1300);
+}
+function phase2Run() {
+  // &idle: the v2 Rust with nothing happening (for ?card=drop and the like).
+  if (q.has("idle")) return;
+  // Today's binary (&old): a look as phase 1 has it, and nothing new anywhere.
+  if (!v2) return lookHold();
+  const reason = q.get("reason");
+  if (lookState === "instant") return lookHoldV2({ heard: q.get("heard") ?? "What is this, and why is it red?" });
+  if (lookState === "followup") {
+    lookHoldV2();
+    return whenCard("voice", "reply", () => setTimeout(() => {
+      const a = document.getElementById("ask");
+      if (!a || !a.form?.hasAttribute("data-follow")) return console.log("follow-up: the box is an ordinary chat box now");
+      a.value = "Which one is PDF?"; a.dispatchEvent(new Event("input", { bubbles: true })); a.form.requestSubmit();
+    }, Number(q.get("expire")) > 0 ? Number(q.get("expire")) * 1000 + 1500 : 2500));
+  }
+  if (lookState === "consent-update") return lookEvent({ phase: "refused", reason: "consent_update" });
+  if (lookState === "settings") return window.__h?.["brenda://look-settings"]?.({ payload: null });
+  // ?state=look-use-screen (review, 12 October 2026): a request typed in her ordinary box, the reply's "Use my screen", and
+  // (&press) the press, which starts a look carrying the same words.
+  if (lookState === "use-screen") {
+    setTimeout(() => ask("Rename the files I've selected to Invoice-01 to Invoice-06", { spoken: false }), 600);
+    if (q.has("press")) whenCard("voice", "reply", () => setTimeout(() => pressNotch('[data-act="use-screen"]'), 1500));
+    return;
+  }
+  if (lookState === "preview-on") { lookHold(); return whenLookReady(() => pressNotch('[data-act="look-send"]')); }
+  if (taskState === "consent-mac" || taskState === "accessibility") {
+    window.__h?.["brenda://act-consent"]?.({ payload: { which: "mac" } });
+    if (taskState === "accessibility") setTimeout(() => { pressNotch('[data-act="help-turn-on"]'); setTimeout(() => pressNotch('[data-act="help-go"]'), 1200); }, 900);
+    return;
+  }
+  if (taskState === "consent-files" || taskState === "finder") {
+    window.__h?.["brenda://act-consent"]?.({ payload: { which: "files" } });
+    if (taskState === "finder") setTimeout(() => pressNotch('[data-act="help-turn-on"]'), 900);
+    return;
+  }
+  if (taskState === "refused") return actEvent({ phase: "refused", reason: reason ?? "use_mac_off", app: reason === "forbidden_app" ? "1Password" : "Figma", n: 20, pages: 212, message: reason === "file_failed" ? "Word couldn't be made from that." : reason === "ACT_LIMIT" ? "You've used today's 150 requests to Brenda, so Brenda can't carry on. Try again tomorrow." : "" });
+  if (taskState === "confirm-voice") {
+    lookHoldV2({ heard: "Remind me to export this as a PDF tomorrow" });
+    return whenCard("voice", "reply", () => setTimeout(() => {
+      voiceEvent({ phase: "listening", level: 0, answer: true, forConfirm: "preview-look-tok" });
+      setTimeout(() => { voiceEvent({ phase: "transcribing", answer: true, forConfirm: "preview-look-tok" }); setTimeout(() => actEvent({ phase: "heard", forConfirm: "preview-look-tok", text: "Yes please", verdict: "yes" }), 700); }, 1200);
+    }, 1500));
+  }
+  // A request said with her keys, then the proposal; then the answer this state shows.
+  const kind = fileTask ? "file" : "screen";
+  lookHoldV2({ heard: q.get("heard") ?? (q.get("risky") === "1" && kind === "screen" ? "Reply to Ada that the deck is ready and send it" : REQUEST[kind]) });
+  const answer = q.get("answer") ?? (taskState === "asking" ? null : "button");
+  whenCard("act", "asking", () => setTimeout(() => {
+    if (answer === "button") pressNotch('[data-act="act-yes"]');
+    if (answer === "voice-yes") sayAnswer("Yes, I need you to do this", "yes");
+    if (answer === "voice-no") sayAnswer("No", "no");
+    if (answer === "voice-unclear") sayAnswer("Maybe later", "unclear");
+    if (answer === "new-request") sayAnswer("No, only rename the first three", "no");
+    if (answer === "typed-yes") { const a = document.getElementById("aans"); if (a) { a.focus(); a.value = "yes please"; a.form?.requestSubmit(); } }
+  }, 1500));
+  // The pointer rests on the doing or working bar: its card opens.
+  if (taskState === "doing" || taskState === "working") setTimeout(pointAtBar, 9000);
+}
+/** The helpers states' runs (helpers contract Q.4; see the comment at the top). */
+function phase4Run() {
+  const hold = (heard) => lookHoldV2({ heard });
+  // The pointer rests on the strip: a Files job's card opens (F.1).
+  const openJob = (ms) => setTimeout(pointAtBar, ms);
+  if (state === "front-done" && q.get("open") === "1") setTimeout(() => pressNotch('[data-act="front-others"]'), 6000);
+  if (state === "front-doing" || state === "front-done") return hold(q.get("undo") === "1" ? "Take a screenshot of this" : q.get("others") === "2" ? "Find last week's invoice and open it" : p4Cmd?.heard ?? "Open Figma");
+  if (state === "front-routing") return hold("Remind me at 3 to call Ada");
+  if (state === "front-ask") return hold({ trash: "Empty the Trash", wifi: "Turn off Wi-Fi", check: "Open Figma" }[q.get("what") ?? "trash"] ?? "Empty the Trash");
+  if (state === "front-choose") return hold("Open the Q3 deck");
+  if (state === "front-found") return hold("Find my invoices");
+  if (state === "front-refused") {
+    const w = q.get("why") ?? "app_none";
+    return hold({ app_none: "Open Figmaa", not_open: "Quit Spotify", installer: "Open Install macOS", accessibility: "Minimise Figma", screen: "Take a screenshot", secure: "Type my password here", nothing_selected: "Copy that", no_box: "Write running late here", finder_denied: "Empty the Trash", wifi_admin: "Turn off Wi-Fi", offline: "Organise my desktop", no_credit: "Organise my desktop", busy: "Organise my desktop" }[w] ?? "Open Figmaa");
+  }
+  if (state === "job-running") { hold("Organise my desktop"); if (!q.has("bar")) openJob(4500); return; }
+  if (state === "job-paused") { hold("Organise my desktop"); if (!q.has("bar")) openJob(5500); return; }
+  if (state === "job-ask" || state === "job-done" || state === "job-failed") return hold(state === "job-ask" ? "Delete my old screenshots" : "Organise my desktop");
+  if (state === "job-stopped") { hold("Organise my desktop"); openJob(4500); return whenCard("job", "running", () => setTimeout(() => pressNotch('[data-act="job-stop"]'), 1200)); }
+  if (state === "job-undone") { hold("Organise my desktop"); return whenCard("job", "done", () => setTimeout(() => pressNotch('[data-act="job-undo"]'), 1200)); }
+  if (state === "jobs-recent") return binary >= 4 ? openRecentJobs() : window.__h?.["brenda://look-settings"]?.({ payload: null });
+  if (state === "job-replay") return hold("Organise my desktop");
+  if (state === "consent-click" || state === "operator-doing" || state === "operator-paused-own") {
+    hold("Fill in this form");
+    if (state !== "consent-click") { whenCard("front", "consent", () => setTimeout(() => pressNotch('[data-act="consent-yes"]'), 900)); setTimeout(pointAtBar, 6500); }
+    // &carry=1: the own-window pause's Carry on is pressed, and the steps go on (helpers contract L.1, I.5).
+    if (state === "operator-paused-own" && q.get("carry") === "1") setTimeout(() => whenCard("act", "paused", () => setTimeout(() => pressNotch('[data-act="act-continue"]'), 1200)), 7000);
+    return;
+  }
+  if (state === "settings-v4") {
+    window.__h?.["brenda://look-settings"]?.({ payload: null });
+    // &scroll=end scrolls the switches to the new rows (the list scrolls inside the card).
+    if (q.get("scroll") === "end") setTimeout(() => { const l = document.querySelector(".sw-list"); if (l) l.scrollTop = l.scrollHeight; }, 600);
+    if (q.has("press")) setTimeout(() => pressNotch('[data-key="check-every"]'), 900);
+    return;
+  }
+  if (state === "look-think") return hold("What does this error mean?");
+  if (state === "reply-quick") return hold("Remind me at 3 to call Ada");
+  if (state === "reply-confirm") return hold("Message Ada that I'm done");
+}
+if (lookState) setTimeout(() => {
+  if (p4) return phase4Run();
+  if (p3) return phase3Run();
+  if (taskState || V2_LOOKS.includes(lookState)) return phase2Run();
+  const reason = q.get("reason");
+  if (lookState === "consent") return window.__h?.["brenda://look-consent"]?.({ payload: null });
+  if (lookState === "permission") { lookPressed(); if (q.get("permission") === "denied" && q.get("asked") !== "1") setTimeout(() => pressNotch('[data-act="look-continue"]'), 900); return; }
+  // The setup card's Turn this on (phase 3: the tray's "Turn on screen help…" opens the setup card).
+  if (lookState === "on") { window.__h?.["brenda://look-consent"]?.({ payload: null }); return setTimeout(() => pressNotch('[data-act="help-turn-on"]'), 900); }
+  if (lookState === "holding") return lookHold({ release: false });
+  if (lookState === "preview" || lookState === "call") return lookPreviewState();
+  if (lookState === "sending" || lookState === "reply") { lookHold(); return whenLookReady(() => pressNotch('[data-act="look-send"]')); }
+  if (lookState === "timeout") { const id = lookHold(); return setTimeout(() => lookEvent({ phase: "cancelled", lookId: id, reason: "timeout" }), 4000); }
+  if (lookState === "off") { if (q.get("from") === "tray") setTimeout(() => { lookMac.on = false; window.__h?.["brenda://look-status"]?.({ payload: lookStatusNow() }); }, 600); return; }
+  if (lookState === "point") return ask("How do I start a task for someone?", { spoken: false }).then(() => { if (q.has("press")) setTimeout(() => pressNotch('[data-act="look-show"]'), 1200); });
+  if (lookState === "refused") {
+    if (reason === "send") { lookHold(); return whenLookReady(() => pressNotch('[data-act="look-send"]')); }
+    if (reason === "error") return lookEvent({ phase: "error", message: q.get("message") ?? "That window is too big to send." });
+    const src = q.get("source") ?? "fixed";
+    const app = reason === "never_look" ? (src === "workspace" ? "Notion" : src === "you" ? "Mail" : "1Password") : "Figma";
+    return lookEvent({ phase: "refused", reason: reason ?? "no_window", app: { name: app }, ...(reason === "never_look" ? { source: src } : {}) });
+  }
+}, 900);
 // ?typed=: words in the ask box of whatever card is open (the timer card opens first for ?state=timer|paused).
 if (q.get("typed")) setTimeout(() => {
   if (["timer", "paused"].includes(state) && card?.kind !== "home") openCard({ kind: "home" });

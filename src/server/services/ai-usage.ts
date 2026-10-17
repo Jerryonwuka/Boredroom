@@ -21,6 +21,9 @@ import { withSystem, withUser, withWorker } from "@/server/db";
 import type { OrgContext } from "@/server/lib/api";
 import { forbidden } from "@/server/lib/errors";
 import { forget0037, isMissingSchema, schema0037Ready } from "@/server/lib/schema-0037";
+import { forget0057, schema0057Ready } from "@/server/lib/schema-0057";
+import { forget0058, schema0058Ready } from "@/server/lib/schema-0058";
+import { schema0060Ready } from "@/server/lib/schema-0060";
 import { addDays, localMidnight, todayLocal } from "@/server/lib/time";
 
 /** Per person per day (owner decision, 8 October 2026). Counted in the organisation's own day, from local midnight. */
@@ -132,11 +135,93 @@ export async function recordWorkspaceUsage(organisationId: string, e: UsageEntry
   } catch (err) { swallow(err); }
 }
 
+// ---- Screen help: what a look costs, with no workspace and no person ------------------------------------------------------
+
+/**
+ * Screen help on Brenda for Mac (owner decision 1, 11 October 2026: "the employer never sees it nor whether it is used";
+ * contract D.9). A look is one ordinary chat request in the person's ledger, recorded with recordUsage like any chat step,
+ * with the picture's tokens taken out of its input (`withoutImage`): owners see an ordinary request with ordinary-looking
+ * tokens. What the picture really cost goes to `look_usage_daily` (migration 0057), per day (UTC) and model only: no
+ * workspace, no person, the worker alone reads or writes it. There is no look-specific rate limit either (it would be a
+ * per-person record of looks).
+ */
+export function withoutImage(usage: ModelUsage, imageTokens: number): ModelUsage {
+  if (!usage) return usage;
+  const take = Math.max(0, Math.round(Number(imageTokens) || 0));
+  const input = typeof usage.input_tokens === "number" && Number.isFinite(usage.input_tokens) ? usage.input_tokens : 0;
+  return { ...usage, input_tokens: Math.max(0, input - take) };
+}
+
+/**
+ * One model call of a look, added to today's (UTC) row for its model: `looks` +1 on the look's first step, `steps` +1,
+ * the picture's tokens and the API's own counts. Through the worker; never throws; nothing before 0057.
+ */
+export async function recordLookUsage(e: { model: string; usage: ModelUsage; imageTokens: number; first: boolean }): Promise<void> {
+  try {
+    const model = String(e.model ?? "").trim().slice(0, 100) || "unknown";
+    const u = e.usage ?? {};
+    await withWorker(async (db) => {
+      if (!(await schema0057Ready(db))) return;
+      await db.query(
+        `INSERT INTO look_usage_daily(day, model, looks, steps, image_tokens, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens)
+         VALUES ((now() AT TIME ZONE 'UTC')::date, $1, $2, 1, $3, $4, $5, $6, $7)
+         ON CONFLICT (day, model) DO UPDATE SET looks = look_usage_daily.looks + EXCLUDED.looks, steps = look_usage_daily.steps + 1,
+           image_tokens = look_usage_daily.image_tokens + EXCLUDED.image_tokens, input_tokens = look_usage_daily.input_tokens + EXCLUDED.input_tokens,
+           output_tokens = look_usage_daily.output_tokens + EXCLUDED.output_tokens, cache_read_tokens = look_usage_daily.cache_read_tokens + EXCLUDED.cache_read_tokens,
+           cache_write_tokens = look_usage_daily.cache_write_tokens + EXCLUDED.cache_write_tokens`,
+        [model, e.first ? 1 : 0, tokens(e.imageTokens), tokens(u.input_tokens), tokens(u.output_tokens), tokens(u.cache_read_input_tokens), tokens(u.cache_creation_input_tokens)]);
+    });
+  } catch (err) {
+    if (isMissingSchema(err)) { forget0057(); return; }
+    console.warn(`[ai-usage] could not record a look's cost: ${(err as { code?: string })?.code ?? "error"}`);
+  }
+}
+
+// ---- Brenda for Mac, phase 2: what tasks cost, with no workspace and no person --------------------------------------------
+
+/**
+ * Tasks on the person's Mac (owner request, 12 October 2026; contract 0b.13, D.10): a task's units (a screen task 1 per 2
+ * steps, a file job 1 per 25,000 tokens) are kept on the person's own task row and counted in their daily limit by
+ * aiAllowance; no `ai_usage` row is ever written for a step or a file call, so owners see nothing per person. What a
+ * task really cost goes to `act_usage_daily` (migration 0058), per day (UTC), model and kind only, through the worker.
+ * `first`: the task's first model call (tasks +1). Never throws; nothing before 0058.
+ */
+// Brenda and her helpers (owner brief, 12 October 2026; decision 8: no helper allowance during the pilot, measure costs for
+// a month): the front desk's router, quick looks, the Files helper and the Mac operator are counted here too, by kind,
+// with no workspace and no person. Migration 0060 widens the kinds; before it those rows are skipped (as tasks' were
+// before 0058).
+export type ActUsageKind = "screen" | "file" | "router" | "look_now" | "files" | "operator";
+const NEW_KINDS: ReadonlySet<ActUsageKind> = new Set(["router", "look_now", "files", "operator"]);
+
+export async function recordActUsage(e: { model: string; kind: ActUsageKind; usage: ModelUsage; imageTokens?: number; first: boolean }): Promise<void> {
+  try {
+    const model = String(e.model ?? "").trim().slice(0, 100) || "unknown";
+    const u = e.usage ?? {};
+    await withWorker(async (db) => {
+      if (!(await schema0058Ready(db))) return;
+      if (NEW_KINDS.has(e.kind) && !(await schema0060Ready(db))) return;
+      await db.query(
+        `INSERT INTO act_usage_daily(day, model, kind, tasks, steps, image_tokens, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens)
+         VALUES ((now() AT TIME ZONE 'UTC')::date, $1, $2, $3, 1, $4, $5, $6, $7, $8)
+         ON CONFLICT (day, model, kind) DO UPDATE SET tasks = act_usage_daily.tasks + EXCLUDED.tasks, steps = act_usage_daily.steps + 1,
+           image_tokens = act_usage_daily.image_tokens + EXCLUDED.image_tokens, input_tokens = act_usage_daily.input_tokens + EXCLUDED.input_tokens,
+           output_tokens = act_usage_daily.output_tokens + EXCLUDED.output_tokens, cache_read_tokens = act_usage_daily.cache_read_tokens + EXCLUDED.cache_read_tokens,
+           cache_write_tokens = act_usage_daily.cache_write_tokens + EXCLUDED.cache_write_tokens`,
+        [model, (["screen", "file", "router", "look_now", "files", "operator"] as const).includes(e.kind) ? e.kind : "screen", e.first ? 1 : 0, tokens(e.imageTokens), tokens(u.input_tokens), tokens(u.output_tokens), tokens(u.cache_read_input_tokens), tokens(u.cache_creation_input_tokens)]);
+    });
+  } catch (err) {
+    if (isMissingSchema(err)) { forget0058(); return; }
+    console.warn(`[ai-usage] could not record a task's cost: ${(err as { code?: string })?.code ?? "error"}`);
+  }
+}
+
 export type Allowance = { ready: boolean; used: number; limit: number; remaining: number; resetsAt: string };
 
 /**
  * Requests today: the distinct request ids of the person's rows for chat and the to-do planner since the organisation's
  * local midnight; `resetsAt` is the next local midnight. Before 0037 nothing is counted (`ready: false`).
+ * Plus, once 0058 is applied (phase 2, owner request 12 October 2026; contract D.10), the units of the person's own tasks
+ * on their Mac that they said yes to today, read as the person from their own rows (owners never read them).
  */
 export async function aiAllowance(ctx: OrgContext): Promise<Allowance> {
   const tz = ctx.org.timezone;
@@ -147,16 +232,40 @@ export async function aiAllowance(ctx: OrgContext): Promise<Allowance> {
   try {
     return await withUser(ctx.user.profileId, async (db) => {
       if (!(await schema0037Ready(db))) return none;
+      const since = localMidnight(today, tz).toISOString();
       const r = await db.one<{ used: number }>(
         `SELECT count(DISTINCT request_id)::int AS used FROM ai_usage
          WHERE organisation_id = $1 AND membership_id = $2 AND purpose = ANY($3::text[]) AND created_at >= $4::timestamptz`,
-        [ctx.org.id, ctx.membership.id, [...LIMITED_PURPOSES], localMidnight(today, tz).toISOString()]);
-      return { ready: true, used: r.used, limit, remaining: Math.max(0, limit - r.used), resetsAt };
+        [ctx.org.id, ctx.membership.id, [...LIMITED_PURPOSES], since]);
+      const tasks = await taskUnitsToday(db, ctx, since);
+      const used = r.used + tasks;
+      return { ready: true, used, limit, remaining: Math.max(0, limit - used), resetsAt };
     });
   } catch (err) {
     if (!isMissingSchema(err)) throw err;
     forget0037();
     return none;
+  }
+}
+
+/**
+ * The units of the person's own tasks they said yes to since `since` (0 before 0058, or when the read fails). Read from
+ * `assistant_task_units`, which the person's Forget never touches (review, 12 October 2026: deleting today's tasks reset
+ * the limit when the units were read from the tasks themselves).
+ */
+async function taskUnitsToday(db: Parameters<Parameters<typeof withUser>[1]>[0], ctx: OrgContext, since: string): Promise<number> {
+  try {
+    if (!(await schema0058Ready(db))) return 0;
+    await db.query("SAVEPOINT act_units");
+    const t = await db.one<{ units: number }>(
+      `SELECT COALESCE(sum(units), 0)::int AS units FROM assistant_task_units WHERE organisation_id = $1 AND membership_id = $2 AND confirmed_at >= $3::timestamptz`,
+      [ctx.org.id, ctx.membership.id, since]);
+    await db.query("RELEASE SAVEPOINT act_units");
+    return Number(t.units) || 0;
+  } catch (err) {
+    await db.query("ROLLBACK TO SAVEPOINT act_units").catch(() => undefined);
+    if (isMissingSchema(err)) forget0058();
+    return 0;
   }
 }
 

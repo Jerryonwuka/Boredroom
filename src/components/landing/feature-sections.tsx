@@ -5,6 +5,8 @@ import { BrendaHomeFrame } from "@/components/landing/hero-frame";
 import { CallCard } from "@/components/landing/panels";
 import { CommitmentMock, FollowUpMock, NotchMock, RecapMock } from "@/components/landing/assistant-mocks";
 import { SectionTitle, WRAP, arrive } from "@/components/landing/parts";
+import { SectionLinks } from "@/components/landing/section-links";
+import type { MarketingPath } from "@/lib/marketing/registry";
 import { cn } from "@/lib/utils";
 
 /**
@@ -18,6 +20,10 @@ import { cn } from "@/lib/utils";
  * Where the text runs longer than its picture (#assistants, #loops, #desktop), the picture sticks under the nav while
  * the text scrolls past and leaves with the end of the section (owner request, 10 October 2026: "let the card stick to
  * the top of that section … do similar for the second"; globals.css §6, "Sticky pictures"). Stacked on phones.
+ *
+ * SEO analysis (owner request, 17 October 2026): the headings carry the searched words where the positioning holds
+ * (the Action Document's heading table: "an AI assistant for every person", "follow-ups", "commitments", "consent-based
+ * AI meeting notes", "Brenda desktop"), and sections link to the pages that cover them in full (SectionLinks).
  */
 
 const SECTION = "py-20 sm:py-28";
@@ -48,7 +54,7 @@ function PointGrid({ points, className }: { points: Point[]; className?: string 
  * A two-column section's text: the 40px tool square, the title, a lead (arriving in that order), then points split by
  * hairlines, each arriving as it scrolls into view (the text is longer than a screen next to a sticky picture).
  */
-function Opener({ id, icon, title, lead, points }: { id: string; icon: React.ReactNode; title: string; lead: string; points: [string, React.ReactNode][] }) {
+function Opener({ id, icon, title, lead, points, links }: { id: string; icon: React.ReactNode; title: string; lead: string; points: [string, React.ReactNode][]; links?: { href: MarketingPath; label: string }[] }) {
   return (
     <div className="min-w-0">
       <div data-lp-arrive>
@@ -66,6 +72,7 @@ function Opener({ id, icon, title, lead, points }: { id: string; icon: React.Rea
           </li>
         ))}
       </ul>
+      {links ? <SectionLinks align="left" className="mt-5" links={links} /> : null}
     </div>
   );
 }
@@ -86,53 +93,59 @@ const HOW: Point[] = [
   { icon: Repeat, t: "Routines, on your terms", d: <>&ldquo;Every weekday at 9, brief me.&rdquo; &ldquo;Every Friday at 4pm, send me what&apos;s still owed.&rdquo; Preview a routine, then switch it on. Quiet hours hold everything until they end.</> },
 ];
 
-/** #how: Brenda works for each person. Her home in today's app frame, then what she does. */
+/** #how: Brenda, an AI assistant for every person. Her home in today's app frame, then what she does. */
 export function HowSection() {
   return (
     <section id="how" aria-labelledby="how-title" className={SECTION}>
       <div className={WRAP}>
-        <SectionTitle id="how-title" icon={<BrendaGlyph aria-hidden />} title="Brenda works for each person"
+        <SectionTitle id="how-title" icon={<BrendaGlyph aria-hidden />} title="Brenda, an AI assistant for every person on the team"
           sub="Everyone names theirs and picks her colour. She knows their day, reminds them, drafts with them and does things for them, with their permission." />
         <div className="mt-14"><BrendaHomeFrame /></div>
         <PointGrid className="mt-3" points={HOW} />
         <p className="mt-6 text-center text-sm font-normal text-secondary">Tell her how you like things done, in your own words, and she follows it. Only you see that list.</p>
+        <SectionLinks className="mt-4" links={[{ href: "/features/ai-assistant", label: "How Brenda works as an AI assistant for teams" }]} />
       </div>
     </section>
   );
 }
 
-/** #assistants: the assistants do the chasing. Text left, the follow-up exchange right. */
+/** #assistants: AI assistants answer follow-ups for you. Text left, the follow-up exchange right. */
 export function AssistantsSection() {
   return (
     <section id="assistants" aria-labelledby="assistants-title" className={SECTION}>
       <div className={cn(WRAP, "grid items-center gap-12 md:grid-cols-2 lg:gap-16")}>
-        <Opener id="assistants-title" icon={<MessageSquareReply aria-hidden />} title="The assistants do the chasing"
+        <Opener id="assistants-title" icon={<MessageSquareReply aria-hidden />} title="How AI assistants answer follow-ups for you"
           lead="Ask yours what Ben is working on. Ben's Brenda answers from his work, and asks Ben once if it can't."
           points={[
             ["Follow-ups, answered from real work.", "Ben's Brenda shares only what you could already see, never his to-dos, day plan, documents, messages or chats with her."],
             ["Messages and requests, passed on.", <>&ldquo;Tell Ada&apos;s assistant the client moved the deadline.&rdquo; &ldquo;Ask Ada&apos;s assistant to add Review pricing to her to-dos.&rdquo; Nothing lands on Ada&apos;s list until she accepts.</>],
             ["Ask any assistant in Messages.", <>Put @ before your assistant&apos;s name in a thread and it answers there. Ask &ldquo;@Ben&apos;s Brenda, where is the deck?&rdquo; and Ben&apos;s assistant answers in the thread.</>],
             ["A standup that writes itself.", "At the time the lead sets, Brenda drafts each person's update from their own work. Nothing is posted until they press Post. The lead gets one rollup, and nobody is chased."],
-          ]} />
+          ]}
+          links={[{ href: "/blog/asynchronous-standup", label: "How to run an async standup" }]} />
         <StickyPicture><FollowUpMock /></StickyPicture>
       </div>
     </section>
   );
 }
 
-/** #loops: promises don't get lost in the chat. The noted commitment left, text right. */
+/** #loops: commitments and follow-ups that don't get lost in chat. The noted commitment left, text right. */
 export function LoopsSection() {
   return (
     <section id="loops" aria-labelledby="loops-title" className={SECTION}>
       <div className={cn(WRAP, "grid items-center gap-12 md:grid-cols-2 lg:gap-16")}>
         <div className="min-w-0 md:order-2">
-          <Opener id="loops-title" icon={<Handshake aria-hidden />} title="Promises don't get lost in the chat"
+          <Opener id="loops-title" icon={<Handshake aria-hidden />} title="Commitments and follow-ups that don't get lost in chat"
             lead="Brenda notices what people say they'll do, and puts it on their list only when they say yes."
             points={[
               ["Commitments.", "When the workspace switches it on, Brenda notes promises made in channels and team chats and asks each person whether to add them to their to-dos. Direct messages are never tracked."],
               ["Loose ends.", "Your own Brenda finds promises you made, things asked of you and things you asked of others that never became a to-do. Only you see them."],
               ["Blocked on whom.", "Mark a task blocked and name who it waits on. Their assistant brings them your question."],
               ["The end-of-day report.", "Every lead gets one, written from what they may see: decisions waiting on them, what changed since yesterday, hours and attendance. Nobody writes it, and nobody is scored."],
+            ]}
+            links={[
+              { href: "/blog/end-of-day-report", label: "What goes in an end-of-day report" },
+              { href: "/free-tools/end-of-day-report-generator", label: "Try the free end-of-day report generator" },
             ]} />
         </div>
         <StickyPicture className="md:order-1"><CommitmentMock /></StickyPicture>
@@ -148,12 +161,12 @@ const CALLS: Point[] = [
   { icon: CalendarX2, t: "Transcripts gone in 7 days", d: "Only the people on the call can read the transcript, and it is deleted 7 days after the recap." },
 ];
 
-/** #calls: calls, with Brenda's notes. The call and its recap side by side, then the four rules. */
+/** #calls: team calls with consent-based AI meeting notes. The call and its recap side by side, then the four rules. */
 export function CallsSection() {
   return (
     <section id="calls" aria-labelledby="calls-title" className={SECTION}>
       <div className={WRAP}>
-        <SectionTitle id="calls-title" icon={<Video aria-hidden />} title="Calls, with Brenda's notes"
+        <SectionTitle id="calls-title" icon={<Video aria-hidden />} title="Team calls with consent-based AI meeting notes"
           sub="Call anyone you can message, or ring the whole team from its channel, and share your screen. On every plan, ringing in the browser and in Brenda desktop." />
         <div className="mt-14 grid gap-3 md:grid-cols-[1.15fr_1fr]">
           <CallCard />
@@ -165,12 +178,12 @@ export function CallsSection() {
   );
 }
 
-/** #desktop: Brenda on your computer. Text left, the notch right. No download link exists, so none is offered. */
+/** #desktop: Brenda desktop, your AI assistant on your computer. Text left, the notch right. No download link exists, so none is offered. */
 export function DesktopSection() {
   return (
     <section id="desktop" aria-labelledby="desktop-title" className={SECTION}>
       <div className={cn(WRAP, "grid items-center gap-12 md:grid-cols-2 lg:gap-16")}>
-        <Opener id="desktop-title" icon={<Laptop aria-hidden />} title="Brenda on your computer"
+        <Opener id="desktop-title" icon={<Laptop aria-hidden />} title="Brenda desktop: your AI assistant on your computer"
           lead="Brenda desktop sits in your Mac's notch, or at the top of the screen on Windows: your timer, the morning briefing and notifications you can read at a glance, without opening a tab."
           points={[
             ["Hold to talk.", "Hold Option and Space (Alt and Space on Windows) and speak. Your words are turned into text on your computer, and no audio leaves it."],

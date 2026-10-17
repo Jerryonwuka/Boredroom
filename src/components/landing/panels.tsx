@@ -7,6 +7,7 @@ import { LiveIndicator } from "@/components/ui/status-dot";
 import { ToolSquare } from "@/components/ui/tool-tile";
 import { buttonVariants } from "@/components/ui/button";
 import { FAKE_BUTTON, Pane, arrive } from "@/components/landing/parts";
+import { LiveClock } from "@/components/marketing/live-clock";
 import { cn } from "@/lib/utils";
 
 const EVENTS: { icon: Icon3DName; name: string; text: string }[] = [
@@ -31,7 +32,7 @@ const CALLERS: { name: string; initials: string; ring: string }[] = [
  * As it arrives the two people join one after the other, then Brenda's notes chip appears (owner request, 10 October
  * 2026: "call tiles joining one by one"; arrival.tsx). The server renders the call in full.
  */
-export function CallCard({ className }: { className?: string }) {
+export function CallCard({ className, live = false }: { className?: string; /** The call's clock ticks while on screen (public pages v2, 17 October 2026); the home page's stays 12:08. */ live?: boolean }) {
   return (
     <Pane data-lp-arrive className={cn("lp-item p-5", className)}>
       <div role="img" aria-label="A call in #Design with Ada and Ben, 12 minutes in. Brenda is taking notes from both of them.">
@@ -39,7 +40,7 @@ export function CallCard({ className }: { className?: string }) {
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="min-w-0">
               <p className="truncate text-sm font-medium text-secondary">#Design</p>
-              <p className="mt-1 font-mono text-[32px] leading-none tabular-nums text-accent-text">12:08</p>
+              <p className="mt-1 font-mono text-[32px] leading-none tabular-nums text-accent-text">{live ? <LiveClock start={728} format="mm:ss" /> : "12:08"}</p>
             </div>
             <LiveIndicator className="mt-0.5">On a call</LiveIndicator>
           </div>
