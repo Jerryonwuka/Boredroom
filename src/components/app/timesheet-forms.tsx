@@ -160,7 +160,7 @@ export function ExportForm({ orgSlug, members, today, canExport = true, upgradeT
   const close = () => { if (!pending) setOpen(false); };
   return (
     <>
-      <Button size="sm" variant="secondary" onClick={() => setOpen(true)} aria-haspopup="dialog"><Download aria-hidden />Export CSV</Button>
+      <Button size="sm" variant="secondary" onClick={() => setOpen(true)} aria-haspopup="dialog" data-brenda-target="timesheets-export"><Download aria-hidden />Export CSV</Button>
       <Sheet open={open} onClose={close} size="sm" title="Export CSV"
         description="Confirmed time per person, day and task, the same totals as Timesheets."
         footer={<><Button variant="secondary" disabled={pending} onClick={close}>Cancel</Button><Button type="submit" form={formId} loading={pending}>{pending ? "Preparing…" : "Download CSV"}</Button></>}>

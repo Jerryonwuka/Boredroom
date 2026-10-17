@@ -31,13 +31,11 @@ export function naturalVoiceNote(reason: NaturalVoiceReason | null | undefined, 
     case "not_ready": return `Natural voices need a database update first. ${name} uses the computer voice until then.`;
     case "no_key": return `Natural voices aren't set up for this workspace yet, so ${name} uses the computer voice.`;
     case "key_rejected": return `ElevenLabs refused the workspace's key, so ${name} uses the computer voice. An owner or HR can check it in Settings.`;
-    case "person_cap": return `You've used today's natural voice, so ${name} uses the computer voice until tomorrow.`;
-    case "workspace_cap": return `Your workspace has used today's natural voice, so ${name} uses the computer voice until tomorrow.`;
-    // Boredroom's key only: every workspace on it shares the day (review, 9 October 2026).
-    case "shared_cap": return `Today's natural voice allowance, shared by the workspaces on Boredroom's key, is used up, so ${name} uses the computer voice until tomorrow.`;
+    // No limit of Boredroom's any more (owner request, 12 October 2026: "remove the limit for ElevenLabs voice"): only
+    // ElevenLabs' own refusal for credits stops the natural voice.
     case "allowance_low": {
       const date = formatResetDate(resetAt, timeZone);
-      return `This month's natural voice allowance is nearly used up, so ${name} uses the computer voice until it resets${date ? ` on ${date}` : ""}.`;
+      return `Your ElevenLabs plan has run out of credits, so ${name} uses the computer voice until it resets${date ? ` on ${date}` : ""}.`;
     }
     case "upstream": return `ElevenLabs didn't answer just now, so ${name} used the computer voice.`;
     default: return null; // voice_off, no_voice, null: no note
@@ -80,7 +78,7 @@ export const NATURAL_WORDS = {
   /** Settings → Brenda → Natural voice (owners and HR; contract F.3). */
   connection: {
     title: "Natural voice",
-    description: "Natural voices for everyone's assistant, from ElevenLabs. Without a key of your own, Boredroom's key is used within a daily share.",
+    description: "Natural voices for everyone's assistant, from ElevenLabs. Without a key of your own, Boredroom's key is used.",
     row: "Connection",
     connected: "Connected",
     boredroom: "Boredroom's key",
@@ -97,7 +95,7 @@ export const NATURAL_WORDS = {
     remove: "Remove",
     removing: "Removing…",
     removeTitle: "Remove the ElevenLabs key?",
-    removeDescription: "The stored key is deleted. Boredroom's key is used again within a daily share, or the computer voice when there isn't one.",
+    removeDescription: "The stored key is deleted. Boredroom's key is used again, or the computer voice when there isn't one.",
     removed: "Removed. The stored key is deleted.",
     success: "Connected. ElevenLabs answered.",
     tooShort: "That's too short to be an ElevenLabs API key.",
@@ -113,13 +111,11 @@ export const NATURAL_WORDS = {
     organisationKey: "Your workspace's key",
     boredroomKey: "Boredroom's key",
     workspace: "This workspace",
-    workspaceValue: (today: number, share: number, month: number) => `${formatCount(today)} today of a ${formatCount(share)} share; ${formatCount(month)} this month`,
-    person: "Each person",
-    personValue: (n: number) => `Up to ${formatCount(n)} characters a day`,
-    low: (date: string | null) => `Less than 10% of this month's allowance is left, so assistants use the computer voice until it resets${date ? ` on ${date}` : ""}.`,
+    /** Characters said aloud (no daily share or limit since the owner's request, 12 October 2026). */
+    workspaceValue: (today: number, month: number) => `${formatCount(today)} characters today; ${formatCount(month)} this month`,
+    low: (date: string | null) => `Your ElevenLabs plan has run out of credits, so assistants use the computer voice until it resets${date ? ` on ${date}` : ""}. A bigger plan in your ElevenLabs account fixes it sooner.`,
     /** Boredroom's key (its own usage and reset date are not shown to a workspace). */
-    lowShared: "Boredroom's key is nearly used up this month, so assistants use the computer voice until it resets. Add your workspace's own key to carry on.",
-    sharedFull: "Today's allowance on Boredroom's key, shared by the workspaces using it, is used up, so assistants use the computer voice until tomorrow. Add your workspace's own key to avoid this.",
+    lowShared: "Boredroom's ElevenLabs plan has run out of credits, so assistants use the computer voice until it resets. Add your workspace's own key to carry on.",
     historyBlocked: "This key can't delete what assistants say from its ElevenLabs history, so whoever holds that ElevenLabs account can read it there. Give the key History (read and write) access in ElevenLabs: Boredroom keeps trying for a day, so what was said meanwhile is deleted once it can.",
     /** What could not be deleted from the key's history in the last 30 days (fix review, 9 October 2026). */
     historyLeft: (n: number) => n === 1

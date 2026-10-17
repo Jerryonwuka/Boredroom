@@ -40,9 +40,17 @@ const COLS: { icon: Glyph; text: string; meta: string }[][] = [
   ],
 ];
 
+/**
+ * The wall is a picture of what the product records, so it is named for assistive technology (owner request,
+ * 17 October 2026: SEO analysis, A6: a meaningful picture hidden from screen readers gets a description); its moving,
+ * repeated rows stay hidden.
+ */
+const WEEK_LABEL = "A week of moments Boredroom records: clock-ins, timers started, follow-ups answered between assistants from real work, calls, work sent for a check and approved, the end-of-day report, a blocked task, a standup rollup, a promise noted and accepted, a timesheet correction, routines, call notes with action items, an export, and a lost connection marked uncertain and asked about.";
+
 export function Moments() {
   return (
     <div>
+      <div role="img" aria-label={WEEK_LABEL}>
       <div className="lp-mq-y grid h-[480px] gap-3 overflow-hidden sm:grid-cols-2 md:grid-cols-3" aria-hidden>
         {COLS.map((col, c) => (
           <div key={c} className={c === 2 ? "hidden md:block" : c === 1 ? "hidden sm:block" : undefined}>
@@ -62,6 +70,7 @@ export function Moments() {
             </ul>
           </div>
         ))}
+      </div>
       </div>
       <div className="mt-2 flex justify-end"><PauseMotion /></div>
     </div>

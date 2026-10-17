@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-look-drop-held"
+description = "Enables the look_drop_held command without any pre-configured scope."
+commands.allow = ["look_drop_held"]
+
+[[permission]]
+identifier = "deny-look-drop-held"
+description = "Denies the look_drop_held command without any pre-configured scope."
+commands.deny = ["look_drop_held"]

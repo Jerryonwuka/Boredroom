@@ -16,7 +16,12 @@
  * transform) to keep the word showing centred, gliding when its width changes.
  *
  * It flips only while it can be seen: not under reduced motion, not while the page's Pause is on, not in a hidden tab
- * and not off screen. The hero gives the h1 a fixed accessible name, so nothing is announced as the words change.
+ * and not off screen.
+ *
+ * The line sits in the page's visible h1 (owner request, 17 October 2026: SEO analysis, A3: the headline is the h1 itself,
+ * no hidden copy), so the heading's text must never change: built, the first word stays in the text, visually hidden,
+ * and the stacked words are drawn from `data-word` by CSS (`.lp-flip-word::before`, globals.css §6) in a cell hidden from
+ * assistive technology. Screen readers and crawlers read "team is doing" in every state; nothing is announced.
  */
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useInView, useReducedMotion } from "motion/react";
@@ -66,9 +71,10 @@ export function FlipLine({ prefix, words, interval = 3000 }: { prefix: string; w
       {built ? (
         <>
           {prefix}{" "}
-          <span ref={cell} className="lp-flip-cell">
+          <span className="sr-only">{words[0]}</span>
+          <span ref={cell} className="lp-flip-cell" aria-hidden>
             {words.map((w, i) => (
-              <span key={w} className="lp-flip-word" data-state={i === cur ? "on" : flips > 0 && i === prev ? "out" : undefined}>{w}</span>
+              <span key={w} className="lp-flip-word" data-word={w} data-state={i === cur ? "on" : flips > 0 && i === prev ? "out" : undefined} />
             ))}
           </span>
         </>

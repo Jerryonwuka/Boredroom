@@ -124,7 +124,7 @@ describe("before 0053, nobody has a natural voice and nothing throws", () => {
 
   it("the person's view: ready false, not_ready, the eight voices still listed", async () => {
     const v = await naturalVoiceView(ada);
-    expect(v).toMatchObject({ ready: false, chosen: null, available: false, reason: "not_ready", usedToday: 0, personDailyLimit: 2000 });
+    expect(v).toMatchObject({ ready: false, chosen: null, available: false, reason: "not_ready", usedToday: 0, personDailyLimit: 0 }); // no limit since the owner's request, 12 October 2026
     expect(v.voices).toHaveLength(8);
     as(a.employee);
     const r = await call(voiceGET, "GET", "/api/orgs/company-a/assistant/voice", ORG);
@@ -135,7 +135,7 @@ describe("before 0053, nobody has a natural voice and nothing throws", () => {
   it("the owners' status: ready false, the source from the server's key only", async () => {
     expect(await voiceConnectionStatus(owner)).toEqual({
       ready: false, source: "environment", hint: null, connectedAt: null, month: null, monthError: null, low: false,
-      workspaceMonth: 0, today: { used: 0, share: 0 }, sharedFull: false, historyBlocked: false, historyLeft: 0, personDailyLimit: 2000,
+      workspaceMonth: 0, today: { used: 0, share: 0 }, sharedFull: false, historyBlocked: false, historyLeft: 0, personDailyLimit: 0,
     });
     delete process.env.ELEVENLABS_API_KEY;
     expect((await voiceConnectionStatus(owner)).source).toBe("none");

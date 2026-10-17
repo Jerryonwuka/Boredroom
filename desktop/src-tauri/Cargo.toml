@@ -21,10 +21,30 @@ tauri-plugin-global-shortcut = "2"
 cpal = "0.18"
 whisper-rs = "0.16"
 futures-util = "0.3"
-tokio = { version = "1", features = ["fs", "io-util"] }
+tokio = { version = "1", features = ["fs", "io-util", "time", "sync"] }
+# Brenda Look (owner decisions, 11 October 2026): the picture is sent as base64 inside the request body, and that body is
+# handed to reqwest as `Bytes` that wipe themselves when reqwest lets go of them.
+base64 = "0.22"
+bytes = "1.9"
+# Brenda doing things when asked (owner rule, 12 October 2026): the plan's SHA-256 (what the person said yes to), typing
+# that never splits a character, and the spreadsheet reader's inflate. All three were already in Cargo.lock (no fetch).
+sha2 = "0.10"
+unicode-segmentation = "1"
+flate2 = "1"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
+# Brenda Look (owner decisions, 11 October 2026): the look keys (modifier state), the window list, the Screen Recording
+# check and the pictures (ScreenCaptureKit, macOS 14+, weak-linked in build.rs). Default features off, so
+# ScreenCaptureKit does not pull in AVFoundation or CoreMedia. Phase 2 (owner rule, 12 October 2026): CGEvent and
+# CGRemoteOperation for the events of a task the person said yes to, CGDisplayConfiguration for mirrored displays.
+# Accessibility is plain `extern "C"` in ax.rs (objc2-application-services is not cached).
+block2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSString", "NSData", "NSDictionary", "NSValue", "NSArray", "NSError", "NSProcessInfo", "NSObject", "NSGeometry"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSBitmapImageRep", "NSImageRep", "NSGraphics", "NSEvent", "NSWorkspace", "NSRunningApplication", "NSResponder", "objc2-core-graphics", "libc"] }
+objc2-core-foundation = { version = "0.3", default-features = false, features = ["std", "CFDictionary", "CFArray", "CFNumber", "CFString", "CFBase", "CFCGTypes"] }
+objc2-core-graphics = { version = "0.3", default-features = false, features = ["std", "CGEventSource", "CGEventTypes", "CGWindow", "CGSession", "CGImage", "CGContext", "CGBitmapContext", "CGColorSpace", "CGDirectDisplay", "CGGeometry", "CGColor", "CGError", "CGEvent", "CGRemoteOperation", "CGDisplayConfiguration", "libc"] }
+objc2-screen-capture-kit = { version = "=0.3.2", default-features = false, features = ["std", "SCShareableContent", "SCScreenshotManager", "SCStream", "block2", "objc2-core-graphics", "objc2-core-foundation", "libc"] }
 
 # whisper.cpp is far too slow unoptimised; keep it fast in development builds too.
 [profile.dev.package.whisper-rs-sys]

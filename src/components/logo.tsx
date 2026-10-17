@@ -13,21 +13,26 @@ const ART = {
   mark: { w: 72, h: 58, dark: "/brand/mark-on-dark.png", light: "/brand/mark-on-light.png" },
 };
 
-export function LogoArt({ variant = "full", height = 16, className }: { variant?: keyof typeof ART; height?: number; className?: string }) {
+/**
+ * `alt` and `loading` (owner request, 17 October 2026: SEO analysis, A6 and A10): the public site names the artwork
+ * "Boredroom" and loads a logo below the fold lazily; the app keeps its defaults (an empty alt inside a named link, eager).
+ * Only one of the two artworks is displayed at a time, so a reader meets the name once.
+ */
+export function LogoArt({ variant = "full", height = 16, className, alt = "", loading = "eager" }: { variant?: keyof typeof ART; height?: number; className?: string; alt?: string; loading?: "eager" | "lazy" }) {
   const art = ART[variant];
   const width = Math.round((art.w / art.h) * height);
   return (
     <span className={cn("inline-flex shrink-0", className)} style={{ height, width }}>
-      <Image src={art.dark} alt="" width={width} height={height} loading="eager" className="block h-full w-auto [html[data-theme=light]_&]:hidden" />
-      <Image src={art.light} alt="" width={width} height={height} loading="eager" className="hidden h-full w-auto [html[data-theme=light]_&]:block" />
+      <Image src={art.dark} alt={alt} width={width} height={height} loading={loading} className="block h-full w-auto [html[data-theme=light]_&]:hidden" />
+      <Image src={art.light} alt={alt} width={width} height={height} loading={loading} className="hidden h-full w-auto [html[data-theme=light]_&]:block" />
     </span>
   );
 }
 
-export function Logo({ className, href = "/", variant = "full", height = 16 }: { className?: string; href?: string; variant?: keyof typeof ART; height?: number }) {
+export function Logo({ className, href = "/", variant = "full", height = 16, alt, loading }: { className?: string; href?: string; variant?: keyof typeof ART; height?: number; alt?: string; loading?: "eager" | "lazy" }) {
   return (
     <Link href={href} className={cn("inline-flex items-center rounded-[6px]", className)} aria-label="Boredroom home">
-      <LogoArt variant={variant} height={height} />
+      <LogoArt variant={variant} height={height} alt={alt} loading={loading} />
     </Link>
   );
 }

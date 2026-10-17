@@ -28,12 +28,15 @@ const OFFLINE = "Cannot reach the server. Check your connection and try again; n
 /** The card that holds a set of rows: r16, the canvas colour, a hairline, rows split by hairlines. */
 export const SETTINGS_GROUP = "card-panel divide-y divide-border p-0";
 
-/** A section of a settings page: the section title (18/26 semibold) with an optional description and action, then its cards. */
-export function SettingsSection({ id, title, description, action, children, className }: { id?: string; title: ReactNode; description?: ReactNode; action?: ReactNode; children: ReactNode; className?: string }) {
+/**
+ * A section of a settings page: the section title (18/26 semibold) with an optional description and action, then its cards.
+ * `target`: the key Brenda points at (owner request, 11 October 2026: Brenda points; lib/brenda-targets), set on the section.
+ */
+export function SettingsSection({ id, title, description, action, children, className, target }: { id?: string; title: ReactNode; description?: ReactNode; action?: ReactNode; children: ReactNode; className?: string; target?: string }) {
   const auto = useId();
   const titleId = `${id ?? auto}-title`;
   return (
-    <section id={id} aria-labelledby={titleId} className={cn("scroll-mt-24", className)}>
+    <section id={id} aria-labelledby={titleId} data-brenda-target={target} className={cn("scroll-mt-24", className)}>
       <SectionTitle id={titleId} title={title} description={description} action={action} />
       {children}
     </section>

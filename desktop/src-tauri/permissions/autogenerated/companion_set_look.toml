@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-companion-set-look"
+description = "Enables the companion_set_look command without any pre-configured scope."
+commands.allow = ["companion_set_look"]
+
+[[permission]]
+identifier = "deny-companion-set-look"
+description = "Denies the companion_set_look command without any pre-configured scope."
+commands.deny = ["companion_set_look"]

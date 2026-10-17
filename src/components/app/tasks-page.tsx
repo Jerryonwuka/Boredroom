@@ -59,7 +59,7 @@ export function NewAssignedTask({ orgSlug, people, self, selfName, canKeep = tru
   return (
     <>
       {/* The Tasks page's one standout action for whoever hands out work (accent rules, 6 October 2026). */}
-      <Button size="sm" variant="accent" onClick={() => setOpen(true)} aria-haspopup="dialog"><Plus aria-hidden />New task</Button>
+      <Button size="sm" variant="accent" onClick={() => setOpen(true)} aria-haspopup="dialog" data-brenda-target="tasks-new"><Plus aria-hidden />New task</Button>
       {open ? <NewTaskSheet orgSlug={orgSlug} people={people} self={self} selfName={selfName} canKeep={canKeep} projects={projects} onClose={() => setOpen(false)} /> : null}
     </>
   );
@@ -168,7 +168,7 @@ export function TaskTable({ orgSlug, rows, viewer, mine, runningTaskId, people, 
   return (
     <>
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        <form role="search" className="w-full sm:w-72" onSubmit={(e) => e.preventDefault()}>
+        <form role="search" className="w-full sm:w-72" onSubmit={(e) => e.preventDefault()} data-brenda-target="tasks-search">
           <InputAdorned fieldSize="lg" type="search" aria-label="Search tasks" placeholder="Search tasks" autoComplete="off" value={query}
             prefix={<Search aria-hidden />} onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Escape" && query) { e.preventDefault(); setQuery(""); } }} />

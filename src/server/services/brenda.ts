@@ -96,6 +96,10 @@ export async function setBrendaPrefs(ctx: OrgContext, input: z.infer<typeof sett
  * 8 October 2026: personal assistants, phase 3; row-level security hides it from owners and HR as well). `auto` on a
  * row: it was done without a Confirm press because the person chose Act without asking (owner decision, 8 October 2026;
  * `detail.auto`), so the log reads "done without asking".
+ *
+ * Screen help (owner decision 1, 11 October 2026; contract D.8): every action's row now says only what kind of thing
+ * was done ("Added a to-do"), for owners and HR as for everyone, so nobody can tell a look's action from one asked for in
+ * words. The viewer's own rows read in their own fuller words (`detail.personalSummary`), as on their Activity page.
  */
 export async function brendaOverview(ctx: OrgContext) {
   return withUser(ctx.user.profileId, async (db) => {
@@ -103,13 +107,18 @@ export async function brendaOverview(ctx: OrgContext) {
     const [settings, prefs, actions] = await Promise.all([
       brendaSettings(db, ctx.org.id),
       brendaPrefs(db, ctx.membership.id),
-      db.query<{ id: string; tool: string; summary: string; outcome: string; source: string; auto: boolean; created_at: string; display_name: string }>(
-        `SELECT a.id, a.tool, a.summary, a.outcome, a.source, COALESCE((a.detail->>'auto') = 'true', false) AS auto, a.created_at, pr.display_name
+      db.query<{ id: string; tool: string; summary: string; outcome: string; source: string; auto: boolean; created_at: string; display_name: string; personal_summary: string | null; mine: boolean }>(
+        `SELECT a.id, a.tool, a.summary, a.outcome, a.source, COALESCE((a.detail->>'auto') = 'true', false) AS auto, a.created_at, pr.display_name,
+                a.detail->>'personalSummary' AS personal_summary, a.membership_id = $2 AS mine
          FROM brenda_actions a JOIN memberships m ON m.id = a.membership_id JOIN profiles pr ON pr.id = m.user_id
-         WHERE a.organisation_id = $1 AND a.source <> 'read' ${isOrg ? "" : "AND a.membership_id = $2"} ORDER BY a.created_at DESC LIMIT 30`, isOrg ? [ctx.org.id] : [ctx.org.id, ctx.membership.id]),
+         WHERE a.organisation_id = $1 AND a.source <> 'read' ${isOrg ? "" : "AND a.membership_id = $2"} ORDER BY a.created_at DESC LIMIT 30`, [ctx.org.id, ctx.membership.id]),
     ]);
-    // The row's own summary, never the person's fuller words; a row that did not go through says what she tried.
-    return { settings, prefs, actions: actions.map((a) => ({ ...a, summary: rowSummary(a, false) })) };
+    // Someone else's row: its own summary, never their fuller words; a row that did not go through says what she tried.
+    // The viewer's own: their own words, as their Activity page shows them.
+    return {
+      settings, prefs,
+      actions: actions.map(({ personal_summary, mine, ...a }) => ({ ...a, summary: rowSummary({ ...a, personalSummary: mine ? personal_summary : null }, mine) })),
+    };
   });
 }
 

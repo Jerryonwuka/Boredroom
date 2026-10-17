@@ -1,0 +1,192 @@
+<!doctype html>
+<!-- Layout preview of the companion by the pointer and the ring (owner request, 12 October 2026; contract A.4, A.5, B.4, C.7).
+     Not part of the app. It loads src/companion.html and src/ring.html in iframes the size Rust gives their windows, over a
+     fake desktop, and drives Companion.apply() and Ring.apply() with the messages Rust sends (contract B.4.2); here the page
+     moves the companion's frame as Rust moves its window (the spring, the flights). Nothing is captured, clicked or typed.
+     ?state=idle (she follows the mouse with Rust's spring, 30 points right of and below it, and fades after 3 s still; move
+     the mouse over the page), listening (the orange bars and live dot from a speech-like level), thinking (the dot circling
+     her), speaking (her eyes squash with the syllables), pointing (she flies to the Export button, the ring draws itself with
+     its label, holds 2.5 s, clears and she flies back, over and over), asking (the neutral pill: the plan, "Do you want me to
+     do this?", where to answer), doing (the orange arc turning, the step note changing each second, "Esc stops me" for the
+     first 5 s, and a tap ripple where each click lands), paused, done (a hop and the green check), sad, badge (a file job's
+     still orange dot). &look=orange,band,round her colour, visor and eyes (Brenda's white, bean and pill when left out);
+     &flip=x|y|xy as near the right or bottom edge; &reduced=1 as Rust's `motion { reduce }` (no spring, no circling, a still
+     arc, the ring drawn at once); &text=… the pill's first line.
+     The clean ring (owner report, 12 October 2026: "very wiggly lines, I don't like that"; companion2 contract E, J.4):
+     ?state=pointing&shape=box|circle (round the Export button, or round the small round Share button), &look=white|orange|
+     blue|yellow (her coat colour and its edge shade for the glow, as this build's Rust sends them), &bg=light|dark (the
+     app window under it), &reduced=1 (there at once, no breathing), &old (today's binary: no colour, so orange), &hold=1
+     (the ring stays, for a still picture). -->
+<html lang="en"><head><meta charset="utf-8"><title>Brenda companion preview</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #3b3b3b; font: 13px/1.4 -apple-system, "Helvetica Neue", Arial, sans-serif; }
+  /* A fake desktop: the menu bar strip, and a light app window with a toolbar, a list and an Export button. */
+  body::before { content: ""; position: fixed; inset: 0 0 auto; height: 28px; background: rgb(0 0 0 / .28); box-shadow: inset 0 -1px 0 rgb(255 255 255 / .075); }
+  .win { position: absolute; left: 60px; top: 70px; width: 640px; height: 360px; border-radius: 12px; background: #f4f4f6; box-shadow: 0 20px 50px -10px rgb(0 0 0 / .5), 0 0 0 .5px rgb(0 0 0 / .4); overflow: hidden; }
+  .bar { height: 40px; background: #e7e7ea; display: flex; align-items: center; gap: 8px; padding: 0 14px; border-bottom: 1px solid #d5d5da; }
+  .bar i { width: 11px; height: 11px; border-radius: 50%; background: #ff5f57; } .bar i:nth-child(2) { background: #febc2e; } .bar i:nth-child(3) { background: #28c840; }
+  .bar b { margin-left: 12px; color: #333; font-weight: 600; }
+  .side { position: absolute; left: 0; top: 41px; bottom: 0; width: 170px; background: #ececef; border-right: 1px solid #d5d5da; padding: 12px; box-sizing: border-box; color: #555; }
+  .side p { margin: 0 0 10px; }
+  .doc { position: absolute; left: 190px; top: 60px; right: 150px; color: #222; }
+  .doc p { margin: 0 0 8px; height: 10px; background: #dcdce1; border-radius: 4px; } .doc p:nth-child(2) { width: 80%; } .doc p:nth-child(4) { width: 60%; }
+  .export { position: absolute; right: 22px; top: 54px; width: 110px; height: 30px; border-radius: 7px; background: #2c2c2c; color: #fff; display: grid; place-items: center; font-weight: 600; }
+  .cursor { position: absolute; width: 18px; height: 26px; pointer-events: none; z-index: 5; }
+  iframe { position: absolute; border: 0; background: transparent; pointer-events: none; z-index: 4; }
+  #cmp { width: 320px; height: 112px; transition: opacity .12s; }
+  #ring { z-index: 3; }
+  .note { position: fixed; left: 12px; bottom: 10px; color: rgb(255 255 255 / .6); }
+  .share { position: absolute; right: 150px; top: 54px; width: 30px; height: 30px; border-radius: 50%; background: #2c2c2c; }
+  /* &bg=dark: a dark app window, so the ring is seen on both. */
+  body.dark .win { background: #1e1e20; } body.dark .bar { background: #2a2a2d; border-color: #3a3a3e; } body.dark .bar b { color: #ddd; }
+  body.dark .side { background: #232326; border-color: #3a3a3e; color: #aaa; } body.dark .doc p { background: #3a3a3f; }
+  body.dark .export, body.dark .share { background: #e9e9ec; color: #111; }
+</style></head>
+<body>
+<div class="win"><div class="bar"><i></i><i></i><i></i><b>Onboarding flow</b></div><div class="side"><p>Pages</p><p>Welcome</p><p>Sign up</p><p>Pick a plan</p></div><div class="doc"><p></p><p></p><p></p><p></p></div><div class="share" id="share"></div><div class="export" id="export">Export</div></div>
+<svg class="cursor" id="cursor" viewBox="0 0 18 26"><path d="M1 1 L1 20 L6 15.5 L9.5 24 L12.5 22.8 L9 14.5 L15.5 14.5 Z" fill="#000" stroke="#fff" stroke-width="1.4" stroke-linejoin="round"/></svg>
+<iframe id="cmp" src="src/companion.html" title="Brenda by the pointer" aria-hidden="true"></iframe>
+<iframe id="ring" src="src/ring.html" title="Brenda pointing" aria-hidden="true" style="display:none"></iframe>
+<p class="note" id="note"></p>
+<script>
+const q = new URLSearchParams(location.search);
+const state = q.get("state") || "idle";
+const reduce = q.get("reduced") === "1" || matchMedia("(prefers-reduced-motion: reduce)").matches;
+const flip = { x: /x/.test(q.get("flip") ?? ""), y: /y/.test(q.get("flip") ?? "") };
+const FACES = {
+  white: { hi: "#ffffff", mid: "#ececf0", edge: "#c9cad1" }, grey: { hi: "#f2f2f4", mid: "#b9bac2", edge: "#8a8b95" },
+  yellow: { hi: "#fff4c2", mid: "#ffd54a", edge: "#d0a015" }, orange: { hi: "#ffdcbd", mid: "#ff9447", edge: "#d0661c" },
+  coral: { hi: "#ffddd6", mid: "#ff8676", edge: "#cf5242" }, pink: { hi: "#ffdcec", mid: "#ff8cc0", edge: "#cf528b" },
+  purple: { hi: "#e9dfff", mid: "#a88cff", edge: "#7559d6" }, blue: { hi: "#dbe8ff", mid: "#74a3ff", edge: "#416fd4" },
+  teal: { hi: "#d1f5f0", mid: "#4ccfc3", edge: "#1f948a" }, green: { hi: "#d5f5e0", mid: "#62d48f", edge: "#2a9960" },
+};
+const [colour = "white", visor = "bean", eyes = "pill"] = (q.get("look") ?? "").split(",").map((v) => v.trim()).filter(Boolean);
+const look = { t: "look", colour: FACES[colour] ? colour : "white", face: FACES[colour] ?? FACES.white, visor, eyes, name: q.get("name") ?? "Brenda" };
+const cmpEl = document.getElementById("cmp"), ringEl = document.getElementById("ring"), cursorEl = document.getElementById("cursor");
+const C = () => cmpEl.contentWindow?.Companion, R = () => ringEl.contentWindow?.Ring;
+const send = (m) => C()?.apply(m);
+// The face's centre in the window (contract B.4.1), and Rust's offset from the pointer's hotspot.
+const centre = () => ({ x: flip.x ? 291 : 29, y: flip.y ? 83 : 29 });
+const OFFSET = { x: flip.x ? -30 : 30, y: flip.y ? -30 : 30 };
+let pointer = { x: 330, y: 290 };
+const pos = { x: pointer.x + OFFSET.x, y: pointer.y + OFFSET.y }, vel = { x: 0, y: 0 };
+let flying = null, parked = null; // mid-flight, or resting at a target until the flight back
+function place(x, y) { const c = centre(); cmpEl.style.left = `${x - c.x}px`; cmpEl.style.top = `${y - c.y}px`; }
+function drawCursor() { cursorEl.style.left = `${pointer.x - 1}px`; cursorEl.style.top = `${pointer.y - 1}px`; }
+// Rust's spring (contract B.4.3): k 320, c 29, semi-implicit Euler at 60 Hz; reduced motion jumps.
+let last = performance.now(), stillSince = performance.now(), faded = false;
+function tick(now) {
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  if (!flying) {
+    const tx = parked ? parked.x : pointer.x + OFFSET.x, ty = parked ? parked.y : pointer.y + OFFSET.y;
+    if (reduce) { pos.x = tx; pos.y = ty; }
+    else for (let t = 0; t < dt; t += 1 / 60) {
+      vel.x += (320 * (tx - pos.x) - 29 * vel.x) / 60; vel.y += (320 * (ty - pos.y) - 29 * vel.y) / 60;
+      pos.x += vel.x / 60; pos.y += vel.y / 60;
+    }
+    place(pos.x, pos.y);
+  }
+  // Idle: after 3 s still she fades (400 ms) and comes back when the pointer moves.
+  if (state === "idle") {
+    const still = now - stillSince > 3000;
+    if (still !== faded) { faded = still; send({ t: "fade", visible: !still }); }
+  }
+  requestAnimationFrame(tick);
+}
+addEventListener("mousemove", (e) => {
+  if (state !== "idle") return;
+  if (Math.hypot(e.clientX - pointer.x, e.clientY - pointer.y) > 2) stillSince = performance.now();
+  pointer = { x: e.clientX, y: e.clientY }; drawCursor();
+});
+// A flight (contract A.5, B.4.4): a quadratic Bézier lifted by min(0.2 × distance, 80), clamp(distance / 800, 0.6, 1.4) s, smoothstep.
+function fly(to, done) {
+  const from = { x: pos.x, y: pos.y };
+  parked = null;
+  const d = Math.hypot(to.x - from.x, to.y - from.y);
+  const ms = reduce ? 0 : Math.min(1400, Math.max(600, (d / 800) * 1000));
+  const lift = Math.min(0.2 * d, 80);
+  const ctrl = { x: (from.x + to.x) / 2, y: Math.min(from.y, to.y) - lift };
+  send({ t: "flight", ms, dx: to.x - from.x, dy: to.y - from.y });
+  if (!ms) { pos.x = to.x; pos.y = to.y; parked = { ...to }; place(pos.x, pos.y); done?.("ring"); return done?.("landed"); }
+  const start = performance.now();
+  flying = true;
+  (function step(now) {
+    let t = Math.min(1, (now - start) / ms); const s = t * t * (3 - 2 * t);
+    pos.x = (1 - s) ** 2 * from.x + 2 * (1 - s) * s * ctrl.x + s * s * to.x;
+    pos.y = (1 - s) ** 2 * from.y + 2 * (1 - s) * s * ctrl.y + s * s * to.y;
+    place(pos.x, pos.y);
+    if (t >= 0.8 && !step.ringed) { step.ringed = true; done?.("ring"); }
+    if (t < 1) requestAnimationFrame(step); else { flying = false; parked = { ...to }; vel.x = vel.y = 0; done?.("landed"); }
+  })(start);
+}
+if (q.get("bg") === "dark") document.body.classList.add("dark");
+const target = () => document.getElementById(q.get("shape") === "circle" ? "share" : "export");
+/**
+ * The ring round the Export button (or the round Share button, &shape=circle; contract B.4.5): its window is the target
+ * grown by 6, 16 of room and 40 for the label. This build's Rust sends her coat colour and its edge shade (contract E);
+ * today's (&old) sends neither, so it is orange.
+ */
+function showRing(label, draw = true) {
+  const r = target().getBoundingClientRect();
+  const w = r.width + 12, h = r.height + 12;
+  ringEl.style.left = `${r.left - 6 - 16}px`; ringEl.style.top = `${r.top - 6 - 16}px`;
+  ringEl.style.width = `${w + 32}px`; ringEl.style.height = `${h + 32 + 40}px`; ringEl.style.display = "block";
+  // As Rust's ring_frame: w and h are the window's own size.
+  const colours = q.has("old") ? {} : { colour: look.face.mid, glow: look.face.edge };
+  R()?.apply({ t: "ring", w: w + 32, h: h + 32 + 40, shape: r.width <= 56 && r.height <= 56 ? "circle" : "box", label, seed: 7, labelAt: "below", draw: draw && !reduce, reduce, ...colours });
+}
+const speech = (() => { let t = 0; return () => { t += 0.07; const syl = Math.max(0, Math.sin(t * 9) * Math.sin(t * 2.3 + 1)); return Math.min(1, 0.05 + syl * 0.85 * (Math.sin(t * 0.7) > -0.55 ? 1 : 0.1)); }; })();
+const NOTES = ["Opening Finder…", "Selecting the 6 files…", "Renaming Invoice-01…", "Renaming Invoice-02…", "Renaming Invoice-03…", "Checking the names…"];
+
+function run() {
+  if (!C() || !R()) return setTimeout(run, 50);
+  send(look);
+  send({ t: "motion", reduce });
+  drawCursor();
+  const st = (s, extra = {}) => send({ t: "state", state: s, flip, ...extra });
+  const text = q.get("text");
+  document.getElementById("note").textContent = `state=${state}${reduce ? ", reduced motion" : ""}`;
+  if (state === "idle") st("idle");
+  if (state === "listening") { st("listening"); setInterval(() => send({ t: "level", v: speech() }), 33); }
+  if (state === "thinking") st("thinking");
+  if (state === "speaking") { st("speaking"); setInterval(() => send({ t: "level", v: speech() }), 33); }
+  if (state === "asking") st("asking", { text: text ?? "I'll rename these 6 files to Invoice-01 to Invoice-06.", sub: "Do you want me to do this?", hint: "Say yes or no while holding ⌃ ⌘, or answer in the notch." });
+  if (state === "paused") st("paused", { text: text ?? "Paused. Carry on in the notch?" });
+  if (state === "done") { st("done"); setTimeout(() => st("idle"), 1200); }
+  if (state === "sad") { st("sad"); }
+  if (state === "badge") { st("idle"); send({ t: "badge", on: true }); }
+  if (state === "doing") {
+    let n = 0;
+    const step = () => {
+      st("doing", { text: text ?? NOTES[n % NOTES.length], hint: "Esc stops me" });
+      // She flies to each click point (250 ms) and the ring's tap marks where it lands.
+      // Rust puts the ring's window (48 points) where the click lands and taps it.
+      const r = document.getElementById("export").getBoundingClientRect();
+      Object.assign(ringEl.style, { display: "block", left: `${r.left + r.width / 2 - 24}px`, top: `${r.top + r.height / 2 - 24}px`, width: "48px", height: "48px" });
+      R()?.apply({ t: "tap" });
+      n++;
+    };
+    step(); setInterval(step, 1000);
+  }
+  if (state === "pointing") {
+    const loop = () => {
+      const r = target().getBoundingClientRect();
+      // Just outside the target's lower right, 8 points beyond the ring (contract A.5.2).
+      const land = { x: r.right + 6 + 8 + 13, y: r.bottom + 6 + 8 + 13 };
+      st("pointing");
+      fly(land, (phase) => {
+        if (phase === "ring") showRing(text ?? "Export");
+        if (phase !== "landed" || q.get("hold") === "1") return;
+        setTimeout(() => {
+          R()?.apply({ t: "clear" });
+          setTimeout(() => { ringEl.style.display = "none"; st("pointing"); fly({ x: pointer.x + OFFSET.x, y: pointer.y + OFFSET.y }, (p) => { if (p === "landed") { parked = null; st("idle"); setTimeout(loop, 1500); } }); }, 400);
+        }, 2500);
+      });
+    };
+    setTimeout(loop, 600);
+  }
+  requestAnimationFrame(tick);
+}
+addEventListener("load", run);
+</script>
+</body></html>

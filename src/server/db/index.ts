@@ -26,11 +26,33 @@ export function getPool(): Pool {
     // so a person who reads a reply for a minute and then presses Listen does not pay a new TCP + TLS + SCRAM handshake
     // first: about 2.2 s against a distant database (review, 9 October 2026: the natural voice's latency on a slow link).
     // Nothing about the role or its password changes; a connection the pooler or a NAT drops is replaced as before.
-    const pool = new Pool({ connectionString: connectionString(), max: 20, min: 1, connectionTimeoutMillis: 10_000, idleTimeoutMillis: 600_000, keepAlive: true, keepAliveInitialDelayMillis: 10_000 });
+    // Brenda and her helpers (owner brief, 12 October 2026: "server ≤ 0.3 s … warm connections"; contract K.5.4): four
+    // idle connections are kept instead of one, so the front desk's request after a quiet minute doesn't wait ~1.5 s for
+    // a new one (measured from the owner's Mac that day); warmPool() opens them on the first front request.
+    const pool = new Pool({ connectionString: connectionString(), max: 20, min: POOL_MIN, connectionTimeoutMillis: 10_000, idleTimeoutMillis: 600_000, keepAlive: true, keepAliveInitialDelayMillis: 10_000 });
     pool.on("error", (err) => { console.warn(`[db] idle connection dropped: ${err.message}`); });
     globalThis.__boredroomPool = pool;
   }
   return globalThis.__boredroomPool;
+}
+
+/** The idle connections the pool keeps (contract K.5.4). */
+export const POOL_MIN = 4;
+let warming: Promise<void> | null = null;
+
+/**
+ * Opens up to POOL_MIN connections in the background (once per process; the front desk's first request and its warm-up
+ * GET call it), so the next requests find them ready. Never throws and never waits: a failure is a warning.
+ */
+export function warmPool(): void {
+  if (warming) return;
+  const pool = getPool();
+  const want = Math.max(0, POOL_MIN - pool.totalCount);
+  warming = (async () => {
+    const clients = await Promise.allSettled(Array.from({ length: want }, () => pool.connect()));
+    for (const c of clients) if (c.status === "fulfilled") c.value.release();
+    if (clients.some((c) => c.status === "rejected")) console.warn("[db] could not warm every connection");
+  })().catch(() => undefined);
 }
 
 export type Db = {

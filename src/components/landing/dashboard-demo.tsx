@@ -1,6 +1,6 @@
 import { CircleCheck, ClipboardCheck, Hourglass, LogIn, SquareCheckBig, Timer } from "lucide-react";
 import { BrendaGlyph } from "@/components/app/brenda-glyph";
-import { AnalyticsCard } from "@/components/ui/analytics-card";
+import { MetricStrip } from "@/components/ui/analytics-card";
 import { Avatar } from "@/components/ui/avatar";
 import { CountPill } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
@@ -52,7 +52,11 @@ function Title({ children, action }: { children: React.ReactNode; action?: React
   );
 }
 
-export function DashboardBody() {
+export function DashboardBody({ fitTabs = false }: {
+  /** Hide a tab that doesn't fit the row's own width (a container query), so a narrow frame never cuts one mid-word
+   *  (review fix, 17 October 2026: the pages' DashboardPeek in a hero column). Off on the home page. */
+  fitTabs?: boolean;
+} = {}) {
   return (
     <div className="px-4 pb-10 pt-6 sm:px-5 md:px-8 md:pt-8">
       {/* The page header (ui/card PageHeader): title, description and live line; actions on the right from sm. */}
@@ -66,9 +70,10 @@ export function DashboardBody() {
         </div>
       </div>
       {/* Whole tabs only (review fix, 10 October 2026: a phone cut "Clocked in 11" to "Clocked in 1"): Teams from sm, Clocked in from 380px. */}
-      <div className="mt-5 flex gap-4 overflow-hidden shadow-[inset_0_-1px_0_var(--border)] sm:gap-6">
+      <div className={cn("mt-5 flex gap-4 overflow-hidden shadow-[inset_0_-1px_0_var(--border)] sm:gap-6", fitTabs && "@container")}>
         {TABS.map((t, i) => (
-          <span key={t.label} className={cn("relative inline-flex shrink-0 items-center gap-1.5 pb-2.5 pt-1 text-sm font-medium", i === 0 ? "text-foreground" : "text-secondary", i === 3 && "max-sm:hidden", i === 2 && "max-[379px]:hidden")}>
+          <span key={t.label} className={cn("relative inline-flex shrink-0 items-center gap-1.5 pb-2.5 pt-1 text-sm font-medium", i === 0 ? "text-foreground" : "text-secondary", i === 3 && "max-sm:hidden", i === 2 && "max-[379px]:hidden",
+            fitTabs && i === 3 && "@max-[420px]:hidden", fitTabs && i === 2 && "@max-[310px]:hidden sm:@max-[328px]:hidden")}>
             {t.label}{t.count ? <CountPill count={t.count} /> : null}
             {i === 0 ? <span className="absolute inset-x-0 bottom-0 h-[1.5px] rounded-full bg-accent" /> : null}
           </span>
@@ -85,13 +90,24 @@ export function DashboardBody() {
         </div>
       </div>
 
-      <AnalyticsCard className="mt-3" label={`Attendance, ${MONTH}`} title="Attendance" description={`${MONTH}, everyone`}
-        metrics={[
-          { key: "hours", label: "Hours on the clock", value: "655h", content: <BarChart title={`Hours on the clock by day, ${MONTH}`} labels={DAYS} values={[97, 101, 0, 0, 98, 104, 99, 103, 53]} highlight={TODAY} format={(n) => `${Math.round(n)}h`} /> },
-          { key: "present", label: "Days clocked in", value: 82, content: <BarChart title={`People clocked in by day, ${MONTH}`} labels={DAYS} values={[11, 12, 0, 0, 12, 12, 12, 12, 11]} highlight={TODAY} /> },
-          { key: "late", label: "Late arrivals", value: 6, hint: "7% of days", content: <BarChart title={`Late arrivals by day, ${MONTH}`} labels={DAYS} values={[1, 0, 0, 0, 2, 1, 0, 1, 1]} highlight={TODAY} /> },
-          { key: "missed", label: "Missed days", value: 2, content: <BarChart title={`Working days with no clock-in, ${MONTH}`} labels={DAYS} values={[0, 0, 0, 0, 1, 0, 1, 0, 0]} highlight={-1} /> },
+      {/* The analytics card drawn still (review fix, 17 October 2026): the real AnalyticsCard's metric strip is a tablist of
+          buttons, and controls don't belong inside a role="img" picture even when inert, so the picture uses the strip's
+          static form (MetricStrip without onChange is a <dl>) and the card's own classes, with the first metric's chart. */}
+      <section data-card className="mt-3 overflow-hidden rounded-2xl border border-border bg-background shadow-chart">
+        <MetricStrip value="hours" metrics={[
+          { key: "hours", label: "Hours on the clock", value: "655h" },
+          { key: "present", label: "Days clocked in", value: 82 },
+          { key: "late", label: "Late arrivals", value: 6, hint: "7% of days" },
+          { key: "missed", label: "Missed days", value: 2 },
         ]} />
+        <div className="p-5">
+          <div className="mb-4 min-w-0">
+            <p className="text-sm font-semibold text-foreground">Attendance</p>
+            <p className="text-meta font-normal text-secondary">{MONTH}, everyone</p>
+          </div>
+          <BarChart title={`Hours on the clock by day, ${MONTH}`} labels={DAYS} values={[97, 101, 0, 0, 98, 104, 99, 103, 53]} highlight={TODAY} format={(n) => `${Math.round(n)}h`} />
+        </div>
+      </section>
 
       <div className="@container mt-10">
         <div className="grid gap-10 @4xl:grid-cols-2 @4xl:gap-6">

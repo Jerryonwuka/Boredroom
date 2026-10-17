@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-front-more"
+description = "Enables the front_more command without any pre-configured scope."
+commands.allow = ["front_more"]
+
+[[permission]]
+identifier = "deny-front-more"
+description = "Denies the front_more command without any pre-configured scope."
+commands.deny = ["front_more"]

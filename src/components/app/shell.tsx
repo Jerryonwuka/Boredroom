@@ -9,6 +9,7 @@ import { RealtimeRefresher } from "@/components/app/realtime";
 import { MessageToasts } from "@/components/app/message-toasts";
 import { AssistantDrawer } from "@/components/app/assistant-drawer";
 import { BrendaPresence } from "@/components/app/brenda";
+import { BrendaPointer } from "@/components/app/brenda-pointer";
 import { cloneElement, Fragment, isValidElement, Suspense, type ReactElement, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { ImpersonationBanner, ShellBanners } from "@/components/app/impersonation-banner";
@@ -202,6 +203,9 @@ export async function AppShell({ ctx, counts, teams = [], children, bleed = fals
           : <PageColumn>{children}</PageColumn>}
         {ctx.plan.features.AI_ASSISTANT ? <AssistantDrawer orgSlug={ctx.org.slug} isOrg={isOrg} firstName={ctx.user.displayName.split(" ")[0]} timeZone={ctx.org.timezone} floating /> : null}
         {ctx.plan.features.AI_ASSISTANT && !isOrg ? <BrendaPresence orgSlug={ctx.org.slug} /> : null}
+        {/* Brenda points (owner request, 11 October 2026): `?point=<key>` or her chat's "Show me" draws her beside an element
+            marked `data-brenda-target`. On every page and plan: it needs no AI and no screen access. */}
+        <BrendaPointer />
         {showSetup ? <AssistantSetup orgSlug={ctx.org.slug} orgName={ctx.org.name} /> : null}
         <RealtimeRefresher orgSlug={ctx.org.slug} />
         <Suspense fallback={null}><MessageToasts orgSlug={ctx.org.slug} /></Suspense>

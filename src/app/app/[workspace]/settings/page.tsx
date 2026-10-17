@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { ProgressBar } from "@/components/ui/progress-arc";
 import { settingsView } from "@/server/services/views";
 import { OrgSettingsForm, ScheduleForm, PolicyForm, StandardNoticeButton, AssistantConnectionForm, SettingsSection, SettingsGroup, SettingsRow, SettingsFooter } from "@/components/app/settings-forms";
-import { assistantStatus, DEFAULT_NOTICE, noticeMentionsScreenRecording } from "@/server/services/orgs";
+import { assistantStatus, DEFAULT_NOTICE, PHASE8_DEFAULT_NOTICE, noticeMentionsScreenRecording } from "@/server/services/orgs";
 import { brendaOverview } from "@/server/services/brenda";
 import { listDevices } from "@/server/services/desktop";
 import { BrendaOrgSettings } from "@/components/app/brenda";
@@ -64,6 +64,10 @@ import type { NaturalVoiceView, VoiceConnectionStatus } from "@/lib/natural-voic
 import { WelcomeSettings } from "@/components/app/welcome/welcome-settings";
 import { welcomeState } from "@/server/services/welcome";
 import { WELCOME_WORDS, passedSeen } from "@/lib/welcome";
+import { ScreenHelpMySettings, ScreenHelpWorkspaceSettings } from "@/components/app/screen-help-settings";
+import { lookEligible, myScreenHelp, screenHelpView } from "@/server/services/screen-help";
+import { macPermission } from "@/server/services/front";
+import { SCREEN_HELP_WORDS, type ScreenHelpMine, type ScreenHelpView } from "@/lib/screen-help";
 import { cn } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -161,7 +165,7 @@ const VOICE_UNREADABLE: VoiceConnectionStatus = {
  * with a sample each, read here (`naturalVoiceView`; a failed read: the card reads it itself) and saved to the account;
  * the privacy line sits beside it. The Brenda section gains "Natural voice" right after "AI connection", for owners and
  * HR (both manage it): the workspace's own ElevenLabs key (tested with one free request, stored encrypted, removable;
- * without one Boredroom's key is used within a daily share) and this month's usage (`voiceConnectionStatus`; a failed
+ * without one Boredroom's key is used, with no daily limit: owner request, 12 October 2026) and this month's usage (`voiceConnectionStatus`; a failed
  * read shows the card as not ready). Both show disabled under an info alert until migration 0053 is applied.
  *
  * Calls (owner decision, 10 October 2026: incoming calls get their own sound setting, separate from the assistant's
@@ -173,6 +177,15 @@ const VOICE_UNREADABLE: VoiceConnectionStatus = {
  * list's "Monitoring notice reviewed" is ticked once the person went through "What's seen" in the welcome or a second
  * notice version was published (it was "version 1 or more", always true), and the setup card's footer always links to the
  * welcome. The orphaned "Workspace ready" alert (`?setup=`) went: the founder lands in the welcome instead.
+ *
+ * Screen help on Brenda for Mac (owner decisions, 11 October 2026: "start building with your recommendations"; contract
+ * D.5 and F.4), shown only while the workspace is in the pilot: the Brenda section gains "Screen help on Brenda for Mac"
+ * after "Acting without asking" (Allowed or Not allowed for everyone, the apps Brenda must never look at, and Start it
+ * now while the 14 days' notice runs; owners and HR), with its page note; "Your assistant" gains "Screen help on your
+ * Mac" after Quiet hours (Turn off on my Macs and the person's own never-look list). Whether anyone turned it on, or used
+ * it, is never known here. The Monitoring notice section says when the published notice is still phase 8's standard text,
+ * which doesn't mention screen help, and offers owners the new one. Brenda points (owner request, 11 October 2026): the
+ * cards she can point at carry their `data-brenda-target` key (`SettingsSection target`).
  */
 export default async function SettingsPage({ params, searchParams }: { params: Promise<{ workspace: string }>; searchParams: Promise<{ section?: string; billing?: string; plan?: string }> }) {
   const { workspace } = await params;
@@ -193,7 +206,7 @@ export default async function SettingsPage({ params, searchParams }: { params: P
   // The open section's explanatory notes, shown at the bottom of the page after "Every change is audited."
   let notes: ReactNode = null;
   if (section === "assistant") {
-    const [a, activity, followUps, talk, mutes, ai, routines, quiet, abilities, preferences, natural, welcome] = await Promise.all([assistantProfiles(ctx), listActivity(ctx, { limit: 5 }), followUpPreference(ctx), assistantTalkPreferences(ctx), listMutes(ctx), aiConnected(ctx.org.id),
+    const [a, activity, followUps, talk, mutes, ai, routines, quiet, abilities, preferences, natural, welcome, screenHelp, myScreen, macPerm] = await Promise.all([assistantProfiles(ctx), listActivity(ctx, { limit: 5 }), followUpPreference(ctx), assistantTalkPreferences(ctx), listMutes(ctx), aiConnected(ctx.org.id),
       // Phase 7a: the person's routines and quiet hours (ready: false before 0046). A failed read: the card reads it itself.
       listRoutines(ctx).catch(() => null), quietHoursFor(ctx).catch(() => null),
       // Phase 7c: the abilities and the person's preferences (ready: false before 0050). A failed read: the card reads it itself.
@@ -201,7 +214,11 @@ export default async function SettingsPage({ params, searchParams }: { params: P
       // Natural voice (9 October 2026): the person's choice (ready: false before 0053). A failed read: the card reads it itself.
       naturalVoiceView(ctx).catch((): NaturalVoiceView | null => null),
       // The welcome (owner request, 11 October 2026): replay or finish it, and bring back hidden next steps.
-      welcomeState(ctx)]);
+      welcomeState(ctx),
+      // Screen help (11 October 2026): the workspace's state and the person's own list (ready: false before 0057).
+      screenHelpView(ctx).catch((): ScreenHelpView | null => null), myScreenHelp(ctx).catch((): ScreenHelpMine | null => null),
+      // Brenda and her helpers (owner brief, 12 October 2026; contract N.2): the person's "Check with me before every task".
+      macPermission(ctx).catch(() => null)]);
     assistants = a;
     const { name } = a.personal;
     const now = new Date(); // the server's clock, so "Today" in the activity rows reads the same on both sides
@@ -221,12 +238,14 @@ export default async function SettingsPage({ params, searchParams }: { params: P
         {/* What the assistant does on a schedule, then when it keeps quiet (owner decision, 8 October 2026: phase 7a). */}
         <RoutinesSettings orgSlug={ctx.org.slug} name={name} impersonated={!!ctx.user.impersonation} timeZone={quiet?.timezone ?? ctx.org.timezone} initial={routines} />
         <QuietHoursSettings orgSlug={ctx.org.slug} name={name} impersonated={!!ctx.user.impersonation} orgTimeZone={ctx.org.timezone} initial={quiet} />
+        {/* Screen help on the person's Mac, while the workspace is in the pilot (owner decisions, 11 October 2026). */}
+        {screenHelp?.eligible && myScreen ? <ScreenHelpMySettings orgSlug={ctx.org.slug} name={name} initial={myScreen} workspace={screenHelp} impersonated={!!ctx.user.impersonation} timeZone={ctx.org.timezone} now={now.getTime()} macPermission={macPerm} /> : null}
         {/* Whether this browser rings for incoming calls, apart from the assistant's chimes (owner decision, 10 October 2026). */}
         <CallSoundSettings name={name} />
         <FollowUpPreferenceSettings orgSlug={ctx.org.slug} initial={followUps} name={name} impersonated={!!ctx.user.impersonation} />
         {/* Other people's assistants (phase 6): tagging the person's assistant in Messages, and whose assistants are muted. */}
         <AssistantTalkSettings orgSlug={ctx.org.slug} name={name} preferences={talk} mutes={mutes} impersonated={!!ctx.user.impersonation} />
-        <AssistantActivityCard orgSlug={ctx.org.slug} timeZone={ctx.org.timezone} name={name} items={activity.items} now={now.getTime()} />
+        <AssistantActivityCard orgSlug={ctx.org.slug} timeZone={ctx.org.timezone} name={name} items={activity.items} now={now.getTime()} impersonated={!!ctx.user.impersonation} />
         {/* The first-run welcome, last (owner request, 11 October 2026): replay it, finish it, or show next steps again. */}
         <WelcomeSettings orgSlug={ctx.org.slug} name={name} state={welcome} impersonated={!!ctx.user.impersonation} />
       </>
@@ -318,13 +337,23 @@ export default async function SettingsPage({ params, searchParams }: { params: P
       // Phase 8 (owner decisions, 8 October 2026: A.3.4, D12): the notice and the heartbeat facts. A notice that still
       // describes screen recording gets an alert; owners can publish the new standard text in one press.
       const outdated = noticeMentionsScreenRecording(policy?.notice_text);
+      // Screen help (owner decisions, 11 October 2026; contract F.3): phase 8's standard text says nothing about Brenda for
+      // Mac looking at a window, so a workspace in the pilot still on it is offered the new standard text.
+      const flat = (t: string) => t.replace(/\s+/g, " ").trim();
+      const phase8 = !!policy?.notice_text && flat(policy.notice_text) === flat(PHASE8_DEFAULT_NOTICE) && lookEligible(ctx.org.slug);
       body = (
-        <SettingsSection id="notice" title="Monitoring notice" description="What Boredroom tracks, in the words everyone reads in their profile. Publishing creates a new version."
+        <SettingsSection id="notice" target="settings-notice" title="Monitoring notice" description="What Boredroom tracks, in the words everyone reads in their profile. Publishing creates a new version."
           action={policy ? <Badge>Version <span className="tabular-nums">{policy.version}</span></Badge> : null}>
           <div className="grid gap-3">
             {outdated ? (
               <Alert tone="warning">
                 Your monitoring notice still describes screen recording, which Boredroom no longer does.
+                {isOwner ? <StandardNoticeButton orgSlug={ctx.org.slug} text={DEFAULT_NOTICE} reminderMinutesBeforeEnd={policy?.reminder_minutes_before_end ?? 30} /> : <> An owner can publish the new standard notice.</>}
+              </Alert>
+            ) : null}
+            {phase8 && !outdated ? (
+              <Alert tone="info">
+                The standard notice now says how Brenda for Mac&apos;s screen help works.
                 {isOwner ? <StandardNoticeButton orgSlug={ctx.org.slug} text={DEFAULT_NOTICE} reminderMinutesBeforeEnd={policy?.reminder_minutes_before_end ?? 30} /> : <> An owner can publish the new standard notice.</>}
               </Alert>
             ) : null}
@@ -338,7 +367,7 @@ export default async function SettingsPage({ params, searchParams }: { params: P
       notes = <PageNote section="Monitoring notice">Nobody signs the notice in advance. When a new version is published, everyone is told and can read it in their profile.</PageNote>;
     }
   } else if (section === "brenda") {
-    const [ai, brenda, a, usage, collection, mentions, notesSetting, actSetting, routinesSetting, commitmentsSetting, abilities, voiceKey] = await Promise.all([assistantStatus(ctx), brendaOverview(ctx), assistantProfiles(ctx), usageSummary(ctx),
+    const [ai, brenda, a, usage, collection, mentions, notesSetting, actSetting, routinesSetting, commitmentsSetting, abilities, voiceKey, screenHelp] = await Promise.all([assistantStatus(ctx), brendaOverview(ctx), assistantProfiles(ctx), usageSummary(ctx),
       withUser(ctx.user.profileId, (db) => followUpSettings(db, ctx.org.id)), withUser(ctx.user.profileId, (db) => mentionSettings(db, ctx.org.id)),
       withUser(ctx.user.profileId, (db) => reportNoteSettings(db, ctx.org.id)), withUser(ctx.user.profileId, (db) => workspaceActSetting(db, ctx.org.id)),
       routineSettingsFor(ctx),
@@ -347,7 +376,9 @@ export default async function SettingsPage({ params, searchParams }: { params: P
       // Phase 7c: the abilities catalogue (ready: false before 0050). A failed read: the card reads it itself.
       abilitiesView(ctx).catch((): AbilitiesView | null => null),
       // Natural voice (9 October 2026): the key and this month's usage (ready: false before 0053). A failed read: not ready.
-      voiceConnectionStatus(ctx).catch((): VoiceConnectionStatus => VOICE_UNREADABLE)]);
+      voiceConnectionStatus(ctx).catch((): VoiceConnectionStatus => VOICE_UNREADABLE),
+      // Screen help (11 October 2026): the workspace's switch and list; shown only in the pilot. A failed read: not shown.
+      screenHelpView(ctx).catch((): ScreenHelpView | null => null)]);
     assistants = a;
     body = (
       <>
@@ -361,6 +392,8 @@ export default async function SettingsPage({ params, searchParams }: { params: P
         <AbilitiesSettings orgSlug={ctx.org.slug} scope="workspace" name={a.personal.name} initial={abilities} />
         {/* Whether people may let their assistant act without asking (owner decision, 8 October 2026). */}
         <ActModeWorkspaceSettings orgSlug={ctx.org.slug} initial={actSetting} canEdit={admin} />
+        {/* Screen help on Brenda for Mac, while the workspace is in the pilot (owner decisions, 11 October 2026). */}
+        {screenHelp?.eligible ? <ScreenHelpWorkspaceSettings orgSlug={ctx.org.slug} initial={screenHelp} timeZone={ctx.org.timezone} /> : null}
         {/* Who may schedule routines that chase other people (owner decision, 8 October 2026: phase 7a). */}
         <RoutinesWorkspaceSettings orgSlug={ctx.org.slug} initial={routinesSetting} canEdit={admin} />
         {/* Commitments in group chats (owner decision, 8 October 2026: phase 7b). */}
@@ -391,6 +424,7 @@ export default async function SettingsPage({ params, searchParams }: { params: P
         <PageNote section="Brenda">She reads what each person is allowed to see, does their own work for them, and asks before anything that lands on someone else, unless the person chose to let their assistant act without asking.</PageNote>
         <PageNote section="Abilities">{ABILITY_WORDS.notes.workspacePage}</PageNote>
         <PageNote section="Acting without asking">{ACT_WORDS.workspace.pageNote}</PageNote>
+        {screenHelp?.eligible ? <PageNote section="Screen help">{SCREEN_HELP_WORDS.pageNote}</PageNote> : null}
         <PageNote section="Routines">{ROUTINE_WORDS.workspace.pageNote}</PageNote>
         <PageNote section={LOOP_WORDS.settings.card}>{LOOP_WORDS.settings.pageNote}</PageNote>
         <PageNote section="Updates before the report">Updates are collected on working days, from what each person&apos;s work already shows. People who chose &ldquo;Always ask me first&rdquo; for their own assistant are asked once, even when asking is off here.</PageNote>

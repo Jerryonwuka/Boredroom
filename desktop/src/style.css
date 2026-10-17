@@ -1,14 +1,18 @@
 /* Brenda's notch in Boredroom's design system v4 (owner decision, 6 October 2026: the ElevenLabs app's design language,
    with orange kept as the accent; the notch follows the web, styling included). The dark tokens are the ones in
    src/app/globals.css, its source of truth (docs/design-system.md). Inter 14/20 medium for words, Geist Mono for the
-   numbers that matter. Surfaces are near-black #0F0F10 with white 7.5% hairlines, and greys are white at low alpha
-   (64% secondary, 53% subtle). The primary button is white with near-black text; secondary is outline and tertiary is
-   ghost. Orange follows the web's accent rules (owner decision, 6 October 2026; docs/design-system.md, "Accent rules"):
+   numbers that matter, and Geist (the display face) for the summary's count alone. Surfaces are near-black #0F0F10 with
+   white 7.5% hairlines, and greys are white at low alpha (64% secondary, 53% subtle). On the island's true black the web's
+   alpha fills are laid over the canvas as solid colours (`--surface`, `--surface-150`, the `--tint-*`), so they read as
+   they do on the web. Buttons are the web's xs (28px, r8; 17 October 2026: no longer pills, and nothing scales on a
+   press); chips, the quick replies and the ask pill stay round. Lists are rows of quiet r8 tiles, 4px apart, as the
+   landing page draws this notch. The open island has a faint hairline round its sides, bottom and shoulders. The primary
+   button is white with near-black text; secondary is outline and tertiary is ghost. Orange follows the web's accent rules (owner decision, 6 October 2026; docs/design-system.md, "Accent rules"):
    it marks what is live, active, chosen or the one thing to do, never decoration, and status meaning wins over it.
    - Live and now: a running timer's dot (it breathes) and digits, the open microphone (the live dot and the recording
      time beside the waveform, and the wash), voice getting ready (the orb's dot), a teammate's running timer, and the
      Stop square on a reply while she reads it aloud.
-   - The one standout action per card is an orange pill with near-black text (`.btn.accent`): Send once there are words,
+   - The one standout action per card is an orange button with near-black text (`.btn.accent`): Send once there are words,
      Start on the briefing, Resume on a paused timer, Link to Boredroom / Open Boredroom, Turn on voice. Every other
      primary stays white, and while the ask box holds words Send is the only orange button (the other one turns white).
    - Progress: the estimate hairline, the progress ring (green once done), download and upload bars.
@@ -41,7 +45,7 @@
    secondary grey (`.why`). No new orange.
    Brenda keeps the loops closed (owner decision, 8 October 2026: phase 7a). The morning opener: the counts as the
    near-black list, each row a quiet button that opens its page (words left, the number right in Geist Mono in the text
-   colour, "not available" in the secondary grey), and its one-tap actions as outline pills with their icons, the first
+   colour, "not available" in the secondary grey), and its one-tap actions as outline buttons with their icons, the first
    the card's one orange button (`.starts`). A routine's card: its lines in the list, each running to two lines with a
    small Open (`.lines`). A Confirm's readback: "Goes to" as the small label over a compact list of who receives it, and
    "What they get" in the secondary grey, aligned with the summary's words (`.readback`). Quiet hours add no styles: the
@@ -64,18 +68,19 @@
    readback, and Remember / Forget the card's one orange button. No other new orange; badges keep their words (amber only
    for a draft that couldn't be made).
    Notifications, "A plus the grafts" (owner decision, 9 October 2026: the approved mockup, direction A "Glance" with B's
-   and C's grafts; the section at the end, "Notifications"). Every notification, the summary, the pager and the end card
-   are drawn by desktop/src/notify-cards.js in classes of their own (`nc-`): a 440px island lit from its top edge by one
-   wash in the colour of the news (violet talk, orange what waits on you, green good news, a white haze for reports; the
-   summary every kind side by side), a byline with the bringer's face in the mood of the news, a 20/24 Inter 650 headline
-   of 30 characters or fewer, numbers as 26px chips in Geist Mono, someone's words beside a 2px bar in their assistant's
-   coat colour, the figure box, Together (two 44px faces, one hop, two stars), the summary's 64px count and row of faces,
-   C's pager footer, and the bar's "8 new, 2 need you". Orange there: the attention chips and "need you" (attention
-   counts), one standout button per card (Accept, Post, Start timer, Take it on or Add to my to-dos, Show them), and the
-   needs wash, which is the news's colour, not a button. Status colours keep their meaning (a late figure red, an early one
-   green); the countdown hairline runs in the kind's colour. */
+   and C's grafts; the section at the end, "Notifications"), redrawn in v4 on 17 October 2026. Every notification, the
+   summary, the pager and the end card are drawn by desktop/src/notify-cards.js in classes of their own (`nc-`): a 440px
+   island (the coloured washes are retired: the kind shows in the byline's words and the pager's dot), a byline with the
+   bringer's face in the mood of the news, an 18/26 Inter 500 headline of 30 characters or fewer (the web's dialog
+   title), numbers as the web's 24px round badges in Geist Mono, someone's words beside a 2px bar in their assistant's
+   coat colour, the figure box, Together (two 44px faces, one hop, two stars), the summary's count in Geist 28/36 (the
+   home headline) and row of faces, C's pager footer, and the bar's "8 new, 2 need you". Orange there: the attention
+   chips and "need you" (attention counts), the pager's dot for what waits on you, a ringing call's running-out hairline,
+   and one standout button per card (Accept, Post, Start timer, Take it on or Add to my to-dos, Show them). Status colours
+   keep their meaning (a late figure red, an early one green); the countdown hairline is neutral. */
 
-/* Inter and Geist Mono, from @fontsource-variable (SIL Open Font License, fonts/OFL.txt). Nothing loads remotely. */
+/* Inter, Geist Mono and Geist, from @fontsource-variable (SIL Open Font License, fonts/OFL.txt). Nothing loads remotely.
+   Geist (the web's display face) is drawn in exactly one place: the summary's count (17 October 2026). */
 @font-face { font-family: "Inter Variable"; font-style: normal; font-display: swap; font-weight: 100 900; src: url(fonts/inter-latin-ext-wght-normal.woff2) format("woff2");
   unicode-range: U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF; }
 @font-face { font-family: "Inter Variable"; font-style: normal; font-display: swap; font-weight: 100 900; src: url(fonts/inter-latin-wght-normal.woff2) format("woff2");
@@ -87,6 +92,10 @@
   unicode-range: U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF; }
 @font-face { font-family: "Geist Mono Variable"; font-style: normal; font-display: swap; font-weight: 100 900; src: url(fonts/geist-mono-latin-wght-normal.woff2) format("woff2");
   unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
+@font-face { font-family: "Geist Variable"; font-style: normal; font-display: swap; font-weight: 100 900; src: url(fonts/geist-latin-ext-wght-normal.woff2) format("woff2");
+  unicode-range: U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF; }
+@font-face { font-family: "Geist Variable"; font-style: normal; font-display: swap; font-weight: 100 900; src: url(fonts/geist-latin-wght-normal.woff2) format("woff2");
+  unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
 
 :root {
   color-scheme: dark;
@@ -94,9 +103,13 @@
      frame around the camera housing. Everything drawn inside it uses the v4 surfaces below. */
   --island: #000;
   /* v4 dark tokens (globals.css). The notch is always dark. */
-  --background: #0f0f10;                  /* panels, fields, outline buttons */
+  --background: #0f0f10;                  /* panels, fields, outline buttons, list tiles */
+  --canvas: #0f0f10;                      /* the web's canvas, the colour every solid fill below is laid over */
   --background-hover: color-mix(in srgb, #fff 2.4%, #0f0f10);
-  --surface: color-mix(in srgb, #fff 4.3%, #0f0f10);   /* fill-1 over the canvas, solid: the prompt pill */
+  /* Inside the island a v4 fill is the fill laid over the canvas, as a solid colour (17 October 2026): the web's alpha
+     fills are tuned for #0F0F10 and come out too dark on the island's true black. */
+  --surface: color-mix(in srgb, #fff 4.3%, #0f0f10);   /* fill-1: badges, chips, bubbles, the prompt pill */
+  --surface-150: color-mix(in srgb, #fff 7%, #0f0f10); /* fill-150: chip hover, an empty Send, tracks */
   --popover: #2e2e2e;
   --foreground: #fff;
   --secondary: rgb(255 255 255 / .64);    /* descriptions, icons, ghost buttons */
@@ -116,11 +129,20 @@
   --accent-ring: rgb(255 108 2 / .6);     /* the 1px ring of the focused ask pill */
   --ring: rgb(255 108 2);                 /* the focus ring: solid, 6.8:1 on the panel (WCAG 1.4.11 asks 3:1) */
   --success: hsl(142 71% 45%); --warning: hsl(38 92% 50%); --danger: hsl(0 84% 60%);
+  /* Status tints and the accent card tint, solid on the canvas (`bg-success/12` and the rest, `--accent-tint`). */
+  --tint-success: color-mix(in srgb, var(--success) 12%, #0f0f10);
+  --tint-warning: color-mix(in srgb, var(--warning) 12%, #0f0f10);
+  --tint-danger: color-mix(in srgb, var(--danger) 12%, #0f0f10);
+  --accent-tint: color-mix(in srgb, #ff6c02 10%, #0f0f10);
+  --faint: rgb(255 255 255 / .32);
+  /* The open island's outline, as the landing page's notch traces its silhouette on a dark page (`--border-input`). */
+  --edge: rgb(255 255 255 / .1);
+  --elev-thumb: 0 1px 3px rgb(0 0 0 / .3), 0 1px 2px -1px rgb(0 0 0 / .3);
   --elev-natural-xs: 0 0 0 1px rgb(0 0 0 / .06), 0 1px 1px -0.5px rgb(0 0 0 / .06), 0 3px 3px -1.5px rgb(0 0 0 / .06);
   /* The open island floats like a toast: a half-pixel edge and one soft drop (globals.css --elev-toast, without the
      inner highlights, which would draw along the top edge). */
   --elev-island: 0 0 0 .5px rgb(0 0 0 / .44), 0 2px 6px -2px rgb(0 0 0 / .13), 0 18px 40px -10px rgb(0 0 0 / .35);
-  --radius-chip: 6px; --radius-btn-xs: 8px; --radius-control: 10px; --radius-card-sm: 12px;
+  --radius-chip: 6px; --radius-btn-xs: 8px; --radius-control: 10px; --radius-card-sm: 12px; --radius-card: 16px;
   /* Brenda's face, the same as `.brenda-face` on the web: a fluffy ball, a black visor, white eyes. A person's own
      assistant's coat takes another colour (`--sphere-*` on each face, below); the visor and eyes stay these on every one. */
   --ink: #fff; --visor: #0b0b0e;
@@ -128,7 +150,9 @@
   --mate-0: #f472b6; --mate-1: #34d399; --mate-2: #fb923c; --mate-3: #60a5fa; --mate-4: #e879f9; --mate-5: #facc15; --mate-6: #2dd4bf; --mate-7: #a78bfa;
   --font-sans: "Inter Variable", "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: "Geist Mono Variable", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --font-display: "Geist Variable", var(--font-sans);   /* the summary's count only */
   --fast: 75ms;                              /* colour changes, as on the web */
+  --duration: 150ms;                         /* switches, chevrons */
   --ease: cubic-bezier(.23,1,.32,1);
   --spring: cubic-bezier(.32,1.22,.42,1);   /* opening: a little overshoot */
   --settle: cubic-bezier(.45,0,.2,1);       /* closing: none */
@@ -146,12 +170,16 @@ svg.ic { width: 14px; height: 14px; flex: none; }
 /* The island: black, square at the top so it melts into the screen edge, with two small concave shoulders. */
 .island { position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 220px; height: var(--compact-h, 40px); background: var(--island); border-radius: 0 0 16px 16px;
   transition: width .34s var(--settle), height .34s var(--settle), border-radius .34s var(--settle), box-shadow .4s var(--ease); box-shadow: 0 2px 6px -2px rgb(0 0 0 / .13), 0 8px 20px -10px rgb(0 0 0 / .45); }
-/* Open, it reads as a floating v4 surface: a 7.5% hairline along the bottom edge and the toast's soft drop. */
-.island.open { border-radius: 0 0 26px 26px; box-shadow: inset 0 -1px 0 var(--border), var(--elev-island); }
+/* Open, it reads as a floating v4 surface: a faint hairline traces its sides, its bottom and its shoulders (the landing
+   page's notch, so the black card survives a dark wallpaper; 17 October 2026), and the toast's soft drop. The line above
+   the top edge falls off the screen. Compact and tucked keep no edge: they meet the hardware notch. */
+.island.open { border-radius: 0 0 26px 26px; box-shadow: 0 0 0 1px var(--edge), var(--elev-island); }
 .island.growing { transition: width .52s var(--spring), height .52s var(--spring), border-radius .52s var(--spring), box-shadow .4s var(--ease); }
 .island::before, .island::after { content: ""; position: absolute; top: 0; width: 12px; height: 12px; pointer-events: none; }
 .island::before { left: -12px; background: radial-gradient(circle at 0 100%, transparent 11.5px, var(--island) 12px); }
 .island::after { right: -12px; background: radial-gradient(circle at 100% 100%, transparent 11.5px, var(--island) 12px); }
+.island.open::before { background: radial-gradient(circle at 0 100%, transparent 10.5px, var(--edge) 11px, var(--edge) 11.5px, var(--island) 12px); }
+.island.open::after { background: radial-gradient(circle at 100% 100%, transparent 10.5px, var(--edge) 11px, var(--edge) 11.5px, var(--island) 12px); }
 /* While the microphone is open, the voice card's wash (the web's `.brenda-wash`): a faint orange light rising from the
    bottom. Nothing else tints the island. */
 .island.open:has(.wave.live) { background: radial-gradient(420px 200px at 50% 112%, color-mix(in srgb, var(--accent) 12%, transparent), transparent 72%), var(--island); }
@@ -178,89 +206,8 @@ svg.ic { width: 14px; height: 14px; flex: none; }
 .row.top > .face { margin-top: 2px; }
 .grow { flex: 1; min-width: 0; }
 
-/* Brenda's face: the web's `.brenda-face` (src/app/globals.css), the same moods and reactions. Her look (owner design,
-   7 October 2026; her coat, 8 October 2026): a fluffy ball (the web's tufted silhouette), a black visor with a soft dip
-   in its top, white pill eyes behind it; the visor and eyes follow the pointer together. Her outline and glow are drop
-   shadows, so they follow the tufts. Her glow follows what is happening (accent, ok, warn, bad); a running timer (blue)
-   and thinking (violet) draw none. Teammates' small faces (`.mini`, below) are their own assistants (9 October 2026).
-   Personal assistants (owner decision, 7 October 2026: phase 1): the face is the person's own assistant, and every
-   assistant wears the coat in its own colour. main.js writes its three stops (`--sphere-hi`, `--sphere-mid`,
-   `--sphere-edge`, from the desktop state) and `data-sphere` / `data-visor` / `data-eyes`, as on the web's `.brenda-face`;
-   the coat is the web's two layers (a blurred fringe under the coat, each masked to the silhouette) coloured from them,
-   and white (or no colour) keeps the owner's exact stops. The visor stays near-black and the eyes white on every colour. */
-.face { --lx: 0; --ly: 0; --glow: transparent; --visor-shape: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='-80 -42 160 86' preserveAspectRatio='none'%3E%3Cpath d='M-80 -2C-80 -37.8 -64 -42 -40 -42C-22.4 -42 -12.8 -28 0 -28C12.8 -28 22.4 -42 40 -42C64 -42 80 -37.8 80 -2C80 35.2 49.6 44 0 44C-49.6 44 -80 35.2 -80 -2Z'/%3E%3C/svg%3E"); --coat-under: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cdefs%3E%3Cfilter id='b' x='-10%25' y='-10%25' width='120%25' height='120%25'%3E%3CfeGaussianBlur stdDeviation='1.4'/%3E%3C/filter%3E%3C/defs%3E%3Cpath d='M58.0 6.0Q62.7 3.8 65.1 9.3Q71.5 2.9 70.9 11.7Q77.4 8.3 76.8 15.7Q84.4 12.2 81.4 20.3Q88.6 18.8 86.8 24.7Q92.7 25.6 90.4 31.1Q97.3 32.7 92.0 38.6Q99.2 41.7 93.7 47.0Q100.3 50.2 93.8 53.4Q103.3 59.4 92.7 61.9Q98.7 66.9 91.3 67.2Q95.7 72.5 88.4 72.0Q92.4 78.4 85.0 77.0Q89.7 85.8 80.5 82.0Q85.0 92.6 75.1 85.5Q77.3 95.8 69.1 88.7Q70.3 99.4 64.2 92.4Q63.7 102.2 58.4 93.2Q56.3 104.8 51.6 93.6Q48.3 102.7 45.5 93.8Q40.7 103.1 39.4 92.1Q32.4 103.5 32.9 91.4Q25.9 100.1 28.8 88.3Q19.8 95.4 22.2 85.1Q14.2 89.2 17.8 80.5Q6.2 85.3 13.9 74.6Q0.7 77.5 10.6 67.5Q-1.0 67.2 7.9 59.9Q-2.9 57.2 5.7 51.7Q-0.9 47.9 5.7 44.6Q-2.0 40.1 6.6 38.6Q0.5 31.7 10.2 30.7Q4.4 22.5 15.2 24.4Q11.0 17.6 17.9 19.9Q14.3 11.8 22.4 16.2Q20.8 6.6 28.8 11.2Q29.6 6.5 33.6 8.4Q36.0 3.1 41.1 7.5Q44.3 -0.7 49.2 5.7Q54.0 1.4 58.0 6.0Z' opacity='.7' filter='url%28%23b%29'/%3E%3C/svg%3E"); --coat: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M55.5 8.0Q61.4 4.5 65.0 10.5Q72.1 7.1 74.0 14.0Q81.5 11.6 79.6 20.3Q88.1 19.7 86.5 27.2Q97.3 29.0 90.4 38.6Q101.9 43.4 92.5 51.0Q98.8 57.2 91.7 61.4Q98.4 71.1 86.7 72.7Q89.6 83.5 77.7 81.6Q80.4 92.6 71.5 87.6Q71.6 97.2 64.1 90.0Q61.8 100.9 55.0 92.5Q51.2 102.1 47.1 92.4Q40.1 103.0 37.6 90.0Q25.2 99.7 25.5 84.0Q14.3 88.1 17.7 76.6Q4.9 80.5 12.7 70.3Q1.3 67.9 8.3 58.7Q-2.2 55.4 6.8 50.0Q-0.7 42.5 9.3 37.7Q2.8 30.4 13.1 30.1Q10.0 20.0 20.3 19.8Q20.1 11.9 27.5 13.8Q29.0 8.4 34.4 10.7Q38.9 2.8 46.5 8.1Q51.1 1.7 55.5 8.0Z'/%3E%3C/svg%3E");
-  --coat-1: var(--sphere-hi, #fff); --coat-2: color-mix(in srgb, var(--sphere-hi, #fff) 50%, var(--sphere-mid, #ececf0)); --coat-3: color-mix(in srgb, var(--sphere-mid, #ececf0) 80%, var(--sphere-edge, #c9cad1)); --coat-4: var(--sphere-edge, #c9cad1); --coat-fringe: var(--sphere-mid, #ececf0);
-  width: 28px; height: 28px; flex: none; border-radius: 50%; display: block; position: relative;
-  filter: drop-shadow(0 0 .5px rgb(255 255 255 / .25)) drop-shadow(0 0 5px var(--glow));
-  transition: transform .25s var(--spring), filter .4s var(--ease); animation: face-breathe 3.6s ease-in-out infinite; }
-.face:not([data-sphere]), .face[data-sphere="white"] { --coat-1: #fff; --coat-2: #f6f6f8; --coat-3: #e4e4e9; --coat-4: #cbccd3; --coat-fringe: #e9e9ee; }
-.face::before, .face::after { content: ""; position: absolute; inset: 0; border-radius: 50%; pointer-events: none; }
-.face::before { background: var(--coat-fringe); -webkit-mask: var(--coat-under) center / 100% 100% no-repeat; mask: var(--coat-under) center / 100% 100% no-repeat; }
-.face::after { background: radial-gradient(78% 78% at 36% 30%, var(--coat-1) 0, var(--coat-2) 45%, var(--coat-3) 80%, var(--coat-4) 100%);
-  -webkit-mask: var(--coat) center / 100% 100% no-repeat; mask: var(--coat) center / 100% 100% no-repeat; }
-.face[data-tone="accent"] { --glow: var(--accent); }
-.face[data-tone="ok"] { --glow: var(--success); }
-.face[data-tone="warn"] { --glow: var(--warning); }
-.face[data-tone="bad"] { --glow: var(--danger); }
-/* The visor is her exact bean outline (--visor-shape) as a mask, placed as the web face places it, so it keeps its
-   shape at every size. */
-.face .eyes { position: absolute; z-index: 1; left: 16.4%; width: 67.2%; top: 24.4%; height: 36.1%; box-sizing: border-box; padding-bottom: 4.3%; display: flex; align-items: center; justify-content: center; gap: 7.7px;
-  background: var(--visor); -webkit-mask: var(--visor-shape) center / 100% 100% no-repeat; mask: var(--visor-shape) center / 100% 100% no-repeat;
-  transform: translate(calc(var(--lx) * 1.7px), calc(var(--ly) * 1.3px)); }
-
-.face .eyes span { width: 2.2px; height: 4px; border-radius: 999px; background: var(--ink); box-shadow: 0 0 1px rgb(255 255 255 / .55); transition: transform 70ms ease, height .2s var(--ease), border-radius .2s var(--ease); }
-.face.small { width: 22px; height: 22px; }
-.face.small .eyes { gap: 6px; transform: translate(calc(var(--lx) * 1.3px), calc(var(--ly) * 1px)); }
-.face.small .eyes span { width: 1.8px; height: 3.2px; box-shadow: none; }
-/* The visors and eye styles a person can choose (owner decision, 7 October 2026: personal assistants), placed as the web
-   face places them (docs/design-system.md, "Personal assistants": the drawn character's proportions, the eyes' centres
-   0.84 R apart in every style). Bean and pill (or no attribute) are the rules above. They sit here, before the moods and
-   reactions, and no stronger than them, so every expression still wins on every eye style. Teammates' `.mini` faces
-   use them too (their own assistants since 9 October 2026). The eyes sit behind the visor's glass: the bean's mask keeps them inside
-   it, and the band and screen clip them to their own shape, so a tall expression (listening, alert) never shows white
-   past the visor's edge on the slim band. */
-.face[data-visor="band"] .eyes { left: 13.9%; width: 72.2%; top: 29.4%; height: 25.2%; padding-bottom: 4.6%; border-radius: 999px; -webkit-mask: none; mask: none; overflow: hidden; }
-.face[data-visor="screen"] .eyes { left: 22.3%; width: 55.4%; top: 23.5%; height: 35.3%; padding-bottom: 3%; border-radius: 18.2% / 28.6%; -webkit-mask: none; mask: none; overflow: hidden; }
-.face[data-eyes="round"] .eyes { gap: 6.5px; } .face[data-eyes="round"] .eyes span { width: 3.4px; height: 3.4px; border-radius: 50%; }
-.face[data-eyes="square"] .eyes { gap: 6.7px; } .face[data-eyes="square"] .eyes span { width: 3.2px; height: 3.2px; border-radius: .8px; }
-.face.small:where([data-eyes="round"]) .eyes { gap: 5.2px; } .face.small:where([data-eyes="round"]) .eyes span { width: 2.6px; height: 2.6px; }
-.face.small:where([data-eyes="square"]) .eyes { gap: 5.3px; } .face.small:where([data-eyes="square"]) .eyes span { width: 2.5px; height: 2.5px; border-radius: .6px; }
-.face.blink .eyes span { transform: scaleY(.12); }
-/* Moods */
-.face.happy .eyes span { height: 3px; width: 6px; background: transparent; border: 2px solid var(--ink); border-bottom: 0; border-radius: 6px 6px 0 0; }
-/* Happy arcs: border-box and fixed (they never flex), centred where the pill eyes sit, inside the bean. */
-.face.happy .eyes span { box-sizing: border-box; flex: none; }
-.face.happy:not(.small):not(.dizzy):not(.love) .eyes { gap: 4.9px; } .face.happy:not(.small):not(.dizzy):not(.love) .eyes span { width: 5px; }
-.face.small.happy:not(.dizzy):not(.love) .eyes { gap: 3.8px; } .face.small.happy:not(.dizzy):not(.love) .eyes span { width: 4px; height: 2px; border-width: 1px; }
-.face.dizzy .eyes { gap: 4.5px; } .face.small.dizzy .eyes { gap: 3px; } .face.dizzy .eyes span { box-sizing: border-box; } .face.love:not(.small) .eyes { gap: 3.5px; }
-.face.small.dizzy .eyes span { width: 4px; height: 4px; border-width: 1px; } .face.small.love .eyes { gap: 2px; }
-.face.sad .eyes span { height: 2px; border-radius: 1px; }
-.face.alert { animation: hop .6s var(--spring) 1, face-breathe 3.6s ease-in-out .6s infinite; }
-.face.alert .eyes span { height: 4.8px; }
-/* Listening (owner decision, 7 October 2026: "when you're sending a voice note she'll do like she's listening"): her eyes
-   widen and swell with the voice, and her glow with them; main.js sets --lvl (0 to 1) from the microphone level. */
-.face.listen { --lvl: 0; filter: drop-shadow(0 0 .5px rgb(255 255 255 / .25)) drop-shadow(0 0 calc(4px + var(--lvl) * 8px) var(--glow)); transition: transform .25s var(--spring), filter 90ms linear; }
-.face.listen .eyes span { height: 4.8px; width: 2.8px; border-radius: 999px; scale: 1 calc(1 + var(--lvl) * .45);
-  transition: transform 70ms ease, scale 90ms linear, height .2s var(--ease), border-radius .2s var(--ease); }
-/* Talking (owner decision, 7 October 2026: her voice): as the web's `.brenda-face[data-talking]`. main.js sets `talk` on her
-   own faces while she speaks and --talk (0 to 1) from the real level of what `say` rendered (or a pulse). She has no
-   mouth, so her eyes squash between syllables and open on each one, she bobs a little, and her glow brightens in her own
-   sphere colour. Listening never coincides with it: she never speaks while the microphone is open. */
-.face.talk { --talk: 0; translate: 0 calc(var(--talk) * -1.2px);
-  filter: drop-shadow(0 0 .5px rgb(255 255 255 / .25)) drop-shadow(0 0 calc(4px + var(--talk) * 6px) color-mix(in srgb, var(--sphere-mid, #ececf0) calc(40% + var(--talk) * 60%), transparent));
-  transition: transform .25s var(--spring), translate 60ms linear, filter 60ms linear; }
-.face.talk .eyes span { scale: calc(1.04 - var(--talk) * .05) calc(.72 + var(--talk) * .45); transition: transform 70ms ease, scale 60ms linear, height .2s var(--ease), border-radius .2s var(--ease); }
-/* An answer pleases her: happy eyes (the mood above) and one small hop as it arrives. */
-.face.pleased { animation: hop .6s var(--spring) 1, face-breathe 3.6s ease-in-out .6s infinite; }
-.face.think .eyes { transform: translate(1.5px, -1.2px); }
-.face.think .eyes span { animation: scan 1.8s ease-in-out infinite; }
-.face.gulp .eyes span { width: 3.2px; height: 3.6px; border-radius: 50%; }
-@keyframes face-breathe { 0%, 100% { scale: 1; } 50% { scale: 1.035; } }
-@keyframes hop { 0% { translate: 0 0; } 35% { translate: 0 -4px; } 70% { translate: 0 1px; } 100% { translate: 0 0; } }
-@keyframes scan { 0%, 100% { translate: 0 0; } 50% { translate: -2px 0; } }
-/* Her presence: a small status dot on her corner. */
-.face .dot { position: absolute; z-index: 2; top: -3px; left: -3px; width: 8px; height: 8px; border-radius: 50%; border: 2px solid var(--island); background: var(--success); }
-.face .dot.away { background: var(--warning); } .face .dot.busy { background: var(--danger); } .face .dot.offline { background: var(--subtle); }
+/* Her face (`.face`, its visors, eyes, moods and reactions) is in face.css, loaded before this file (owner request,
+   12 October 2026: the companion by the pointer wears the same face). */
 
 /* Type: Inter for words (14/20 medium for titles, 13/19.5 regular in secondary for what goes under them), Geist Mono for
    the numbers that matter. Sentence case throughout. */
@@ -278,14 +225,14 @@ svg.ic { width: 14px; height: 14px; flex: none; }
 .code { font-family: var(--font-mono); font-size: 24px; line-height: 30px; font-weight: 500; letter-spacing: .18em; text-indent: .18em; text-align: center; font-variant-numeric: tabular-nums;
   padding: 12px; border-radius: var(--radius-card-sm); border: 1px solid var(--border); background: var(--background); box-shadow: var(--elev-natural-xs); }
 
-/* Badges: 20px pills, 12/16 medium. Neutral on fill-1; status tones as a 12% wash of their colour; the accent one is the
-   web's "New" badge. */
-.pill { display: inline-flex; align-items: center; gap: 6px; flex: none; height: 20px; padding: 0 8px; border-radius: 9999px; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: .03px; white-space: nowrap; background: var(--fill-1); color: var(--foreground); }
+/* Badges (the web's `Badge`): 20px, round, 12/16 medium. Neutral on the solid fill-1; status tones on their solid 12%
+   tints; the accent one is the web's "New" badge. */
+.pill { display: inline-flex; align-items: center; gap: 6px; flex: none; height: 20px; padding: 0 8px; border-radius: 9999px; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: .03px; white-space: nowrap; background: var(--surface); color: var(--foreground); }
 .pill .d { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
-.pill.ok { color: var(--success); background: color-mix(in srgb, var(--success) 12%, transparent); }
-.pill.warn { color: var(--warning); background: color-mix(in srgb, var(--warning) 12%, transparent); }
+.pill.ok { color: var(--success); background: var(--tint-success); }
+.pill.warn { color: var(--warning); background: var(--tint-warning); }
 .pill.acc { color: var(--accent-text); background: var(--accent-soft); }
-.pill.bad { color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); }
+.pill.bad { color: var(--danger); background: var(--tint-danger); }
 /* The recording mark, as on the web's voice card: a dot with a 15% halo that pulses and the time in Geist Mono. The open
    microphone is live, so the dot and the running digits are orange (accent rules), not red; stopped, the time is grey. */
 .mic { display: inline-flex; align-items: center; gap: 6px; flex: none; white-space: nowrap; font-size: 12px; line-height: 16px; font-weight: 500; color: var(--secondary); }
@@ -297,22 +244,23 @@ svg.ic { width: 14px; height: 14px; flex: none; }
 .count { display: inline-flex; align-items: center; justify-content: center; flex: none; box-sizing: border-box; min-width: 16px; height: 16px; padding: 0 5px; border-radius: 9999px;
   background: var(--accent-soft); color: var(--accent-text); font-size: 10px; line-height: 16px; font-weight: 600; font-variant-numeric: tabular-nums; }
 
-/* Buttons, v4 at the notch's size: 28px pills, 13px medium. Primary is white with near-black text, secondary (plain
-   `.btn`) is outline on the near-black surface, ghost is text in secondary, danger is outline with red text. Colours
-   change in 75 ms; a press still squeezes. */
+/* Buttons, the web's `Button size="xs"` (17 October 2026: they were pills): 28px, r8, 8px sides, 13px medium. Primary is
+   white with near-black text, secondary (plain `.btn`) is outline on the near-black surface, ghost is text in secondary,
+   danger is outline with red text. Colours change in 75 ms; nothing scales on a press. Chips, the quick replies and the
+   ask pill stay round, as on the web. */
 .actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; align-items: center; }
-.btn { box-sizing: border-box; height: 28px; padding: 0 12px; border-radius: 9999px; border: 1px solid var(--border-input); background: var(--background); color: var(--foreground);
+.btn { box-sizing: border-box; height: 28px; padding: 0 8px; border-radius: var(--radius-btn-xs); border: 1px solid var(--border-input); background: var(--background); color: var(--foreground);
   font-size: 13px; line-height: 20px; font-weight: 500; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 6px; white-space: nowrap;
-  transition: background-color var(--fast) var(--ease), border-color var(--fast) var(--ease), color var(--fast) var(--ease), transform .2s var(--spring); }
+  transition: background-color var(--fast) var(--ease), border-color var(--fast) var(--ease), color var(--fast) var(--ease); }
 .btn:hover { background: var(--background-hover); border-color: var(--border-input-hover); }
-.btn:active:not(:disabled) { transform: scale(.94); }
 .btn.primary { background: var(--primary); border-color: transparent; color: var(--primary-fg); }
 .btn.primary:hover { background: var(--primary-hover); }
 .btn.ghost { background: transparent; border-color: transparent; color: var(--secondary); }
-.btn.ghost:hover { background: var(--fill-1); color: var(--foreground); }
+.btn.ghost:hover { background: var(--surface); color: var(--foreground); }
 .btn.danger { color: var(--danger); }
-.btn.danger:hover { border-color: color-mix(in srgb, var(--danger) 40%, transparent); background: color-mix(in srgb, var(--danger) 10%, transparent); }
-/* The standout action, one per card at most (accent rules): orange with near-black text, a lighter orange on hover.
+.btn.danger:hover { border-color: color-mix(in srgb, var(--danger) 40%, transparent); background: var(--tint-danger); }
+/* The standout action, one per card at most (accent rules; the web's `variant="accent"`): orange with near-black text, a
+   lighter orange on hover.
    It is marked `btn primary accent`, so disabled it greys like any primary. While the ask box holds words its Send is
    the standout, and the card's other orange button goes back to white, so two never show at once. */
 .btn.accent { background: var(--accent); border-color: transparent; color: var(--accent-fg); }
@@ -324,7 +272,8 @@ svg.ic { width: 14px; height: 14px; flex: none; }
 .btn .ic { width: 14px; height: 14px; }
 /* A key hint inside a button takes the button's own colour. */
 .btn kbd { height: 18px; min-width: 18px; margin-right: -4px; padding: 0 4px; background: color-mix(in srgb, currentColor 12%, transparent); color: inherit; opacity: .8; }
-/* The talk button while voice is off, and Listen on a reply: a round 28px ghost icon button on the left of the actions. */
+/* The talk button while voice is off, and Listen on a reply: a 28px ghost icon button (r8, the web's `IconButton
+   size="xs"`) on the left of the actions. */
 .btn.icon { width: 28px; padding: 0; margin-right: auto; }
 .btn.icon .ic { width: 16px; height: 16px; }
 /* Listen's Stop square is orange while she speaks (live and now, accent rules), as on the web's chat (owner decision,
@@ -335,9 +284,10 @@ svg.ic { width: 14px; height: 14px; flex: none; }
 .link:hover { color: var(--foreground); text-decoration-color: var(--accent); }
 .link:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; border-radius: 4px; }
 
-/* Lists inside a card: one near-black panel with a hairline, calm 32px rows with no lines between them. */
-.list { display: grid; margin: 0; padding: 4px; list-style: none; background: var(--background); border: 1px solid var(--border); border-radius: var(--radius-card-sm); }
-.list li { display: flex; align-items: center; gap: 8px; min-width: 0; min-height: 32px; padding: 0 8px; border-radius: var(--radius-btn-xs); font-size: 14px; line-height: 20px; font-weight: 500; color: var(--foreground); }
+/* Lists inside a card, as the landing page draws this notch (`NotchMock`): each row its own quiet r8 tile on the
+   canvas, 4px apart, with no outer box (17 October 2026: they were one bordered panel). */
+.list { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; background: none; border: 0; }
+.list li { display: flex; align-items: center; gap: 8px; min-width: 0; min-height: 32px; padding: 0 10px; border-radius: var(--radius-btn-xs); background: var(--background); font-size: 14px; line-height: 20px; font-weight: 500; color: var(--foreground); }
 .list li .t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .list li .t .s { color: var(--secondary); font-weight: 400; }
 .list li .k { margin-left: auto; flex: none; font-size: 13px; line-height: 19.5px; font-weight: 400; color: var(--secondary); white-space: nowrap; font-variant-numeric: tabular-nums; }
@@ -346,7 +296,7 @@ svg.ic { width: 14px; height: 14px; flex: none; }
 .list li .k.ok { color: var(--success); margin-left: 0; display: inline-flex; }
 .list li .k.ok.end { margin-left: auto; }
 .list li .k.ok .ic { width: 16px; height: 16px; }
-.list li .btn { margin-left: auto; height: 24px; padding: 0 10px; font-size: 12px; line-height: 16px; }
+.list li .btn { margin-left: auto; height: 24px; padding: 0 8px; border-radius: var(--radius-chip); font-size: 12px; line-height: 16px; }
 .list li .btn .ic { width: 12px; height: 12px; }
 
 /* Her progress ring (the web's ProgressArc, tone accent): orange over a 10% track, green once done. */
@@ -394,15 +344,15 @@ select.field option { background: var(--popover); color: var(--foreground); }
 .big { flex: none; font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.15px; color: var(--foreground); }
 .big.live { color: var(--accent-text); }
 .big.dim { color: var(--secondary); }
-.est { height: 2px; border-radius: 2px; background: var(--fill-1); overflow: hidden; }
+.est { height: 2px; border-radius: 2px; background: var(--surface); overflow: hidden; }
 .est i { display: block; height: 100%; background: var(--accent); transform-origin: left center; transition: transform 1s linear; }
 /* Download and upload progress: orange on a 7% track (the web's ProgressBar). */
-.bar { height: 4px; border-radius: 9999px; background: var(--fill-150); overflow: hidden; }
+.bar { height: 4px; border-radius: 9999px; background: var(--surface-150); overflow: hidden; }
 .bar i { display: block; height: 100%; border-radius: inherit; background: var(--accent); transition: width .25s var(--ease); }
 
 /* Keys: 11px medium in a 20px rounded-6 chip (18px inside a sentence). */
 kbd { display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; min-width: 20px; height: 20px; padding: 0 5px; border-radius: var(--radius-chip); vertical-align: middle;
-  background: var(--fill-1); color: var(--secondary); font: 500 11px/1 var(--font-sans); white-space: nowrap; }
+  background: var(--surface); color: var(--secondary); font: 500 11px/1 var(--font-sans); white-space: nowrap; }
 .sub kbd, .cap kbd { height: 18px; min-width: 18px; padding: 0 4px; }
 /* Voice is on: the mic and the shortcut, on the left of the actions. */
 .hint { display: inline-flex; align-items: center; gap: 6px; margin-right: auto; color: var(--secondary); }
@@ -439,27 +389,30 @@ kbd { display: inline-flex; align-items: center; justify-content: center; box-si
 .reply li::marker { color: var(--secondary); font-variant-numeric: tabular-nums; }
 .reply strong, .reply .label { font-weight: 600; color: var(--foreground); }
 .reply em { font-style: italic; }
-.reply code { font-family: var(--font-mono); font-size: 12.5px; padding: 1px 4px; border-radius: var(--radius-chip); background: var(--fill-1); }
+.reply code { font-family: var(--font-mono); font-size: 12.5px; padding: 1px 4px; border-radius: var(--radius-chip); background: var(--surface); }
 .reply .link { color: var(--foreground); font-size: inherit; line-height: inherit; font-weight: 500; }
 /* Something Brenda prepared that needs a yes: the web's warning Alert (a 6% amber wash, a 25% amber hairline, a shield). */
 .confirm { display: grid; gap: 12px; padding: 12px 14px; border-radius: var(--radius-card-sm); border: 1px solid color-mix(in srgb, var(--warning) 25%, transparent); background: color-mix(in srgb, var(--warning) 6%, transparent); }
 .confirm .sub { display: flex; gap: 10px; align-items: flex-start; font-size: 14px; line-height: 20px; color: var(--foreground); }
 .confirm .sub .ic { width: 16px; height: 16px; margin-top: 2px; color: var(--warning); }
 /* The whole message a Confirm will send (review, 8 October 2026): every word is seen before the yes, scrolled when long. */
-.confirm .detail { max-height: 132px; overflow-y: auto; padding: 8px 10px; border-radius: 8px; background: color-mix(in srgb, var(--foreground) 5%, transparent); font-size: 13px; line-height: 19.5px; font-weight: 400; color: var(--foreground); white-space: pre-wrap; overflow-wrap: anywhere; }
+.confirm .detail { max-height: 132px; overflow-y: auto; padding: 8px 10px; border-radius: var(--radius-btn-xs); background: var(--surface); font-size: 13px; line-height: 19.5px; font-weight: 400; color: var(--foreground); white-space: pre-wrap; overflow-wrap: anywhere; }
 .reply + .note { margin-top: 6px; }
 
 /* Follow-ups between assistants (owner decision, 8 October 2026: personal assistants, phase 4).
    A title that may run to two lines (the ask and the answer name a task), then cut. */
 .title.wrap { white-space: normal; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
-/* The question, in the asker's words: a quoted bubble on fill-1 (the web exchange's bubble), never a link, scrolled when long. */
-.quote { padding: 8px 12px; border-radius: var(--radius-control); background: var(--fill-1); font-size: 14px; line-height: 20px; font-weight: 400; color: var(--foreground);
+/* The question, in the asker's words: a quoted bubble (the web's `Bubble`, r16 on the solid fill-1), never a link,
+   scrolled when long. */
+.quote { padding: 8px 14px; border-radius: var(--radius-card); background: var(--surface); font-size: 14px; line-height: 20px; font-weight: 400; color: var(--foreground);
   white-space: pre-wrap; overflow-wrap: anywhere; max-height: 100px; overflow-y: auto; -webkit-user-select: text; user-select: text; }
-/* The four quick replies: outline pills sharing the row, one chosen at a time (`aria-pressed`). The chosen one gets a white
-   hairline, the fill and a small orange dot before its word (chosen, accent rules; the word carries the meaning). */
+/* The four quick replies (the web's `follow-up-reply` radios): round outline chips sharing the row, their words in the
+   secondary grey, one chosen at a time (`aria-pressed`). The chosen one gets a white hairline, the fill, its word in white
+   and a small orange dot before it (chosen, accent rules; the word carries the meaning). */
 .choices { display: flex; gap: 6px; }
-.btn.choice { flex: 1 1 auto; padding: 0 10px; }
-.btn.choice[aria-pressed="true"] { border-color: var(--foreground); background: var(--fill-150); }
+.btn.choice { flex: 1 1 auto; padding: 0 10px; border-radius: 9999px; background: transparent; color: var(--secondary); }
+.btn.choice:hover { background: transparent; border-color: var(--border-input-hover); color: var(--foreground); }
+.btn.choice[aria-pressed="true"] { border-color: var(--foreground); background: var(--surface); color: var(--foreground); }
 .btn.choice[aria-pressed="true"]::before { content: ""; width: 6px; height: 6px; border-radius: 50%; flex: none; background: var(--accent); }
 /* The note: a field with the talk keys inside its end while voice is on, and under it, only when there is something to
    say, the microphone while it is open (the voice card's live dot, time and waveform), why it could not listen, and the
@@ -541,7 +494,7 @@ kbd { display: inline-flex; align-items: center; justify-content: center; box-si
 .ask .field, .ask .field:hover, .ask .field:focus { flex: 1; height: 32px; padding: 0 8px 0 12px; border: 0; border-radius: 9999px; background: transparent; box-shadow: none; }
 .ask .icon-send { width: 32px; height: 32px; padding: 0; border: 0; border-radius: 50%; flex: none; }
 .ask .icon-send .ic { width: 16px; height: 16px; stroke-width: 2.25; }
-.ask:has(.field:placeholder-shown) .icon-send, .ask:has(.field:placeholder-shown) .icon-send:hover { background: var(--fill-150); color: var(--subtle); }
+.ask:has(.field:placeholder-shown) .icon-send, .ask:has(.field:placeholder-shown) .icon-send:hover { background: var(--surface-150); color: var(--subtle); }
 
 /* Tucked away: a thin black sliver at the top edge; the pointer reaching the top of the screen brings Brenda back. */
 .island .notch, .island::before, .island::after, .countdown { transition: opacity .2s ease; }
@@ -561,32 +514,18 @@ kbd { display: inline-flex; align-items: center; justify-content: center; box-si
 /* In the day card, one outline chip per teammate (32px, r10): their face, first name, and what they are on. */
 .team { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .mate { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 8px; min-width: 0; height: 32px; padding: 0 10px 0 8px; border-radius: var(--radius-control); cursor: pointer;
-  background: var(--background); border: 1px solid var(--border-input); transition: background-color var(--fast) var(--ease), border-color var(--fast) var(--ease), transform .2s var(--spring); }
+  background: var(--background); border: 1px solid var(--border-input); transition: background-color var(--fast) var(--ease), border-color var(--fast) var(--ease); }
 .mate:hover { background: var(--background-hover); border-color: var(--border-input-hover); }
-.mate:active { transform: scale(.96); }
 .mate:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
 .mate .nm { flex: none; font-size: 13px; line-height: 20px; font-weight: 500; color: var(--foreground); }
 .mate .tk { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; line-height: 16px; font-weight: 400; color: var(--secondary); }
 
-/* Dropping a file: a dashed zone on the faint fill that turns green when the file is over Brenda. */
-.dropzone { border: 1px dashed var(--border-input-hover); border-radius: var(--radius-card-sm); padding: 20px 16px; text-align: center; font-size: 14px; line-height: 20px; font-weight: 500; color: var(--secondary); background: var(--fill-0);
+/* Dropping a file: a dashed zone on the solid fill-0 that turns green when the file is over Brenda. */
+.dropzone { border: 1px dashed var(--border-input-hover); border-radius: var(--radius-card-sm); padding: 20px 16px; text-align: center; font-size: 14px; line-height: 20px; font-weight: 500; color: var(--secondary); background: var(--background-hover);
   transition: border-color .15s var(--ease), color .15s var(--ease), background-color .15s var(--ease); }
-.island.hot .dropzone { border-color: var(--success); color: var(--success); background: color-mix(in srgb, var(--success) 10%, transparent); }
+.island.hot .dropzone { border-color: var(--success); color: var(--success); background: var(--tint-success); }
 
-/* Reactions: poked (squash, cross for a moment), poked three times (dizzy), admired (orange heart eyes, as on the web). */
-.face:not(.mini) { cursor: pointer; }
-.face.squash { animation: squash .32s var(--spring) 1; }
-.face.squash .eyes span { height: 2px; border-radius: 1px; }
-.face.squash .eyes span:first-child { transform: rotate(18deg); }
-.face.squash .eyes span:last-child { transform: rotate(-18deg); }
-.face.dizzy { animation: wobble .45s ease-in-out infinite alternate; }
-.face.dizzy .eyes span { width: 5px; height: 5px; border-radius: 50%; background: transparent; border: 1.5px solid var(--ink); border-right-color: transparent; animation: spin .55s linear infinite; }
-.face.love { --glow: var(--accent); }
-.face.love .eyes span { width: 6px; height: 6px; border: 0; border-radius: 0; background: var(--accent); clip-path: path("M3 5.6 L0.7 3.2 A1.45 1.45 0 0 1 3 1.2 A1.45 1.45 0 0 1 5.3 3.2 Z"); animation: thump .7s ease-in-out infinite; }
-@keyframes squash { 0% { transform: scale(1); } 30% { transform: scale(1.2, .76); } 62% { transform: scale(.92, 1.1); } 100% { transform: scale(1); } }
-@keyframes wobble { from { rotate: -9deg; } to { rotate: 9deg; } }
-@keyframes spin { to { transform: rotate(360deg); } }
-@keyframes thump { 0%, 100% { scale: 1; } 50% { scale: 1.25; } }
+/* Reactions (squash, dizzy, love) moved to face.css with the rest of her face (12 October 2026). */
 
 /* Icons that move (owner request, 7 October 2026: "I want our icons to be animated icons"), as the web's animated icons
    do: hovering or focusing a button plays its icon's small move once, about 0.4 s, eased out, no bounce and never a loop.
@@ -630,14 +569,10 @@ kbd { display: inline-flex; align-items: center; justify-content: center; box-si
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
   .shimmer { -webkit-text-fill-color: currentColor; }
-  .face.listen .eyes span { scale: none; }
-  .face.talk { translate: none; filter: drop-shadow(0 0 .5px rgb(255 255 255 / .25)) drop-shadow(0 0 6px color-mix(in srgb, var(--sphere-mid, #ececf0) 70%, transparent)); }
-  .face.talk .eyes span { scale: 1.04 1.1; }
   .btn .ic-check path { stroke-dasharray: none; }
   .orb.think i { opacity: .8; }
   /* Notifications (owner decision, 9 October 2026, "A plus the grafts"): a 120 ms cross-fade as a card arrives or the
-     pager turns, and nothing else: no growing, hop, stars, slide, blur or countdown; the wash is there at once and the
-     faces are still. A redraw of the same card (`steady`) does not fade again. */
+     pager turns, and nothing else: no growing, hop, stars, slide, blur or countdown; the faces are still. A redraw of the same card (`steady`) does not fade again. */
   .notch.enter:not(.steady) > *, .notch.step:not(.steady) > * { animation: nc-fade .12s linear both !important; }
   .nc-tg-stars, .countdown { display: none; }
 }
@@ -651,12 +586,12 @@ kbd { display: inline-flex; align-items: center; justify-content: center; box-si
    button the size of the row that opens its page; the number is Geist Mono in the text colour (a figure, not orange),
    "not available" stays in the secondary grey. */
 .list li:has(> .rowlink) { padding: 0; }
-.list li > .rowlink { all: unset; box-sizing: border-box; flex: 1; min-width: 0; min-height: 32px; display: flex; align-items: center; gap: 8px; padding: 0 8px; border-radius: var(--radius-btn-xs); cursor: pointer;
+.list li > .rowlink { all: unset; box-sizing: border-box; flex: 1; min-width: 0; min-height: 32px; display: flex; align-items: center; gap: 8px; padding: 0 10px; border-radius: inherit; cursor: pointer;
   transition: background-color var(--fast) var(--ease); }
-.list li > .rowlink:hover { background: var(--fill-1); }
+.list li > .rowlink:hover { background: var(--surface); }
 .list li > .rowlink:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
 .list li .k.n { font-family: var(--font-mono); font-size: 14px; line-height: 20px; font-weight: 500; color: var(--foreground); }
-/* Its one-tap actions: outline pills that wrap within the card (never sideways), each with its icon; the first is the
+/* Its one-tap actions: outline buttons that wrap within the card (never sideways), each with its icon; the first is the
    card's one orange button. */
 .starts { display: flex; flex-wrap: wrap; gap: 6px; }
 .starts .btn { max-width: 100%; }
@@ -667,7 +602,7 @@ kbd { display: inline-flex; align-items: center; justify-content: center; box-si
 /* A Confirm's readback, aligned with the summary's words (past the shield): "Goes to" as the small label, who receives it
    as a compact list (13/19.5, one per line, wrapping), and what they get in the secondary grey. */
 .confirm .readback { display: grid; gap: 6px; margin-left: 26px; min-width: 0; }
-.readback .list { padding: 2px 4px; }
+.readback .list { gap: 2px; }
 .readback .list li { min-height: 24px; padding: 2px 8px; font-size: 13px; line-height: 19.5px; font-weight: 400; }
 .readback .list li .t { white-space: normal; overflow-wrap: anywhere; }
 .readback .list li.more .t { color: var(--secondary); }
@@ -712,31 +647,35 @@ kbd { display: inline-flex; align-items: center; justify-content: center; box-si
 .pref-q { display: grid; gap: 4px; min-width: 0; }
 .confirm .pref-q .why { margin-top: 0; }
 .confirm.pref .readback { margin-left: 0; }
-.confirm.pref .quote { background: color-mix(in srgb, var(--foreground) 5%, transparent); }
+.confirm.pref .quote { background: var(--surface); }
 
 /* ---- Notifications ---------------------------------------------------------------------------------------------------
-   Owner decision, 9 October 2026 (notch notifications, "A plus the grafts"; the header says what shows). The markup is
+   Owner decision, 9 October 2026 (notch notifications, "A plus the grafts"; the header says what shows), redrawn in v4 on
+   17 October 2026 (owner request: the notch "is still using our first old design system"). The markup is
    desktop/src/notify-cards.js's, every class `nc-`: the notch's own `.quote`, `.facts`, `.names`, `.big`, `.mate`,
    `.count`, `.lbl` and `.answer` keep their looks for the cards that still use them. What came from where:
-   - The approved mockup, direction A ("Glance"): the four washes and their strengths, the type scale (headline Inter 650
-     20/24, supporting line 13/18, byline 12/16, the summary's 64px count, the reminder's 40px time, the answer's 28px
-     result), the chips, the move row, the standup's rows, the summary's sentence and kind chips, the bar's states and the
-     end card.
+   - The approved mockup, direction A ("Glance"): the chips, the move row, the standup's rows, the summary's sentence and
+     kind chips, the bar's states and the end card. Its coloured washes are retired (17 October 2026: v4 has no gradients
+     or glow, and no violet): the kind shows in the byline's words and the pager's dot. Its type scale is now v4's: the
+     headline is the web's dialog title (Inter 500 18/26), the reminder's time the running timer's stat size, the answer's
+     result the section title (600 18/26), and the summary's count the one use of Geist (the home headline, 28/36).
    - From B ("Duo"): Together (two 44px faces cheek to cheek, one shared hop, two stars in their coat colours), the row of
      faces in the summary, the moods, the 2px bar in the sender's colour beside their words, "Ben is waiting on you".
-   - From C ("Stack"): the pager's footer (dots in each kind's colour, "3 of 8", ‹ and a labelled Next ›) and the figure
-     box; Inter and Geist Mono only.
-   `--talk` here is a colour triplet on :root; `.face.talk` sets its own `--talk` (the voice level) on the faces, which is
-   all that reads it there, so the two never meet. */
+   - From C ("Stack"): the pager's footer (rest dots in each kind's colour, the current one long and white, "3 of 8", ‹
+     and a labelled Next ›) and the figure box.
+   `--talk` here is a colour triplet on :root (white now; NotifyCards.mix() still names it); `.face.talk` sets its own
+   `--talk` (the voice level) on the faces, which is all that reads it there, so the two never meet. */
 :root {
-  --talk: 130 136 255;     /* messages, mentions, answers */
+  --talk: 255 255 255;     /* messages, mentions, answers */
   --needs: 255 108 2;      /* what waits on you */
   --good: 67 194 120;      /* approved, accepted */
   --plain: 255 255 255;    /* reports, roundups, notes */
-  --talk-dot: #8f95ff; --needs-dot: #ff7a1a; --good-dot: #43c278; --plain-dot: #b5b5b5;
-  --chip: rgb(255 255 255 / .065);
-  --faint: rgb(255 255 255 / .32);
-  --display: var(--font-sans);   /* headlines are Inter 650; no Geist sans in the notch */
+  /* Each kind's dot (the pager, the summary's kinds, the bar's lead dot): talk in the description grey, what waits on you
+     orange (attention), good news green (status), the rest in the subtle grey. The two greys stay a step apart and never
+     darken toward the black island (review, 17 October 2026: talk and plain were rgb 97 and 59, about 1.6:1). */
+  --talk-dot: var(--secondary); --needs-dot: var(--accent); --good-dot: var(--success); --plain-dot: var(--subtle);
+  --chip: var(--surface);
+  --display: var(--font-sans);   /* headlines are Inter; Geist only through --font-display */
   --mono: var(--font-mono);
 }
 
@@ -752,87 +691,77 @@ kbd { display: inline-flex; align-items: center; justify-content: center; box-si
    (review, 9 October 2026: `.nc h3` outranked `.nc-hl` and the headline sat flush under the byline). */
 :where(.nc) :where(h3, dl, dd) { margin: 0; }
 
-/* The wash: light falling from the top edge in the colour of the news, about 120px down. The compact bar is never
-   tinted; the notch's words sit above it. */
-.wash { position: absolute; inset: 0 0 auto 0; height: min(150px, 100%); border-radius: inherit; pointer-events: none; opacity: 0; transition: opacity .3s var(--ease);
-  background: radial-gradient(125% 128px at 50% -30px, rgb(var(--w, 255 255 255) / var(--wa, 0)), rgb(var(--w, 255 255 255) / 0) 100%); }
-.island[data-family="talk"] { --w: var(--talk); --wa: .32; }
-.island[data-family="needs"] { --w: var(--needs); --wa: .27; }
-.island[data-family="good"] { --w: var(--good); --wa: .3; }
-.island[data-family="plain"] { --w: var(--plain); --wa: .1; }
-.island.open:is([data-family="talk"], [data-family="needs"], [data-family="good"], [data-family="plain"], [data-family="mix"]) .wash { opacity: 1; }
-/* The summary: every kind that is waiting, side by side in proportion (main.js sets --mix from NotifyCards.mix()). */
-.island[data-family="mix"] .wash { height: min(140px, 100%); background: var(--mix, none);
-  -webkit-mask: linear-gradient(to bottom, #000 0, rgb(0 0 0 / .45) 64px, transparent 136px); mask: linear-gradient(to bottom, #000 0, rgb(0 0 0 / .45) 64px, transparent 136px); }
+/* The wash is retired (17 October 2026: v4 has no gradients or glow). The element, `data-family` on the island and
+   `--mix` stay, because main.js still sets them; nothing draws them. */
+.wash { display: none; }
 .island .notch { z-index: 1; }
 .island > .countdown { z-index: 2; }
-/* Arriving, the wash rises over 600 ms; turning the pager, it fades in again before the words (the colour changes first). */
-.island.growing .wash { transition: opacity .6s var(--ease) .1s; }
-.island.step .wash, .island:has(> .notch.step:not(.steady)) .wash { animation: wash-in .3s var(--ease) both; }
-/* The countdown hairline runs in the kind's colour, and waits while the pointer or the keyboard is on the island. */
-.island[data-family="talk"] .countdown { background: var(--talk-dot); }
-.island[data-family="needs"] .countdown { background: var(--needs-dot); }
-.island[data-family="good"] .countdown { background: var(--good-dot); }
-.island[data-family="plain"] .countdown { background: var(--plain-dot); }
+/* The countdown hairline stays neutral whatever the kind, and waits while the pointer or the keyboard is on the island. */
 .island.paused .countdown.run { animation-play-state: paused; }
 
 /* Byline: who brought it (their face, in the mood of the news), from where, when. */
 .nc-by { display: flex; align-items: center; gap: 9px; min-width: 0; min-height: 28px; font-size: 12px; line-height: 16px; font-weight: 500; color: var(--secondary); white-space: nowrap; }
 .nc-by .ctx { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .nc-by .ctx b { color: var(--foreground); font-weight: 500; }
-.nc-by .when { margin-left: auto; flex: none; font: 500 11.5px/16px var(--mono); color: var(--secondary); font-variant-numeric: tabular-nums; }
-.nc-more { margin-left: auto; flex: none; display: inline-flex; align-items: center; gap: 6px; height: 20px; padding: 0 8px; border-radius: 9999px; background: var(--fill-150); color: var(--foreground); font-size: 11.5px; line-height: 16px; font-weight: 500; }
-.nc-more .n { font-family: var(--mono); font-weight: 600; }
+/* The time, as the web's meta "15:40": Inter 12/16 regular in tabular figures, subtle. */
+.nc-by .when { margin-left: auto; flex: none; font: 400 12px/16px var(--font-sans); color: var(--subtle); font-variant-numeric: tabular-nums; }
+.nc-more { margin-left: auto; flex: none; display: inline-flex; align-items: center; gap: 6px; height: 20px; padding: 0 8px; border-radius: 9999px; background: var(--surface); color: var(--foreground); font-size: 12px; line-height: 16px; font-weight: 500; }
+.nc-more .n { font-family: var(--mono); font-weight: 500; font-variant-numeric: tabular-nums; }
 .nc-pair { display: inline-flex; flex: none; }
 .nc-pair .face + .face { margin-left: -8px; outline: 2px solid var(--island); }
 
 /* The headline: one line written to fit (30 characters); the thing itself (a task, a commitment, a title) may run to two. */
-.nc-hl { margin-top: 10px; font: 650 20px/24px var(--display); letter-spacing: -.4px; color: var(--foreground); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* The web's dialog title: Inter 500 18/26. */
+.nc-hl { margin-top: 10px; font: 500 18px/26px var(--display); letter-spacing: -.045px; color: var(--foreground); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .nc-hl.wrap { white-space: normal; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
 /* What a press did (main.js's result) is read whole, never cut (review, 8 October 2026). */
 .nc-hl.full { display: block; -webkit-line-clamp: none; line-clamp: none; }
-.nc-hl > .ic { width: 18px; height: 18px; margin-right: 7px; vertical-align: -2px; stroke-width: 2.4; }
-.nc-hl.ok > .ic { color: #5ee08f; }
-.nc-hl.bad > .ic { color: #ff8a8a; }
-.nc-lede { margin-top: 4px; font-size: 13px; line-height: 18px; font-weight: 400; color: var(--secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nc-hl > .ic { width: 16px; height: 16px; margin-right: 6px; vertical-align: -2px; stroke-width: 2; }
+.nc-hl.ok > .ic { color: var(--success); }
+.nc-hl.bad > .ic { color: var(--danger); }
+.nc-lede { margin-top: 4px; font-size: 13px; line-height: 19.5px; font-weight: 400; color: var(--secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .nc-lede.two { white-space: normal; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
 .nc-note { margin-top: 10px; font-size: 12px; line-height: 16px; font-weight: 400; color: var(--subtle); overflow-wrap: anywhere; }
-/* Someone's own words (B): a 2px bar in their assistant's coat colour (--q, its middle tone), two lines at most. */
-.nc-quote { margin-top: 10px; padding-left: 10px; border-left: 2px solid var(--q, var(--border-input-hover)); font-size: 14px; line-height: 20px; font-weight: 400; color: rgb(255 255 255 / .9);
+/* Someone's own words (B): a 2px bar in their assistant's coat colour (--q, its middle tone: identity, as the web's
+   avatar ring), the words in white, two lines at most. */
+.nc-quote { margin-top: 10px; padding-left: 10px; border-left: 2px solid var(--q, var(--border-input-hover)); font-size: 14px; line-height: 20px; font-weight: 400; color: var(--foreground);
   overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; -webkit-user-select: text; user-select: text; }
-.nc-quote .at { font-weight: 600; color: #c5c8ff; }
-/* A follow-up's answer: the question small, the result big, in its status colour. */
-.nc-q { margin-top: 10px; font-size: 13px; line-height: 18px; font-weight: 400; color: var(--secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.nc-result { margin-top: 2px; font: 650 28px/32px var(--display); letter-spacing: -.6px; overflow-wrap: anywhere; }
+.nc-quote .at { font-weight: 600; color: var(--foreground); }
+/* A follow-up's answer: the question small, the result as a section title (600 18/26) in its status colour; the word
+   carries the meaning. */
+.nc-q { margin-top: 10px; font-size: 13px; line-height: 19.5px; font-weight: 400; color: var(--secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nc-result { margin-top: 2px; font: 600 18px/26px var(--display); letter-spacing: -.045px; overflow-wrap: anywhere; }
 .nc-result.r-ok { color: var(--success); }
 .nc-result.r-blocked { color: var(--danger); }
 .nc-result.r-notstarted { color: var(--warning); }
 .nc-result.r-none { color: var(--secondary); }
 
-/* Facts: counted, not written. Neutral chips; a count of problems orange (the unread badge's colours, attention); one
-   item's status keeps its status colour; zeros fade to grey. A chip with a caret is a button that shows who. */
+/* Facts: counted, not written, as the web's large badges (24px, round). Neutral chips; a count of problems orange (the
+   unread badge's colours, attention); one item's status keeps its status colour; zeros fade to grey. A chip with a caret
+   is a button that shows who. */
 .nc-facts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 12px; }
-.nc-fact { all: unset; box-sizing: border-box; display: inline-flex; align-items: center; gap: 6px; max-width: 100%; height: 26px; padding: 0 9px 0 7px; border-radius: 8px; background: var(--chip);
+.nc-fact { all: unset; box-sizing: border-box; display: inline-flex; align-items: center; gap: 6px; max-width: 100%; height: 24px; padding: 0 10px 0 8px; border-radius: 9999px; background: var(--chip);
   font-size: 12px; line-height: 16px; font-weight: 500; color: var(--secondary); white-space: nowrap; }
-.nc-fact .ic { width: 13px; height: 13px; color: var(--subtle); }
-.nc-fact .n { font: 600 12.5px/16px var(--mono); color: var(--foreground); font-variant-numeric: tabular-nums; letter-spacing: -.2px; }
+.nc-fact .ic { width: 12px; height: 12px; color: var(--subtle); }
+.nc-fact .n { font: 500 12px/16px var(--mono); color: var(--foreground); font-variant-numeric: tabular-nums; }
 .nc-fact .w { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .nc-fact.zero .n { color: var(--subtle); }
 .nc-fact.attn { background: var(--accent-soft); color: var(--accent-text); }
 .nc-fact.attn .n, .nc-fact.attn .ic { color: var(--accent-text); }
-.nc-fact.bad { background: color-mix(in srgb, var(--danger) 14%, transparent); color: #ff8a8a; }
-.nc-fact.bad .n, .nc-fact.bad .ic { color: #ff8a8a; }
-.nc-fact.ok { background: color-mix(in srgb, var(--success) 13%, transparent); color: #5ee08f; }
-.nc-fact.ok .n, .nc-fact.ok .ic { color: #5ee08f; }
-button.nc-fact { height: 28px; cursor: pointer; transition: box-shadow var(--fast) var(--ease); }
-button.nc-fact::after { content: ""; width: 10px; height: 10px; margin-left: -1px; flex: none; background: currentColor; opacity: .75; transition: rotate .15s var(--ease);
+.nc-fact.bad { background: var(--tint-danger); color: var(--danger); }
+.nc-fact.bad .n, .nc-fact.bad .ic { color: var(--danger); }
+.nc-fact.ok { background: var(--tint-success); color: var(--success); }
+.nc-fact.ok .n, .nc-fact.ok .ic { color: var(--success); }
+button.nc-fact { height: 24px; cursor: pointer; transition: background-color var(--fast) var(--ease); }
+button.nc-fact::after { content: ""; width: 10px; height: 10px; margin-left: -1px; flex: none; background: currentColor; opacity: .75; transition: rotate var(--duration) var(--ease);
   -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") center / contain no-repeat;
   mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") center / contain no-repeat; }
 button.nc-fact[aria-expanded="true"]::after { rotate: 180deg; }
-button.nc-fact:hover { box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 35%, transparent); }
+button.nc-fact:hover { background: var(--surface-150); }
+button.nc-fact:is(.attn, .bad, .ok):hover { background: color-mix(in srgb, currentColor 18%, var(--canvas)); }
 button.nc-fact:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
 /* Names on demand, under the chips. */
-.nc-names { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; margin-top: 10px; padding: 8px 10px; border-radius: var(--radius-control); background: var(--fill-1); font-size: 13px; line-height: 18px; font-weight: 500; color: var(--foreground); }
+.nc-names { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; margin-top: 10px; padding: 8px 10px; border-radius: var(--radius-card-sm); background: var(--background); border: 1px solid var(--border); font-size: 13px; line-height: 18px; font-weight: 500; color: var(--foreground); }
 .nc-names[hidden] { display: none; }
 .nc-names .lbl { font-size: 13px; line-height: 18px; font-weight: 400; letter-spacing: 0; color: var(--secondary); }
 .nc-names .nm { display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; }
@@ -840,12 +769,12 @@ button.nc-fact:focus-visible { outline: 2px solid var(--ring); outline-offset: 2
 .nc-names .nm.more { color: var(--secondary); font-weight: 400; }
 
 /* A change, drawn as the change: the thing, the old value struck through in grey, an arrow, the new one in white. */
-.nc-move { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; min-width: 0; margin-top: 12px; font-size: 13px; line-height: 18px; font-weight: 500; color: var(--secondary); }
-.nc-move .task { box-sizing: border-box; display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; height: 26px; padding: 0 9px 0 7px; border-radius: 8px; background: var(--chip); color: var(--foreground); }
+.nc-move { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; min-width: 0; margin-top: 12px; font-size: 13px; line-height: 19.5px; font-weight: 500; color: var(--secondary); }
+.nc-move .task { box-sizing: border-box; display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; height: 24px; padding: 0 10px 0 8px; border-radius: 9999px; background: var(--chip); font-size: 12px; line-height: 16px; color: var(--foreground); }
 .nc-move .task .t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.nc-move .task .ic { width: 13px; height: 13px; color: var(--subtle); }
-.nc-move .from { font: 500 13px/18px var(--mono); color: var(--subtle); white-space: nowrap; text-decoration: line-through; text-decoration-color: rgb(255 255 255 / .4); }
-.nc-move .to { font: 600 15px/18px var(--mono); color: var(--foreground); white-space: nowrap; letter-spacing: -.3px; }
+.nc-move .task .ic { width: 12px; height: 12px; color: var(--subtle); }
+.nc-move .from { font: 400 13px/19.5px var(--mono); color: var(--subtle); white-space: nowrap; text-decoration: line-through; text-decoration-color: var(--faint); }
+.nc-move .to { font: 500 13px/19.5px var(--mono); color: var(--foreground); white-space: nowrap; }
 .nc-move > .ic { width: 14px; height: 14px; color: var(--subtle); }
 /* The plain list of lines, when there are no facts (a request's "what would change", a routine's first lines). */
 .nc-lines { margin: 12px 0 0; padding: 8px 12px 8px 28px; background: var(--background); border: 1px solid var(--border); border-radius: var(--radius-card-sm); font-size: 13px; line-height: 19.5px; font-weight: 400; color: var(--foreground); }
@@ -853,27 +782,28 @@ button.nc-fact:focus-visible { outline: 2px solid var(--ring); outline-offset: 2
 .nc-lines li + li { margin-top: 2px; }
 .nc-lines li::marker { color: var(--subtle); }
 
-/* A reminder: the time is the biggest thing on the card, a hairline, then what to do. */
-.nc-remind { display: flex; align-items: center; gap: 16px; min-width: 0; margin-top: 10px; }
-.nc-remind .time { flex: none; font: 650 40px/40px var(--display); letter-spacing: -1px; font-variant-numeric: tabular-nums; color: var(--foreground); }
-.nc-remind .rule-v { flex: none; width: 1px; align-self: stretch; background: var(--border-input); }
+/* A reminder: the time at the running timer's stat size (Geist Mono 24/30 bold), a hairline, then what to do. */
+.nc-remind { display: flex; align-items: center; gap: 12px; min-width: 0; margin-top: 10px; }
+.nc-remind .time { flex: none; font: 700 24px/30px var(--mono); letter-spacing: -.15px; font-variant-numeric: tabular-nums; color: var(--foreground); }
+.nc-remind .rule-v { flex: none; width: 1px; align-self: stretch; background: var(--border); }
 .nc-remind-t { flex: 1; min-width: 0; }
 .nc-remind .nc-hl, .nc-remind .nc-lede { margin-top: 0; }
 /* The standup draft: each section's first line beside its label, "and 2 more" in grey. */
-.nc-rows { display: grid; grid-template-columns: minmax(74px, auto) minmax(0, 1fr); gap: 5px 10px; margin-top: 12px; padding: 10px 12px; border-radius: var(--radius-control); background: var(--fill-1); font-size: 13px; line-height: 18px; font-weight: 400; }
+.nc-rows { display: grid; grid-template-columns: minmax(74px, auto) minmax(0, 1fr); gap: 5px 10px; margin-top: 12px; padding: 10px 12px; border-radius: var(--radius-card-sm); background: var(--background); border: 1px solid var(--border); font-size: 13px; line-height: 18px; font-weight: 400; }
 .nc-rows dt { color: var(--secondary); white-space: nowrap; }
 .nc-rows dd { min-width: 0; color: var(--foreground); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .nc-rows dd .more { color: var(--secondary); }
 .nc-rows dd.none { color: var(--subtle); }
 
-/* The figure box (C's `.key`): one figure in Geist Mono 22/26 in a small dark box right of the headline; red when late. */
+/* The figure box (C's `.key`): one figure in Geist Mono 18/26 (the web's metric) in a small near-black cell with a
+   hairline, right of the headline; red when late. */
 .nc-head-k { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 12px; margin-top: 10px; }
 .nc-head-t { min-width: 0; }
 .nc-head-k .nc-hl { margin-top: 2px; }
-.nc-key { box-sizing: border-box; display: grid; justify-items: center; min-width: 54px; padding: 7px 10px 6px; border-radius: var(--radius-card-sm); background: rgb(0 0 0 / .38); box-shadow: inset 0 0 0 1px var(--border-input); text-align: center; }
-.nc-key .fig { font: 600 22px/26px var(--mono); letter-spacing: -.03em; font-variant-numeric: tabular-nums; color: var(--foreground); white-space: nowrap; }
+.nc-key { box-sizing: border-box; display: grid; justify-items: center; min-width: 54px; padding: 7px 10px 6px; border-radius: var(--radius-card-sm); background: var(--background); box-shadow: 0 0 0 1px var(--border); text-align: center; }
+.nc-key .fig { font: 500 18px/26px var(--mono); font-variant-numeric: tabular-nums; color: var(--foreground); white-space: nowrap; }
 .nc-key .kc { font-size: 12px; line-height: 16px; font-weight: 500; color: var(--secondary); white-space: nowrap; }
-.nc-key.bad .fig { color: color-mix(in srgb, var(--danger) 78%, #fff); }
+.nc-key.bad .fig { color: var(--danger); }
 
 /* Together (B): good news is the two assistants cheek to cheek at 44px, both happy, two small stars in their colours. */
 .nc-tg-stage { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 12px; min-height: 56px; margin-top: -2px; }
@@ -898,36 +828,36 @@ button.nc-fact:focus-visible { outline: 2px solid var(--ring); outline-offset: 2
 
 /* The summary: a sentence that starts small and lands on the number, who sent them, the kinds. */
 .nc-sum-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 28px; }
-.nc-hey { font-size: 15px; line-height: 20px; font-weight: 500; color: var(--secondary); overflow-wrap: anywhere; }
+.nc-hey { font-size: 14px; line-height: 20px; font-weight: 500; color: var(--secondary); overflow-wrap: anywhere; }
 .nc-hey b { color: var(--foreground); font-weight: 500; }
-.nc-big { display: flex; align-items: baseline; gap: 10px; margin-top: 2px; }
-.nc-big .n { font: 700 64px/60px var(--display); letter-spacing: -3px; font-variant-numeric: tabular-nums; }
-.nc-big .w { font: 650 22px/26px var(--display); letter-spacing: -.5px; }
+/* The count and its word: the notch's one use of the display face, at her home headline's size (Geist 400 28/36). */
+.nc-big { display: flex; align-items: baseline; gap: 8px; margin-top: 4px; }
+.nc-big .n, .nc-big .w { font: 400 28px/36px var(--font-display); letter-spacing: -.21px; }
+.nc-big .n { font-variant-numeric: tabular-nums; }
 /* B's row of faces: up to six senders at 30px with a first name and a word, then +N. */
 .nc-lineup { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; margin-top: 12px; padding: 4px 0 2px; }
 .nc-mate { position: relative; display: flex; flex-direction: column; align-items: center; gap: 3px; min-width: 0; text-align: center; }
 .nc-mate .face { margin-bottom: 3px; }
-.nc-mate b { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; line-height: 15px; font-weight: 600; }
-.nc-mate > span:last-child { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; line-height: 14px; font-weight: 400; color: var(--secondary); }
+.nc-mate b { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; line-height: 16px; font-weight: 500; color: var(--foreground); }
+.nc-mate > span:last-child { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; line-height: 16px; font-weight: 400; color: var(--secondary); }
 .nc-mate .count { position: absolute; top: -4px; left: calc(50% + 9px); box-shadow: 0 0 0 2px var(--island); }
-.nc-more-n { display: grid; place-items: center; width: 30px; height: 30px; margin-bottom: 3px; border-radius: 50%; background: color-mix(in srgb, #fff 12%, var(--island)); font: 600 12px/1 var(--mono); color: var(--secondary); }
-.nc-kinds { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 14px; }
-.nc-kind { all: unset; box-sizing: border-box; display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 9px 0 8px; border-radius: 9999px; background: var(--chip); cursor: pointer;
+.nc-more-n { display: grid; place-items: center; width: 30px; height: 30px; margin-bottom: 3px; border-radius: 50%; background: var(--surface); font: 500 12px/1 var(--mono); color: var(--secondary); }
+.nc-kinds { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
+.nc-kind { all: unset; box-sizing: border-box; display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px 0 8px; border-radius: 9999px; background: var(--chip); cursor: pointer;
   font-size: 12px; line-height: 16px; font-weight: 500; color: var(--secondary); transition: background-color var(--fast) var(--ease), color var(--fast) var(--ease); }
-.nc-kind:hover { background: var(--fill-150); color: var(--foreground); }
+.nc-kind:hover { background: var(--surface-150); color: var(--foreground); }
 .nc-kind:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
-.nc-kind .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--plain-dot); }
-.nc-kind .n { font: 600 12.5px/16px var(--mono); color: var(--foreground); }
+.nc-kind .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--plain-dot); }
+.nc-kind .n { font: 500 12px/16px var(--mono); color: var(--foreground); font-variant-numeric: tabular-nums; }
 .nc-kind[data-family="talk"] .dot { background: var(--talk-dot); }
 .nc-kind[data-family="needs"] .dot { background: var(--needs-dot); }
 .nc-kind[data-family="good"] .dot { background: var(--good-dot); }
 
-/* The buttons: the notch's own pills, 18px under the card. On a card that can grow taller than the stage (a reply or
-   reason box, the follow-up's quick replies, names opened) they stay in view at the bottom of the island, on its black;
-   a short card keeps them on the wash. */
+/* The buttons, 18px under the card. On a card that can grow taller than the stage (a reply or reason box, the
+   follow-up's quick replies, names opened) they stay in view at the bottom of the island, on its black. */
 .nc > .actions { margin-top: 18px; }
 .nc:has(.fu-note, .choices, .nc-names:not([hidden])) > .actions:last-child { position: sticky; bottom: -18px; z-index: 1; margin: 10px -18px -18px; padding: 8px 18px 18px; background: var(--island); border-radius: 0 0 26px 26px; }
-.nc-done { display: inline-flex; align-items: center; gap: 6px; height: 28px; font-size: 13px; line-height: 20px; font-weight: 500; color: #5ee08f; }
+.nc-done { display: inline-flex; align-items: center; gap: 6px; height: 28px; font-size: 13px; line-height: 20px; font-weight: 500; color: var(--success); }
 .nc-done .ic { width: 14px; height: 14px; }
 /* Acted on in the pager: the card dims, "Accepted" shows for 600 ms, then the next one. */
 .nc.acted > :not(.nc-nav):not(.actions) { opacity: .45; transition: opacity .2s var(--ease); }
@@ -937,35 +867,39 @@ button.nc-fact:focus-visible { outline: 2px solid var(--ring); outline-offset: 2
 .nc-duo { display: inline-flex; margin: 0 auto; }
 .nc.center .nc-hl { margin-top: 12px; }
 
-/* The pager's footer (C's deck row): the dots in each card's kind colour (the current one long, the read ones dim), the
-   position in Geist Mono, Mark all read, ‹ and a labelled Next › that says Finish on the last card. It stays at the
-   bottom of the island when a card is taller than the stage. */
+/* The pager's footer (C's deck row), in the web carousel's language: the rest dots in each card's kind colour, the
+   current one long and white, the read ones dim; the position in Geist Mono, Mark all read, ‹ and a labelled Next › that
+   says Finish on the last card. It stays at the bottom of the island when a card is taller than the stage. */
 .nc-nav { position: sticky; bottom: -18px; z-index: 1; display: flex; align-items: center; gap: 8px; margin: 16px -18px -18px; padding: 10px 14px 14px 18px; border-top: 1px solid var(--border); border-radius: 0 0 26px 26px; background: var(--island); }
 .nc-dots { display: inline-flex; align-items: center; gap: 4px; flex: none; }
-.nc-dots i { display: block; width: 6px; height: 6px; border-radius: 3px; background: color-mix(in srgb, var(--kind, var(--plain-dot)) 72%, #000); transition: width .24s var(--ease), opacity .24s var(--ease); }
-.nc-dots i.on { width: 16px; background: var(--kind, var(--plain-dot)); }
-.nc-dots i.past { opacity: .28; }
+.nc-dots i { display: block; width: 6px; height: 6px; border-radius: 3px; background: var(--kind, var(--plain-dot)); transition: width .24s var(--ease), opacity .24s var(--ease); }
+/* Only the coloured kinds take the 72% mix toward black; the greys keep their own value. */
+.nc-dots i:is([style*="needs"], [style*="good"]) { background: color-mix(in srgb, var(--kind) 72%, #000); }
+.nc-dots i.on { width: 16px; background: var(--foreground); }
+/* A read dot stays visible: the coloured ones at .45, the greys at .5 (about rgb 65 to 80 on the island). */
+.nc-dots i.past { opacity: .45; }
+.nc-dots i.past:not([style*="needs"]):not([style*="good"]) { opacity: .5; }
 .nc-pos { font: 500 12px/16px var(--mono); color: var(--secondary); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .nc-pos b { color: var(--foreground); font-weight: 500; }
 .nc-sp { flex: 1; min-width: 0; }
 .nc-nav .btn.icon { margin-right: 0; }
 .nc-nav .btn.icon .ic { width: 14px; height: 14px; }
-/* Twelve dots leave the footer no room for Mark all read's words beside them: the pills tighten a little. */
+/* Twelve dots leave the footer no room for Mark all read's words beside them: the buttons tighten a little. */
 .nc-nav:has(.nc-dots i:nth-child(10)) { gap: 6px; }
 .nc-nav:has(.nc-dots i:nth-child(10)) .nc-dots { gap: 3px; }
 .nc-nav:has(.nc-dots i:nth-child(10)) .btn.ghost { padding: 0 8px; }
 
-/* The compact bar's parts: the kind's dot, the sender in white, "8 new" in the headline face, "2 need you" orange
+/* The compact bar's parts: the kind's dot, the sender in white, "8 new" in semibold white, "2 need you" orange
    (attention), up to three faces; and the same words as one row at the top of the home card. */
 .nc-kdot { width: 6px; height: 6px; flex: none; border-radius: 50%; }
-.nc-big-n { font: 650 13.5px/16px var(--display); letter-spacing: -.1px; color: var(--foreground); }
+.nc-big-n { font: 600 13px/16px var(--display); color: var(--foreground); }
 .nc-acc { color: var(--accent-text); }
 .notch.compact b { color: var(--foreground); font-weight: 500; }
 .notch.compact .nc-stack .face, .nc-strip .nc-stack .face { zoom: .82; }
 .notch.compact .nc-stack .face + .face, .nc-strip .nc-stack .face + .face { margin-left: -5px; }
 .nc-strip { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 9px; width: 100%; min-width: 0; height: 32px; padding: 0 8px 0 10px; border-radius: var(--radius-control); cursor: pointer;
   box-shadow: inset 0 0 0 1px var(--border); font-size: 13px; line-height: 16px; font-weight: 500; color: var(--secondary); transition: background-color var(--fast) var(--ease); }
-.nc-strip:hover { background: var(--fill-1); }
+.nc-strip:hover { background: var(--surface); }
 .nc-strip:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
 .nc-strip-t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .nc-strip b { color: var(--foreground); font-weight: 500; }
@@ -979,7 +913,7 @@ button.nc-fact:focus-visible { outline: 2px solid var(--ring); outline-offset: 2
 :is(.btn, .link):is(:hover, :focus-visible) > .ic-checks { animation-name: ic-press; }
 .nc-strip:is(:hover, :focus-visible) > .ic-right { animation: ic-nudge .42s var(--ease) 1; }
 
-/* Motion. Arrival keeps the island's spring and the words' blur-in (`.notch.enter`), the wash rising after. Together: both
+/* Motion. Arrival keeps the island's spring and the words' blur-in (`.notch.enter`). Together: both
    faces hop once, at the same moment, and the stars open just after. The pager: the next card slides 8px the way the
    person went (--dx from main.js) in 220 ms while the footer stays put and its dot grows. Nothing loops but the faces'
    breathing. */
@@ -992,31 +926,32 @@ button.nc-fact:focus-visible { outline: 2px solid var(--ring); outline-offset: 2
 .notch.step.steady > :not(.nc), .notch.step.steady > .nc > :not(.nc-nav), .notch.step.steady .nc-dots i.on { animation-name: none; }
 @keyframes star { from { opacity: 0; transform: scale(.2) rotate(-40deg); } }
 @keyframes nc-slide { from { opacity: 0; translate: var(--dx, 8px) 0; } }
-@keyframes wash-in { from { opacity: 0; } }
 @keyframes nc-fade { from { opacity: 0; } }
 @keyframes nc-dot { from { width: 6px; } }
 
 /* Calls (owner decisions, 8 October 2026, confirmed 10 October 2026: phase 8, calls; contract F). The incoming card is a
-   notification card (`.nc.nc-call`, the needs wash): the caller's face, the headline, where, the waiting line, then a
-   hairline running down to the ring's end in the needs colour (its own, so the pointer resting on the card never pauses
-   it: the ring times out on the server whatever the pointer does), the quick messages as one column of outline pills, and
-   Decline, Message and Accept (the card's one orange button). The strip is the same ring as one row on a card that must
-   stay, lightly tinted with a word beside the colour; its Accept is white. The bar on a call: the live dot (orange,
+   notification card (`.nc.nc-call`): the caller's face, the headline, where, the waiting line, then a hairline running
+   down to the ring's end in orange (live and running out; its own, so the pointer resting on the card never pauses it:
+   the ring times out on the server whatever the pointer does), the quick messages as one column of the web's subtle
+   32px buttons (as its incoming call), and Decline, Message and Accept (the card's one orange button). The strip is the
+   same ring as one row on a card that must stay, on the web's accent card tint with a word beside the colour; its Accept
+   is white. The bar on a call: the live dot (orange,
    breathing like a running timer's) and the clock in orange digits. A teammate on a call: a small white phone on their
    face, no colour change. Under reduced motion the hairline stands still at what is left and the dot does not breathe. */
-.nc-ringtime { height: 2px; margin-top: 14px; border-radius: 2px; background: var(--fill-150); overflow: hidden; }
-.nc-ringtime i { display: block; height: 100%; border-radius: inherit; background: var(--needs-dot); transform-origin: left center; transform: scaleX(var(--from, 1)); animation: ring-left linear forwards; }
+.nc-ringtime { height: 2px; margin-top: 14px; border-radius: 2px; background: var(--surface-150); overflow: hidden; }
+.nc-ringtime i { display: block; height: 100%; border-radius: inherit; background: var(--accent); transform-origin: left center; transform: scaleX(var(--from, 1)); animation: ring-left linear forwards; }
 @keyframes ring-left { from { transform: scaleX(var(--from, 1)); } to { transform: scaleX(0); } }
 .nc-quick { display: grid; gap: 6px; margin-top: 12px; }
-.nc-quick .btn { justify-content: flex-start; width: 100%; height: 30px; padding: 0 14px; overflow: hidden; text-overflow: ellipsis; }
-.nc-ringstrip { box-sizing: border-box; display: flex; align-items: center; gap: 9px; min-width: 0; min-height: 36px; padding: 4px 4px 4px 10px; border-radius: var(--radius-control);
-  background: color-mix(in srgb, var(--accent) 10%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 28%, transparent); font-size: 13px; line-height: 16px; font-weight: 500; color: var(--secondary); }
+.nc-quick .btn { justify-content: flex-start; width: 100%; height: 32px; padding: 0 12px; border-color: transparent; border-radius: var(--radius-control); background: var(--surface); color: var(--foreground); overflow: hidden; text-overflow: ellipsis; }
+.nc-quick .btn:hover { background: var(--surface-150); border-color: transparent; }
+.nc-ringstrip { box-sizing: border-box; display: flex; align-items: center; gap: 9px; min-width: 0; min-height: 36px; padding: 4px 4px 4px 10px; border-radius: var(--radius-card-sm);
+  background: var(--accent-tint); box-shadow: inset 0 0 0 1px var(--border); font-size: 13px; line-height: 16px; font-weight: 500; color: var(--secondary); }
 .nc-ringstrip.note { padding-right: 10px; }
 .nc-ringstrip-t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .nc-ringstrip b { color: var(--foreground); font-weight: 500; }
 .nc-ringstrip .btn { flex: none; height: 28px; }
 .nc-ringstrip .btn.icon { margin-right: 0; }
-.notch.compact .nc-bar-btn { flex: none; height: 22px; padding: 0 10px; font-size: 12px; line-height: 16px; }
+.notch.compact .nc-bar-btn { flex: none; height: 22px; padding: 0 8px; border-radius: var(--radius-chip); font-size: 12px; line-height: 16px; }
 .nc-live { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); animation: live-ping 2s cubic-bezier(0, 0, .2, 1) infinite; }
 .face.mini .ph { position: absolute; z-index: 2; right: -4px; bottom: -3px; display: grid; place-items: center; width: 11px; height: 11px; border-radius: 50%; background: var(--island); color: var(--foreground); }
 .face.mini .ph svg { width: 7px; height: 7px; }
@@ -1025,3 +960,193 @@ button.nc-fact:focus-visible { outline: 2px solid var(--ring); outline-offset: 2
 @media (prefers-reduced-motion: reduce) {
   .nc-ringtime i { transform: scaleX(var(--from, 1)); }
 }
+
+/* Screen help (owner decisions, 11 October 2026: "start building with your recommendations"; contract C.2 and
+   docs/design-system.md, "The notch's look cards"). One card kind, `look`, with at most one orange button: Turn on screen
+   help, Continue, Open System Settings, or Send once the question has words. While she looks her eyes lower to your window
+   with a slight squint and drift slowly across it (`look`; a still pose under reduced motion), with the accent glow and the
+   live dot (`.rec-dot`): she is looking now. The preview's picture is contained in a 10px-round frame with a hairline, at
+   most 400 by 200 (so the card, its question and Send fit the 440px stage; the frame is 12px round since 17 October 2026); Rust draws the ring at the pointer into the
+   picture, and the card marks the same spot at a size that reads. The consent scrolls inside the card so its buttons
+   always show. The answer's "Looked at Figma" is a neutral pill. */
+.face.look { filter: drop-shadow(0 0 .5px rgb(255 255 255 / .25)) drop-shadow(0 0 5px var(--glow)); }
+.face.look .eyes { transform: translate(calc(var(--lx) * .6px), 1.8px); }
+.face.small.look .eyes { transform: translate(calc(var(--lx) * .5px), 1.4px); }
+.face.look .eyes span { height: 2.6px; animation: look-scan 2.6s ease-in-out infinite; }
+.face.small.look .eyes span { height: 2.2px; }
+@keyframes look-scan { 0%, 100% { translate: -1.2px 0; } 50% { translate: 1.2px 0; } }
+/* Look beside the talk control: the two sit together on the left of the actions. */
+.actions > :is(.hint, .btn.icon):has(+ .look-btn) { margin-right: 0; }
+.look-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.look-head .title { min-width: 0; }
+.look-shot { display: grid; gap: 6px; justify-items: center; margin: 0; }
+.look-shot img { display: block; width: auto; height: auto; max-width: min(100%, 400px); max-height: 200px; object-fit: contain; box-sizing: border-box;
+  border-radius: var(--radius-card-sm); border: 1px solid var(--border); background: var(--background); }
+.look-shot figcaption { margin-top: 0; text-align: center; }
+.look-never { margin-right: auto; height: 24px; padding: 0 8px; border-radius: var(--radius-chip); font-size: 12px; line-height: 16px; }
+.look-consent { display: grid; gap: 10px; max-height: 240px; overflow-y: auto; overscroll-behavior: contain; padding-right: 4px; }
+.look-consent::-webkit-scrollbar { width: 6px; }
+.look-consent::-webkit-scrollbar-thumb { background: var(--border-input-hover); border-radius: 3px; }
+.look-consent b { font-weight: 600; color: var(--foreground); }
+.look-consent:focus-visible { outline-offset: 4px; border-radius: 4px; }
+.look-foot { margin-top: -4px; text-align: right; }
+.pill.looked .ic { width: 12px; height: 12px; }
+/* Beside "Acting without asking" the pills go under the question rather than squeezing it into a column. */
+.said-row:has(.looked) { flex-wrap: wrap; row-gap: 6px; }
+.said-row:has(.looked) .said { flex: 1 1 100%; }
+/* A call ringing over the preview (its strip, phase 8), or Option+Space saying the question into it (the waveform and a
+   line under the field): the picture gives way, so Send stays on screen. */
+.notch:has(.nc-ringstrip) .look-shot img, .notch:has([data-look] #fdict:not(:empty)) .look-shot img { max-height: 132px; }
+/* Its icons move as the others do, once on hover or focus (never under reduced motion): Look blinks, Show me's pointer
+   nudges towards what it points at. */
+@keyframes ic-blink { 0%, 100% { scale: 1 1; } 40% { scale: 1 .15; } }
+:is(.btn, .link):is(:hover, :focus-visible) > .ic-eye { animation-name: ic-blink; transform-origin: 50% 50%; }
+:is(.btn, .link):is(:hover, :focus-visible) > .ic-pointer { animation-name: ic-fly-out; }
+/* The pointer's spot on the preview: the same ring as Rust's (orange with a white edge, no fill, so what is under it
+   stays visible) at a size that reads on the small picture. */
+.look-frame { position: relative; display: block; max-width: 100%; line-height: 0; }
+.look-mark { position: absolute; width: 22px; height: 22px; box-sizing: border-box; translate: -50% -50%; border-radius: 50%; border: 2px solid var(--accent);
+  box-shadow: 0 0 0 1.5px #fff, inset 0 0 0 1px #fff; pointer-events: none; }
+
+/* Doing things on the Mac only when asked (owner rule, 12 October 2026; contract A.6 to A.11, C.4; docs/design-system.md,
+   "Brenda by your pointer"). One card kind, `act`. The asking card and the step card are neutral on purpose: her alert face
+   with no glow, the plan in white, "Do you want me to do this?" under it, a ghost No beside a white Yes, do it, and the
+   countdown hairline in grey (it keeps running under the pointer, as Rust's minute does). No orange there: a question must
+   never read as an alarm or a nudge. Orange only for what is live (the doing and working bars' dot), and the consents'
+   one standout button. The settings card's switches are white when on, as the web's (the accent rules: switches stay
+   white), each with its state in words for screen readers. */
+.act-plan { font-weight: 600; }
+.act-q { color: var(--foreground); margin-top: 2px; }
+.act-file { color: var(--secondary); overflow-wrap: anywhere; }
+.act-answer { margin: 0; }
+.act-answer .field { height: 32px; font-size: 13px; }
+.act-hint { margin-top: -2px; }
+.act-head { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.act-head .title { flex: 1; min-width: 0; }
+.act-step { display: inline-flex; align-items: center; gap: 6px; flex: none; font-size: 12px; line-height: 16px; color: var(--secondary); }
+.act-step .num, .act-step .clock { color: var(--accent-text); }
+.act-yes-line { margin: 0 0 -4px; color: var(--foreground); }
+.tiny .act-dot { display: inline-block; vertical-align: middle; margin: -2px 0 0 2px; }
+.island.asking .countdown.run { animation-play-state: running; }
+.sw-list { display: grid; gap: 2px; margin: 0 -8px; }
+.sw-row { display: flex; align-items: center; gap: 12px; padding: 8px; border-radius: var(--radius-control); }
+.sw-row:hover { background: var(--background-hover); }
+.sw-row .title { white-space: normal; }
+.sw-row .pill { margin-top: 6px; border: 0; cursor: pointer; font-family: inherit; }
+/* The switch, the web's `.switch`: 36×20, white on with a 16px thumb in the canvas colour and the thumb's shadow. Off, the
+   track is the 16% grey laid over the canvas as a solid colour (22% on hover; §3.1: the island is #000, so a bare alpha
+   would sink into it) with the 16% hairline inside, and the thumb is the description grey, so an off switch on the black
+   island still reads as a control (review, 17 October 2026: the off track and thumb were 1.45:1 and 1.3:1). Never orange. */
+.sw { all: unset; box-sizing: border-box; position: relative; flex: none; width: 36px; height: 20px; border-radius: 9999px; background: color-mix(in srgb, #fff 16%, var(--canvas)); box-shadow: inset 0 0 0 1px var(--border-input-hover); cursor: pointer;
+  transition: background-color var(--duration) var(--ease); }
+.sw:hover:not([aria-checked="true"]) { background: color-mix(in srgb, #fff 22%, var(--canvas)); }
+.sw i { position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: color-mix(in srgb, #fff 64%, var(--canvas)); box-shadow: var(--elev-thumb); transition: translate var(--duration) var(--ease), background-color var(--duration) var(--ease); }
+.sw[aria-checked="true"] { background: var(--foreground); box-shadow: none; }
+.sw[aria-checked="true"] i { translate: 16px 0; background: var(--background); }
+.sw:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+.act-note { color: var(--foreground); }
+
+/* Brenda for Mac, phase 3 (owner report and requests, 12 October 2026; companion2 contract A.1, A.3, A.4, J.3, M.7;
+   docs/design-system.md, "Brenda by your pointer"). The setup card, `help`: her face, the title and the lead; three rows,
+   each a checkbox (orange when ticked: the accent rules' checked box; an ability already on is grey and disabled with "On"
+   at its right), its label and its sub-line; the promises in the caption grey; Read everything under a link. Its middle
+   scrolls and its buttons stay in view. Turn these on is the card's one orange button; macOS's steps keep white
+   primaries; the done card's Ask again is orange. A plan's asking card stays neutral: its lines are the near-black list,
+   one per row with a small grey icon by step; "Show the 14" is a link. Under a reply, the fixed "… is off on this Mac."
+   line sits under her words and Turn it on / Set up is the card's one orange button. */
+.hs-mid { max-height: 260px; gap: 12px; }
+.hs-rows { display: grid; gap: 2px; margin: 0 -8px; }
+.hs-row { display: flex; align-items: flex-start; gap: 10px; padding: 8px; border-radius: var(--radius-control); cursor: pointer; }
+.hs-row:hover { background: var(--background-hover); }
+.hs-row.off { cursor: default; opacity: .55; }
+.hs-row.off:hover { background: none; }
+.hs-row .grow { display: grid; gap: 2px; min-width: 0; }
+.hs-label { font-size: 14px; line-height: 20px; font-weight: 500; color: var(--foreground); }
+.hs-row .cap { margin: 0; }
+.hs-row .pill { margin-top: 1px; }
+/* The checkbox, the web's bare one: a transparent r4 box with a 16% hairline (the subtle grey on hover), orange with a
+   near-black tick when checked (checked, accent rules); one already on is grey and still. */
+.hs-box { appearance: none; -webkit-appearance: none; flex: none; position: relative; box-sizing: border-box; width: 16px; height: 16px; margin: 2px 0 0; border-radius: 4px;
+  background: transparent; border: 1px solid var(--border-input-hover); cursor: pointer; transition: background-color var(--fast) linear, border-color var(--fast) linear; }
+.hs-box:hover:not(:disabled) { border-color: var(--subtle); }
+.hs-box:checked { background: var(--accent); border-color: var(--accent); }
+.hs-box:checked:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); }
+.hs-box:checked::after { content: ""; position: absolute; left: 4px; top: 1px; width: 4px; height: 8px; box-sizing: border-box; border: solid var(--accent-fg); border-width: 0 2px 2px 0; rotate: 45deg; }
+.hs-box:disabled { cursor: default; }
+.hs-box:disabled:checked { background: var(--surface-150); border-color: var(--border-input); }
+.hs-box:disabled:checked::after { border-color: var(--secondary); }
+.hs-box:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+.hs-needs { margin: -6px 0 0; }
+.hs-promises { display: grid; gap: 4px; margin: 0; padding-left: 16px; }
+.hs-promises li { margin: 0; }
+.hs-mid > p { margin: 0; }
+.hs-read { display: grid; gap: 8px; }
+.hs-h { margin: 4px 0 0; font-size: 13px; line-height: 19.5px; font-weight: 600; color: var(--foreground); }
+.act-lines li .act-li, .list li .act-li { flex: none; display: inline-flex; color: var(--secondary); }
+.list li .act-li .ic { width: 14px; height: 14px; }
+/* Every word of a plan's line shows (review, 12 October 2026: the yes covers a message's whole text and a page's whole
+   address, so a line is never clamped; the lines scroll inside the card instead). */
+.act-lines li.wrap .t { display: block; -webkit-line-clamp: none; line-clamp: none; overflow: visible; }
+.act-which { margin: -4px 0 0; }
+.act-which .link { display: inline-flex; align-items: center; gap: 4px; }
+.act-which .link .ic { width: 14px; height: 14px; }
+.act-names { max-height: 88px; overflow-y: auto; overscroll-behavior: contain; }
+/* With the files listed, the hint gives way so Yes and No stay in view. */
+.notch:has(.act-names) .act-hint { display: none; }
+.act-names li { min-height: 26px; font-size: 13px; line-height: 19.5px; font-weight: 400; }
+.help-line { margin-top: 8px; color: var(--foreground); }
+/* Help on this Mac has five switches now (phase 3): the list scrolls inside the card so Done stays in view. */
+.sw-list { max-height: 262px; overflow-y: auto; overscroll-behavior: contain; }
+/* More below (integration, 12 October 2026): a list that scrolls inside a card fades over its last 28 px while more sits
+   under the fold (main.js `markScrollers` sets `data-more`), so nothing hides there unseen; scrolled to the end, it doesn't. */
+/* A plan's lines (review, 12 October 2026): they scroll inside the asking card, and Yes and No stay pinned at its foot,
+   so a plan of four to six parts never pushes them under the fold. With three lines or more, or while they overflow,
+   the hint gives way. */
+.act-mid { display: grid; gap: 8px; max-height: 148px; overflow-y: auto; overscroll-behavior: contain; }
+.act-mid:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; border-radius: 4px; }
+.act-mid .act-names { max-height: none; overflow: visible; }
+.notch:has(.act-mid[data-more]) .act-hint, .notch:has(.act-mid .act-lines li:nth-child(3)) .act-hint { display: none; }
+.actions.act-pinned { position: sticky; bottom: -16px; margin-bottom: -16px; padding-bottom: 16px; background: var(--island); box-shadow: 0 -12px 12px -4px var(--island); z-index: 1; }
+:is(.hs-mid, .sw-list, .act-names, .act-mid)[data-more] { -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 28px), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - 28px), transparent); }
+
+/* Brenda and her helpers, build 1 (the owner's approved brief, 12 October 2026; helpers contract F, Q.3;
+   docs/design-system.md, "Brenda and her helpers"). Permission rule v2: routine requests run at once, so the notch shows
+   what she is doing instead of asking. The "Doing it" strip is the compact bar: the orange live dot (she is working now)
+   and the doing line, a job's "23 of 64" in tabular digits, and a small ghost Stop; done, a green check and the done line
+   with a ghost Undo when it can be undone; paused, an amber dot with its words. Status colours win over orange. The ask
+   card, the chooser and a job's Trash question are neutral like phase 2's asking card (her alert face, no glow, no
+   orange, a ghost No beside a white verb). Orange elsewhere only for a running job's progress bar and live dot, the
+   click consent's one button and a refusal's Turn it on / Allow it. Every colour has a word beside it. Reduced motion: the
+   dot stands still and nothing shimmers (the block above). */
+.notch.compact .strip-btn { flex: none; height: 24px; padding: 0 8px; border-radius: var(--radius-chip); font-size: 12px; line-height: 16px; gap: 4px; }
+.notch.compact .strip-btn .ic { width: 12px; height: 12px; }
+.strip-ok { display: inline-flex; vertical-align: middle; margin: -2px 6px 0 0; color: var(--success); }
+.strip-ok .ic { width: 14px; height: 14px; }
+.strip-paused { display: inline-block; width: 6px; height: 6px; margin: -2px 8px 0 2px; vertical-align: middle; border-radius: 50%; background: var(--warning); }
+.tiny .num { color: var(--foreground); }
+/* The chooser, a found list, the others after the newest, a job's new files and recent jobs: two-line rows, the name in
+   medium, where and when in the secondary grey; small ghost icon buttons with their names for screen readers. */
+.fr-list li.fr-row { min-height: 40px; padding-top: 4px; padding-bottom: 4px; }
+.fr-list li.fr-row:has(> .rowlink) { padding: 0; }
+.fr-list li > .rowlink { min-height: 40px; padding-top: 4px; padding-bottom: 4px; }
+.fr-text { display: grid; min-width: 0; flex: 1; }
+.fr-text .t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fr-meta { font-size: 12px; line-height: 16px; font-weight: 400; color: var(--secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fr-btns { display: inline-flex; gap: 2px; flex: none; margin-left: auto; }
+.fr-list li .fr-btns .btn { margin: 0; }
+.fr-list li .btn.icon { width: 28px; height: 28px; margin-right: 0; }
+.fr-list li .btn.icon .ic { width: 14px; height: 14px; }
+.fr-list li > .rowlink .k { margin-left: auto; color: var(--secondary); }
+.fr-list { max-height: 216px; overflow-y: auto; overscroll-behavior: contain; }
+.fr-done { display: flex; align-items: center; white-space: normal; }
+.fr-done .strip-ok { margin-top: 0; }
+.fr-others { margin: -4px 0 0; }
+.fr-others .link { display: inline-flex; align-items: center; gap: 4px; }
+.fr-folders .fr-list { margin-top: 8px; max-height: none; }
+/* A running job: the orange progress bar (progress, accent rules) with its count beside it in Geist Mono. */
+.job-progress { display: flex; align-items: center; gap: 10px; margin: 8px 0 6px; }
+.job-bar { flex: 1; }
+.job-count { flex: none; font-size: 12px; line-height: 16px; color: var(--secondary); }
+.job-progress + .sub + .pill { margin-top: 6px; }
+/* Paused, the job's clock stops and is no longer live: secondary grey, its amber words beside it. */
+.act-step.paused .clock { color: var(--secondary); }

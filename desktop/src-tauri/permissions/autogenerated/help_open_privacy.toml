@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-help-open-privacy"
+description = "Enables the help_open_privacy command without any pre-configured scope."
+commands.allow = ["help_open_privacy"]
+
+[[permission]]
+identifier = "deny-help-open-privacy"
+description = "Denies the help_open_privacy command without any pre-configured scope."
+commands.deny = ["help_open_privacy"]

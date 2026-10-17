@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-look-status"
+description = "Enables the look_status command without any pre-configured scope."
+commands.allow = ["look_status"]
+
+[[permission]]
+identifier = "deny-look-status"
+description = "Denies the look_status command without any pre-configured scope."
+commands.deny = ["look_status"]

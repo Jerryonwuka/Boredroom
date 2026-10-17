@@ -100,6 +100,9 @@ describe("rows that did not go through (review, 8 October 2026)", () => {
     expect(problemSummary("create_todos", "refused", TAINT_ERROR, { input: { items: [{}, {}] } })).toBe("Didn't add 2 to-dos: you had just read messages, so ask again");
     expect(problemSummary("create_todos", "refused", "Organisation accounts hand tasks to someone; name who it is for.", { input: { items: [{}] } })).toBe("Didn't add a to-do: Organisation accounts hand tasks to someone; name who it is for.");
     expect(problemSummary("clock", "failed", "boom", { input: { direction: "out" } })).toBe("Couldn't clock you out: boom");
+    // From a look, only the lead words: the error may quote what the model read from the picture (review, 11 October 2026).
+    expect(problemSummary("create_todos", "refused", "\"Dr Patel\" is not someone you can assign to. People: Ada, Ben.", { input: { items: [{}] }, leadOnly: true })).toBe("Didn't add a to-do");
+    expect(problemSummary("update_task", "failed", "invalid input syntax for type uuid: \"INV-4471\"", { leadOnly: true })).toBe("Couldn't change a task");
     // The Messages tools' errors list the person's conversations: never in the row.
     expect(problemSummary("mark_read", "refused", "No conversation called \"x\". Conversations: #Union organising, Ben.")).toBe("Didn't mark conversations as read");
     expect(problemSummary("send_message", "refused", "Nobody and no channel called \"x\". Channels: Union organising")).toBe("Didn't send a message");

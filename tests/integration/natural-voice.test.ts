@@ -2,8 +2,9 @@
  * Natural voice (owner decision, 9 October 2026: natural voice (ElevenLabs), contract H). Through the real route
  * handlers, signed in by a session cookie (and once by the notch's desktop token), on the throwaway test database with
  * migration 0053 applied: the tables' row security, the workspace's key (owners and HR, tested, stored encrypted), the
- * person's choice, the speech offer on a chat reply, the speech route (the token, every cap, every ElevenLabs failure
- * with its refund, the breaker, base64 for the notch, concurrent requests) and the cached samples.
+ * person's choice, the speech offer on a chat reply, the speech route (the token, no cap of Boredroom's since the owner's
+ * request of 12 October 2026, every ElevenLabs failure with its refund, the breaker, base64 for the notch, concurrent
+ * requests) and the cached samples.
  *
  * ElevenLabs is ALWAYS mocked (setElevenLabsFetchForTests): text-to-speech costs the owner's allowance. The keys here
  * are made up; the real ELEVENLABS_API_KEY that tests/setup.ts loads is replaced before anything runs. No model either.
@@ -27,7 +28,7 @@ import { todayLocal } from "@/server/lib/time";
 import { forget0053 } from "@/server/lib/schema-0053";
 import { ElevenLabsError, setElevenLabsFetchForTests } from "@/server/services/elevenlabs";
 import {
-  HISTORY_JOB, PERSON_DAILY_CHARS, forgetSpoken, naturalSpeech, naturalVoiceView, resetNaturalVoiceForTests, runHistoryForgetJob, saveMyNaturalVoice,
+  HISTORY_JOB, NO_LIMIT, forgetSpoken, naturalSpeech, naturalVoiceView, resetNaturalVoiceForTests, runHistoryForgetJob, saveMyNaturalVoice,
   speechOffer, voiceConnectionStatus,
 } from "@/server/services/natural-voice";
 import { speechText, type SpeechOffer } from "@/lib/natural-voices";
@@ -253,18 +254,18 @@ describe("the workspace's key", () => {
     expect(el.calls).toEqual([]);
   });
 
-  it("on Boredroom's key: only this workspace's own counters and its slice, never the key's (every workspace's) usage", async () => {
+  it("on Boredroom's key: only this workspace's own counters and its day, never the key's (every workspace's) month", async () => {
     el.sub = { used: 1234, limit: 38_373 };
     as(a.owner);
     const r = await call(keyGET, "GET", path, ORG);
     expect(r.status).toBe(200);
     const s = await bodyOf(r);
     expect(s).toMatchObject({ ready: true, source: "environment", hint: null, connectedAt: null, month: null, monthError: null, low: false, workspaceMonth: 0, sharedFull: false, historyBlocked: false, historyLeft: 0 });
-    // 37,139 credits left is 74,278 characters of Flash; over 30 days, 2,475 a day for the key; a quarter of it, 618,
-    // for each workspace on it, which is also the most one person there can say.
-    expect(s.today).toEqual({ used: 0, share: 618 });
-    expect(s.personDailyLimit).toBe(618);
-    for (const leak of ["1234", "38373", "2475"]) expect(JSON.stringify(s)).not.toContain(leak);
+    // No daily share and no limit per person since the owner's request (12 October 2026: "remove the limit for ElevenLabs
+    // voice"); the fields stay at 0 for older pages.
+    expect(s.today).toEqual({ used: 0, share: NO_LIMIT });
+    expect(s.personDailyLimit).toBe(NO_LIMIT);
+    for (const leak of ["1234", "38373"]) expect(JSON.stringify(s)).not.toContain(leak);
     expect(JSON.stringify(s)).not.toContain(ENV_KEY);
     expect(subCalls().map((c) => c.key)).toEqual([ENV_KEY]);
   });
@@ -363,7 +364,7 @@ describe("the person's own voice", () => {
     const r = await call(voiceGET, "GET", path, ORG);
     expect(r.status).toBe(200);
     const v = await bodyOf(r);
-    expect(v).toMatchObject({ ready: true, chosen: null, available: false, reason: null, usedToday: 0, personDailyLimit: 2000, samples: true });
+    expect(v).toMatchObject({ ready: true, chosen: null, available: false, reason: null, usedToday: 0, personDailyLimit: NO_LIMIT, samples: true });
     expect((v.voices as unknown[]).length).toBe(8);
   });
 
@@ -533,97 +534,58 @@ describe("the speech route", () => {
     expect(ttsCalls()).toEqual([]);
   }
 
-  it("409 person_cap once 2,000 characters a day are said; the reply that crosses it is said whole", async () => {
-    await setUsage(ada, PERSON_DAILY_CHARS - 10);
-    expect((await naturalVoiceView(ada)).reason).toBeNull(); // 10 left: available, and the next reply is said whole
-    const crossing = await speak(await offerFor(ada, words));
-    expect(crossing.status).toBe(200);
-    await crossing.arrayBuffer();
-    expect(await naturalVoiceView(ada)).toMatchObject({ available: false, reason: "person_cap", usedToday: PERSON_DAILY_CHARS - 10 + words.length });
-    el.calls = [];
-    await expect409("person_cap");
-  });
-
-  it("409 workspace_cap at 2,000 a day for a workspace on Boredroom's key", async () => {
-    await setUsage(ben, 2000);
-    await expect409("workspace_cap");
-    expect(await naturalVoiceView(ada)).toMatchObject({ available: false, reason: "workspace_cap" });
-  });
-
-  it("409 workspace_cap at the workspace's slice of Boredroom's key", async () => {
-    // 11% left: not low. 11,000 credits left is 22,000 characters; with the 183 already said today, over 30 days, 739 a
-    // day; a quarter is 184.
-    el.sub = { used: 89_000, limit: 100_000 };
-    resetNaturalVoiceForTests(); // the subscription read before this test changed it
-    await setUsage(ben, 183);
-    expect((await voiceConnectionStatus(owner)).today).toEqual({ used: 183, share: 184 });
-    expect((await naturalVoiceView(ada)).available).toBe(true);
-    await setUsage(ben, 184);
-    await expect409("workspace_cap");
-    expect(await naturalVoiceView(ada)).toMatchObject({ available: false, reason: "workspace_cap" });
-  });
-
-  it("Boredroom's Starter key (fix review, 9 October 2026): a whole reply longer than the workspace's slice is said on a fresh day, and the view and the route agree", async () => {
-    // 6 of 38,373 credits used: 76,734 characters of Flash over 30 days, 2,557 a day; a quarter, 639, for the workspace.
-    el.sub = { used: 6, limit: 38_373 };
+  // No limit of Boredroom's (owner request, 12 October 2026: "remove the limit for ElevenLabs voice"; the computer voice
+  // used to take over after about six replies). Only ElevenLabs' own refusal for credits stops the natural voice.
+  it("no cap is ever applied: a person, a workspace and the key far past every old limit are still said, and counted", async () => {
+    // 50,000 characters today for Ada (five times the old person cap), 30,000 for Ben (three times the old workspace cap),
+    // and the key 99% used this month (the old stop was 10% left): all still said.
+    el.sub = { used: 99_000, limit: 100_000 };
     resetNaturalVoiceForTests();
-    const list = `Here's what's on today. ${Array.from({ length: 7 }, (_, i) => `Item ${i + 1}: write the quarterly plan for the team.`).join(" ")}`;
-    const offer = await offerFor(ada, list);
-    expect(offer.text.length).toBeGreaterThan(300);
-    expect(offer.text.length).toBeLessThanOrEqual(400);
-    // A slice smaller than the reply (as it was at 309) must not refuse it: here the reply is said whatever the slice.
-    await setUsage(ben, 0);
-    expect(await naturalVoiceView(ada)).toMatchObject({ available: true, reason: null });
-    const r = await speak(offer);
+    await setUsage(ada, 50_000);
+    await setUsage(ben, 30_000);
+    expect(await naturalVoiceView(ada)).toMatchObject({ available: true, reason: null, personDailyLimit: NO_LIMIT, usedToday: 50_000 });
+    const r = await speak(await offerFor(ada, words));
     expect(r.status).toBe(200);
     await r.arrayBuffer();
-    await setUsage(ben, 638 - offer.text.length); // one character of the slice left: the next reply is still said whole
-    expect((await naturalVoiceView(ada)).available).toBe(true);
-    const again = await speak(offer);
-    expect(again.status).toBe(200);
-    await again.arrayBuffer();
-    // Now past the slice: refused, and the view says so before anyone asks.
-    expect(await naturalVoiceView(ada)).toMatchObject({ available: false, reason: "workspace_cap" });
-    el.calls = [];
-    await expect409("workspace_cap");
+    expect(ttsCalls()).toHaveLength(1);
+    expect((await usageOf(ada))[0].characters).toBe(50_000 + words.length);
+    const status = await voiceConnectionStatus(owner);
+    expect(status).toMatchObject({ low: false, sharedFull: false, personDailyLimit: NO_LIMIT, today: { used: 80_000 + words.length, share: NO_LIMIT } });
   });
 
-  it("another workspace cannot use up this one's day; the key's whole share used by others is shared_cap, said as such", async () => {
+  it("a second workspace on Boredroom's key never takes this one's voice away (no shared day any more)", async () => {
     const b = await buildCompany("b");
     try {
-      // 11,000 credits (22,000 characters) left over 30 days (read when B's person chose a voice, before anything was
-      // said) is 733 a day for the key; 183 for each workspace.
-      el.sub = { used: 89_000, limit: 100_000 };
-      resetNaturalVoiceForTests();
-      // Company B's people try to use the whole key: its slice stops them once they reach 183.
       await adminQuery(`UPDATE organisations SET feature_overrides = COALESCE(feature_overrides, '{}'::jsonb) || '{"AI_ASSISTANT": true}'::jsonb WHERE id = $1`, [b.ownerCtx.org.id]);
       b.employeeCtx.plan.features.AI_ASSISTANT = true;
       await saveMyNaturalVoice(b.employeeCtx, { voiceId: LILY });
+      await setUsage(b.employeeCtx, 100_000);
       const theirs = await speechOffer(b.employeeCtx, words);
-      await setUsage(b.employeeCtx, 183);
-      await expect(naturalSpeech(b.employeeCtx, { token: theirs!.token, text: theirs!.text, speed: "normal", as: "stream" }, new AbortController().signal))
-        .rejects.toMatchObject({ code: "VOICE_UNAVAILABLE", details: { reason: "workspace_cap" } });
-      // Company A still speaks.
+      const said = await naturalSpeech(b.employeeCtx, { token: theirs!.token, text: theirs!.text, speed: "normal", as: "stream" }, new AbortController().signal);
+      await new Response(said.stream).arrayBuffer();
       const mine = await speak(await offerFor(ada, "Done."));
       expect(mine.status).toBe(200);
       await mine.arrayBuffer();
-      // Many workspaces together used the key's day (counters set directly): A is told it is the shared allowance.
-      await setUsage(b.employeeCtx, 728);
-      el.calls = [];
-      await expect409("shared_cap");
-      expect(await naturalVoiceView(ada)).toMatchObject({ available: false, reason: "shared_cap" });
-      expect(await voiceConnectionStatus(owner)).toMatchObject({ sharedFull: true, today: { used: 5, share: 183 } });
+      expect(await naturalVoiceView(ada)).toMatchObject({ available: true, reason: null });
     } finally {
       await adminQuery(`DELETE FROM voice_usage_daily`);
     }
   });
 
-  it("409 allowance_low under 10% of the month left", async () => {
-    el.sub = { used: 95_000, limit: 100_000 };
-    resetNaturalVoiceForTests();
+  it("ElevenLabs' own refusal for credits (quota) is the only stop: allowance_low, held, then said again once the breaker lets go", async () => {
+    el.tts = () => json(401, { detail: { status: "quota_exceeded" } });
+    const first = await speak(await offerFor(ada, words));
+    expect(first.status).toBe(502);
+    expect((await bodyOf(first)).details?.reason).toBe("allowance_low");
+    el.tts = () => audio();
+    el.calls = [];
     await expect409("allowance_low");
     expect(await naturalVoiceView(ada)).toMatchObject({ available: false, reason: "allowance_low" });
-    expect((await voiceConnectionStatus(owner)).low).toBe(true);
+    // The breaker forgets it (a new plan, or the reset): the natural voice is back, with no cap of Boredroom's.
+    resetNaturalVoiceForTests();
+    const back = await speak(await offerFor(ada, words));
+    expect(back.status).toBe(200);
+    await back.arrayBuffer();
   });
 
   it("409 no_voice when the person has gone back to the computer voice", async () => {
@@ -647,8 +609,8 @@ describe("the speech route", () => {
     }
   });
 
-  it("429 past 30 a minute", async () => {
-    await adminQuery(`INSERT INTO auth_rate_limits(bucket, window_start, hits) VALUES ($1, to_timestamp(floor(extract(epoch from now()) / 60) * 60), 30)`, [`voice.burst:${ada.membership.id}`]);
+  it("429 past 60 a minute (the burst limit guards abuse, not use)", async () => {
+    await adminQuery(`INSERT INTO auth_rate_limits(bucket, window_start, hits) VALUES ($1, to_timestamp(floor(extract(epoch from now()) / 60) * 60), 60)`, [`voice.burst:${ada.membership.id}`]);
     const offer = await offerFor(ada, "Hello.");
     const r = await speak(offer);
     expect(r.status).toBe(429);
@@ -667,7 +629,11 @@ describe("the speech route", () => {
     const r = await speak(offer);
     expect(r.status).toBe(502);
     const b = await bodyOf(r);
-    expect(b).toMatchObject({ code: "VOICE_UNAVAILABLE", message: "ElevenLabs didn't answer, so the computer voice is used.", details: { reason } });
+    // ElevenLabs' own refusal for credits says so (owner request, 12 October 2026: the only stop there is).
+    const message = reason === "allowance_low"
+      ? "The ElevenLabs plan has run out of credits for this month, so the computer voice is used until it resets or the plan is upgraded."
+      : "ElevenLabs didn't answer, so the computer voice is used.";
+    expect(b).toMatchObject({ code: "VOICE_UNAVAILABLE", message, details: { reason } });
     expect(await usageOf(ada)).toEqual([{ characters: 0, utterances: 0, key_source: "environment" }]);
     // At once, without asking ElevenLabs again.
     el.tts = () => audio();
@@ -719,20 +685,17 @@ describe("the speech route", () => {
     expect((await bodyOf(again)).details?.reason).toBe("key_rejected");
   });
 
-  it("concurrent requests never pass the cap together: only one utterance ever crosses it", async () => {
+  it("concurrent requests are all said and all counted (no cap to cross since the owner's request, 12 October 2026)", async () => {
     const long = `${"Here is a sentence of plain words to say. ".repeat(7)}End.`.trim(); // about 300 characters
     const offer = await offerFor(ada, long);
     const n = offer.text.length;
+    const before = 9_000; // the old person cap was 10,000: these ten would have crossed it
+    await setUsage(ada, before);
     const results = await Promise.all(Array.from({ length: 10 }, () => speak(offer)));
-    const okCount = results.filter((r) => r.status === 200).length;
-    for (const r of results) { if (r.status === 200) await r.arrayBuffer(); else expect((await bodyOf(r)).details?.reason).toBe("person_cap"); }
-    expect(okCount).toBe(Math.ceil(PERSON_DAILY_CHARS / n));
+    for (const r of results) { expect(r.status).toBe(200); await r.arrayBuffer(); }
     const [u] = await usageOf(ada);
-    expect(u.characters).toBe(okCount * n);
-    expect(u.characters).toBeLessThan(PERSON_DAILY_CHARS + n);
-    expect(ttsCalls()).toHaveLength(okCount);
-    // One subscription request for all eight.
-    expect(subCalls()).toHaveLength(1);
+    expect(u.characters).toBe(before + 10 * n);
+    expect(ttsCalls()).toHaveLength(10);
   });
 
   it("works from the notch with its desktop token (bearer), base64", async () => {
@@ -952,13 +915,13 @@ describe("a request the person left before it reached ElevenLabs (fix review, 9 
     expect(await usageOf(ada)).toEqual([]);
   });
 
-  it("gone while the caps were read: given back, nothing sent", async () => {
-    resetNaturalVoiceForTests(); // the subscription is read again, slowly
-    el.subDelayMs = 300;
+  it("gone while it was being counted: given back, nothing sent", async () => {
+    // Nothing waits for the subscription any more (no caps: owner request, 12 October 2026), so the request is gone just
+    // after it starts, before ElevenLabs is asked.
     const ctl = new AbortController();
     const offer = await offerFor(ada, WORDS);
     const p = naturalSpeech(ada, { token: offer.token, text: offer.text, speed: "normal", as: "stream" }, ctl.signal).then(() => null, (e) => e);
-    setTimeout(() => ctl.abort(), 100);
+    queueMicrotask(() => ctl.abort());
     expect(await p).toMatchObject({ status: 502 });
     expect(ttsCalls()).toEqual([]);
     expect((await usageOf(ada)).map((u) => u.characters)).not.toContain(offer.text.length);
@@ -977,28 +940,23 @@ describe("a request the person left before it reached ElevenLabs (fix review, 9 
 describe("the subscription cache across the workspace's midnight (fix review, 9 October 2026)", () => {
   afterEach(() => { vi.useRealTimers(); });
 
-  it("yesterday's count is never added to today's share: a new day reads the subscription again", async () => {
+  it("a new day's count starts from nothing (no share to work out any more)", async () => {
     await adminQuery(`INSERT INTO organisation_voice_secrets(organisation_id, key_enc, key_hint) VALUES ($1, $2, '…wxyz')`,
       [owner.org.id, (await import("@/server/lib/crypto")).encryptSecret(ORG_KEY)]);
     vi.useFakeTimers({ toFake: ["Date"] });
-    // 23:55 in Lagos (UTC+1) on 7 November; 32,000 of 38,373 credits used; resets 9 November 07:47 UTC.
     vi.setSystemTime(new Date("2026-11-07T22:55:00Z"));
     el.sub = { used: 32_000, limit: 38_373 };
     el.resetUnix = Math.floor(Date.parse("2026-11-09T07:47:00Z") / 1000);
-    {
-      await setUsage(ada, 3000, "organisation");
-      const before = await voiceConnectionStatus(owner);
-      // (6,373 credits = 12,746 characters, plus the 3,000 said today) over 2 days.
-      expect(before.today).toEqual({ used: 3000, share: 7873 });
-      expect(subCalls()).toHaveLength(1);
-      // 00:03 on 8 November, 8 minutes later: a new day, so the subscription is read again (in the background: the
-      // entry is served meanwhile without yesterday's count, which only makes the share smaller; review, 9 October 2026).
-      vi.setSystemTime(new Date("2026-11-07T23:03:00Z"));
-      const after = await voiceConnectionStatus(owner);
-      await until(() => expect(subCalls()).toHaveLength(2));
-      // 12,746 characters left over 2 days, with nothing counted today yet.
-      expect(after.today).toEqual({ used: 0, share: 6373 });
-    }
+    await setUsage(ada, 3000, "organisation");
+    const before = await voiceConnectionStatus(owner);
+    expect(before.today).toEqual({ used: 3000, share: NO_LIMIT });
+    expect(before.month).toMatchObject({ used: 32_000, limit: 38_373 });
+    expect(subCalls()).toHaveLength(1);
+    // 00:03 on 8 November in Lagos: a new day, so today's count starts from nothing; the month is ElevenLabs' own figure.
+    vi.setSystemTime(new Date("2026-11-07T23:03:00Z"));
+    const after = await voiceConnectionStatus(owner);
+    expect(after.today).toEqual({ used: 0, share: NO_LIMIT });
+    expect(after.month).toMatchObject({ used: 32_000, limit: 38_373 });
   });
 });
 
@@ -1024,7 +982,7 @@ describe("the speech route on a slow link (review, 9 October 2026)", () => {
   afterEach(() => { vi.useRealTimers(); });
   const burstHits = async () => (await adminQuery<{ hits: number }>(`SELECT hits FROM auth_rate_limits WHERE bucket = $1`, [`voice.burst:${ada.membership.id}`]))[0]?.hits ?? 0;
 
-  it("warm, four round trips from the request to ElevenLabs: BEGIN, the session with the membership and plan, the person's reads with the burst limit, the reservation with its COMMIT", async () => {
+  it("warm, four round trips from the request to ElevenLabs: BEGIN, the session with the membership and plan, the person's reads with the burst limit, the count with its COMMIT", async () => {
     const offer = await offerFor(ada, WORDS);
     const first = await speak(offer); // the schema flags and the subscription, once
     await first.arrayBuffer();
@@ -1035,7 +993,8 @@ describe("the speech route on a slow link (review, 9 October 2026)", () => {
     expect(sql[0]).toMatch(/^BEGIN; SELECT set_config\('app.role', 'system', true\)$/);
     expect(sql[1]).toMatch(/auth_sessions/);
     expect(sql[2]).toMatch(/INSERT INTO auth_rate_limits/);
-    expect(sql[3]).toMatch(/^SELECT pg_advisory_xact_lock\(hashtext\('voice:env'\)\); WITH t AS/);
+    // No caps since the owner's request (12 October 2026): no lock and no reservation, one upsert with the COMMIT.
+    expect(sql[3]).toMatch(/^INSERT INTO voice_usage_daily/);
     expect(sql[3]).toMatch(/; COMMIT$/);
     await r.arrayBuffer();
     expect(await usageOf(ada)).toEqual([{ characters: 2 * offer.text.length, utterances: 2, key_source: "environment" }]);
@@ -1054,54 +1013,37 @@ describe("the speech route on a slow link (review, 9 October 2026)", () => {
       await adminQuery(`UPDATE organisations SET feature_overrides = feature_overrides || '{"AI_ASSISTANT": true}'::jsonb WHERE id = $1`, [owner.org.id]);
     }
     expect(await burstHits()).toBe(2);
-    await adminQuery(`UPDATE auth_rate_limits SET hits = 30 WHERE bucket = $1`, [`voice.burst:${ada.membership.id}`]);
+    await adminQuery(`UPDATE auth_rate_limits SET hits = 60 WHERE bucket = $1`, [`voice.burst:${ada.membership.id}`]);
     expect((await speak(offer)).status).toBe(429);
-    expect(await burstHits()).toBe(30);
+    expect(await burstHits()).toBe(60);
     expect(ttsCalls()).toEqual([]);
     expect(await usageOf(ada)).toEqual([]);
   });
 
-  it("an older subscription is served at once and read again in the background; the Listen never waits for it", async () => {
-    const offer = await offerFor(ada, WORDS);
-    const first = await speak(offer);
-    await first.arrayBuffer();
-    expect(subCalls()).toHaveLength(1);
-    // Eleven minutes later (past the 10 fresh ones): ElevenLabs now takes 2 s to answer the subscription.
-    vi.useFakeTimers({ toFake: ["Date"] });
-    vi.setSystemTime(new Date(Date.now() + 11 * 60_000));
+  // No caps since the owner's request (12 October 2026): neither the reply's offer nor the Listen reads the key's
+  // subscription, so a slow ElevenLabs account page never delays the natural voice.
+  it("a slow subscription never delays the Listen: speaking never reads it", async () => {
+    resetNaturalVoiceForTests();
     el.subDelayMs = 2_000;
+    const offer = await offerFor(ada, WORDS);
     const started = performance.now();
     const r = await speak(offer);
     expect(r.status).toBe(200);
     expect(performance.now() - started).toBeLessThan(1_500);
     await r.arrayBuffer();
-    expect(subCalls()).toHaveLength(2);
-    expect(ttsCalls()).toHaveLength(2);
-    await new Promise((done) => setTimeout(done, 2_100)); // the background read, before the next test
+    expect(subCalls()).toEqual([]);
+    expect(ttsCalls()).toHaveLength(1);
   }, 10_000);
 
-  it("a reply's offer reads the subscription ahead of Listen when none is held, so the Listen asks ElevenLabs only to speak", async () => {
-    const offer = await offerFor(ada, WORDS);
-    await until(() => expect(subCalls()).toHaveLength(1));
-    const r = await speak(offer);
-    expect(r.status).toBe(200);
-    await r.arrayBuffer();
-    expect(subCalls()).toHaveLength(1);
-    expect(ttsCalls()).toHaveLength(1);
-  });
-
-  it("with no subscription to serve, the route reads it after its transaction is committed, then reserves under the lock", async () => {
-    el.subDelayMs = 300;
-    resetNaturalVoiceForTests(); // saving the voice read the subscription: nothing to serve now
+  it("a token signed without a reply (a process restarted between reply and Listen): one transaction, no lock, counted", async () => {
+    resetNaturalVoiceForTests();
     const { signSpeechToken } = await import("@/server/services/natural-voice");
-    // Signed here, not by a reply: no offer read the subscription ahead (a process restarted between reply and Listen).
     const offer: SpeechOffer = { path: "/api/orgs/company-a/assistant/speech", token: signSpeechToken(ada, WORDS), text: WORDS };
     const { result: r, sql } = await roundTrips(() => speak(offer));
     expect(r.status).toBe(200);
     await r.arrayBuffer();
-    // BEGIN, the context, the reads (COMMIT), then the reservation's own BEGIN and batch with its COMMIT.
-    expect(sql.filter((q) => /^BEGIN/.test(q))).toHaveLength(2);
-    expect(sql.filter((q) => /pg_advisory_xact_lock/.test(q))).toHaveLength(1);
+    expect(sql.filter((q) => /^BEGIN/.test(q))).toHaveLength(1);
+    expect(sql.filter((q) => /pg_advisory_xact_lock/.test(q))).toHaveLength(0);
     expect(await usageOf(ada)).toEqual([{ characters: offer.text.length, utterances: 1, key_source: "environment" }]);
     expect(await burstHits()).toBe(1);
   });

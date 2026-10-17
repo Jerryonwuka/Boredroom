@@ -5,17 +5,39 @@
 //! the index of a dropped file, so it cannot ask Rust to read anything else from the computer. Each file goes to
 //! Boredroom's ordinary task upload (`POST /api/orgs/:org/tasks/:task/uploads`), which checks size, type and content
 //! and keeps it with the task until it is sent for review.
+//!
+//! File work (owner request, 12 October 2026; `filework.rs`): the last drop also stays a file Brenda may work on, for
+//! two minutes after it landed and only with "Let Brenda work on files" on, and only when the person asks and says yes.
+//! Its paths go to `filework` only, never to the page or the server.
 
 use serde::Serialize;
-use std::{path::PathBuf, sync::Mutex};
+use std::{path::PathBuf, sync::Mutex, time::{Duration, Instant}};
 use tauri::{AppHandle, DragDropEvent, Emitter, Manager, State};
 
 use crate::{base_url, AppState};
 
 const MAX_BYTES: u64 = 25 * 1024 * 1024;
 
+/// The last drop's paths and when it landed.
 #[derive(Default)]
-pub struct Dropped(Mutex<Vec<PathBuf>>);
+pub struct Dropped(Mutex<(Vec<PathBuf>, Option<Instant>)>);
+
+/// A drop counts for file work this long (A.8).
+pub const DROP_FRESH: Duration = Duration::from_secs(120);
+
+pub fn fresh(at: Option<Instant>, now: Instant) -> bool {
+    at.is_some_and(|t| now.saturating_duration_since(t) <= DROP_FRESH)
+}
+
+/// The last drop's files as file-work candidates, if it landed in the last two minutes (B.9.1).
+pub fn recent_candidates(app: &AppHandle) -> Vec<crate::filework::Candidate> {
+    let Some(d) = app.try_state::<Dropped>() else { return vec![] };
+    let (paths, at) = d.0.lock().unwrap().clone();
+    if !fresh(at, Instant::now()) {
+        return vec![];
+    }
+    paths.iter().take(crate::filework::MAX_CANDIDATES).filter_map(|p| crate::filework::candidate(crate::filework::Source::Dropped, p)).collect()
+}
 
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -77,7 +99,7 @@ pub fn on_drag(app: &AppHandle, event: &DragDropEvent, scale: f64) {
     if phase == "drop" {
         let paths = paths.cloned().unwrap_or_default();
         files = paths.iter().take(10).enumerate().map(|(i, p)| describe(i, p)).collect();
-        *app.state::<Dropped>().0.lock().unwrap() = paths.into_iter().take(10).collect();
+        *app.state::<Dropped>().0.lock().unwrap() = (paths.into_iter().take(10).collect(), Some(Instant::now()));
     }
     let count = paths.map(|p| p.len()).unwrap_or(0);
     let _ = app.emit("brenda://drag", DragPayload { phase, x, y, count, files });
@@ -90,7 +112,7 @@ pub async fn upload_dropped(state: State<'_, AppState>, dropped: State<'_, Dropp
     if !task_id.chars().all(|c| c.is_ascii_hexdigit() || c == '-') || task_id.len() != 36 {
         return Err(fail(400, "Pick a task."));
     }
-    let path = dropped.0.lock().unwrap().get(index).cloned().ok_or_else(|| fail(400, "Drop the file again."))?;
+    let path = dropped.0.lock().unwrap().0.get(index).cloned().ok_or_else(|| fail(400, "Drop the file again."))?;
     let mime = mime_of(&path).ok_or_else(|| fail(400, "Only PDF, PNG, JPEG, WebP and TXT files."))?;
     let bytes = tokio::fs::read(&path).await.map_err(|_| fail(400, "That file can't be read."))?;
     if bytes.len() as u64 > MAX_BYTES {
@@ -112,4 +134,17 @@ pub async fn upload_dropped(state: State<'_, AppState>, dropped: State<'_, Dropp
         return Err(fail(status, value.get("message").and_then(|m| m.as_str()).unwrap_or("Upload failed.")));
     }
     Ok(value)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_drop_counts_for_two_minutes() {
+        let t = Instant::now();
+        assert!(fresh(Some(t), t + Duration::from_secs(119)));
+        assert!(!fresh(Some(t), t + Duration::from_secs(121)));
+        assert!(!fresh(None, t));
+    }
 }

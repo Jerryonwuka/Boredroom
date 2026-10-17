@@ -261,3 +261,10 @@ describe("what the model is told (B.5)", () => {
     expect(actSituation(actOf({ ready: false, locked: "not_ready", effective: "ask" }))).toBeNull();
   });
 });
+
+describe("Brenda for Mac (owner permission rule, 12 October 2026)", () => {
+  it("from her notch every change asks, in every mode, with its reason", () => {
+    for (const [tool, facts] of TABLE) expect(decide(tool, facts, { onMac: true }), tool).toEqual(asks("on_mac"));
+    expect(decide("assign_task", {}, { onMac: false })).toEqual({ act: true });
+  });
+});

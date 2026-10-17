@@ -1,17 +1,15 @@
 /**
  * Natural voice (owner decision, 9 October 2026: natural voice (ElevenLabs), contract H): the catalogue, the words a
- * speech token covers, the token itself, the daily share and the reasons the person sees. Pure: no database, and no
+ * speech token covers, the token itself and the reasons the person sees. Boredroom sets no limit of its own since the owner's
+ * request (12 October 2026: "remove the limit for ElevenLabs voice"): no daily share, no per-person or workspace cap, no
+ * stop under 10% left; only ElevenLabs' own refusal for credits stops the natural voice. Pure: no database, and no
  * ElevenLabs (nothing here calls it).
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { NATURAL_VOICES, SPEECH_MAX_CHARS, SPEECH_SPEEDS, isNaturalVoiceId, naturalVoice, speechText } from "@/lib/natural-voices";
-import {
-  BOREDROOM_KEY_WORKSPACE_DAILY_MAX, BOREDROOM_KEY_WORKSPACE_FRACTION, LOW_ALLOWANCE, PERSON_DAILY_CHARS, SPEECH_TOKEN_TTL_S,
-  allowanceLow, dailyShare, daysLeft, naturalVoiceReason, reservationProblem, signSpeechToken, verifySpeechToken, workspaceCap,
-  type ReasonInput,
-} from "@/server/services/natural-voice";
+import * as service from "@/server/services/natural-voice";
+import { NO_LIMIT, SPEECH_TOKEN_TTL_S, naturalVoiceReason, outOfCredits, signSpeechToken, verifySpeechToken, type ReasonInput } from "@/server/services/natural-voice";
 import { signPayload } from "@/server/lib/crypto";
-import { TTS_CREDITS_PER_CHARACTER } from "@/server/services/elevenlabs";
 
 afterEach(() => { vi.useRealTimers(); });
 
@@ -114,6 +112,12 @@ describe("the speech token", () => {
   it("verifies for the same person, workspace, membership and words", () => {
     const t = signSpeechToken(ctxA, TEXT);
     expect(() => verifySpeechToken(ctxA, t, TEXT)).not.toThrow();
+    expect(verifySpeechToken(ctxA, t, TEXT)).toEqual({ boredroomKeyOnly: false });
+  });
+
+  it("a look's token says it may be said only on Boredroom's own key (review, 11 October 2026)", () => {
+    const t = signSpeechToken(ctxA, TEXT, { boredroomKeyOnly: true });
+    expect(verifySpeechToken(ctxA, t, TEXT)).toEqual({ boredroomKeyOnly: true });
   });
 
   it.each([
@@ -172,99 +176,37 @@ describe("the speech token", () => {
   });
 });
 
-describe("the daily share", () => {
-  // The subscription counts credits; Flash v2.5 costs half a credit a character (TTS_CREDITS_PER_CHARACTER), so the
-  // share, in characters, is twice the credits left over the days left (fix review, 9 October 2026).
-  it("matches the 9 October example: 38,373 credits left, resets 9 November 07:47 UTC ⇒ 31 days ⇒ 2,475 characters a day", () => {
-    const now = new Date("2026-10-09T12:00:00Z");
-    const resetAt = "2026-11-09T07:47:00.000Z";
-    expect(TTS_CREDITS_PER_CHARACTER).toBe(0.5);
-    expect(daysLeft(resetAt, now)).toBe(31);
-    expect(dailyShare({ used: 0, limit: 38_373, resetAt, keyTodayAtFetch: 0 }, now)).toBe(2475);
+describe("no limit of Boredroom's (owner request, 12 October 2026)", () => {
+  it("the caps and the daily share are gone from the service", () => {
+    expect(NO_LIMIT).toBe(0);
+    for (const gone of ["PERSON_DAILY_CHARS", "BOREDROOM_KEY_WORKSPACE_DAILY_MAX", "BOREDROOM_KEY_WORKSPACE_FRACTION", "LOW_ALLOWANCE", "SHARE_DAYS_AHEAD",
+      "dailyShare", "daysLeft", "allowanceLow", "workspaceCap", "reservationProblem"]) {
+      expect(gone in service).toBe(false);
+    }
   });
 
-  it("adds back what was already counted today when the subscription was read (characters, as credits cost them)", () => {
-    const now = new Date("2026-10-09T12:00:00Z");
-    const resetAt = "2026-11-09T07:47:00.000Z";
-    // 500 characters said today before the read cost 250 credits: the allowance already shows them, the share does not shrink.
-    expect(dailyShare({ used: 250, limit: 38_373, resetAt, keyTodayAtFetch: 500 }, now)).toBe(2475);
-  });
-
-  it("at least one day; without a reset date, to the end of the UTC month", () => {
-    const now = new Date("2026-10-09T12:00:00Z");
-    expect(daysLeft("2026-10-09T11:00:00Z", now)).toBe(1);
-    expect(daysLeft("2026-10-09T12:30:00Z", now)).toBe(1);
-    expect(daysLeft(null, now)).toBe(23); // 9 Oct 12:00 → 1 Nov 00:00 is 22.5 days
-    expect(daysLeft(null, new Date("2026-10-31T23:00:00Z"))).toBe(1);
-    expect(daysLeft("not a date", now)).toBe(23);
-  });
-
-  it("never negative; nothing left ⇒ 0", () => {
-    const now = new Date("2026-10-09T12:00:00Z");
-    expect(dailyShare({ used: 40_000, limit: 38_373, resetAt: "2026-11-09T07:47:00Z", keyTodayAtFetch: 0 }, now)).toBe(0);
-  });
-
-  it("is low under 10% of the allowance", () => {
-    expect(LOW_ALLOWANCE).toBe(0.1);
-    expect(allowanceLow({ used: 0, limit: 38_373 })).toBe(false);
-    expect(allowanceLow({ used: 34_535, limit: 38_373 })).toBe(false); // 3,838 left: exactly 10%
-    expect(allowanceLow({ used: 34_540, limit: 38_373 })).toBe(true);
-    expect(allowanceLow({ used: 0, limit: 0 })).toBe(true);
-  });
-
-  it("gives a workspace on Boredroom's key a quarter of the key's share (at most 2,000 a day), its own key the whole share", () => {
-    expect(BOREDROOM_KEY_WORKSPACE_DAILY_MAX).toBe(2000);
-    expect(BOREDROOM_KEY_WORKSPACE_FRACTION).toBe(0.25);
-    expect(workspaceCap("environment", 20_000)).toBe(2000);
-    expect(workspaceCap("environment", 5000)).toBe(1250);
-    // The Starter plan on 9 October: 2,475 characters a day for the key, 618 for each workspace on it.
-    expect(workspaceCap("environment", 2475)).toBe(618);
-    expect(workspaceCap("environment", -5)).toBe(0);
-    expect(workspaceCap("organisation", 5000)).toBe(5000);
+  it("out of credits only by ElevenLabs' own figures (for Settings; nothing is refused for it)", () => {
+    expect(outOfCredits({ used: 0, limit: 38_373 })).toBe(false);
+    expect(outOfCredits({ used: 38_000, limit: 38_373 })).toBe(false); // nearly used up is no longer a stop
+    expect(outOfCredits({ used: 38_373, limit: 38_373 })).toBe(true);
+    expect(outOfCredits({ used: 0, limit: 0 })).toBe(true);
   });
 });
 
-describe("a reservation", () => {
-  const base = { low: false, share: 1237, source: "environment" as const, personToday: 0, workspaceToday: 0, keyToday: 0 };
-  it("passes within every cap", () => { expect(reservationProblem(base)).toBeNull(); });
-  it("allowance low first", () => { expect(reservationProblem({ ...base, low: true, personToday: 5000 })).toBe("allowance_low"); });
-  it("the person's 2,000 a day: reached once the day's count meets it (the utterance that crosses it is said whole)", () => {
-    expect(PERSON_DAILY_CHARS).toBe(2000);
-    expect(reservationProblem({ ...base, share: 99_999, personToday: 1999 })).toBeNull();
-    expect(reservationProblem({ ...base, share: 99_999, personToday: 2000 })).toBe("person_cap");
-  });
-  it("a reply longer than a whole slice is still said on a fresh day (fix review, 9 October 2026: the slice was 309, replies up to 400)", () => {
-    expect(workspaceCap("environment", 1237)).toBe(309);
-    expect(reservationProblem({ ...base, workspaceToday: 0, keyToday: 0 })).toBeNull();
-    expect(reservationProblem({ ...base, workspaceToday: 308, keyToday: 308 })).toBeNull();
-    expect(reservationProblem({ ...base, workspaceToday: 669, keyToday: 669 })).toBe("workspace_cap");
-  });
-  it("one workspace on Boredroom's key cannot use up the others' day; the key's whole share is told apart", () => {
-    expect(reservationProblem({ ...base, workspaceToday: 309, keyToday: 309 })).toBe("workspace_cap");
-    // Other workspaces used the key's day: this one is told it is the shared allowance, not its own.
-    expect(reservationProblem({ ...base, keyToday: 1237 })).toBe("shared_cap");
-    expect(reservationProblem({ ...base, keyToday: 1236 })).toBeNull();
-    // A workspace's own key: its share is its cap.
-    expect(reservationProblem({ ...base, source: "organisation", share: 3000, workspaceToday: 2999, keyToday: 2999 })).toBeNull();
-    expect(reservationProblem({ ...base, source: "organisation", share: 3000, workspaceToday: 3000, keyToday: 3000 })).toBe("workspace_cap");
-  });
-});
-
-describe("the reason the person sees (contract C.5 order)", () => {
-  const all: ReasonInput = { ready: true, voiceOff: false, chosen: "pFZP5JQG7iQjIQuC4Bku", key: true, held: null, subscription: "ok", low: false, personFull: false, workspaceFull: false };
+describe("the reason the person sees (contract C.5 order, no caps)", () => {
+  const all: ReasonInput = { ready: true, voiceOff: false, chosen: "pFZP5JQG7iQjIQuC4Bku", key: true, held: null };
   it("none when everything is fine", () => { expect(naturalVoiceReason(all)).toBeNull(); });
   it("follows the order exactly", () => {
-    const worst: ReasonInput = { ready: false, voiceOff: true, chosen: "x", key: false, held: "upstream", subscription: "key_rejected", low: true, personFull: true, workspaceFull: true };
+    const worst: ReasonInput = { ready: false, voiceOff: true, chosen: "x", key: false, held: "upstream" };
     expect(naturalVoiceReason(worst)).toBe("not_ready");
     expect(naturalVoiceReason({ ...worst, ready: true })).toBe("voice_off");
     expect(naturalVoiceReason({ ...worst, ready: true, voiceOff: false, chosen: null })).toBeNull();
     expect(naturalVoiceReason({ ...worst, ready: true, voiceOff: false })).toBe("no_key");
     expect(naturalVoiceReason({ ...worst, ready: true, voiceOff: false, key: true })).toBe("upstream");
-    expect(naturalVoiceReason({ ...worst, ready: true, voiceOff: false, key: true, held: null })).toBe("key_rejected");
-    expect(naturalVoiceReason({ ...worst, ready: true, voiceOff: false, key: true, held: null, subscription: "ok" })).toBe("allowance_low");
-    expect(naturalVoiceReason({ ...all, personFull: true, workspaceFull: true })).toBe("person_cap");
-    expect(naturalVoiceReason({ ...all, workspaceFull: true, sharedFull: true })).toBe("workspace_cap");
-    expect(naturalVoiceReason({ ...all, sharedFull: true })).toBe("shared_cap");
+  });
+  it("only ElevenLabs' own refusals, held by the breaker, stop it: a rejected key or no credits", () => {
+    expect(naturalVoiceReason({ ...all, held: "key_rejected" })).toBe("key_rejected");
+    expect(naturalVoiceReason({ ...all, held: "allowance_low" })).toBe("allowance_low");
   });
   it("voice off shows even with no voice chosen; none chosen otherwise needs no note", () => {
     expect(naturalVoiceReason({ ...all, chosen: null, voiceOff: true })).toBe("voice_off");

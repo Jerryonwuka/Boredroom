@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-job-show-folder"
+description = "Enables the job_show_folder command without any pre-configured scope."
+commands.allow = ["job_show_folder"]
+
+[[permission]]
+identifier = "deny-job-show-folder"
+description = "Denies the job_show_folder command without any pre-configured scope."
+commands.deny = ["job_show_folder"]

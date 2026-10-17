@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-job-undo"
+description = "Enables the job_undo command without any pre-configured scope."
+commands.allow = ["job_undo"]
+
+[[permission]]
+identifier = "deny-job-undo"
+description = "Denies the job_undo command without any pre-configured scope."
+commands.deny = ["job_undo"]

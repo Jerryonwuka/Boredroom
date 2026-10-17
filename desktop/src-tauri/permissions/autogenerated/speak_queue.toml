@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-speak-queue"
+description = "Enables the speak_queue command without any pre-configured scope."
+commands.allow = ["speak_queue"]
+
+[[permission]]
+identifier = "deny-speak-queue"
+description = "Denies the speak_queue command without any pre-configured scope."
+commands.deny = ["speak_queue"]

@@ -95,6 +95,8 @@ import { abilitiesFor } from "@/server/services/abilities";
 import { abilitiesOff, abilityOff, type AbilityKey } from "@/lib/abilities";
 import { noticeFacts, type DesktopNotification, type NoticeFacts, type NoticeRow } from "@/server/services/notice-facts";
 import { membersOnCall } from "@/server/services/calls";
+import { desktopLook } from "@/server/services/screen-help";
+import type { DesktopLook } from "@/lib/screen-help";
 
 const CODE_TTL_SECONDS = 10 * 60;
 const DESKTOP_SESSION_DAYS = 90;
@@ -252,7 +254,7 @@ export async function desktopState(ctx: OrgContext, o: { opener?: boolean } = {}
   const lead = ctx.membership.role !== "employee";
   const noLoops: DesktopLoops = { ready: false, commitments: [], blocks: [], looseEnds: { open: 0, href: `/app/${ctx.org.slug}/home/loose-ends` } };
   const noStandup: DesktopStandup = { ready: false, entries: [], rollups: [] };
-  const [brief, session, clock, team, extra, followUps, assistantItems, routineRuns, loops, standup, abilities] = await Promise.all([
+  const [brief, session, clock, team, extra, followUps, assistantItems, routineRuns, loops, standup, abilities, look, voice] = await Promise.all([
     briefing(ctx),
     worker ? currentSession(ctx) : Promise.resolve(null),
     worker ? myClock(ctx) : Promise.resolve(null),
@@ -286,6 +288,11 @@ export async function desktopState(ctx: OrgContext, o: { opener?: boolean } = {}
     standupForDesktop(ctx).catch((err) => { console.warn(`[desktop] standup: ${(err as Error)?.message ?? String(err)}`); return noStandup; }),
     // The abilities switched off for the person (never throws: everything on when it cannot be read).
     abilitiesFor(ctx),
+    // Screen help on Brenda for Mac (owner decisions, 11 October 2026; contract A.10): never throws (not ready).
+    desktopLook(ctx),
+    // Brenda and her helpers (owner brief, 12 October 2026; contract M.2): the person's natural voice, so the notch can
+    // say her first short line ("Opening Figma.") in it from a clip it kept. Never throws: none when it can't be read.
+    import("@/server/services/natural-voice").then((m) => m.naturalVoiceView(ctx)).catch(() => null),
   ]);
   const mates = team ? team.rows.filter((r) => r.membership_id !== ctx.membership.id)
     .sort((a, b) => Number(!!b.session_state) - Number(!!a.session_state) || a.display_name.localeCompare(b.display_name))
@@ -323,7 +330,12 @@ export async function desktopState(ctx: OrgContext, o: { opener?: boolean } = {}
     // aloud (phase 2: her voice; the notch reads anything else, or its absence from an older server, as 'voice'), and
     // whether it asks before acting (act without asking, 8 October 2026; `ready: false` before 0045).
     // Phase 7c: `voice` false when the workspace switched Voice off (speak then reads 'never').
-    assistant: { personal: forNotch(extra.assistants.personal), workspace: forNotch(extra.assistants.workspace), speak: extra.assistants.speak, act, voice: extra.assistants.voice !== false, ...(ai === undefined ? {} : { ai }) } satisfies { personal: DesktopAssistant; workspace: DesktopAssistant; speak: AssistantSpeak; act: ActState; voice: boolean; ai?: boolean },
+    // Brenda and her helpers (contract M.2): `naturalVoice`, the person's chosen ElevenLabs voice while it is available,
+    // else null (the notch's speed for it is its own; the server keeps none, so "normal").
+    assistant: {
+      personal: forNotch(extra.assistants.personal), workspace: forNotch(extra.assistants.workspace), speak: extra.assistants.speak, act, voice: extra.assistants.voice !== false, ...(ai === undefined ? {} : { ai }),
+      naturalVoice: voice && voice.available && voice.chosen ? { id: voice.chosen, speed: "normal" as const } : null,
+    } satisfies { personal: DesktopAssistant; workspace: DesktopAssistant; speak: AssistantSpeak; act: ActState; voice: boolean; ai?: boolean; naturalVoice: { id: string; speed: "slower" | "normal" | "faster" } | null },
     settings: extra.settings, prefs: extra.prefs,
     clock: clock ? { status: clock.status, workingDay: clock.workingDay, startAt: clock.scheduledStartAt, endAt: clock.scheduledEndAt, clockInAt: clock.record?.clock_in_at ?? null, lateSeconds: clock.record?.late_seconds ?? 0 } : null,
     timer: s ? { id: s.id, version: s.version, state: s.state, taskId: s.taskId, taskTitle: s.taskTitle, confirmedSeconds: s.confirmedSeconds, openIntervalStartedAt: s.openIntervalStartedAt, serverNow: s.serverNow, estimateMinutes: s.estimateMinutes, progress: running?.progress_percent ?? 0, taskVersion: running?.version ?? null } : null,
@@ -352,6 +364,10 @@ export async function desktopState(ctx: OrgContext, o: { opener?: boolean } = {}
     abilities: { off: abilitiesOff(abilities) satisfies AbilityKey[] },
     // The person's own open tasks, soonest due first: where a dropped file can go.
     myTasks: worker ? extra.progress.slice(0, 8).map((t) => ({ id: t.id, title: t.title, due: t.due_at })) : [],
+    // Screen help on Brenda for Mac (owner decisions, 11 October 2026; contract A.10): whether the workspace offers it
+    // now, the never-look lists the Mac adds to its fixed one, and the person's last "Turn off on my Macs". Whether they
+    // turned it on, or used it, is never known here. An older notch ignores it; an older server sends none.
+    look: look satisfies DesktopLook,
     // Team leads and organisation accounts: who is working right now, for the small faces in the notch.
     // Each teammate's face is their own assistant (owner request, 9 October 2026), Brenda where they have none.
     team: mates.map((r) => ({ id: r.membership_id, name: r.display_name, state: r.session_state ?? null, task: r.task_title ?? null,

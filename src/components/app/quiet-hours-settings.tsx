@@ -121,7 +121,7 @@ export function QuietHoursSettings({ orgSlug, name, impersonated, orgTimeZone, i
   const active = saved?.state.ready && saved.state.active && saved.state.until ? Q.activeUntil(routineTime(saved.state.until, saved.timezone)) : null;
 
   return (
-    <SettingsSection id="quiet-hours" title={Q.section} description={Q.description(name)}>
+    <SettingsSection id="quiet-hours" target="settings-quiet-hours" title={Q.section} description={Q.description(name)}>
       {loadError ? (
         <SettingsGroup><SettingsAlert>{loadError}</SettingsAlert></SettingsGroup>
       ) : !draft || !saved ? (

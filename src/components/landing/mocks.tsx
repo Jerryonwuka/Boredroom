@@ -5,6 +5,7 @@ import { ProgressBar } from "@/components/ui/progress-arc";
 import { StatusDot } from "@/components/ui/status-dot";
 import { FAKE_BUTTON, Pane, arrive } from "@/components/landing/parts";
 import { CountUp } from "@/components/landing/arrival";
+import { LiveClock } from "@/components/marketing/live-clock";
 import { cn } from "@/lib/utils";
 
 /**
@@ -18,8 +19,11 @@ import { cn } from "@/lib/utils";
 
 const fake = (variant: "primary" | "secondary") => cn(buttonVariants({ variant, size: "xs" }), FAKE_BUTTON);
 
-/** My Day: the one card a staff member lives in. */
-export function MyDayMock() {
+/**
+ * My Day: the one card a staff member lives in. `live` (the public pages, owner feedback 17 October 2026: pages v2)
+ * lets the timer tick while it is on screen; the home page passes nothing and keeps the still 1:42:07.
+ */
+export function MyDayMock({ live = false }: { live?: boolean } = {}) {
   const rows = [
     { t: "Homepage design", m: "Fri, 2h 30m", state: "running" },
     { t: "Client kickoff notes", m: "today, 45m", state: "todo" },
@@ -39,7 +43,7 @@ export function MyDayMock() {
               <StatusDot tone="live" />
               <span className="text-sm font-medium text-secondary">Homepage design</span>
             </div>
-            <p className="mt-2 font-mono text-[44px] leading-none tabular-nums text-accent-text sm:text-[52px]">1:42:07</p>
+            <p className="mt-2 font-mono text-[44px] leading-none tabular-nums text-accent-text sm:text-[52px]">{live ? <LiveClock start={6127} /> : "1:42:07"}</p>
             <ProgressBar className="mt-4" value={102} max={150} label="Homepage design, time against the estimate" />
             <p className="mt-2 text-meta font-normal text-secondary">Estimate 2h 30m, 48m left</p>
             <ul className="mt-5 space-y-1">

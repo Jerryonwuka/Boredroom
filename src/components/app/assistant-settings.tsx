@@ -111,7 +111,7 @@ const readWorkspace = (r: unknown) => (r as { workspace: AssistantProfile }).wor
 /** "Your assistant": the person's own assistant in this workspace, for every role. */
 export function MyAssistantSettings({ orgSlug, initial, impersonated = false }: { orgSlug: string; initial: AssistantProfile; impersonated?: boolean }) {
   return (
-    <SettingsSection id="assistant" title="Your assistant" description="The name and look of the assistant who works with you here. People in this workspace can see them.">
+    <SettingsSection id="assistant" target="settings-assistant" title="Your assistant" description="The name and look of the assistant who works with you here. People in this workspace can see them.">
       {/* Only the person chooses: an administrator signed in as them sees it read-only (the server refuses the save too). */}
       <AssistantForm initial={initial} idPrefix="my-assistant" url={`/api/orgs/${orgSlug}/brenda/assistant`} read={readPersonal} canEdit={!impersonated}
         readOnly="Only the person can change their assistant. It stays as it is while you are signed in as them." />
@@ -153,7 +153,7 @@ export function MyActModeSettings({ orgSlug, name, initial, ai = true, workspace
     { value: "auto", label: P.auto.label, hint: P.auto.hint(name), describedBy: floorsId },
   ];
   return (
-    <SettingsSection id="permissions" title={P.section} description={P.description(name)}>
+    <SettingsSection id="permissions" target="settings-permissions" title={P.section} description={P.description(name)}>
       <div className={cn(SETTINGS_GROUP, "@container")}>
         {!state.ready ? <SettingsAlert tone="info">{P.notReady}</SettingsAlert>
           : state.locked === "workspace" ? (

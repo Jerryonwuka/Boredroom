@@ -162,6 +162,13 @@ const contextSql = (): string => (contextSqlText ??= `WITH ${SESSION_CTES}, m AS
      )
      SELECT u.*, m.*, e.* FROM u LEFT JOIN m ON true LEFT JOIN LATERAL (${entitlementsSql("m.org_id")}) e ON m.org_id IS NOT NULL`);
 
+/**
+ * The same statement and its reading, for Brenda for Mac's one-trip context (owner brief, 12 October 2026: "server ≤ 0.3
+ * s"; contract K.5.1, server/lib/mac-context.ts), which sends it with the person's reads in one simple-protocol query.
+ */
+export const orgContextSql = (): string => contextSql();
+export const orgContextOf = (row: Record<string, unknown> | null): OrgContext | AppError => contextOf(row as ContextRow | null);
+
 async function contextRowIn(db: Db, orgSlug: string, token: string): Promise<ContextRow | null> {
   return db.maybeOne<ContextRow>(contextSql(), [sha256(token), orgSlug]);
 }

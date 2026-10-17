@@ -13,6 +13,9 @@ import { SectionTitle, WRAP } from "@/components/landing/parts";
  * rendered; only the card's tilt runs script, and only while scrolling.
  *
  * The section clips sideways: tilted back, the card's near (bottom) edge is wider than the page on a narrow laptop.
+ *
+ * Its heading carries the category (owner request, 17 October 2026: SEO analysis, the Action Document's heading table:
+ * "Remote team visibility: everything in view").
  */
 
 const CARDS: { icon: Icon3DName; t: string; d: string }[] = [
@@ -28,7 +31,7 @@ export function DashboardSection() {
     <section id="control" aria-labelledby="control-title" className="overflow-x-clip pb-20 pt-10 sm:pb-28 sm:pt-14">
       <div className={WRAP}>
         <ContainerScroll label={LABEL}
-          title={<SectionTitle id="control-title" icon={<Target aria-hidden />} title="Everything in view" sub="Who is working, on what, what is blocked and what was delivered, live for owners, HR and team leads. Staff get My Day, not the dashboard or the Workroom." />}>
+          title={<SectionTitle id="control-title" icon={<Target aria-hidden />} title="Remote team visibility: everything in view" sub="Who is working, on what, what is blocked and what was delivered, live for owners, HR and team leads. Staff get My Day, not the dashboard or the Workroom." />}>
           <AppFrame active="dashboard" crumb="Dashboard"><DashboardBody /></AppFrame>
         </ContainerScroll>
         <ul className="mt-6 grid gap-3 md:grid-cols-3">

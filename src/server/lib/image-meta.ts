@@ -13,6 +13,9 @@
  *   chunks (and their VP8X flags) and anything after the RIFF. The picture's own data is never touched.
  * - A file that cannot be read this way gives null and is refused, never stored with its metadata (review, 11 October
  *   2026: it used to come back as it was, and the copy from the first scan on kept appended images' Exif).
+ * - `imageSize` (owner decisions, 11 October 2026: screen help on Brenda for Mac): a JPEG's (SOF0, SOF1, SOF2) or PNG's
+ *   (IHDR) own width and height, so the look route checks that a picture is the size the Mac says it is. It reads the
+ *   headers only, never the picture.
  */
 
 export type ImageType = "image/png" | "image/jpeg" | "image/webp";
@@ -32,6 +35,40 @@ export function stripImageMetadata(type: ImageType, bytes: Buffer): Buffer | nul
     if (type === "image/jpeg") return stripJpeg(bytes);
     if (type === "image/png") return stripPng(bytes);
     return stripWebp(bytes);
+  } catch {
+    return null;
+  }
+}
+
+/** A JPEG's or PNG's own width and height from its headers; null when it cannot be read (or is another type). */
+export function imageSize(type: string, bytes: Buffer): { width: number; height: number } | null {
+  try {
+    if (type === "image/png") {
+      if (bytes.length < 24 || !bytes.subarray(0, 8).equals(PNG_SIGNATURE) || bytes.subarray(12, 16).toString("latin1") !== "IHDR") return null;
+      const width = bytes.readUInt32BE(16), height = bytes.readUInt32BE(20);
+      return width > 0 && height > 0 ? { width, height } : null;
+    }
+    if (type !== "image/jpeg" || bytes.length < 4 || bytes[0] !== 0xff || bytes[1] !== 0xd8) return null;
+    let i = 2;
+    while (i < bytes.length) {
+      if (bytes[i] !== 0xff) return null;
+      let j = i;
+      while (j < bytes.length && bytes[j] === 0xff) j++;
+      if (j >= bytes.length) return null;
+      const marker = bytes[j];
+      if (marker === 0xd9 || marker === 0xda) return null; // the end, or the picture's data, before any frame header
+      if ((marker >= 0xd0 && marker <= 0xd7) || marker === 0x01) { i = j + 1; continue; }
+      if (j + 3 > bytes.length) return null;
+      const len = bytes.readUInt16BE(j + 1);
+      if (len < 2 || j + 1 + len > bytes.length) return null;
+      if (marker === 0xc0 || marker === 0xc1 || marker === 0xc2) {
+        if (len < 7) return null;
+        const height = bytes.readUInt16BE(j + 4), width = bytes.readUInt16BE(j + 6);
+        return width > 0 && height > 0 ? { width, height } : null;
+      }
+      i = j + 1 + len;
+    }
+    return null;
   } catch {
     return null;
   }

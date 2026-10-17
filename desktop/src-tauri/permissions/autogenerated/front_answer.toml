@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-front-answer"
+description = "Enables the front_answer command without any pre-configured scope."
+commands.allow = ["front_answer"]
+
+[[permission]]
+identifier = "deny-front-answer"
+description = "Denies the front_answer command without any pre-configured scope."
+commands.deny = ["front_answer"]

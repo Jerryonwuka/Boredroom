@@ -61,7 +61,7 @@ export function NewDocButton({ orgSlug, folder = null, variant = "accent", size 
   const [error, setError] = useState<string | null>(null);
   return (
     <div className="flex flex-col items-end gap-1.5">
-      <Button variant={variant} size={size} loading={pending} onClick={async () => {
+      <Button variant={variant} size={size} loading={pending} data-brenda-target="docs-new" onClick={async () => {
         setPending(true); setError(null);
         try {
           const doc = await api<{ id: string }>(`/api/orgs/${orgSlug}/docs`, { method: "POST", body: { title: "Untitled document", ...(folder ? { folder } : {}) } });
@@ -157,7 +157,7 @@ export function DocsLibrary({ orgSlug, docs, folders, q, folder, now, viewerMemb
       <section aria-labelledby="docs-list-heading" aria-busy={pending} className="min-w-0">
         <h2 id="docs-list-heading" className="sr-only">{q ? `Documents matching ${q}` : folder ? `Documents in ${folder}` : "Documents"}</h2>
         <div className="mb-4 flex flex-wrap items-center gap-3">
-          <form role="search" className="w-full sm:max-w-sm" onSubmit={(e) => e.preventDefault()} data-refresh-safe>
+          <form role="search" className="w-full sm:max-w-sm" onSubmit={(e) => e.preventDefault()} data-refresh-safe data-brenda-target="docs-search">
             <InputAdorned fieldSize="lg" type="search" autoComplete="off" enterKeyHint="search" maxLength={200} aria-label="Search documents"
               placeholder="Search titles and text" value={query} prefix={<Search aria-hidden />}
               onChange={(e) => setQuery(e.target.value)}

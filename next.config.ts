@@ -32,6 +32,9 @@ const csp = [
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  // Modern image formats (owner request, 17 October 2026: SEO analysis, A10): the optimiser answers each browser with
+  // AVIF where it is accepted, else WebP, else the original (next/image picks by the request's Accept header).
+  images: { formats: ["image/avif", "image/webp"] },
   async headers() {
     return [
       {

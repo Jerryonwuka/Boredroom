@@ -22,7 +22,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { adminQuery, adminUrl, resetTestDatabase } from "../helpers/db";
 import { buildCompany, contextFor, createVerifiedUser, type CompanyFixture } from "@/server/services/fixtures";
 import { startSession, stopSession } from "@/server/services/sessions";
-import { createOrganisation, publishPolicy, DEFAULT_NOTICE } from "@/server/services/orgs";
+import { createOrganisation, publishPolicy, DEFAULT_NOTICE, PHASE8_DEFAULT_NOTICE } from "@/server/services/orgs";
 import { storage, tenantKey } from "@/server/lib/storage";
 import { forget0055, noteSchema0055 } from "@/server/lib/schema-0055";
 import { runDeleteRecordings, hostOf, type DeleteRecordingsResult } from "../../db/scripts/delete-recordings";
@@ -247,7 +247,8 @@ describe("migration 0055 and the code around it", () => {
     const before = await createVerifiedUser(`before-0055-${randomUUID().slice(0, 8)}@company-c.test`, "Cara Before");
     const made = await createOrganisation(before.profileId, { name: "Before 0055", slug: `before-${randomUUID().slice(0, 8)}`, timezone: "Africa/Lagos", employeeCode: "OWN-001" });
     const p = await one<{ recording_mode: string; retention_days: number; notice_text: string }>(`SELECT p.recording_mode, p.retention_days, p.notice_text FROM policies p JOIN organisations o ON o.current_policy_id = p.id WHERE o.id = $1`, [made.orgId]);
-    expect(p).toEqual({ recording_mode: "disabled", retention_days: 7, notice_text: DEFAULT_NOTICE });
+    // Outside screen help's pilot, phase 8's text: the notice doesn't describe a feature the workspace lacks (review, 11 October 2026).
+    expect(p).toEqual({ recording_mode: "disabled", retention_days: 7, notice_text: PHASE8_DEFAULT_NOTICE });
     const ctx = await contextFor(before, made.slug);
     const v = await publishPolicy(ctx, { noticeText: "Boredroom records the tasks you plan and the timers you start.", reminderMinutesBeforeEnd: 15 });
     expect(v.version).toBe(2);

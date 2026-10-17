@@ -107,7 +107,7 @@ function Notifications({ orgSlug, unread, recent }: { orgSlug: string; unread: n
   return (
     <Popover align="end" label="Notifications" width="min(360px, calc(100vw - 16px))" className="p-1"
       trigger={
-        <IconButton aria-label={unread ? `Notifications, ${unread} unread` : "Notifications"}>
+        <IconButton aria-label={unread ? `Notifications, ${unread} unread` : "Notifications"} data-brenda-target="notifications">
           <AnimatedBell aria-hidden />
           {unread ? <span aria-hidden className="absolute right-[7px] top-[7px] size-2 rounded-full bg-accent ring-2 ring-background" /> : null}
         </IconButton>
@@ -149,7 +149,7 @@ function Notifications({ orgSlug, unread, recent }: { orgSlug: string; unread: n
 function SettingsMenu({ orgSlug, attention }: { orgSlug: string; attention: number }) {
   const base = `/app/${orgSlug}`;
   return (
-    <Menu align="end" label="Settings" trigger={<IconButton aria-label="Settings"><AnimatedSettings aria-hidden /></IconButton>}>
+    <Menu align="end" label="Settings" trigger={<IconButton aria-label="Settings" data-brenda-target="nav-settings"><AnimatedSettings aria-hidden /></IconButton>}>
       {/* No policy page any more (owner decision, 5 October 2026): working hours and the monitoring notice are in Settings. */}
       <MenuItem href={`${base}/settings`} icon={<AnimatedSettings aria-hidden />}>Organisation settings</MenuItem>
       <MenuItem href={`${base}/people`} icon={<AnimatedUsersRound aria-hidden />}>People and teams</MenuItem>
@@ -166,7 +166,8 @@ function Account({ orgSlug, user, roleLabel }: { orgSlug: string; user: TopBarUs
   return (
     <Popover align="end" label="Your account" width={288} className="p-1"
       trigger={
-        <button type="button" aria-label={`Your account, ${user.displayName}`} className="relative ml-1 grid size-8 shrink-0 place-items-center rounded-full transition-opacity duration-75 hover:opacity-90 pointer-coarse:size-10">
+        // Brenda points (11 October 2026): Settings is not in the sidebar; for staff and team leads it is reached from here.
+        <button type="button" aria-label={`Your account, ${user.displayName}`} data-brenda-target="nav-settings" className="relative ml-1 grid size-8 shrink-0 place-items-center rounded-full transition-opacity duration-75 hover:opacity-90 pointer-coarse:size-10">
           <Avatar profileId={user.profileId} name={user.displayName} avatarKey={user.avatarKey} presence={presence} size={32} />
         </button>
       }>
@@ -221,11 +222,11 @@ export function TopBar({ orgSlug, orgName, user, roleLabel, isOrg, unread, atten
         <SidebarToggle className="hidden md:inline-flex" />
         <Breadcrumb orgName={orgName} pages={pages} />
       </div>
-      <div className="hidden justify-center lg:flex">
+      <div className="hidden justify-center lg:flex" data-brenda-target="search">
         <SearchTrigger onOpen={() => setSearchOpen(true)} />
       </div>
       <div className="flex items-center justify-end gap-1">
-        <IconButton aria-label="Search" aria-haspopup="dialog" aria-controls={SEARCH_DIALOG_ID} className="lg:hidden" onClick={() => setSearchOpen(true)}><AnimatedSearch aria-hidden /></IconButton>
+        <IconButton aria-label="Search" aria-haspopup="dialog" aria-controls={SEARCH_DIALOG_ID} className="lg:hidden" data-brenda-target="search" onClick={() => setSearchOpen(true)}><AnimatedSearch aria-hidden /></IconButton>
         {/* On phones the theme switch lives in the menu, so the bar fits a 375px screen. */}
         <ThemeToggle className="hidden sm:inline-flex" />
         <Notifications orgSlug={orgSlug} unread={unread} recent={recent} />

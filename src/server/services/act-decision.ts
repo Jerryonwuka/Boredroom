@@ -30,6 +30,16 @@
  * later act as a request and a follow-up do (the other side still accepts or answers); declining a commitment answers
  * someone else ('answers_others'); naming who a blocked task waits on acts; answering a block always asks.
  *
+ * Screen help (owner decisions, 11 October 2026): anything prepared in a turn that holds a picture of the person's screen
+ * asks ('looked'), in every mode: the picture is what an app or other people wrote, and only the person's own press acts.
+ * The turn itself is not marked tainted while it runs (that would refuse "add this to my to-dos" outright); copilot turns
+ * every immediate tool into a Confirm card instead, and this gives the card its reason in 'auto'.
+ *
+ * Brenda for Mac (owner permission rule, 12 October 2026, verbatim: "if it's a core task, Brenda should confirm, oh, do
+ * you want me to do this? And then I'll say, yes"): in chat from her notch every change waits for the person's Confirm
+ * ('on_mac'), in every mode; Act without asking stays a choice for the web chat only (review, 12 October 2026: the owner's
+ * call whether the web keeps it).
+ *
  * Standup and "How I like things done" (owner decisions, 8–9 October 2026: phase 7c): posting the person's standup is a
  * broadcast to their team's channel, so it always waits for their own press ('broadcast_team', the act-mode floor: nothing
  * posts on its own, ever); editing their own draft and skipping the day act on their own entry. Remembering or forgetting
@@ -106,10 +116,12 @@ const ask = (reason: AskReason | null): ActDecision => ({ act: false, reason });
  * 3. a shared thread: asks, no reason (the thread card stays as it is);
  * 4. locked: before 0045 no reason; impersonated; the workspace turned it off;
  * 5. the built-in helper;
- * 6. other people's words in this turn, then earlier in the conversation;
- * 7. the tool's own rule (AUTO_RULES); a tool with none always asks.
+ * 6. a look at the person's screen in this turn ('looked', owner decisions, 11 October 2026); chat from Brenda for Mac
+ *    ('on_mac', owner permission rule, 12 October 2026);
+ * 7. other people's words in this turn, then earlier in the conversation;
+ * 8. the tool's own rule (AUTO_RULES); a tool with none always asks.
  */
-export function decideAct(tool: string, facts: ActFacts, t: { act?: ActContext | null; tainted: boolean; othersWords?: boolean; shared: boolean }): ActDecision {
+export function decideAct(tool: string, facts: ActFacts, t: { act?: ActContext | null; tainted: boolean; othersWords?: boolean; shared: boolean; look?: boolean; onMac?: boolean }): ActDecision {
   const act = t.act;
   if (!act) return ask(null);
   if (act.state.mode !== "auto") return ask(null);
@@ -120,6 +132,8 @@ export function decideAct(tool: string, facts: ActFacts, t: { act?: ActContext |
   // Before 0045 (or any state that is not plainly 'auto' in force): today's card, no line.
   if (lock || !act.state.ready || act.state.effective !== "auto") return ask(null);
   if (act.engine === "builtin") return ask("builtin");
+  if (t.look) return ask("looked");
+  if (t.onMac) return ask("on_mac");
   if (t.tainted || t.othersWords) return ask("tainted");
   if (act.earlierTaint) return ask("tainted_earlier");
   const rule = Object.hasOwn(AUTO_RULES, tool) ? AUTO_RULES[tool] : undefined;

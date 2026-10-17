@@ -4,8 +4,8 @@ import { VOICE_KEY_BODY_MAX, clearVoiceKey, setVoiceKey, voiceConnectionStatus, 
 /**
  * The workspace's own ElevenLabs key (owner decision, 9 October 2026: natural voice (ElevenLabs), contract B.3). Owners
  * and HR. GET → the connection and this month's usage; POST `{ apiKey }` tests the key with one free request (its
- * subscription, which the caps need), stores it encrypted and answers the new status (a refusal is 422 on `apiKey`, with
- * words people can act on); DELETE removes it (Boredroom's key is used again within a daily share). The key is never
+ * subscription, for the usage card), stores it encrypted and answers the new status (a refusal is 422 on `apiKey`, with
+ * words people can act on); DELETE removes it (Boredroom's key is used again; no daily limit since the owner's request, 12 October 2026). The key is never
  * returned, logged or put in an error. Before migration 0053: GET says `ready: false`; POST and DELETE answer 503.
  */
 export const GET = route<{ org: string }>(async (_req, { params }) => {

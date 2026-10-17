@@ -171,6 +171,11 @@ describe("why a Confirm card still asks (B.1)", () => {
     others_words_todo: "Still asking: this to-do comes from words in a conversation, so you confirm it first.",
     // Phase 7c (owner decisions, 8–9 October 2026): what the assistant remembers about the person is always their call.
     preference_consent: "Still asking: what Max remembers about you is always your call.",
+    // Screen help (owner decisions, 11 October 2026): an action from a look always waits for the person's own press.
+    looked: "Still asking: this came from what Max saw on your screen.",
+    on_mac: "Still asking: from your Mac, Max always checks with you first.",
+    // Brenda and her helpers (owner brief, 12 October 2026; decision 9): "Check with me before every task".
+    check_every: "Still asking: you asked Max to check with you before every task.",
   };
 
   it.each([...ASK_REASONS])("%s", (reason) => {

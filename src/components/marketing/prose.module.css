@@ -1,0 +1,68 @@
+/* Long-form text on the public pages (owner request, 17 October 2026: SEO analysis; markup: Prose in article.tsx). Design
+   system v4 on the dark canvas, in the landing's voice: paragraphs 16/28 Inter 400 in the secondary grey; h2 in the
+   display face; h3 17/26 semibold in the foreground; strong in the foreground; links as `.link-inline` (an orange underline only on
+   hover, the accent rules); lists with quiet markers; tables with hairlines (wrap them in ScrollTable); quotes with a
+   hairline rule. Tokens only. Headings leave room for the sticky notch when a link jumps to them. An element marked
+   `data-plain` (the blocks' own lists and headings, blocks.tsx) keeps its own styles. */
+
+.prose {
+  max-width: 44rem;
+  font-size: 16px;
+  line-height: 28px;
+  font-weight: 400;
+  color: var(--secondary);
+  overflow-wrap: break-word;
+}
+.prose > * + * { margin-top: 20px; }
+
+.prose :global(:is(h2, h3, h4)) { scroll-margin-top: 88px; }
+.prose :global(:is(h2, h3, h4):not([data-plain])) { color: var(--foreground); text-wrap: balance; }
+.prose :global(h2:not([data-plain])) { margin-top: 56px; font-family: var(--font-display); font-size: 28px; line-height: 34px; font-weight: 400; letter-spacing: -0.02em; }
+.prose :global(h3:not([data-plain])) { margin-top: 36px; font-size: 17px; line-height: 26px; font-weight: 600; letter-spacing: -0.01em; }
+.prose :global(h4:not([data-plain])) { margin-top: 28px; font-size: 15px; line-height: 24px; font-weight: 600; }
+.prose > :global(:is(h2, h3, h4):first-child) { margin-top: 0; }
+.prose :global(:is(h2, h3, h4):not([data-plain]) + *) { margin-top: 12px; }
+@media (min-width: 640px) {
+  .prose :global(h2:not([data-plain])) { margin-top: 64px; font-size: 32px; line-height: 38px; }
+}
+
+.prose :global(strong) { color: var(--foreground); font-weight: 600; }
+.prose :global(em) { font-style: italic; }
+
+.prose :global(a:not([data-plain])) {
+  color: var(--foreground);
+  font-weight: 500;
+  text-decoration-line: underline;
+  text-decoration-color: var(--border-input-hover);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  border-radius: 2px;
+  transition: text-decoration-color var(--duration-fast) var(--ease-out);
+}
+.prose :global(a:not([data-plain]):hover) { text-decoration-color: var(--accent); }
+.prose :global(a:focus-visible) { outline: 2px solid var(--ring); outline-offset: 2px; }
+
+.prose :global(:is(ul, ol):not([data-plain])) { padding-left: 22px; }
+.prose :global(ul:not([data-plain])) { list-style: disc; }
+.prose :global(ol:not([data-plain])) { list-style: decimal; }
+.prose :global(li:not([data-plain])) { padding-left: 4px; }
+.prose :global(li:not([data-plain]) + li) { margin-top: 8px; }
+.prose :global(li > :is(ul, ol)) { margin-top: 8px; }
+.prose :global(li::marker) { color: var(--subtle); }
+
+.prose :global(blockquote) { border-left: 2px solid var(--border-input-hover); padding-left: 20px; color: var(--foreground); }
+
+.prose :global(code) { font-family: var(--font-mono); font-size: 0.875em; border-radius: 6px; background: var(--fill-1); padding: 1px 6px; color: var(--foreground); }
+.prose :global(pre code) { background: none; padding: 0; }
+
+.prose :global(hr) { margin-block: 48px; border: 0; border-top: 1px solid var(--border); }
+
+.prose :global(table) { width: 100%; border-collapse: collapse; font-size: 14px; line-height: 20px; }
+.prose :global(caption) { caption-side: top; padding-bottom: 10px; text-align: left; font-size: 13px; line-height: 19.5px; color: var(--secondary); }
+.prose :global(th) { padding: 10px 14px; border-bottom: 1px solid var(--border); background: var(--fill-0); text-align: left; vertical-align: bottom; font-weight: 500; color: var(--foreground); }
+.prose :global(td) { padding: 12px 14px; border-bottom: 1px solid var(--border); vertical-align: top; color: var(--secondary); }
+.prose :global(tbody th) { background: transparent; vertical-align: top; }
+.prose :global(tr:last-child > :is(td, th)) { border-bottom: 0; }
+
+.prose :global(figure) { margin-block: 32px; }
+.prose :global(figcaption) { margin-top: 10px; font-size: 13px; line-height: 19.5px; color: var(--secondary); }

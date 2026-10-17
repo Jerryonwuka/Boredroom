@@ -76,7 +76,7 @@ const REPLAY_MAX_BYTES = 4_000_000;
 
 const SPEECH_PATH = /^\/api\/orgs\/[^/?#\s]+\/assistant\/speech$/;
 const SAMPLE_PATH = /^\/api\/orgs\/[^/?#\s]+\/assistant\/voice\/samples\/[A-Za-z0-9]{16,40}$/;
-const REASONS: ReadonlySet<string> = new Set(["not_ready", "no_voice", "voice_off", "no_key", "key_rejected", "person_cap", "workspace_cap", "shared_cap", "allowance_low", "upstream"]);
+const REASONS: ReadonlySet<string> = new Set(["not_ready", "no_voice", "voice_off", "no_key", "key_rejected", "allowance_low", "upstream"]);
 
 /** Our own speech route (never anywhere else). */
 export const isSpeechPath = (p: unknown): p is string => typeof p === "string" && SPEECH_PATH.test(p);

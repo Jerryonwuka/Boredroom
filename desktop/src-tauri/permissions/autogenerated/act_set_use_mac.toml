@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-act-set-use-mac"
+description = "Enables the act_set_use_mac command without any pre-configured scope."
+commands.allow = ["act_set_use_mac"]
+
+[[permission]]
+identifier = "deny-act-set-use-mac"
+description = "Denies the act_set_use_mac command without any pre-configured scope."
+commands.deny = ["act_set_use_mac"]

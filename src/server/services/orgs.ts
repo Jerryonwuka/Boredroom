@@ -12,6 +12,7 @@ import { audit, notify } from "@/server/services/common";
 import type { OrgContext } from "@/server/lib/api";
 import { assertCanCreateWorkspace } from "@/server/services/workspace-limit";
 import { recordingColumnsGone, retryWithRecordingColumns } from "@/server/lib/schema-0055";
+import { schema0057Ready } from "@/server/lib/schema-0057";
 import { resolveEntitlements, requireSeat } from "@/server/lib/entitlements";
 import { WELCOME_WORDS } from "@/lib/welcome";
 
@@ -19,11 +20,26 @@ export const ROLES = ["owner", "hr", "manager", "employee"] as const;
 export type Role = (typeof ROLES)[number];
 
 /**
- * The standard monitoring notice (owner decisions, 8 October 2026: phase 8). Screen recording is gone and calls are
- * never recorded; Brenda's notes on a call are each person's own choice. Existing workspaces keep their own words
- * (D12): owners see an alert in Settings while their notice still describes screen recording.
+ * The standard monitoring notice. Phase 8 (owner decisions, 8 October 2026): screen recording is gone and calls are
+ * never recorded; Brenda's notes on a call are each person's own choice. Screen help on Brenda for Mac (owner decisions,
+ * 11 October 2026; contract F.3): a third paragraph says that Brenda for Mac looks at a screen only when that person
+ * asks her to (her keys or her Look button), that the picture is not kept and that the organisation can't see it or
+ * whether it was used ("[Workspace]" in the proposal became "your organisation", so one text fits every workspace). It
+ * starts "If your organisation allows it" (review, 11 October 2026), so it stays true where an owner set Not allowed; a
+ * workspace created outside the pilot gets phase 8's text, and the Settings alert offers this one once it is offered. Existing workspaces keep their own words
+ * (D12): owners see an alert in Settings while their notice still describes screen recording, and, in the pilot, while it
+ * is still phase 8's standard text (PHASE8_DEFAULT_NOTICE).
  */
 export const DEFAULT_NOTICE = `Boredroom records the tasks you plan, the work sessions you start and stop, and the progress notes and evidence you submit. Timers only run when you start them. Heartbeats show whether your browser is connected; they are not a measure of productivity.
+
+Boredroom does not record your screen, and calls are never recorded: their sound and video pass through our video provider only to reach the people on the call. If someone turns on Brenda's notes during a call, you choose for yourself. Only the words of people who agree are written down, by their own device, and the transcript is deleted 7 days after the recap.
+
+If your organisation allows it, Brenda for Mac can look at a person's screen, but only when that person asks her to, with her keys or her Look button. The picture is not kept, and your organisation cannot see it or whether it was used. It is not monitoring and is not used to assess anyone's work.
+
+Unlogged or uncertain time leads to a clarification request, not an automatic penalty.`;
+
+/** The standard notice of phase 8 (8 October 2026), exactly as workspaces received it until screen help (11 October 2026). */
+export const PHASE8_DEFAULT_NOTICE = `Boredroom records the tasks you plan, the work sessions you start and stop, and the progress notes and evidence you submit. Timers only run when you start them. Heartbeats show whether your browser is connected; they are not a measure of productivity.
 
 Boredroom does not record your screen, and calls are never recorded: their sound and video pass through our video provider only to reach the people on the call. If someone turns on Brenda's notes during a call, you choose for yourself. Only the words of people who agree are written down, by their own device, and the transcript is deleted 7 days after the recap.
 
@@ -54,6 +70,11 @@ const NOT_HAPPENING = /\b(?:not|never|no|none|nobody|nothing|without|nor|neither
 const CLAUSES = /[.;:!?\n]+|,\s*(?:and|or|but|while|whereas|although|though|except)\b|\s(?:but|while|whereas|although|though|except)\s/i;
 const sameText = (a: string, b: string) => a.replace(/\s+/g, " ").trim() === b.replace(/\s+/g, " ").trim();
 
+/** A notice that is one of Boredroom's standard texts, today's or phase 8's, word for word (spaces aside). */
+export function isStandardNotice(text: string | null | undefined): boolean {
+  return !!text && (sameText(text, DEFAULT_NOTICE) || sameText(text, PHASE8_DEFAULT_NOTICE));
+}
+
 /**
  * True when a notice still describes screen recording as something Boredroom does: the old standard text, or a clause
  * about recording screens (the feature, the act, the old "Record screen" button, the recordings' retention) that does not
@@ -63,7 +84,7 @@ const sameText = (a: string, b: string) => a.replace(/\s+/g, " ").trim() === b.r
  */
 export function noticeMentionsScreenRecording(text: string | null | undefined): boolean {
   if (!text || !text.trim()) return false;
-  if (sameText(text, DEFAULT_NOTICE)) return false;
+  if (isStandardNotice(text)) return false;
   if (sameText(text, PREVIOUS_DEFAULT_NOTICE)) return true;
   return text.split(CLAUSES).some((clause) => !!clause && SCREEN_RECORDING_WORDS.some((re) => re.test(clause)) && !NOT_HAPPENING.test(clause));
 }
@@ -79,6 +100,11 @@ export async function createOrganisation(userId: string, input: z.infer<typeof c
   if (!(await registrationOpen())) throw forbidden("Boredroom is not open for new organisations yet. Join the waitlist and we will email you when it is.");
   if (!isValidTimeZone(input.timezone)) throw invalid("Unknown time zone.", { timezone: ["Choose a valid IANA time zone."] });
   await assertCanCreateWorkspace(userId);
+  // Screen help on Brenda for Mac (owner decision 2, 11 October 2026; contract D.5): a workspace created while it is
+  // offered is available at once, with no notice. Loaded here, not at import: screen-help reaches a large part of the app.
+  const lookOffered = (await import("@/server/services/screen-help")).lookEligible(input.slug);
+  // Outside the pilot the notice doesn't describe screen help, which isn't offered there (review, 11 October 2026).
+  const notice = lookOffered ? DEFAULT_NOTICE : PHASE8_DEFAULT_NOTICE;
   // Retried once when the cached answer about 0055's recording columns was wrong (schema-0055).
   const created = await retryWithRecordingColumns(() => withUser(userId, async (db) => {
     // The id is generated here: RETURNING would need SELECT rights the creator only gains once their membership exists.
@@ -98,12 +124,16 @@ export async function createOrganisation(userId: string, input: z.infer<typeof c
       (await recordingColumnsGone(db))
         ? `INSERT INTO policies(organisation_id, version, notice_text, created_by, effective_at) VALUES ($1, 1, $2, $3, now()) RETURNING id`
         : `INSERT INTO policies(organisation_id, version, recording_mode, retention_days, notice_text, created_by, effective_at)
-           VALUES ($1, 1, 'disabled', 7, $2, $3, now()) RETURNING id`, [org.id, DEFAULT_NOTICE, membership.id]);
+           VALUES ($1, 1, 'disabled', 7, $2, $3, now()) RETURNING id`, [org.id, notice, membership.id]);
     await db.query(`UPDATE organisations SET current_policy_id = $2 WHERE id = $1`, [org.id, policy.id]);
     await db.query(`INSERT INTO schedules(organisation_id, timezone) VALUES ($1, $2)`, [org.id, input.timezone]);
     await db.query(`INSERT INTO policy_acknowledgements(organisation_id, membership_id, policy_id, shown_notice_text) VALUES ($1, $2, $3, $4)`,
-      [org.id, membership.id, policy.id, DEFAULT_NOTICE]);
+      [org.id, membership.id, policy.id, notice]);
     await audit(db, { organisationId: org.id, actorMembershipId: membership.id, actorUserId: userId, action: "org.created", subjectType: "organisation", subjectId: org.id });
+    // Readiness is asked before the insert (a failing statement would abort the whole creation); before 0057 nothing.
+    if (lookOffered && (await schema0057Ready(db))) {
+      await db.query(`INSERT INTO screen_help_settings(organisation_id, notice_at, available_from, updated_by) VALUES ($1, now(), now(), $2) ON CONFLICT (organisation_id) DO NOTHING`, [org.id, membership.id]);
+    }
     return { orgId: org.id, slug: org.slug, membershipId: membership.id };
   }));
   // The platform event is recorded after the workspace is saved, with the system role (people cannot write platform

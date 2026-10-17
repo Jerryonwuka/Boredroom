@@ -1,0 +1,99 @@
+/* The companion by the pointer (owner request, 12 October 2026; contract A.4, B.4.1, C.5): a small Brenda in the person's own
+   assistant's colour beside their pointer. Rust moves the 320 by 112-point window; this page draws her in it.
+
+   The layout is the contract with Rust (B.4.1): the face box is 26 by 26 at inset 16, so her centre is (29, 29); with
+   `data-flip-x` (near the right edge) it is (291, 29), with `data-flip-y` (near the bottom) (29, 83). Pills sit at x 54, or
+   mirrored with flip-x; flip-y puts them above. Nothing here ever covers the pointer: Rust keeps her 30 points right of and
+   below it, and moves her to the other side near an edge.
+
+   The accent rules (docs/design-system.md): her pills are neutral (#2E2E2E, a 7.5% white hairline, radius 10, Inter 13/18);
+   orange only for what is live (the listening bars and live dot), progress (the arc while she works, the file job's dot)
+   and the ring round a target (ring.css). Asking is neutral: no orange and not her colour, so a question never reads as an
+   alarm or a nudge. Every element stays mounted; states cross-fade by opacity in 150 ms (250 ms into idle). Reduced motion
+   (the system setting, or Rust's `motion`): nothing moves, nothing circles, the arc stands still. */
+@font-face { font-family: "Inter Variable"; font-style: normal; font-display: swap; font-weight: 100 900; src: url(fonts/inter-latin-ext-wght-normal.woff2) format("woff2");
+  unicode-range: U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF; }
+@font-face { font-family: "Inter Variable"; font-style: normal; font-display: swap; font-weight: 100 900; src: url(fonts/inter-latin-wght-normal.woff2) format("woff2");
+  unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
+
+:root {
+  /* The notch's dark tokens (style.css), copied: this page loads face.css and this file only. */
+  --popover: #2e2e2e; --foreground: #fff; --secondary: rgb(255 255 255 / .64); --border: rgb(255 255 255 / .075);
+  --accent: #ff6c02; --success: hsl(142 71% 45%);
+  --font-sans: "Inter Variable", "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: transparent; }
+body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased; user-select: none; -webkit-user-select: none; cursor: default; }
+
+.cmp[data-state] { position: relative; width: 320px; height: 112px; transition: opacity .12s ease-out; }
+.cmp[data-state].faded { opacity: 0; transition: opacity .4s ease-in; }
+
+/* Her: the notch's face at 26 points (face.css `.face.cmp`), a faint drop shadow in her coat colour (the face's own glow
+   takes it) and a soft dark edge so a white coat still reads on a white page. */
+.body { position: absolute; left: 16px; top: 16px; width: 26px; height: 26px; filter: drop-shadow(0 1px 1.5px rgb(0 0 0 / .32)); transform-origin: 50% 50%; }
+.cmp[data-flip-x] .body { left: 278px; }
+.cmp[data-flip-y] .body { top: 70px; }
+.body .face { --glow: color-mix(in srgb, var(--sphere-mid, #ececf0) 55%, transparent); cursor: default; }
+
+/* Beside her: everything mounted, shown by state. */
+.live, .badge, .orbit, .arc, .check, .wave, .pill { opacity: 0; transition: opacity .15s ease-out; pointer-events: none; }
+.cmp[data-state="idle"] :is(.live, .orbit, .arc, .check, .wave, .pill) { transition-duration: .25s; }
+
+/* Listening: the orange live dot at her top right and five 2-point orange bars from the microphone level. */
+.live { position: absolute; top: -2px; right: -2px; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 1px rgb(0 0 0 / .45); z-index: 3; }
+.cmp[data-state="listening"] .live { opacity: 1; animation: live-ping 1.4s ease-out infinite; }
+@keyframes live-ping { 0% { box-shadow: 0 0 0 1px rgb(0 0 0 / .45), 0 0 0 0 rgb(255 108 2 / .55); } 75%, 100% { box-shadow: 0 0 0 1px rgb(0 0 0 / .45), 0 0 0 5px rgb(255 108 2 / 0); } }
+.wave { position: absolute; left: 50px; top: 19px; height: 20px; display: flex; align-items: center; gap: 3px; filter: drop-shadow(0 1px 1px rgb(0 0 0 / .35)); }
+.cmp[data-flip-x] .wave { left: auto; right: 50px; }
+.cmp[data-flip-y] .wave { top: 73px; }
+.wave i { display: block; width: 2px; height: 4px; border-radius: 999px; background: var(--accent); transition: height 60ms linear; }
+.cmp[data-state="listening"] .wave { opacity: 1; }
+
+/* Thinking: a 3-point dot in her coat colour circling her once every 1.2 s. */
+.orbit { position: absolute; inset: -6px; border-radius: 50%; }
+.orbit i { position: absolute; left: 50%; top: 0; width: 3px; height: 3px; margin-left: -1.5px; border-radius: 50%; background: var(--sphere-mid, #ececf0); box-shadow: 0 0 0 .5px rgb(0 0 0 / .35); }
+.cmp[data-state="thinking"] .orbit { opacity: 1; animation: orbit 1.2s linear infinite; }
+@keyframes orbit { to { transform: rotate(360deg); } }
+
+/* Doing (only after the person's yes): a 2-point orange arc turning round her, one turn every 1.4 s (progress). */
+.arc { position: absolute; left: -9px; top: -9px; width: 44px; height: 44px; overflow: visible; }
+.arc circle { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linecap: round; stroke-dasharray: 34 86; }
+.cmp[data-state="doing"] .arc { opacity: 1; animation: orbit 1.4s linear infinite; }
+
+/* A file job running in the background: a still 6-point orange dot on her top right until it ends. */
+.badge { position: absolute; top: -2px; right: -2px; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 1px rgb(0 0 0 / .45); z-index: 2; }
+.cmp[data-badge] .badge { opacity: 1; }
+.cmp[data-badge][data-state="listening"] .badge { opacity: 0; }
+
+/* Done: a green check for 1.2 s beside her happy hop. */
+.check { position: absolute; right: -7px; bottom: -5px; width: 14px; height: 14px; border-radius: 50%; background: var(--success); display: grid; place-items: center; z-index: 3; box-shadow: 0 0 0 1px rgb(0 0 0 / .35); }
+.check svg { width: 10px; height: 10px; fill: none; stroke: #0f0f10; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.cmp[data-state="done"] .check { animation: check 1.2s ease-out both; }
+@keyframes check { 0% { opacity: 0; transform: scale(.6); } 15% { opacity: 1; transform: scale(1); } 80% { opacity: 1; } 100% { opacity: 0; } }
+
+/* Her pills: neutral, beside her (asking, doing, paused). */
+.pill { position: absolute; left: 54px; top: 8px; max-width: 258px; box-sizing: border-box; padding: 7px 10px 8px; border-radius: 10px; background: var(--popover);
+  box-shadow: 0 0 0 1px var(--border), 0 6px 18px -6px rgb(0 0 0 / .5); color: var(--foreground); }
+.cmp[data-flip-x] .pill { left: auto; right: 54px; }
+.cmp[data-flip-y] .pill { top: auto; bottom: 8px; }
+.pill p { margin: 0; overflow-wrap: anywhere; }
+.pill p:empty { display: none; }
+.pill .l1 { font-size: 13px; line-height: 18px; font-weight: 500; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
+.pill .l2 { font-size: 13px; line-height: 18px; font-weight: 600; }
+.pill .l3 { font-size: 12px; line-height: 16px; font-weight: 500; color: var(--secondary); margin-top: 1px; }
+.cmp:is([data-state="asking"], [data-state="doing"], [data-state="paused"])[data-pill] .pill { opacity: 1; }
+/* While she works, the note is one line (48 characters at most). */
+.cmp[data-state="doing"] .pill .l1 { -webkit-line-clamp: 1; line-clamp: 1; }
+
+/* Flights (contract A.5): the page leans her along the flight and grows her a little mid-way (companion.js animates the
+   body for the flight's duration); Rust moves the window. */
+
+/* Reduced motion: no circling, no turning arc (a still one), no ping, no hop; she simply is where she is. */
+.cmp[data-reduce] *, .cmp[data-reduce] *::before, .cmp[data-reduce] *::after { animation: none !important; }
+.cmp[data-reduce] .wave i { transition: none; }
+.cmp[data-reduce][data-state="done"] .check { opacity: 1; }
+@media (prefers-reduced-motion: reduce) {
+  .cmp *, .cmp *::before, .cmp *::after { animation: none !important; }
+  .cmp[data-state="done"] .check { opacity: 1; }
+  .wave i { transition: none; }
+}

@@ -10,8 +10,26 @@ import { cn } from "@/lib/utils";
 
 export type LandingCopy = { headline: string; subheadline: string; cta: string };
 
-/** The faces in the pill above the Brendas; served from public/users (owner request, 10 October 2026: keep them). */
-const USERS = [1, 2, 3, 4, 5].map((n) => `/users/user-${n}.jpg`);
+/**
+ * The faces in the pill above the Brendas; served from public/users (owner request, 10 October 2026: keep them). Each
+ * has its own description of the person shown (owner request, 17 October 2026: SEO analysis, A6: varied, never one string
+ * repeated); they are illustrative portraits, so nothing claims who they are. The pill's words stay its accessible name:
+ * the faces sit in a group hidden from assistive technology.
+ */
+const USERS = [
+  { src: "/users/user-1.jpg", alt: "Portrait of a smiling woman with braided hair" },
+  { src: "/users/user-2.jpg", alt: "Portrait of a smiling young man with short dark hair" },
+  { src: "/users/user-3.jpg", alt: "Portrait of a smiling woman with long dark hair, outdoors" },
+  { src: "/users/user-4.jpg", alt: "Portrait of a smiling man with short brown hair in front of bookshelves" },
+  { src: "/users/user-5.jpg", alt: "Portrait of a smiling woman with long dark hair in a bright room" },
+];
+
+/**
+ * The category line in front of the headline: the page's primary keyword, visible and part of the h1 (owner request,
+ * 17 October 2026: SEO analysis, A3 and the Homepage Fix Sheet: "Remote team management software that knows what your
+ * team is doing").
+ */
+const CATEGORY = "Remote team management software";
 
 /** The hero's buttons: the v4 lg button a little larger for the page (44px, 15px). */
 export const heroButton = (variant: "primary" | "secondary" | "accent") => cn(buttonVariants({ variant, size: "lg" }), "h-11 px-5 text-[15px]");
@@ -24,8 +42,10 @@ const LEAD_SHORT = "Each person's Brenda answers “any update?” from their re
 
 /**
  * The hero (owner request, 10 October 2026, after the owner's mock): Brenda in every colour floating over a backdrop in
- * the colour of the one in front (HeroStage, the carousel), the headline "Know what your team is {doing}" with the flip
- * the live site had (FlipLine), the line about each person's own Brenda, the call to action and "How it works", then
+ * the colour of the one in front (HeroStage, the carousel), the headline "Remote team management software / that knows
+ * what your team is {doing}" (SEO analysis, 17 October 2026: the category line added in front of the old "Know what your
+ * team is {doing}") with the flip the live site had (FlipLine), the line about each person's own Brenda, the call to
+ * action and "How it works", then
  * the carousel's controls. Replaces the v4 hero of 6 October (its unsupported "10k+" claim, and the product frame, which
  * now illustrates "How it works"); the pill with the faces stays.
  *
@@ -35,7 +55,7 @@ const LEAD_SHORT = "Each person's Brenda answers “any update?” from their re
  * narrowest phones. In maintenance sign-ups are off, so the call to action is Log in. The call to action is the white primary in every mode
  * (owner request, 10 October 2026: Join the waitlist was orange; the landing's buttons are all white). The
  * admin's copy (Control Center, landingSettings) replaces the headline, the lead and the button's words in waitlist
- * mode; an admin headline is plain text, with no flip.
+ * mode; an admin headline is plain text, with no flip, after the category line.
  *
  * Server-rendered: the backdrop in coral, the pill, the headline ("team is doing"), the lead and the buttons paint with
  * the HTML and nothing waits for script; the Brendas arrive after hydration.
@@ -55,7 +75,7 @@ export function Hero({ signedIn, waitlist = false, maintenance = false, notice =
   const pillBody = (
     <>
       <span className="flex shrink-0 -space-x-1.5" aria-hidden>
-        {USERS.map((src, i) => <Image key={src} src={src} alt="" width={22} height={22} loading="eager" className={cn("relative size-[22px] rounded-full object-cover ring-2 ring-background", i >= 3 && "max-[379px]:hidden")} style={{ zIndex: USERS.length - i }} />)}
+        {USERS.map(({ src, alt }, i) => <Image key={src} src={src} alt={alt} width={22} height={22} loading="eager" className={cn("relative size-[22px] rounded-full object-cover ring-2 ring-background", i >= 3 && "max-[379px]:hidden")} style={{ zIndex: USERS.length - i }} />)}
       </span>
       <span className="min-w-0">{joinable ? "Opening soon. Join the waitlist." : maintenance ? notice || "Boredroom is under maintenance. New sign-ups are paused." : "New: calls, with Brenda's notes"}</span>
       {maintenance && !joinable ? null : <ChevronRight className="size-3.5 shrink-0" aria-hidden />}
@@ -66,14 +86,15 @@ export function Hero({ signedIn, waitlist = false, maintenance = false, notice =
     : <a href="#calls" className={pillClass}>{pillBody}</a>;
   const override = waitlist && copy.headline ? copy.headline : null;
 
+  // The visible headline is the h1 itself (owner request, 17 October 2026: SEO analysis, A3): the category line, then the
+  // display line with its flipping word; no hidden copy and no aria-hidden headline. FlipLine keeps the heading's text
+  // fixed while the word flips. An admin headline keeps the category line in front of it.
   return (
     <HeroStage pill={pill}>
       <h1 id="hero-title" className="lp-display lp-hero-title mx-auto max-w-4xl">
-        {override ?? (
-          <>
-            <span className="sr-only">Know what your team is doing</span>
-            <span aria-hidden>Know what your<br /><FlipLine prefix="team is" words={HERO_WORDS} /></span>
-          </>
+        <span className="lp-hero-kicker">{CATEGORY}{override ? <span className="sr-only">:</span> : null}</span>{" "}
+        {override ? <span className="block">{override}</span> : (
+          <span className="block">that knows what your <br /><FlipLine prefix="team is" words={HERO_WORDS} /></span>
         )}
       </h1>
       <p className="lp-lead mx-auto mt-4 max-w-[640px] sm:mt-5">
