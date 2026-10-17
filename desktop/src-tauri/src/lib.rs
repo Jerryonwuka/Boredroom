@@ -762,7 +762,17 @@ pub fn run() {
             app.manage(front::Front::default());
             app.manage(jobs::Jobs::default());
             app.manage(appindex::AppIndex::default());
-            if let Some(window) = app.get_webview_window("notch") {
+            // The notch window is made here, after Brenda became a menu-bar app, not from the config at launch (owner
+            // report, 17 October 2026: inside a full-screen app the notch never showed). macOS lets a window into other
+            // apps' full-screen Spaces only if it was made while its app was already a menu-bar app; one made a moment
+            // earlier stays on the ordinary desktops whatever its behaviour (tested on macOS 26 with a 2-point window).
+            // The framework's set_activation_policy above only takes effect a moment later, so it is applied at once too.
+            island::menu_bar_app_now();
+            let notch = app.get_webview_window("notch").or_else(|| {
+                let c = app.config().app.windows.iter().find(|w| w.label == "notch")?.clone();
+                tauri::WebviewWindowBuilder::from_config(app.handle(), &c).and_then(|b| b.build()).map_err(|e| eprintln!("Brenda: the notch window could not be made ({e})")).ok()
+            });
+            if let Some(window) = notch {
                 let _ = window.set_always_on_top(true);
                 let _ = island::place(&window);
                 island::start(&handle, window);

@@ -429,6 +429,7 @@ const TYPING = new Set(["ask", "fnote", "lq", "aans", "dwq"]);
 let viewKey = "";           // which view is showing; content animates in only when it changes
 let wasOpen = false;
 let tucked = false, tuckTimer = null, alwaysVisible = false;
+let covered = false;        // the front app is full screen or covers the screen (Rust's `brenda://covered`; 17 October 2026)
 let fx = null, fxTimer = null, loveTimer = null;   // a passing reaction on Brenda's face: squash, dizzy, love
 const pokes = [];
 // Her voice (owner decision, 7 October 2026): she is talking (Rust said `speaking`), the pulse standing in for levels
@@ -488,6 +489,14 @@ function keepNatural(token, audio, run = naturalRun) {
 const ORDINARY_REFUSALS = ["VOICE_UNAVAILABLE", "SPEECH_TOKEN"];
 const reduceMotion = window.matchMedia ? window.matchMedia("(prefers-reduced-motion: reduce)") : null;
 const TUCK = { w: 96, h: 5 };
+// Inside an app (owner request, 17 October 2026: "not stagnant in the app"): while the front app is full screen, or its
+// window covers the screen (maximised or zoomed), Rust says `brenda://covered` and the notch hides completely, with no bar
+// or sliver. It comes out when the pointer reaches the thin hot zone at the very top centre (HOT_ZONE: the top HOT_ZONE.h
+// points, HOT_ZONE.half either side of the middle; it works with the menu bar hidden), when Control+Command is held (the
+// look card), and when a call rings or a card arrives on its own, as before; it hides again COVERED_TUCK_MS after the
+// pointer leaves or the card closes. An ordinary windowed app keeps the bar and the sliver as before.
+const HOT_ZONE = { h: 4, half: 140 };
+const COVERED_TUCK_MS = 450;
 const TALK_MEMORY_MS = 3 * 60_000;
 const REPLY_CLOSE_MS = 16_000;
 // The morning opener (phase 7a, 8 October 2026): opened from a poll only while the pointer has moved this recently (the
@@ -678,12 +687,15 @@ function fit() {
   else if (!open) island.classList.remove("growing");
   const tuck = tucked && !open;
   island.classList.toggle("tucked", tuck);
+  // Inside a full-screen or covering app the tucked notch is gone altogether (no sliver), and takes no clicks.
+  const away = tuck && covered;
+  island.classList.toggle("away", away);
   // A card drawn by notify-cards.js (`.nc`, the incoming call's too) is 440 px, whatever row sits above it (phase 8: the
   // ring's strip on a card that must stay).
   const wide = open ? (el.querySelector(":scope > .nc") ? WIDE_NOTICE : WIDE) : barWide === "call" ? COMPACT_CALL : barWide === "strip" ? COMPACT_STRIP : barWide ? COMPACT_WIDE : COMPACT.w;
   el.style.width = `${wide}px`;
-  const w = open ? wide : tuck ? TUCK.w : wide + (hovering ? PEEK : 0);
-  const h = open ? Math.ceil(el.offsetHeight) : tuck ? TUCK.h : COMPACT.h;
+  const w = open ? wide : away ? 0 : tuck ? TUCK.w : wide + (hovering ? PEEK : 0);
+  const h = open ? Math.ceil(el.offsetHeight) : away ? 0 : tuck ? TUCK.h : COMPACT.h;
   if (open !== wasOpen) Sound.play(open ? "open" : "close");
   wasOpen = open;
   island.style.width = `${w}px`;
@@ -974,10 +986,19 @@ function idle() {
   // Nor while the front desk or a Files job works (helpers contract F.1): the strip stays in view.
   return !!config?.signedIn && !card && !task && !front && !fileJobLive() && !alwaysVisible && !data?.timer && !waitingAsk && !inbox().some((n) => nq.held.has(n.id) || !nq.known.has(n.id));
 }
+/**
+ * Inside a full-screen or covering app (owner request, 17 October 2026) the bar never stays: the notch hides whenever no
+ * card is open, the pointer is not on it and nothing rings. A running timer, a task under way, an unread count or "always
+ * visible" wait for the pointer at the top edge or the keys; a ringing call keeps its bar, as everywhere.
+ */
+function coveredIdle() {
+  return !!config?.signedIn && !card && callsShowing() !== "ring";
+}
 function updateTuck() {
   clearTimeout(tuckTimer);
-  if (!idle() || hovering) { if (tucked) { tucked = false; fit(); } return; }
-  if (!tucked) tuckTimer = setTimeout(() => { if (idle() && !hovering) { tucked = true; fit(); } }, 1500);
+  const away = () => (covered ? coveredIdle() : idle());
+  if (!away() || hovering) { if (tucked) { tucked = false; fit(); } return; }
+  if (!tucked) tuckTimer = setTimeout(() => { if (away() && !hovering) { tucked = true; fit(); } }, covered ? COVERED_TUCK_MS : 1500);
 }
 island.addEventListener("pointerenter", () => setHover(true));
 island.addEventListener("pointerleave", () => setHover(false));
@@ -7905,15 +7926,25 @@ listen("brenda://cursor", ({ payload }) => {
   // The morning opener first when it is due (review, 9 October 2026): what waited then opens at a later poll.
   if (back && !maybeBriefing()) arrive();
   const r = island.getBoundingClientRect();
-  // Tucked away, the menu bar around the notch wakes it (anywhere in its height); otherwise the island itself.
+  // Tucked away, the menu bar around the notch wakes it (anywhere in its height); otherwise the island itself. Hidden inside
+  // a full-screen or covering app (17 October 2026), only the thin hot zone at the very top edge does, so the app's own
+  // tabs and toolbar just below it never bring her out.
   setHover(tucked
-    ? payload.y >= 0 && payload.y <= COMPACT.h + 4 && Math.abs(payload.x - window.innerWidth / 2) <= 140
+    ? payload.y >= 0 && payload.y <= (covered ? HOT_ZONE.h : COMPACT.h + 4) && Math.abs(payload.x - window.innerWidth / 2) <= (covered ? HOT_ZONE.half : 140)
     : payload.x >= r.left && payload.x <= r.right && payload.y >= r.top && payload.y <= r.bottom + 4);
   stepFace();
   watchAdmiration();
 });
 listen("brenda://sounds", ({ payload }) => { soundsOn = payload !== false; Sound.setEnabled(payload); if (payload) Sound.play("tick"); kickCalls(); });
 listen("brenda://always-visible", ({ payload }) => { alwaysVisible = !!payload; updateTuck(); });
+// The front app went full screen or came out of it, or its window now covers the screen or no longer does (island.rs).
+listen("brenda://covered", ({ payload }) => {
+  const now = payload === true;
+  if (now === covered) return;
+  covered = now;
+  updateTuck();
+  fit();
+});
 // Inter can arrive just after a card is drawn (font-display: swap): the island measures its content again when it does.
 document.fonts?.addEventListener?.("loadingdone", () => { if (config) fit(); });
 

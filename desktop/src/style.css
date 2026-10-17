@@ -500,6 +500,9 @@ kbd { display: inline-flex; align-items: center; justify-content: center; box-si
 .island .notch, .island::before, .island::after, .countdown { transition: opacity .2s ease; }
 .island.tucked { border-radius: 0 0 6px 6px; box-shadow: none; }
 .island.tucked .notch, .island.tucked::before, .island.tucked::after, .island.tucked .countdown { opacity: 0; pointer-events: none; }
+/* Inside a full-screen or covering app (owner request, 17 October 2026) the tucked notch is gone altogether: no sliver,
+   no clicks. The top edge's hot zone, the look keys, a ringing call or a card arriving bring it back. */
+.island.away { pointer-events: none; }
 
 /* Teammates' small faces (team leads and organisation accounts) are their own assistants (owner request, 9 October
    2026: "other teams' bots still show like this instead of their Brenda"): the fur in their colour with their visor and
