@@ -11,3 +11,11 @@ vercel.json
 e2e
 tests
 playwright-report
+# The worker needs only the server code (deploy fix, 23 October 2026): not the Mac app, its build output,
+# local worktrees, design files or media.
+desktop
+.claude
+docs
+public
+coverage
+*.dump
