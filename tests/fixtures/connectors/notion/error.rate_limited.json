@@ -1,0 +1,12 @@
+{
+  "_source": "https://developers.notion.com/reference/status-codes and https://developers.notion.com/reference/request-limits (error object shape)",
+  "object": "error",
+  "status": 429,
+  "code": "rate_limited",
+  "message": "You have been rate limited. Please try again in a few minutes.",
+  "request_id": "c0ffee00-0000-4000-8000-000000000003",
+  "additional_data": {
+    "rate_limit_reason": "public_api_request_rate_limit",
+    "retry_after": "30"
+  }
+}

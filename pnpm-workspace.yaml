@@ -15,3 +15,10 @@ overrides:
   # On-device dictation uses only the browser build of @huggingface/transformers; its Node runtime (about 287 MB of
   # native binaries for every platform) is never loaded, so it is left out of installs and Docker images.
   "@huggingface/transformers>onnxruntime-node": "-"
+  # Security audit, 23 October 2026 (issue 4): sharp below 0.35.5 has a high librsvg advisory (GHSA-wq5f-xc86-pv6w).
+  # It arrives through @huggingface/transformers (^0.35.4) and next's optional dependency, so it is pinned here.
+  sharp: ^0.35.5
+  # Security audit, 23 October 2026 (issue 4): vite 8.3.0 to 8.3.2 (dev only, vitest's peer) has a high dev-server
+  # advisory (GHSA-587h-7wmj-h5pm) and five lesser ones. vite is also listed in devDependencies at ^8.3.5, because
+  # pnpm otherwise keeps the old auto-installed peer; this floor stops anything pulling the bad range back in.
+  "vite@>=8.3.0 <8.3.3": ^8.3.5

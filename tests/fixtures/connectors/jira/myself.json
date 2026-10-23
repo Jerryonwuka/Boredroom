@@ -1,0 +1,10 @@
+{
+  "_source": "https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-myself/ (get current user)",
+  "self": "https://api.atlassian.com/ex/jira/11223344-5566-4778-899a-abcdefabcdef/rest/api/3/user?accountId=5b10a2844c20165700ede21g",
+  "accountId": "5b10a2844c20165700ede21g",
+  "accountType": "atlassian",
+  "emailAddress": "ada@example.com",
+  "displayName": "Ada Obi",
+  "active": true,
+  "timeZone": "Europe/London"
+}

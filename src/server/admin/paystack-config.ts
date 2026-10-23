@@ -40,13 +40,8 @@ export async function paystackConfig(): Promise<{ mode: PaymentMode; publicKey: 
   return { mode: s.mode, publicKey: "", secretKey: "", source: "none" };
 }
 
-/** Every secret that could have signed a webhook: the pair in use first, then the other one, then the environment. */
-export async function paystackSecrets(): Promise<string[]> {
-  const s = await stored();
-  const keys = [s.mode === "live" ? s.live_secret_key : s.test_secret_key, s.mode === "live" ? s.test_secret_key : s.live_secret_key].map(reveal);
-  if (process.env.PAYSTACK_SECRET_KEY) keys.push(process.env.PAYSTACK_SECRET_KEY);
-  return Array.from(new Set(keys.filter(Boolean)));
-}
+// The other mode's key and a leftover PAYSTACK_SECRET_KEY no longer verify webhooks (security audit, 23 October 2026,
+// issue 9): only the key paystackConfig() returns does, so a test key on a laptop or in CI cannot sign a live event.
 
 /** What the settings page shows: which pair is in use, the public keys, the tails of the secrets, and the URLs to paste into Paystack. */
 export async function paystackStatus() {

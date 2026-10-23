@@ -300,9 +300,10 @@ export async function scheduleStandups(now: Date = new Date()) {
  * `callsDueIn`: a live call, an ended call whose LiveKit room is still open, a recap pending or being written), and once
  * an hour whatever happens; the room listing (`{ rooms: true }`: leftover `call-<uuid>` rooms in LiveKit) at most once per
  * 10-minute slot; brenda_notes' transcript purge (7 days after each recap) once an hour. Jobs are never purged, so only
- * when there is work. Returns at once before migration 0054. `now` for the tests.
+ * when there is work. Returns at once before migration 0054. `now` for the tests. `rooms: false` (worker night mode,
+ * owner request, 23 October 2026: realtime plan, phase 0) leaves out the room listing outside every working window.
  */
-export async function scheduleCalls(now: Date = new Date()) {
+export async function scheduleCalls(now: Date = new Date(), opts: { rooms?: boolean } = {}) {
   return withWorker(async (db) => {
     if (!(await schema0054Ready(db))) return { queued: false, due: false };
     const { callsDueIn } = await import("../src/server/services/calls");
@@ -311,7 +312,7 @@ export async function scheduleCalls(now: Date = new Date()) {
     if (due) await enqueueJob(db, "call.sweep", {}, { dedupKey: `call.sweep:${minute}` });
     // Once an hour whatever happens (its own key, so a loop that misses a minute still runs it).
     await enqueueJob(db, "call.sweep", {}, { dedupKey: `call.sweep:h${Math.floor(minute / 60)}` });
-    await enqueueJob(db, "call.sweep", { rooms: true }, { dedupKey: `call.sweep.rooms:${Math.floor(minute / 10)}` });
+    if (opts.rooms !== false) await enqueueJob(db, "call.sweep", { rooms: true }, { dedupKey: `call.sweep.rooms:${Math.floor(minute / 10)}` });
     await enqueueJob(db, "call.transcript_purge", {}, { dedupKey: `call.transcript_purge:h${Math.floor(minute / 60)}` });
     return { queued: true, due };
   });
@@ -347,10 +348,15 @@ export async function claimKilledJobs(workerId: string, types: string[], limit =
 /**
  * Enqueues deduplicated scheduled jobs: Brenda's end-of-day team reports, the assistants' sweeps, calls, housekeeping.
  * There is no end-of-day "submit your report" reminder any more: staff no longer write a daily report (owner
- * decision, 6 October 2026).
+ * decision, 6 October 2026). `quiet`: outside every working window (worker night mode, owner request, 23 October 2026:
+ * realtime plan, phase 0), without the LiveKit room listing and connector.sweep.
  */
-export async function scheduleMaintenance() {
+export async function scheduleMaintenance(opts: { quiet?: boolean } = {}) {
+  const quiet = opts.quiet === true;
   await scheduleDailyReports().catch((err) => console.error("[worker] daily report schedule", (err as Error).message));
+  // Connected apps (owner decisions, 22 October 2026: connectors): due syncs, early refreshes, upkeep and, next to the
+  // daily reports, the digests for the channels workspaces chose.
+  await import("./connectors").then((m) => m.scheduleConnectors(new Date(), { sweep: !quiet })).catch((err) => console.error("[worker] connectors schedule", (err as Error).message));
   // Follow-ups between assistants (phase 4): the workspace's collection before the report, and the sweep.
   await scheduleFollowUpCollection().catch((err) => console.error("[worker] follow-up collection schedule", (err as Error).message));
   await scheduleFollowUpSweep().catch((err) => console.error("[worker] follow-up sweep schedule", (err as Error).message));
@@ -369,7 +375,7 @@ export async function scheduleMaintenance() {
   // The async standup (phase 7c): days opening at their time, rollups at their cutoff, and the sweep.
   await scheduleStandups().catch((err) => console.error("[worker] standup schedule", (err as Error).message));
   // Calls (phase 8): the sweep while anything is live or owed, LiveKit's leftover rooms, the transcripts' deletion.
-  await scheduleCalls().catch((err) => console.error("[worker] call schedule", (err as Error).message));
+  await scheduleCalls(new Date(), { rooms: !quiet }).catch((err) => console.error("[worker] call schedule", (err as Error).message));
   // Jobs an older worker killed are claimed and run by this worker's loop (claimKilledJobs, worker/index.ts).
   // Screen recording's retention deletions went with it (owner decision, 8 October 2026: phase 8).
   await withWorker(async (db) => {

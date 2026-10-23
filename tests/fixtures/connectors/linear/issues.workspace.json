@@ -1,0 +1,59 @@
+{
+  "_source": "https://linear.app/developers/graphql (issues filtered by team)",
+  "data": {
+    "issues": {
+      "nodes": [
+        {
+          "id": "0b9e0020-1111-4222-8333-444455556666",
+          "identifier": "WEB-20",
+          "title": "Speed up search",
+          "url": "https://linear.app/acme/issue/WEB-20/speed-up-search",
+          "priority": 3,
+          "dueDate": null,
+          "updatedAt": "2026-10-22T07:00:00.000Z",
+          "description": "Steps to reproduce: sign in, wait.",
+          "state": {
+            "id": "st-backlog",
+            "name": "Backlog",
+            "type": "backlog"
+          },
+          "team": {
+            "id": "5b1c0f2e-6a3d-4c1e-9f0a-2b7d8e4c1a01",
+            "key": "WEB",
+            "name": "Web"
+          },
+          "assignee": {
+            "id": "d4e5f6a7-0000-4000-8000-0000000000b2",
+            "name": "Ben Ade",
+            "email": "ben@example.com"
+          }
+        },
+        {
+          "id": "0b9e0021-1111-4222-8333-444455556666",
+          "identifier": "WEB-21",
+          "title": "Unassigned bug",
+          "url": "https://linear.app/acme/issue/WEB-21/unassigned-bug",
+          "priority": 0,
+          "dueDate": null,
+          "updatedAt": "2026-10-22T06:00:00.000Z",
+          "description": "Steps to reproduce: sign in, wait.",
+          "state": {
+            "id": "st-triage",
+            "name": "Triage",
+            "type": "triage"
+          },
+          "team": {
+            "id": "5b1c0f2e-6a3d-4c1e-9f0a-2b7d8e4c1a01",
+            "key": "WEB",
+            "name": "Web"
+          },
+          "assignee": null
+        }
+      ],
+      "pageInfo": {
+        "hasNextPage": false,
+        "endCursor": null
+      }
+    }
+  }
+}

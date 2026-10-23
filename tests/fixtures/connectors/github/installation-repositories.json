@@ -1,0 +1,21 @@
+{
+  "_source": "https://docs.github.com/en/rest/apps/installations#list-repositories-accessible-to-the-app-installation",
+  "total_count": 2,
+  "repository_selection": "selected",
+  "repositories": [
+    {
+      "id": 1296269,
+      "name": "Web",
+      "full_name": "acme/Web",
+      "private": true,
+      "archived": false
+    },
+    {
+      "id": 1296270,
+      "name": "old",
+      "full_name": "acme/old",
+      "private": false,
+      "archived": true
+    }
+  ]
+}

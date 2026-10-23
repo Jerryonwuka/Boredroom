@@ -70,7 +70,7 @@ import { z } from "zod";
 import { withSystem, withUser } from "@/server/db";
 import type { OrgContext } from "@/server/lib/api";
 import type { CurrentUser } from "@/server/auth";
-import { rateLimitIn } from "@/server/auth";
+import { assertFailuresBelow, rateLimitCommitted, rateLimitIn, recordFailure } from "@/server/auth";
 import { randomToken, sha256 } from "@/server/lib/crypto";
 import { AppError, forbidden, invalid, notFound } from "@/server/lib/errors";
 import { briefing, brendaPrefs, brendaSettings } from "@/server/services/brenda";
@@ -138,10 +138,14 @@ export async function approveLink(user: CurrentUser, input: z.infer<typeof appro
   // carry no impersonation, so it would also slip every lock that holds while they are signed in (act without asking).
   if (user.impersonation) throw forbidden("Only the person can link a computer. It can't be done while you are signed in as them.");
   const code = normalise(input.userCode);
-  return withSystem(async (db) => {
-    await rateLimitIn(db, `desktop.approve:${user.authUserId}`, 30, 3600);
+  // Security audit, 23 October 2026 (issue 1): the attempt is counted in its own committed transaction (it used to be
+  // rolled back with the "not valid" error, so codes could be guessed without limit), and wrong codes are counted
+  // apart: ten an hour, then approving is refused for the rest of the hour.
+  await rateLimitCommitted(`desktop.approve:${user.authUserId}`, 30, 3600);
+  await assertFailuresBelow(`desktop.approve.fail:${user.authUserId}`, 10, 3600, "Too many wrong codes. Try again in an hour.");
+  const result = await withSystem(async (db) => {
     const row = await db.maybeOne<{ id: string; expires_at: string; approved_at: string | null; device_name: string | null }>(`SELECT id, expires_at, approved_at, device_name FROM desktop_link_codes WHERE user_code = $1`, [code]);
-    if (!row || new Date(row.expires_at) < new Date()) throw invalid("That code is not valid or has expired. Start again from the desktop app.", { userCode: ["Not valid or expired."] });
+    if (!row || new Date(row.expires_at) < new Date()) return null;
     if (row.approved_at) throw invalid("That code has already been used.", { userCode: ["Already used."] });
     const org = await db.maybeOne<{ id: string; name: string }>(
       `SELECT o.id, o.name FROM organisations o JOIN memberships m ON m.organisation_id = o.id WHERE o.slug = $1 AND m.user_id = $2 AND m.status = 'active' AND o.status = 'active'`, [input.orgSlug, user.profileId]);
@@ -151,6 +155,11 @@ export async function approveLink(user: CurrentUser, input: z.infer<typeof appro
       [user.authUserId, row.id, JSON.stringify({ organisationId: org.id, deviceName: row.device_name })]);
     return { approved: true, workspace: org.name, deviceName: row.device_name };
   });
+  if (!result) {
+    await recordFailure(`desktop.approve.fail:${user.authUserId}`, 3600);
+    throw invalid("That code is not valid or has expired. Start again from the desktop app.", { userCode: ["Not valid or expired."] });
+  }
+  return result;
 }
 
 export const pollSchema = z.object({ deviceCode: z.string().min(20).max(200) });
@@ -355,6 +364,9 @@ export async function desktopState(ctx: OrgContext, o: { opener?: boolean } = {}
     // The morning opener, quiet hours and the routine runs delivered today (owner decision, 8 October 2026: phase 7a).
     opener,
     quiet,
+    // Connected apps (owner decisions, 22 October 2026: connectors): in a meeting on the person's own calendar now, and
+    // until when, beside `quiet` (the notch holds pop-ups and sounds). Only the person's own state; an older notch ignores it.
+    meeting: await import("@/server/connectors/items").then((m) => m.myMeetingState(ctx)).then((m) => ({ active: m.active, until: m.until })).catch(() => ({ active: false, until: null as string | null })),
     routineRuns: routineRuns satisfies DesktopRoutineRuns,
     // Commitments and open asks waiting for the person, blocks waiting on them, and open loose ends (phase 7b).
     loops: loops satisfies DesktopLoops,

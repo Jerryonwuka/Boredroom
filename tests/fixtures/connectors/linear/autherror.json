@@ -1,0 +1,11 @@
+{
+  "_source": "https://linear.app/developers/graphql (AUTHENTICATION_ERROR)",
+  "errors": [
+    {
+      "message": "Authentication required, not authenticated",
+      "extensions": {
+        "code": "AUTHENTICATION_ERROR"
+      }
+    }
+  ]
+}

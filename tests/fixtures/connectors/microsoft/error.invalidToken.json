@@ -1,0 +1,7 @@
+{
+  "_source": "https://learn.microsoft.com/en-us/graph/errors",
+  "error": {
+    "code": "InvalidAuthenticationToken",
+    "message": "Lifetime validation failed, the token is expired."
+  }
+}

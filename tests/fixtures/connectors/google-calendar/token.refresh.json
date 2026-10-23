@@ -1,0 +1,7 @@
+{
+  "_source": "https://developers.google.com/identity/protocols/oauth2/web-server#offline (refresh response: no new refresh token; values invented)",
+  "access_token": "ya29.test-google-access-0003",
+  "expires_in": 3599,
+  "scope": "https://www.googleapis.com/auth/calendar.events.owned.readonly",
+  "token_type": "Bearer"
+}

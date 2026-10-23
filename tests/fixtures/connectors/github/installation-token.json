@@ -1,0 +1,11 @@
+{
+  "_source": "https://docs.github.com/en/rest/apps/apps#create-an-installation-access-token-for-an-app",
+  "token": "ghs_fixture0001",
+  "expires_at": "2026-10-22T10:00:00Z",
+  "permissions": {
+    "issues": "write",
+    "pull_requests": "read",
+    "metadata": "read"
+  },
+  "repository_selection": "selected"
+}

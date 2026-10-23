@@ -1,0 +1,6 @@
+{
+  "_source": "https://developers.asana.com/docs/oauth (refresh response: no new refresh token)",
+  "access_token": "asana-access-fixture-0002",
+  "expires_in": 3600,
+  "token_type": "bearer"
+}

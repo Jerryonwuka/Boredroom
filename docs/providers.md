@@ -99,3 +99,7 @@ Calls (phase 8, owner decision, 8 October 2026) carry sound, video and screen sh
 ## Monitoring
 
 Wire `console.error` output from the API wrapper (`[requestId]` prefixed) and the worker into your error reporter with PII scrubbing. Watch: job backlog (`jobs` where state = 'pending'), dead jobs, stale sessions (`work_sessions.state = 'interrupted'`), storage bytes, calls left live (`calls.state <> 'ended'` older than 4 hours), call minutes against the LiveKit plan, and call transcripts older than 7 days after their recap.
+
+## Connected apps
+
+Connectors (Google Calendar, Outlook Calendar, Slack, Microsoft Teams, Notion, Linear, Jira, GitHub, Asana; owner decisions, 22 October 2026) are each optional and set up from the environment: see `docs/connectors/README.md`.

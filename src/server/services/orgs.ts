@@ -1,7 +1,8 @@
 import { z } from "zod";
-import { randomUUID } from "node:crypto";
+import { randomInt, randomUUID } from "node:crypto";
 import { withUser, withSystem, isUniqueViolation, type Db } from "@/server/db";
 import { AppError, conflict, forbidden, invalid, notFound } from "@/server/lib/errors";
+import { assertFailuresBelow, rateLimitCommitted, recordFailure } from "@/server/auth";
 import { randomToken, sha256 } from "@/server/lib/crypto";
 import { isValidTimeZone } from "@/server/lib/time";
 import { mail } from "@/server/lib/mail";
@@ -275,6 +276,8 @@ export async function changeRole(ctx: OrgContext, membershipId: string, role: Ro
     const before = await db.maybeOne<{ role: Role }>(`SELECT role FROM memberships WHERE id = $1 AND organisation_id = $2 AND status = 'active'`, [membershipId, ctx.org.id]);
     if (!before) throw notFound("Member not found.");
     if (before.role === "owner" && ctx.membership.role !== "owner") throw forbidden("Only owners can change an owner's role.");
+    // Security audit, 23 October 2026 (issue 18): one HR admin could demote another, and only the owner could undo it.
+    if (before.role === "hr" && ctx.membership.role !== "owner") throw forbidden("Only owners can change an HR admin's role.");
     try {
       await db.query(`UPDATE memberships SET role = $3 WHERE id = $1 AND organisation_id = $2`, [membershipId, ctx.org.id, role]);
     } catch (err) {
@@ -298,6 +301,8 @@ export async function revokeMembership(ctx: OrgContext, membershipId: string) {
     const m = await db.maybeOne<{ id: string; role: Role; user_id: string }>(`SELECT id, role, user_id FROM memberships WHERE id = $1 AND organisation_id = $2 AND status = 'active' FOR UPDATE`, [membershipId, ctx.org.id]);
     if (!m) throw notFound("Member not found.");
     if (m.role === "owner" && ctx.membership.role !== "owner") throw forbidden("Only owners can offboard an owner.");
+    // Security audit, 23 October 2026 (issue 18): HR admins are offboarded by an owner only, as their role is changed.
+    if (m.role === "hr" && ctx.membership.role !== "owner") throw forbidden("Only owners can offboard an HR admin.");
     try {
       await db.query(`UPDATE memberships SET status = 'revoked', revoked_at = now(), revoked_by = $3 WHERE id = $1 AND organisation_id = $2`, [membershipId, ctx.org.id, ctx.membership.id]);
     } catch (err) {
@@ -445,10 +450,24 @@ export { AppError };
 // ---------------------------------------------------------------------------
 // Join codes: the organisation account hands out a code or link; staff can only join through it.
 // ---------------------------------------------------------------------------
-function newJoinCode() {
+/** Drawn with a cryptographic source, not Math.random(), so codes cannot be predicted (security audit, 23 October 2026, issue 16). */
+export function newJoinCode() {
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  const pick = (n: number) => Array.from({ length: n }, () => alphabet[Math.floor(Math.random() * alphabet.length)]).join("");
+  const pick = (n: number) => Array.from({ length: n }, () => alphabet[randomInt(alphabet.length)]).join("");
   return `${pick(4)}-${pick(4)}`;
+}
+
+/** Codes that matched nothing, per IP, before looking codes up is refused for the rest of the hour (security audit, 23 October 2026, issue 16). */
+const JOIN_MISSES = { limit: 30, windowSeconds: 3600 } as const;
+const JOIN_THROTTLED = "Too many organisation codes tried. Wait an hour, or ask your administrator for the join link.";
+
+/** The caller's IP when there is a request (pages and routes); null in tests and the worker, which are not throttled. */
+async function requestIp(): Promise<string | null> {
+  try {
+    const { headers } = await import("next/headers");
+    const h = await headers();
+    return h.get("x-forwarded-for")?.split(",")[0]?.trim() || "local";
+  } catch { return null; }
 }
 
 export const joinCodeSchema = z.object({
@@ -483,13 +502,21 @@ export async function joinCodeView(ctx: OrgContext) {
 
 export type JoinPreview = { organisationId: string; name: string; slug: string; role: "manager" | "employee"; teamId: string | null; enabled: boolean };
 
+/**
+ * What a join code opens, or null. Security audit, 23 October 2026 (issue 16): from a request, codes that match nothing
+ * are counted per IP in their own committed transaction, and once there are too many every lookup from that IP is
+ * refused with a 429 for the rest of the hour, found or not, so guessing learns nothing.
+ * A code that matches is never counted, so an office sharing one address can all use the real link.
+ */
 export async function previewJoinCode(code: string): Promise<JoinPreview | null> {
   const clean = code.trim().toUpperCase().replace(/\s+/g, "");
   if (!/^[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(clean)) return null;
-  return withSystem(async (db) => {
-    const r = await db.maybeOne<{ organisation_id: string; name: string; slug: string; role: "manager" | "employee"; team_id: string | null; enabled: boolean }>(`SELECT * FROM app_join_code_preview($1)`, [clean]);
-    return r ? { organisationId: r.organisation_id, name: r.name, slug: r.slug, role: r.role, teamId: r.team_id, enabled: r.enabled } : null;
-  });
+  const ip = await requestIp();
+  const missBucket = ip ? `join.miss:${ip}` : null;
+  if (missBucket) await assertFailuresBelow(missBucket, JOIN_MISSES.limit, JOIN_MISSES.windowSeconds, JOIN_THROTTLED);
+  const r = await withSystem((db) => db.maybeOne<{ organisation_id: string; name: string; slug: string; role: "manager" | "employee"; team_id: string | null; enabled: boolean }>(`SELECT * FROM app_join_code_preview($1)`, [clean]));
+  if (!r && missBucket) await recordFailure(missBucket, JOIN_MISSES.windowSeconds);
+  return r ? { organisationId: r.organisation_id, name: r.name, slug: r.slug, role: r.role, teamId: r.team_id, enabled: r.enabled } : null;
 }
 
 /**
@@ -498,6 +525,8 @@ export async function previewJoinCode(code: string): Promise<JoinPreview | null>
  * request, 11 October 2026: the first-run welcome, D11; migration 0056 lets only such a code take a lead seat).
  */
 export async function joinWithCode(userId: string, code: string) {
+  // Per account as well as per IP, committed before the code is looked up (security audit, 23 October 2026, issue 16).
+  await rateLimitCommitted(`join.accept:${userId}`, 20, 3600, JOIN_THROTTLED);
   const preview = await previewJoinCode(code);
   if (!preview) throw notFound("That organisation code is not valid.");
   if (!preview.enabled) throw conflict("JOIN_DISABLED", "This organisation is not accepting new members with this code right now. Ask your administrator for a new one.");

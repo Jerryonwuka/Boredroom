@@ -1,0 +1,8 @@
+{
+  "_source": "https://developer.atlassian.com/cloud/jira/platform/webhooks/ (register dynamic webhooks response)",
+  "webhookRegistrationResult": [
+    {
+      "createdWebhookId": 1000
+    }
+  ]
+}

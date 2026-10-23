@@ -146,8 +146,10 @@ function EditTaskSheet({ onClose, onSubmit, pending, error, fieldErrors, canMana
   const [due] = useState(() => localDateTime(current.dueAt));
   const submitChanges = (f: FormData) => {
     const body: Record<string, unknown> = {};
-    const reviewer = String(f.get("reviewerMembershipId") ?? "") || null;
-    if (reviewer !== current.reviewerId) body.reviewerMembershipId = reviewer;
+    if (canManage) {
+      const reviewer = String(f.get("reviewerMembershipId") ?? "") || null;
+      if (reviewer !== current.reviewerId) body.reviewerMembershipId = reviewer;
+    }
     const estimate = f.get("estimateMinutes") ? Number(f.get("estimateMinutes")) : null;
     if (estimate !== current.estimateMinutes) body.estimateMinutes = estimate;
     const dueAt = String(f.get("dueAt") ?? "");
@@ -166,7 +168,8 @@ function EditTaskSheet({ onClose, onSubmit, pending, error, fieldErrors, canMana
       footer={<><Button variant="secondary" onClick={onClose}>Cancel</Button><Button type="submit" form={formId} loading={pending}>{pending ? "Saving…" : "Save changes"}</Button></>}>
       <form id={formId} className="grid gap-4" onSubmit={(e) => { e.preventDefault(); submitChanges(new FormData(e.currentTarget)); }}>
         {unplaced ? <Alert tone="danger">{error}</Alert> : null}
-        <Field label="Reviewer" htmlFor="e-rev" error={fieldErrors.reviewerMembershipId}><Select id="e-rev" name="reviewerMembershipId" defaultValue={current.reviewerId ?? ""}><option value="">None yet</option>{members.filter((m) => m.id !== current.assigneeId).map((m) => <option key={m.id} value={m.id}>{m.display_name}</option>)}</Select></Field>
+        {/* Only managers change the reviewer (security audit, 23 October 2026, issue 17); updateTask refuses anyone else. */}
+        {canManage ? <Field label="Reviewer" htmlFor="e-rev" error={fieldErrors.reviewerMembershipId}><Select id="e-rev" name="reviewerMembershipId" defaultValue={current.reviewerId ?? ""}><option value="">None yet</option>{members.filter((m) => m.id !== current.assigneeId).map((m) => <option key={m.id} value={m.id}>{m.display_name}</option>)}</Select></Field> : null}
         {canManage ? <Field label="Assignee" htmlFor="e-asg" hint="Can't change while a work session is open" error={fieldErrors.assigneeMembershipId}><Select id="e-asg" name="assigneeMembershipId" defaultValue={current.assigneeId}>{members.map((m) => <option key={m.id} value={m.id}>{m.display_name}</option>)}</Select></Field> : null}
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Estimated time" htmlFor="e-est" error={fieldErrors.estimateMinutes}><DurationPicker id="e-est" name="estimateMinutes" defaultValue={current.estimateMinutes} /></Field>

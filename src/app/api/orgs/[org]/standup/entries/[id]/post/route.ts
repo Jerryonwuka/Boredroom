@@ -1,5 +1,10 @@
-import { route, orgContext, idempotent } from "@/server/lib/api";
+import { z } from "zod";
+import { route, orgContext, idempotent, parseBody } from "@/server/lib/api";
 import { postStandup } from "@/server/services/standup";
+
+// Connected apps (security fix, 22 October 2026): `alsoTo` is the connected-app channel the card showed and the person
+// left ticked; their standup goes there too only then (and only while it is still that channel).
+const Body = z.object({ alsoTo: z.string().trim().min(1).max(200).nullish() });
 
 /**
  * Post the person's standup to their team's channel (owner decisions, 8–9 October 2026: phase 7c). This press IS their
@@ -11,5 +16,6 @@ import { postStandup } from "@/server/services/standup";
  */
 export const POST = route<{ org: string; id: string }>(async (req, { params }) => {
   const ctx = await orgContext(params.org);
-  return idempotent(req, ctx.user, "standup.post", { id: params.id }, async () => ({ status: 200, body: await postStandup(ctx, params.id) }));
+  const body = await parseBody(req, Body);
+  return idempotent(req, ctx.user, "standup.post", { id: params.id, alsoTo: body.alsoTo ?? null }, async () => ({ status: 200, body: await postStandup(ctx, params.id, { alsoTo: body.alsoTo ?? null }) }));
 });

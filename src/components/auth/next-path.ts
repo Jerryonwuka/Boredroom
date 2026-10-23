@@ -9,7 +9,11 @@ export function safeNextPath(next: string | string[] | null | undefined, fallbac
   if (typeof path !== "string" || !path.startsWith("/")) return fallback;
   try {
     const url = new URL(path, "http://boredroom.invalid");
-    return url.origin === "http://boredroom.invalid" ? `${url.pathname}${url.search}${url.hash}` : fallback;
+    if (url.origin !== "http://boredroom.invalid") return fallback;
+    // Security audit, 23 October 2026 (issue 6): dot segments resolve away, so "/.//evil.com" and "/./\evil.com"
+    // come out as "//evil.com", which a browser reads as another site. A result that starts so is refused.
+    if (/^\/[\/\\]/.test(url.pathname)) return fallback;
+    return `${url.pathname}${url.search}${url.hash}`;
   } catch {
     return fallback;
   }

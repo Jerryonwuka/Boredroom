@@ -1,0 +1,14 @@
+{
+  "_source": "https://developers.google.com/workspace/calendar/api/guides/errors#403_rate_limit_exceeded",
+  "error": {
+    "code": 403,
+    "message": "Rate Limit Exceeded",
+    "errors": [
+      {
+        "domain": "usageLimits",
+        "reason": "rateLimitExceeded",
+        "message": "Rate Limit Exceeded"
+      }
+    ]
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "_source": "https://developer.atlassian.com/cloud/jira/platform/webhooks/ (issue updated event for a dynamic webhook)",
+  "timestamp": 1792660800000,
+  "webhookEvent": "jira:issue_updated",
+  "matchedWebhookIds": [
+    1000
+  ],
+  "issue": {
+    "id": "10101",
+    "key": "WEB-7",
+    "fields": {
+      "summary": "Fix the login loop"
+    }
+  }
+}

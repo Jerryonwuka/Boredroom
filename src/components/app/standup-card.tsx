@@ -34,6 +34,7 @@ import { AnimatedArrowUpRight, AnimatedRotateCcw, AnimatedSend } from "@/compone
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Field, Textarea } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/switch";
 import { Alert } from "@/components/ui/states";
 import { BrendaFace } from "@/components/app/brenda-face";
 import { useAssistant } from "@/components/app/assistant-context";
@@ -42,6 +43,7 @@ import { api, isApiFailure } from "@/lib/api-client";
 import { EVIDENCE_WORDS, evidenceHref, type EvidenceRef } from "@/lib/evidence-links";
 import { STANDUP_LIMITS, STANDUP_SECTIONS, STANDUP_WORDS, cleanSection, clockOf, entryLines, type StandupEntryView, type StandupRollupView, type StandupSection, type StandupStatus, type StandupTexts } from "@/lib/standup";
 import { cn } from "@/lib/utils";
+import { members as membersWords } from "@/lib/confirm-readback";
 
 const OFFLINE = "Cannot reach the server. Check your connection and try again; nothing was changed.";
 const MAX = STANDUP_LIMITS.sectionMax;
@@ -77,6 +79,8 @@ export const STANDUP_CARD_WORDS = {
   empty: SW.errors.empty,
   tooLong: SW.errors.tooLong,
   leftOut: "Left out",
+  alsoTo: (label: string, app: string, members: string) => `Also post it in ${label} on ${app}, ${members}`,
+  alsoToHint: (app: string) => `As your words with your name, in ${app}, outside Boredroom. Untick to share it in Boredroom only.`,
   nothing: SW.empty.blocked,
 } as const;
 const W = STANDUP_CARD_WORDS;
@@ -141,6 +145,9 @@ export function StandupCard({ orgSlug, entry: given, timeZone, standout = true, 
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<StandupTexts>({ yesterday: "", today: "", blocked: "" });
   const [fieldError, setFieldError] = useState<string | null>(null);
+  // Connected apps (security fix, 22 October 2026): the workspace's standup channel in Slack or Teams, named on the card;
+  // the standup goes there too only while this stays ticked, and the press says which channel it saw.
+  const [alsoPost, setAlsoPost] = useState(true);
   const editButton = useRef<HTMLButtonElement>(null);
   const undoButton = useRef<HTMLButtonElement>(null);
   const openLink = useRef<HTMLAnchorElement>(null);
@@ -192,7 +199,8 @@ export function StandupCard({ orgSlug, entry: given, timeZone, standout = true, 
 
   const post = () => press("post", async () => {
     // One key per press: a retry after a lost answer returns the same post, and the server never posts twice anyway.
-    const r = await api<{ entry: StandupEntryView; message: { id: string; conversationId: string; href: string }; already?: true }>(`/api/orgs/${orgSlug}/standup/entries/${e.id}/post`, { method: "POST" });
+    const alsoTo = e.alsoTo && alsoPost ? e.alsoTo.label : null;
+    const r = await api<{ entry: StandupEntryView; message: { id: string; conversationId: string; href: string }; already?: true }>(`/api/orgs/${orgSlug}/standup/entries/${e.id}/post`, { method: "POST", ...(alsoTo ? { body: { alsoTo } } : {}) });
     took(r.entry);
     const text = W.posted(r.entry.team.name, clockOf(r.entry.posted?.at, tz));
     setResult({ text, href: r.entry.posted?.href ?? r.message?.href ?? null });
@@ -324,6 +332,12 @@ export function StandupCard({ orgSlug, entry: given, timeZone, standout = true, 
           <p>{W.readback(channel, e.postTo.members, personal.name)}</p>
           <p>{e.youLead ? SW.card.rollupToYou(e.otherLeads ?? [], cutoff) : W.rollup(e.leads, cutoff)}</p>
           {e.edited ? <p>{SW.card.edited}</p> : null}
+          {e.alsoTo ? (
+            <Checkbox className="pt-1.5" checked={alsoPost} disabled={!!busy} onChange={(ev) => setAlsoPost(ev.target.checked)}
+              hint={W.alsoToHint(e.alsoTo.app)}>
+              {W.alsoTo(e.alsoTo.label, e.alsoTo.app, membersWords(e.alsoTo.members))}
+            </Checkbox>
+          ) : null}
         </div>
       ) : null}
 

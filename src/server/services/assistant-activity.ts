@@ -29,7 +29,7 @@ export type ActivityItem = {
   id: string; tool: string; summary: string;
   outcome: "done" | "confirmed" | "refused" | "failed";
   /** "mac": a task on the person's Mac (phase 2), whose id is "task:<uuid>" and whose tool is mac_screen, mac_file or (phase 3) mac_plan. */
-  source: "chat" | "confirm" | "automatic" | "read" | "mac";
+  source: "chat" | "confirm" | "automatic" | "read" | "mac" | "private";
   /** The page it is about (detail.href) when it is inside this workspace; else null. */
   href: string | null;
   createdAt: string;
@@ -130,7 +130,10 @@ export const PRIVATE_TOOLS: ReadonlySet<string> = new Set(["send_message", "mark
   // remember is theirs alone (owners and HR never see it), so a refusal says only what kind of thing was tried.
   "remember_preference", "forget_preference", "preference",
   // The async standup (fix review, 9 October 2026): a refusal's words can say a draft was skipped or name the team.
-  "standup", "standup_action"]);
+  "standup", "standup_action",
+  // Connected apps (owner decisions, 22 October 2026: connectors): what she read or tried in someone's apps is theirs.
+  "connected_apps", "my_calendar", "my_work_items", "find_in_apps", "read_app_item", "track_app_item", "hide_app_item",
+  "calendar_action", "work_item_action", "notion_action", "post_to_channel", "connector"]);
 
 /**
  * What owners and HR read in Settings › Brenda's log for an action her done line describes (owner decision 1, 11 October
@@ -288,7 +291,9 @@ export async function listActivity(ctx: OrgContext, opts: { kind?: ActivityKind;
     const params: unknown[] = [ctx.org.id, ctx.membership.id];
     // Changes the person made to her settings themself (tool 'settings': the organisation's Brenda settings, the workspace
     // assistant's look) stay in Settings → Brenda's log; they are not something their assistant did (review, 8 October 2026).
-    let where = `a.organisation_id = $1 AND a.membership_id = $2 AND a.tool <> 'settings' ${KIND_SQL[kind]} ${readsHidden ? "AND a.source <> 'read'" : ""}`;
+    // Connected apps (owner decisions, 22 October 2026): 'private' rows (what she did in the person's own apps) are hidden
+    // while someone else is signed in as them, exactly as 'read' rows.
+    let where = `a.organisation_id = $1 AND a.membership_id = $2 AND a.tool <> 'settings' ${KIND_SQL[kind]} ${readsHidden ? "AND a.source NOT IN ('read', 'private')" : ""}`;
     if (after) {
       params.push(after.at, after.id);
       where += ` AND (a.created_at, a.id) < ($3::timestamptz, $4::uuid)`;

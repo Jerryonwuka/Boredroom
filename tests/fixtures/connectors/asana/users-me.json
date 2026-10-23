@@ -1,0 +1,18 @@
+{
+  "_source": "https://developers.asana.com/reference/getuser",
+  "data": {
+    "gid": "1201000000000001",
+    "email": "ada@example.com",
+    "name": "Ada Obi",
+    "workspaces": [
+      {
+        "gid": "1200000000000001",
+        "name": "Acme"
+      },
+      {
+        "gid": "1200000000000002",
+        "name": "Personal Projects"
+      }
+    ]
+  }
+}

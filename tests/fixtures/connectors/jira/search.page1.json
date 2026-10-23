@@ -1,0 +1,77 @@
+{
+  "_source": "https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-issue-search/ (search for issues using JQL enhanced search, POST)",
+  "issues": [
+    {
+      "id": "10101",
+      "key": "WEB-7",
+      "self": "https://api.atlassian.com/ex/jira/11223344-5566-4778-899a-abcdefabcdef/rest/api/3/issue/10101",
+      "fields": {
+        "summary": "Fix the login loop",
+        "status": {
+          "name": "In Progress",
+          "statusCategory": {
+            "key": "indeterminate",
+            "name": "indeterminate"
+          }
+        },
+        "duedate": "2026-10-24",
+        "priority": {
+          "name": "Highest",
+          "id": "2"
+        },
+        "assignee": {
+          "accountId": "5b10a2844c20165700ede21g",
+          "displayName": "Ada Obi",
+          "emailAddress": "ada@example.com"
+        },
+        "updated": "2026-10-22T09:12:33.000+0100",
+        "project": {
+          "id": "10001",
+          "key": "WEB",
+          "name": "Website"
+        },
+        "issuetype": {
+          "name": "Task",
+          "subtask": false
+        }
+      }
+    },
+    {
+      "id": "10102",
+      "key": "WEB-8",
+      "self": "https://api.atlassian.com/ex/jira/11223344-5566-4778-899a-abcdefabcdef/rest/api/3/issue/10102",
+      "fields": {
+        "summary": "Write the release notes",
+        "status": {
+          "name": "To Do",
+          "statusCategory": {
+            "key": "new",
+            "name": "new"
+          }
+        },
+        "duedate": null,
+        "priority": {
+          "name": "Medium",
+          "id": "2"
+        },
+        "assignee": {
+          "accountId": "5b10a2844c20165700ede21g",
+          "displayName": "Ada Obi",
+          "emailAddress": "ada@example.com"
+        },
+        "updated": "2026-10-21T15:00:00.000+0000",
+        "project": {
+          "id": "10001",
+          "key": "WEB",
+          "name": "Website"
+        },
+        "issuetype": {
+          "name": "Task",
+          "subtask": false
+        }
+      }
+    }
+  ],
+  "nextPageToken": "CAEaAggB",
+  "isLast": false
+}

@@ -1,0 +1,30 @@
+# Boredroom's Slack app manifest (calendars + chat group; owner decisions, 22 October 2026: connectors; spec §8.3, §14.3).
+# api.slack.com/apps › Create New App › From a manifest. Replace https://boredroom.cc with Boredroom's APP_ORIGIN (https
+# only). Bot scopes only, no user scopes and no chat:write.public: Boredroom posts only in channels it was invited to.
+# Token rotation is on (it can't be turned off later). Boredroom never reads messages.
+display_information:
+  name: Boredroom
+  description: End-of-day digests, standups and reminders from Boredroom, in the channels your workspace chooses.
+  background_color: "#111111"
+features:
+  bot_user:
+    display_name: Boredroom
+    always_online: false
+oauth_config:
+  redirect_urls:
+    - https://boredroom.cc/api/connectors/slack/callback
+  scopes:
+    bot:
+      - chat:write
+      - channels:read
+      - groups:read
+settings:
+  # Under settings, not oauth_config (fix, 22 October 2026: Slack's manifest reference puts it here).
+  token_rotation_enabled: true
+  event_subscriptions:
+    request_url: https://boredroom.cc/api/connectors/webhooks/slack
+    bot_events:
+      - app_uninstalled
+      - tokens_revoked
+  org_deploy_enabled: false
+  socket_mode_enabled: false

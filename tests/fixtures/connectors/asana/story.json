@@ -1,0 +1,9 @@
+{
+  "_source": "https://developers.asana.com/reference/createstoryfortask",
+  "data": {
+    "gid": "1204000000000001",
+    "resource_type": "story",
+    "text": "Done by Friday.",
+    "type": "comment"
+  }
+}

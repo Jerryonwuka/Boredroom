@@ -15,6 +15,9 @@ export const FEATURE_LABELS: Record<string, string> = {
   EXPORT_REPORTS: "Report exports",
   ADVANCED_ANALYTICS: "Advanced analytics",
   AI_ASSISTANT: "AI assistant",
+  // Connected apps (owner decision, 22 October 2026: connectors on every plan, switchable in the Control Center). Required
+  // here, not cosmetic: entitlementsOf only fills features for these keys.
+  CONNECTORS: "Connected apps",
   VOICE_NOTES: "Voice notes in messages",
   GOOGLE_SIGN_IN: "Sign in with Google",
   CUSTOM_ROLES: "Custom roles",

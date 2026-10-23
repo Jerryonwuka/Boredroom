@@ -53,10 +53,14 @@ export type UndoSpec =
   | { kind: "follow_up_asked"; batchId: string; followUpIds: string[] }
   | { kind: "assistant_message"; itemId: string }
   | { kind: "assistant_request"; itemId: string }
-  | { kind: "report_note"; itemId: string };
+  | { kind: "report_note"; itemId: string }
+  // Connected apps (owner decisions, 22 October 2026: connectors; spec §9.7): a private step in the person's own app or
+  // My Day (hide, link to a to-do, a private block, moving one), taken back through the connector layer. `personal`: the
+  // Undo's log row is the person's alone ('private').
+  | { kind: "connector"; connectionId: string; personal: boolean; action: "hide" | "link" | "block" | "move"; data: Record<string, unknown> };
 export type UndoKind = UndoSpec["kind"];
 export const UNDO_KINDS = ["todo_created", "task_changed", "task_assigned", "reminder_set", "reminder_cancelled", "message_sent", "conversations_read",
-  "status_set", "day_planned", "doc_created", "follow_up_asked", "assistant_message", "assistant_request", "report_note"] as const satisfies readonly UndoKind[];
+  "status_set", "day_planned", "doc_created", "follow_up_asked", "assistant_message", "assistant_request", "report_note", "connector"] as const satisfies readonly UndoKind[];
 
 /** The longest Undo token the route takes (its body cap is a little more). An offer that would be longer is not made. */
 export const UNDO_TOKEN_MAX = 16_000;
@@ -113,6 +117,7 @@ export const UNDO_WORDS = {
     reminder_cancelled: "Undid a cancelled reminder", message_sent: "Undid a message", conversations_read: "Undid mark as read",
     status_set: "Undid a status change", day_planned: "Undid a day plan", doc_created: "Undid a document", follow_up_asked: "Undid a follow-up",
     assistant_message: "Undid a message to an assistant", assistant_request: "Undid a request", report_note: "Undid a report note",
+    connector: "Undid a step in a connected app",
   } satisfies Record<UndoKind, string>,
   personal: (label: string) => `Undid: ${label}`,
 } as const;
@@ -168,6 +173,8 @@ export function isUndoSpec(v: unknown): v is UndoSpec {
     case "doc_created": return isUuid(s.docId) && (s.updatedAt === undefined || (typeof s.updatedAt === "string" && !Number.isNaN(Date.parse(s.updatedAt))));
     case "follow_up_asked": return isUuid(s.batchId) && uuids(s.followUpIds, 50);
     case "assistant_message": case "assistant_request": case "report_note": return isUuid(s.itemId);
+    case "connector": return isUuid(s.connectionId) && typeof s.personal === "boolean" && ["hide", "link", "block", "move"].includes(s.action as string)
+      && !!s.data && typeof s.data === "object" && !Array.isArray(s.data) && JSON.stringify(s.data).length <= 2000;
     default: return false;
   }
 }
@@ -229,7 +236,8 @@ export async function undoAction(ctx: OrgContext, token: string): Promise<{ undo
     throw err;
   }
   await recordAction(ctx, {
-    tool: "undo", outcome: "done", source: "chat", summary: UNDO_WORDS.logged[spec.kind],
+    // A connected app's private step: the Undo's row is the person's alone, as the step's was (connectors, 22 October 2026).
+    tool: "undo", outcome: "done", source: spec.kind === "connector" && spec.personal ? "private" : "chat", summary: UNDO_WORDS.logged[spec.kind],
     detail: { personalSummary: UNDO_WORDS.personal(label || UNDO_WORDS.logged[spec.kind]), undoOf: spec.kind, ...(p.a === true ? { auto: true } : {}) },
   });
   return { undone: true, summary };
@@ -246,6 +254,11 @@ function taskMovedOn(err: unknown): boolean {
 
 async function run(ctx: OrgContext, spec: UndoSpec): Promise<string> {
   switch (spec.kind) {
+    case "connector": {
+      // Connected apps (owner decisions, 22 October 2026): loaded only when needed.
+      const { undoConnectorAction } = await import("@/server/connectors/brenda/tools");
+      return undoConnectorAction(ctx, spec);
+    }
     case "todo_created": return undoTodos(ctx, spec.tasks);
     case "task_changed": {
       const { status, reason, ...fields } = spec.before;

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { getCurrentUser } from "@/server/auth";
+import { getCurrentUser, requestSessionToken } from "@/server/auth";
+import { wakeTag } from "@/server/lib/wake-tag";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +14,8 @@ const NO_STORE = { "Cache-Control": "no-store" };
  */
 export async function GET() {
   try {
+    // A session to look up reaches the database; none answers "signed out" without it (owner request, 23 October 2026).
+    if (await requestSessionToken()) wakeTag("auth");
     const user = await getCurrentUser();
     return NextResponse.json({ signedIn: !!user, emailVerified: !!user?.emailVerified }, { headers: NO_STORE });
   } catch {

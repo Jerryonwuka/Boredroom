@@ -7055,6 +7055,10 @@ async function ackUpdate() {
 
 /** The person's quiet hours are on now. A missing or unready `quiet` (an older server, before 0046) is never quiet. */
 function quietNow() {
+  // Connected apps (owner decisions, 22 October 2026: connectors): a meeting on the person's own calendar holds pop-ups
+  // and sounds too, until it ends. Absent from an older server: never.
+  const m = data?.meeting;
+  if (m && typeof m === "object" && m.active === true && !(typeof m.until === "string" && Date.parse(m.until) <= serverNow())) return true;
   const q = data?.quiet;
   if (!q || typeof q !== "object" || q.ready !== true) return false;
   const now = serverNow();

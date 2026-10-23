@@ -43,6 +43,12 @@ export type StandupEntryView = {
   timeZone?: string;
   /** Fix review, 9 October 2026: the person receives this team's rollup themself, and the other recipients' names. */
   youLead?: boolean; otherLeads?: string[];
+  /**
+   * Connected apps (security fix, 22 October 2026): the channel in Slack or Microsoft Teams the workspace chose for this
+   * team's standups. A shared standup goes there only when the person's press carried this line (the card's tick, or
+   * Brenda's readback).
+   */
+  alsoTo?: { label: string; app: string; members: number | null } | null;
 };
 /** `timeZone` (phase 7c addition): the organisation's, so a rollup's times read on its clock wherever it is shown. */
 export type StandupRollupContent = {

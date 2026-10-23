@@ -1,0 +1,43 @@
+{
+  "_source": "https://developers.notion.com/reference/patch-block-children (PATCH /v1/blocks/{block_id}/children, Notion-Version 2026-03-11)",
+  "object": "list",
+  "results": [
+    {
+      "object": "block",
+      "id": "eeeeeee1-eeee-4eee-8eee-eeeeeeeeeeee",
+      "parent": {
+        "type": "page_id",
+        "page_id": "44444444-4444-4444-8444-444444444444"
+      },
+      "type": "paragraph",
+      "paragraph": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "Added text",
+              "link": null
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            },
+            "plain_text": "Added text",
+            "href": null
+          }
+        ],
+        "color": "default"
+      },
+      "in_trash": false,
+      "has_children": false
+    }
+  ],
+  "next_cursor": null,
+  "has_more": false,
+  "type": "block",
+  "block": {}
+}

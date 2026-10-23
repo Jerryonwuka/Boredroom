@@ -1,0 +1,30 @@
+{
+  "_source": "https://linear.app/developers/graphql (issue query)",
+  "data": {
+    "issue": {
+      "id": "0b9e0012-1111-4222-8333-444455556666",
+      "identifier": "ENG-12",
+      "title": "Fix the login loop",
+      "url": "https://linear.app/acme/issue/ENG-12/fix-the-login-loop",
+      "priority": 1,
+      "dueDate": "2026-10-24",
+      "updatedAt": "2026-10-22T08:10:00.000Z",
+      "description": "Steps to reproduce: sign in, wait.",
+      "state": {
+        "id": "st-started",
+        "name": "In Progress",
+        "type": "started"
+      },
+      "team": {
+        "id": "8d2e1a4b-7c5f-4e3a-b1d9-6f0c2a8e5b02",
+        "key": "ENG",
+        "name": "Engineering"
+      },
+      "assignee": {
+        "id": "c3f1a2b4-1d2e-4f5a-8b9c-0d1e2f3a4b01",
+        "name": "Ada Obi",
+        "email": "ada@example.com"
+      }
+    }
+  }
+}

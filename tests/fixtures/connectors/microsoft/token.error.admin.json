@@ -1,0 +1,8 @@
+{
+  "_source": "https://learn.microsoft.com/en-us/entra/identity-platform/reference-error-codes (AADSTS65001; body shape from v2-oauth2-auth-code-flow#error-response-1)",
+  "error": "invalid_grant",
+  "error_description": "AADSTS65001: The user or administrator has not consented to use the application with ID '00000000-0000-0000-0000-000000000000'. Trace ID: 0000",
+  "error_codes": [
+    65001
+  ]
+}

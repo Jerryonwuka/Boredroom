@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { CONNECTOR_TOOL_NAMES } from "@/server/connectors/brenda/tools";
 
 // Personal assistants, phase 5 (owner decision, 8 October 2026): the assistant tagged in a conversation. Shared mode in
 // runTool (the audience rule decided by the server, never the model), the prompt (the cached prefix unchanged, the thread
@@ -126,12 +127,14 @@ describe("shared mode: every tool has exactly one class", () => {
     const of = (cls: string) => Object.entries(SHARED_TOOL_CLASS).filter(([, c]) => c === cls).map(([n]) => n).sort();
     // Phase 7c (owner decisions, 8–9 October 2026): the person's standup and preferences are acted on only in their own
     // chat (standup_action edits and skips at once, so it is an immediate tool refused in a thread).
-    expect(of("immediate")).toEqual([...IMMEDIATE_TOOLS].filter((x) => x !== "team_report" && x !== "standup_action").sort());
-    expect(of("refused")).toEqual(["forget_preference", "remember_preference", "standup_action", "team_report"]);
+    // Connected apps (owner decisions, 22 October 2026): never in a thread, every one of them refused there.
+    expect(of("immediate")).toEqual([...IMMEDIATE_TOOLS].filter((x) => x !== "team_report" && x !== "standup_action" && !CONNECTOR_TOOL_NAMES.includes(x)).sort());
+    expect(of("refused")).toEqual(["forget_preference", "remember_preference", "standup_action", "team_report", ...CONNECTOR_TOOL_NAMES].sort());
     // Phase 6 (owner decision, 8 October 2026): sending to another assistant and answering what was brought wait for Confirm.
     // Phase 7a (owner decision, 8 October 2026): setting up or changing a routine waits for Confirm too.
     // Phase 7b (owner decision, 8 October 2026): answering a commitment or a block, and naming who a task waits on, too.
-    expect(of("confirm")).toEqual(["add_report_note", "assign_task", "create_routine", "create_team", "follow_up", "hand_over_request", "invite_person", "mark_read", "pass_message", "respond_to_block", "respond_to_commitment", "respond_to_item", "send_message", "set_blocked_on", "submit_for_review", "update_routine"]);
+    // Security audit, 23 October 2026 (issue 5): a task comment always waits for Confirm.
+    expect(of("confirm")).toEqual(["add_comment", "add_report_note", "assign_task", "create_routine", "create_team", "follow_up", "hand_over_request", "invite_person", "mark_read", "pass_message", "respond_to_block", "respond_to_commitment", "respond_to_item", "send_message", "set_blocked_on", "submit_for_review", "update_routine"]);
     expect(of("public")).toEqual(["list_people"]);
     expect(of("policy")).toEqual(["get_policy"]);
     expect(of("link")).toEqual(["open_page"]);

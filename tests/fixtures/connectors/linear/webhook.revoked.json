@@ -1,0 +1,10 @@
+{
+  "_source": "https://linear.app/developers/webhooks (OAuthApp revoked payload)",
+  "action": "revoked",
+  "type": "OAuthApp",
+  "organizationId": "a1b2c3d4-0000-4000-8000-00000000ac01",
+  "webhookTimestamp": 0,
+  "data": {
+    "oauthClientId": "client-fixture"
+  }
+}

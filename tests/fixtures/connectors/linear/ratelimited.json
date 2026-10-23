@@ -1,0 +1,11 @@
+{
+  "_source": "https://linear.app/developers/rate-limiting (RATELIMITED in GraphQL errors, HTTP 400)",
+  "errors": [
+    {
+      "message": "Rate limit exceeded",
+      "extensions": {
+        "code": "RATELIMITED"
+      }
+    }
+  ]
+}

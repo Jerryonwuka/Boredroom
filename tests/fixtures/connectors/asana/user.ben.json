@@ -1,0 +1,8 @@
+{
+  "_source": "https://developers.asana.com/reference/getuser (by email)",
+  "data": {
+    "gid": "1201000000000002",
+    "name": "Ben Ade",
+    "email": "ben@example.com"
+  }
+}

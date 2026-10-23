@@ -34,7 +34,7 @@ import { memberContext } from "@/server/lib/member-context";
 import { addDays, localDate as localDateOf, localMidnight, localTimeOn, weekdayOf } from "@/server/lib/time";
 import { audit, enqueueJob, notify } from "@/server/services/common";
 import { recordAction } from "@/server/services/brenda";
-import { quietStateFor } from "@/server/services/routines";
+import { holdStateFor, quietStateFor } from "@/server/services/routines";
 import { abilitiesIn } from "@/server/services/abilities";
 import { preferencesForWorker } from "@/server/services/preferences";
 import { insertViaAssistantIn } from "@/server/services/messaging";
@@ -381,6 +381,14 @@ const DAY_SQL = `SELECT s.team_id, s.organisation_id, s.enabled, to_char(s.post_
 export async function openStandupDay(teamId: string, localDate: string, now = new Date()): Promise<{ status: "opened" | "exists" | "off" | "missed"; entryIds: string[]; rollupId: string | null }> {
   const off = { status: "off" as const, entryIds: [], rollupId: null };
   if (!isUuid(teamId) || !DATE.test(localDate)) return off;
+  const opened = await openStandupDayIn(teamId, localDate, now, off);
+  // Connected apps (owner decisions, 22 October 2026: connectors): "Today's standup for {team} is open" in the channel the
+  // workspace chose for reminders, once the day opens. Never throws; nothing before 0061 or without an enabled route.
+  if (opened.status === "opened") await import("@/server/connectors/posting/post").then((m) => m.enqueueStandupPosts({ teamId, localDate, kind: "reminders" })).catch(() => 0);
+  return opened;
+}
+
+async function openStandupDayIn(teamId: string, localDate: string, now: Date, off: { status: "off"; entryIds: never[]; rollupId: null }): Promise<{ status: "opened" | "exists" | "off" | "missed"; entryIds: string[]; rollupId: string | null }> {
   return inWorker<{ status: "opened" | "exists" | "off" | "missed"; entryIds: string[]; rollupId: string | null }>(off, async (db) => {
     const s = await db.maybeOne<DayRow>(`${DAY_SQL} WHERE s.team_id = $1 FOR UPDATE OF s`, [teamId]);
     if (!s || !s.enabled || s.archived || s.org_status !== "active" || !daysOf(s.days).includes(weekdayOf(localDate))) return off;
@@ -547,7 +555,9 @@ export async function saveStandupDraft(entryId: string, c: StandupComposed, now 
     const texts: StandupTexts = { yesterday: sectionText(c.texts?.yesterday), today: sectionText(c.texts?.today), blocked: sectionText(c.texts?.blocked) };
     const draft = draftOf(c.draft);
     const engine = c.engine === "claude" ? "claude" : "template";
-    const quiet = await quietStateFor(db, e.membership_id, now);
+    // Quiet hours, or a meeting on the person's own connected calendar (connectors, 22 October 2026): "your draft is
+    // ready" waits until either ends.
+    const quiet = await holdStateFor(db, e.membership_id, now);
     const held = quiet.active && !!quiet.until;
     await db.query(
       `UPDATE standup_entries SET status = 'ready', draft = $2, yesterday_text = $3, today_text = $4, blocked_text = $5, blockers = $6, engine = $7,
@@ -670,6 +680,37 @@ async function notifyRollup(db: Db, r: { id: string; organisation_id: string; sl
  */
 export async function sendRollup(rollupId: string, content: StandupRollupContent, now = new Date()): Promise<{ notified: number; held: number }> {
   if (!isUuid(rollupId)) return { notified: 0, held: 0 };
+  const out = await sendRollupIn(rollupId, content, now);
+  // Connected apps (owner decisions, 22 October 2026: connectors): the rollup also goes to the team's standup channel
+  // when the workspace turned that route on. Counts only (security fix, 22 October 2026): how many shared and how many
+  // are blocked; never anyone's words or name, and never who didn't share.
+  await postRollupToChannel(rollupId);
+  return out;
+}
+
+/** Queues the team's standup channel post for a sent rollup (never throws). */
+async function postRollupToChannel(rollupId: string): Promise<void> {
+  try {
+    const r = await withWorker((db) => db.maybeOne<{ team_id: string; local_date: string; status: string }>(`SELECT team_id, local_date::text AS local_date, status FROM standup_rollups WHERE id = $1`, [rollupId]));
+    if (r?.status !== "sent") return;
+    const { enqueueStandupPosts } = await import("@/server/connectors/posting/post");
+    await enqueueStandupPosts({ teamId: r.team_id, localDate: r.local_date, kind: "standup", rollupId });
+  } catch { /* posting to a channel never holds up the standup */ }
+}
+
+/** Queues a person's shared standup for the team's standup channel, when one is on and is the one they saw (never throws). */
+async function postEntryToChannel(entryId: string, seenLabel: string): Promise<void> {
+  try {
+    const e = await withWorker((db) => db.maybeOne<{ team_id: string; local_date: string }>(`SELECT team_id, local_date::text AS local_date FROM standup_entries WHERE id = $1 AND status = 'posted'`, [entryId]));
+    if (!e) return;
+    const now = await withWorker((db) => standupChannelLine(db, e.team_id));
+    if (!now || now.label !== seenLabel) return;
+    const { enqueueStandupPosts } = await import("@/server/connectors/posting/post");
+    await enqueueStandupPosts({ teamId: e.team_id, localDate: e.local_date, kind: "standup", entryId });
+  } catch { /* as above */ }
+}
+
+async function sendRollupIn(rollupId: string, content: StandupRollupContent, now: Date): Promise<{ notified: number; held: number }> {
   return inWorker({ notified: 0, held: 0 }, async (db) => {
     const r = await db.maybeOne<RollupRow>(`${ROLLUP_SQL} WHERE r.id = $1 FOR UPDATE OF r`, [rollupId]);
     if (!r || r.status !== "open") return { notified: 0, held: 0 };
@@ -874,7 +915,7 @@ async function releaseHeld(now: Date): Promise<number> {
         await db.query(`UPDATE standup_entries SET status = 'cancelled', reason = 'off', notified_at = $2::timestamptz WHERE id = $1 AND status = 'ready'`, [e.id, iso(now)]);
         continue;
       }
-      const quiet = await quietStateFor(db, e.membership_id, now);
+      const quiet = await holdStateFor(db, e.membership_id, now);
       if (quiet.active && quiet.until) { await db.query(`UPDATE standup_entries SET notify_at = $2::timestamptz WHERE id = $1`, [e.id, quiet.until]); continue; }
       await notifyDraft(db, { ...e, texts: { yesterday: e.yesterday_text ?? "", today: e.today_text ?? "", blocked: e.blocked_text ?? "" } });
       await db.query(`UPDATE standup_entries SET notified_at = $2::timestamptz WHERE id = $1`, [e.id, iso(now)]);
@@ -989,6 +1030,9 @@ async function entryViewsIn(db: Db, ctx: OrgContext, where: string, params: unkn
   }
   const leads = new Map<string, { membershipId: string; name: string }[]>();
   for (const t of teamIds) leads.set(t, await recipientsIn(db, t));
+  // The team's standup channel in a connected app, for a standup still to share (security fix, 22 October 2026).
+  const alsoTo = new Map<string, StandupEntryView["alsoTo"]>();
+  for (const t of new Set(rows.filter((r) => r.status === "ready").map((r) => r.team_id))) alsoTo.set(t, await standupChannelLine(db, t));
   const now = Date.now();
   return rows.map((r): StandupEntryView => {
     const day = days.get(r.rollup_id);
@@ -1011,8 +1055,18 @@ async function entryViewsIn(db: Db, ctx: OrgContext, where: string, params: unkn
       } : null,
       canUnskip: r.status === "skipped" && day?.status === "open" && Date.parse(day.cutoff_at) > now,
       seen: !!r.seen_at, href: standupEntryHref(ctx.org.slug, r.id), timeZone: ctx.org.timezone,
+      ...(r.status === "ready" ? { alsoTo: alsoTo.get(r.team_id) ?? null } : {}),
     };
   });
+}
+
+/** The enabled standup channel of a connected app for a team, as the person reads it; null when none (never throws). */
+async function standupChannelLine(db: Db, teamId: string): Promise<StandupEntryView["alsoTo"]> {
+  try {
+    const c = await (await import("@/server/connectors/posting/post")).standupChannelFor(db, teamId);
+    if (!c) return null;
+    return { label: c.label, app: c.provider === "teams" ? "Microsoft Teams" : c.provider === "slack" ? "Slack" : "Test app", members: c.members };
+  } catch { return null; }
 }
 
 /** One of the person's standups, or null (not theirs, or before 0050). */
@@ -1244,7 +1298,7 @@ export async function markRollupSeen(ctx: OrgContext, id: string): Promise<{ ok:
  * Errors: 403 while someone else is signed in as them; 404 not theirs; 409 STANDUP_CLOSED, STANDUP_NOT_IN_TEAM,
  * STANDUP_OFF (the workspace or the team), CONVERSATION_ARCHIVED; 503 before 0050.
  */
-export async function postStandup(ctx: OrgContext, entryId: string): Promise<{ entry: StandupEntryView; message: { id: string; conversationId: string; href: string }; already?: true }> {
+export async function postStandup(ctx: OrgContext, entryId: string, o: { alsoTo?: string | null } = {}): Promise<{ entry: StandupEntryView; message: { id: string; conversationId: string; href: string }; already?: true }> {
   onlyThePerson(ctx);
   if (!isUuid(entryId)) throw notYours();
   const done = await personTx(ctx, async (db) => {
@@ -1285,6 +1339,10 @@ export async function postStandup(ctx: OrgContext, entryId: string): Promise<{ e
     href: done.entry.posted?.href ?? (done.entry.postTo.conversationId ? `/app/${ctx.org.slug}/messages?c=${done.entry.postTo.conversationId}` : ""),
   };
   if (done.already) return { entry: done.entry, message, already: true };
+  // Connected apps (owner decisions, 22 October 2026: connectors): what they shared also goes to the team's standup
+  // channel when the workspace turned that on, and only when the person's press named that very channel (security fix,
+  // 22 October 2026: the card's tick or Brenda's readback; the owner's route alone is not each person's consent).
+  if (o.alsoTo) await postEntryToChannel(entryId, o.alsoTo);
   await recordAction(ctx, {
     tool: "standup_post", summary: W.chat.posted(done.entry.postTo.name), outcome: "done", source: "confirm",
     detail: { href: message.href, at: clockOf(done.entry.posted?.at, ctx.org.timezone) },

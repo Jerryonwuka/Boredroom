@@ -111,7 +111,7 @@ export async function brendaOverview(ctx: OrgContext) {
         `SELECT a.id, a.tool, a.summary, a.outcome, a.source, COALESCE((a.detail->>'auto') = 'true', false) AS auto, a.created_at, pr.display_name,
                 a.detail->>'personalSummary' AS personal_summary, a.membership_id = $2 AS mine
          FROM brenda_actions a JOIN memberships m ON m.id = a.membership_id JOIN profiles pr ON pr.id = m.user_id
-         WHERE a.organisation_id = $1 AND a.source <> 'read' ${isOrg ? "" : "AND a.membership_id = $2"} ORDER BY a.created_at DESC LIMIT 30`, [ctx.org.id, ctx.membership.id]),
+         WHERE a.organisation_id = $1 AND a.source NOT IN ('read', 'private') ${isOrg ? "" : "AND a.membership_id = $2"} ORDER BY a.created_at DESC LIMIT 30`, [ctx.org.id, ctx.membership.id]),
     ]);
     // Someone else's row: its own summary, never their fuller words; a row that did not go through says what she tried.
     // The viewer's own: their own words, as their Activity page shows them.
@@ -128,7 +128,9 @@ export async function brendaOverview(ctx: OrgContext) {
  * One line of her log. `source` 'read' (migration 0037) is a catch-up read: what she read for the person, written by
  * server/services/catch-up only once 0037 is applied (owner decision, 8 October 2026: personal assistants, phase 3).
  */
-export type ActionEntry = { tool: string; summary: string; outcome: "done" | "confirmed" | "refused" | "failed"; source?: "chat" | "confirm" | "automatic" | "read"; detail?: Record<string, unknown> };
+// `private` (connected apps, owner decisions 22 October 2026; migration 0061): what she did in the person's own connected
+// apps, the person's alone like 'read' (row security hides it from owners and HR).
+export type ActionEntry = { tool: string; summary: string; outcome: "done" | "confirmed" | "refused" | "failed"; source?: "chat" | "confirm" | "automatic" | "read" | "private"; detail?: Record<string, unknown> };
 
 export async function logAction(db: Db, ctx: OrgContext, e: ActionEntry) {
   await db.query(`INSERT INTO brenda_actions(organisation_id, membership_id, tool, summary, outcome, source, detail) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
@@ -278,8 +280,10 @@ export async function autoClockIn(ctx: OrgContext): Promise<{ clockedIn: boolean
  * One pass, run every few minutes by the worker. Personal reminders that are due go out at once. The daily nudges go
  * out once per person per working day, an hour into the day, and only when both the organisation and the person keep
  * reminders on. Every nudge is built from data, deduplicated by key, and delivered as a notification.
+ * `nudges: false` (worker night mode, owner request, 23 October 2026: realtime plan, phase 0): outside every working
+ * window the tick sends due reminders only; the day's nudges are left to the day.
  */
-export async function brendaTick(now = new Date()) {
+export async function brendaTick(now = new Date(), opts: { nudges?: boolean } = {}) {
   return withWorker(async (db) => {
     let sent = 0;
     // Reminders and nudges name the person's own assistant (owner decision, 7 October 2026: personal assistants); before
@@ -299,6 +303,7 @@ export async function brendaTick(now = new Date()) {
     }
 
     // Daily nudges, per organisation that keeps reminders on.
+    if (opts.nudges === false) return { sent };
     const orgs = await db.query<{ id: string; slug: string; timezone: string; working_days: number[]; start_local: string }>(
       `SELECT o.id, o.slug, o.timezone, s.working_days, s.start_local::text AS start_local
        FROM organisations o

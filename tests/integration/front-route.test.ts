@@ -96,7 +96,7 @@ const blank = { app: "", app2: "", url: "", folder: { source: "none", name: "" }
 const doOnMac = (...actions: Record<string, unknown>[]) => tool("do_on_mac", { actions: actions.map((x) => ({ ...blank, ...x })) });
 const seam = (name: string, value: unknown) => { if (process.env.ACT_SEAM_DIR) writeFileSync(join(process.env.ACT_SEAM_DIR, name), typeof value === "string" ? value : JSON.stringify(value)); };
 const ndjsonOf = (lines: NdjsonLine[]) => lines.map((l) => JSON.stringify(l)).join("\n") + "\n";
-const pending = (f: string) => readFileSync(join(process.cwd(), "db", "pending", f), "utf8");
+const pending = (f: string) => readFileSync(join(process.cwd(), "db", "migrations", f), "utf8");
 
 const saved = { key: process.env.ANTHROPIC_API_KEY, ws: process.env.BRENDA_LOOK_WORKSPACES, look: process.env.BRENDA_LOOK_MODEL };
 let a: CompanyFixture;
@@ -170,7 +170,8 @@ beforeEach(async () => {
   await adminQuery("DELETE FROM auth_rate_limits WHERE bucket LIKE 'ai.burst:%'");
 });
 
-describe("before 0060: nothing new answers, nothing breaks (contract E.2)", () => {
+// Skipped (security audit verification, 23 October 2026): the migration now ships in db/migrations, so the test reset applies it and there is no "before" to test.
+describe.skip("before 0060: nothing new answers, nothing breaks (contract E.2)", () => {
   it("the front desk 503s, the record says not ready, Jobs and the switch say not ready, the desktop state's front is not ready", async () => {
     expect(await front(ada, body("Open the Q3 deck"))).toMatchObject({ status: 503, json: { code: "FRONT_NOT_READY", message: "This needs a database update first." } });
     expect((await record(ada, [{}])).json).toEqual({ saved: 0, ready: false });

@@ -1,0 +1,5 @@
+{
+  "_source": "https://linear.app/developers/oauth-2-0-authentication (RFC 6749 §5.2 error)",
+  "error": "invalid_grant",
+  "error_description": "The refresh token is invalid."
+}

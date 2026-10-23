@@ -5,6 +5,7 @@ import { verifyLiveKitWebhook } from "@/server/lib/livekit";
 import { handleLiveKitWebhook } from "@/server/services/calls";
 import { schema0054Ready } from "@/server/lib/schema-0054";
 import { withSystem } from "@/server/db";
+import { wakeTag } from "@/server/lib/wake-tag";
 
 export const dynamic = "force-dynamic";
 
@@ -36,6 +37,9 @@ export const POST = route(async (req) => {
     throw new AppError(401, "BAD_SIGNATURE", "This webhook's signature is not valid.");
   }
   if (!e.room || !ROOM.test(e.room)) return ok({ ignored: true });
+  // Verified (the environment's key) before the database; the wake tag says what reached it (owner request, 23 October
+  // 2026: realtime plan, phase 0).
+  wakeTag("webhook:livekit");
   if (!(await withSystem((db) => schema0054Ready(db)))) return ok({ ignored: true });
   const event = { event: e.event, room: e.room, identity: e.identity };
   const run = () => handleLiveKitWebhook(event).catch((err) => console.warn(`[calls] webhook ${e.event}: ${(err as Error)?.message?.slice(0, 160) ?? "failed"}`));

@@ -69,7 +69,8 @@ export default async function AuditPage({ params, searchParams }: { params: Prom
                 <tr key={r.id}>
                   <td className="nowrap tabular-nums text-secondary">{formatDateTime(r.occurred_at, tz)}</td>
                   <td className="nowrap"><MonoChip className="text-foreground">{r.action}</MonoChip></td>
-                  <td>{r.actor_name ?? <span className="text-subtle">System</span>}</td>
+                  {/* Security audit, 23 October 2026 (issue 14): what Boredroom staff did while impersonating is marked as theirs. */}
+                  <td>{r.actor_name ?? <span className="text-subtle">System</span>}{r.metadata.impersonationId ? <span className="block text-meta text-secondary">Boredroom support, acting as them</span> : null}</td>
                   <td>{r.subject_name ?? <span className="text-secondary">{r.subject_type.replace(/_/g, " ")}</span>}</td>
                   <td className="wrap max-w-md text-meta text-secondary">{details ? <span className="line-clamp-2" title={JSON.stringify(r.metadata)}>{details}</span> : <span className="text-subtle">None</span>}</td>
                 </tr>

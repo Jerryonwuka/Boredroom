@@ -1,0 +1,10 @@
+{
+  "_source": "https://learn.microsoft.com/en-us/graph/api/event-get ($select=organizer; values invented)",
+  "id": "AAMkAD-design",
+  "organizer": {
+    "emailAddress": {
+      "name": "Grace Hopper",
+      "address": "grace@example.com"
+    }
+  }
+}

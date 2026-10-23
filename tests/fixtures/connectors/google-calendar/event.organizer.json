@@ -1,0 +1,8 @@
+{
+  "_source": "https://developers.google.com/workspace/calendar/api/v3/reference/events/get (fields=organizer; values invented)",
+  "organizer": {
+    "email": "grace@example.com",
+    "displayName": "Grace Hopper",
+    "self": false
+  }
+}

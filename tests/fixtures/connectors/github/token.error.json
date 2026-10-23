@@ -1,0 +1,6 @@
+{
+  "_source": "https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/refreshing-user-access-tokens (error answered with 200)",
+  "error": "bad_refresh_token",
+  "error_description": "The refresh token passed is incorrect or expired.",
+  "error_uri": "https://docs.github.com/apps/managing-oauth-apps/troubleshooting-oauth-app-access-token-request-errors/#bad-verification-code"
+}

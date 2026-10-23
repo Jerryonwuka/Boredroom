@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { completeGoogleSignIn, signInWithGoogle, safeNext, googleFailureCode, OAUTH_COOKIE, type GoogleFailure } from "@/server/auth/google";
 import { SESSION_COOKIE, sessionCookieOptions } from "@/server/auth";
+import { wakeTag } from "@/server/lib/wake-tag";
 
 export const dynamic = "force-dynamic";
 
@@ -25,6 +26,7 @@ export async function GET(req: Request) {
   try {
     const claims = await completeGoogleSignIn(code, pending.nonce);
     const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "local";
+    wakeTag("auth"); // owner request, 23 October 2026: realtime plan, phase 0
     // `next` lets someone joining by invitation or join code in while registration is closed (owner request, 11 October 2026: D9).
     const { token } = await signInWithGoogle(claims, { ip, userAgent: req.headers.get("user-agent") ?? undefined }, { next: pending.next });
     const res = NextResponse.redirect(`${process.env.APP_ORIGIN ?? url.origin}${safeNext(pending.next)}`, 302);

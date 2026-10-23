@@ -1,0 +1,9 @@
+{
+  "_source": "https://developers.google.com/identity/protocols/oauth2/web-server#exchange-authorization-code (response example; values invented)",
+  "access_token": "ya29.test-google-access-0001",
+  "expires_in": 3599,
+  "refresh_token": "1//test-google-refresh-0001",
+  "scope": "openid https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/calendar.events.owned.readonly https://www.googleapis.com/auth/calendar.events.owned",
+  "token_type": "Bearer",
+  "id_token": "eyJhbGciOiJSUzI1NiJ9.e30.test-signature"
+}

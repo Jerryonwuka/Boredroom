@@ -103,9 +103,10 @@ describe("who may ask", () => {
   it("does not let an employee make anyone followable by naming them as the checker of her own task", async () => {
     // Ada and Ifeoma share no work: Ada may not follow up on her.
     expect(await refusal(ada, id(ifeoma))).toBe("not_allowed");
-    // Ada holds "Homepage design" (David made it): as its assignee she may set any active member as its checker.
+    // Ada holds "Homepage design" (David made it). As its assignee she could once set any active member as its checker;
+    // since the security audit (23 October 2026, issue 17) only a manager changes the reviewer, so that is refused too.
     const v = (await adminQuery<{ version: number }>("SELECT version FROM tasks WHERE id = $1", [a.taskIds.homepage]))[0].version;
-    await updateTask(ada, a.taskIds.homepage, { expectedVersion: v, reviewerMembershipId: id(ifeoma) });
+    await expect(updateTask(ada, a.taskIds.homepage, { expectedVersion: v, reviewerMembershipId: id(ifeoma) })).rejects.toMatchObject({ status: 403 });
     expect(await refusal(ada, id(ifeoma)), "Ada self-granted follow-up rights over Ifeoma").toBe("not_allowed");
   });
 

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { CONNECTOR_TOOL_NAMES } from "@/server/connectors/brenda/tools";
 
 // The async standup and "How I like things done" in her chat (owner decisions, 8–9 October 2026: phase 7c, contract
 // F.1, D.2–D.4): the four tools, their place in the sets that decide what waits for Confirm and what a thread may do, the
@@ -119,13 +120,14 @@ describe("the registry and the sets", () => {
   const tool = (name: string) => TOOLS.find((x) => x.name === name);
 
   it("has the four tools last, with the contract's required fields, and every tool one thread class", () => {
-    const names = TOOLS.map((x) => x.name);
+    // Connected apps (owner decisions, 22 October 2026) come after these, last: positions are counted without them.
+    const names = TOOLS.slice(0, -CONNECTOR_TOOL_NAMES.length).map((x) => x.name);
     expect(names.slice(-4)).toEqual(NEW);
     expect(tool("standup")?.input_schema.required).toEqual([]);
     expect(tool("standup_action")?.input_schema.required).toEqual(["entryId", "action"]);
     expect(tool("remember_preference")?.input_schema.required).toEqual(["text"]);
     expect(tool("forget_preference")?.input_schema.required).toEqual([]);
-    expect(Object.keys(SHARED_TOOL_CLASS).sort()).toEqual([...names].sort());
+    expect(Object.keys(SHARED_TOOL_CLASS).sort()).toEqual(TOOLS.map((x) => x.name).sort());
     expect([SHARED_TOOL_CLASS.standup, SHARED_TOOL_CLASS.standup_action, SHARED_TOOL_CLASS.remember_preference, SHARED_TOOL_CLASS.forget_preference]).toEqual(["narrow", "refused", "refused", "refused"]);
   });
 

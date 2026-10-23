@@ -1,0 +1,5 @@
+{
+  "_source": "https://docs.slack.dev/reference/methods/chat.postMessage#errors",
+  "ok": false,
+  "error": "is_archived"
+}

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { CONNECTOR_TOOL_NAMES } from "@/server/connectors/brenda/tools";
 
 // Loose ends, commitments and blocked on whom in her chat (owner decisions, 8 October 2026: phase 7b, contract G.2): the
 // seven tools, their place in the sets that decide what waits for Confirm and what a thread may do, the rule in the cached
@@ -130,7 +131,8 @@ describe("the registry", () => {
   const tool = (name: string) => TOOLS.find((x) => x.name === name);
 
   it("has the seven tools with the contract's required fields, before the phase 6 and routine tools", () => {
-    const names = TOOLS.map((x) => x.name);
+    // Connected apps (owner decisions, 22 October 2026) come after these, last: positions are counted without them.
+    const names = TOOLS.slice(0, -CONNECTOR_TOOL_NAMES.length).map((x) => x.name);
     for (const n of NEW) expect(names, n).toContain(n);
     expect(new Set(names).size).toBe(names.length);
     // Phase 7c (owner decisions, 8–9 October 2026): the standup and preference tools come last.

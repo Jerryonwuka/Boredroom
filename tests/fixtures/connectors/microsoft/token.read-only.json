@@ -1,0 +1,8 @@
+{
+  "_source": "https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-auth-code-flow#successful-response-1 (values invented)",
+  "token_type": "Bearer",
+  "scope": "Calendars.ReadBasic User.Read openid profile email",
+  "expires_in": 3600,
+  "access_token": "test-ms-access-0003",
+  "refresh_token": "0.AAAA-test-ms-refresh-0003"
+}

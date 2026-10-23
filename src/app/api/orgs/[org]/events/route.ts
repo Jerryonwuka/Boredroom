@@ -25,13 +25,25 @@ export async function GET(req: Request, context: { params: Promise<{ org: string
   };
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
+      const close = () => { try { controller.close(); } catch { /* already closed */ } };
       const send = (s: string) => { try { controller.enqueue(encoder.encode(s)); } catch { void cleanup(); } };
-      try { unsubscribe = await subscribe(channel, (payload) => send(`data: ${payload}\n\n`)); }
-      catch (err) { send(`event: error\ndata: ${JSON.stringify({ message: (err as Error).message })}\n\n`); controller.close(); return; }
+      // Next does not always call cancel() when the browser goes away; the request signal is the reliable hook. It is
+      // listened to before the subscribe, and checked again after it (fix review, 23 October 2026: realtime plan,
+      // phase 0): a browser that left while the LISTEN connection was still opening, which takes seconds after a Neon
+      // suspend, used to leave its subscriber behind, so the connection never closed and kept reconnecting, waking Neon.
+      req.signal.addEventListener("abort", () => { void cleanup(); close(); }, { once: true });
+      if (req.signal.aborted) { await cleanup(); close(); return; }
+      let un: () => Promise<void>;
+      try { un = await subscribe(channel, (payload) => send(`data: ${payload}\n\n`)); }
+      catch (err) {
+        if (!done) send(`event: error\ndata: ${JSON.stringify({ message: (err as Error).message })}\n\n`);
+        close();
+        return;
+      }
+      if (done || req.signal.aborted) { done = true; await un(); close(); return; }
+      unsubscribe = un;
       send(`: connected\n\n`);
       keepalive = setInterval(() => send(`: keepalive\n\n`), 25000);
-      // Next does not always call cancel() when the browser goes away; the request signal is the reliable hook.
-      req.signal.addEventListener("abort", () => { void cleanup(); try { controller.close(); } catch { /* already closed */ } });
     },
     async cancel() { await cleanup(); },
   });

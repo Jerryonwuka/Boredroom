@@ -1,0 +1,10 @@
+{
+  "_source": "https://developers.asana.com/reference/gettask (workspace field)",
+  "data": {
+    "gid": "1203000000000001",
+    "workspace": {
+      "gid": "1200000000000001",
+      "name": "Acme"
+    }
+  }
+}

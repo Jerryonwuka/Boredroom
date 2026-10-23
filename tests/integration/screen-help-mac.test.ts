@@ -63,7 +63,7 @@ const report = (c: OrgContext, i: number, s: MacState, setupSeen: string | null 
 beforeAll(async () => {
   for (const k of ["error", "warn", "log", "info"] as const) vi.spyOn(console, k).mockImplementation((...args: unknown[]) => { logs.push(args.map((x) => (typeof x === "string" ? x : JSON.stringify(x))).join(" ")); });
   await resetTestDatabase();
-  await adminQuery(readFileSync(join(process.cwd(), "db", "pending", "0059_mac_help.sql"), "utf8"));
+  await adminQuery(readFileSync(join(process.cwd(), "db", "migrations", "0059_mac_help.sql"), "utf8"));
   forget0057(); forget0058(); forget0059();
   process.env.ANTHROPIC_API_KEY = "test-env-key-not-real";
   process.env.BRENDA_LOOK_WORKSPACES = "company-a";

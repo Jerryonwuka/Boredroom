@@ -1,0 +1,49 @@
+{
+  "_source": "https://learn.microsoft.com/en-us/graph/api/user-list-calendarview (response with Prefer: outlook.timezone=\"UTC\"; values invented)",
+  "value": [
+    {
+      "id": "AAMkAD-holiday",
+      "subject": "Bank holiday",
+      "start": {
+        "dateTime": "2026-10-25T23:00:00.0000000",
+        "timeZone": "UTC"
+      },
+      "end": {
+        "dateTime": "2026-10-26T23:00:00.0000000",
+        "timeZone": "UTC"
+      },
+      "isAllDay": true,
+      "showAs": "free",
+      "responseStatus": {
+        "response": "organizer"
+      },
+      "isOrganizer": true,
+      "isCancelled": false,
+      "isOnlineMeeting": false,
+      "lastModifiedDateTime": "2026-10-01T08:00:00Z",
+      "attendees": []
+    },
+    {
+      "id": "AAMkAD-wfh",
+      "subject": "Working from home",
+      "start": {
+        "dateTime": "2026-10-27T08:00:00.0000000",
+        "timeZone": "UTC"
+      },
+      "end": {
+        "dateTime": "2026-10-27T17:00:00.0000000",
+        "timeZone": "UTC"
+      },
+      "isAllDay": false,
+      "showAs": "workingElsewhere",
+      "responseStatus": {
+        "response": "none"
+      },
+      "isOrganizer": false,
+      "isCancelled": false,
+      "isOnlineMeeting": false,
+      "lastModifiedDateTime": "2026-10-01T08:00:00Z",
+      "attendees": []
+    }
+  ]
+}

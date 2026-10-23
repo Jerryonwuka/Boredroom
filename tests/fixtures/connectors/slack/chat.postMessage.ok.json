@@ -1,0 +1,13 @@
+{
+  "_source": "https://docs.slack.dev/reference/methods/chat.postMessage (values invented)",
+  "ok": true,
+  "channel": "C012AB3CD",
+  "ts": "1761123600.000200",
+  "message": {
+    "type": "message",
+    "subtype": "bot_message",
+    "text": "Hello",
+    "ts": "1761123600.000200",
+    "bot_id": "B19LU7CSY"
+  }
+}

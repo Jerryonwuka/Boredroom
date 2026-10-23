@@ -1,0 +1,11 @@
+{
+  "_source": "https://linear.app/developers/graphql (commentCreate mutation payload)",
+  "data": {
+    "commentCreate": {
+      "success": true,
+      "comment": {
+        "id": "e1f2a3b4-0000-4000-8000-0000000000c1"
+      }
+    }
+  }
+}

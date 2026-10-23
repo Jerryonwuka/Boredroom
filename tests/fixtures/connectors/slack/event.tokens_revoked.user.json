@@ -1,0 +1,18 @@
+{
+  "_source": "https://docs.slack.dev/reference/events/tokens_revoked (user tokens only)",
+  "token": "XXYYZZ",
+  "team_id": "T9TK3CUKW",
+  "api_app_id": "A0KRD7HC3",
+  "event": {
+    "type": "tokens_revoked",
+    "tokens": {
+      "oauth": [
+        "UXXXXXXXX"
+      ],
+      "bot": []
+    }
+  },
+  "type": "event_callback",
+  "event_id": "Ev0PV52K23",
+  "event_time": 1761123600
+}

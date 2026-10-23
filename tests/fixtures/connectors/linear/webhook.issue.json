@@ -1,0 +1,15 @@
+{
+  "_source": "https://linear.app/developers/webhooks (Issue update payload)",
+  "action": "update",
+  "type": "Issue",
+  "createdAt": "2026-10-22T09:00:00.000Z",
+  "organizationId": "a1b2c3d4-0000-4000-8000-00000000ac01",
+  "webhookTimestamp": 0,
+  "webhookId": "f0e1d2c3-0000-4000-8000-0000000000d1",
+  "url": "https://linear.app/acme/issue/ENG-12",
+  "data": {
+    "id": "0b9e0012-1111-4222-8333-444455556666",
+    "identifier": "ENG-12",
+    "title": "Fix the login loop"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "_source": "https://learn.microsoft.com/en-us/graph/api/channel-post-messages (201 response; values invented)",
+  "id": "1616990032035",
+  "messageType": "message",
+  "createdDateTime": "2026-10-22T09:00:00.000Z",
+  "webUrl": "https://teams.microsoft.com/l/message/19%3A561fbdbbfca848a484f0a6f00ce9dbbd%40thread.tacv2/1616990032035",
+  "body": {
+    "contentType": "html",
+    "content": "<p>Hello</p>"
+  }
+}

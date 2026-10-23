@@ -1,0 +1,5 @@
+{
+  "_source": "https://learn.microsoft.com/en-us/graph/api/user-list-calendarview (response with Prefer: outlook.timezone=\"UTC\"; values invented) (a nextLink off Graph's host, to test the guard)",
+  "value": [],
+  "@odata.nextLink": "https://evil.example.com/v1.0/me/calendarView?$skip=100"
+}

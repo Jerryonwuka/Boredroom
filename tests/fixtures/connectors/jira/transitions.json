@@ -1,0 +1,45 @@
+{
+  "_source": "https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-issues/ (get transitions)",
+  "transitions": [
+    {
+      "id": "11",
+      "name": "To Do",
+      "to": {
+        "name": "To Do",
+        "statusCategory": {
+          "key": "new"
+        }
+      }
+    },
+    {
+      "id": "21",
+      "name": "Start",
+      "to": {
+        "name": "In Progress",
+        "statusCategory": {
+          "key": "indeterminate"
+        }
+      }
+    },
+    {
+      "id": "41",
+      "name": "Won't do",
+      "to": {
+        "name": "Won't Do",
+        "statusCategory": {
+          "key": "done"
+        }
+      }
+    },
+    {
+      "id": "31",
+      "name": "Done",
+      "to": {
+        "name": "Done",
+        "statusCategory": {
+          "key": "done"
+        }
+      }
+    }
+  ]
+}

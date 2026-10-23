@@ -134,6 +134,12 @@ When people on a call agree to Brenda's notes, each consenting person's own devi
 - Pending backlog: `SELECT type, count(*) FROM jobs WHERE state = 'pending' GROUP BY type;`
 - Dead jobs: `SELECT id, type, last_error FROM jobs WHERE state = 'dead';` Fix the cause, then `UPDATE jobs SET state = 'pending', attempts = 0 WHERE id = '…';`
 - A job locked for more than 15 minutes is automatically returned to `pending` by the worker.
+- Outside every organisation's working window the worker sleeps between passes (night mode, docs/realtime.md): its log
+  says `[worker] night pass (<why it woke>): ran N job(s); next at <time> (<why>)`, at most about once an hour with
+  nothing due. A job that seems late at night: check `next_run_at`, then the log's next wake.
+- One worker only: `SELECT locked_by, max(locked_at) FROM jobs GROUP BY 1` should show the Fly host alone. A laptop's
+  worker refuses a hosted database outside production (`src/server/lib/db-guard.ts`).
+- What woke the database: Vercel's logs carry `[wake] <tag>` lines from public and webhook routes (docs/realtime.md).
 
 ## Stale sessions
 
@@ -236,7 +242,7 @@ A person may own one workspace on Free, five on Pro and any number on Enterprise
 ## Payments end to end
 
 1. **Keys.** Control Center, Settings, Paystack: paste the test public and secret keys, press Test test key, save. Paste the live pair when the account is approved, test it, then move the switch to Live. Secrets are stored encrypted in `platform_settings.payments` and shown by their last four characters. `PAYSTACK_SECRET_KEY` in the environment is only a fallback for servers with nothing stored.
-2. **Paystack dashboard.** Settings, API Keys and Webhooks: add the webhook URL shown on that page for both test and live. The callback URL is set per checkout by the app.
-3. **Buying.** The home page pricing section lists every active plan (Plans in the Control Center). A visitor picks a plan and signs up; a signed-in person lands on Settings, Plan and billing, with the plan marked. Pay with Paystack opens Paystack's page; the callback verifies the reference and records the payment; the webhook records it again idempotently. A success activates the subscription for the interval paid and notifies the owners in the bell and by email.
+2. **Paystack dashboard.** Settings, API Keys and Webhooks: add the webhook URL shown on that page for the mode the server is in (live for production; point the test webhook at a test or staging server). Only the current mode's secret key verifies a webhook, and an event whose `domain` is the other mode is stored but not applied (security audit, 23 October 2026). The callback URL is set per checkout by the app.
+3. **Buying.** The home page pricing section lists every active plan (Plans in the Control Center). A visitor picks a plan and signs up; a signed-in person lands on Settings, Plan and billing, with the plan marked. Pay with Paystack opens Paystack's page; the callback verifies the reference and records the payment; the webhook records it again idempotently. A success activates the subscription for the interval paid and notifies the owners in the bell and by email. Only references the app created count, with the workspace, plan and interval from its own row, never Paystack metadata; if the amount, currency or domain does not match, or a paid reference is not ours, nothing changes and a `PAYMENT_NEEDS_REVIEW` platform event is raised for an admin. Success and refunded are final, so the period is extended once per payment and a refund cannot be undone by replaying the callback.
 4. **What the plan unlocks.** `resolveEntitlements` (server/lib/entitlements.ts) merges the plan's features, the organisation's overrides and the global flags into `ctx.plan`. Exports, the assistant, voice notes and the audit page check it on the server (402 PLAN_REQUIRED) and in the UI (hidden from the nav, an upgrade notice on the page). Seats follow `max_users` (402 SEATS_FULL on invite and join). A lapsed paid plan falls back to Free's entitlements after the grace period; nothing is deleted.
 5. **Reminders.** The daily worker job notifies owners and HR in-app 14, 7, 3 and 1 days before the period ends and the day after it ends; the automations engine sends the matching emails. Owners also see a banner in the app in the last week, after a failed payment, and while lapsed.

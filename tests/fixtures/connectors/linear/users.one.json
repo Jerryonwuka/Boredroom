@@ -1,0 +1,16 @@
+{
+  "_source": "https://linear.app/developers/graphql (users filtered by email or name)",
+  "data": {
+    "users": {
+      "nodes": [
+        {
+          "id": "d4e5f6a7-0000-4000-8000-0000000000b2",
+          "name": "Ben Ade",
+          "displayName": "ben",
+          "email": "ben@example.com",
+          "active": true
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "_source": "https://developer.atlassian.com/cloud/jira/platform/oauth-2-3lo-apps/ (exchange authorization code for access token)",
+  "access_token": "atl-access-fixture-0001",
+  "expires_in": 3600,
+  "token_type": "Bearer",
+  "refresh_token": "atl-refresh-fixture-0001",
+  "scope": "read:jira-work read:jira-user manage:jira-webhook offline_access write:jira-work"
+}

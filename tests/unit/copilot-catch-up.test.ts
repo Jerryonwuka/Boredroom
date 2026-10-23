@@ -117,12 +117,13 @@ describe("rows that did not go through (review, 8 October 2026)", () => {
 describe("the tainted turn", () => {
   const tainted = { tainted: true, mode: "chat" as const };
   it("refuses what would run at once after messages were read", () => {
-    for (const name of ["create_todos", "update_task", "update_doc", "create_doc", "add_comment", "clock", "timer", "set_status", "plan_day", "remind_me", "cancel_reminder", "complete_task", "team_report"]) {
+    // Security audit, 23 October 2026 (issue 5): add_comment always waits for Confirm now, so it is no longer refused here.
+    for (const name of ["create_todos", "update_task", "update_doc", "create_doc", "clock", "timer", "set_status", "plan_day", "remind_me", "cancel_reminder", "complete_task", "team_report"]) {
       expect(taintRefusal(name, tainted), name).toEqual({ error: TAINT_ERROR });
     }
   });
   it("lets reading, links and actions that wait for Confirm through", () => {
-    for (const name of ["send_message", "assign_task", "submit_for_review", "create_team", "invite_person", "mark_read", "read_conversation", "search_messages", "list_conversations", "open_page", "get_briefing", "list_people"]) {
+    for (const name of ["send_message", "assign_task", "submit_for_review", "create_team", "invite_person", "mark_read", "add_comment", "read_conversation", "search_messages", "list_conversations", "open_page", "get_briefing", "list_people"]) {
       expect(taintRefusal(name, tainted), name).toBeNull();
       expect(IMMEDIATE_TOOLS.has(name), name).toBe(false);
     }

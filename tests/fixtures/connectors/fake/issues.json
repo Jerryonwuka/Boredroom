@@ -1,0 +1,6 @@
+{
+  "_source": "Boredroom's pretend provider (src/server/connectors/adapters/fake.ts): GET /issues",
+  "issues": [
+    { "id": "i-1", "key": "TEST-1", "title": "Fix the login loop", "state": "in_progress", "stateLabel": "In progress", "assignee": "fake-user", "due": null, "updated": "2026-10-20T09:00:00.000Z", "comments": [], "project": "TEST", "url": "https://fake.connectors.invalid/issues/TEST-1" }
+  ]
+}

@@ -1,0 +1,100 @@
+{
+  "_source": "https://docs.github.com/en/rest/issues/issues#list-issues-assigned-to-the-authenticated-user (an array; under \"list\" because fixtures are objects)",
+  "list": [
+    {
+      "id": 1012,
+      "node_id": "I_kw12",
+      "number": 12,
+      "title": "Fix the login loop",
+      "state": "open",
+      "state_reason": null,
+      "html_url": "https://github.com/acme/Web/issues/12",
+      "repository_url": "https://api.github.com/repos/acme/Web",
+      "user": {
+        "id": 583231,
+        "login": "octocat"
+      },
+      "assignee": {
+        "id": 9001,
+        "login": "ada-obi"
+      },
+      "assignees": [
+        {
+          "id": 9001,
+          "login": "ada-obi"
+        }
+      ],
+      "updated_at": "2026-10-22T08:10:00Z",
+      "body": "It loops after sign-in.",
+      "draft": false,
+      "repository": {
+        "full_name": "acme/Web"
+      }
+    },
+    {
+      "id": 1088,
+      "node_id": "I_kw88",
+      "number": 88,
+      "title": "Speed up search",
+      "state": "open",
+      "state_reason": null,
+      "html_url": "https://github.com/acme/Web/pull/88",
+      "repository_url": "https://api.github.com/repos/acme/Web",
+      "user": {
+        "id": 583231,
+        "login": "octocat"
+      },
+      "assignee": {
+        "id": 9001,
+        "login": "ada-obi"
+      },
+      "assignees": [
+        {
+          "id": 9001,
+          "login": "ada-obi"
+        }
+      ],
+      "updated_at": "2026-10-21T08:10:00Z",
+      "body": "It loops after sign-in.",
+      "draft": false,
+      "repository": {
+        "full_name": "acme/Web"
+      },
+      "pull_request": {
+        "url": "https://api.github.com/repos/acme/Web/pulls/88",
+        "html_url": "https://github.com/acme/Web/pull/88",
+        "merged_at": null
+      }
+    },
+    {
+      "id": 1005,
+      "node_id": "I_kw5",
+      "number": 5,
+      "title": "Old bug",
+      "state": "closed",
+      "state_reason": "not_planned",
+      "html_url": "https://github.com/acme/api/issues/5",
+      "repository_url": "https://api.github.com/repos/acme/api",
+      "user": {
+        "id": 583231,
+        "login": "octocat"
+      },
+      "assignee": {
+        "id": 9001,
+        "login": "ada-obi"
+      },
+      "assignees": [
+        {
+          "id": 9001,
+          "login": "ada-obi"
+        }
+      ],
+      "updated_at": "2026-10-20T08:10:00Z",
+      "body": "It loops after sign-in.",
+      "draft": false,
+      "repository": {
+        "full_name": "acme/api"
+      }
+    }
+  ]
+}

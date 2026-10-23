@@ -1,0 +1,162 @@
+{
+  "_source": "https://developers.google.com/workspace/calendar/api/v3/reference/events/list (Events resource: https://developers.google.com/workspace/calendar/api/v3/reference/events)",
+  "items": [
+    {
+      "id": "evt-design-review",
+      "status": "confirmed",
+      "summary": "Design review",
+      "start": {
+        "dateTime": "2026-10-23T10:00:00+01:00"
+      },
+      "end": {
+        "dateTime": "2026-10-23T10:30:00+01:00"
+      },
+      "attendees": [
+        {
+          "self": true,
+          "responseStatus": "accepted"
+        },
+        {
+          "responseStatus": "accepted"
+        },
+        {
+          "responseStatus": "needsAction"
+        },
+        {
+          "resource": true,
+          "responseStatus": "accepted"
+        }
+      ],
+      "organizer": {
+        "self": false
+      },
+      "hangoutLink": "https://meet.google.com/abc-defg-hij",
+      "htmlLink": "https://www.google.com/calendar/event?eid=ZXZ0LWRlc2lnbi1yZXZpZXc",
+      "updated": "2026-10-20T08:00:00.000Z",
+      "eventType": "default"
+    },
+    {
+      "id": "evt-planning",
+      "status": "confirmed",
+      "summary": "Planning",
+      "start": {
+        "dateTime": "2026-10-23T14:00:00+01:00"
+      },
+      "end": {
+        "dateTime": "2026-10-23T15:00:00+01:00"
+      },
+      "attendees": [
+        {
+          "self": true,
+          "organizer": true,
+          "responseStatus": "accepted"
+        },
+        {
+          "responseStatus": "tentative"
+        },
+        {
+          "responseStatus": "accepted"
+        }
+      ],
+      "organizer": {
+        "self": true
+      },
+      "conferenceData": {
+        "entryPoints": [
+          {
+            "entryPointType": "video"
+          },
+          {
+            "entryPointType": "phone"
+          }
+        ]
+      },
+      "htmlLink": "https://www.google.com/calendar/event?eid=ZXZ0LXBsYW5uaW5n",
+      "updated": "2026-10-21T08:00:00.000Z",
+      "eventType": "default"
+    },
+    {
+      "id": "evt-declined",
+      "status": "confirmed",
+      "summary": "Vendor call",
+      "start": {
+        "dateTime": "2026-10-23T16:00:00+01:00"
+      },
+      "end": {
+        "dateTime": "2026-10-23T16:30:00+01:00"
+      },
+      "attendees": [
+        {
+          "self": true,
+          "responseStatus": "declined"
+        },
+        {
+          "responseStatus": "accepted"
+        }
+      ],
+      "organizer": {
+        "self": false
+      },
+      "htmlLink": "https://www.google.com/calendar/event?eid=ZXZ0LWRlY2xpbmVk",
+      "updated": "2026-10-21T09:00:00.000Z",
+      "eventType": "default"
+    },
+    {
+      "id": "evt-offsite",
+      "status": "confirmed",
+      "summary": "Team offsite",
+      "start": {
+        "date": "2026-10-24"
+      },
+      "end": {
+        "date": "2026-10-25"
+      },
+      "transparency": "transparent",
+      "organizer": {
+        "self": true
+      },
+      "htmlLink": "https://www.google.com/calendar/event?eid=ZXZ0LW9mZnNpdGU",
+      "updated": "2026-10-19T08:00:00.000Z",
+      "eventType": "default"
+    },
+    {
+      "id": "evt-office",
+      "status": "confirmed",
+      "summary": "Office",
+      "start": {
+        "date": "2026-10-23"
+      },
+      "end": {
+        "date": "2026-10-24"
+      },
+      "transparency": "transparent",
+      "organizer": {
+        "self": true
+      },
+      "updated": "2026-10-19T08:00:00.000Z",
+      "eventType": "workingLocation"
+    },
+    {
+      "id": "evt-birthday",
+      "status": "confirmed",
+      "summary": "Grace's birthday",
+      "start": {
+        "date": "2026-10-25"
+      },
+      "end": {
+        "date": "2026-10-26"
+      },
+      "transparency": "transparent",
+      "organizer": {
+        "self": true
+      },
+      "updated": "2026-10-19T08:00:00.000Z",
+      "eventType": "birthday"
+    },
+    {
+      "id": "evt-cancelled",
+      "status": "cancelled"
+    }
+  ],
+  "nextPageToken": "page-2-token"
+}

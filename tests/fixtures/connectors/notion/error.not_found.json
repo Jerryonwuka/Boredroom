@@ -1,0 +1,8 @@
+{
+  "_source": "https://developers.notion.com/reference/status-codes and https://developers.notion.com/reference/request-limits (error object shape)",
+  "object": "error",
+  "status": 404,
+  "code": "object_not_found",
+  "message": "Could not find page with ID: 55555555-5555-4555-8555-555555555555. Make sure the relevant pages and databases are shared with your integration.",
+  "request_id": "c0ffee00-0000-4000-8000-000000000004"
+}

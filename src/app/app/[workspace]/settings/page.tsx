@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { Check, Clock, CreditCard, FileText, Laptop, SlidersHorizontal } from "lucide-react";
+import { Check, Clock, CreditCard, FileText, Laptop, Plug, SlidersHorizontal } from "lucide-react";
 import { workspacePage } from "@/server/lib/workspace-page";
 import { AppShell } from "@/components/app/shell";
 import { PageHeader } from "@/components/ui/card";
@@ -69,16 +69,31 @@ import { lookEligible, myScreenHelp, screenHelpView } from "@/server/services/sc
 import { macPermission } from "@/server/services/front";
 import { SCREEN_HELP_WORDS, type ScreenHelpMine, type ScreenHelpView } from "@/lib/screen-help";
 import { cn } from "@/lib/utils";
+// Connected apps (owner decisions, 22 October 2026: connectors): Settings → Connectors and Your connections.
+import { ConnectorsSettings } from "@/components/app/connectors/connectors-settings";
+import { YourConnections } from "@/components/app/connectors/your-connections";
+import { UpgradeGate } from "@/components/app/upgrade-gate";
+import { connectorsReady, connectorsView, notReadyView } from "@/server/connectors/connections";
+import { CONNECTOR_WORDS } from "@/lib/connectors/words";
+import type { ConnectorsView } from "@/lib/connectors/types";
+
+/** The connectors view for the page; before 0061 (or a failed read) the not-ready view, so the cards say why. */
+async function connectorsFor(ctx: Parameters<typeof connectorsView>[0]): Promise<ConnectorsView> {
+  try { return (await connectorsReady()) ? await connectorsView(ctx) : notReadyView(ctx); }
+  catch (err) { console.warn(`[settings] connected apps unavailable: ${(err as Error)?.message ?? err}`); return notReadyView(ctx); }
+}
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Settings" };
 
-type SectionKey = "general" | "hours" | "notice" | "brenda" | "assistant" | "billing" | "desktop";
+type SectionKey = "general" | "hours" | "notice" | "brenda" | "connectors" | "assistant" | "billing" | "desktop";
 const SECTIONS: { key: SectionKey; label: string; icon: ReactNode }[] = [
   { key: "general", label: "General", icon: <SlidersHorizontal aria-hidden /> },
   { key: "hours", label: "Working hours", icon: <Clock aria-hidden /> },
   { key: "notice", label: "Monitoring notice", icon: <FileText aria-hidden /> },
   { key: "brenda", label: "Brenda", icon: <BrendaGlyph aria-hidden /> },
+  // Connected apps (owner decisions, 22 October 2026: connectors), after Brenda, for owners and HR.
+  { key: "connectors", label: "Connectors", icon: <Plug aria-hidden /> },
   { key: "assistant", label: "Your assistant", icon: <BrendaGlyph aria-hidden /> },
   { key: "billing", label: "Billing", icon: <CreditCard aria-hidden /> },
   { key: "desktop", label: "Desktop", icon: <Laptop aria-hidden /> },
@@ -219,6 +234,8 @@ export default async function SettingsPage({ params, searchParams }: { params: P
       screenHelpView(ctx).catch((): ScreenHelpView | null => null), myScreenHelp(ctx).catch((): ScreenHelpMine | null => null),
       // Brenda and her helpers (owner brief, 12 October 2026; contract N.2): the person's "Check with me before every task".
       macPermission(ctx).catch(() => null)]);
+    // Connected apps (owner decisions, 22 October 2026): the person's own connections, private to them.
+    const apps = ctx.plan.features.CONNECTORS ? await connectorsFor(ctx) : null;
     assistants = a;
     const { name } = a.personal;
     const now = new Date(); // the server's clock, so "Today" in the activity rows reads the same on both sides
@@ -235,6 +252,8 @@ export default async function SettingsPage({ params, searchParams }: { params: P
         {/* What the assistant may do for the person, then how they like it done (owner decisions, 8–9 October 2026: phase 7c). */}
         <AbilitiesSettings orgSlug={ctx.org.slug} scope="personal" name={name} initial={abilities} />
         <PreferencesSettings orgSlug={ctx.org.slug} name={name} initial={preferences} />
+        {/* Their own calendar and work apps (owner decisions, 22 October 2026: connectors), after "How I like things done". */}
+        {apps?.ready ? <YourConnections orgSlug={ctx.org.slug} view={apps} name={name} timeZone={ctx.org.timezone} /> : null}
         {/* What the assistant does on a schedule, then when it keeps quiet (owner decision, 8 October 2026: phase 7a). */}
         <RoutinesSettings orgSlug={ctx.org.slug} name={name} impersonated={!!ctx.user.impersonation} timeZone={quiet?.timezone ?? ctx.org.timezone} initial={routines} />
         <QuietHoursSettings orgSlug={ctx.org.slug} name={name} impersonated={!!ctx.user.impersonation} orgTimeZone={ctx.org.timezone} initial={quiet} />
@@ -256,6 +275,7 @@ export default async function SettingsPage({ params, searchParams }: { params: P
         <PageNote section="Permissions">{ACT_WORDS.settings.pageNote(name)}</PageNote>
         <PageNote section="Abilities">{ABILITY_WORDS.notes.personalPage(name)}</PageNote>
         <PageNote section={PREFERENCE_WORDS.section}>{PREFERENCE_WORDS.pageNote(name)}</PageNote>
+        {apps?.ready && apps.enabled ? CONNECTOR_WORDS.personal.notes.map((n) => <PageNote key={n.body} section={n.title}>{n.body}</PageNote>) : null}
         <PageNote section="Routines">A routine runs as you, with your permissions and limits, and does only what its preview showed when you enabled it. Follow-ups it asks are answered by each person&apos;s own assistant, under their own rules.</PageNote>
         <PageNote section="Quiet hours">During quiet hours nothing pops up or plays a sound on its own. Emails, such as the end-of-day report, are not held.</PageNote>
         <PageNote section="Follow-ups">Follow-ups between assistants never change anyone&apos;s task. Owners and HR see in Audit that a follow-up happened, not what was said.</PageNote>
@@ -445,6 +465,15 @@ export default async function SettingsPage({ params, searchParams }: { params: P
         <PageNote section={NATURAL_WORDS.connection.title}>{NATURAL_WORDS.connection.privacyNote}</PageNote>
       </>
     );
+  } else if (section === "connectors") {
+    // Connected apps (owner decisions, 22 October 2026: connectors; spec §11.1): the plan gate, the database update, then
+    // the catalogue by category.
+    const [apps, a] = await Promise.all([connectorsFor(ctx), assistantProfiles(ctx)]);
+    assistants = a;
+    body = !ctx.plan.features.CONNECTORS
+      ? <UpgradeGate feature="CONNECTORS" orgSlug={ctx.org.slug} planName={ctx.plan.plan?.name ?? null} upgradeTo={ctx.plan.upgradeTo} isOwner={isOwner} lapsed={ctx.plan.lapsed} />
+      : <ConnectorsSettings orgSlug={ctx.org.slug} view={apps} timeZone={ctx.org.timezone} assistantName={a.workspace.name} isOwner={isOwner} />;
+    notes = apps.ready ? <>{CONNECTOR_WORDS.workspace.notes.map((n) => <PageNote key={n.body} section={n.title}>{n.body}</PageNote>)}</> : null;
   } else if (section === "billing") {
     const [billing, a] = await Promise.all([orgBilling(ctx), assistantProfiles(ctx)]);
     assistants = a;

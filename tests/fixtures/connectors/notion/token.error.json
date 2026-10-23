@@ -1,0 +1,5 @@
+{
+  "_source": "https://developers.notion.com/docs/authorization (token errors use RFC 6749 §5.2 codes)",
+  "error": "invalid_grant",
+  "error_description": "Invalid code."
+}

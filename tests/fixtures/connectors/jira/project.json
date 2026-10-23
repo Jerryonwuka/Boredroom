@@ -1,0 +1,23 @@
+{
+  "_source": "https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-projects/ (get project, issueTypes)",
+  "id": "10001",
+  "key": "WEB",
+  "name": "Website",
+  "issueTypes": [
+    {
+      "id": "10010",
+      "name": "Sub-task",
+      "subtask": true
+    },
+    {
+      "id": "10011",
+      "name": "Bug",
+      "subtask": false
+    },
+    {
+      "id": "10012",
+      "name": "Task",
+      "subtask": false
+    }
+  ]
+}

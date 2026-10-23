@@ -48,3 +48,4 @@ next-env.d.ts
 
 # On-device dictation runtime, copied from onnxruntime-web by scripts/copy-speech-runtime.mjs
 /public/speech/
+.neon

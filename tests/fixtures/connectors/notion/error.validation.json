@@ -1,0 +1,8 @@
+{
+  "_source": "https://developers.notion.com/reference/status-codes and https://developers.notion.com/reference/request-limits (error object shape)",
+  "object": "error",
+  "status": 400,
+  "code": "validation_error",
+  "message": "body failed validation: body.children.length should be ≤ `100`, instead was `101`.",
+  "request_id": "c0ffee00-0000-4000-8000-000000000005"
+}

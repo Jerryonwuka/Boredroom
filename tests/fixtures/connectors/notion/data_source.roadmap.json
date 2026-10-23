@@ -1,0 +1,58 @@
+{
+  "_source": "https://developers.notion.com/reference/retrieve-a-data-source (GET /v1/data_sources/{data_source_id}, Notion-Version 2026-03-11)",
+  "object": "data_source",
+  "id": "66666666-6666-4666-8666-666666666666",
+  "title": [
+    {
+      "type": "text",
+      "text": {
+        "content": "Roadmap",
+        "link": null
+      },
+      "annotations": {
+        "bold": false,
+        "italic": false,
+        "strikethrough": false,
+        "underline": false,
+        "code": false,
+        "color": "default"
+      },
+      "plain_text": "Roadmap",
+      "href": null
+    }
+  ],
+  "description": [],
+  "parent": {
+    "type": "database_id",
+    "database_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+  },
+  "database_parent": {
+    "type": "page_id",
+    "page_id": "55555555-5555-4555-8555-555555555555"
+  },
+  "is_inline": false,
+  "in_trash": false,
+  "created_time": "2025-11-03T12:00:00.000Z",
+  "last_edited_time": "2026-10-21T10:00:00.000Z",
+  "created_by": {
+    "object": "user",
+    "id": "7a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+  },
+  "last_edited_by": {
+    "object": "user",
+    "id": "7a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+  },
+  "properties": {
+    "Name": {
+      "id": "title",
+      "name": "Name",
+      "description": null,
+      "type": "title",
+      "title": {}
+    }
+  },
+  "icon": null,
+  "cover": null,
+  "url": "https://www.notion.so/66666666666646668666666666666666",
+  "public_url": null
+}

@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { ingestResend } from "@/server/admin/inbox";
+import { wakeTag } from "@/server/lib/wake-tag";
 
 /**
  * Resend inbound webhook. Paste this URL (…/api/inbound/resend) into Resend → Webhooks for the `inbox.email.received`
@@ -30,6 +31,9 @@ export async function POST(req: Request) {
   const id = req.headers.get("svix-id") ?? "", ts = req.headers.get("svix-timestamp") ?? "", sig = req.headers.get("svix-signature") ?? "";
   const raw = await req.text();
   if (!verify(secret, id, ts, sig, raw)) return new Response("bad signature", { status: 401 });
+  // Verified with the environment's secret before any database work; the wake tag says what reached it (owner request,
+  // 23 October 2026: realtime plan, phase 0).
+  wakeTag("webhook:resend");
   try {
     const payload = JSON.parse(raw) as { type?: string; data?: Record<string, unknown> };
     await ingestResend(payload);

@@ -24,6 +24,16 @@ describe("safeNextPath", () => {
     expect(safeNextPath("app/acme")).toBe("/app");
   });
 
+  it("refuses dot segments that resolve to another site (security audit, 23 October 2026, issue 6)", () => {
+    for (const evil of ["/.//evil.com", "/..//evil.com", "/%2e//evil.com", "/./\\evil.com", "/.//evil.com/login?x=1", "/app/..//evil.com"]) {
+      expect(safeNextPath(evil)).toBe("/app");
+      expect(safeNextPath(evil, "")).toBe("");
+    }
+    expect(joiningTarget("/.//evil.com/join/ABCD-EFGH")).toBeNull();
+    // Ordinary dot segments on this site still resolve.
+    expect(safeNextPath("/./app/acme")).toBe("/app/acme");
+  });
+
   it("takes the first of a repeated parameter, and falls back on nothing", () => {
     expect(safeNextPath(["/invite/abc", "//evil.example"])).toBe("/invite/abc");
     expect(safeNextPath(["//evil.example", "/invite/abc"])).toBe("/app");

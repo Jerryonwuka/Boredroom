@@ -1,0 +1,37 @@
+{
+  "_source": "https://docs.slack.dev/reference/methods/conversations.list (values invented)",
+  "ok": true,
+  "channels": [
+    {
+      "id": "C012AB3CD",
+      "name": "design",
+      "is_channel": true,
+      "is_private": false,
+      "is_archived": false,
+      "is_member": true,
+      "num_members": 14
+    },
+    {
+      "id": "C061EG9T2",
+      "name": "random",
+      "is_channel": true,
+      "is_private": false,
+      "is_archived": false,
+      "is_member": false,
+      "num_members": 40
+    },
+    {
+      "id": "G0AKFJBEU",
+      "name": "leads",
+      "is_channel": true,
+      "is_group": true,
+      "is_private": true,
+      "is_archived": false,
+      "is_member": true,
+      "num_members": 4
+    }
+  ],
+  "response_metadata": {
+    "next_cursor": "dGVhbTpDMDYxRkE1UEI="
+  }
+}

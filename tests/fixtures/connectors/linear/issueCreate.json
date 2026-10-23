@@ -1,0 +1,29 @@
+{
+  "_source": "https://linear.app/developers/graphql (issueCreate mutation payload)",
+  "data": {
+    "issueCreate": {
+      "success": true,
+      "issue": {
+        "id": "0b9e0022-1111-4222-8333-444455556666",
+        "identifier": "WEB-22",
+        "title": "Add dark mode",
+        "url": "https://linear.app/acme/issue/WEB-22/add-dark-mode",
+        "priority": 0,
+        "dueDate": null,
+        "updatedAt": "2026-10-22T09:05:00.000Z",
+        "description": "Please add it.",
+        "state": {
+          "id": "st-unstarted",
+          "name": "Todo",
+          "type": "unstarted"
+        },
+        "team": {
+          "id": "5b1c0f2e-6a3d-4c1e-9f0a-2b7d8e4c1a01",
+          "key": "WEB",
+          "name": "Web"
+        },
+        "assignee": null
+      }
+    }
+  }
+}

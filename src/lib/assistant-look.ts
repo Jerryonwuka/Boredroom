@@ -49,7 +49,9 @@ export type AssistantProfile = AssistantLook & { name: string };
  * `voice` (phase 7c, owner decisions, 8–9 October 2026: the abilities catalogue): false when the workspace switched Voice
  * off (`speak` then reads 'never' and the talk and listen controls are hidden); absent when it is on.
  */
-export type AssistantProfiles = { personal: AssistantProfile; workspace: AssistantProfile; setupDone: boolean; canEditWorkspace: boolean; speak: AssistantSpeak; act?: ActState; ai?: boolean; quiet?: QuietState; voice?: false };
+// `meeting` (connected apps, owner decisions 22 October 2026): the person is in a meeting on their own connected calendar
+// now, until when; the web's chimes and the morning opener hold until it ends. Absent: not in one (or nothing connected).
+export type AssistantProfiles = { personal: AssistantProfile; workspace: AssistantProfile; setupDone: boolean; canEditWorkspace: boolean; speak: AssistantSpeak; act?: ActState; ai?: boolean; quiet?: QuietState; voice?: false; meeting?: { active: boolean; until: string | null } };
 
 /** The drawn sphere's four stops (lib/brenda-character/engine), from the lit upper left to the rim. */
 export type SphereShades = { light: string; mid: string; shade: string; rim: string };

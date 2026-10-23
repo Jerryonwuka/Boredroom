@@ -1,0 +1,39 @@
+{
+  "_source": "https://docs.github.com/en/rest/search/search#search-issues-and-pull-requests",
+  "total_count": 1,
+  "incomplete_results": false,
+  "items": [
+    {
+      "id": 1090,
+      "node_id": "I_kw90",
+      "number": 90,
+      "title": "Add caching",
+      "state": "open",
+      "state_reason": null,
+      "html_url": "https://github.com/acme/Web/pull/90",
+      "repository_url": "https://api.github.com/repos/acme/Web",
+      "user": {
+        "id": 583231,
+        "login": "octocat"
+      },
+      "assignee": {
+        "id": 9002,
+        "login": "ben-ade"
+      },
+      "assignees": [
+        {
+          "id": 9002,
+          "login": "ben-ade"
+        }
+      ],
+      "updated_at": "2026-10-22T07:00:00Z",
+      "body": "It loops after sign-in.",
+      "draft": false,
+      "pull_request": {
+        "url": "https://api.github.com/repos/acme/Web/pulls/90",
+        "html_url": "https://github.com/acme/Web/pull/90",
+        "merged_at": null
+      }
+    }
+  ]
+}

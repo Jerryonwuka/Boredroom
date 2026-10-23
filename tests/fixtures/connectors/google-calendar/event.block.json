@@ -1,0 +1,20 @@
+{
+  "_source": "https://developers.google.com/workspace/calendar/api/v3/reference/events/insert (response: an Events resource; values invented)",
+  "id": "blk-0001",
+  "status": "confirmed",
+  "summary": "Deep work",
+  "start": {
+    "dateTime": "2026-10-23T14:00:00+01:00"
+  },
+  "end": {
+    "dateTime": "2026-10-23T15:00:00+01:00"
+  },
+  "visibility": "private",
+  "transparency": "opaque",
+  "organizer": {
+    "self": true
+  },
+  "htmlLink": "https://www.google.com/calendar/event?eid=YmxrLTAwMDE",
+  "updated": "2026-10-22T09:00:00.000Z",
+  "eventType": "default"
+}

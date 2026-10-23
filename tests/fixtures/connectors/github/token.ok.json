@@ -1,0 +1,9 @@
+{
+  "_source": "https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-a-user-access-token-for-a-github-app",
+  "access_token": "ghu_fixture0001",
+  "expires_in": 28800,
+  "refresh_token": "ghr_fixture0001",
+  "refresh_token_expires_in": 15811200,
+  "scope": "",
+  "token_type": "bearer"
+}

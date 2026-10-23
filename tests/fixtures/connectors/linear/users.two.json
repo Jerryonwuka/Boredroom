@@ -1,0 +1,23 @@
+{
+  "_source": "https://linear.app/developers/graphql (users filtered by name, two matches)",
+  "data": {
+    "users": {
+      "nodes": [
+        {
+          "id": "d4e5f6a7-0000-4000-8000-0000000000b2",
+          "name": "Sam Lee",
+          "displayName": "sam",
+          "email": "sam@example.com",
+          "active": true
+        },
+        {
+          "id": "d4e5f6a7-0000-4000-8000-0000000000b3",
+          "name": "Sam Lee",
+          "displayName": "samlee",
+          "email": "sam.lee@example.com",
+          "active": true
+        }
+      ]
+    }
+  }
+}

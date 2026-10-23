@@ -1,0 +1,30 @@
+{
+  "_source": "https://linear.app/developers/graphql (teams connection)",
+  "data": {
+    "teams": {
+      "nodes": [
+        {
+          "id": "5b1c0f2e-6a3d-4c1e-9f0a-2b7d8e4c1a01",
+          "key": "WEB",
+          "name": "Web",
+          "private": false,
+          "archivedAt": null
+        },
+        {
+          "id": "8d2e1a4b-7c5f-4e3a-b1d9-6f0c2a8e5b02",
+          "key": "ENG",
+          "name": "Engineering",
+          "private": true,
+          "archivedAt": null
+        },
+        {
+          "id": "9e3f2b5c-8d6a-4f4b-c2e0-7a1d3b9f6c03",
+          "key": "OLD",
+          "name": "Old",
+          "private": false,
+          "archivedAt": "2026-01-02T10:00:00.000Z"
+        }
+      ]
+    }
+  }
+}

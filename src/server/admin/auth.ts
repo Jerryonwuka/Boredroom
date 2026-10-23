@@ -18,24 +18,32 @@ import { randomUUID } from "node:crypto";
 
 export type Admin = { user: CurrentUser; adminId: string; role: AdminRole; permissions: Set<Permission>; ip: string | null };
 
-function bootstrapEmails(): Set<string> {
+export function bootstrapEmails(): Set<string> {
   return new Set((process.env.PLATFORM_SUPER_ADMINS ?? "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean));
 }
 
-async function adminRowFor(db: Db, user: CurrentUser): Promise<{ id: string; role: AdminRole; status: string } | null> {
+export async function adminRowFor(db: Db, user: CurrentUser): Promise<{ id: string; role: AdminRole; status: string } | null> {
   const row = await db.maybeOne<{ id: string; role: AdminRole; status: string }>(`SELECT id, role, status FROM platform_admins WHERE auth_user_id = $1`, [user.authUserId]);
   if (row) return row;
   if (!bootstrapEmails().has(user.email.toLowerCase())) return null;
-  // First entry by a bootstrap email: the row is created and recorded.
+  // Security audit, 23 October 2026 (issue 12): a listed address becomes super admin only when the person has confirmed
+  // it and is signed in as themselves, never under an impersonated session or an unconfirmed sign-up of that address.
+  if (!user.emailVerified || user.impersonation) return null;
+  // First entry by a bootstrap email: the row is created and recorded. `$1` is cast for each column (uuid, then text):
+  // used bare for both it failed with 42P08 and rolled the bootstrap back (security audit, 23 October 2026).
   const created = await db.one<{ id: string; role: AdminRole; status: string }>(`INSERT INTO platform_admins(auth_user_id, role, status, last_login_at) VALUES ($1, 'super_admin', 'active', now()) ON CONFLICT (auth_user_id) DO UPDATE SET last_login_at = now() RETURNING id, role, status`, [user.authUserId]);
-  await db.query(`INSERT INTO platform_audit_events(admin_user_id, action, target_type, target_id, target_label, metadata) VALUES ($1, 'admin.bootstrap', 'admin', $1, $2, $3)`, [user.authUserId, user.email, JSON.stringify({ via: "PLATFORM_SUPER_ADMINS" })]);
+  await db.query(`INSERT INTO platform_audit_events(admin_user_id, action, target_type, target_id, target_label, metadata) VALUES ($1::uuid, 'admin.bootstrap', 'admin', $1::text, $2, $3)`, [user.authUserId, user.email, JSON.stringify({ via: "PLATFORM_SUPER_ADMINS" })]);
   return created;
 }
 
-/** The current administrator, or null. Cached per request. */
+/**
+ * The current administrator, or null. Cached per request. Never under an impersonated session (security audit,
+ * 23 October 2026, issue 12): someone viewing Boredroom as a customer runs no administrator code as them, so support
+ * cannot borrow a listed address's bootstrap, or another administrator's rights, by impersonating its owner.
+ */
 export const getAdmin = cache(async function getAdmin(): Promise<Admin | null> {
   const user = await getCurrentUser();
-  if (!user) return null;
+  if (!user || user.impersonation) return null;
   const row = await withSystem((db) => adminRowFor(db, user));
   if (!row || row.status !== "active") return null;
   let ip: string | null = null;

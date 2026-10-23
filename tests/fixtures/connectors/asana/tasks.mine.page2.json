@@ -1,0 +1,24 @@
+{
+  "_source": "https://developers.asana.com/reference/gettasks (last page)",
+  "data": [
+    {
+      "gid": "1203000000000003",
+      "resource_type": "task",
+      "name": "Call the printer",
+      "completed": false,
+      "due_on": null,
+      "due_at": null,
+      "permalink_url": "https://app.asana.com/0/0/1203000000000003",
+      "modified_at": "2026-10-22T08:00:00.000Z",
+      "assignee": {
+        "gid": "1201000000000001",
+        "name": "Ada Obi",
+        "email": "ada@example.com"
+      },
+      "projects": [],
+      "notes": "Draft the copy.",
+      "resource_subtype": "default_task"
+    }
+  ],
+  "next_page": null
+}

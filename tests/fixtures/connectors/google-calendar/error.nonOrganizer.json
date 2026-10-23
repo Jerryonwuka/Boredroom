@@ -1,0 +1,14 @@
+{
+  "_source": "https://developers.google.com/workspace/calendar/api/guides/errors#403_forbidden_for_non_organizer",
+  "error": {
+    "code": 403,
+    "message": "The operation can only be performed by the organizer of the event.",
+    "errors": [
+      {
+        "domain": "calendar",
+        "reason": "forbiddenForNonOrganizer",
+        "message": "The operation can only be performed by the organizer of the event."
+      }
+    ]
+  }
+}

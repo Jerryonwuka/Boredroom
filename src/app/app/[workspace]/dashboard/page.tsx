@@ -23,6 +23,10 @@ import { Avatar } from "@/components/ui/avatar";
 import { Person } from "@/components/ui/person";
 import { LiveClock, LiveSync, LiveRefresh, StatusDot } from "@/components/app/live";
 import { YourDaySection } from "@/components/app/your-day";
+// Connected apps (owner decisions, 22 October 2026: connectors): owners' and HR's own calendar and items only.
+import { connectedDay } from "@/server/connectors/items";
+import { ConnectedDaySection } from "@/components/app/connectors/connected-day";
+import { CONNECTOR_WORDS } from "@/lib/connectors/words";
 import { orgDashboard } from "@/server/services/views";
 import { attendanceBoard, attendanceMonth } from "@/server/services/attendance";
 import { briefing } from "@/server/services/brenda";
@@ -63,12 +67,14 @@ export default async function DashboardPage({ params, searchParams }: { params: 
   const tab: Tab = (TABS as readonly string[]).includes(sp.tab ?? "") ? (sp.tab as Tab) : "overview";
   // A team id from the address bar is checked before it reaches a uuid column: a mistyped link shows everyone.
   const teamId = sp.team && uuid.safeParse(sp.team).success ? sp.team : null;
-  const [d, att, m, brief, { personal }] = await Promise.all([
+  const [d, att, m, brief, { personal }, apps] = await Promise.all([
     orgDashboard(ctx), attendanceBoard(ctx),
     tab === "overview" ? attendanceMonth(ctx, { month: sp.month, teamId }) : Promise.resolve(null),
     tab === "overview" ? briefing(ctx) : Promise.resolve(null),
     // The hand-off to Brenda names the person's own assistant (owner decision, 7 October 2026: personal assistants).
     assistantProfiles(ctx),
+    // Connected apps (owner decisions, 22 October 2026): the viewer's own calendar and items; never takes the page down.
+    tab === "overview" ? connectedDay(ctx).catch(() => null) : Promise.resolve(null),
   ]);
   const base = `/app/${ctx.org.slug}`;
   const tz = ctx.org.timezone;
@@ -160,6 +166,7 @@ export default async function DashboardPage({ params, searchParams }: { params: 
           </div>
 
           {brief ? <YourDaySection className="mt-12" orgSlug={ctx.org.slug} role={ctx.membership.role} brief={brief} timeZone={tz} /> : null}
+          {apps?.ready && apps.enabled ? <div className="mt-12"><ConnectedDaySection orgSlug={ctx.org.slug} view={{ ...apps, canTrack: false }} timeZone={tz} /></div> : null}
         </>
       ) : null}
 
@@ -226,6 +233,7 @@ export default async function DashboardPage({ params, searchParams }: { params: 
 
       <PageNotes>
         <PageNote>Figures come from clocks, timers and tasks.</PageNote>
+        {apps?.ready && apps.enabled ? <PageNote section={CONNECTOR_WORDS.day.heading}>{CONNECTOR_WORDS.day.note}</PageNote> : null}
       </PageNotes>
     </AppShell>
   );

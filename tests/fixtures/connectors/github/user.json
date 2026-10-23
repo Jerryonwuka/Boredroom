@@ -1,0 +1,8 @@
+{
+  "_source": "https://docs.github.com/en/rest/users/users#get-the-authenticated-user",
+  "id": 9001,
+  "login": "ada-obi",
+  "name": "Ada Obi",
+  "email": null,
+  "type": "User"
+}

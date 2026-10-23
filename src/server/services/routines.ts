@@ -817,6 +817,17 @@ export async function quietStateFor(db: Db, membershipId: string, now = new Date
   return quietState(q, q.timezone, now);
 }
 
+/**
+ * Quiet hours, or (connected apps, owner decisions 22 October 2026) a meeting on the person's own connected calendar: what
+ * Boredroom delivers to them waits until either ends. Only for the person's own deliveries; never anyone else's view.
+ */
+export async function holdStateFor(db: Db, membershipId: string, now = new Date()): Promise<QuietState> {
+  const quiet = await quietStateFor(db, membershipId, now);
+  if (quiet.active && quiet.until) return quiet;
+  const meeting = await import("@/server/connectors/items").then((m) => m.meetingStateFor(db, membershipId, now)).catch(() => null);
+  return meeting?.active && meeting.until ? { ...quiet, active: true, until: meeting.until } : quiet;
+}
+
 // ---- The morning opener's "seen today" (contract E.2) ----------------------------------------------------------------------
 
 /**
@@ -1088,7 +1099,8 @@ export async function completeRun(runId: string, result: TemplateResult, opts: {
       if (result.empty && (run.quiet_when_empty || run.template === "afternoon_check")) {
         delivery = "silent";
       } else {
-        const quiet = await quietStateFor(db, run.membership_id, now);
+        // Quiet hours, or a meeting on their own calendar (connectors, 22 October 2026).
+        const quiet = await holdStateFor(db, run.membership_id, now);
         if (quiet.active && quiet.until) { delivery = "held"; heldUntil = quiet.until; }
         else {
           await deliverRun(db, { ...run, output });
@@ -1185,7 +1197,7 @@ export async function releaseHeldRuns(membershipId: string, now = new Date()): P
          FROM routine_runs rr JOIN routines ro ON ro.id = rr.routine_id JOIN organisations o ON o.id = rr.organisation_id
          WHERE rr.membership_id = $1 AND rr.delivery = 'held' ORDER BY rr.started_at, rr.id FOR UPDATE OF rr`, [membershipId]);
       if (!rows.length) return none;
-      const quiet = await quietStateFor(db, membershipId, now);
+      const quiet = await holdStateFor(db, membershipId, now);
       if (quiet.active && quiet.until) {
         await db.query(`UPDATE routine_runs SET held_until = $2 WHERE membership_id = $1 AND delivery = 'held'`, [membershipId, quiet.until]);
         return { released: 0, bundled: false, heldUntil: quiet.until };

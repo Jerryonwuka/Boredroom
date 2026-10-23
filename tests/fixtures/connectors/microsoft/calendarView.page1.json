@@ -1,0 +1,134 @@
+{
+  "_source": "https://learn.microsoft.com/en-us/graph/api/user-list-calendarview (response with Prefer: outlook.timezone=\"UTC\"; values invented)",
+  "value": [
+    {
+      "id": "AAMkAD-design",
+      "subject": "Design review",
+      "start": {
+        "dateTime": "2026-10-23T09:00:00.0000000",
+        "timeZone": "UTC"
+      },
+      "end": {
+        "dateTime": "2026-10-23T09:30:00.0000000",
+        "timeZone": "UTC"
+      },
+      "isAllDay": false,
+      "showAs": "busy",
+      "responseStatus": {
+        "response": "accepted",
+        "time": "2026-10-20T08:00:00Z"
+      },
+      "isOrganizer": false,
+      "isCancelled": false,
+      "isOnlineMeeting": true,
+      "webLink": "https://outlook.office365.com/owa/?itemid=AAMkAD-design&exvsurl=1&path=/calendar/item",
+      "lastModifiedDateTime": "2026-10-20T08:00:00.0000000Z",
+      "changeKey": "ck-design",
+      "attendees": [
+        {
+          "type": "required",
+          "emailAddress": {
+            "name": "Ada Obi",
+            "address": "ada@example.com"
+          }
+        },
+        {
+          "type": "required",
+          "emailAddress": {
+            "name": "Grace Hopper",
+            "address": "grace@example.com"
+          }
+        },
+        {
+          "type": "optional",
+          "emailAddress": {
+            "name": "Linus",
+            "address": "linus@example.com"
+          }
+        },
+        {
+          "type": "resource",
+          "emailAddress": {
+            "name": "Room 1",
+            "address": "room1@example.com"
+          }
+        }
+      ]
+    },
+    {
+      "id": "AAMkAD-planning",
+      "subject": "Planning",
+      "start": {
+        "dateTime": "2026-10-23T13:00:00.0000000",
+        "timeZone": "UTC"
+      },
+      "end": {
+        "dateTime": "2026-10-23T14:00:00.0000000",
+        "timeZone": "UTC"
+      },
+      "isAllDay": false,
+      "showAs": "busy",
+      "responseStatus": {
+        "response": "organizer"
+      },
+      "isOrganizer": true,
+      "isCancelled": false,
+      "isOnlineMeeting": false,
+      "webLink": "https://outlook.office365.com/owa/?itemid=AAMkAD-planning",
+      "lastModifiedDateTime": "2026-10-21T08:00:00Z",
+      "changeKey": "ck-planning",
+      "attendees": [
+        {
+          "type": "required",
+          "emailAddress": {
+            "name": "Grace Hopper",
+            "address": "grace@example.com"
+          }
+        },
+        {
+          "type": "required",
+          "emailAddress": {
+            "name": "Linus",
+            "address": "linus@example.com"
+          }
+        }
+      ]
+    },
+    {
+      "id": "AAMkAD-tentative",
+      "subject": "Lunch and learn",
+      "start": {
+        "dateTime": "2026-10-23T12:00:00.0000000",
+        "timeZone": "UTC"
+      },
+      "end": {
+        "dateTime": "2026-10-23T12:45:00.0000000",
+        "timeZone": "UTC"
+      },
+      "isAllDay": false,
+      "showAs": "tentative",
+      "responseStatus": {
+        "response": "tentativelyAccepted"
+      },
+      "isOrganizer": false,
+      "isCancelled": false,
+      "isOnlineMeeting": false,
+      "lastModifiedDateTime": "2026-10-21T08:00:00Z",
+      "attendees": []
+    },
+    {
+      "id": "AAMkAD-cancelled",
+      "subject": "Old sync",
+      "start": {
+        "dateTime": "2026-10-23T15:00:00.0000000",
+        "timeZone": "UTC"
+      },
+      "end": {
+        "dateTime": "2026-10-23T15:30:00.0000000",
+        "timeZone": "UTC"
+      },
+      "isCancelled": true
+    }
+  ],
+  "@odata.nextLink": "https://graph.microsoft.com/v1.0/me/calendarView?startDateTime=2026-10-21T23%3A00%3A00.000Z&endDateTime=2026-11-05T00%3A00%3A00.000Z&%24skip=100"
+}

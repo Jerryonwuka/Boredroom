@@ -1,0 +1,8 @@
+{
+  "_source": "https://learn.microsoft.com/en-us/graph/api/user-get (values invented)",
+  "@odata.context": "https://graph.microsoft.com/v1.0/$metadata#users(id,displayName,mail,userPrincipalName)/$entity",
+  "id": "48d31887-5fad-4d73-a9f5-3c356e68a038",
+  "displayName": "Ada Obi",
+  "mail": "ada@example.com",
+  "userPrincipalName": "ada@contoso.example.com"
+}

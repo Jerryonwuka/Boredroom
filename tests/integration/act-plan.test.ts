@@ -235,7 +235,8 @@ beforeEach(async () => {
                     WHERE status IN ('proposed', 'running', 'asking')`);
 });
 
-describe("before migration 0059 (contract 0b.9, G.2)", () => {
+// Skipped (security audit verification, 23 October 2026): the migration now ships in db/migrations, so the test reset applies it and there is no "before" to test.
+describe.skip("before migration 0059 (contract 0b.9, G.2)", () => {
   it("0059 is not applied here; a Mac that runs plans gets phase 2's propose_task exactly", async () => {
     expect(await count("SELECT count(*)::int AS n FROM pg_attribute WHERE attrelid = 'assistant_tasks'::regclass AND attname = 'steps'")).toBe(0);
     model.msgs = [say("I'll ask you first.")];
@@ -257,9 +258,9 @@ describe("before migration 0059 (contract 0b.9, G.2)", () => {
 
 describe("with migration 0059", () => {
   beforeAll(async () => {
-    await adminQuery(readFileSync(join(process.cwd(), "db", "pending", "0059_mac_help.sql"), "utf8"));
+    await adminQuery(readFileSync(join(process.cwd(), "db", "migrations", "0059_mac_help.sql"), "utf8"));
     // Idempotent: safe to run by hand twice.
-    await adminQuery(readFileSync(join(process.cwd(), "db", "pending", "0059_mac_help.sql"), "utf8"));
+    await adminQuery(readFileSync(join(process.cwd(), "db", "migrations", "0059_mac_help.sql"), "utf8"));
     forget0059();
   });
 

@@ -1,0 +1,5 @@
+{
+  "_source": "RFC 6749 §5.2 error response (https://www.rfc-editor.org/rfc/rfc6749#section-5.2)",
+  "error": "invalid_grant",
+  "error_description": "The refresh token is invalid or expired."
+}

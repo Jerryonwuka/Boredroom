@@ -1,0 +1,28 @@
+{
+  "_source": "https://developers.google.com/workspace/calendar/api/v3/reference/events/insert (with attendees; values invented)",
+  "id": "inv-0001",
+  "status": "confirmed",
+  "summary": "Design review",
+  "start": {
+    "dateTime": "2026-10-23T14:00:00+01:00"
+  },
+  "end": {
+    "dateTime": "2026-10-23T14:30:00+01:00"
+  },
+  "attendees": [
+    {
+      "email": "ada@example.com",
+      "responseStatus": "needsAction"
+    },
+    {
+      "email": "grace@example.com",
+      "responseStatus": "needsAction"
+    }
+  ],
+  "organizer": {
+    "self": true
+  },
+  "htmlLink": "https://www.google.com/calendar/event?eid=aW52LTAwMDE",
+  "updated": "2026-10-22T09:00:00.000Z",
+  "eventType": "default"
+}

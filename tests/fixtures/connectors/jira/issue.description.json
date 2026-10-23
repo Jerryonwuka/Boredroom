@@ -1,0 +1,91 @@
+{
+  "_source": "https://developer.atlassian.com/cloud/jira/platform/apis/document/structure/ (ADF) and get issue",
+  "id": "10101",
+  "key": "WEB-7",
+  "fields": {
+    "description": {
+      "type": "doc",
+      "version": 1,
+      "content": [
+        {
+          "type": "heading",
+          "attrs": {
+            "level": 2
+          },
+          "content": [
+            {
+              "type": "text",
+              "text": "Steps"
+            }
+          ]
+        },
+        {
+          "type": "orderedList",
+          "content": [
+            {
+              "type": "listItem",
+              "content": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "Sign in"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "listItem",
+              "content": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "Wait"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "text": "Ask "
+            },
+            {
+              "type": "mention",
+              "attrs": {
+                "id": "5b10a2844c20165700ede21g",
+                "text": "@Ada Obi"
+              }
+            },
+            {
+              "type": "text",
+              "text": " first."
+            },
+            {
+              "type": "hardBreak"
+            },
+            {
+              "type": "text",
+              "text": "See "
+            },
+            {
+              "type": "inlineCard",
+              "attrs": {
+                "url": "https://evil.example.com/x"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "_source": "https://developers.asana.com/reference/createwebhook",
+  "data": {
+    "gid": "1205000000000001",
+    "resource": {
+      "gid": "1202000000000001",
+      "resource_type": "project",
+      "name": "Website"
+    },
+    "target": "https://boredroom.test/api/connectors/webhooks/asana/x",
+    "active": true
+  }
+}

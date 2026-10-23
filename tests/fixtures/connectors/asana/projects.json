@@ -1,0 +1,18 @@
+{
+  "_source": "https://developers.asana.com/reference/getprojects",
+  "data": [
+    {
+      "gid": "1202000000000001",
+      "name": "Website",
+      "archived": false,
+      "public": true
+    },
+    {
+      "gid": "1202000000000002",
+      "name": "Hiring",
+      "archived": false,
+      "public": false
+    }
+  ],
+  "next_page": null
+}

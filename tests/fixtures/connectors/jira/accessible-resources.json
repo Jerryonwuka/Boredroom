@@ -1,0 +1,26 @@
+{
+  "_source": "https://developer.atlassian.com/cloud/jira/platform/oauth-2-3lo-apps/ (accessible-resources; the list is under \"resources\" here because fixtures are objects)",
+  "resources": [
+    {
+      "id": "99999999-0000-4000-8000-000000000000",
+      "url": "https://acme-confluence.atlassian.net",
+      "name": "acme-confluence",
+      "scopes": [
+        "read:confluence-content.all"
+      ],
+      "avatarUrl": "https://site-admin-avatar-cdn.prod.public.atl-paas.net/avatars/240/rocket.png"
+    },
+    {
+      "id": "11223344-5566-4778-899a-abcdefabcdef",
+      "url": "https://acme.atlassian.net",
+      "name": "acme",
+      "scopes": [
+        "read:jira-work",
+        "read:jira-user",
+        "manage:jira-webhook",
+        "write:jira-work"
+      ],
+      "avatarUrl": "https://site-admin-avatar-cdn.prod.public.atl-paas.net/avatars/240/flag.png"
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "_source": "https://linear.app/developers/oauth-2-0-authentication (token response example)",
+  "access_token": "lin-access-fixture-0001",
+  "token_type": "Bearer",
+  "expires_in": 86399,
+  "scope": "read write",
+  "refresh_token": "lin-refresh-fixture-0001"
+}

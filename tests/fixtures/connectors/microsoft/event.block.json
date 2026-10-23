@@ -1,0 +1,26 @@
+{
+  "_source": "https://learn.microsoft.com/en-us/graph/api/user-post-events (response; values invented)",
+  "id": "AAMkAD-block",
+  "subject": "Deep work",
+  "start": {
+    "dateTime": "2026-10-23T13:00:00.0000000",
+    "timeZone": "UTC"
+  },
+  "end": {
+    "dateTime": "2026-10-23T14:00:00.0000000",
+    "timeZone": "UTC"
+  },
+  "isAllDay": false,
+  "showAs": "busy",
+  "sensitivity": "private",
+  "responseStatus": {
+    "response": "organizer"
+  },
+  "isOrganizer": true,
+  "isCancelled": false,
+  "isOnlineMeeting": false,
+  "webLink": "https://outlook.office365.com/owa/?itemid=AAMkAD-block",
+  "lastModifiedDateTime": "2026-10-22T09:00:00Z",
+  "changeKey": "ck-block-1",
+  "attendees": []
+}

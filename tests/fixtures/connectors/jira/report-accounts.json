@@ -1,0 +1,13 @@
+{
+  "_source": "https://developer.atlassian.com/cloud/jira/platform/user-privacy-developer-guide/ (report accounts response)",
+  "accounts": [
+    {
+      "accountId": "5b10ac8d82e05b22cc7d4ef7",
+      "status": "closed"
+    },
+    {
+      "accountId": "5b10a2844c20165700ede21g",
+      "status": "updated"
+    }
+  ]
+}

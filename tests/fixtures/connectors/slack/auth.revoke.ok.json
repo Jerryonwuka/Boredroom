@@ -1,0 +1,5 @@
+{
+  "_source": "https://docs.slack.dev/reference/methods/auth.revoke",
+  "ok": true,
+  "revoked": true
+}

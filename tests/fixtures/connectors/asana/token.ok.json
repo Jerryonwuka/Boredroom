@@ -1,0 +1,13 @@
+{
+  "_source": "https://developers.asana.com/docs/oauth (token exchange response)",
+  "access_token": "asana-access-fixture-0001",
+  "expires_in": 3600,
+  "token_type": "bearer",
+  "refresh_token": "asana-refresh-fixture-0001",
+  "data": {
+    "id": "1201000000000001",
+    "gid": "1201000000000001",
+    "name": "Ada Obi",
+    "email": "ada@example.com"
+  }
+}

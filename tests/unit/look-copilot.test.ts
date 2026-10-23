@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
+import { CONNECTOR_RULES, CONNECTOR_TOOLS } from "@/server/connectors/brenda/tools";
 import { createHash } from "node:crypto";
 
 // Screen help on Brenda for Mac, phase 1 (owner decisions, 11 October 2026: "start building with your recommendations";
@@ -20,8 +21,11 @@ const sha = (s: string) => createHash("sha256").update(s).digest("hex");
 
 describe("the cached prefix", () => {
   it("RULES and TOOLS are byte for byte what they were before screen help (the hashes of c3d0a04)", () => {
-    expect(sha(RULES)).toBe("a382a034ee96c7846dca689f57463d304dde426f7965fa0ed154c0efb086cc3b");
-    expect(sha(JSON.stringify(TOOLS))).toBe("677790e21c61136b36bbbae087566a737c441b32fe4f5daefea46dc738b2146d");
+    // Connected apps (owner decisions, 22 October 2026: the cached prefix changes once): their rules and tools are
+    // appended at the end; everything before them is still byte for byte what it was.
+    expect(RULES.endsWith(`\n${CONNECTOR_RULES}`)).toBe(true);
+    expect(sha(RULES.slice(0, RULES.length - CONNECTOR_RULES.length - 1))).toBe("a382a034ee96c7846dca689f57463d304dde426f7965fa0ed154c0efb086cc3b");
+    expect(sha(JSON.stringify(TOOLS.slice(0, -CONNECTOR_TOOLS.length)))).toBe("677790e21c61136b36bbbae087566a737c441b32fe4f5daefea46dc738b2146d");
   });
 });
 

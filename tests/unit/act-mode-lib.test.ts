@@ -102,6 +102,8 @@ describe("ACT_WORDS", () => {
       "before invitations, review submissions and new teams",
       "before answering something another person sent you",
       "before changing someone else's document",
+      // Connected apps (owner decisions, 22 October 2026).
+      "before anything other people will see in your connected apps",
       "always in Messages threads",
     ]);
     expect(ACT_WORDS.workspace.switch).toBe("Allow people to let their assistant act without asking");

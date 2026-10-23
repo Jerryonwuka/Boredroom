@@ -216,8 +216,10 @@ async function earlyFounder() {
 describe("the person's own side (contract 0.11, D.5)", () => {
   it("their never-look list and Turn off on my Macs; nothing about whether they turned it on", async () => {
     const empty = await call(ada, mineGET, "GET", "/screen-help/me");
-    // Phase 3 (contract G.3): before 0059 the card's Mac fields are empty (screen-help-mac.test.ts covers them after).
-    const noMacs = { macReady: false, macs: [], linked: [], setupAt: null, impersonated: false };
+    // Phase 3 (contract G.3): 0059 now ships in db/migrations, so the reset applies it (security audit verification,
+    // 23 October 2026): the card's Mac fields are ready, with the Mac linked earlier in this file and nothing set up
+    // (screen-help-mac.test.ts covers the rest).
+    const noMacs = { macReady: true, macs: [], linked: [{ device: "Early Mac", lastSeenAt: expect.any(String) }], setupAt: null, impersonated: false };
     expect(empty.json).toEqual({ ready: true, neverLook: [], offAt: null, ...noMacs });
     const listed = await call(ada, minePUT, "PUT", "/screen-help/me", { neverLook: [{ name: "Preview", bundleId: "com.apple.Preview" }] });
     expect(listed.json).toEqual({ ready: true, neverLook: [{ name: "Preview", bundleId: "com.apple.Preview" }], offAt: null, ...noMacs });
@@ -231,7 +233,8 @@ describe("the person's own side (contract 0.11, D.5)", () => {
     expect((await desktopState(david)).look.neverLook.filter((r) => r.source === "you")).toEqual([]);
     // The columns are the only screen help state about her (no opt-in, no use).
     const cols = await adminQuery<{ column_name: string }>("SELECT column_name FROM information_schema.columns WHERE table_name = 'assistant_private' AND column_name LIKE 'screen_help%' ORDER BY 1");
-    expect(cols.map((c) => c.column_name)).toEqual(["screen_help_never_look", "screen_help_off_at"]);
+    // 0059 (applied by the reset since it moved to db/migrations) adds the Mac state and the Set up time.
+    expect(cols.map((c) => c.column_name)).toEqual(["screen_help_macs", "screen_help_never_look", "screen_help_off_at", "screen_help_setup_at"]);
   });
 
   it("refused while someone else is signed in as the person", async () => {

@@ -13,7 +13,7 @@ import type { OrgContext } from "@/server/lib/api";
 import { AppError, invalid, notFound, forbidden } from "@/server/lib/errors";
 import { adminAudit, type Admin } from "@/server/admin/auth";
 import { emitEvent } from "@/server/admin/events";
-import { paystackConfig, paystackSecrets } from "@/server/admin/paystack-config";
+import { paystackConfig, type PaymentMode } from "@/server/admin/paystack-config";
 import { notifyBilling } from "@/server/admin/billing-reminders";
 import { dateOnly } from "@/lib/format";
 
@@ -166,14 +166,37 @@ export async function paymentMetrics() {
             (SELECT json_agg(x) FROM (SELECT to_char(date_trunc('month', paid_at), 'YYYY-MM') AS month, SUM(amount)::bigint AS amount FROM payment_transactions WHERE status = 'success' AND paid_at > now() - interval '12 months' GROUP BY 1 ORDER BY 1) x) AS by_month`));
 }
 
+/**
+ * A refund takes back the time that payment bought (security audit, 23 October 2026, issue 10 and verification V5): the
+ * workspace's period end moves back by the payment's interval (1 or 12 months), never earlier than now, and its
+ * payment status reads "refunded". When nothing is left of the period the subscription is expired at once (no grace
+ * days: the money is back). Returns the before and after for the audit row and the PAYMENT_REFUNDED event, which an
+ * admin sees in the Control Center; null when the workspace has no dated period (a free plan, or none).
+ */
+async function takeBackRefundedPeriod(db: Db, organisationId: string | null, interval: string | null) {
+  if (!organisationId) return null;
+  const r = await db.maybeOne<{ before_end: string; before_status: string; after_end: string; after_status: string }>(
+    `WITH old AS (SELECT id, current_period_end, status FROM subscriptions WHERE organisation_id = $1 AND current_period_end IS NOT NULL FOR UPDATE),
+          upd AS (
+            UPDATE subscriptions s SET
+              current_period_end = GREATEST(now(), old.current_period_end - ($2 || ' months')::interval),
+              status = CASE WHEN old.current_period_end - ($2 || ' months')::interval <= now() AND s.status IN ('active', 'past_due', 'payment_failed') THEN 'expired' ELSE s.status END,
+              payment_status = 'refunded', updated_at = now()
+            FROM old WHERE s.id = old.id RETURNING s.current_period_end, s.status)
+     SELECT old.current_period_end::text AS before_end, old.status AS before_status, upd.current_period_end::text AS after_end, upd.status AS after_status FROM old, upd`,
+    [organisationId, interval === "annual" ? "12" : "1"]);
+  return r ? { periodEndBefore: r.before_end, statusBefore: r.before_status, periodEndAfter: r.after_end, statusAfter: r.after_status } : null;
+}
+
 export async function markRefunded(admin: Admin, id: string, reason: string) {
   await withSystem(async (db) => {
-    const tx = await db.maybeOne<{ id: string; reference: string; status: string; organisation_id: string | null }>(`SELECT id, reference, status, organisation_id FROM payment_transactions WHERE id = $1`, [id]);
+    const tx = await db.maybeOne<{ id: string; reference: string; status: string; organisation_id: string | null; interval: string | null }>(`SELECT id, reference, status, organisation_id, interval FROM payment_transactions WHERE id = $1 FOR UPDATE`, [id]);
     if (!tx) throw notFound("Transaction not found.");
     if (tx.status !== "success") throw invalid("Only a successful payment can be marked refunded.");
     await db.query(`UPDATE payment_transactions SET status = 'refunded', refunded_at = now(), updated_at = now() WHERE id = $1`, [id]);
-    await adminAudit(db, admin, { action: "payment.refunded", targetType: "payment", targetId: id, targetLabel: tx.reference, organisationId: tx.organisation_id, before: { status: tx.status }, after: { status: "refunded" }, reason });
-    await emitEvent(db, "PAYMENT_REFUNDED", { organisationId: tx.organisation_id, reference: tx.reference });
+    const period = await takeBackRefundedPeriod(db, tx.organisation_id, tx.interval);
+    await adminAudit(db, admin, { action: "payment.refunded", targetType: "payment", targetId: id, targetLabel: tx.reference, organisationId: tx.organisation_id, before: { status: tx.status, ...(period ? { periodEnd: period.periodEndBefore, subscription: period.statusBefore } : {}) }, after: { status: "refunded", ...(period ? { periodEnd: period.periodEndAfter, subscription: period.statusAfter } : {}) }, reason });
+    await emitEvent(db, "PAYMENT_REFUNDED", { organisationId: tx.organisation_id, reference: tx.reference, ...(period ?? {}) });
   });
 }
 
@@ -191,15 +214,30 @@ async function paystack<T>(path: string, init: { method?: string; body?: unknown
   return body.data as T;
 }
 
-/** Verifies a webhook body against Paystack's signature (HMAC SHA-512 of the raw body with the secret key). */
-export async function verifyPaystackSignature(rawBody: string, signature: string | null): Promise<boolean> {
-  if (!signature) return false;
-  for (const key of await paystackSecrets()) {
+/**
+ * Verifies a webhook body against Paystack's signature (HMAC SHA-512 of the raw body with the secret key). Cheapest
+ * first (owner request, 23 October 2026: realtime plan, phase 0, item 5): the signature's shape and a JSON body with an
+ * `event`, and only then the current mode's secret key, which may need the database (`onLookup` is told just before,
+ * for the wake tag). Junk never reaches the database.
+ *
+ * Only the current mode's key verifies (security audit, 23 October 2026, issue 9): in live mode a signature made with
+ * the test key, stored or in PAYSTACK_SECRET_KEY, is refused, and the other way round. The environment's key counts
+ * only when paystackConfig() falls back to it (nothing stored for the mode in use).
+ */
+export async function verifyPaystackSignature(rawBody: string, signature: string | null, onLookup?: () => void): Promise<boolean> {
+  if (!signature || !/^[0-9a-f]{128}$/i.test(signature) || !rawBody) return false;
+  try {
+    const e = JSON.parse(rawBody) as { event?: unknown } | null;
+    if (!e || typeof e.event !== "string") return false;
+  } catch { return false; }
+  const matches = (key: string) => {
     const expected = createHmac("sha512", key).update(rawBody).digest("hex");
-    const a = Buffer.from(expected), b = Buffer.from(signature);
-    if (a.length === b.length && timingSafeEqual(a, b)) return true;
-  }
-  return false;
+    const a = Buffer.from(expected), b = Buffer.from(signature.toLowerCase());
+    return a.length === b.length && timingSafeEqual(a, b);
+  };
+  onLookup?.();
+  const key = (await paystackConfig()).secretKey;
+  return !!key && matches(key);
 }
 
 /** An organisation owner starts a checkout: returns Paystack's hosted page URL. The reference carries our ids. */
@@ -225,32 +263,61 @@ export async function startCheckout(ctx: OrgContext, input: { planId: string; in
   return { free: false as const, url: data.authorization_url, reference };
 }
 
-type PaystackTx = { id: number; reference: string; status: string; amount: number; currency: string; channel?: string; gateway_response?: string; paid_at?: string | null; customer?: { email?: string; customer_code?: string }; authorization?: Record<string, unknown>; metadata?: { organisation_id?: string; plan_id?: string; interval?: string } | null; plan?: unknown };
+type PaystackTx = { id: number; reference: string; status: string; amount: number; currency: string; domain?: string; channel?: string; gateway_response?: string; paid_at?: string | null; customer?: { email?: string; customer_code?: string }; authorization?: Record<string, unknown>; metadata?: { organisation_id?: string; plan_id?: string; interval?: string } | null; plan?: unknown };
 
-/** Verifies a reference with Paystack and records the outcome. */
+/**
+ * Verifies a reference with Paystack and records the outcome. A reference Boredroom never created is answered at once,
+ * without asking Paystack (security audit, 23 October 2026, issue 2): the public callback is no longer a way to have
+ * any transaction on the account looked up and recorded.
+ */
 export async function verifyAndRecord(reference: string) {
+  const ours = await withSystem((db) => db.maybeOne<{ id: string }>(`SELECT id FROM payment_transactions WHERE reference = $1`, [reference]));
+  if (!ours) return { changed: false, status: "unmatched" as const, organisationId: null };
+  const mode = (await paystackConfig()).mode;
   const tx = await paystack<PaystackTx>(`/transaction/verify/${encodeURIComponent(reference)}`);
-  return withSystem((db) => recordPayment(db, tx));
+  return withSystem((db) => recordPayment(db, tx, mode));
+}
+
+// Final states (security audit, 23 October 2026, issue 10): once a payment has succeeded, only a refund (markRefunded,
+// refund.processed) moves it on, and a refunded payment never comes back. So the subscription period is extended by the
+// first success alone, and replaying the public callback or a stale webhook after a refund changes nothing.
+const FINAL_PAYMENT_STATES = new Set(["success", "refunded"]);
+
+/** Flags a payment an admin should look at, once per reference (security audit, 23 October 2026, issue 2). */
+async function flagPayment(db: Db, reason: "unmatched_reference" | "amount_currency_or_domain_mismatch", tx: PaystackTx, organisationId: string | null, expected?: { amount: number; currency: string; domain: PaymentMode }) {
+  const seen = await db.maybeOne(`SELECT 1 FROM platform_events WHERE type = 'PAYMENT_NEEDS_REVIEW' AND payload->>'reference' = $1 LIMIT 1`, [tx.reference]);
+  if (seen) return;
+  await emitEvent(db, "PAYMENT_NEEDS_REVIEW", { organisationId, reason, reference: tx.reference, status: tx.status, amount: tx.amount, currency: tx.currency, domain: tx.domain ?? null, expected: expected ?? null, paystackId: tx.id ?? null });
 }
 
 /**
  * The single place a payment outcome lands, from the callback or a webhook. Idempotent on the reference: a second
  * delivery of the same outcome changes nothing. A success activates the subscription for the interval paid.
+ *
+ * Security audit, 23 October 2026 (issues 2 and 10): only a reference Boredroom created (startCheckout's pending row)
+ * can change a subscription, and the workspace, plan and interval come from that row, never from Paystack's metadata,
+ * which whoever pays sets. A reference we never created is not recorded and is flagged for review if it was paid.
+ * Paystack's amount (at least the price asked; more covers fees passed to the customer), currency and domain (the
+ * current mode) must match the row, or nothing changes and the payment is flagged. Success and refunded are final.
  */
-export async function recordPayment(db: Db, tx: PaystackTx) {
+export async function recordPayment(db: Db, tx: PaystackTx, mode?: PaymentMode) {
+  const currentMode = mode ?? (await paystackConfig()).mode;
   const status = tx.status === "success" ? "success" : tx.status === "abandoned" ? "abandoned" : "failed";
-  const existing = await db.maybeOne<{ id: string; status: string; organisation_id: string | null; plan_id: string | null; interval: string | null }>(`SELECT id, status, organisation_id, plan_id, interval FROM payment_transactions WHERE reference = $1 FOR UPDATE`, [tx.reference]);
-  const orgId = existing?.organisation_id ?? tx.metadata?.organisation_id ?? null;
-  const planId = existing?.plan_id ?? tx.metadata?.plan_id ?? null;
-  const interval = existing?.interval ?? tx.metadata?.interval ?? "monthly";
-  if (existing && existing.status === status) return { changed: false, status, organisationId: orgId };
-  if (existing) {
-    await db.query(`UPDATE payment_transactions SET status = $2, channel = $3, gateway_response = $4, paid_at = $5, paystack_id = $6, raw = $7, customer_email = COALESCE(customer_email, $8), updated_at = now() WHERE id = $1`,
-      [existing.id, status, tx.channel ?? null, tx.gateway_response ?? null, tx.paid_at ?? null, tx.id, JSON.stringify(tx), tx.customer?.email ?? null]);
-  } else {
-    await db.query(`INSERT INTO payment_transactions(reference, organisation_id, plan_id, customer_email, amount, currency, status, channel, gateway_response, paid_at, paystack_id, interval, raw, subscription_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, (SELECT id FROM subscriptions WHERE organisation_id = $2))`,
-      [tx.reference, orgId, planId, tx.customer?.email ?? null, tx.amount, tx.currency, status, tx.channel ?? null, tx.gateway_response ?? null, tx.paid_at ?? null, tx.id, interval, JSON.stringify(tx)]);
+  const existing = await db.maybeOne<{ id: string; status: string; organisation_id: string | null; plan_id: string | null; interval: string | null; amount: number; currency: string }>(`SELECT id, status, organisation_id, plan_id, interval, amount, currency FROM payment_transactions WHERE reference = $1 FOR UPDATE`, [tx.reference]);
+  if (!existing) {
+    if (status === "success") await flagPayment(db, "unmatched_reference", tx, null);
+    return { changed: false, status: "unmatched" as const, organisationId: null };
   }
+  const orgId = existing.organisation_id;
+  const planId = existing.plan_id;
+  const interval = existing.interval ?? "monthly";
+  if (FINAL_PAYMENT_STATES.has(existing.status) || existing.status === status) return { changed: false, status: existing.status, organisationId: orgId };
+  if (tx.domain !== currentMode || typeof tx.amount !== "number" || tx.amount < existing.amount || String(tx.currency ?? "").toUpperCase() !== existing.currency.toUpperCase()) {
+    await flagPayment(db, "amount_currency_or_domain_mismatch", tx, orgId, { amount: existing.amount, currency: existing.currency, domain: currentMode });
+    return { changed: false, status: "mismatch" as const, organisationId: orgId };
+  }
+  await db.query(`UPDATE payment_transactions SET status = $2, channel = $3, gateway_response = $4, paid_at = $5, paystack_id = $6, raw = $7, customer_email = COALESCE(customer_email, $8), updated_at = now() WHERE id = $1`,
+    [existing.id, status, tx.channel ?? null, tx.gateway_response ?? null, tx.paid_at ?? null, tx.id, JSON.stringify(tx), tx.customer?.email ?? null]);
   if (status === "success" && orgId && planId) {
     await db.query(
       `INSERT INTO subscriptions(organisation_id, plan_id, status, billing_interval, started_at, current_period_end, auto_renew, paystack_customer_code, paystack_authorization, last_payment_at, payment_status, updated_at)
@@ -277,17 +344,28 @@ export async function processPaystackEvent(event: { event: string; data: Record<
   const data = event.data as Partial<PaystackTx> & { subscription_code?: string; email_token?: string; customer?: { email?: string; customer_code?: string }; status?: string; subscription?: { subscription_code?: string } };
   const reference = (data.reference as string | undefined) ?? (data.subscription_code as string | undefined) ?? String((data as { id?: number }).id ?? "");
   const key = `${event.event}:${reference || "none"}`;
+  const mode = (await paystackConfig()).mode;
   return withSystem(async (db) => {
     const inserted = await db.query<{ id: string }>(`INSERT INTO paystack_events(event_key, event, reference, payload) VALUES ($1, $2, $3, $4) ON CONFLICT (event_key) DO NOTHING RETURNING id`, [key, event.event, reference || null, JSON.stringify(raw)]);
     if (inserted.length === 0) return { duplicate: true };
     const id = inserted[0].id;
+    // An event from the other mode's domain is kept for the record but never applied (security audit, 23 October
+    // 2026, issue 9). Charges must name the current domain (recordPayment); other events are refused when they name another.
+    const domain = (data as { domain?: unknown }).domain;
+    if (typeof domain === "string" && domain !== mode) {
+      await db.query(`UPDATE paystack_events SET processed_at = now(), error = $2 WHERE id = $1`, [id, `Ignored: domain ${domain.slice(0, 20)} is not the current ${mode} mode.`]);
+      return { duplicate: false };
+    }
     try {
       switch (event.event) {
-        case "charge.success": await recordPayment(db, data as PaystackTx); break;
-        case "invoice.payment_failed": case "charge.failed": await recordPayment(db, { ...(data as PaystackTx), status: "failed" }); break;
+        case "charge.success": await recordPayment(db, data as PaystackTx, mode); break;
+        case "invoice.payment_failed": case "charge.failed": await recordPayment(db, { ...(data as PaystackTx), status: "failed" }, mode); break;
         case "subscription.create": {
+          // The workspace in metadata is only believed when its subscription already carries this Paystack customer,
+          // which only a matched successful payment records (security audit, 23 October 2026, issue 2).
           const orgId = (data.metadata as { organisation_id?: string } | null)?.organisation_id ?? null;
-          if (orgId) await db.query(`UPDATE subscriptions SET paystack_subscription_code = $2, paystack_email_token = $3, paystack_customer_code = COALESCE($4, paystack_customer_code), auto_renew = true, updated_at = now() WHERE organisation_id = $1`, [orgId, data.subscription_code ?? null, data.email_token ?? null, data.customer?.customer_code ?? null]);
+          const customer = data.customer?.customer_code ?? null;
+          if (orgId && customer) await db.query(`UPDATE subscriptions SET paystack_subscription_code = $2, paystack_email_token = $3, auto_renew = true, updated_at = now() WHERE organisation_id = $1 AND paystack_customer_code = $4`, [orgId, data.subscription_code ?? null, data.email_token ?? null, customer]);
           break;
         }
         case "subscription.disable": case "subscription.not_renew": {
@@ -301,8 +379,9 @@ export async function processPaystackEvent(event: { event: string; data: Record<
         case "refund.processed": {
           const ref = (data as { transaction_reference?: string }).transaction_reference ?? data.reference;
           if (ref) {
-            const r = await db.query<{ organisation_id: string | null }>(`UPDATE payment_transactions SET status = 'refunded', refunded_at = now(), updated_at = now() WHERE reference = $1 AND status = 'success' RETURNING organisation_id`, [ref]);
-            for (const t of r) await emitEvent(db, "PAYMENT_REFUNDED", { organisationId: t.organisation_id, reference: ref, source: "paystack" });
+            const r = await db.query<{ organisation_id: string | null; interval: string | null }>(`UPDATE payment_transactions SET status = 'refunded', refunded_at = now(), updated_at = now() WHERE reference = $1 AND status = 'success' RETURNING organisation_id, interval`, [ref]);
+            // The time the payment bought goes with it (security audit, 23 October 2026, verification V5).
+            for (const t of r) await emitEvent(db, "PAYMENT_REFUNDED", { organisationId: t.organisation_id, reference: ref, source: "paystack", ...((await takeBackRefundedPeriod(db, t.organisation_id, t.interval)) ?? {}) });
           }
           break;
         }

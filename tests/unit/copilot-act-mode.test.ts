@@ -176,6 +176,9 @@ describe("why a Confirm card still asks (B.1)", () => {
     on_mac: "Still asking: from your Mac, Max always checks with you first.",
     // Brenda and her helpers (owner brief, 12 October 2026; decision 9): "Check with me before every task".
     check_every: "Still asking: you asked Max to check with you before every task.",
+    // Connected apps (owner decisions, 22 October 2026): without the app or the place given.
+    app_shared: "Still asking: other people will see this in that app.",
+    app_post: "Still asking: this posts in a channel.",
   };
 
   it.each([...ASK_REASONS])("%s", (reason) => {

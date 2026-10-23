@@ -1,0 +1,41 @@
+{
+  "_source": "https://developers.notion.com/reference/create-a-comment (POST /v1/comments, Notion-Version 2026-03-11; illustrative values from the response schema)",
+  "object": "comment",
+  "id": "9d1b2c3e-4f5a-4b6c-8d7e-9f0a1b2c3d4e",
+  "parent": {
+    "type": "page_id",
+    "page_id": "44444444-4444-4444-8444-444444444444"
+  },
+  "discussion_id": "3c2d1e0f-9a8b-4c7d-8e6f-5a4b3c2d1e0f",
+  "created_time": "2026-10-22T10:00:00.000Z",
+  "last_edited_time": "2026-10-22T10:00:00.000Z",
+  "created_by": {
+    "object": "user",
+    "id": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d"
+  },
+  "rich_text": [
+    {
+      "type": "text",
+      "text": {
+        "content": "Looks good.",
+        "link": null
+      },
+      "annotations": {
+        "bold": false,
+        "italic": false,
+        "strikethrough": false,
+        "underline": false,
+        "code": false,
+        "color": "default"
+      },
+      "plain_text": "Looks good.",
+      "href": null
+    }
+  ],
+  "display_name": {
+    "type": "integration",
+    "resolved_name": "Boredroom"
+  },
+  "original_content_deleted": false,
+  "has_pending_attachments": false
+}

@@ -40,6 +40,12 @@
  * ('on_mac'), in every mode; Act without asking stays a choice for the web chat only (review, 12 October 2026: the owner's
  * call whether the web keeps it).
  *
+ * Other people's words, then something others see (security audit, 23 October 2026, issue 5): once a turn read free
+ * text someone else wrote, or such words are earlier in the chat, or the chat is from Brenda for Mac, copilot's
+ * outwardGate turns an immediate action other people can see (a shared task's change, a team document, a timer stopped
+ * for review) into a Confirm card in every mode, 'ask' included; here it then asks with 'tainted', 'tainted_earlier' or
+ * 'on_mac'. A task comment always asks ('always_asks').
+ *
  * Standup and "How I like things done" (owner decisions, 8–9 October 2026: phase 7c): posting the person's standup is a
  * broadcast to their team's channel, so it always waits for their own press ('broadcast_team', the act-mode floor: nothing
  * posts on its own, ever); editing their own draft and skipping the day act on their own entry. Remembering or forgetting
@@ -72,6 +78,11 @@ export type ActFacts = {
   commitment?: "accept" | "decline" | "dismiss" | "done";
   /** standup_action: what the person would do with their own standup draft (phase 7c). */
   standup?: "edit" | "post" | "skip";
+  /**
+   * Connected apps (owner decisions, 22 October 2026: connectors): the action's risk class, the app's name, the place
+   * ("#design") and whether it makes a Boredroom to-do (track_app_item's newTodo).
+   */
+  app?: { risk: "private" | "shared" | "destructive"; label: string; place?: string; createsTodo?: boolean };
 };
 
 export type ActDecision = { act: true } | { act: false; reason: AskReason | null };
@@ -100,11 +111,22 @@ export const AUTO_RULES: Readonly<Record<string, (f: ActFacts) => true | AskReas
   respond_to_commitment: (f: ActFacts) => f.commitment === "accept" ? "others_words_todo" : f.commitment === "decline" ? "answers_others" : true,
   set_blocked_on: () => true,
   respond_to_block: () => "answers_others",
+  // Security audit, 23 October 2026 (issue 5): a task comment notifies the assignee and reviewer with its words, so it is
+  // outward and always the person's own press, whatever the mode.
+  add_comment: () => "always_asks",
   // Phase 7c (owner decisions, 8–9 October 2026): a post goes to the whole team's channel, always the person's own press;
   // an edit or a skip is their own entry. A preference is always their call (copilot's branches pass the same floors).
   standup_action: (f: ActFacts) => (f.standup === "post" ? "broadcast_team" : true),
   remember_preference: () => "preference_consent",
   forget_preference: () => "preference_consent",
+  // Connected apps (owner decisions, 22 October 2026: connectors; permission rule v2): the person's own private steps act;
+  // what others see asks ('app_shared', 'app_post'); what deletes asks ('cant_undo').
+  hide_app_item: () => true,
+  track_app_item: (f: ActFacts) => (f.app?.createsTodo ? "others_words_todo" : true),
+  calendar_action: (f: ActFacts) => (f.app?.risk === "private" ? true : f.app?.risk === "destructive" ? "cant_undo" : "app_shared"),
+  work_item_action: (f: ActFacts) => (f.app?.risk === "destructive" ? "cant_undo" : "app_shared"),
+  notion_action: () => "app_shared",
+  post_to_channel: () => "app_post",
 } satisfies Record<string, (f: ActFacts) => true | AskReason>);
 
 const ask = (reason: AskReason | null): ActDecision => ({ act: false, reason });

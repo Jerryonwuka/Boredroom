@@ -1,0 +1,17 @@
+{
+  "_source": "https://docs.slack.dev/reference/methods/oauth.v2.access (and https://docs.slack.dev/authentication/using-token-rotation; values invented) (an organisation-wide Enterprise Grid install)",
+  "ok": true,
+  "access_token": "xoxe.xoxb-test-slack-access-0002",
+  "token_type": "bot",
+  "scope": "chat:write,channels:read,groups:read",
+  "bot_user_id": "U0KRQLJ9H",
+  "app_id": "A0KRD7HC3",
+  "team": null,
+  "enterprise": {
+    "name": "Acme Group",
+    "id": "E12345678"
+  },
+  "is_enterprise_install": true,
+  "refresh_token": "xoxe-test-slack-refresh-0002",
+  "expires_in": 43200
+}

@@ -1,0 +1,8 @@
+{
+  "_source": "https://learn.microsoft.com/en-us/graph/api/organization-get (values invented)",
+  "value": [
+    {
+      "displayName": "Contoso Ltd"
+    }
+  ]
+}

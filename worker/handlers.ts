@@ -404,6 +404,8 @@ const voiceHistoryForget: Handler = async (payload) => {
 };
 
 import { controlCenterHandlers } from "./control-center";
+// Connected apps (owner decisions, 22 October 2026: connectors): sync, refresh, revoke, webhooks, posts, upkeep.
+import { connectorHandlers } from "./connectors";
 
 export const handlers: Record<string, Handler> = {
   ...controlCenterHandlers,
@@ -432,4 +434,5 @@ export const handlers: Record<string, Handler> = {
   "deliverable.scan": scanDeliverable,
   "system.purge_expired": purgeExpired,
   "voice.history_forget": voiceHistoryForget,
+  ...connectorHandlers,
 };

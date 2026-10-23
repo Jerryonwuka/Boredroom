@@ -8,6 +8,7 @@ import { JoinAccept } from "@/components/auth/join-forms";
 import { decodeSegment } from "@/components/auth/next-path";
 import { getCurrentUser } from "@/server/auth";
 import { previewJoinCode } from "@/server/services/orgs";
+import { AppError } from "@/server/lib/errors";
 
 export const metadata = { title: "Join organisation" };
 
@@ -15,9 +16,11 @@ const full = (variant: "primary" | "outline" = "primary") => cn(buttonVariants({
 
 export default async function JoinCodePage({ params }: { params: Promise<{ code: string }> }) {
   const raw = decodeSegment((await params).code).trim().toUpperCase();
-  const [user, preview] = await Promise.all([getCurrentUser(), previewJoinCode(raw)]);
+  // Too many unknown codes from this address (security audit, 23 October 2026, issue 16) reads as a page, not a crash.
+  const [user, preview] = await Promise.all([getCurrentUser(), previewJoinCode(raw).catch((err: unknown) => { if (err instanceof AppError && err.status === 429) return "throttled" as const; throw err; })]);
   const here = `/join/${encodeURIComponent(raw)}`;
   const another = <Link className={AUTH_LINK} href="/join">Try another code</Link>;
+  if (preview === "throttled") return <AuthShell title="Too many tries" footer={another}><Alert tone="warning">Too many organisation codes were tried from here. Wait an hour, or ask your administrator for the join link.</Alert></AuthShell>;
   if (!preview) return <AuthShell title="Code not recognised" footer={another}><Alert tone="danger">That organisation code is not valid. Check it with your administrator, or paste the whole join link.</Alert></AuthShell>;
   if (!preview.enabled) return <AuthShell title="Joining is paused" footer={another}><Alert tone="warning">{preview.name} is not accepting new members with this code right now. Ask your administrator for a current code.</Alert></AuthShell>;
   const as = preview.role === "manager" ? "a team lead" : "staff";

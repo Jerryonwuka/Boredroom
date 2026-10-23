@@ -1,0 +1,23 @@
+{
+  "_source": "https://developers.notion.com/docs/authorization (public integration token exchange; values invented); refresh_token grant: a new access and refresh token",
+  "access_token": "ntn_test_access_token_fixture_0002",
+  "token_type": "bearer",
+  "refresh_token": "nrt_test_refresh_token_fixture_0002",
+  "bot_id": "b0b0b0b0-1111-4222-8333-444455556666",
+  "workspace_name": "Acme",
+  "workspace_icon": null,
+  "workspace_id": "0a0a0a0a-1b1b-4c2c-8d3d-4e4e4e4e4e4e",
+  "owner": {
+    "type": "user",
+    "user": {
+      "object": "user",
+      "id": "f0e1d2c3-b4a5-4968-8776-655443322110",
+      "name": "Ada Obi",
+      "avatar_url": null,
+      "type": "person",
+      "person": {}
+    }
+  },
+  "duplicated_template_id": null,
+  "request_id": "c0ffee00-0000-4000-8000-000000000002"
+}

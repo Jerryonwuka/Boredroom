@@ -45,19 +45,46 @@ async function loadProject(db: Db, orgId: string, projectId: string): Promise<Pr
   return p;
 }
 
-async function canManageAssignee(db: Db, ctx: OrgContext, assigneeMembershipId: string, projectId: string): Promise<boolean> {
+/**
+ * The caller's lead rights on a project, as SQL over `$1` = organisation, `$2` = project, `$3` = the caller's membership,
+ * `$4` = the caller's role. Security audit, 23 October 2026 (issue 11): a personal to-do project (the only project staff
+ * can ever have created: app_create_personal_project, migration 0011) makes its maker "lead", and lead rights used to
+ * mean managing anyone's task filed there, the owner's included. So a project a staff member created grants them no lead
+ * rights; leads granted on other projects keep theirs. db/pending/0063 makes the database's own check the same.
+ */
+const LEAD_RIGHTS_SQL = `(app_is_project_lead($1, $2)
+  AND NOT ($4 = 'employee' AND EXISTS (SELECT 1 FROM projects p WHERE p.id = $2 AND p.organisation_id = $1 AND p.created_by = $3)))`;
+
+/** Whether the caller holds lead rights on a project (LEAD_RIGHTS_SQL); for the task and project pages too. */
+export async function hasLeadRights(db: Db, ctx: OrgContext, projectId: string): Promise<boolean> {
+  const r = await db.one<{ lead: boolean }>(`SELECT ${LEAD_RIGHTS_SQL} AS lead`, [ctx.org.id, projectId, ctx.membership.id, ctx.membership.role]);
+  return r.lead;
+}
+
+/**
+ * Whether the caller may give out work for this assignee in this project: as a manager (organisation account, the
+ * assignee's manager, or lead rights on the project), or, with `opts.self`, as the assignee themself if a project member.
+ */
+async function canManageAssignee(db: Db, ctx: OrgContext, assigneeMembershipId: string, projectId: string, opts: { self: boolean } = { self: true }): Promise<boolean> {
   if (ctx.membership.role === "owner" || ctx.membership.role === "hr") return true;
   const r = await db.one<{ manages: boolean; lead: boolean; member: boolean }>(
-    `SELECT app_manages($1, $2) AS manages, app_is_project_lead($1, $3) AS lead,
-            EXISTS (SELECT 1 FROM project_members pm WHERE pm.project_id = $3 AND pm.membership_id = $4) AS member`,
-    [ctx.org.id, assigneeMembershipId, projectId, ctx.membership.id]);
+    `SELECT app_manages($1, $5) AS manages, ${LEAD_RIGHTS_SQL} AS lead,
+            EXISTS (SELECT 1 FROM project_members pm WHERE pm.project_id = $2 AND pm.membership_id = $3) AS member`,
+    [ctx.org.id, projectId, ctx.membership.id, ctx.membership.role, assigneeMembershipId]);
   if (r.manages || r.lead) return true;
-  return assigneeMembershipId === ctx.membership.id && r.member;
+  return opts.self && assigneeMembershipId === ctx.membership.id && r.member;
 }
+
+/** Staff hold their own work; handing tasks to others is for team leads and organisation accounts (quickTodo's rule). */
+const STAFF_SELF_ONLY = "Only team leads and organisation accounts can hand tasks to others.";
+const REVIEWER_MANAGERS_ONLY = "Only a manager can choose who reviews this task.";
 
 export async function createTask(ctx: OrgContext, input: z.infer<typeof createTaskSchema>, requestId?: string) {
   const assignee = input.assigneeMembershipId ?? ctx.membership.id;
   if (input.reviewerMembershipId && input.reviewerMembershipId === assignee) throw invalid("Reviewer must be a different person from the assignee.", { reviewerMembershipId: ["Choose someone other than the assignee."] });
+  // Security audit, 23 October 2026 (issue 11): quickTodo's rule held only there; the tasks route and Brenda reach
+  // createTask directly, so it is enforced here too.
+  if (ctx.membership.role === "employee" && assignee !== ctx.membership.id) throw forbidden(STAFF_SELF_ONLY);
   return withUser(ctx.user.profileId, async (db) => {
     const project = await loadProject(db, ctx.org.id, input.projectId);
     if (project.status !== "active") throw conflict("PROJECT_ARCHIVED", "Tasks cannot be created in an archived project.");
@@ -70,6 +97,11 @@ export async function createTask(ctx: OrgContext, input: z.infer<typeof createTa
     if (input.reviewerMembershipId) {
       const rev = await db.maybeOne(`SELECT 1 FROM memberships WHERE id = $1 AND organisation_id = $2 AND status = 'active'`, [input.reviewerMembershipId, ctx.org.id]);
       if (!rev) throw invalid("Reviewer is not an active member.", { reviewerMembershipId: ["Not an active member."] });
+      // Security audit, 23 October 2026 (issue 17): someone filing work for themselves gets their usual checker (their
+      // team lead, as quickTodo picks); only a manager chooses another reviewer, so nobody routes their work to a friend.
+      if (!(await canManageAssignee(db, ctx, assignee, input.projectId, { self: false })) && input.reviewerMembershipId !== (await defaultReviewerFor(db, ctx.org.id, assignee))) {
+        throw forbidden(REVIEWER_MANAGERS_ONLY);
+      }
     }
     const task = await db.one<{ id: string; version: number }>(
       `INSERT INTO tasks(organisation_id, project_id, assignee_membership_id, reviewer_membership_id, created_by, title, expected_output, category, priority, estimate_minutes, due_at)
@@ -127,12 +159,21 @@ export async function updateTask(ctx: OrgContext, taskId: string, input: z.infer
       }
     }
     if (input.dueAt !== undefined) push("due_at", input.dueAt);
-    if (input.reviewerMembershipId !== undefined) {
+    if (input.reviewerMembershipId !== undefined && input.reviewerMembershipId !== t.reviewer_membership_id) {
+      // Security audit, 23 October 2026 (issue 17): the assignee (or the reviewer) used to pick any colleague as the
+      // reviewer, who could then approve the work before the lead saw it. Only the managing path changes it now (not
+      // `manages`, which also lets an assignee who is a project member manage their own task).
+      if (!(await canManageAssignee(db, ctx, t.assignee_membership_id, t.project_id, { self: false }))) throw forbidden(REVIEWER_MANAGERS_ONLY);
       if (input.reviewerMembershipId && input.reviewerMembershipId === t.assignee_membership_id) throw invalid("Reviewer must differ from assignee.", { reviewerMembershipId: ["Choose someone other than the assignee."] });
+      if (input.reviewerMembershipId && !(await db.maybeOne(`SELECT 1 FROM memberships WHERE id = $1 AND organisation_id = $2 AND status = 'active'`, [input.reviewerMembershipId, ctx.org.id]))) {
+        throw invalid("Reviewer is not an active member.", { reviewerMembershipId: ["Not an active member."] });
+      }
       push("reviewer_membership_id", input.reviewerMembershipId);
     }
     if (input.assigneeMembershipId !== undefined && input.assigneeMembershipId !== t.assignee_membership_id) {
       if (!manages) throw forbidden("Only managers can reassign tasks.");
+      // Security audit, 23 October 2026 (issue 11): the same rule as createTask, so staff cannot file a task for themselves and then hand it on.
+      if (ctx.membership.role === "employee" && input.assigneeMembershipId !== ctx.membership.id) throw forbidden(STAFF_SELF_ONLY);
       const target = await db.maybeOne<{ role: string }>(`SELECT role FROM memberships WHERE id = $1 AND organisation_id = $2 AND status = 'active'`, [input.assigneeMembershipId, ctx.org.id]);
       if (!target) throw invalid("Assignee is not an active member.", { assigneeMembershipId: ["Not an active member."] });
       if (target.role === "owner" || target.role === "hr") throw invalid("Organisation accounts cannot be assigned tasks.", { assigneeMembershipId: ["Organisation accounts cannot be assigned tasks."] });
@@ -255,7 +296,16 @@ export async function createProject(ctx: OrgContext, input: z.infer<typeof creat
 }
 
 export async function setProjectMember(ctx: OrgContext, projectId: string, membershipId: string, accessRole: "lead" | "contributor" | "viewer" | "remove") {
+  // Security audit, 23 October 2026 (issue 11): there was no check here but row security, which let staff make
+  // colleagues lead of their personal to-do project. Organisation accounts, and team leads who lead or created the
+  // project, manage who is on it; staff never do. db/pending/0063 mirrors this in project_members_write.
+  if (ctx.membership.role === "employee") throw forbidden("Only team leads and organisation accounts manage who is on a project.");
   return withUser(ctx.user.profileId, async (db) => {
+    if (ctx.membership.role === "manager") {
+      const p = await db.maybeOne<{ created_by: string }>(`SELECT created_by FROM projects WHERE id = $1 AND organisation_id = $2`, [projectId, ctx.org.id]);
+      if (!p) throw notFound("Project not found.");
+      if (p.created_by !== ctx.membership.id && !(await hasLeadRights(db, ctx, projectId))) throw forbidden("Only the project's lead manages who is on it.");
+    }
     if (accessRole === "remove") await db.query(`DELETE FROM project_members WHERE project_id = $1 AND membership_id = $2 AND organisation_id = $3`, [projectId, membershipId, ctx.org.id]);
     else await db.query(`INSERT INTO project_members(organisation_id, project_id, membership_id, access_role) VALUES ($1, $2, $3, $4) ON CONFLICT (project_id, membership_id) DO UPDATE SET access_role = EXCLUDED.access_role`, [ctx.org.id, projectId, membershipId, accessRole]);
     await audit(db, { organisationId: ctx.org.id, actorMembershipId: ctx.membership.id, action: "project.member_set", subjectType: "project", subjectId: projectId, subjectMembershipId: membershipId, metadata: { accessRole } });

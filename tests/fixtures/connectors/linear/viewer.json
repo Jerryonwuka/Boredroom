@@ -1,0 +1,15 @@
+{
+  "_source": "https://linear.app/developers/graphql (viewer query)",
+  "data": {
+    "viewer": {
+      "id": "c3f1a2b4-1d2e-4f5a-8b9c-0d1e2f3a4b01",
+      "name": "Ada Obi",
+      "email": "ada@example.com",
+      "organization": {
+        "id": "a1b2c3d4-0000-4000-8000-00000000ac01",
+        "name": "Acme",
+        "urlKey": "acme"
+      }
+    }
+  }
+}

@@ -1,8 +1,9 @@
 import { cache } from "react";
 import type { Presence } from "@/lib/presence";
 import { cookies, headers } from "next/headers";
+import { after } from "next/server";
 import { withSystem, isUniqueViolation, type Db } from "@/server/db";
-import { hashPassword, verifyPassword, randomToken, sha256 } from "@/server/lib/crypto";
+import { hashPassword, verifyPassword, randomToken, sha256, keyedDigest, signPayload, verifyPayload } from "@/server/lib/crypto";
 import { AppError, invalid, rateLimited, unauthenticated } from "@/server/lib/errors";
 import { mail } from "@/server/lib/mail";
 import { verifyEmailMail, resetPasswordMail } from "@/server/lib/emails";
@@ -48,6 +49,72 @@ async function rateLimit(db: Db, bucket: string, limit: number, windowSeconds: n
 }
 
 /**
+ * A rate-limit hit in its own transaction, committed before the caller checks anything (security audit, 23 October
+ * 2026, issue 1): a hit counted inside the caller's transaction was rolled back with the caller's error, so failed
+ * logins, codes and sign-ups were never counted. The 429 is thrown after the commit.
+ */
+export async function rateLimitCommitted(bucket: string, limit: number, windowSeconds: number, message?: string) {
+  const hits = await withSystem(async (db) => (await db.one<{ hits: number }>(
+    `INSERT INTO auth_rate_limits(bucket, window_start, hits)
+     VALUES ($1, to_timestamp(floor(extract(epoch from now()) / $2) * $2), 1)
+     ON CONFLICT (bucket, window_start) DO UPDATE SET hits = auth_rate_limits.hits + 1
+     RETURNING hits`, [bucket, windowSeconds])).hits);
+  if (hits > limit) throw rateLimited(message);
+}
+
+/**
+ * Failure counters (security audit, 23 October 2026, issue 1): `recordFailure` counts one failed attempt in its own
+ * committed transaction; `assertFailuresBelow` refuses, without counting, once a bucket has `limit` failures in the
+ * current window. Only failures count, so the person who knows their password is not slowed by their own sign-ins.
+ */
+export async function recordFailure(bucket: string, windowSeconds: number) {
+  await withSystem((db) => db.query(
+    `INSERT INTO auth_rate_limits(bucket, window_start, hits)
+     VALUES ($1, to_timestamp(floor(extract(epoch from now()) / $2) * $2), 1)
+     ON CONFLICT (bucket, window_start) DO UPDATE SET hits = auth_rate_limits.hits + 1`, [bucket, windowSeconds]));
+}
+
+export async function assertFailuresBelow(bucket: string, limit: number, windowSeconds: number, message?: string) {
+  const row = await withSystem((db) => db.maybeOne<{ hits: number }>(
+    `SELECT hits FROM auth_rate_limits WHERE bucket = $1 AND window_start = to_timestamp(floor(extract(epoch from now()) / $2) * $2)`,
+    [bucket, windowSeconds]));
+  if ((row?.hits ?? 0) >= limit) throw rateLimited(message);
+}
+
+/** Failed passwords for one address before sign-in is refused for the rest of the hour (security audit, 23 October 2026). */
+const LOGIN_FAILURES = { limit: 10, windowSeconds: 3600 } as const;
+const LOGIN_LOCKED = "Too many failed attempts for this account. Try again in an hour, or reset your password.";
+
+/**
+ * Known devices (security audit, 23 October 2026, verification V2): the per-address failure lock alone let anyone lock
+ * any account, admins included, out of password sign-in from rotating addresses. A browser that has signed in to an
+ * address before carries a signed cookie naming it (a keyed digest of the address, never the address), and the
+ * per-address lock does not refuse it; the lock for that address from that one network address still does. Five
+ * addresses per browser at most, for 180 days from the last sign-in.
+ */
+export const KNOWN_DEVICE_COOKIE = "boredroom_known";
+const KNOWN_DEVICE_DAYS = 180;
+const KNOWN_DEVICE_MAX = 5;
+const knownDigest = (email: string) => keyedDigest(`known-device:${email.trim().toLowerCase()}`).slice(0, 32);
+function knownDigests(cookie: string | null | undefined): string[] {
+  if (!cookie) return [];
+  const p = verifyPayload<{ kd?: unknown }>(cookie);
+  return Array.isArray(p?.kd) ? p.kd.filter((x): x is string => typeof x === "string").slice(0, KNOWN_DEVICE_MAX) : [];
+}
+export function isKnownDevice(cookie: string | null | undefined, email: string): boolean {
+  return knownDigests(cookie).includes(knownDigest(email));
+}
+/** The cookie's new value after `email` signed in on this browser: that address first, then up to four others. */
+export function rememberDevice(cookie: string | null | undefined, email: string): string {
+  const d = knownDigest(email);
+  return signPayload({ kd: [d, ...knownDigests(cookie).filter((x) => x !== d)].slice(0, KNOWN_DEVICE_MAX) }, KNOWN_DEVICE_DAYS * 86400);
+}
+export function knownDeviceCookieOptions() {
+  return { httpOnly: true, sameSite: "lax" as const, secure: process.env.NODE_ENV === "production", path: "/", maxAge: KNOWN_DEVICE_DAYS * 86400 };
+}
+const BAD_CREDENTIALS = "Email or password is incorrect. If you signed up with Google, use the Google button.";
+
+/**
  * Whether `next` leads to a way into a workspace that is open to this address (owner request, 11 October 2026: the
  * first-run welcome, D9): an invitation that is still pending and was sent to `email`, or a join code that is enabled.
  * While Boredroom is in waitlist mode these people may still create an account, by email or with Google; everyone else
@@ -78,9 +145,10 @@ export async function signUp(input: { email: string; password: string; displayNa
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw invalid("Enter a valid email address.", { email: ["Enter a valid email address."] });
   if (input.password.length < 10) throw invalid("Password must be at least 10 characters.", { password: ["Use at least 10 characters."] });
   if (!input.displayName.trim()) throw invalid("Name is required.", { displayName: ["Name is required."] });
+  // Committed before the address is tried, so "already taken" answers count too (security audit, 23 October 2026, issue 1).
+  await rateLimitCommitted(`signup:${input.ip ?? "unknown"}`, 20, 3600);
   const passwordHash = await hashPassword(input.password);
   return withSystem(async (db) => {
-    await rateLimit(db, `signup:${input.ip ?? "unknown"}`, 20, 3600);
     let authUser: { id: string };
     try {
       authUser = await db.one(`INSERT INTO auth_users(email, password_hash) VALUES ($1, $2) RETURNING id`, [email, passwordHash]);
@@ -161,14 +229,40 @@ export async function peekVerifyToken(token: string): Promise<{ authUserId: stri
   return row ? { authUserId: row.user_id, verified: row.verified, usable: row.usable } : null;
 }
 
+const pendingMail = new Set<Promise<unknown>>();
+/**
+ * Runs `fn` after the response (Next's `after`), so how long it takes never shows in the answer. Outside a request (a
+ * script, the tests) it runs at once in the background; `settleAuthMail` waits for it. Never throws.
+ */
+function afterResponse(fn: () => Promise<unknown>): void {
+  const run = () => fn().catch((err: unknown) => { console.warn(`[auth] recovery mail failed: ${(err as { code?: string })?.code ?? "error"}`); });
+  try {
+    after(run);
+  } catch {
+    const p = run();
+    pendingMail.add(p);
+    void p.finally(() => pendingMail.delete(p));
+  }
+}
+/** Waits for recovery mail started outside a request (tests). */
+export async function settleAuthMail(): Promise<void> {
+  while (pendingMail.size) await Promise.all([...pendingMail]);
+}
+
+/**
+ * Always the same answer, in the same time (security audit, 23 October 2026, issue 15 and verification V4): both limits
+ * are counted and committed first, then the account is looked up and its mail sent after the response, so an address
+ * with an account no longer answers more slowly (the mail round trip) than one without.
+ */
 export async function requestPasswordRecovery(email: string, ip?: string) {
   const normalised = email.trim().toLowerCase();
-  return withSystem(async (db) => {
-    await rateLimit(db, `recover:${ip ?? "unknown"}`, 10, 3600);
+  // Per address as well as per IP, so rotating addresses cannot flood one inbox (security audit, 23 October 2026, issue 15).
+  await rateLimitCommitted(`recover:${normalised}`, 5, 3600);
+  await rateLimitCommitted(`recover:${ip ?? "unknown"}`, 10, 3600);
+  afterResponse(() => withSystem(async (db) => {
     const u = await db.maybeOne<{ id: string }>(`SELECT id FROM auth_users WHERE email = $1`, [normalised]);
     if (u) await issueToken(db, u.id, normalised, "recover_password");
-    // Always succeed to avoid account enumeration.
-  });
+  }));
 }
 
 export async function resetPassword(token: string, newPassword: string) {
@@ -181,30 +275,55 @@ export async function resetPassword(token: string, newPassword: string) {
     if (!row) throw new AppError(410, "TOKEN_INVALID", "This recovery link is invalid or has expired.");
     await db.query(`UPDATE auth_users SET password_hash = $1, email_verified_at = COALESCE(email_verified_at, now()) WHERE id = $2`, [hash, row.user_id]);
     await db.query(`UPDATE auth_sessions SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL`, [row.user_id]);
+    // Proving the mailbox lifts a lockout from failed passwords (security audit, 23 October 2026, issue 1), the
+    // per-address and per-address-and-network ones alike (verification V2).
+    await db.query(`DELETE FROM auth_rate_limits WHERE bucket = 'login.fail:' || (SELECT email FROM auth_users WHERE id = $1)
+                       OR starts_with(bucket, 'login.fail:' || (SELECT email FROM auth_users WHERE id = $1) || ':')`, [row.user_id]);
     await db.query(`INSERT INTO audit_events(actor_user_id, action, subject_type, subject_id) VALUES ($1, 'auth.password_reset', 'auth_user', $1)`, [row.user_id]);
   });
 }
 
-export async function signIn(input: { email: string; password: string; ip?: string; userAgent?: string }) {
+/**
+ * Security audit, 23 October 2026 (issues 1 and 15): the attempt is counted in its own committed transaction before
+ * anything is checked, failed passwords are counted per address (ten an hour, then refused until the hour is out or
+ * the password is reset), and the password is checked before the account's state is read, so a wrong password gets
+ * one answer whatever the account is (unknown, Google-only, suspended, closed). Only someone who knows the password
+ * learns that their account is suspended, and why.
+ *
+ * Verification V2 (security audit, 23 October 2026): every attempt no longer counts against the address, only failures
+ * do, and the per-address lock no longer refuses a browser that signed in to this address before (`knownDevice`, the
+ * KNOWN_DEVICE_COOKIE value), so nobody can keep an owner or admin out of their own account from rotating addresses.
+ * Failures are also counted per address and network address, and that lock refuses everyone, known browsers included.
+ * `knownDevice` comes back as the cookie's new value.
+ */
+export async function signIn(input: { email: string; password: string; ip?: string; userAgent?: string; knownDevice?: string | null }) {
   const email = input.email.trim().toLowerCase();
+  const ip = input.ip ?? "unknown";
+  await rateLimitCommitted(`login:${ip}`, 30, 900);
+  await assertFailuresBelow(`login.fail:${email}:${ip}`, LOGIN_FAILURES.limit, LOGIN_FAILURES.windowSeconds, LOGIN_LOCKED);
+  if (!isKnownDevice(input.knownDevice, email)) await assertFailuresBelow(`login.fail:${email}`, LOGIN_FAILURES.limit, LOGIN_FAILURES.windowSeconds, LOGIN_LOCKED);
+  const u = await withSystem((db) => db.maybeOne<{ id: string; password_hash: string | null; email_verified_at: string | null; status: string; status_reason: string | null }>(
+    `SELECT id, password_hash, email_verified_at, status, status_reason FROM auth_users WHERE email = $1`, [email]));
+  // The same scrypt work whether or not there is a password to check, so timing does not tell either.
+  const ok = await verifyPassword(input.password, u?.password_hash ?? "scrypt$AAAA$AAAA");
+  if (!u || !u.password_hash || !ok) {
+    await recordFailure(`login.fail:${email}`, LOGIN_FAILURES.windowSeconds);
+    await recordFailure(`login.fail:${email}:${ip}`, LOGIN_FAILURES.windowSeconds);
+    throw new AppError(401, "BAD_CREDENTIALS", BAD_CREDENTIALS);
+  }
+  if (u.status !== "active") throw new AppError(403, "ACCOUNT_" + u.status.toUpperCase(), u.status === "banned" ? "This account has been closed." : u.status === "deleted" ? "This account no longer exists." : `This account is suspended${u.status_reason ? `: ${u.status_reason}` : ""}. Contact support if you think this is a mistake.`);
   return withSystem(async (db) => {
-    await rateLimit(db, `login:${input.ip ?? "unknown"}`, 30, 900);
-    await rateLimit(db, `login:${email}`, 10, 900);
-    const u = await db.maybeOne<{ id: string; password_hash: string | null; email_verified_at: string | null }>(
-      `SELECT id, password_hash, email_verified_at FROM auth_users WHERE email = $1`, [email]);
-    // An account made with Google has no password; say so rather than "incorrect".
-    const st = u ? await db.maybeOne<{ status: string; status_reason: string | null }>(`SELECT status, status_reason FROM auth_users WHERE id = $1`, [u.id]) : null;
-    if (st && st.status !== "active") throw new AppError(403, "ACCOUNT_" + st.status.toUpperCase(), st.status === "banned" ? "This account has been closed." : st.status === "deleted" ? "This account no longer exists." : `This account is suspended${st.status_reason ? `: ${st.status_reason}` : ""}. Contact support if you think this is a mistake.`);
-    if (u && !u.password_hash) throw new AppError(401, "NO_PASSWORD", "This account signs in with Google. Use the Google button, or set a password with “Forgot your password?”.");
-    const ok = u ? await verifyPassword(input.password, u.password_hash!) : await verifyPassword(input.password, "scrypt$AAAA$AAAA");
-    if (!u || !ok) throw new AppError(401, "BAD_CREDENTIALS", "Email or password is incorrect.");
     const token = await issueSession(db, u.id, { ip: input.ip, userAgent: input.userAgent, method: "password" });
-    return { token, emailVerified: !!u.email_verified_at };
+    return { token, emailVerified: !!u.email_verified_at, knownDevice: rememberDevice(input.knownDevice, email) };
   });
 }
 
 /** A new session for a user who has just proved who they are, by password or by Google. */
-export async function issueSession(db: Db, userId: string, meta: { ip?: string; userAgent?: string; method: "password" | "google" }) {
+/**
+ * Security audit, 23 October 2026 (issue 14): a Control Center impersonation is recorded as method "impersonation" with
+ * its record's id (it was logged as a Google sign-in by the customer).
+ */
+export async function issueSession(db: Db, userId: string, meta: { ip?: string; userAgent?: string; method: "password" | "google" | "impersonation"; impersonationId?: string }) {
   const token = randomToken(32);
   const session = await db.one<{ id: string }>(
     `INSERT INTO auth_sessions(user_id, token_hash, expires_at, user_agent) VALUES ($1, $2, now() + ($3 || ' days')::interval, $4) RETURNING id`,
@@ -212,7 +331,7 @@ export async function issueSession(db: Db, userId: string, meta: { ip?: string; 
   await db.query(`UPDATE auth_users SET last_login_at = now() WHERE id = $1`, [userId]);
   await db.query(`UPDATE platform_admins SET last_login_at = now() WHERE auth_user_id = $1`, [userId]);
   await db.query(`INSERT INTO audit_events(actor_user_id, action, subject_type, subject_id, metadata) VALUES ($1, 'auth.sign_in', 'auth_session', $2, $3)`,
-    [userId, session.id, JSON.stringify({ ip: meta.ip ?? null, method: meta.method })]);
+    [userId, session.id, JSON.stringify({ ip: meta.ip ?? null, method: meta.method, ...(meta.impersonationId ? { impersonationId: meta.impersonationId } : {}) })]);
   return token;
 }
 

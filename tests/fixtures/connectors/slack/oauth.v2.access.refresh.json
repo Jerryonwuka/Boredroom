@@ -1,0 +1,17 @@
+{
+  "_source": "https://docs.slack.dev/authentication/using-token-rotation (refresh_token grant response; values invented)",
+  "ok": true,
+  "app_id": "A0KRD7HC3",
+  "scope": "chat:write,channels:read,groups:read",
+  "token_type": "bot",
+  "access_token": "xoxe.xoxb-test-slack-access-0003",
+  "bot_user_id": "U0KRQLJ9H",
+  "refresh_token": "xoxe-test-slack-refresh-0003",
+  "expires_in": 43200,
+  "team": {
+    "id": "T9TK3CUKW",
+    "name": "Acme Design"
+  },
+  "enterprise": null,
+  "is_enterprise_install": false
+}

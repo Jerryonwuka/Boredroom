@@ -1,0 +1,15 @@
+{
+  "_source": "https://developers.asana.com/reference/typeaheadforworkspace",
+  "data": [
+    {
+      "gid": "1201000000000002",
+      "name": "Ben Ade",
+      "resource_type": "user"
+    },
+    {
+      "gid": "1201000000000003",
+      "name": "Ben Adeyemi",
+      "resource_type": "user"
+    }
+  ]
+}

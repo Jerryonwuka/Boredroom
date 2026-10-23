@@ -1,0 +1,17 @@
+{
+  "_source": "https://docs.slack.dev/reference/methods/conversations.list (values invented)",
+  "ok": true,
+  "channels": [
+    {
+      "id": "C0G9QF9GW",
+      "name": "standups",
+      "is_channel": true,
+      "is_private": false,
+      "is_archived": false,
+      "is_member": true
+    }
+  ],
+  "response_metadata": {
+    "next_cursor": ""
+  }
+}

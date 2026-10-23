@@ -1,0 +1,10 @@
+{
+  "_source": "https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-auth-code-flow#successful-response-1 (values invented)",
+  "token_type": "Bearer",
+  "scope": "https://graph.microsoft.com/Calendars.ReadBasic https://graph.microsoft.com/Calendars.ReadWrite https://graph.microsoft.com/User.Read",
+  "expires_in": 3736,
+  "ext_expires_in": 3736,
+  "access_token": "eyJ0eXAiOiJKV1QiLCJub25jZSI6InRlc3QifQ.test-ms-access-0001",
+  "refresh_token": "0.AAAA-test-ms-refresh-0001",
+  "id_token": "eyJ0eXAiOiJKV1QifQ.e30.test"
+}

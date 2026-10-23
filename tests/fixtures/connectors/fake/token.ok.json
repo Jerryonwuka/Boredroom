@@ -1,0 +1,8 @@
+{
+  "_source": "Boredroom's pretend provider (src/server/connectors/adapters/fake.ts), shaped like RFC 6749 §5.1 (https://www.rfc-editor.org/rfc/rfc6749#section-5.1)",
+  "access_token": "fake-access-token-fixture-0001",
+  "refresh_token": "fake-refresh-token-fixture-0001",
+  "token_type": "bearer",
+  "expires_in": 3600,
+  "scope": "read write"
+}

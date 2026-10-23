@@ -1,0 +1,26 @@
+{
+  "_source": "https://developers.asana.com/reference/updatetask",
+  "data": {
+    "gid": "1203000000000001",
+    "resource_type": "task",
+    "name": "Write the plan",
+    "completed": true,
+    "due_on": "2026-10-24",
+    "due_at": null,
+    "permalink_url": "https://app.asana.com/0/0/1203000000000001",
+    "modified_at": "2026-10-22T09:00:00.000Z",
+    "assignee": {
+      "gid": "1201000000000001",
+      "name": "Ada Obi",
+      "email": "ada@example.com"
+    },
+    "projects": [
+      {
+        "gid": "1202000000000001",
+        "name": "Website"
+      }
+    ],
+    "notes": "Draft the copy.",
+    "resource_subtype": "default_task"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "_source": "https://developers.notion.com/reference/post-search (Notion-Version 2026-03-11; response shape and page/data source objects from the reference's examples; people and content invented)",
+  "object": "list",
+  "results": [],
+  "next_cursor": null,
+  "has_more": false,
+  "type": "page_or_data_source",
+  "page_or_data_source": {},
+  "request_status": {
+    "type": "complete"
+  }
+}

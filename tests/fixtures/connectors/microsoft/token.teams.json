@@ -1,0 +1,10 @@
+{
+  "_source": "https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-auth-code-flow#successful-response-1 (values invented)",
+  "token_type": "Bearer",
+  "scope": "User.Read Team.ReadBasic.All Channel.ReadBasic.All ChannelMessage.Send profile openid email",
+  "expires_in": 4521,
+  "ext_expires_in": 4521,
+  "access_token": "eyJ0eXAiOiJKV1QifQ.test-ms-access-0002",
+  "refresh_token": "0.AAAA-test-ms-refresh-0002",
+  "id_token": "eyJ0eXAiOiJKV1QifQ.e30.test"
+}

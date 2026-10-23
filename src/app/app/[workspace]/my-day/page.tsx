@@ -12,6 +12,12 @@ import { MyDayBoard } from "@/components/app/my-day";
 import { YourDaySection } from "@/components/app/your-day";
 import { PageNote, PageNotes } from "@/components/ui/page-notes";
 import { formatDuration, formatLongDate } from "@/lib/utils";
+// Connected apps (owner decisions, 22 October 2026: connectors): "From your apps", the person's own calendar and issues.
+import { connectedDay } from "@/server/connectors/items";
+import { ConnectedDaySection } from "@/components/app/connectors/connected-day";
+import { CONNECTOR_WORDS } from "@/lib/connectors/words";
+import { withUser } from "@/server/db";
+import { managersOf } from "@/server/services/common";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "My Day" };
@@ -42,6 +48,15 @@ export default async function MyDayPage({ params }: { params: Promise<{ workspac
     // The header names the person's own assistant (owner decision, 7 October 2026: personal assistants).
     assistantProfiles(ctx),
   ]);
+  // Connected apps (owner decisions, 22 October 2026): never takes My Day down; left out before 0061 or without the plan.
+  const [apps, leadName] = await Promise.all([
+    connectedDay(ctx).catch(() => null),
+    withUser(ctx.user.profileId, async (db) => {
+      const ids = await managersOf(db, ctx.org.id, ctx.membership.id);
+      return ids.length ? (await db.maybeOne<{ name: string }>(`SELECT p.display_name AS name FROM memberships m JOIN profiles p ON p.id = m.user_id WHERE m.id = $1`, [ids[0]]))?.name ?? null : null;
+    }).catch(() => null),
+  ]);
+  const openTodos = [...data.planned, ...data.ownTodos, ...data.fromLeads].filter((t, i, all) => all.findIndex((x) => x.id === t.id) === i).map((t) => ({ id: t.id, title: t.title }));
   const first = ctx.user.displayName.split(" ")[0];
   const yourTeam = team
     ? { working: team.filter((r) => r.membership_id !== ctx.membership.id).map((r) => ({ id: r.membership_id, name: r.display_name, state: r.session_state ?? null, task: r.task_title ?? null, todaySeconds: r.today_seconds })) }
@@ -62,10 +77,12 @@ export default async function MyDayPage({ params }: { params: Promise<{ workspac
         lead={lead}
         yourDay={<YourDaySection className="pb-4" orgSlug={ctx.org.slug} role={role} brief={brief} timeZone={ctx.org.timezone} team={yourTeam} />}
       />
+      {apps?.ready && apps.enabled ? <div className="mt-10"><ConnectedDaySection orgSlug={ctx.org.slug} view={apps} timeZone={ctx.org.timezone} todos={openTodos} lead={leadName} /></div> : null}
       {/* Page notes (owner request, 7 October 2026): explanations at the bottom of the screen, small and grey. No daily
           report any more (owner decision, 6 October 2026); said once, since people were used to one. */}
       <PageNotes>
         <PageNote>There is no daily report to write: your to-dos and timer are the record your team lead sees.</PageNote>
+        {apps?.ready && apps.enabled ? <PageNote section={CONNECTOR_WORDS.day.heading}>{CONNECTOR_WORDS.day.note}</PageNote> : null}
       </PageNotes>
     </AppShell>
   );

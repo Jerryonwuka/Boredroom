@@ -1,0 +1,10 @@
+{
+  "_source": "https://learn.microsoft.com/en-us/graph/api/channel-list (values invented)",
+  "value": [
+    {
+      "id": "19:aa11bb22@thread.tacv2",
+      "displayName": "General",
+      "membershipType": "standard"
+    }
+  ]
+}

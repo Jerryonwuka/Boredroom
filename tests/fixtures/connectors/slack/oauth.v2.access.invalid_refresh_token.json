@@ -1,0 +1,5 @@
+{
+  "_source": "https://docs.slack.dev/reference/methods/oauth.v2.access#errors",
+  "ok": false,
+  "error": "invalid_refresh_token"
+}

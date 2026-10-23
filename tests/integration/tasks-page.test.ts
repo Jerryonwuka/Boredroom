@@ -93,10 +93,13 @@ describe("handing tasks upwards", () => {
     const done = await completeTask(a.ownerCtx, t.id, { note: "" });
     expect(done.completed).toBe(false);
     expect((await tasksView(a.managerCtx, { status: "check" })).tasks.map((x) => x.title)).toEqual(["Approve the Q4 design budget"]);
-    // HR and another lead can be assignees too; the owner still cannot give themself a task.
+    // HR and another lead can be assignees too. Since the owner decision of 25 September 2026 (createTask), an organisation
+    // account may keep a task for itself; this line expected the older refusal (security audit follow-up, 23 October 2026:
+    // the test is aligned with the recorded decision, the code is unchanged; quickTodo's own-to-do refusal still stands).
     await quickTodo(a.managerCtx, { title: "Send the contract to legal", assigneeMembershipId: a.hrCtx.membership.id });
     expect((await tasksView(a.hrCtx)).tasks.map((x) => x.title)).toContain("Send the contract to legal");
-    await expect(createTask(a.ownerCtx, { projectId: a.projectId, title: "Owner task", expectedOutput: "x", assigneeMembershipId: a.ownerCtx.membership.id, category: "work", priority: "normal", addToMyDay: false })).rejects.toMatchObject({ status: 422 });
+    await expect(createTask(a.ownerCtx, { projectId: a.projectId, title: "Owner task", expectedOutput: "x", assigneeMembershipId: a.ownerCtx.membership.id, category: "work", priority: "normal", addToMyDay: false })).resolves.toMatchObject({ id: expect.any(String) });
+    await expect(quickTodo(a.ownerCtx, { title: "Owner to-do" })).rejects.toMatchObject({ status: 403 });
     // Staff still cannot hand tasks to anyone.
     await expect(quickTodo(a.employeeCtx, { title: "Not allowed", assigneeMembershipId: a.ownerCtx.membership.id })).rejects.toMatchObject({ status: 403 });
   });

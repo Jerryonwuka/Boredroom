@@ -1,0 +1,39 @@
+{
+  "_source": "https://developers.asana.com/docs/webhooks-guide (an event delivery)",
+  "events": [
+    {
+      "user": {
+        "gid": "1201000000000002",
+        "resource_type": "user"
+      },
+      "created_at": "2026-10-22T09:00:00.000Z",
+      "action": "changed",
+      "resource": {
+        "gid": "1203000000000001",
+        "resource_type": "task",
+        "resource_subtype": "default_task"
+      },
+      "parent": null,
+      "change": {
+        "field": "due_on",
+        "action": "changed"
+      }
+    },
+    {
+      "user": {
+        "gid": "1201000000000002",
+        "resource_type": "user"
+      },
+      "created_at": "2026-10-22T09:00:01.000Z",
+      "action": "added",
+      "resource": {
+        "gid": "1204000000000002",
+        "resource_type": "story"
+      },
+      "parent": {
+        "gid": "1203000000000001",
+        "resource_type": "task"
+      }
+    }
+  ]
+}

@@ -1,0 +1,46 @@
+{
+  "_source": "https://developers.google.com/workspace/calendar/api/v3/reference/events/list (Events resource: https://developers.google.com/workspace/calendar/api/v3/reference/events)",
+  "items": [
+    {
+      "id": "evt-ooo",
+      "status": "confirmed",
+      "summary": "Out of office",
+      "start": {
+        "dateTime": "2026-10-27T09:00:00+00:00"
+      },
+      "end": {
+        "dateTime": "2026-10-27T17:00:00+00:00"
+      },
+      "organizer": {
+        "self": true
+      },
+      "updated": "2026-10-19T08:00:00.000Z",
+      "eventType": "outOfOffice"
+    },
+    {
+      "id": "evt-untitled",
+      "status": "confirmed",
+      "start": {
+        "dateTime": "2026-10-28T09:00:00+00:00"
+      },
+      "end": {
+        "dateTime": "2026-10-28T09:15:00+00:00"
+      },
+      "organizer": {
+        "self": false
+      },
+      "attendees": [
+        {
+          "self": true,
+          "responseStatus": "needsAction"
+        },
+        {
+          "responseStatus": "accepted"
+        }
+      ],
+      "updated": "2026-10-19T08:00:00.000Z",
+      "eventType": "default",
+      "htmlLink": "https://evil.example.com/phish"
+    }
+  ]
+}

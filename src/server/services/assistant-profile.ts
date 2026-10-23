@@ -212,7 +212,11 @@ function quietOf(ready: boolean, r: Pick<ProfilesRow, "timezone" | "quiet_start"
 export const assistantProfiles = cache(async (ctx: OrgContext): Promise<AssistantProfiles> => {
   try {
     // A database restored to before 0045 (or 0046) while the process runs: once more without those columns, not Brenda for all.
-    const p = await retryWithout0050(() => retryWithout0046(() => retryWithout0045(() => retryWithout0047(() => withUser(ctx.user.profileId, (db) => readAssistantProfiles(db, ctx))))));
+    const read = await retryWithout0050(() => retryWithout0046(() => retryWithout0045(() => retryWithout0047(() => withUser(ctx.user.profileId, (db) => readAssistantProfiles(db, ctx))))));
+    // Connected apps (owner decisions, 22 October 2026: connectors): a meeting on the person's own calendar, for their own
+    // surfaces only (chimes and the opener hold). Never throws; nothing before 0061 or while someone is signed in as them.
+    const meeting = await import("@/server/connectors/items").then((m) => m.myMeetingState(ctx)).catch(() => null);
+    const p = meeting?.active ? { ...read, meeting: { active: true, until: meeting.until } } : read;
     // Only for someone who chose 'auto' (review, 8 October 2026): without AI the built-in helper always asks, and the
     // drawer, Brenda's page and the notch say so instead of promising it acts straight away.
     return p.act?.mode === "auto" ? { ...p, ai: await aiConnected(ctx.org.id) } : p;

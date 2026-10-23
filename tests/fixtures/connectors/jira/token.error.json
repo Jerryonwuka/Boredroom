@@ -1,0 +1,5 @@
+{
+  "_source": "https://developer.atlassian.com/cloud/jira/platform/oauth-2-3lo-apps/ (refresh token error)",
+  "error": "invalid_grant",
+  "error_description": "Unknown or invalid refresh token."
+}

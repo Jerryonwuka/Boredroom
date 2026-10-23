@@ -14,7 +14,9 @@ export type FeatureFlags = Record<string, boolean>;
 
 // Calls have no flag: they are on every plan (owner decisions, 8 October 2026: phase 8, which also took out the two
 // screen-recording flags).
-export const FEATURE_KEYS = ["HEARTBEAT_TRACKING", "ADVANCED_ANALYTICS", "API_ACCESS", "CUSTOM_ROLES", "AUDIT_LOGS", "EXPORT_REPORTS", "AI_ASSISTANT", "VOICE_NOTES", "GOOGLE_SIGN_IN"] as const;
+export const FEATURE_KEYS = ["HEARTBEAT_TRACKING", "ADVANCED_ANALYTICS", "API_ACCESS", "CUSTOM_ROLES", "AUDIT_LOGS", "EXPORT_REPORTS", "AI_ASSISTANT", "VOICE_NOTES", "GOOGLE_SIGN_IN",
+  // Connected apps (owner decision, 22 October 2026): on for every plan by migration 0061, switchable like every module.
+  "CONNECTORS"] as const;
 
 type Cache = { at: number; values: Record<string, unknown> };
 let cache: Cache | null = null;

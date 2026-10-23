@@ -167,13 +167,15 @@ describe("a promise in a tracked channel", () => {
   it("accept: a to-do owned by the committer, linked to the message and the commitment", async () => {
     await expect(C.acceptCommitment(impersonated(ben), cid, {})).rejects.toMatchObject({ status: 403, message: LOOP_WORDS.errors.impersonated("Ben") });
     await expect(C.acceptCommitment(ada, cid, {})).rejects.toMatchObject({ status: 404 });
-    const r = await C.acceptCommitment(ben, cid, { dueAt: "2026-10-15T17:00:00+01:00" });
+    // A due date well in the future (security audit verification, 23 October 2026): 15 October 2026 had passed, so the
+    // commitment read as overdue rather than open.
+    const r = await C.acceptCommitment(ben, cid, { dueAt: "2030-10-15T17:00:00+01:00" });
     expect(r.note).toBeNull();
-    expect(r.commitment).toMatchObject({ status: "open", display: "open", canMarkDone: true, canAccept: false, dueAt: "2026-10-15T16:00:00.000Z", dueLabel: "Thu 15 Oct, 17:00" });
+    expect(r.commitment).toMatchObject({ status: "open", display: "open", canMarkDone: true, canAccept: false, dueAt: "2030-10-15T16:00:00.000Z", dueLabel: "Tue 15 Oct, 17:00" });
     const taskId = r.commitment.todo!.id;
     const [t] = await adminQuery<{ assignee_membership_id: string; created_by: string; title: string; expected_output: string; due_at: string }>(
       "SELECT assignee_membership_id, created_by, title, expected_output, due_at FROM tasks WHERE id = $1", [taskId]);
-    expect(t).toMatchObject({ assignee_membership_id: id(ben), created_by: id(ben), title: "Send the deck", due_at: "2026-10-15T16:00:00.000Z" });
+    expect(t).toMatchObject({ assignee_membership_id: id(ben), created_by: id(ben), title: "Send the deck", due_at: "2030-10-15T16:00:00.000Z" });
     expect(t.expected_output).toContain(`Noted in #Design: http://localhost:3000/app/company-a/messages?c=${design}#m-${msg}`);
     expect(await adminQuery("SELECT todo_task_id, lease_until FROM commitments WHERE id = $1", [cid])).toEqual([{ todo_task_id: taskId, lease_until: null }]);
     expect(await labelOf(msg)).toBe("noted");

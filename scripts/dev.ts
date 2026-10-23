@@ -1,7 +1,11 @@
 /**
  * `pnpm dev`: starts the app, the background worker (which runs reminders, routines, the call sweeps and Brenda's
  * notes on calls), and the self-contained PostgreSQL when .env.local points at it (i.e. the project was set up with
- * `pnpm quickstart`). With your own PostgreSQL nothing changes. `pnpm dev --no-worker` skips the worker.
+ * `pnpm quickstart`). With your own PostgreSQL on this machine nothing changes. `pnpm dev --no-worker` skips the worker.
+ *
+ * A database that isn't on this machine is refused (owner request, 23 October 2026: realtime plan, phase 0; the laptop's
+ * dev server and worker kept production Neon awake day and night). BOREDROOM_DEV_REMOTE_DB=1 allows it for the web app
+ * only: the worker never starts against a remote database from here (src/server/lib/db-guard.ts).
  */
 import { config } from "dotenv";
 config({ path: [".env.local", ".env"], quiet: true });
@@ -9,6 +13,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { usesLocalPostgres, canConnect, startLocalPostgres, superUrl, DATA_DIR } from "./local-pg";
 import { migrate } from "../db/scripts/migrate";
+import { devDatabaseGuard } from "../src/server/lib/db-guard";
 
 /** After a `git pull` that added a package, node_modules is behind package.json; install before Next tries to resolve it. */
 function ensureDependencies() {
@@ -22,6 +27,9 @@ function ensureDependencies() {
 }
 
 async function main() {
+  const guard = devDatabaseGuard(process.env, { noWorker: process.argv.includes("--no-worker") });
+  if (!guard.ok) { console.error(guard.message); process.exit(1); }
+  if (guard.remote) console.warn(guard.notice);
   ensureDependencies();
   // On-device dictation serves its WebAssembly runtime from public/speech (see scripts/copy-speech-runtime.mjs).
   spawnSync(process.execPath, ["scripts/copy-speech-runtime.mjs"], { stdio: "inherit" });
@@ -37,7 +45,7 @@ async function main() {
   const port = process.env.PORT ?? "3000";
   const next = spawn(npx, ["next", "dev", "-p", port], { stdio: "inherit", env: process.env, shell: process.platform === "win32" });
   // Without the worker, reminders and routines never run and calls are only tidied when someone looks. Run it alongside the app.
-  const worker = process.argv.includes("--no-worker") ? null : spawn(npx, ["tsx", "worker/index.ts"], { stdio: "inherit", env: process.env, shell: process.platform === "win32" });
+  const worker = !guard.worker ? null : spawn(npx, ["tsx", "worker/index.ts"], { stdio: "inherit", env: process.env, shell: process.platform === "win32" });
   if (worker) console.log("Background worker started (reminders, routines, calls).");
   const shutdown = async () => { worker?.kill(); if (stop) { console.log("\nStopping local PostgreSQL…"); await stop(); } process.exit(0); };
   process.on("SIGINT", shutdown); process.on("SIGTERM", shutdown);

@@ -1,0 +1,76 @@
+{
+  "_source": "https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-issue-search/ (last page)",
+  "issues": [
+    {
+      "id": "10103",
+      "key": "WEB-9",
+      "self": "https://api.atlassian.com/ex/jira/11223344-5566-4778-899a-abcdefabcdef/rest/api/3/issue/10103",
+      "fields": {
+        "summary": "Retire the old form",
+        "status": {
+          "name": "Won't Do",
+          "statusCategory": {
+            "key": "done",
+            "name": "done"
+          }
+        },
+        "duedate": null,
+        "priority": {
+          "name": "Low",
+          "id": "2"
+        },
+        "assignee": {
+          "accountId": "5b10a2844c20165700ede21g",
+          "displayName": "Ada Obi",
+          "emailAddress": "ada@example.com"
+        },
+        "updated": "2026-10-20T10:00:00.000+0000",
+        "project": {
+          "id": "10001",
+          "key": "WEB",
+          "name": "Website"
+        },
+        "issuetype": {
+          "name": "Task",
+          "subtask": false
+        }
+      }
+    },
+    {
+      "id": "10104",
+      "key": "WEB-10",
+      "self": "https://api.atlassian.com/ex/jira/11223344-5566-4778-899a-abcdefabcdef/rest/api/3/issue/10104",
+      "fields": {
+        "summary": "Ship pricing",
+        "status": {
+          "name": "Done",
+          "statusCategory": {
+            "key": "done",
+            "name": "done"
+          }
+        },
+        "duedate": null,
+        "priority": {
+          "name": "Lowest",
+          "id": "2"
+        },
+        "assignee": {
+          "accountId": "5b10a2844c20165700ede21g",
+          "displayName": "Ada Obi",
+          "emailAddress": "ada@example.com"
+        },
+        "updated": "2026-10-20T09:00:00.000+0000",
+        "project": {
+          "id": "10001",
+          "key": "WEB",
+          "name": "Website"
+        },
+        "issuetype": {
+          "name": "Task",
+          "subtask": false
+        }
+      }
+    }
+  ],
+  "isLast": true
+}

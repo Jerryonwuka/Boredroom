@@ -4,7 +4,7 @@
  */
 import { withUser, type Db } from "@/server/db";
 import type { OrgContext } from "@/server/lib/api";
-import { assignableMembers } from "@/server/services/tasks";
+import { assignableMembers, hasLeadRights } from "@/server/services/tasks";
 import { todayLocal } from "@/server/lib/time";
 import { membersOnCall } from "@/server/services/calls";
 
@@ -89,7 +89,9 @@ export async function projectDetail(ctx: OrgContext, projectId: string) {
     const tasks = await db.query<TaskRow>(`${TASK_SELECT} WHERE t.project_id = $1 ORDER BY t.archived_at NULLS FIRST, CASE t.status WHEN 'blocked' THEN 0 WHEN 'in_progress' THEN 1 WHEN 'in_review' THEN 2 WHEN 'todo' THEN 3 ELSE 4 END, t.due_at NULLS LAST, t.created_at`, [projectId]);
     const members = await db.query<{ membership_id: string; display_name: string; access_role: string }>(`SELECT pm.membership_id, pr.display_name, pm.access_role FROM project_members pm JOIN memberships m ON m.id = pm.membership_id JOIN profiles pr ON pr.id = m.user_id WHERE pm.project_id = $1 ORDER BY pm.access_role, pr.display_name`, [projectId]);
     const allMembers = await db.query<{ id: string; display_name: string }>(`SELECT m.id, pr.display_name FROM memberships m JOIN profiles pr ON pr.id = m.user_id WHERE m.organisation_id = $1 AND m.status = 'active' ORDER BY pr.display_name`, [ctx.org.id]);
-    const isLead = members.some((m) => m.membership_id === ctx.membership.id && m.access_role === "lead") || project.created_by === ctx.membership.id;
+    // Security audit, 23 October 2026 (issue 11): a project staff created (their personal to-do list) gives them no lead rights.
+    const isLead = (members.some((m) => m.membership_id === ctx.membership.id && m.access_role === "lead") || project.created_by === ctx.membership.id)
+      && !(ctx.membership.role === "employee" && project.created_by === ctx.membership.id);
     return { project, tasks, members, allMembers, isLead };
   });
 }
@@ -114,8 +116,9 @@ export async function taskDetail(ctx: OrgContext, taskId: string) {
     const comments = await db.query<{ id: string; body: string; created_at: string; author_name: string }>(`SELECT c.id, c.body, c.created_at, pr.display_name AS author_name FROM task_comments c JOIN memberships m ON m.id = c.author_membership_id JOIN profiles pr ON pr.id = m.user_id WHERE c.task_id = $1 ORDER BY c.created_at`, [taskId]);
     const history = await db.query<{ from_status: string | null; to_status: string; reason: string | null; occurred_at: string; actor_name: string | null }>(`SELECT h.from_status, h.to_status, h.reason, h.occurred_at, pr.display_name AS actor_name FROM task_status_history h LEFT JOIN memberships m ON m.id = h.actor_membership_id LEFT JOIN profiles pr ON pr.id = m.user_id WHERE h.task_id = $1 ORDER BY h.occurred_at`, [taskId]);
     const members = await db.query<{ id: string; display_name: string }>(`SELECT m.id, pr.display_name FROM memberships m JOIN profiles pr ON pr.id = m.user_id WHERE m.organisation_id = $1 AND m.status = 'active' ORDER BY pr.display_name`, [ctx.org.id]);
-    const manages = await db.one<{ v: boolean }>(`SELECT (app_has_role($1, 'owner', 'hr') OR app_manages($1, $2) OR app_is_project_lead($1, $3)) AS v`, [ctx.org.id, task.assignee_membership_id, task.project_id]);
-    return { task, sessions, submissions, deliverables, reviews, comments, history, members, canManage: manages.v };
+    // The same lead rights updateTask uses (security audit, 23 October 2026, issue 11: hasLeadRights).
+    const manages = await db.one<{ v: boolean }>(`SELECT (app_has_role($1, 'owner', 'hr') OR app_manages($1, $2)) AS v`, [ctx.org.id, task.assignee_membership_id]);
+    return { task, sessions, submissions, deliverables, reviews, comments, history, members, canManage: manages.v || (await hasLeadRights(db, ctx, task.project_id)) };
   });
 }
 

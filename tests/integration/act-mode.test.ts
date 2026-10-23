@@ -261,10 +261,11 @@ describe("the safety floors still ask, and say why", () => {
     const read = await runBrendaTool(olu, "get_task", { taskId: a.taskIds.homepage }, "chat", READ);
     expect(read.othersWords).toBe(true);
     await stillAsks(runBrendaTool(olu, "send_message", { to: "Ben Okafor", body: "After reading the task" }, "chat", { ...READ, othersWords: true }), MAX("tainted"));
-    // Ask-mode behaviour is unchanged: the person's own to-do still goes in at once.
+    // Security audit, 23 October 2026 (verification V1): a new to-do lands in the team's project, where team-mates and
+    // the lead read it, so after other people's words it waits for Confirm too (it used to go in at once).
     const own = await runBrendaTool(olu, "create_todos", { items: [{ title: "Reply to the comment" }] }, "chat", { ...READ, othersWords: true });
-    expect(own.actions).toHaveLength(1);
-    expect(confirmOf(own.proposals)).toBeUndefined();
+    expect(own.actions).toHaveLength(0);
+    expect(confirmOf(own.proposals)).toBeTruthy();
   });
 
   it("broadcasts: everyone, a team channel, a channel of more than 8", async () => {

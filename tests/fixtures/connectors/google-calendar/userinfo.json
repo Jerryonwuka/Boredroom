@@ -1,0 +1,6 @@
+{
+  "_source": "https://developers.google.com/identity/openid-connect/openid-connect#obtainuserinfo (values invented)",
+  "sub": "110169484474386276334",
+  "email": "ada@example.com",
+  "email_verified": true
+}

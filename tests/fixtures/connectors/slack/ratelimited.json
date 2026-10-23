@@ -1,0 +1,5 @@
+{
+  "_source": "https://docs.slack.dev/apis/web-api/rate-limits",
+  "ok": false,
+  "error": "ratelimited"
+}

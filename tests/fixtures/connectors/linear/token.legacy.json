@@ -1,0 +1,10 @@
+{
+  "_source": "https://linear.app/developers/oauth-2-0-authentication (apps made before December 2023 answer scope as an array)",
+  "access_token": "lin-access-fixture-0002",
+  "token_type": "Bearer",
+  "expires_in": 86399,
+  "scope": [
+    "read",
+    "issues:create"
+  ]
+}

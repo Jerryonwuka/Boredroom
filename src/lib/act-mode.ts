@@ -67,7 +67,10 @@ export const ASK_REASONS = ["tainted", "tainted_earlier", "broadcast_everyone", 
   "on_mac",
   // Brenda and her helpers (owner brief, 12 October 2026; decision 9): the person turned on "Check with me before every
   // task", so even their own to-dos, reminders and timer from their Mac wait for their yes.
-  "check_every"] as const;
+  "check_every",
+  // Connected apps (owner decisions, 22 October 2026: connectors): anything other people will see in a connected app, and
+  // a post in a channel, always waits for the person's own press, whatever the mode.
+  "app_shared", "app_post"] as const;
 export type AskReason = (typeof ASK_REASONS)[number];
 export const isAskReason = (v: unknown): v is AskReason => (ASK_REASONS as readonly unknown[]).includes(v);
 
@@ -75,7 +78,7 @@ export const isAskReason = (v: unknown): v is AskReason => (ASK_REASONS as reado
  * The Confirm card's line in auto mode: "Still asking: …" (only when the person chose 'auto'; ask mode's cards read as
  * before). `name`: the person's assistant ("Max"); `people`: a channel's readers, when known.
  */
-export function whyStillAsking(reason: AskReason, o: { name: string; people?: number }): string {
+export function whyStillAsking(reason: AskReason, o: { name: string; people?: number; app?: string; place?: string }): string {
   switch (reason) {
     case "tainted": return `Still asking: ${o.name} read other people's words in this reply.`;
     case "tainted_earlier": return `Still asking: other people's messages are earlier in this chat. Start a new chat for ${o.name} to act without asking.`;
@@ -108,6 +111,8 @@ export function whyStillAsking(reason: AskReason, o: { name: string; people?: nu
     case "looked": return `Still asking: this came from what ${o.name} saw on your screen.`;
     case "on_mac": return `Still asking: from your Mac, ${o.name} always checks with you first.`;
     case "check_every": return `Still asking: you asked ${o.name} to check with you before every task.`;
+    case "app_shared": return `Still asking: other people will see this in ${o.app ?? "that app"}.`;
+    case "app_post": return `Still asking: this posts in ${o.place ?? "a channel"}${o.app ? ` on ${o.app}` : ""}.`;
   }
 }
 
@@ -136,6 +141,7 @@ export const ACT_WORDS = {
         "before invitations, review submissions and new teams",
         "before answering something another person sent you",
         "before changing someone else's document",
+        "before anything other people will see in your connected apps",
         "always in Messages threads",
       ],
     },

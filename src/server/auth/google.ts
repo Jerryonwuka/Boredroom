@@ -150,6 +150,19 @@ export async function signInWithGoogle(c: Claims, meta: { ip?: string; userAgent
         created = true;
       } else {
         // Same address, existing account: Google has verified it, so the account is verified too.
+        // Security audit, 23 October 2026 (issue 3): an account nobody had confirmed may have been registered by someone
+        // else with this address. Its password is cleared, and its sessions, unused links and approved-but-unclaimed
+        // desktop codes are ended, so whoever set that password keeps no way in; the mailbox owner can set a password
+        // with "Forgot your password?".
+        const prior = await db.one<{ verified: boolean }>(`SELECT email_verified_at IS NOT NULL AS verified FROM auth_users WHERE id = $1 FOR UPDATE`, [user.id]);
+        if (!prior.verified) {
+          await db.query(`UPDATE auth_users SET password_hash = NULL WHERE id = $1`, [user.id]);
+          await db.query(`UPDATE auth_sessions SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL`, [user.id]);
+          await db.query(`UPDATE auth_tokens SET used_at = now() WHERE user_id = $1 AND used_at IS NULL`, [user.id]);
+          await db.query(`DELETE FROM desktop_link_codes WHERE approved_user_id = $1 AND claimed_at IS NULL`, [user.id]);
+          await db.query(`INSERT INTO audit_events(actor_user_id, action, subject_type, subject_id, metadata) VALUES ($1, 'auth.unverified_account_reset', 'auth_user', $1, $2)`,
+            [user.id, JSON.stringify({ via: "google_link" })]);
+        }
         await db.query(`UPDATE auth_users SET email_verified_at = COALESCE(email_verified_at, now()), updated_at = now() WHERE id = $1`, [user.id]);
       }
       try { await db.query(`INSERT INTO auth_identities(user_id, provider, subject, email, last_used_at) VALUES ($1, 'google', $2, $3, now())`, [user.id, c.sub, email]); }

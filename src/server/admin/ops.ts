@@ -5,7 +5,7 @@
 import { z } from "zod";
 import { withSystem, type Db } from "@/server/db";
 import { invalid, notFound, forbidden } from "@/server/lib/errors";
-import { adminAudit, type Admin } from "@/server/admin/auth";
+import { adminAudit, bootstrapEmails, type Admin } from "@/server/admin/auth";
 import { ADMIN_ROLES, type AdminRole } from "@/server/admin/permissions";
 import { runHealthChecks } from "@/server/lib/health";
 import { paystackConfigured } from "@/server/admin/billing";
@@ -269,13 +269,15 @@ export async function updateAdmin(admin: Admin, id: string, input: { role?: Admi
 /** Starts viewing Boredroom as another person: a fresh session for them, marked with the impersonation record. */
 export async function startImpersonation(admin: Admin, targetUserId: string, reason: string, meta: { userAgent?: string }) {
   return withSystem(async (db) => {
-    const t = await db.maybeOne<{ id: string; email: string; status: string; is_admin: boolean }>(`SELECT u.id, u.email, u.status, EXISTS (SELECT 1 FROM platform_admins a WHERE a.auth_user_id = u.id AND a.status = 'active') AS is_admin FROM auth_users u WHERE u.id = $1`, [targetUserId]);
+    const t = await db.maybeOne<{ id: string; email: string; status: string; is_admin: boolean }>(`SELECT u.id, u.email, u.status, EXISTS (SELECT 1 FROM platform_admins a WHERE a.auth_user_id = u.id) AS is_admin FROM auth_users u WHERE u.id = $1`, [targetUserId]);
     if (!t) throw notFound("User not found.");
     if (t.id === admin.user.authUserId) throw invalid("That is you.");
-    if (t.is_admin) throw forbidden("Administrators cannot be impersonated.");
+    // Security audit, 23 October 2026 (issue 12): anyone with an administrator row, active or disabled, or a listed
+    // bootstrap address is refused, not only active administrators.
+    if (t.is_admin || bootstrapEmails().has(t.email.toLowerCase())) throw forbidden("Administrators cannot be impersonated.");
     if (t.status !== "active") throw invalid("That account is not active.");
     const rec = await db.one<{ id: string }>(`INSERT INTO admin_impersonations(admin_user_id, target_user_id, reason) VALUES ($1, $2, $3) RETURNING id`, [admin.user.authUserId, t.id, reason]);
-    const token = await issueSession(db, t.id, { ip: admin.ip ?? undefined, userAgent: meta.userAgent, method: "google" });
+    const token = await issueSession(db, t.id, { ip: admin.ip ?? undefined, userAgent: meta.userAgent, method: "impersonation", impersonationId: rec.id });
     const s = await db.one<{ id: string }>(`UPDATE auth_sessions SET impersonation_id = $2, expires_at = LEAST(expires_at, now() + interval '2 hours') WHERE token_hash = encode(sha256($1::bytea), 'hex') RETURNING id`, [Buffer.from(token), rec.id]);
     await db.query(`UPDATE admin_impersonations SET session_id = $2 WHERE id = $1`, [rec.id, s.id]);
     await adminAudit(db, admin, { action: "user.impersonation_started", targetType: "user", targetId: t.id, targetLabel: t.email, reason, metadata: { impersonationId: rec.id } });

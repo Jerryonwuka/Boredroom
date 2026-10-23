@@ -1,0 +1,16 @@
+{
+  "_source": "https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-user-search/ (find users assignable to issues)",
+  "users": [
+    {
+      "accountId": "5b10ac8d82e05b22cc7d4ef5",
+      "displayName": "Ben Ade",
+      "emailAddress": "ben@example.com",
+      "active": true
+    },
+    {
+      "accountId": "5b10ac8d82e05b22cc7d4ef6",
+      "displayName": "Ben Adeyemi",
+      "active": true
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "_source": "https://learn.microsoft.com/en-us/graph/throttling (body shape from https://learn.microsoft.com/en-us/graph/errors)",
+  "error": {
+    "code": "TooManyRequests",
+    "message": "Please retry again later.",
+    "innerError": {
+      "date": "2026-10-22T09:00:00"
+    }
+  }
+}
