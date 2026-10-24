@@ -22,7 +22,8 @@ import type { OrgContext } from "@/server/lib/api";
 
 delete process.env.ANTHROPIC_API_KEY;
 delete process.env.ELEVENLABS_API_KEY;
-delete process.env.DESKTOP_DOWNLOAD_URL;
+// The Mac download is offered by default (24 October 2026); off here, so the Next steps lists below are only their own items.
+process.env.DESKTOP_DOWNLOAD_URL = "off";
 
 let a: CompanyFixture;
 let b: CompanyFixture;
@@ -250,8 +251,10 @@ describe("what the page shows", () => {
     expect((await welcomeView(fresh, { replay: true })).replay).toBe(false);
   });
 
-  it("offers the Mac download only when it is an https address", () => {
-    expect(desktopDownloadUrl({})).toBeNull();
+  it("offers the Mac download from the releases by default, an https address instead, and nothing when off", () => {
+    expect(desktopDownloadUrl({})).toBe("https://github.com/Jerryonwuka/boredroom-releases/releases/latest/download/Boredroom.dmg");
+    expect(desktopDownloadUrl({ DESKTOP_DOWNLOAD_URL: "  " })).toBe("https://github.com/Jerryonwuka/boredroom-releases/releases/latest/download/Boredroom.dmg");
+    expect(desktopDownloadUrl({ DESKTOP_DOWNLOAD_URL: "off" })).toBeNull();
     expect(desktopDownloadUrl({ DESKTOP_DOWNLOAD_URL: "http://boredroom.test/Brenda.dmg" })).toBeNull();
     expect(desktopDownloadUrl({ DESKTOP_DOWNLOAD_URL: "not a url" })).toBeNull();
     expect(desktopDownloadUrl({ DESKTOP_DOWNLOAD_URL: " https://boredroom.test/Brenda.dmg " })).toBe("https://boredroom.test/Brenda.dmg");
@@ -333,7 +336,7 @@ describe("Next steps", () => {
     expect((await welcomeView(hr, { replay: false })).team).toMatchObject({ invitations: 0, members: 0 });
   });
 
-  it("offers the Mac app only with a download set, until a computer is linked", async () => {
+  it("offers the Mac app (to /download) while the download is on, until a computer is linked", async () => {
     const mo = await joinViaInvitation(a.hrCtx, await createVerifiedUser("mo@company-a.test", "Mo Staff"), "employee", a.teamId, "EMP-108");
     await finishWelcome(mo, { outcome: "done" });
     expect((await nextStepsFor(mo))?.items.map((i) => i.key)).toEqual(["plan_today"]);
@@ -341,12 +344,14 @@ describe("Next steps", () => {
     try {
       expect((await nextStepsFor(mo))?.items).toEqual([
         { key: "plan_today", label: "Write today's to-dos", href: "/app/company-a/todos?add=1", external: false },
-        { key: "mac_app", label: "Get Brenda for Mac", href: "https://boredroom.test/Brenda.dmg", external: true },
+        { key: "mac_app", label: "Get Boredroom for Mac", href: "/download", external: false },
       ]);
       await adminQuery(`INSERT INTO auth_sessions(user_id, token_hash, expires_at, kind) VALUES ($1, $2, now() + interval '30 days', 'desktop')`, [mo.user.authUserId, `desktop-${mo.membership.id}`]);
       expect((await nextStepsFor(mo))?.items.map((i) => i.key)).toEqual(["plan_today"]);
+      delete process.env.DESKTOP_DOWNLOAD_URL; // unset: the releases default, so it is still not offered once linked
+      expect((await nextStepsFor(mo))?.items.map((i) => i.key)).toEqual(["plan_today"]);
     } finally {
-      delete process.env.DESKTOP_DOWNLOAD_URL;
+      process.env.DESKTOP_DOWNLOAD_URL = "off";
     }
   });
 

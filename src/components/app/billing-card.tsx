@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,7 @@ import { api, isApiFailure } from "@/lib/api-client";
 import { money, bytes, dateOnly } from "@/lib/format";
 import { FEATURE_LABELS, planFeatureKeys } from "@/lib/plans";
 import { cn } from "@/lib/utils";
+import { isDesktopApp } from "@/lib/desktop-app";
 import type { orgBilling } from "@/server/admin/billing";
 
 type Data = Awaited<ReturnType<typeof orgBilling>>;
@@ -33,12 +34,22 @@ export function BillingCard({ orgSlug, data, notice, preselect }: { orgSlug: str
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [switched, setSwitched] = useState<string | null>(null);
+  // Boredroom for Mac's window (owner request, 24 October 2026: option A): the checkout opens in the person's browser
+  // (cards belong there); this page says so and reads the plan again when the person comes back.
+  const [inBrowser, setInBrowser] = useState(false);
+  useEffect(() => {
+    if (!inBrowser) return;
+    const again = () => { if (document.visibilityState === "visible") router.refresh(); };
+    window.addEventListener("focus", again);
+    document.addEventListener("visibilitychange", again);
+    return () => { window.removeEventListener("focus", again); document.removeEventListener("visibilitychange", again); };
+  }, [inBrowser, router]);
   const choose = async (planId: string, planName: string) => {
     setPending(planId); setError(null); setSwitched(null);
     try {
       const r = await api<{ free: boolean; url?: string }>(`/api/orgs/${orgSlug}/billing/checkout`, { method: "POST", body: { planId, interval: cycle }, retries: 0 });
       if (r.free) { setSwitched(`The workspace is now on ${planName}.`); router.refresh(); return; }
-      if (r.url) { window.location.assign(r.url); return; }
+      if (r.url) { if (isDesktopApp()) setInBrowser(true); window.location.assign(r.url); return; }
       setError("Paystack did not return a checkout page. Nothing was charged; try again in a minute.");
     } catch (err) { setError(isApiFailure(err) ? err.error.message : "Cannot reach the server. Nothing was charged; check your connection and try again."); }
     finally { setPending(null); }
@@ -56,8 +67,9 @@ export function BillingCard({ orgSlug, data, notice, preselect }: { orgSlug: str
   const per = cycle === "annual" ? "year" : "month";
   return (
     <div className="space-y-10">
-      {notice === "success" || notice === "failed" || notice === "abandoned" || notice === "error" || error || switched ? (
+      {notice === "success" || notice === "failed" || notice === "abandoned" || notice === "error" || error || switched || inBrowser ? (
         <div className="space-y-3">
+          {inBrowser ? <Alert tone="info" title="Finish paying in your browser">Paystack opened in your browser. This page updates when you come back.</Alert> : null}
           {notice === "success" ? <Alert tone="success" title="Payment received">Thank you; the plan is active.</Alert> : notice === "failed" || notice === "abandoned" ? <Alert tone="warning" title="The payment did not go through">Nothing was charged; try again when you are ready.</Alert> : notice === "error" ? <Alert tone="danger" title="The payment could not be verified">If money left your account, reply to the receipt email and we will sort it out.</Alert> : null}
           {error ? <Alert tone="danger">{error}</Alert> : null}
           {switched ? <Alert tone="success">{switched}</Alert> : null}

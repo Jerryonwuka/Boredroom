@@ -1,7 +1,7 @@
 /**
  * Permissions fixes from the security audit (23 October 2026): issues 11, 14, 17 and 18. Each test here fails on the code
- * before the fix. db/pending/0063 (the database's mirror of 11 and 18) is applied by the last block only, as the owner
- * will apply it later, so every earlier test checks the app on today's schema.
+ * before the fix. 0063 (the database's mirror of 11 and 18) is now applied by the reset too; the last block applies it
+ * again (idempotent) and checks the database refuses on its own.
  */
 import { readFileSync } from "node:fs";
 import { beforeAll, describe, expect, it, vi } from "vitest";
@@ -150,9 +150,9 @@ describe("issue 14: impersonation is stamped on the customer's audit rows", () =
   });
 });
 
-describe("db/pending/0063: the database says the same (applied here only)", () => {
+describe("0063: the database says the same", () => {
   beforeAll(async () => {
-    await adminQuery(readFileSync("db/pending/0063_permissions_hardening.sql", "utf8"));
+    await adminQuery(readFileSync("db/migrations/0063_permissions_hardening.sql", "utf8"));
   });
 
   it("row security refuses staff filing tasks for others in their personal project, or adding its members", async () => {

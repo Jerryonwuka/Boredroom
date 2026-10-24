@@ -29,6 +29,7 @@ import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { Logo } from "@/components/logo";
 import { setSidebarCollapsed, useSidebarCollapsed } from "@/components/app/sidebar";
 import { api } from "@/lib/api-client";
+import { signedOutInApp } from "@/components/auth/forms";
 
 const ICONS = { dashboard: Gauge, organisations: Building2, users: UsersRound, plans: Tags, subscriptions: CreditCard, payments: Wallet, usage: Activity, moderation: ShieldAlert, support: LifeBuoy, marketing: Megaphone, communications: Mail, launch: Rocket, system: BarChart3, audit: FileClock, admins: ShieldCheck, settings: Settings, notifications: Bell };
 export type AdminNavGroup = { title: string; items: { label: string; href: string; icon: keyof typeof ICONS }[] };
@@ -223,7 +224,7 @@ export function AdminAccount({ profileId, name, email, avatarKey, role }: { prof
           <Link href="/app" onClick={close} className="menu-item"><LayoutGrid aria-hidden />Back to the app</Link>
           <div role="separator" className="menu-separator" />
           <button type="button" disabled={signOut === "pending"} className="menu-item disabled:opacity-60"
-            onClick={async () => { setSignOut("pending"); try { await api("/api/auth/logout", { method: "POST", retries: 0 }); router.push("/login"); router.refresh(); } catch { setSignOut("failed"); } }}>
+            onClick={async () => { setSignOut("pending"); try { await api("/api/auth/logout", { method: "POST", retries: 0 }); if (signedOutInApp()) return; router.push("/login"); router.refresh(); } catch { setSignOut("failed"); } }}>
             <LogOut aria-hidden />{signOut === "pending" ? "Signing out…" : "Sign out"}
           </button>
           {signOut === "failed" ? <p role="alert" className="px-2 pb-1.5 pt-1 text-xs text-danger">Could not sign out. Check your connection and try again.</p> : null}

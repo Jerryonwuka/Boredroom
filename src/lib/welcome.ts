@@ -192,7 +192,7 @@ export type WelcomeView = {
   ownerFirstName: string | null;
   /** Owners and HR only. */
   team: WelcomeTeamData | null;
-  /** DESKTOP_DOWNLOAD_URL when it is set to an https address; null otherwise. */
+  /** The Boredroom for Mac download (lib/desktop-download.ts): set unless DESKTOP_DOWNLOAD_URL is "off" or not https. */
   desktopDownloadUrl: string | null;
 };
 
@@ -455,19 +455,21 @@ export const WELCOME_WORDS = {
     createTeam: { label: "Create your first team", hint: "A team gives its lead a board and a place to talk." },
     openDashboard: { label: "Open the dashboard", hint: "Who's on what, what's late and what needs a decision." },
   },
+  // Boredroom for Mac (owner request, 24 October 2026: option A): one app, the dashboard in its own window and the
+  // person's assistant in the notch.
   mac: {
-    title: "Brenda for Mac",
-    line: (name: string) => `${name} sits in your Mac's notch, so you can ask and get reminders without opening a tab.`,
-    get: "Get the Mac app",
-    have: "Already have Brenda for Mac?",
-    link: "Link it",
+    title: "Boredroom for Mac",
+    line: (name: string) => `The dashboard in its own window, and ${name} in your Mac's notch.`,
+    get: "Download Boredroom for Mac",
+    have: "Already have Boredroom for Mac?",
+    link: "Link it with a code",
   },
   nextSteps: {
     title: "Next steps",
     left: (n: number) => `${n} left`,
     hide: "Hide next steps",
     finishWelcome: "Finish your welcome",
-    mac: "Get Brenda for Mac",
+    mac: "Get Boredroom for Mac",
     hideFailed: "Couldn't hide it. Try again.",
     /** Said in its place once hidden (review, 11 October 2026). */
     hidden: "Next steps hidden. You can show them again in Settings.",

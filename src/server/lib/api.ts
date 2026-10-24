@@ -53,6 +53,20 @@ export function assertSameOrigin(req: Request) {
   throw new AppError(403, "BAD_ORIGIN", "Cross-site request rejected.");
 }
 
+/**
+ * The stricter check for the routes that sign someone in (owner request, 24 October 2026: Boredroom for Mac, option A):
+ * `Origin` must be present and equal APP_ORIGIN, and `Sec-Fetch-Site`, when sent, must be `same-origin`. `same-site`,
+ * `none` and a missing Origin are refused (403 BAD_ORIGIN), unlike assertSameOrigin, which lets them through.
+ */
+export function assertStrictSameOrigin(req: Request) {
+  const origin = req.headers.get("origin");
+  const fetchSite = req.headers.get("sec-fetch-site");
+  const expected = process.env.APP_ORIGIN ?? "http://localhost:3000";
+  if (!origin || origin !== expected || (fetchSite !== null && fetchSite !== "same-origin")) {
+    throw new AppError(403, "BAD_ORIGIN", "Cross-site request rejected.");
+  }
+}
+
 type Handler<P> = (req: Request, ctx: { params: P; requestId: string }) => Promise<Response>;
 
 export function route<P = Record<string, string>>(fn: Handler<P>) {
@@ -199,6 +213,17 @@ export const orgContext = cache(async function orgContext(orgSlug: string): Prom
   if (ctx instanceof AppError) throw ctx;
   return ctx;
 });
+
+/**
+ * The context for a session token the caller already holds rather than the request's (owner request, 24 October 2026:
+ * Boredroom for Mac, option A): the browser bridge has just signed the browser in, and the connector start must run as
+ * that new session. The same checks as orgContext (401, 404, 403).
+ */
+export async function orgContextForToken(orgSlug: string, token: string): Promise<OrgContext> {
+  const ctx = contextOf(await withSystem((db) => contextRowIn(db, orgSlug, token)));
+  if (ctx instanceof AppError) throw ctx;
+  return ctx;
+}
 
 /**
  * orgContext, then `fn` in the SAME transaction (the speech route: review, 9 October 2026, the natural voice's latency

@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils";
 
 /** What a card says a page is, beside its title. */
 export const KIND_LABEL: Record<RegistryPage["kind"], string> = {
-  home: "Home", hub: "Section", post: "Guide", feature: "Feature", solution: "Solution", usecase: "Use case", comparison: "Comparison", tool: "Free tool", pricing: "Pricing",
+  home: "Home", hub: "Section", post: "Guide", feature: "Feature", solution: "Solution", usecase: "Use case", comparison: "Comparison", tool: "Free tool", pricing: "Pricing", download: "Download",
 };
 
 export type RelatedLink = MarketingPath | { href: MarketingPath; /** The anchor text; the page's label when absent. */ label?: string; /** The line under it; the page's summary when absent. */ summary?: string };

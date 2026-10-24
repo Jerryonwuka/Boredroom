@@ -50,7 +50,7 @@ async function loadProject(db: Db, orgId: string, projectId: string): Promise<Pr
  * `$4` = the caller's role. Security audit, 23 October 2026 (issue 11): a personal to-do project (the only project staff
  * can ever have created: app_create_personal_project, migration 0011) makes its maker "lead", and lead rights used to
  * mean managing anyone's task filed there, the owner's included. So a project a staff member created grants them no lead
- * rights; leads granted on other projects keep theirs. db/pending/0063 makes the database's own check the same.
+ * rights; leads granted on other projects keep theirs. 0063 makes the database's own check the same.
  */
 const LEAD_RIGHTS_SQL = `(app_is_project_lead($1, $2)
   AND NOT ($4 = 'employee' AND EXISTS (SELECT 1 FROM projects p WHERE p.id = $2 AND p.organisation_id = $1 AND p.created_by = $3)))`;
@@ -298,7 +298,7 @@ export async function createProject(ctx: OrgContext, input: z.infer<typeof creat
 export async function setProjectMember(ctx: OrgContext, projectId: string, membershipId: string, accessRole: "lead" | "contributor" | "viewer" | "remove") {
   // Security audit, 23 October 2026 (issue 11): there was no check here but row security, which let staff make
   // colleagues lead of their personal to-do project. Organisation accounts, and team leads who lead or created the
-  // project, manage who is on it; staff never do. db/pending/0063 mirrors this in project_members_write.
+  // project, manage who is on it; staff never do. 0063 mirrors this in project_members_write.
   if (ctx.membership.role === "employee") throw forbidden("Only team leads and organisation accounts manage who is on a project.");
   return withUser(ctx.user.profileId, async (db) => {
     if (ctx.membership.role === "manager") {

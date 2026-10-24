@@ -70,7 +70,8 @@ import { z } from "zod";
 import { withSystem, withUser } from "@/server/db";
 import type { OrgContext } from "@/server/lib/api";
 import type { CurrentUser } from "@/server/auth";
-import { assertFailuresBelow, rateLimitCommitted, rateLimitIn, recordFailure } from "@/server/auth";
+import { assertFailuresBelow, rateLimitCommitted, rateLimitIn, recordFailure, try0064In } from "@/server/auth";
+import { insertDesktopSession } from "@/server/services/desktop-app";
 import { randomToken, sha256 } from "@/server/lib/crypto";
 import { AppError, forbidden, invalid, notFound } from "@/server/lib/errors";
 import { briefing, brendaPrefs, brendaSettings } from "@/server/services/brenda";
@@ -99,7 +100,6 @@ import { desktopLook } from "@/server/services/screen-help";
 import type { DesktopLook } from "@/lib/screen-help";
 
 const CODE_TTL_SECONDS = 10 * 60;
-const DESKTOP_SESSION_DAYS = 90;
 const ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"; // no 0/O, 1/I/L: easy to read aloud and type
 
 function userCode() {
@@ -175,10 +175,10 @@ export async function pollLink(input: z.infer<typeof pollSchema>, meta: { userAg
       if (new Date(row.expires_at) < new Date()) throw new AppError(410, "LINK_EXPIRED", "The code expired before it was approved. Start again.");
       return { status: "pending" as const };
     }
-    const token = randomToken(32);
-    const session = await db.one<{ id: string }>(
-      `INSERT INTO auth_sessions(user_id, token_hash, expires_at, user_agent, kind, device_name) VALUES ($1, $2, now() + ($3 || ' days')::interval, $4, 'desktop', $5) RETURNING id`,
-      [row.approved_user_id, sha256(token), String(DESKTOP_SESSION_DAYS), meta.userAgent?.slice(0, 300) ?? "Brenda desktop", row.device_name ?? "Brenda desktop"]);
+    // The same row the PKCE sign-in makes (owner request, 24 October 2026: Boredroom for Mac, option A); the fallback
+    // names are "Boredroom for Mac" (they were "Brenda desktop").
+    const session = await insertDesktopSession(db, { userId: row.approved_user_id!, userAgent: meta.userAgent, deviceName: row.device_name });
+    const token = session.token;
     await db.query(`UPDATE desktop_link_codes SET claimed_at = now(), session_id = $2 WHERE id = $1`, [row.id, session.id]);
     const who = await db.one<{ slug: string; name: string; display_name: string }>(
       `SELECT o.slug, o.name, p.display_name FROM organisations o, profiles p WHERE o.id = $1 AND p.auth_user_id = $2`, [row.organisation_id, row.approved_user_id]);
@@ -194,11 +194,17 @@ export async function listDevices(user: CurrentUser) {
     `SELECT id, device_name, created_at, last_seen_at, expires_at FROM auth_sessions WHERE user_id = $1 AND kind = 'desktop' AND revoked_at IS NULL AND expires_at > now() ORDER BY created_at DESC`, [user.authUserId]));
 }
 
-/** Unlinks a computer: its session is revoked and the app signs out on its next request. */
+/**
+ * Unlinks a computer: its session is revoked and the app signs out on its next request. Boredroom for Mac (owner
+ * request, 24 October 2026: option A): its window's sessions go with it (without 0064 there are none to find).
+ */
 export async function revokeDevice(user: CurrentUser, sessionId: string) {
   return withSystem(async (db) => {
     const r = await db.query(`UPDATE auth_sessions SET revoked_at = now() WHERE id = $1 AND user_id = $2 AND kind = 'desktop' AND revoked_at IS NULL RETURNING id`, [sessionId, user.authUserId]);
     if (!r.length) throw notFound("That computer is not linked to your account.");
+    await try0064In(db, async () => {
+      await db.query(`UPDATE auth_sessions SET revoked_at = now() WHERE desktop_session_id = $1 AND user_id = $2 AND revoked_at IS NULL`, [sessionId, user.authUserId]);
+    });
     await db.query(`INSERT INTO audit_events(actor_user_id, action, subject_type, subject_id) VALUES ($1, 'auth.desktop_unlinked', 'auth_session', $2)`, [user.authUserId, sessionId]);
     return { revoked: true };
   });

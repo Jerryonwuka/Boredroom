@@ -13,6 +13,12 @@ import { OrgSettingsForm, ScheduleForm, PolicyForm, StandardNoticeButton, Assist
 import { assistantStatus, DEFAULT_NOTICE, PHASE8_DEFAULT_NOTICE, noticeMentionsScreenRecording } from "@/server/services/orgs";
 import { brendaOverview } from "@/server/services/brenda";
 import { listDevices } from "@/server/services/desktop";
+import { cookies } from "next/headers";
+import { FROM_DESKTOP_COOKIE } from "@/server/services/desktop-app";
+import { inDesktopApp } from "@/server/lib/desktop-app";
+import { backToAppUrl } from "@/lib/desktop-app";
+import { BackToMac } from "@/components/app/desktop-app/back-to-mac";
+import { PROVIDER_LABELS, providerFromSlug } from "@/lib/connectors/types";
 import { BrendaOrgSettings } from "@/components/app/brenda";
 import { BrendaGlyph } from "@/components/app/brenda-glyph";
 import { BrendaReportSettings } from "@/components/app/brenda-report-settings";
@@ -202,7 +208,7 @@ const VOICE_UNREADABLE: VoiceConnectionStatus = {
  * which doesn't mention screen help, and offers owners the new one. Brenda points (owner request, 11 October 2026): the
  * cards she can point at carry their `data-brenda-target` key (`SettingsSection target`).
  */
-export default async function SettingsPage({ params, searchParams }: { params: Promise<{ workspace: string }>; searchParams: Promise<{ section?: string; billing?: string; plan?: string }> }) {
+export default async function SettingsPage({ params, searchParams }: { params: Promise<{ workspace: string }>; searchParams: Promise<{ section?: string; billing?: string; plan?: string; connected?: string }> }) {
   const { workspace } = await params;
   const sp = await searchParams;
   const { ctx, counts, teams: navTeams } = await workspacePage(workspace, `/app/${workspace}/settings`);
@@ -487,9 +493,9 @@ export default async function SettingsPage({ params, searchParams }: { params: P
     const [devices, a] = await Promise.all([listDevices(ctx.user), assistantProfiles(ctx)]);
     assistants = a;
     body = (
-      <SettingsSection id="desktop" title="Brenda desktop" description="Brenda on your computer acts as you, with your permissions, in the workspace you approve it for.">
+      <SettingsSection id="desktop" title="Boredroom for Mac" description="Boredroom for Mac signs in as you. Brenda in its notch acts as you, with your permissions, in the workspace you chose.">
         <SettingsGroup>
-          <SettingsRow label="Link a computer" hint="Open Brenda desktop and press Sign in. It shows a code and opens a page in your browser to approve it." align="text">
+          <SettingsRow label="Link a computer" hint="Open Boredroom on your Mac and sign in. To link with a code instead, choose Use a code instead in its notch." align="text">
             <Link href="/desktop/link" className={buttonVariants({ variant: "secondary", size: "sm" })}>Enter a code</Link>
           </SettingsRow>
           <div className="px-5 pb-2 pt-4">
@@ -499,8 +505,17 @@ export default async function SettingsPage({ params, searchParams }: { params: P
         </SettingsGroup>
       </SettingsSection>
     );
-    notes = <PageNote section="Brenda desktop">Each person links their own computers; the ones listed here are yours.</PageNote>;
+    notes = <PageNote section="Boredroom for Mac">Each person links their own computers; the ones listed here are yours.</PageNote>;
   }
+
+  // Back from a connector consent that Boredroom for Mac sent to this browser (owner request, 24 October 2026: option A;
+  // spec §7.1): the way back to the app's window, at this page.
+  const connectedApp = sp.connected ? providerFromSlug(sp.connected) : null;
+  const backToMac = (
+    <BackToMac offer={connectedApp && (await cookies()).get(FROM_DESKTOP_COOKIE)?.value === "1" && !(await inDesktopApp())
+      ? { app: PROVIDER_LABELS[connectedApp], href: backToAppUrl(`${base}/settings?section=${section}&connected=${encodeURIComponent(sp.connected!)}`) }
+      : null} />
+  );
 
   return (
     <AppShell ctx={ctx} counts={counts} teams={navTeams}>
@@ -522,7 +537,7 @@ export default async function SettingsPage({ params, searchParams }: { params: P
             })}
           </ul>
         </nav>
-        <div className="min-w-0 max-w-[56rem] space-y-10">{body}</div>
+        <div className="min-w-0 max-w-[56rem] space-y-10">{backToMac}{body}</div>
       </div>
       <PageNotes>
         {/* A person's own assistant is theirs and not logged (a name and a look); everything else here is. */}

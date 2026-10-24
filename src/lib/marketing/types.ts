@@ -5,14 +5,15 @@
  * and the tests that hold the analysis's rules (keyword in the title and the H1, a 120–160 character description).
  */
 
-/** What a page is: decides its JSON-LD type (a post is a BlogPosting, a hub a CollectionPage, the rest WebPage). */
-export type PageKind = "home" | "hub" | "post" | "feature" | "solution" | "usecase" | "comparison" | "tool" | "pricing";
+/** What a page is: decides its JSON-LD type (a post is a BlogPosting, a hub a CollectionPage, the rest WebPage). The
+ *  download page (24 October 2026) is a product page, as /pricing is. */
+export type PageKind = "home" | "hub" | "post" | "feature" | "solution" | "usecase" | "comparison" | "tool" | "pricing" | "download";
 
 export type MarketingPage = {
   /** The URL path: "/" for the home page, otherwise no trailing slash ("/blog/end-of-day-report"). Fixed once published. */
   readonly path: string;
   readonly kind: PageKind;
-  /** The breadcrumb parent: "/" for the hubs and /pricing, the hub for a hub's pages; none for the home page. */
+  /** The breadcrumb parent: "/" for the hubs, /pricing and /download, the hub for a hub's pages; none for the home page. */
   readonly parent?: string;
   /** The short name: breadcrumbs, the nav, hub cards and related links ("End-of-day report guide"). */
   readonly label: string;

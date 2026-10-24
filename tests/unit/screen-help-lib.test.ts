@@ -154,16 +154,26 @@ describe("the pilot gate, the model and the key (contract D.4)", () => {
     if (saved.model === undefined) delete process.env.BRENDA_LOOK_MODEL; else process.env.BRENDA_LOOK_MODEL = saved.model;
   });
 
-  it("BRENDA_LOOK_WORKSPACES: slugs split on commas and spaces, any case; '*' is everyone; unset or empty is nobody", () => {
+  it("BRENDA_LOOK_WORKSPACES: unset, empty or '*' is everyone; 'off' is nobody; otherwise only the slugs named (commas and spaces, any case)", () => {
     expect(lookEligible("jeremiah-onwuka", "jeremiah-onwuka")).toBe(true);
     expect(lookEligible("company-a", " Jeremiah-Onwuka , company-a  other ")).toBe(true);
     expect(lookEligible("other", "company-a other")).toBe(true);
     expect(lookEligible("company-b", "company-a")).toBe(false);
     expect(lookEligible("anyone", "*")).toBe(true);
-    expect(lookEligible("anyone", "")).toBe(false);
-    expect(lookEligible("anyone", "  ,  ")).toBe(false);
-    expect(lookEligible("anyone", undefined)).toBe(false);
+    expect(lookEligible("anyone", "")).toBe(true);
+    expect(lookEligible("anyone", "  ,  ")).toBe(true);
+    // undefined falls back to the real setting (a test's .env may name a workspace): unset there is everyone too.
+    const env = process.env.BRENDA_LOOK_WORKSPACES;
+    delete process.env.BRENDA_LOOK_WORKSPACES;
+    try {
+      expect(lookEligible("anyone", undefined)).toBe(true);
+    } finally {
+      if (env !== undefined) process.env.BRENDA_LOOK_WORKSPACES = env;
+    }
     expect(lookEligible("company", "company-a")).toBe(false);
+    expect(lookEligible("anyone", "off")).toBe(false);
+    expect(lookEligible("anyone", " OFF ")).toBe(false);
+    expect(lookEligible("company-a", "off")).toBe(false);
   });
 
   it("BRENDA_LOOK_MODEL: a Claude model id, never Fable or Mythos; claude-opus-5-5 otherwise", () => {

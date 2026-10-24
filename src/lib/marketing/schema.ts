@@ -123,7 +123,7 @@ export function pageJsonLd(path: MarketingPath, extra: readonly JsonLdNode[] = [
   const page = getPage(path);
   const url = absoluteUrl(path);
   const image = { "@type": "ImageObject", url: absoluteUrl(ogImagePath(path)), width: 1200, height: 630 };
-  const productPage = page.kind === "feature" || page.kind === "solution" || page.kind === "usecase" || page.kind === "pricing" || page.kind === "comparison";
+  const productPage = page.kind === "feature" || page.kind === "solution" || page.kind === "usecase" || page.kind === "pricing" || page.kind === "comparison" || page.kind === "download";
   const webPage: JsonLdNode = {
     "@type": page.kind === "hub" ? "CollectionPage" : "WebPage",
     "@id": `${url}#webpage`,

@@ -8,6 +8,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { Alert } from "@/components/ui/states";
 import { cn } from "@/lib/utils";
 import { getCurrentUser } from "@/server/auth";
+import { inDesktopApp, signInPath } from "@/server/lib/desktop-app";
 
 export const metadata = { title: "Verify your email" };
 
@@ -21,7 +22,7 @@ export default async function PendingPage({ searchParams }: { searchParams: Prom
   const next = sp.next ? safeNextPath(sp.next) : null;
   const user = await getCurrentUser();
   // Signing in brings an unconfirmed person back here, still carrying where they were going.
-  if (!user) redirect(next ? `/login?next=${encodeURIComponent(next)}` : "/login");
+  if (!user) redirect(next ? await signInPath(next) : (await inDesktopApp()) ? "/desktop/app?next=%2Fapp" : "/login");
   if (user.emailVerified) redirect(next ?? "/app");
   // Confirmed in another tab? This page moves on by itself once the address is confirmed, so "continue" is a reload.
   // The count changes the address each time, so a second press is a fresh look and not a navigation to the same place.

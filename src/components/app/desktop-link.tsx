@@ -31,7 +31,7 @@ export function DesktopLinkForm({ initialCode, workspaces, devices }: { initialC
       {/* Above both parts: an unlink that fails after a link has gone through still needs somewhere to say so. */}
       {error ? <Alert tone="danger">{error}</Alert> : null}
       {done ? (
-        <Alert tone="success" title="Linked">Brenda on your computer is signed in to {done}. You can close this tab; the desktop app picks it up in a few seconds.</Alert>
+        <Alert tone="success" title="Linked">Boredroom for Mac is signed in to {done}. You can close this tab; the app picks it up in a few seconds.</Alert>
       ) : (
         <form className="grid gap-4" onSubmit={async (e) => {
           e.preventDefault(); setPending(true); setError(null); setFieldErrors({});
@@ -64,19 +64,19 @@ export function LinkedComputers({ devices, onError, empty = false }: { devices: 
   const router = useRouter();
   const [ownError, setOwnError] = useState<string | null>(null);
   const report = onError ?? setOwnError;
-  if (!devices.length) return empty ? <EmptyState compact icon={Laptop} title="No computers linked" description="Open Brenda desktop and press Sign in. It shows a code and opens a page in your browser to approve it." /> : null;
+  if (!devices.length) return empty ? <EmptyState compact icon={Laptop} title="No computers linked" description="Open Boredroom on your Mac and sign in. To link with a code instead, choose Use a code instead in its notch." /> : null;
   return (
     <>
       {!onError && ownError ? <Alert tone="danger" className="mb-2">{ownError}</Alert> : null}
       <ul className="-mx-2 space-y-0.5">
         {devices.map((d) => {
-          const name = d.device_name ?? "Brenda desktop";
+          const name = d.device_name ?? "Boredroom for Mac";
           return (
             <li key={d.id} className="flex min-h-16 items-center gap-3 rounded-xl px-2 py-3">
               <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-fill-1 text-secondary"><Laptop className="size-5" aria-hidden /></span>
               {/* Dates follow the browser's clock and zone, which the server cannot know; the text settles on the client. */}
               <span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold text-foreground">{name}</span><span className="block truncate text-meta font-normal text-secondary">Linked <time dateTime={d.created_at} suppressHydrationWarning>{formatDateTime(d.created_at)}</time>, active <time dateTime={d.last_seen_at} suppressHydrationWarning>{relativeTime(d.last_seen_at)}</time></span></span>
-              <ConfirmButton variant="ghost" size="icon-sm" aria-label={`Unlink ${name}`} title={`Unlink ${name}?`} description="Brenda on that computer is signed out at once. Link it again any time with a new code from the app." confirmLabel="Unlink" pendingLabel="Unlinking…"
+              <ConfirmButton variant="ghost" size="icon-sm" aria-label={`Unlink ${name}`} title={`Unlink ${name}?`} description="Boredroom on that computer, its window and its notch, is signed out at once. Sign in again any time from the app." confirmLabel="Unlink" pendingLabel="Unlinking…"
                 onConfirm={async () => { report(null); try { await api(`/api/desktop/devices/${d.id}`, { method: "DELETE", retries: 0 }); router.refresh(); } catch (err) { report(isApiFailure(err) ? err.error.message : `${OFFLINE} ${name} is still linked.`); } }}>
                 <Unlink aria-hidden />
               </ConfirmButton>

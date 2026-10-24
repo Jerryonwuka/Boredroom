@@ -3,6 +3,7 @@ import { orgContext, type OrgContext } from "@/server/lib/api";
 import { AppError } from "@/server/lib/errors";
 import { navCounts, workspaceShell } from "@/server/services/workspace";
 import { myTeams } from "@/server/services/views";
+import { signInPath } from "@/server/lib/desktop-app";
 
 /** Where a workspace opens: Brenda Home, for everyone (owner decision, 5 October 2026). */
 export function homeFor(ctx: OrgContext): string {
@@ -15,7 +16,8 @@ export async function workspacePage(slug: string, currentPath: string): Promise<
   try {
     ctx = await orgContext(slug);
   } catch (err) {
-    if (err instanceof AppError && err.status === 401) redirect(`/login?next=${encodeURIComponent(currentPath)}`);
+    // In Boredroom for Mac's window, through /desktop/app (owner request, 24 October 2026: option A).
+    if (err instanceof AppError && err.status === 401) redirect(await signInPath(currentPath));
     if (err instanceof AppError && err.status === 404) notFound();
     throw err;
   }

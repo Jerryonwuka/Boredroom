@@ -6,6 +6,7 @@ import { OnboardingForm } from "@/components/app/onboarding-form";
 import { Alert } from "@/components/ui/states";
 import { registrationOpen } from "@/server/admin/settings";
 import { workspaceAllowance } from "@/server/services/workspace-limit";
+import { signInPath } from "@/server/lib/desktop-app";
 
 export const metadata = { title: "Create workspace" };
 
@@ -17,7 +18,7 @@ export const metadata = { title: "Create workspace" };
  */
 export default async function OnboardingPage() {
   const user = await getCurrentUser();
-  if (!user) redirect("/login?next=/onboarding");
+  if (!user) redirect(await signInPath("/onboarding"));
   if (!user.emailVerified) redirect("/verify/pending?next=/onboarding");
   const [allowance, open] = await Promise.all([workspaceAllowance(user.profileId), registrationOpen()]);
   const full = allowance.limit !== null && allowance.used >= allowance.limit;

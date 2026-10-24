@@ -10,6 +10,7 @@ import { verifyEmailMail, resetPasswordMail } from "@/server/lib/emails";
 import { contactRegistered } from "@/server/admin/marketing";
 import { registrationOpen } from "@/server/admin/settings";
 import { joiningTarget, safeNextPath } from "@/components/auth/next-path";
+import { noteMissing0064, schema0064Missing } from "@/server/lib/schema-0064";
 
 /**
  * Local auth provider: email/password with verification and recovery.
@@ -322,22 +323,101 @@ export async function signIn(input: { email: string; password: string; ip?: stri
 /**
  * Security audit, 23 October 2026 (issue 14): a Control Center impersonation is recorded as method "impersonation" with
  * its record's id (it was logged as a Google sign-in by the customer).
+ *
+ * Boredroom for Mac (owner request, 24 October 2026: option A): `desktop_app` (the app's PKCE sign-in) and `desktop_handoff`
+ * (a linked app signs its own window in). The browser bridge signs nobody in (security review, 24 October 2026: SEC-1).
+ * `desktopSessionId` ties the new web session to the app's desktop session (needs 0064; revoking either revokes both),
+ * and `expiresAt` caps its life (never past the desktop session's own end).
  */
-export async function issueSession(db: Db, userId: string, meta: { ip?: string; userAgent?: string; method: "password" | "google" | "impersonation"; impersonationId?: string }) {
+export type SessionMethod = "password" | "google" | "impersonation" | "desktop_app" | "desktop_handoff";
+type SessionMeta = { ip?: string; userAgent?: string; method: SessionMethod; impersonationId?: string; desktopSessionId?: string; expiresAt?: string | Date };
+export async function issueSession(db: Db, userId: string, meta: SessionMeta) {
+  return (await issueSessionRow(db, userId, meta)).token;
+}
+
+/** As issueSession, answering the new row's id and expiry too (the handoff sets the cookie's Max-Age from it). */
+export async function issueSessionRow(db: Db, userId: string, meta: SessionMeta): Promise<{ token: string; id: string; expiresAt: string }> {
   const token = randomToken(32);
-  const session = await db.one<{ id: string }>(
-    `INSERT INTO auth_sessions(user_id, token_hash, expires_at, user_agent) VALUES ($1, $2, now() + ($3 || ' days')::interval, $4) RETURNING id`,
-    [userId, sha256(token), String(SESSION_TTL_DAYS), meta.userAgent?.slice(0, 300) ?? null]);
+  const cap = meta.expiresAt ? new Date(meta.expiresAt).toISOString() : null;
+  const params = [userId, sha256(token), String(SESSION_TTL_DAYS), meta.userAgent?.slice(0, 300) ?? null, cap];
+  const session = meta.desktopSessionId
+    ? await db.one<{ id: string; expires_at: string }>(
+      `INSERT INTO auth_sessions(user_id, token_hash, expires_at, user_agent, desktop_session_id)
+       VALUES ($1, $2, LEAST(now() + ($3 || ' days')::interval, COALESCE($5::timestamptz, 'infinity'::timestamptz)), $4, $6) RETURNING id, expires_at`,
+      [...params, meta.desktopSessionId])
+    : await db.one<{ id: string; expires_at: string }>(
+      `INSERT INTO auth_sessions(user_id, token_hash, expires_at, user_agent)
+       VALUES ($1, $2, LEAST(now() + ($3 || ' days')::interval, COALESCE($5::timestamptz, 'infinity'::timestamptz)), $4) RETURNING id, expires_at`, params);
   await db.query(`UPDATE auth_users SET last_login_at = now() WHERE id = $1`, [userId]);
   await db.query(`UPDATE platform_admins SET last_login_at = now() WHERE auth_user_id = $1`, [userId]);
   await db.query(`INSERT INTO audit_events(actor_user_id, action, subject_type, subject_id, metadata) VALUES ($1, 'auth.sign_in', 'auth_session', $2, $3)`,
     [userId, session.id, JSON.stringify({ ip: meta.ip ?? null, method: meta.method, ...(meta.impersonationId ? { impersonationId: meta.impersonationId } : {}) })]);
-  return token;
+  return { token, id: session.id, expiresAt: new Date(session.expires_at).toISOString() };
 }
 
+/**
+ * Revokes a desktop session and every window session tied to it (owner request, 24 October 2026: option A). Needs 0064
+ * (`desktop_session_id`); callers guard it with try0064In.
+ */
+export async function revokeDesktopFamily(db: Db, desktopSessionId: string): Promise<number> {
+  const rows = await db.query<{ id: string }>(
+    `UPDATE auth_sessions SET revoked_at = now() WHERE revoked_at IS NULL AND (id = $1 OR desktop_session_id = $1) RETURNING id`, [desktopSessionId]);
+  return rows.length;
+}
+
+/**
+ * Runs `fn` inside a savepoint (owner request, 24 October 2026: option A). A missing 0064 (42P01, 42703) is noted,
+ * rolled back to the savepoint and answered as `false`, so the caller's transaction carries on with its old statement:
+ * logout and unlinking a Mac never fail for want of 0064.
+ */
+export async function try0064In(db: Db, fn: () => Promise<void>): Promise<boolean> {
+  if (schema0064Missing()) return false;
+  await db.query("SAVEPOINT desktop_0064");
+  try {
+    await fn();
+    await db.query("RELEASE SAVEPOINT desktop_0064");
+    return true;
+  } catch (err) {
+    if (!noteMissing0064(err)) throw err;
+    await db.query("ROLLBACK TO SAVEPOINT desktop_0064");
+    return false;
+  }
+}
+
+/**
+ * Signs one session out. Boredroom for Mac (owner request, 24 October 2026: option A): a window session takes its
+ * desktop session and that one's other window sessions with it (signing out in the window signs the notch out too); a
+ * desktop session takes its window sessions. An ordinary browser session touches nothing else. Without 0064, the old
+ * single-row statement.
+ */
 export async function signOut(token: string | undefined) {
   if (!token) return;
-  await withSystem((db) => db.query(`UPDATE auth_sessions SET revoked_at = now() WHERE token_hash = $1 AND revoked_at IS NULL`, [sha256(token)]));
+  await withSystem(async (db) => {
+    const done = await try0064In(db, async () => {
+      const row = await db.maybeOne<{ id: string; kind: string; desktop_session_id: string | null }>(
+        `UPDATE auth_sessions SET revoked_at = now() WHERE token_hash = $1 AND revoked_at IS NULL RETURNING id, kind, desktop_session_id`, [sha256(token)]);
+      const family = row ? (row.kind === "desktop" ? row.id : row.desktop_session_id) : null;
+      if (family) await revokeDesktopFamily(db, family);
+    });
+    if (!done) await db.query(`UPDATE auth_sessions SET revoked_at = now() WHERE token_hash = $1 AND revoked_at IS NULL`, [sha256(token)]);
+  });
+}
+
+/**
+ * The app's own desktop session, from the `Authorization: Bearer` header only (cookies are ignored), for the routes only
+ * Boredroom for Mac's Rust side calls (owner request, 24 October 2026: option A): kind 'desktop', not revoked or
+ * expired, the person active. 401 otherwise.
+ */
+export type DesktopBearer = { sessionId: string; authUserId: string; profileId: string; expiresAt: string };
+export async function requireDesktopBearer(): Promise<DesktopBearer> {
+  const token = await bearerToken();
+  if (!token) throw unauthenticated();
+  const row = await withSystem((db) => db.maybeOne<{ id: string; user_id: string; profile_id: string; expires_at: string }>(
+    `SELECT s.id, s.user_id, p.id AS profile_id, s.expires_at
+       FROM auth_sessions s JOIN auth_users u ON u.id = s.user_id JOIN profiles p ON p.auth_user_id = u.id
+      WHERE s.token_hash = $1 AND s.kind = 'desktop' AND s.revoked_at IS NULL AND s.expires_at > now() AND u.status = 'active'`, [sha256(token)]));
+  if (!row) throw unauthenticated();
+  return { sessionId: row.id, authUserId: row.user_id, profileId: row.profile_id, expiresAt: new Date(row.expires_at).toISOString() };
 }
 
 /** The session's columns (`SessionRow`), as CTEs `s`, `touched` and `u` over `$1` = sha256(token), for one statement. */

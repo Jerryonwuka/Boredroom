@@ -30,6 +30,7 @@ import { listDevices } from "@/server/services/desktop";
 import { emitEvent } from "@/server/admin/events";
 import { ASK_STATE } from "@/lib/act-mode";
 import { DEFAULT_PROFILES, type AssistantProfiles } from "@/lib/assistant-look";
+import { desktopDownloadUrl } from "@/lib/desktop-download";
 import {
   COUNTED_STEPS, WELCOME_AUTO_SHOWS, WELCOME_NOT_READY, WELCOME_WORDS, bringsTeam, firstActionFor, firstNameOf, isCountedStep, isWelcomeStep, welcomeAutoPath,
   type FirstActionInput, type NextStepItem, type NextSteps, type WelcomeDoneInput, type WelcomeNotice, type WelcomeOutcome,
@@ -296,17 +297,8 @@ async function photoFromGoogle(ctx: OrgContext): Promise<boolean> {
   }
 }
 
-/** DESKTOP_DOWNLOAD_URL when it is an https address; null otherwise (the welcome then offers to link an installed app). */
-export function desktopDownloadUrl(env: Record<string, string | undefined> = process.env): string | null {
-  const raw = env.DESKTOP_DOWNLOAD_URL?.trim();
-  if (!raw) return null;
-  try {
-    const u = new URL(raw);
-    return u.protocol === "https:" ? u.toString() : null;
-  } catch {
-    return null;
-  }
-}
+/** The Boredroom for Mac download: DESKTOP_DOWNLOAD_URL (https), the releases default when unset, null when "off" (lib/desktop-download.ts). */
+export { desktopDownloadUrl };
 
 const leadOf = (teams: { id: string; name: string; is_manager: boolean }[]) => {
   const t = [...teams].filter((x) => x.is_manager).sort((a, b) => a.name.localeCompare(b.name))[0];
@@ -400,7 +392,7 @@ export async function nextStepsFor(ctx: OrgContext): Promise<NextSteps | null> {
   } else if (!r.planned) {
     items.push(item(firstActionFor(base)));
   }
-  const mac = desktopDownloadUrl();
-  if (mac && (await listDevices(ctx.user).catch(() => [{}])).length === 0) items.push(item({ key: "mac_app", label: WELCOME_WORDS.nextSteps.mac, href: mac }, true));
+  // Boredroom for Mac (24 October 2026): to /download, which has the first-open steps an app not yet signed by Apple needs.
+  if (desktopDownloadUrl() && (await listDevices(ctx.user).catch(() => [{}])).length === 0) items.push(item({ key: "mac_app", label: WELCOME_WORDS.nextSteps.mac, href: "/download" }));
   return items.length ? { items, left: items.length } : null;
 }

@@ -19,6 +19,7 @@ const COLUMNS: { title: string; links: { label: string; href: MarketingPath }[] 
     links: [
       { label: "Features", href: "/features" },
       { label: "AI assistant for teams", href: "/features/ai-assistant" },
+      { label: "Brenda for Mac", href: "/download" },
       { label: "Attendance and timesheets", href: "/features/attendance-timesheets" },
       { label: "Solutions", href: "/solutions" },
       { label: "Use cases", href: "/usecases" },

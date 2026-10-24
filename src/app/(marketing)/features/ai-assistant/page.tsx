@@ -26,7 +26,7 @@ import { ENTITY_SENTENCE, POSITIONING_POINTS } from "@/lib/marketing/site";
  * Every claim is built (checked 17 October 2026 against src/app/page.tsx FAIR and faq(), components/landing/
  * feature-sections.tsx, docs/design-system.md, desktop/README.md, server/services/daily-report.ts and orgs.ts
  * DEFAULT_NOTICE). The comparison with a one-person assistant describes the kind of tool, not a named product. No
- * integrations, no download link, no customer numbers: none exist.
+ * integrations and no customer numbers: none exist. The notch row links /download (24 October 2026).
  *
  * Pages v2 (owner feedback, 17 October 2026: "like actual product pages, like the homepage"): the feature template
  * (spec §5.1): a split hero with the follow-up and a perched Brenda, "one per person" beside Brenda's home, what she does
@@ -114,7 +114,7 @@ export default function Page() {
           },
           {
             id: "notch", icon: <Laptop />, title: "Sits in the notch on your Mac, or at the top of your screen on Windows",
-            body: <p>Brenda desktop puts your timer, the morning briefing and notifications at the top of the screen, without opening a tab. Hold Option and Space (Alt and Space on Windows) and speak: your words are turned into text on your computer, and no audio leaves it. Calls ring there too, and during your quiet hours no card opens and nothing makes a sound. It links to your workspace with a code you approve in the browser, never a password.</p>,
+            body: <p>Brenda desktop puts your timer, the morning briefing and notifications at the top of the screen, without opening a tab. Hold Option and Space (Alt and Space on Windows) and speak: your words are turned into text on your computer, and no audio leaves it. Calls ring there too, and during your quiet hours no card opens and nothing makes a sound. It links to your workspace with a code you approve in the browser, never a password. <Link href="/download">Download Brenda for Mac</Link>.</p>,
             visual: <NotchMock />, caption: "Brenda desktop in a Mac's notch: the running timer and the morning briefing with three things waiting.",
           },
         ]}

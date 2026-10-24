@@ -13,6 +13,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { EmptyState, Alert } from "@/components/ui/states";
 import { QuickLink } from "@/components/ui/tool-tile";
 import { cn } from "@/lib/utils";
+import { signInPath } from "@/server/lib/desktop-app";
 
 export const metadata = { title: "Workspaces" };
 
@@ -26,7 +27,7 @@ const ROLE_LABEL: Record<string, string> = { owner: "Organisation owner", hr: "H
 export default async function WorkspacesPage({ searchParams }: { searchParams: Promise<{ verified?: string; switch?: string }> }) {
   const sp = await searchParams;
   const user = await getCurrentUser();
-  if (!user) redirect("/login?next=/app");
+  if (!user) redirect(await signInPath("/app"));
   if (!user.emailVerified) redirect("/verify/pending");
   const [workspaces, allowance, open] = await Promise.all([listMyWorkspaces(user.profileId), workspaceAllowance(user.profileId), registrationOpen()]);
   const full = allowance.limit !== null && allowance.used >= allowance.limit;

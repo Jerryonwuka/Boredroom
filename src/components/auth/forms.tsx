@@ -13,6 +13,19 @@ import { cn } from "@/lib/utils";
 import { AUTH_LINK } from "@/components/auth/auth-shell";
 import { safeNextPath } from "@/components/auth/next-path";
 import { welcomeAutoPath } from "@/lib/welcome";
+import { desktopNext, isDesktopApp } from "@/lib/desktop-app";
+
+/**
+ * After signing out in Boredroom for Mac's window (owner request, 24 October 2026: option A): a full load of
+ * /desktop/app, where the app notices and shows the sign-in (the server signed its notch out too). True when it went.
+ */
+export function signedOutInApp(): boolean {
+  if (!isDesktopApp()) return false;
+  // A full load on purpose: the app watches /desktop/app loads (a client navigation would be invisible to it).
+  // eslint-disable-next-line @next/next/no-location-assign-relative-destination
+  window.location.assign("/desktop/app?next=%2Fapp");
+  return true;
+}
 
 type Errors = Record<string, string[]>;
 type Failure = { message: string; code?: string };
@@ -44,7 +57,12 @@ export function useSubmit() {
       return null;
     } finally { setBusy(false); }
   }
-  function go(href: string) { startNavigation(() => router.push(href)); }
+  // In Boredroom for Mac's window every continuation is a full load through /desktop/app, which the app sees (owner
+  // request, 24 October 2026: option A): it then signs the notch in, or checks the window's person is the notch's.
+  function go(href: string) {
+    if (isDesktopApp()) { window.location.assign(desktopNext(href)); return; }
+    startNavigation(() => router.push(href));
+  }
   return { pending: busy || navigating, error, fieldErrors, run, go, showFieldErrors };
 }
 
@@ -339,7 +357,7 @@ export function SignOutButton({ className, to = "/login", size = "md" }: { class
       {failed ? <span role="alert" className="text-meta font-normal text-danger">Could not sign out. Try again.</span> : null}
       <Button variant="ghost" size={size} className={className} disabled={busy} onClick={async () => {
         setBusy(true); setFailed(false);
-        try { await api("/api/auth/logout", { method: "POST", retries: 0 }); router.push(to); router.refresh(); }
+        try { await api("/api/auth/logout", { method: "POST", retries: 0 }); if (signedOutInApp()) return; router.push(to); router.refresh(); }
         catch { setFailed(true); setBusy(false); }
       }}>{busy ? "Signing out…" : "Sign out"}</Button>
     </span>

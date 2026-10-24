@@ -34,7 +34,7 @@ const interRegular = () => (inter ??= readFile(join(process.cwd(), "src/app/og/f
 const titleSize = (title: string) => (title.length <= 36 ? 76 : title.length <= 60 ? 66 : title.length <= 80 ? 58 : 50);
 
 export async function renderOgImage(page: RegistryPage): Promise<ImageResponse> {
-  const section = page.parent && page.parent !== "/" ? getPage(page.parent as RegistryPage["path"]).label : page.kind === "pricing" ? page.label : null;
+  const section = page.parent && page.parent !== "/" ? getPage(page.parent as RegistryPage["path"]).label : page.kind === "pricing" || page.kind === "download" ? page.label : null;
   const size = titleSize(page.h1);
   return new ImageResponse(
     (

@@ -42,12 +42,12 @@ export type ScreenHelpReason = (typeof SCREEN_HELP_REASONS)[number];
 export type DesktopLook = {
   /** Migration 0057 is applied. */
   ready: boolean;
-  /** The pilot list (BRENDA_LOOK_WORKSPACES, or "*") names this workspace. */
+  /** Offered here: every workspace, unless BRENDA_LOOK_WORKSPACES is "off" or a list without it. */
   eligible: boolean;
   /** eligible, allowed, the notice is over, the plan includes Brenda and Boredroom's own key is set. */
   available: boolean;
   reason: ScreenHelpReason | null;
-  /** ISO, while the workspace is in its 14 days' notice. */
+  /** ISO, while the workspace is in a notice set before notices were removed. */
   availableFrom: string | null;
   /** The workspace's list, then the person's own (the fixed list is the Mac's own copy). */
   neverLook: (AppRule & { source: "workspace" | "you" })[];
@@ -364,8 +364,11 @@ export function dayMonth(iso: string, timeZone?: string): string {
   catch { return d.toLocaleDateString("en-GB", { day: "numeric", month: "long", timeZone: "UTC" }); }
 }
 
-/** How long existing workspaces are told before screen help becomes available (owner decision 2, 11 October 2026). */
-export const NOTICE_DAYS = 14;
+/**
+ * How long existing workspaces are told before screen help becomes available: none (owner request, 24 October 2026,
+ * replacing decision 2's 14 days). Owners and HR are still told it is on; a notice set before stays as it was.
+ */
+export const NOTICE_DAYS = 0;
 
 // ---- Every fixed word (contract A.8, F.4) -----------------------------------------------------------------------------------
 
@@ -425,8 +428,8 @@ export const SCREEN_HELP_WORDS = {
   },
   /** The owners' and HR's notification when the notice starts (contract D.5). */
   noticeNotification: {
-    title: (date: string) => `Screen help on Brenda for Mac starts on ${date}`,
-    body: "Each person can let Brenda look at a window on their Mac when they ask her to, with her keys or her Look button. You can switch it off, or start it now, in Settings › Brenda.",
+    title: () => "Screen help on Brenda for Mac is on in this workspace",
+    body: "Each person can let Brenda look at a window on their Mac when they ask her to, with her keys or her Look button. Each person turns it on for themselves. You can switch it off for everyone in Settings › Brenda.",
   },
   /** The workspace log's words (Settings › Brenda's log; contract D.5). */
   log: {

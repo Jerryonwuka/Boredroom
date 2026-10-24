@@ -5,8 +5,8 @@
  * 1. Before migration 0057 (the code ships first): the desktop state reads `look.ready: false`, the views `ready: false`,
  *    the writes and the look route answer 503, a workspace is still created (with no row). Then 0057 is applied by hand,
  *    twice: no error.
- * 2. The lazy notice: the first time a workspace in the pilot is read, its 14 days' notice starts and owners and HR are
- *    told, once. Owners and HR switch it, list apps and start it now; staff are refused; members read it. A workspace
+ * 2. The first read: the first time a workspace is offered screen help, it is available at once (no notice period
+ *    since 24 October 2026) and owners and HR are told it is on, once. Owners and HR switch it, list apps and start it now; staff are refused; members read it. A workspace
  *    created while it is offered is available at once.
  * 3. The person's own side: their never-look list and "Turn off on my Macs", refused while someone is signed in as them.
  * 4. Row-level security: staff cannot change the workspace's row; nobody but the worker reads the look costs; an owner
@@ -122,20 +122,19 @@ describe("before migration 0057 (contract D.3)", () => {
 });
 
 describe("the lazy notice and the workspace's switch (contract 0.9, D.5)", () => {
-  it("the first read starts the 14 days' notice and tells owners and HR, once", async () => {
+  it("the first read makes it available at once and tells owners and HR it is on, once", async () => {
     const v = await screenHelpView(ada);
-    expect(v).toMatchObject({ ready: true, eligible: true, allowed: true, available: false, reason: "notice", neverLook: [], canEdit: false });
-    const days = (Date.parse(v.availableFrom as string) - Date.parse(v.noticeAt as string)) / 86_400_000;
-    expect(days).toBeCloseTo(14, 3);
+    expect(v).toMatchObject({ ready: true, eligible: true, allowed: true, available: true, reason: null, neverLook: [], canEdit: false });
+    const row = await adminQuery<{ days: number }>("SELECT extract(epoch FROM available_from - notice_at)::float / 86400 AS days FROM screen_help_settings WHERE organisation_id = $1", [owner.org.id]);
+    expect(row[0].days).toBeCloseTo(0, 3);
     for (let i = 0; i < 3; i++) await screenHelpView(owner);
     await desktopState(ada);
     const told = await adminQuery<{ recipient_membership_id: string; title: string; body: string; href: string }>(
       "SELECT recipient_membership_id, title, body, href FROM notifications WHERE type = 'brenda.screen_help_notice' ORDER BY recipient_membership_id");
     expect(told.map((n) => n.recipient_membership_id).sort()).toEqual([owner.membership.id, hr.membership.id].sort());
-    const date = new Date(v.availableFrom as string).toLocaleDateString("en-GB", { day: "numeric", month: "long", timeZone: "Africa/Lagos" });
     expect(told[0]).toMatchObject({
-      title: `Screen help on Brenda for Mac starts on ${date}`,
-      body: "Each person can let Brenda look at a window on their Mac when they ask her to, with her keys or her Look button. You can switch it off, or start it now, in Settings › Brenda.",
+      title: "Screen help on Brenda for Mac is on in this workspace",
+      body: "Each person can let Brenda look at a window on their Mac when they ask her to, with her keys or her Look button. Each person turns it on for themselves. You can switch it off for everyone in Settings › Brenda.",
       href: "/app/company-a/settings?section=brenda",
     });
     expect(await count("SELECT count(*)::int AS n FROM screen_help_settings WHERE organisation_id = $1", [owner.org.id])).toBe(1);
@@ -147,7 +146,7 @@ describe("the lazy notice and the workspace's switch (contract 0.9, D.5)", () =>
       expect([r.status, r.json.message]).toEqual([403, "Only the organisation owner or HR can change screen help."]);
       const g = await call(c, settingsGET, "GET", "/screen-help");
       expect(g.status).toBe(200);
-      expect(g.json).toMatchObject({ ready: true, eligible: true, allowed: true, reason: "notice", canEdit: false });
+      expect(g.json).toMatchObject({ ready: true, eligible: true, allowed: true, reason: null, canEdit: false });
     }
     process.env.BRENDA_LOOK_WORKSPACES = "someone-else";
     try {
@@ -162,7 +161,7 @@ describe("the lazy notice and the workspace's switch (contract 0.9, D.5)", () =>
     const off = await call(hr, settingsPUT, "PUT", "/screen-help", { allowed: false });
     expect(off.json).toMatchObject({ allowed: false, available: false, reason: "switched_off", canEdit: true });
     const list = await call(owner, settingsPUT, "PUT", "/screen-help", { allowed: true, neverLook: [{ name: "Excel", bundleId: "com.microsoft.Excel" }, { name: "excel 2", bundleId: "COM.MICROSOFT.EXCEL" }, { name: " Notion " }] });
-    expect(list.json).toMatchObject({ allowed: true, reason: "notice", neverLook: [{ name: "Excel", bundleId: "com.microsoft.Excel" }, { name: "Notion", bundleId: null }] });
+    expect(list.json).toMatchObject({ allowed: true, reason: null, neverLook: [{ name: "Excel", bundleId: "com.microsoft.Excel" }, { name: "Notion", bundleId: null }] });
     const bad = await call(owner, settingsPUT, "PUT", "/screen-help", { neverLook: [{ name: "", bundleId: null }] });
     expect(bad.status).toBe(422);
     const now = await call(owner, settingsPUT, "PUT", "/screen-help", { startNow: true });
@@ -201,9 +200,9 @@ describe("the lazy notice and the workspace's switch (contract 0.9, D.5)", () =>
     const outside = await createVerifiedUser(`outside-${Date.now()}@company-x.test`, "Out Side");
     await createOrganisation(outside.profileId, { name: "Outside Co", slug: "outside-co", timezone: "Africa/Lagos", employeeCode: "OWN-001" });
     expect(await notice("outside-co")).toBe(PHASE8_DEFAULT_NOTICE);
-    // early-co, created before 0057, gets its notice on its first read.
+    // early-co, created before 0057, is available on its first read too (no notice period).
     const early = await contextFor(await earlyFounder(), "early-co");
-    expect(await screenHelpView(early)).toMatchObject({ reason: "notice" });
+    expect(await screenHelpView(early)).toMatchObject({ available: true, reason: null });
   });
 });
 

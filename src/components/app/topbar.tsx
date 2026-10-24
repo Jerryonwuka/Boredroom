@@ -50,6 +50,7 @@ import { api } from "@/lib/api-client";
 import { ROUTINE_WORDS } from "@/lib/routines";
 import { relativeTime, cn } from "@/lib/utils";
 import type { RecentNotification } from "@/server/services/workspace";
+import { signedOutInApp } from "@/components/auth/forms";
 
 export type TopBarUser = { profileId: string; displayName: string; email: string; avatarKey?: string | null; title?: string | null; statusText?: string | null; presence?: Presence | null; isAdmin?: boolean };
 
@@ -194,7 +195,7 @@ function Account({ orgSlug, user, roleLabel }: { orgSlug: string; user: TopBarUs
           {user.isAdmin ? <Link href="/admin" onClick={close} className="menu-item"><AnimatedShieldCheck aria-hidden />Control Center</Link> : null}
           <div role="separator" className="menu-separator" />
           <button type="button" disabled={signOut === "pending"} className="menu-item disabled:opacity-60"
-            onClick={async () => { setSignOut("pending"); try { await api("/api/auth/logout", { method: "POST", retries: 0 }); router.push("/login"); router.refresh(); } catch { setSignOut("failed"); } }}>
+            onClick={async () => { setSignOut("pending"); try { await api("/api/auth/logout", { method: "POST", retries: 0 }); if (signedOutInApp()) return; router.push("/login"); router.refresh(); } catch { setSignOut("failed"); } }}>
             <AnimatedLogOut aria-hidden />{signOut === "pending" ? "Signing out…" : "Sign out"}
           </button>
           {signOut === "failed" ? <p role="alert" className="px-2 pb-1.5 pt-1 text-xs text-danger">Could not sign out. Check your connection and try again.</p> : null}

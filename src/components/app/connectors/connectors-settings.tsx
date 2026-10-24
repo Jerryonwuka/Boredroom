@@ -17,6 +17,7 @@ import { ADMIN_CONSENT_DONE, CONNECTOR_WORDS, CONNECT_FAILURE, isConnectFailure 
 import { CATEGORY_ORDER } from "@/lib/connectors/catalogue";
 import { PROVIDER_LABELS, providerFromSlug, type ConnectorsView, type PolicyView } from "@/lib/connectors/types";
 import { SetupSteps, StatusBadge, WorkspaceConnectionCard } from "./connection-card";
+import { CONNECTOR_BRIDGE_RETURN } from "./connect-sheet";
 
 const W = CONNECTOR_WORDS.workspace;
 
@@ -46,6 +47,12 @@ export function useConnectorReturn(anchor?: string): string | null {
     // After the router has settled its own scroll for the return (a frame is too early).
     if (anchor) setTimeout(() => document.getElementById(anchor)?.scrollIntoView({ block: "start" }), 300);
   }, [params, router, anchor]);
+  // A consent finished in the browser (Boredroom for Mac, owner request, 24 October 2026): refetch when the person is back.
+  useEffect(() => {
+    const again = () => router.refresh();
+    window.addEventListener(CONNECTOR_BRIDGE_RETURN, again);
+    return () => window.removeEventListener(CONNECTOR_BRIDGE_RETURN, again);
+  }, [router]);
   return error;
 }
 

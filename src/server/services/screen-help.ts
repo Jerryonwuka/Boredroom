@@ -2,15 +2,17 @@
  * Screen help on Brenda for Mac, phase 1: the server's side (owner decisions, 11 October 2026: "start building with
  * your recommendations"; contract sections D.4 to D.6).
  *
- * - The pilot gate: screen help is offered only in the workspaces BRENDA_LOOK_WORKSPACES names ("*" offers it everywhere;
- *   unset or empty, nowhere). The owner's own workspace is first.
+ * - Offered in every workspace (owner request, 24 October 2026: a per-workspace list in Vercel doesn't scale). Each
+ *   workspace's owners and HR decide with its switch, and each person still turns it on on their own Mac.
+ *   BRENDA_LOOK_WORKSPACES is only an override: "off" offers it nowhere (the platform's kill switch), and a list of slugs
+ *   offers it only there (a limited trial); unset, empty or "*" is everywhere.
  * - Boredroom's own key and the pilot model: pictures always go through ANTHROPIC_API_KEY, never a workspace's own key
  *   (owner decision 3), to BRENDA_LOOK_MODEL (claude-opus-5-5 by default; never a Fable or Mythos model, which need
  *   30-day retention: owner decision 4).
  * - The workspace's switch (owner decision 2): Allowed by default; owners and HR can switch it off for everyone and add
- *   apps to a never-look list. A workspace gets 14 days' notice the first time it is offered screen help (the notice
- *   starts lazily, on the first read, and owners and HR are told); owners and HR may start it at once. A workspace created
- *   while screen help is offered is available at once (orgs.createOrganisation inserts its row).
+ *   apps to a never-look list. There is no notice period any more (owner request, 24 October 2026): the first time a
+ *   workspace is offered screen help its row is written, available at once, and owners and HR are told it is on. A
+ *   workspace created while screen help is offered is available at once (orgs.createOrganisation inserts its row).
  * - The person's own side: their never-look list and "Turn off on my Macs", in assistant_private (theirs alone). Phase 3
  *   (owner request, 12 October 2026: the person sees what is on; the employer still sees nothing; contract 0b.2, K.2):
  *   what each of their Macs last reported (which abilities are on, which permissions macOS gave, whether the companion
@@ -34,7 +36,7 @@ import { audit, notify } from "@/server/services/common";
 import { logAction } from "@/server/services/brenda";
 import type { AssistantConnection } from "@/server/services/assistant";
 import {
-  APP_RULE_LIMITS, LOOK_LIMITS, MAC_REPORTS_MAX, NOTICE_DAYS, SCREEN_HELP_WORDS, SETUP_FRESH_MINUTES, appRuleListSchema, appRulesOf, cleanAppRule, dayMonth, longDate,
+  APP_RULE_LIMITS, LOOK_LIMITS, MAC_REPORTS_MAX, NOTICE_DAYS, SCREEN_HELP_WORDS, SETUP_FRESH_MINUTES, appRuleListSchema, appRulesOf, cleanAppRule, longDate,
   macStateSchema, neverLookMatch, type AppRule, type DesktopAct, type DesktopLook, type MacReport, type MacState, type ScreenHelpMine, type ScreenHelpReason,
   type ScreenHelpView, type macReportBodySchema,
 } from "@/lib/screen-help";
@@ -44,11 +46,15 @@ const W = SCREEN_HELP_WORDS;
 
 // ---- The pilot gate, the model and the key (contract D.4) -------------------------------------------------------------------
 
-/** Whether BRENDA_LOOK_WORKSPACES offers screen help to this workspace: slugs split on commas and spaces; "*" is every one. */
+/**
+ * Whether screen help is offered to this workspace: everywhere unless BRENDA_LOOK_WORKSPACES says otherwise ("off" is
+ * nowhere; a list of slugs, split on commas and spaces, is only those; "*" is every one).
+ */
 export function lookEligible(slug: string, env: string | undefined = process.env.BRENDA_LOOK_WORKSPACES): boolean {
   const list = String(env ?? "").split(/[\s,]+/).map((s) => s.trim().toLowerCase()).filter(Boolean);
-  if (!list.length) return false;
-  return list.includes("*") || list.includes(String(slug ?? "").trim().toLowerCase());
+  if (!list.length || list.includes("*")) return true;
+  if (list.includes("off")) return false;
+  return list.includes(String(slug ?? "").trim().toLowerCase());
 }
 
 export const DEFAULT_LOOK_MODEL = "claude-opus-5-5";
@@ -104,13 +110,12 @@ async function startNotice(ctx: OrgContext): Promise<SettingsRow | null> {
       `INSERT INTO screen_help_settings(organisation_id, notice_at, available_from) VALUES ($1, now(), now() + make_interval(days => $2))
        ON CONFLICT (organisation_id) DO NOTHING RETURNING allowed, notice_at, available_from, never_look, true AS actions_allowed`, [ctx.org.id, NOTICE_DAYS]);
     if (inserted) {
-      const date = dayMonth(iso(inserted.available_from) as string, ctx.org.timezone);
       const leads = await db.query<{ id: string }>(
         `SELECT id FROM memberships WHERE organisation_id = $1 AND status = 'active' AND role IN ('owner', 'hr')`, [ctx.org.id]);
       for (const m of leads) {
         await notify(db, {
           organisationId: ctx.org.id, recipientMembershipId: m.id, type: "brenda.screen_help_notice",
-          title: W.noticeNotification.title(date), body: W.noticeNotification.body,
+          title: W.noticeNotification.title(), body: W.noticeNotification.body,
           href: `/app/${ctx.org.slug}/settings?section=brenda`, dedupKey: `screen-help-notice:${ctx.org.id}`,
         });
       }

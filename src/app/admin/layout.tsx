@@ -8,6 +8,7 @@ import { AdminShell } from "@/components/admin/shell";
 import { Logo } from "@/components/logo";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { signInPath } from "@/server/lib/desktop-app";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: { default: "Control Center", template: "%s · Control Center" } };
@@ -17,7 +18,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   const admin = await getAdmin();
   if (!admin) {
     const user = await getCurrentUser();
-    if (!user) redirect("/login?next=/admin");
+    if (!user) redirect(await signInPath("/admin"));
     return (
       <main id="main" className="mx-auto flex min-h-dvh max-w-md flex-col items-center justify-center px-5 py-24 text-center">
         <Logo href="/app" height={18} />
