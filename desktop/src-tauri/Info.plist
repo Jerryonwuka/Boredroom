@@ -2,15 +2,35 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+  <!-- A menu-bar app from the first instant: no Dock icon at launch (owner request, 24 October 2026). The Dock icon shows
+       while the Boredroom window is open (dashboard.rs switches the activation policy). -->
+  <key>LSUIElement</key>
+  <true/>
+  <!-- boredroom://auth (the one sign-in's hand-back from the browser) and boredroom://open (Back to Boredroom), handled
+       in Rust from RunEvent::Opened (owner request, 24 October 2026). -->
+  <key>CFBundleURLTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleURLName</key>
+      <string>cc.boredroom.brenda</string>
+      <key>CFBundleURLSchemes</key>
+      <array>
+        <string>boredroom</string>
+      </array>
+    </dict>
+  </array>
+  <!-- macOS's prompts are fixed text and can't know the person's assistant's name, so they say "your assistant". -->
   <key>NSMicrophoneUsageDescription</key>
-  <string>Brenda listens only while you hold the talk shortcut, and turns what you say into text on this computer.</string>
+  <string>Boredroom uses your microphone only while you hold the talk shortcut, so your assistant can turn what you say into text on this Mac, and in calls and voice notes you start.</string>
+  <key>NSCameraUsageDescription</key>
+  <string>Boredroom uses your camera only in calls, when you turn your camera on.</string>
   <key>NSAppleEventsUsageDescription</key>
-  <string>Brenda asks Finder which files and folders you've selected, and empties the Trash only when you ask and say yes.</string>
+  <string>Boredroom asks Finder which files and folders you've selected, and empties the Bin only when you ask and say yes.</string>
   <key>NSDocumentsFolderUsageDescription</key>
-  <string>Brenda works on files in your Documents folder only when you ask her to, and never deletes anything.</string>
+  <string>Boredroom uploads the files you choose from Documents, and your assistant works on files there only when you ask. Nothing is deleted.</string>
   <key>NSDesktopFolderUsageDescription</key>
-  <string>Brenda works on files on your Desktop, and saves screenshots there, only when you ask her to.</string>
+  <string>Boredroom uploads the files you choose from your Desktop, and your assistant works on files and saves screenshots there only when you ask.</string>
   <key>NSDownloadsFolderUsageDescription</key>
-  <string>Brenda works on files in your Downloads folder only when you ask her to, and never deletes anything.</string>
+  <string>Boredroom saves the files you download from your dashboard to Downloads, and your assistant works on files there only when you ask. Nothing is deleted.</string>
 </dict>
 </plist>

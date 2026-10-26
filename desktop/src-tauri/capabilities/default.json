@@ -71,6 +71,8 @@
     "allow-job-open-output",
     "allow-job-reveal-output",
     "allow-job-show-folder",
-    "allow-job-list"
+    "allow-job-list",
+    "allow-update-status",
+    "allow-update-install"
   ]
 }

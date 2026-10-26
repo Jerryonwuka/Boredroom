@@ -77,6 +77,9 @@ fn main() {
         "job_reveal_output",
         "job_show_folder",
         "job_list",
+        // Updates (owner request, 24 October 2026).
+        "update_status",
+        "update_install",
     ])))
     .expect("failed to run tauri-build");
 }

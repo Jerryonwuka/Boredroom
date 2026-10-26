@@ -1,7 +1,7 @@
 [package]
 name = "brenda-desktop"
-version = "0.1.0"
-description = "Brenda for Boredroom: the desktop notch"
+version = "0.2.0"
+description = "Boredroom for Mac: the dashboard and Brenda in your notch."
 edition = "2021"
 
 [lib]
@@ -31,6 +31,11 @@ bytes = "1.9"
 sha2 = "0.10"
 unicode-segmentation = "1"
 flate2 = "1"
+# Updates (owner request, 24 October 2026): Brenda checks a signed feed quietly, downloads in the background and offers
+# "Restart to update"; the plugin checks the minisign signature before anything is installed. Pinned to 2.x (a 3.0
+# alpha exists). The process plugin is registered as asked; no window is granted its permissions.
+tauri-plugin-updater = "2.14"
+tauri-plugin-process = "2.4"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"

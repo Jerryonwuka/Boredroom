@@ -489,7 +489,7 @@ fn transcribe_and_emit(app: &AppHandle, samples: Vec<f32>, rate: u32, purpose: &
     }
     let peak = samples.iter().fold(0f32, |m, x| m.max(x.abs()));
     if peak < 0.002 {
-        return fail(app, "I couldn't hear anything. Check that Brenda may use the microphone in System Settings › Privacy & Security › Microphone, and that the right microphone is selected.", purpose);
+        return fail(app, "I couldn't hear anything. Check that Boredroom may use the microphone in System Settings › Privacy & Security › Microphone, and that the right microphone is selected.", purpose);
     }
     emit(app, tagged(purpose, "transcribing"));
     match transcribe(app, &resample(&samples, rate)) {

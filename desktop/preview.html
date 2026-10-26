@@ -1608,6 +1608,13 @@ window.__TAURI__ = {
     if (cmd === "api" && bug === "empty" && path.includes("/brenda/desktop")) await wait(3000);
     // The server's clock as it is now (phase 7a: quiet hours end at `until` on it; &ends=N shows that).
     if (cmd === "api") return { ...sample, serverNow: new Date().toISOString() };
+    // ?state=link is the signed-out card (one sign-in, owner request 24 October 2026): Sign in opens Boredroom's window
+    // (logged here), and a moment later the window's sign-in links the notch (`brenda://linked`).
+    if (cmd === "open_in_browser" && state === "link" && path === "/app") {
+      console.log("open the Boredroom window at", path);
+      setTimeout(() => window.__h?.["brenda://linked"]?.({ payload: { config: { baseUrl: "https://boredroom.cc", signedIn: true, workspaceSlug: "company-a", workspaceName: "Company A", displayName: "Ada Employee" } } }), 1500);
+      return;
+    }
     if (cmd === "open_in_browser") { console.log("open", path); return; }
     return {};
   } },

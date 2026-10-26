@@ -5,7 +5,7 @@
 // by Node for the unit tests (tests/unit/notch-look.test.ts), as notify.js is.
 //
 // What the person sees (contract C.4): the first-time consent in the notch (the proposal's exact words, section 6), the
-// Screen Recording step and "Allow Brenda in System Settings", "Screen help is on" and "Screen help is off"; while she
+// Screen Recording step and "Allow Boredroom in System Settings", "Screen help is on" and "Screen help is off"; while she
 // looks, "Looking at Figma…"; then the preview of the one picture, with Send and Don't send; the refusals in plain words.
 // This file holds those words and the small rules main.js asks about: what the preview caption says, when Send may be
 // pressed, when the Mac must turn screen help off because the person pressed "Turn off on my Macs" in Boredroom, whether a
@@ -193,11 +193,11 @@ const Look = (() => {
       },
       denied: {
         // "Brenda" here is the app's name in System Settings, whatever the person calls their assistant.
-        title: "Allow Brenda in System Settings",
+        title: "Allow Boredroom in System Settings",
         // Sonoma (14) calls the list Screen Recording; Sequoia (15) and later, Screen & System Audio Recording.
-        sub: "Privacy & Security › Screen Recording (Screen & System Audio Recording on newer macOS), then turn on Brenda. You may need to quit and reopen Brenda afterwards.",
+        sub: "Privacy & Security › Screen Recording (Screen & System Audio Recording on newer macOS), then turn on Boredroom. You may need to quit and reopen Boredroom afterwards.",
         notNow: "Not now", check: "Check again", open: "Open System Settings",
-        stillOff: "Brenda isn't allowed yet. Turn it on in that list, then check again.",
+        stillOff: "Boredroom isn't allowed yet. Turn it on in that list, then check again.",
       },
       on: { title: "Screen help is on", sub: `Hold ${k} and ask about what's in front of you. Point at something first and ask “what's this?”`, ok: "Got it" },
       off: {
@@ -274,6 +274,8 @@ const Look = (() => {
       // Phase 2 (contract B.2, A.6.4): a screen that looks shared, and a hold while a question waits for its answer.
       case "sharing": return { title: "Your screen looks shared", sub: "I don't look or work while it's being shared." };
       case "answer_first": return { title: "Answer this one first", sub: "" };
+      // Boredroom's own window (owner request, 24 October 2026): never looked at or worked in.
+      case "own_window": return { title: "That's Boredroom's own window, so I can't look at it", sub: "Ask me here, or open it in your browser." };
       // The consent changed since it was given (contract E.1.1): main.js opens the update card instead.
       case "consent_update": return null;
       case "unsupported": return { title: "Screen help needs macOS 14 Sonoma or later", sub: "Everything else works as before." };

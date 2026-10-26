@@ -1069,6 +1069,11 @@ fn facts_for(mac: &dyn Mac, host: &dyn Host, a: &MacAction, target: Option<&AppT
         "type_text" | "copy_selection" => {
             // Brenda's own notch has the keyboard (a typed request): the front is handed back first, and the box is
             // checked again then (`macos::type_text`), so nothing here is a fact about the person's box yet.
+            // The Boredroom window is the person's front window (owner request, 24 October 2026): never typed or
+            // copied in, and never the app behind it instead.
+            if mac.person_front().is_some_and(|p| p.pid == mac.own_pid()) {
+                f.push(Fact::Own);
+            }
             if let Some(focus) = mac.focused_text().filter(|f| f.pid != Some(mac.own_pid())) {
                 if focus.secure() || mac.secure_input() {
                     f.push(Fact::SecureField);
@@ -1310,6 +1315,13 @@ fn run_one(mac: &mut dyn Mac, host: &mut dyn Host, nonce: &str, a: &MacAction) -
                     }
                 }
             };
+            // Boredroom's own window (owner request, 24 October 2026): minimised by Rust, never moved by Accessibility.
+            if pid == mac.own_pid() {
+                if a.kind == "minimise" && mac.minimise_own() {
+                    return Did::Done("Minimised Boredroom.".into());
+                }
+                return Did::No(refusal("That's Boredroom itself", "I don't click, type or change anything in it."));
+            }
             if a.kind == "minimise" {
                 return if mac.minimise(pid) { Did::Done(format!("Minimised {}.", line_name(&name))) } else { Did::No(failure("I couldn't do that", "That window wouldn't minimise.")) };
             }
@@ -1357,7 +1369,7 @@ fn run_one(mac: &mut dyn Mac, host: &mut dyn Host, nonce: &str, a: &MacAction) -
                 Err(r) => return Did::No(r),
             };
             if t.pid == Some(mac.own_pid()) || t.bundle_id.as_deref().is_some_and(|b| b.eq_ignore_ascii_case(crate::look::OWN_BUNDLE_ID)) {
-                return Did::No(refusal("I can't quit myself", "Use Quit Brenda in the menu bar."));
+                return Did::No(refusal("I can't quit myself", "Quit Boredroom from its menu (⌘Q)."));
             }
             if t.bundle_id.as_deref() == Some(crate::guard::FINDER_ID) {
                 return Did::No(refusal("Finder always stays open", ""));
@@ -1436,7 +1448,7 @@ fn run_one(mac: &mut dyn Mac, host: &mut dyn Host, nonce: &str, a: &MacAction) -
             Err(MacRefusal::FinderDenied) => Did::No(Refusal {
                 // The page's way out is named "finder" (System Settings › Automation; integration, 16 October 2026).
                 enable: Some("finder".into()),
-                ..refusal("Finder said no", "Let Brenda ask Finder in System Settings › Privacy & Security › Automation, or empty the Trash from the Dock.")
+                ..refusal("Finder said no", "Let Boredroom ask Finder in System Settings › Privacy & Security › Automation, or empty the Trash from the Dock.")
             }),
             Err(_) => Did::No(failure("I couldn't do that", "Finder didn't empty the Trash.")),
         },
@@ -1590,8 +1602,8 @@ fn never_words(a: &MacAction, v: &Verdict, t: Option<&AppTarget>) -> Refusal {
         "bad_url" => refusal("I can't open that address", "Only ordinary web pages, never downloads of apps or scripts."),
         "secure_field" => refusal("That's a password box", "I never type or copy in password boxes."),
         "never_look" => refusal(if a.kind == "copy_selection" { "I don't copy from that app" } else { "I don't type in that app" }, "It's one of the apps I never look at or work in."),
-        "own" if a.kind == "quit_app" => refusal("I can't quit myself", "Use Quit Brenda in the menu bar."),
-        "own" => refusal("I couldn't do that", "That's Brenda herself."),
+        "own" if a.kind == "quit_app" => refusal("I can't quit myself", "Quit Boredroom from its menu (⌘Q)."),
+        "own" => refusal("That's Boredroom itself", "I don't click, type or change anything in it."),
         "finder" => refusal("Finder always stays open", ""),
         "secret" => refusal("I don't open that file", "It looks like a password or key file."),
         _ => refusal("I couldn't do that", "That isn't something I do."),
@@ -2263,7 +2275,7 @@ impl AppHost {
                 Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied || e.raw_os_error() == Some(1) => {
                     // "folder": macOS's own permission, so the way out is System Settings › Files and Folders ("files"
                     // is the Work on my files switch; integration, 16 October 2026).
-                    return Err(Refusal { enable: Some("folder".into()), ..refusal("Your Mac hasn't let Brenda into Desktop", "Allow it in System Settings › Privacy & Security › Files and Folders, then ask me again.") })
+                    return Err(Refusal { enable: Some("folder".into()), ..refusal("Your Mac hasn't let Boredroom into Desktop", "Allow it in System Settings › Privacy & Security › Files and Folders, then ask me again.") })
                 }
                 Err(_) => return Err(failure("I couldn't save the screenshot", "")),
             }

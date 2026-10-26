@@ -55,6 +55,10 @@ pub trait Mac {
     fn window_frame(&self, pid: i32) -> Option<Bounds>;
     fn set_window_frame(&self, pid: i32, frame: Bounds) -> bool;
     fn minimise(&self, pid: i32) -> bool;
+    /// Minimises the Boredroom window (owner request, 24 October 2026).
+    fn minimise_own(&self) -> bool {
+        false
+    }
     /// The visible frame (no menu bar, no Dock) of the display holding `p`.
     fn visible_frame_for(&self, p: (f64, f64)) -> Option<Bounds>;
     fn pointer(&self) -> Option<(f64, f64)>;
@@ -452,6 +456,10 @@ impl Mac for RealMac {
 
     fn minimise(&self, pid: i32) -> bool {
         crate::ax::minimise_window(pid)
+    }
+
+    fn minimise_own(&self) -> bool {
+        crate::dashboard::minimise(&self.app)
     }
 
     fn visible_frame_for(&self, p: (f64, f64)) -> Option<Bounds> {

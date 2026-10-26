@@ -1334,6 +1334,10 @@ impl input::Env for MacEnv {
             return Some(AppInfo { pid: self.own_pid, name: "Brenda".into(), bundle_id: Some(look::OWN_BUNDLE_ID.into()) });
         }
         let list = capture::window_list(true);
+        // Boredroom's own window (owner request, 24 October 2026): a click there is never the app behind it.
+        if capture::own_window_at(&list, p, self.own_pid) {
+            return Some(AppInfo { pid: self.own_pid, name: "Boredroom".into(), bundle_id: Some(look::OWN_BUNDLE_ID.into()) });
+        }
         let w = look::window_at(&list, p, self.own_pid)?;
         capture::app_of_pid(&self.app, w.pid).map(|f| app_info(&f)).or(Some(AppInfo { pid: w.pid, name: w.owner_name.clone(), bundle_id: None }))
     }
@@ -2121,6 +2125,7 @@ pub(crate) fn render_pdf(app: &AppHandle, html: &str) -> Option<Vec<u8>> {
         .disable_drag_drop_handler()
         .build()
         .ok()?;
+    crate::island::helper_window_flags(&w);
     let out = render_pdf_in(&w, html);
     let _ = w.close();
     out
@@ -2754,8 +2759,8 @@ mod tests {
         assert_eq!(v["ask"]["i"], 1);
         let v = serde_json::to_value(ActEvent::Done { task_id: "t".into(), kind: "plan".into(), summary: "Opened Figma.".into(), steps: 0, output: None, doc: None, outputs: Some(vec![OutputShown { name: "Documents summary.docx".into(), folder: "Documents".into() }]), skipped: Some(2) }).unwrap();
         assert_eq!(v, json!({ "phase": "done", "taskId": "t", "kind": "plan", "summary": "Opened Figma.", "steps": 0, "outputs": [{ "name": "Documents summary.docx", "folder": "Documents" }], "skipped": 2 }));
-        let v = serde_json::to_value(ActEvent::Unresolved { task_id: "t".into(), message: "Your Mac hasn't let Brenda into Documents.".into(), settings: Some("files".into()) }).unwrap();
-        assert_eq!(v, json!({ "phase": "unresolved", "taskId": "t", "message": "Your Mac hasn't let Brenda into Documents.", "settings": "files" }));
+        let v = serde_json::to_value(ActEvent::Unresolved { task_id: "t".into(), message: "Your Mac hasn't let Boredroom into Documents.".into(), settings: Some("files".into()) }).unwrap();
+        assert_eq!(v, json!({ "phase": "unresolved", "taskId": "t", "message": "Your Mac hasn't let Boredroom into Documents.", "settings": "files" }));
         let v = serde_json::to_value(ActEvent::Unresolved { task_id: "t".into(), message: "m".into(), settings: None }).unwrap();
         assert_eq!(v["settings"], Value::Null);
         // Looking things up: Esc, her keys and Stop stop it.

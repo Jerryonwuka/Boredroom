@@ -537,6 +537,11 @@ pub fn path_allowed(path: &str) -> bool {
     if parts.windows(2).any(|w| w[0] == "assistant" && (w[1] == "look" || w[1] == "act" || w[1] == "jobs")) {
         return false;
     }
+    // One sign-in (owner request, 24 October 2026): the window's sign-in and handoff routes are Rust's own (webauth.rs),
+    // so the notch's page can never mint a handoff code or redeem a sign-in code.
+    if parts.len() >= 3 && parts[0] == "api" && parts[1] == "desktop" && parts[2] == "app" {
+        return false;
+    }
     // The front desk (helpers-spec O.1): Rust's only, except the page's `/assistant/front/line` (a speech offer).
     for (i, w) in parts.windows(2).enumerate() {
         if w[0] == "assistant" && w[1] == "front" && !(parts.len() == i + 3 && parts[i + 2] == "line") {
@@ -547,7 +552,7 @@ pub fn path_allowed(path: &str) -> bool {
 }
 
 /// `%XX` decoded once (anything else kept as it is), as text.
-fn percent_decode(s: &str) -> String {
+pub(crate) fn percent_decode(s: &str) -> String {
     let bytes = s.as_bytes();
     let mut out = Vec::with_capacity(bytes.len());
     let mut i = 0;
@@ -769,6 +774,9 @@ pub enum Refusal {
     ConsentUpdate,
     /// A question is waiting for its answer (A.6.4).
     AnswerFirst,
+    /// The person's front window, or the window under the pointer, is Boredroom's own: she never looks at it (owner
+    /// request, 24 October 2026).
+    OwnWindow,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -1002,6 +1010,12 @@ pub fn act_available(app: &AppHandle) -> bool {
 /// A Boredroom call is live or ringing, as the page last said (however old: live refuses at once).
 pub fn call_live(app: &AppHandle) -> bool {
     app.try_state::<Look>().is_some_and(|l| l.call.lock().unwrap().is_some_and(|(live, _)| live))
+}
+
+/// A live call the page reported within `fresh` (the Boredroom window asks before closing during one; owner request,
+/// 24 October 2026).
+pub fn call_fresh(app: &AppHandle, fresh: Duration) -> bool {
+    app.try_state::<Look>().is_some_and(|l| l.call.lock().unwrap().is_some_and(|(live, at)| live && at.elapsed() <= fresh))
 }
 
 fn server_v(app: &AppHandle) -> u32 {
@@ -1419,6 +1433,11 @@ fn work(app: &AppHandle, id: String, gen: u64, source: Source) {
     // The person's app, even when Brenda's notch is in front (L.1 step 3).
     let front = capture::person_front(app);
     let pointer = if source == Source::Keys { capture::pointer_top_left() } else { None };
+    // Boredroom's own window (owner request, 24 October 2026): never looked at, and never the app behind it instead.
+    let own_under_pointer = pointer.is_some_and(|p| capture::own_window_at(&capture::window_list(true), p, own_pid));
+    if own_under_pointer || (pointer.is_none() && front.as_ref().is_some_and(|f| f.own_window)) {
+        return refuse_with(Refusal::OwnWindow);
+    }
     let display = match pointer {
         Some(p) => capture::display_under(p),
         None => notch_display(app).or_else(|| capture::displays().into_iter().next()),
@@ -3112,7 +3131,7 @@ mod tests {
         assert_eq!(v, json!({ "phase": "preview", "lookId": "ab", "source": "keys", "app": { "name": "Figma", "bundleId": null }, "image": "data:image/jpeg;base64,AA", "width": 10, "height": 20, "pointer": null }));
         let v = serde_json::to_value(LookEvent::Refused { reason: Refusal::NeverLook, app: Some(AppName { name: "Slack".into() }), source: Some(RuleSource::Fixed) }).unwrap();
         assert_eq!(v, json!({ "phase": "refused", "reason": "never_look", "app": { "name": "Slack" }, "source": "fixed" }));
-        for (r, s) in [(Refusal::Sharing, "sharing"), (Refusal::ConsentUpdate, "consent_update"), (Refusal::AnswerFirst, "answer_first"), (Refusal::CallUnknown, "call_unknown")] {
+        for (r, s) in [(Refusal::Sharing, "sharing"), (Refusal::ConsentUpdate, "consent_update"), (Refusal::AnswerFirst, "answer_first"), (Refusal::CallUnknown, "call_unknown"), (Refusal::OwnWindow, "own_window")] {
             assert_eq!(serde_json::to_value(LookEvent::Refused { reason: r, app: None, source: None }).unwrap(), json!({ "phase": "refused", "reason": s }));
         }
         let v = serde_json::to_value(LookEvent::Cancelled { look_id: "ab".into(), reason: CancelReason::FrontChanged }).unwrap();

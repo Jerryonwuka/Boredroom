@@ -1,12 +1,14 @@
 {
   "name": "brenda-desktop",
   "private": true,
-  "version": "0.1.0",
-  "description": "Brenda for Boredroom: the desktop notch.",
+  "version": "0.2.0",
+  "description": "Boredroom for Mac: the dashboard and Brenda in your notch.",
   "scripts": {
     "dev": "tauri dev",
     "build": "tauri build",
-    "icons": "tauri icon icon.png"
+    "icons": "tauri icon icon.png",
+    "release": "node scripts/release.mjs",
+    "release:plain": "node scripts/release.mjs --plain"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2"

@@ -205,9 +205,49 @@ pub fn menu_bar_app_now() {
     }
 }
 
+/// Makes Boredroom an ordinary Mac app (a Dock icon, ⌘Tab, the menu bar) at once, on the main thread, for the Boredroom
+/// window (owner request, 24 October 2026). The notch stays the window made at launch while a menu-bar app (see
+/// `menu_bar_app_now`), so it keeps entering other apps' full-screen Spaces; it is never remade. Main thread only.
+pub fn regular_app_now() {
+    #[cfg(target_os = "macos")]
+    unsafe {
+        use objc2::{class, msg_send, runtime::AnyObject};
+        let ns_app: *mut AnyObject = msg_send![class!(NSApplication), sharedApplication];
+        if !ns_app.is_null() {
+            // NSApplicationActivationPolicyRegular
+            let _: bool = msg_send![&*ns_app, setActivationPolicy: 0isize];
+            let _: () = msg_send![&*ns_app, activateIgnoringOtherApps: true];
+        }
+    }
+}
+
+/// Brenda's own windows (the notch and its helpers) stay when the person hides Boredroom (⌘H) and are never listed in
+/// the Window menu (owner request, 24 October 2026).
+pub fn helper_window_flags(window: &WebviewWindow) {
+    #[cfg(target_os = "macos")]
+    {
+        use objc2::{msg_send, runtime::AnyObject};
+        let w = window.clone();
+        let _ = window.run_on_main_thread(move || {
+            if let Ok(ns) = w.ns_window() {
+                let ns = ns as *mut AnyObject;
+                if !ns.is_null() {
+                    unsafe {
+                        let _: () = msg_send![&*ns, setCanHide: false];
+                        let _: () = msg_send![&*ns, setExcludedFromWindowsMenu: true];
+                    }
+                }
+            }
+        });
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = window;
+}
+
 pub fn place(window: &WebviewWindow) -> tauri::Result<()> {
     #[cfg(target_os = "macos")]
     above_menu_bar(window);
+    helper_window_flags(window);
     window.set_size(LogicalSize::new(PANEL_W, PANEL_H))?;
     if let Some(monitor) = window.current_monitor()?.or(window.primary_monitor()?) {
         let scale = monitor.scale_factor();
@@ -291,7 +331,8 @@ pub(crate) fn covers(window: Bounds, display: Bounds, visible: Bounds) -> bool {
 }
 
 /// Inside a full-screen or covering app now, on the notch's display: Some(true) or Some(false), or None when it cannot
-/// be told (the front app unknown, or Brenda herself in front while the person types to her), and the last answer stands.
+/// be told (the front app unknown, or the notch itself in front while the person types to her), and the last answer
+/// stands. The Boredroom window in front counts as an app like any other (owner request, 24 October 2026).
 fn covered_now(app: &AppHandle, window: &WebviewWindow) -> Option<bool> {
     let (Ok(origin), Ok(scale)) = (window.outer_position(), window.scale_factor()) else { return None };
     let top = (origin.x as f64 / scale + PANEL_W / 2.0, origin.y as f64 / scale + 1.0);
@@ -303,11 +344,12 @@ fn covered_now(app: &AppHandle, window: &WebviewWindow) -> Option<bool> {
     }
     let snap = crate::capture::env_snapshot(app)?;
     let front = snap.front?;
-    if front.pid == std::process::id() as i32 {
+    let own = std::process::id() as i32;
+    let windows = crate::capture::window_list(false);
+    if front.pid == own && !crate::capture::own_dashboard_front(&windows, own, None) {
         return None;
     }
     let visible = snap.visible.iter().find(|(v, _)| *v == id).map(|(_, b)| *b).unwrap_or(display);
-    let windows = crate::capture::window_list(false);
     Some(windows.iter().find(|w| w.pid == front.pid && w.layer == 0 && w.alpha > 0.0).is_some_and(|w| covers(w.bounds, display, visible)))
 }
 

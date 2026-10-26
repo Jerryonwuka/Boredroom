@@ -837,6 +837,7 @@ mod mac {
             .build()
             .ok()?;
         let _ = w.set_ignore_cursor_events(true);
+        crate::island::helper_window_flags(&w);
         std::thread::sleep(Duration::from_millis(300)); // the page loads before the first message
         Some(w)
     }

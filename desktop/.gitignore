@@ -1,3 +1,5 @@
 node_modules/
 src-tauri/target/
 src-tauri/gen/
+# Release outputs (pnpm release): the DMG, the update archive and latest.json; never committed.
+release/

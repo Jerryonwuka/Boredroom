@@ -52,6 +52,28 @@ pub fn first_person_window(list: &[crate::look::WindowInfo], own_pid: i32) -> Op
         .map(|w| w.pid)
 }
 
+/// Whether the Boredroom window is the person's front window (owner request, 24 October 2026): the first ordinary
+/// (layer 0, visible) window in front-to-back order is ours, and is the window when its number is known. The notch and
+/// its helpers are never layer 0, so typing to Brenda over the window still counts as the window.
+pub fn own_dashboard_front(list: &[crate::look::WindowInfo], own_pid: i32, dashboard_window: Option<u32>) -> bool {
+    list.iter()
+        .find(|w| w.layer == 0 && w.alpha > 0.0 && w.bounds.w > 1.0 && w.bounds.h > 1.0 && (w.pid == own_pid || !SYSTEM_OWNERS.iter().any(|s| s.eq_ignore_ascii_case(w.owner_name.trim()))))
+        .is_some_and(|w| w.pid == own_pid && dashboard_window.is_none_or(|n| n == w.id))
+}
+
+/// Whether the window under a point (the first ordinary or desktop window there, front to back) is one of ours: the
+/// Boredroom window. Brenda never looks at it, clicks in it or types in it (owner request, 24 October 2026).
+pub fn own_window_at(list: &[crate::look::WindowInfo], p: (f64, f64), own_pid: i32) -> bool {
+    list.iter()
+        .find(|w| w.alpha > 0.0 && w.layer <= 0 && p.0 >= w.bounds.x && p.1 >= w.bounds.y && p.0 < w.bounds.x + w.bounds.w && p.1 < w.bounds.y + w.bounds.h)
+        .is_some_and(|w| w.pid == own_pid)
+}
+
+/// The front app when it is Boredroom's own window.
+pub fn own_window_front() -> FrontApp {
+    FrontApp { pid: std::process::id() as i32, bundle_id: Some(crate::look::OWN_BUNDLE_ID.into()), name: Some("Boredroom".into()), own_window: true }
+}
+
 /// How long `hand_back` waits for the app to be in front (L.1).
 pub const HAND_BACK_MS: u64 = 600;
 
@@ -250,6 +272,8 @@ pub struct FrontApp {
     pub pid: i32,
     pub bundle_id: Option<String>,
     pub name: Option<String>,
+    /// The Boredroom window itself (pid ours): never "the app behind it" (owner request, 24 October 2026).
+    pub own_window: bool,
 }
 
 /// What the companion's thread reads from AppKit once a second, on the main thread.
@@ -450,7 +474,7 @@ mod mac {
     // ---- apps ----------------------------------------------------------------------------------------------------
 
     fn front_of(a: &NSRunningApplication) -> FrontApp {
-        FrontApp { pid: a.processIdentifier(), bundle_id: a.bundleIdentifier().map(|s| s.to_string()), name: a.localizedName().map(|s| s.to_string()) }
+        FrontApp { pid: a.processIdentifier(), bundle_id: a.bundleIdentifier().map(|s| s.to_string()), name: a.localizedName().map(|s| s.to_string()), own_window: false }
     }
 
     /// Runs `f` on the main thread and waits (1 s at most). Never call this from the main thread.
@@ -473,15 +497,21 @@ mod mac {
         on_main(app, move || NSRunningApplication::runningApplicationWithProcessIdentifier(pid).map(|a| front_of(&a))).flatten()
     }
 
-    /// The app the person is in (L.1 step 1): the frontmost app when it is not Brenda; otherwise the owner of the first
-    /// ordinary window in front of everything else that isn't Brenda's or the system's. Never call from the main thread.
+    /// The app the person is in (L.1 step 1): the frontmost app when it is not Boredroom; Boredroom's own window when it
+    /// is the front window (`own_window`, never the app behind it: owner request, 24 October 2026); otherwise the owner of
+    /// the first ordinary window in front of everything else that isn't ours or the system's. Never call from the main
+    /// thread.
     pub fn person_front(app: &AppHandle) -> Option<FrontApp> {
         let own = std::process::id() as i32;
         let front = frontmost(app);
         if let Some(f) = front.as_ref().filter(|f| f.pid != own) {
             return Some(f.clone());
         }
-        let pid = first_person_window(&window_list(false), own).or_else(noted_person_front)?;
+        let list = window_list(false);
+        if crate::dashboard::exists(app) && own_dashboard_front(&list, own, None) {
+            return Some(own_window_front());
+        }
+        let pid = first_person_window(&list, own).or_else(noted_person_front)?;
         app_of_pid(app, pid)
     }
 
@@ -491,7 +521,11 @@ mod mac {
     /// Whether it is in front. Never call from the main thread. [UNVERIFIED: `yieldActivationToApplication:` from an
     /// accessory app]
     pub fn hand_back(app: &AppHandle, pid: i32, timeout_ms: u64) -> bool {
-        if pid <= 0 || pid == std::process::id() as i32 {
+        if pid == std::process::id() as i32 {
+            // Back to Boredroom's own window, when the person was in it.
+            return crate::dashboard::exists(app) && crate::dashboard::focus(app);
+        }
+        if pid <= 0 {
             return false;
         }
         let asked = on_main(app, move || {
@@ -1102,6 +1136,7 @@ mod mac {
                 match built {
                     Ok(w) => {
                         let _ = w.set_ignore_cursor_events(true);
+                        crate::island::helper_window_flags(&w);
                         // The first time, give outline.html a moment to load, or the first flash has no ring to show.
                         std::thread::sleep(Duration::from_millis(250));
                         w
@@ -1164,6 +1199,29 @@ mod pure_tests {
         let owner = pid.and_then(|p| list.iter().find(|w| w.pid == p)).map(|w| w.owner_name.clone());
         println!("the person's app: {pid:?} {owner:?} ({} windows on screen)", list.len());
         assert!(pid.is_some_and(|p| p != own));
+    }
+
+    /// §9: the Boredroom window in front is Boredroom; the notch alone in front is still the app behind.
+    #[test]
+    fn the_boredroom_window_counts_as_boredroom() {
+        let own = 500;
+        let mut notch = win(own, "Boredroom", 1001, 1.0);
+        notch.id = 9;
+        let mut dash = win(own, "Boredroom", 0, 1.0);
+        dash.id = 42;
+        let safari = win(7, "Safari", 0, 1.0);
+        assert!(own_dashboard_front(&[notch.clone(), dash.clone(), safari.clone()], own, None));
+        assert!(own_dashboard_front(&[notch.clone(), dash.clone(), safari.clone()], own, Some(42)));
+        assert!(!own_dashboard_front(&[notch.clone(), dash.clone(), safari.clone()], own, Some(43)));
+        assert!(!own_dashboard_front(&[notch.clone(), safari.clone(), dash.clone()], own, None), "Safari in front of the window");
+        assert!(!own_dashboard_front(&[notch.clone(), safari.clone()], own, None), "only the notch: the app behind, as today");
+        assert_eq!(first_person_window(&[notch.clone(), safari.clone()], own), Some(7));
+        assert!(!own_dashboard_front(&[win(1, "Dock", 0, 1.0), safari.clone()], own, None));
+        assert!(own_window_at(&[notch.clone(), dash.clone(), safari.clone()], (10.0, 10.0), own), "under the pointer: the window");
+        assert!(!own_window_at(&[notch, safari.clone(), dash], (10.0, 10.0), own));
+        assert!(!own_window_at(&[safari], (900.0, 10.0), own), "nothing there");
+        let f = own_window_front();
+        assert!(f.own_window && f.name.as_deref() == Some("Boredroom"));
     }
 
     /// L.1: the person's app is the first ordinary window that isn't Brenda's or the system's.

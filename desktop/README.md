@@ -1,4 +1,9 @@
-# Brenda desktop
+# Boredroom for Mac
+
+One app, `Boredroom.app` (owner decision, option A, 24 October 2026): the whole Boredroom dashboard in its own Mac
+window, and Brenda (the person's own assistant, by whatever name they gave it) in the notch, signed in once for both.
+The bundle identifier stays `cc.boredroom.brenda`, so `brenda.json` and the Mac's permissions carry over from the
+notch-only app.
 
 Brenda in a notch at the top of the screen: the running timer, the morning briefing, reminders and nudges, and
 automatic clock-in, for staff and team leads in a Boredroom workspace. Built with Tauri 2 (Rust core, plain HTML,
@@ -22,9 +27,73 @@ CSS and JavaScript in `src/`, no front-end build step). Runs on macOS and Window
    `cmake` to build whisper.cpp (`pip3 install --user cmake`, then add `~/Library/Python/3.9/bin` to `PATH`, or install
    it with Homebrew).
 
-3. In the notch, click the address under "Hi, I'm Brenda" and set it to `http://localhost:3000`, then press
-   **Link to Boredroom**. Your browser opens Boredroom's approval page with the code filled in; approve it for a
-   workspace. The notch signs in within a few seconds.
+3. In the notch, click the address under "Sign in to Boredroom" and set it to `http://localhost:3000`, then press
+   **Sign in**: the Boredroom window opens at the sign-in page, and signing in there signs the notch in too. Or press
+   **Use a code instead**: your browser opens Boredroom's approval page with the code filled in; approve it for a
+   workspace, and the notch signs in within a few seconds. (Under `tauri dev` the browser can't hand back to the app
+   through `boredroom://`, so sign in inside the window, or use the code.)
+
+## The Boredroom window
+
+`dashboard.rs` (owner request, 24 October 2026). One window, label `boredroom`, made on demand and destroyed when it is
+closed (⌘W or the red button; it asks first during a call). It opens from the Dock icon (also when Boredroom isn't
+running), from the notch (**Sign in**, **Open Boredroom**, and every link to an app page: calls, notifications,
+routines, follow-ups, open chat), from **Open Boredroom** in the menu-bar menu, from ⌘, (Settings), from a
+`boredroom://open?path=…` link, and at launch (not after an update restart that had it closed, and not at login).
+While it exists Boredroom is an ordinary Mac app (a Dock icon, ⌘Tab, the menu bar: Boredroom, Edit, View, Window, Help;
+`appmenu.rs`); 1.5 s after it is destroyed Boredroom is a menu-bar app again, and the notch carries on (notifications and
+calls keep working with the window closed). `dashboard.json` (0600, beside `brenda.json`) keeps its frame, zoom and last
+page, `dockIcon` (set it to `false` to keep Boredroom out of the Dock even with the window open), the one-time quit
+explanation's "Don't ask again", and whether an update restart had it open. ⌘Q quits everything, the notch too: asked
+once while the window is open, and always during a call or a task.
+
+Its user agent is Safari's plus `BoredroomDesktop/<version>`; the web uses the token for the interface only (hard
+navigations at sign-in and sign-out, the connector bridge, no Mac card), never for security. Downloads land in Downloads
+with the quarantine a browser sets (`downloads.rs`); the file picker is macOS's own; files dropped on the window go to
+the page. Offline, the window shows "Boredroom can't connect." with Try again. A crashed page reloads.
+
+## The Boredroom window's chrome
+
+Owner request, 26 October 2026 (the Mac app shell): the window looks like a Mac app, not a browser. `dashboard.rs` makes it with the Overlay title bar style and a hidden title (the title still names the window in the Window menu and Mission Control), the traffic lights at (20, 32) so they sit in the web app's floating sidebar (`chrome::TRAFFIC_LIGHTS`), a transparent page over macOS's sidebar vibrancy, and the theme the page last showed (`dashboard.json`'s `theme`). The web app does the rest when it sees the window's user agent (globals.css, "Boredroom for Mac's window"; development: `?shell=mac` in a browser).
+
+`chrome.rs` keeps the window IPC-free while doing what a title bar does. Twice a second while the window shows, and after each page load, the app runs one fixed script in WebKit's isolated client world (`PROBE_JS`: the page's own scripts can't touch it) that returns the page's theme and the rectangles that move the window (the margins round the floating panels, the sidebar's top row, the top bar, less anything clickable in them; nothing while a dialog, a menu or the assistant's panel is open; the top 40 points on other pages and the offline page). A transparent native view over the web view claims exactly those points (`hitTest:`) and hands a press to macOS (`performWindowDragWithEvent:`; a double click follows System Settings: zoom, minimise or nothing); every other point falls through to the page. The answer is parsed defensively (at most 240 rectangles, finite numbers, one word for the theme); the worst a page could do is make its own top bar move the window or not. The window's appearance follows the page's theme, so the vibrancy and the traffic lights match.
+
+Menus (`appmenu.rs`): File › New To-do (⌘N, the to-do list with its new row open), Go › the assistant's page, My Day, To-dos, Tasks, Commitments, Messages, Calls, Docs, Notifications (⌘1–⌘9; owners and HR are sent on where those belong), in the workspace the window shows, else the one this Mac is linked to. Inside the app's own pages the move is the web router's (`window.__boredroomShell.go`, which only accepts `/app/…` paths); the app never reads anything back. ⌘, Settings, ⌘[ ⌘] Back and Forward and ⌘R Reload were already there.
+
+The Dock's badge is the unread notifications count the notch's state already carries (`notificationsUnread`, read as it passes through the `api` command; "99+" past 99), cleared on sign-out.
+
+## Security of the window
+
+- **No IPC.** The window loads remote pages, so no capability names it (a test reads every file in `capabilities/`: no
+  `boredroom`, no wildcard, no `remote`), and the opener plugin's link script is off for the whole app. Its only ways to
+  reach Rust are navigations, which `policy.rs` decides, and the page loads `webauth.rs` watches.
+- **Only Boredroom.** It shows https://www.boredroom.cc and the apex (a development build also the configured server).
+  Every other link opens in the default browser (3 per 5 seconds at most); `mailto:` and `tel:` go to macOS; `file:`,
+  `tauri:`, `javascript:` and other schemes are refused; a new window is always refused (an app link stays in the window,
+  anything else goes to the browser); a page that reaches another site anyway goes to the browser and the window goes
+  back. `/desktop/link`, `/desktop/continue` and `/download` open in the browser.
+- **Its own data.** A website data store of its own (a fixed id, never changed), never the notch's.
+- **No devtools** in a release build. Microphone and camera are allowed for calls (macOS still asks once); nothing else.
+- **Never Brenda's target.** Brenda never looks at the window, clicks in it or types in it, and never mistakes it for
+  the app behind it (`capture::own_dashboard_front`, `own_window_at`).
+
+## One sign-in
+
+`webauth.rs`. The app is signed in when Rust holds a desktop session (the 90-day token below). The window's web session
+is tied to it on the server, and signing out anywhere (the window, the notch, the tray, Settings › Desktop) ends both.
+
+- **Notch signed in, window opens:** Rust asks for a 60-second single-use handoff code with its token and hands it, by
+  `eval`, to Boredroom's own `/desktop/app` page, which posts it to a strict same-origin route that sets the ordinary
+  session cookie. No code or token is ever in a URL.
+- **Signing in signs the notch in (PKCE):** Rust starts an auth request with a challenge; the person signs in in the
+  window, or in the default browser for **Continue with Google** and **Sign in with your browser** (Google blocks
+  sign-in inside apps' own windows, and password managers work there); `/desktop/app/finish` sends them to
+  `boredroom://auth?code&state`, which Rust catches in the window or macOS hands to the app from the browser. Rust
+  redeems the code with its verifier.
+- **Connected apps** (Google, Notion, Slack, GitHub…): their consent runs in the browser through a single-use ticket
+  (`/desktop/continue`), and **Back to Boredroom** (`boredroom://open?path=…`) returns to the window.
+- An old server (or migration 0064 not applied) answers 404 or 503: the window then signs in on its own, and the notch
+  uses the device code below.
 
 ## How it signs in
 
@@ -32,7 +101,8 @@ A device code, never a password. The app asks Boredroom for a code (`POST /api/d
 on `/desktop/link` while signed in, and the app claims a desktop session (`POST /api/desktop/link/poll`) that lasts 90
 days. The token is kept by the Rust side in the app's config folder (`brenda.json`, readable only by you) and sent as a
 bearer token; the web view never sees it. Linked computers are listed on `/desktop/link`, where each can be unlinked,
-which signs the app out at once. The tray menu also has **Sign out of this computer**.
+which signs the app out at once. The tray menu also has **Sign out of Boredroom**. Since 24 October 2026 the code is
+the fallback (**Use a code instead**); the one sign-in above is the usual way.
 
 ## What it reads and does
 
@@ -793,14 +863,98 @@ no_window|busy|unsupported|not_available|permission|error|send` (never_look with
 `open_in_browser` logs the page) and `look-call` (a ring arriving while the preview shows: the strip). Every other state
 answers the look commands as today's Rust does (they do not exist), so no look feature shows there.
 
-## Build installers
+## Releasing Boredroom for Mac
 
-```bash
-pnpm build
-```
+Owner request, 24 October 2026: people download Boredroom for Mac from boredroom.cc/download before there is an Apple
+Developer account. The app is one universal build (Apple silicon and Intel), ad-hoc signed (`signingIdentity: "-"`) with
+the hardened runtime and `src-tauri/Entitlements.plist` (microphone, camera, Apple events), for macOS 14 or later. The
+app is `Boredroom.app`; the file people download is `Boredroom.dmg`. Mac only for now. (The 0.2.0 build that held
+`Brenda.app` was never released and is superseded.)
 
-Produces a `.dmg` on macOS and an `.msi`/`.exe` on Windows under `src-tauri/target/release/bundle/`. Code signing
-(Apple Developer ID, a Windows certificate) is configured separately before distributing.
+### Once
+
+- `rustup target add aarch64-apple-darwin x86_64-apple-darwin`
+- cmake (the speech library): `pip3 install --user cmake` or `brew install cmake`. The script finds either.
+- The updater key, made once: `pnpm exec tauri signer generate --ci -w ~/.tauri/boredroom-updater.key`, then the
+  `.pub` file's text goes in `plugins.updater.pubkey` (done for 0.2.0; the key has no password, mode 600). **Back the
+  private key up** (a password manager): without it no installed copy can ever be updated again, and everyone would
+  have to download Boredroom afresh. Never commit it or paste it anywhere.
+- A **public** GitHub repo for the files: `Jerryonwuka/boredroom-releases` by default (the main repo may go private).
+
+### Each release
+
+1. Bump the version in `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` and `package.json` (the script refuses if
+   they differ).
+2. `pnpm release --notes "What changed"` (or `--notes-file notes.md`; `--repo owner/name` or
+   `BOREDROOM_RELEASES_REPO` for another releases repo; `--plain` skips the Finder window layout of the disk image, for
+   unattended runs; `--out dir` puts the files elsewhere). It builds with `GGML_NATIVE=OFF`, so the speech library runs on
+   every Mac rather than only on processors like this one's, then checks both architectures, macOS 14 in both
+   slices, the signature, entitlements and hardened runtime, the `boredroom://` scheme and the camera and microphone
+   strings, that the app links only system libraries, the disk image
+   (verified and mounted, without opening the app) and the update signature against the public key.
+3. It writes `release/v<version>/`: `Boredroom.dmg`, `Boredroom_<version>_universal.app.tar.gz`, `latest.json` and
+   `SHA256SUMS.txt`, and prints the tag (`v<version>`) and the exact upload list (and a `gh release create` line). It
+   never uploads. Make the release on the releases repo, not a pre-release, marked latest; the file names must stay
+   exactly as printed.
+
+The website's download button is `https://github.com/<repo>/releases/latest/download/Boredroom.dmg`
+(`DESKTOP_DOWNLOAD_URL` overrides it; `off` stops offering it).
+
+`pnpm build` alone now also needs `TAURI_SIGNING_PRIVATE_KEY` (the key's path) and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`
+(empty), because the bundle makes update archives; use `pnpm release` instead, which sets both and the speech library's
+flags. `tauri dev` is unaffected.
+
+### Updates
+
+About a minute after it starts, then once a day, Boredroom reads
+`https://github.com/<repo>/releases/latest/download/latest.json` (`updater.rs`). A newer version is downloaded in the
+background and its minisign signature (and the version it was signed for) checked against the key in tauri.conf.json.
+Then "Restart to update to Boredroom X.Y.Z" appears at the top of the menu-bar menu, and the notch shows a one-off
+card (when nothing else is going on) with Restart to update and Later. Boredroom › Check for Updates… asks at once and
+says what it found. It never restarts by itself; after an update's restart the window opens again only if it was open.
+Never under `tauri dev` (unless `BRENDA_UPDATER_DEV=1`), and not while it runs from the disk image or from a
+translocated copy (opened from Downloads without moving it to Applications).
+
+### When there is an Apple Developer account
+
+No code changes: set these and run `pnpm release` again.
+
+- `APPLE_SIGNING_IDENTITY="Developer ID Application: … (TEAMID)"` replaces the `"-"` in tauri.conf.json.
+- Notarisation: `APPLE_ID`, `APPLE_PASSWORD` (an app-specific password) and `APPLE_TEAM_ID`; or an App Store Connect
+  API key: `APPLE_API_KEY` (the key id), `APPLE_API_ISSUER` and `APPLE_API_KEY_PATH` (the `.p8`).
+- On CI: `APPLE_CERTIFICATE` (base64 .p12) and `APPLE_CERTIFICATE_PASSWORD` import the certificate.
+
+Tauri then signs, notarises and staples the app; the script signs, notarises and staples `Boredroom.dmg`, and fails
+if Gatekeeper still rejects the app. The first-open steps on /download can then go.
+
+**Until then**, an ad-hoc signature changes with every build, so macOS may ask again for the microphone after an
+update, and Screen Recording or Accessibility can look on but not work until the old Boredroom entry is removed in
+Privacy & Security and added again (/download says so). A free way round it: make a self-signed code-signing
+certificate once (Keychain Access › Certificate Assistant › Create a Certificate…, type Code Signing, e.g. "Boredroom
+Local Signing") and release with `APPLE_SIGNING_IDENTITY="Boredroom Local Signing"`; permissions then survive updates.
+The first-open steps stay the same.
+
+The release app and `tauri dev` share the identifier `cc.boredroom.brenda` (and so `brenda.json`) and both take
+Option+Space: quit the dev notch before trying the installed app.
+
+### Manual checks (the owner, on the installed release build)
+
+Quit the dev notch first. Then: the first launch opens the window with the sign-in and a Dock icon; signing in with
+email and password signs the notch in within seconds; quit and reopen needs no second sign-in; ⌘W then the Dock icon
+reopens it at the same size and place; signing out in the window signs the notch out, and Continue with Google opens the
+browser and comes back ("Open Boredroom?"); signing out from the tray shows the sign-in; Connect a provider in Settings ›
+Connected apps finishes in the browser and Back to Boredroom returns; an external link opens the browser and `mailto:`
+Mail; a timesheet export lands in Downloads (`xattr -l` shows `com.apple.quarantine`); Edit, View and Window menus work,
+⌘, opens Settings, Check for Updates… answers; with the window open, the notch still shows over another app's full
+screen, and typing to Brenda doesn't raise the window; ⌘H hides the window, not the notch; a call accepted in the notch
+opens in the window with sound and camera, and closing the window asks first; screen help refuses to look at the window;
+no "Inspect Element" and no Develop menu entry; offline shows "Boredroom can't connect."
+
+**Before shipping the Dock icon (D6), run the activation-policy spike** (spec §5.1, S1): with a small always-on-top
+window made while a menu-bar app, switch to an ordinary app and open a window, put Safari full screen and check the small
+window shows there; close it and switch back; repeat ten times quickly and look for ghost Dock icons. If only the
+second check passes, the notch hides over other apps' full-screen Spaces while the window is open; if it fails, set
+`"dockIcon": false` in `dashboard.json` and consider a separate helper process for the notch.
 
 ## Motion, face and sounds
 

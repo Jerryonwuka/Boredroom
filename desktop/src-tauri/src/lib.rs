@@ -1,3 +1,9 @@
+//! Boredroom for Mac (owner decision, option A, 24 October 2026): one app, Boredroom.app, with the dashboard in its own
+//! window (`dashboard.rs`) and Brenda in the notch, signed in once for both (`webauth.rs`). The bundle identifier stays
+//! `cc.boredroom.brenda`, so `brenda.json` and the Mac's permissions carry over. The window loads remote pages and has
+//! no IPC at all (`policy.rs`, and the capability tests below); its menus, quitting and alerts are `appmenu.rs`, its
+//! downloads `downloads.rs`.
+//!
 //! Brenda for Boredroom, the desktop notch (owner decision, 3 October 2026).
 //!
 //! The Rust side keeps the sign-in (Boredroom's address, the desktop session token and the workspace) in the app's
@@ -6,7 +12,7 @@
 //! `src/` (plain HTML, CSS and JavaScript).
 //!
 //! The computer is acted on only when the person asks Brenda to and says yes to exactly what she will do (owner rule,
-//! 12 October 2026). She opens Boredroom links in the browser; reads the files the person drops on the notch or asks
+//! 12 October 2026). She opens Boredroom's app pages in Boredroom's window and other links in the browser; reads the files the person drops on the notch or asks
 //! her to work on (`files.rs`, `filework.rs`); sees the screen under the pointer only while the person holds
 //! Control+Command or presses Look (`look.rs`, `capture.rs`); and, only with "Do things when I ask" on and a yes for
 //! the task (and another for each step that sends, deletes, pays or can't be undone), moves the pointer, clicks and
@@ -45,9 +51,13 @@ use tauri_plugin_opener::OpenerExt;
 
 mod act;
 mod appindex;
+mod appmenu;
 mod ax;
 mod capture;
+mod chrome;
 mod companion;
+mod dashboard;
+mod downloads;
 mod files;
 mod front;
 mod fileops;
@@ -63,11 +73,15 @@ mod look;
 mod macos;
 mod open;
 mod plan;
+mod policy;
 mod risk;
+mod updater;
 mod voice;
+mod webauth;
 mod yes;
 
-const DEFAULT_BASE_URL: &str = "https://boredroom.cc";
+/// The canonical host (owner request, 24 October 2026): the apex redirects to www, and a redirected POST loses its body.
+const DEFAULT_BASE_URL: &str = "https://www.boredroom.cc";
 
 #[derive(Default, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -135,6 +149,13 @@ struct Config {
     /// The folders the person added for the Files helper on this Mac (0b.23; absolute paths, at most 10).
     #[serde(default)]
     extra_folders: Vec<String>,
+    /// Who this Mac is signed in as, as Boredroom's digest (one sign-in, owner request 24 October 2026): only to notice
+    /// that the window's session belongs to someone else, and to keep the opt-ins only for the same person.
+    #[serde(default)]
+    user_digest: Option<String>,
+    /// The Boredroom window has opened once on its own (the first launch).
+    #[serde(default)]
+    first_run_done: bool,
 }
 
 /// macOS's answer for each folder setup asked about: "granted" or "denied" (None: not asked).
@@ -183,30 +204,64 @@ impl ApiError {
     }
 }
 
+/// The installed app's settings. A dev build keeps its own (owner report, 24 October 2026): both share the bundle
+/// identifier, so a dev notch's `http://localhost:3000` reached the installed app, whose window then refused to open.
+const CONFIG_FILE: &str = "brenda.json";
+const DEV_CONFIG_FILE: &str = "brenda-dev.json";
+
 fn config_path(app: &AppHandle) -> Option<PathBuf> {
-    app.path().app_config_dir().ok().map(|d| d.join("brenda.json"))
+    app.path().app_config_dir().ok().map(|d| d.join(if cfg!(debug_assertions) { DEV_CONFIG_FILE } else { CONFIG_FILE }))
+}
+
+fn read_config(path: &std::path::Path) -> Option<Config> {
+    fs::read_to_string(path).ok().and_then(|s| serde_json::from_str(&s).ok())
+}
+
+fn write_private(path: &std::path::Path, json: &str) {
+    if let Some(dir) = path.parent() {
+        let _ = fs::create_dir_all(dir);
+    }
+    let _ = fs::write(path, json);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = fs::set_permissions(path, fs::Permissions::from_mode(0o600));
+    }
+}
+
+/// A local dev site (localhost, 127.0.0.1, [::1] or *.localhost): only a dev build talks to one.
+fn is_dev_server(base: &str) -> bool {
+    tauri::Url::parse(base).ok().and_then(|u| u.host_str().map(|h| h.trim_matches(['[', ']']).to_ascii_lowercase())).is_some_and(|h| {
+        h == "localhost" || h.ends_with(".localhost") || h == "::1" || h.parse::<std::net::Ipv4Addr>().is_ok_and(|ip| ip.is_loopback())
+    })
 }
 
 fn load_config(app: &AppHandle) -> Config {
-    config_path(app)
-        .and_then(|p| fs::read_to_string(p).ok())
-        .and_then(|s| serde_json::from_str(&s).ok())
-        .unwrap_or_default()
+    let Ok(dir) = app.path().app_config_dir() else { return Config::default() };
+    let (installed, dev) = (dir.join(CONFIG_FILE), dir.join(DEV_CONFIG_FILE));
+    if cfg!(debug_assertions) {
+        // The first dev run after the split starts from the shared file, so the dev sign-in carries over.
+        return read_config(&dev).or_else(|| read_config(&installed)).unwrap_or_default();
+    }
+    let mut c = read_config(&installed).unwrap_or_default();
+    if c.base_url.as_deref().is_some_and(is_dev_server) {
+        // A dev build's sign-in: it moves to the dev file (when that has none yet), and the installed app starts
+        // signed out on Boredroom. The token was the dev site's, so it is dropped here, never sent anywhere.
+        if !dev.exists() {
+            if let Ok(json) = serde_json::to_string_pretty(&c) {
+                write_private(&dev, &json);
+            }
+        }
+        c.base_url = None;
+        clear_session(&mut c);
+        save_config(app, &c);
+    }
+    c
 }
 
 fn save_config(app: &AppHandle, config: &Config) {
-    if let Some(path) = config_path(app) {
-        if let Some(dir) = path.parent() {
-            let _ = fs::create_dir_all(dir);
-        }
-        if let Ok(json) = serde_json::to_string_pretty(config) {
-            let _ = fs::write(&path, json);
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                let _ = fs::set_permissions(&path, fs::Permissions::from_mode(0o600));
-            }
-        }
+    if let (Some(path), Ok(json)) = (config_path(app), serde_json::to_string_pretty(config)) {
+        write_private(&path, &json);
     }
 }
 
@@ -219,12 +274,13 @@ fn update_config(app: &AppHandle, f: impl FnOnce(&mut Config)) {
 }
 
 fn base_url(config: &Config) -> String {
-    config
-        .base_url
-        .clone()
-        .unwrap_or_else(|| DEFAULT_BASE_URL.to_string())
-        .trim_end_matches('/')
-        .to_string()
+    let u = config.base_url.clone().unwrap_or_else(|| DEFAULT_BASE_URL.to_string()).trim_end_matches('/').to_string();
+    // A config saved with the apex (the old default) goes straight to www too.
+    if u.eq_ignore_ascii_case("https://boredroom.cc") {
+        DEFAULT_BASE_URL.to_string()
+    } else {
+        u
+    }
 }
 
 fn public(config: &Config) -> PublicConfig {
@@ -240,8 +296,10 @@ fn public(config: &Config) -> PublicConfig {
     }
 }
 
+/// Rust's own HTTP calls (the window has its own, Safari-like user agent: dashboard.rs).
 fn user_agent() -> String {
-    format!("Brenda desktop/{} ({})", env!("CARGO_PKG_VERSION"), std::env::consts::OS)
+    let os = if std::env::consts::OS == "macos" { "macOS" } else { std::env::consts::OS };
+    format!("Boredroom for Mac/{} ({os})", env!("CARGO_PKG_VERSION"))
 }
 
 /// The screen opt-ins are the signed-in person's (and this Boredroom's): signing out or changing Boredroom clears them.
@@ -264,7 +322,88 @@ fn clear_session(c: &mut Config) {
     // The click consent and the added folders were the signed-in person's (helpers-spec P.6).
     c.click_consent_at = None;
     c.extra_folders.clear();
+    c.user_digest = None;
     clear_opt_ins(c);
+}
+
+/// A valid digest from Boredroom (hex or base64url, at most 64 characters).
+fn digest_of(r: &Value) -> Option<String> {
+    r.get("userDigest").and_then(|d| d.as_str()).filter(|d| !d.is_empty() && d.len() <= 64 && d.bytes().all(|c| c.is_ascii_alphanumeric())).map(String::from)
+}
+
+/// A link Boredroom approved (the device code or the one sign-in): who and where, and the token. The opt-ins and the
+/// person's own setup are kept only for the same person (the same digest); they were someone else's consent otherwise.
+fn apply_link(c: &mut Config, r: &Value) {
+    let digest = digest_of(r);
+    let same = match (&c.user_digest, &digest) {
+        (Some(a), Some(b)) => a == b,
+        (None, None) => true,
+        _ => false,
+    };
+    if !same {
+        c.folders = None;
+        c.click_consent_at = None;
+        c.extra_folders.clear();
+        clear_opt_ins(c);
+    }
+    c.token = r.get("token").and_then(|t| t.as_str()).map(String::from);
+    c.workspace_slug = r.pointer("/workspace/slug").and_then(|s| s.as_str()).map(String::from);
+    c.workspace_name = r.pointer("/workspace/name").and_then(|s| s.as_str()).map(String::from);
+    c.display_name = r.get("displayName").and_then(|s| s.as_str()).map(String::from);
+    c.user_digest = digest;
+}
+
+/// Stores a link and answers what the notch may know.
+fn store_link(app: &AppHandle, r: &Value) -> PublicConfig {
+    let state = app.state::<AppState>();
+    let mut c = state.config.lock().unwrap();
+    apply_link(&mut c, r);
+    save_config(app, &c);
+    let p = public(&c);
+    drop(c);
+    companion::wake(app);
+    p
+}
+
+/// Signs this Mac out here only (the server already ended the session): the notch hears `brenda://signed-out`.
+fn local_sign_out(app: &AppHandle) {
+    voice::stop_speaking(app);
+    {
+        let state = app.state::<AppState>();
+        let mut c = state.config.lock().unwrap();
+        clear_session(&mut c);
+        save_config(app, &c);
+    }
+    dashboard::update(app, |f| f.last_path = None);
+    forget_all(app, "signout");
+    companion::wake(app);
+    let _ = app.emit("brenda://signed-out", ());
+    refresh_tray(app);
+}
+
+/// Signing out from the notch or the tray (one sign-in, owner request 24 October 2026): this Mac forgets who it was, the
+/// server forgets the desktop session and the window's with it (best effort), and the window shows the sign-in.
+fn sign_out_everywhere(app: &AppHandle) -> PublicConfig {
+    voice::stop_speaking(app);
+    let (old, p) = {
+        let state = app.state::<AppState>();
+        let mut c = state.config.lock().unwrap();
+        let old = c.token.clone();
+        clear_session(&mut c);
+        save_config(app, &c);
+        (old, public(&c))
+    };
+    forget_all(app, "signout");
+    companion::wake(app);
+    dashboard::forget_data(app);
+    let app2 = app.clone();
+    tauri::async_runtime::spawn(async move {
+        if let Some(t) = old {
+            webauth::sign_out_server(&app2, t).await;
+        }
+        dashboard::show_sign_in(&app2);
+    });
+    p
 }
 
 /// Everything that stops and goes when the person signs out (or the app quits): a task, a job, the front desk's outbox.
@@ -282,7 +421,7 @@ fn device_name() -> String {
         "linux" => "Linux computer",
         other => other,
     };
-    format!("Brenda on this {os}")
+    format!("Boredroom on this {os}")
 }
 
 fn voice_on(app: &AppHandle) -> bool {
@@ -364,26 +503,22 @@ fn set_base_url(app: AppHandle, state: State<AppState>, url: String) -> PublicCo
     let trimmed = url.trim().trim_end_matches('/').to_string();
     c.base_url = if trimmed.is_empty() { None } else { Some(trimmed) };
     c.token = None;
+    c.user_digest = None;
     clear_opt_ins(&mut c);
     save_config(&app, &c);
     let p = public(&c);
     drop(c);
     forget_all(&app, "signout");
     companion::wake(&app);
+    // The window was signed in to the other server (owner request, 24 October 2026).
+    dashboard::forget_data(&app);
+    dashboard::show_sign_in(&app);
     p
 }
 
 #[tauri::command]
-fn sign_out(app: AppHandle, state: State<AppState>) -> PublicConfig {
-    voice::stop_speaking(&app);
-    let mut c = state.config.lock().unwrap();
-    clear_session(&mut c);
-    save_config(&app, &c);
-    let p = public(&c);
-    drop(c);
-    forget_all(&app, "signout");
-    companion::wake(&app);
-    p
+fn sign_out(app: AppHandle) -> PublicConfig {
+    sign_out_everywhere(&app)
 }
 
 async fn send(state: &State<'_, AppState>, method: &str, path: &str, body: Option<Value>, with_token: bool) -> Result<Value, ApiError> {
@@ -432,8 +567,14 @@ async fn send(state: &State<'_, AppState>, method: &str, path: &str, body: Optio
 
 /// Any Boredroom API call as the signed-in person (never the look or act routes).
 #[tauri::command]
-async fn api(state: State<'_, AppState>, method: String, path: String, body: Option<Value>) -> Result<Value, ApiError> {
-    send(&state, &method, &path, body, true).await
+async fn api(app: AppHandle, state: State<'_, AppState>, method: String, path: String, body: Option<Value>) -> Result<Value, ApiError> {
+    let v = send(&state, &method, &path, body, true).await?;
+    // The Dock's badge (the Mac app shell, owner request 26 October 2026): the unread count the notch's state already
+    // carries, read on its way past. Nothing new is fetched.
+    if let Some(n) = v.get("notificationsUnread").and_then(|n| n.as_i64()) {
+        dashboard::set_badge(&app, n);
+    }
+    Ok(v)
 }
 
 /// Step one of linking: a fresh code to show.
@@ -447,26 +588,75 @@ async fn link_start(state: State<'_, AppState>) -> Result<Value, ApiError> {
 async fn link_poll(app: AppHandle, state: State<'_, AppState>, device_code: String) -> Result<Value, ApiError> {
     let r = send(&state, "POST", "/api/desktop/link/poll", Some(serde_json::json!({ "deviceCode": device_code })), false).await?;
     if r.get("status").and_then(|s| s.as_str()) == Some("approved") {
-        let mut c = state.config.lock().unwrap();
-        c.token = r.get("token").and_then(|t| t.as_str()).map(String::from);
-        c.workspace_slug = r.pointer("/workspace/slug").and_then(|s| s.as_str()).map(String::from);
-        c.workspace_name = r.pointer("/workspace/name").and_then(|s| s.as_str()).map(String::from);
-        c.display_name = r.get("displayName").and_then(|s| s.as_str()).map(String::from);
-        save_config(&app, &c);
-        return Ok(serde_json::json!({ "status": "approved", "config": public(&c) }));
+        let config = store_link(&app, &r);
+        return Ok(serde_json::json!({ "status": "approved", "config": config }));
     }
     Ok(r)
 }
 
-/// Opens a Boredroom page (or the approval page) in the person's browser. Only Boredroom's own address.
+/// Where the notch's links go (pure, tested).
+#[derive(Debug, PartialEq)]
+enum Route {
+    /// An app page: Boredroom's window.
+    Window(String),
+    /// The device-code page and the public site: the default browser.
+    Browser(String),
+    Refused,
+}
+
+fn route(base: &str, path: &str) -> Route {
+    let url = if path.starts_with("http://") || path.starts_with("https://") { path.to_string() } else if path.starts_with('/') && !path.starts_with("//") { format!("{base}{path}") } else { return Route::Refused };
+    let (Ok(u), Ok(b)) = (tauri::Url::parse(&url), tauri::Url::parse(base)) else { return Route::Refused };
+    // 1. Anything off Boredroom's address is refused, as before.
+    if policy::Origin::of(&u).is_none() || policy::Origin::of(&u) != policy::Origin::of(&b) {
+        return Route::Refused;
+    }
+    // 2. The device code's page belongs in the browser.
+    if policy::under(u.path(), "/desktop/link") {
+        return Route::Browser(u.to_string());
+    }
+    // 3. The app's pages open in the window.
+    let mut rel = u.path().to_string();
+    if let Some(q) = u.query() {
+        rel = format!("{rel}?{q}");
+    }
+    if let Some(f) = u.fragment() {
+        rel = format!("{rel}#{f}");
+    }
+    if let Some(p) = webauth::safe_app_path(&rel, &[]) {
+        return Route::Window(p);
+    }
+    // 4. The sign-in routes and the API never open from the notch.
+    if policy::under(u.path(), "/desktop/app") || policy::under(u.path(), "/api") || u.path().starts_with("/app") {
+        return Route::Refused;
+    }
+    // 5. Any other page on the site (the public pages): the browser, as before.
+    Route::Browser(u.to_string())
+}
+
+/// Opens a Boredroom page: the app's pages in Boredroom's window, the device-link page and the public site in the browser
+/// (owner request, 24 October 2026). Only Boredroom's own address; the sign-in routes and the API never.
 #[tauri::command]
 fn open_in_browser(app: AppHandle, state: State<AppState>, path: String) -> Result<(), String> {
     let base = base_url(&state.config.lock().unwrap());
-    let url = if path.starts_with("http") { path } else { format!("{base}{path}") };
-    if !url.starts_with(&base) {
-        return Err("Only Boredroom links can be opened.".into());
+    match route(&base, &path) {
+        Route::Window(p) if dashboard::can_open(&app) => {
+            dashboard::open(&app, Some(&p));
+            Ok(())
+        }
+        Route::Window(p) => app.opener().open_url(format!("{base}{p}"), None::<&str>).map_err(|e| e.to_string()),
+        Route::Browser(u) => app.opener().open_url(u, None::<&str>).map_err(|e| e.to_string()),
+        Route::Refused => {
+            eprintln!("Boredroom: the notch asked to open a link that isn't one of Boredroom's pages; refused");
+            Err("Only Boredroom links can be opened.".into())
+        }
     }
-    app.opener().open_url(url, None::<&str>).map_err(|e| e.to_string())
+}
+
+/// The assistant's settings on this Mac (the tray's Help settings…, the app menu's "{Name} on this Mac…").
+fn open_mac_settings(app: &AppHandle) {
+    look::show_notch(app);
+    let _ = app.emit("brenda://look-settings", ());
 }
 
 /// Gives the notch keyboard focus so the person can type to Brenda (the window does not take focus on its own). The
@@ -503,8 +693,12 @@ struct ScreenHelpMenu {
     off: MenuItem<tauri::Wry>,
 }
 
-fn visible_label(always: bool) -> &'static str {
-    if always { "Tuck Brenda away when idle" } else { "Keep Brenda always visible" }
+fn visible_label(always: bool, name: &str) -> String {
+    if always { format!("Tuck {name} away when idle") } else { format!("Keep {name} always visible") }
+}
+
+fn toggle_label(visible: bool, name: &str) -> String {
+    if visible { format!("Hide {name}") } else { format!("Show {name}") }
 }
 
 fn sounds_label(muted: bool) -> &'static str {
@@ -576,8 +770,18 @@ fn tray_items(s: &look::LookStatus, a: &act::ActStatus, c: &companion::Companion
 /// Puts the tray's words and checks right (after any change of screen help, the options, the abilities, a task or the
 /// companion's reason).
 fn refresh_tray(app: &AppHandle) {
+    let name = companion::name(app);
+    if let Some(item) = app.try_state::<ToggleMenu>() {
+        let visible = app.get_webview_window("notch").and_then(|w| w.is_visible().ok()).unwrap_or(true);
+        let _ = item.0.set_text(toggle_label(visible, &name));
+    }
+    if let Some(item) = app.try_state::<VisibleMenu>() {
+        let always = app.state::<AppState>().config.lock().unwrap().always_visible;
+        let _ = item.0.set_text(visible_label(always, &name));
+    }
+    appmenu::refresh(app);
     let Some(m) = app.try_state::<ScreenHelpMenu>() else { return };
-    let t = tray_items(&look::status(app), &act::status(app), &companion::status(app), &companion::name(app));
+    let t = tray_items(&look::status(app), &act::status(app), &companion::status(app), &name);
     let _ = m.menu.set_text(&t.title);
     let _ = m.status.set_text(&t.status);
     let _ = m.setup.set_text(&t.setup.0);
@@ -606,17 +810,20 @@ fn talk_shortcut() -> Shortcut {
 
 fn tray_menu_event(app: &AppHandle, id: &str, toggle_item: &MenuItem<tauri::Wry>) {
     match id {
+        // Open Boredroom: its window (owner request, 24 October 2026).
         "open" => {
-            let state = app.state::<AppState>();
-            let c = state.config.lock().unwrap().clone();
-            let path = c.workspace_slug.as_ref().map(|s| format!("/app/{s}")).unwrap_or_else(|| "/app".into());
-            let _ = app.opener().open_url(format!("{}{}", base_url(&c), path), None::<&str>);
+            let c = app.state::<AppState>().config.lock().unwrap().clone();
+            let path = match (c.token.as_ref(), c.workspace_slug.as_ref()) {
+                (Some(_), Some(s)) => format!("/app/{}", webauth::enc(s)),
+                _ => "/app".into(),
+            };
+            dashboard::open(app, Some(&path));
         }
         "toggle" => {
             if let Some(w) = app.get_webview_window("notch") {
                 let visible = w.is_visible().unwrap_or(true);
                 let _ = if visible { w.hide() } else { w.show() };
-                let _ = toggle_item.set_text(if visible { "Show Brenda" } else { "Hide Brenda" });
+                let _ = toggle_item.set_text(toggle_label(!visible, &companion::name(app)));
             }
         }
         "voice" => {
@@ -673,10 +880,7 @@ fn tray_menu_event(app: &AppHandle, id: &str, toggle_item: &MenuItem<tauri::Wry>
             jobs::stop(app, "tray");
             front::stop_all(app);
         }
-        "look_settings" => {
-            look::show_notch(app);
-            let _ = app.emit("brenda://look-settings", ());
-        }
+        "look_settings" => open_mac_settings(app),
         "sounds" => {
             let state = app.state::<AppState>();
             let mut c = state.config.lock().unwrap();
@@ -693,36 +897,70 @@ fn tray_menu_event(app: &AppHandle, id: &str, toggle_item: &MenuItem<tauri::Wry>
             c.always_visible = !c.always_visible;
             save_config(app, &c);
             if let Some(item) = app.try_state::<VisibleMenu>() {
-                let _ = item.0.set_text(visible_label(c.always_visible));
+                let _ = item.0.set_text(visible_label(c.always_visible, &companion::name(app)));
             }
             let _ = app.emit("brenda://always-visible", c.always_visible);
         }
         "signout" => {
-            voice::stop_speaking(app);
-            {
-                let state = app.state::<AppState>();
-                let mut c = state.config.lock().unwrap();
-                clear_session(&mut c);
-                save_config(app, &c);
-            }
-            forget_all(app, "signout");
-            companion::wake(app);
+            sign_out_everywhere(app);
             let _ = app.emit("brenda://signed-out", ());
         }
-        "quit" => {
-            act::stop(app, "quit");
-            jobs::stop(app, "quit");
-            voice::stop_speaking(app); // `afplay` and `say` would otherwise finish the sentence on their own
-            app.exit(0)
-        }
+        // Updates (owner request, 24 October 2026): only ever from the person's click.
+        "update_install" => updater::install(app),
+        // Quit Boredroom: the notch quits too, so it asks first when that matters (appmenu.rs).
+        "quit" => appmenu::quit(app),
         _ => {}
     }
     refresh_tray(app);
 }
 
+/// Whether Boredroom's window opens at launch (§5.5, pure): after an update's restart only if it was open; on the first
+/// launch; when not signed in (the person needs to sign in); not at login; otherwise yes (a Dock app shows its window).
+fn launch_opens_window(restart_open: Option<bool>, first_run_done: bool, linked: bool, login_item: bool) -> bool {
+    if let Some(open) = restart_open {
+        return open;
+    }
+    !first_run_done || !linked || !login_item
+}
+
+/// Best effort: whether macOS launched Boredroom as a login item (the `oapp` event's `keyAELaunchedAsLogInItem`). When it
+/// can't be told, it isn't one.
+fn launched_as_login_item() -> bool {
+    #[cfg(target_os = "macos")]
+    unsafe {
+        use objc2::{class, msg_send, runtime::AnyObject};
+        const OAPP: u32 = u32::from_be_bytes(*b"oapp");
+        const LGIT: u32 = u32::from_be_bytes(*b"lgit");
+        let mgr: *mut AnyObject = msg_send![class!(NSAppleEventManager), sharedAppleEventManager];
+        if mgr.is_null() {
+            return false;
+        }
+        let ev: *mut AnyObject = msg_send![&*mgr, currentAppleEvent];
+        if ev.is_null() {
+            eprintln!("Boredroom: launch: no Apple event to tell a login launch by");
+            return false;
+        }
+        let id: u32 = msg_send![&*ev, eventID];
+        let param: *mut AnyObject = msg_send![&*ev, paramDescriptorForKeyword: LGIT];
+        let login = id == OAPP && !param.is_null();
+        eprintln!("Boredroom: launch: {}", if login { "as a login item" } else { "by the person" });
+        login
+    }
+    #[cfg(not(target_os = "macos"))]
+    false
+}
+
+/// `boredroom://` links that arrived before setup finished (a cold start from a link).
+static EARLY_LINKS: Mutex<Vec<tauri::Url>> = Mutex::new(Vec::new());
+
 pub fn run() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_opener::init())
+        // The opener plugin's link script is off for the whole app (owner request, 24 October 2026): it turned every
+        // `target="_blank"` click into an IPC call, which the Boredroom window may not make, so links went dead. The
+        // window's links are decided in policy.rs; the notch never had the opener's permission.
+        .plugin(tauri_plugin_opener::Builder::new().open_js_links_on_click(false).build())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(|app, shortcut, event| {
@@ -743,9 +981,13 @@ pub fn run() {
                 })
                 .build(),
         )
+        // Boredroom's Mac menus (owner request, 24 October 2026; appmenu.rs).
+        .menu(appmenu::build)
+        .on_menu_event(appmenu::on_event)
+        .on_web_content_process_terminate(|webview| dashboard::on_web_content_terminated(webview.app_handle(), webview.label()))
         .setup(|app| {
             #[cfg(target_os = "macos")]
-            app.set_activation_policy(tauri::ActivationPolicy::Accessory); // no Dock icon: Brenda lives in the notch and the menu bar
+            app.set_activation_policy(tauri::ActivationPolicy::Accessory); // no Dock icon until the Boredroom window opens: Brenda lives in the notch and the menu bar
 
             let handle = app.handle().clone();
             let config = load_config(&handle);
@@ -762,6 +1004,9 @@ pub fn run() {
             app.manage(front::Front::default());
             app.manage(jobs::Jobs::default());
             app.manage(appindex::AppIndex::default());
+            app.manage(webauth::WebAuth::default());
+            dashboard::manage(&handle);
+            dashboard::no_tabbing();
             // The notch window is made here, after Brenda became a menu-bar app, not from the config at launch (owner
             // report, 17 October 2026: inside a full-screen app the notch never showed). macOS lets a window into other
             // apps' full-screen Spaces only if it was made while its app was already a menu-bar app; one made a moment
@@ -794,7 +1039,7 @@ pub fn run() {
             }
 
             let open = MenuItem::with_id(app, "open", "Open Boredroom", true, None::<&str>)?;
-            let toggle = MenuItem::with_id(app, "toggle", "Hide Brenda", true, None::<&str>)?;
+            let toggle = MenuItem::with_id(app, "toggle", toggle_label(true, &companion::name(&handle)), true, None::<&str>)?;
             app.manage(ToggleMenu(toggle.clone()));
             let voice_item = MenuItem::with_id(app, "voice", "Turn voice on", true, None::<&str>)?;
             app.manage(VoiceMenu(voice_item.clone()));
@@ -825,25 +1070,57 @@ pub fn run() {
             let sound_item = MenuItem::with_id(app, "sounds", sounds_label(muted), true, None::<&str>)?;
             app.manage(SoundMenu(sound_item.clone()));
             let always = app.state::<AppState>().config.lock().unwrap().always_visible;
-            let visible_item = MenuItem::with_id(app, "visible", visible_label(always), true, None::<&str>)?;
+            let visible_item = MenuItem::with_id(app, "visible", visible_label(always, &companion::name(&handle)), true, None::<&str>)?;
             app.manage(VisibleMenu(visible_item.clone()));
-            let signout = MenuItem::with_id(app, "signout", "Sign out of this computer", true, None::<&str>)?;
-            let quit = MenuItem::with_id(app, "quit", "Quit Brenda", true, None::<&str>)?;
+            let signout = MenuItem::with_id(app, "signout", "Sign out of Boredroom", true, None::<&str>)?;
+            let quit = MenuItem::with_id(app, "quit", "Quit Boredroom", true, None::<&str>)?;
             let sep = PredefinedMenuItem::separator(app)?;
             let menu = Menu::with_items(app, &[&open, &toggle, &voice_item, &screen_help, &sound_item, &visible_item, &sep, &signout, &quit])?;
+            // "Restart to update" joins the top of the menu only once an update is downloaded (updater.rs).
+            app.manage(updater::UpdateMenu {
+                menu: menu.clone(),
+                item: MenuItem::with_id(app, "update_install", "Restart to update", true, None::<&str>)?,
+                sep: PredefinedMenuItem::separator(app)?,
+                shown: std::sync::atomic::AtomicBool::new(false),
+            });
+            app.manage(updater::Updates::default());
             let toggle_item = toggle.clone();
             TrayIconBuilder::with_id("brenda")
                 .icon(app.default_window_icon().cloned().expect("app icon"))
-                .tooltip("Brenda")
+                .tooltip("Boredroom")
                 .menu(&menu)
                 .show_menu_on_left_click(true)
                 .on_menu_event(move |app, event| tray_menu_event(app, event.id().as_ref(), &toggle_item))
                 .build(app)?;
+            updater::start(&handle);
+
+            // When the Boredroom window opens at launch (§5.5), after the notch is made.
+            let restart = dashboard::read(&handle).restart.map(|r| r.open);
+            if restart.is_some() {
+                dashboard::update(&handle, |f| f.restart = None);
+            }
+            let (first_done, linked) = {
+                let c = handle.state::<AppState>().config.lock().unwrap().clone();
+                (c.first_run_done, c.token.is_some())
+            };
+            if !first_done {
+                update_config(&handle, |c| c.first_run_done = true);
+            }
+            let login = restart.is_none() && first_done && linked && launched_as_login_item();
+            if launch_opens_window(restart, first_done, linked, login) {
+                dashboard::open(&handle, None);
+            }
+            for u in std::mem::take(&mut *EARLY_LINKS.lock().unwrap()) {
+                webauth::scheme_action(&handle, &u);
+            }
             Ok(())
         })
         .on_window_event(|window, event| {
+            // Files dropped on the notch only: the Boredroom window's page takes its own drops (attachments).
             if let tauri::WindowEvent::DragDrop(drag) = event {
-                files::on_drag(window.app_handle(), drag, window.scale_factor().unwrap_or(1.0));
+                if window.label() == "notch" {
+                    files::on_drag(window.app_handle(), drag, window.scale_factor().unwrap_or(1.0));
+                }
             }
         })
         .invoke_handler(tauri::generate_handler![
@@ -911,19 +1188,37 @@ pub fn run() {
             jobs::job_open_output,
             jobs::job_reveal_output,
             jobs::job_show_folder,
-            jobs::job_list
+            jobs::job_list,
+            updater::update_status,
+            updater::update_install
         ])
         .build(tauri::generate_context!())
-        .expect("error while running Brenda")
-        .run(|app, event| {
+        .expect("error while running Boredroom")
+        .run(|app, event| match event {
             // However the app ends (Cmd+Q, logging out, the tray's Quit), her voice ends with it: a spawned `afplay` or
             // `say` is not killed with its parent and would finish the reply on its own (review, 7 October 2026). A task
             // stops too, before anything else is posted.
-            if let tauri::RunEvent::Exit = event {
+            tauri::RunEvent::Exit => {
                 act::stop(app, "quit");
                 jobs::stop(app, "quit");
                 voice::stop_speaking(app);
             }
+            // The Dock icon, Finder, Launchpad or Spotlight while running: the window (owner request, 24 October 2026).
+            #[cfg(target_os = "macos")]
+            tauri::RunEvent::Reopen { .. } => dashboard::open(app, None),
+            // `boredroom://` from the browser (the one sign-in's hand-back, "Back to Boredroom"); files dropped on the
+            // Dock icon are ignored.
+            #[cfg(target_os = "macos")]
+            tauri::RunEvent::Opened { urls } => {
+                for u in urls.into_iter().filter(|u| u.scheme() == "boredroom") {
+                    if app.try_state::<webauth::WebAuth>().is_some() {
+                        webauth::scheme_action(app, &u);
+                    } else {
+                        EARLY_LINKS.lock().unwrap().push(u);
+                    }
+                }
+            }
+            _ => {}
         });
 }
 
@@ -995,6 +1290,8 @@ const COMMANDS: &[&str] = &[
     "job_reveal_output",
     "job_show_folder",
     "job_list",
+    "update_status",
+    "update_install",
 ];
 
 #[cfg(test)]
@@ -1131,6 +1428,27 @@ mod tests {
     }
 
     #[test]
+    fn base_url_is_the_canonical_host() {
+        assert_eq!(base_url(&Config::default()), "https://www.boredroom.cc");
+        for old in ["https://boredroom.cc", "https://boredroom.cc/", "https://Boredroom.cc"] {
+            let c = Config { base_url: Some(old.into()), ..Default::default() };
+            assert_eq!(base_url(&c), "https://www.boredroom.cc", "{old}");
+        }
+        let c = Config { base_url: Some("http://localhost:3000/".into()), ..Default::default() };
+        assert_eq!(base_url(&c), "http://localhost:3000");
+    }
+
+    #[test]
+    fn dev_servers_are_told_apart() {
+        for dev in ["http://localhost:3000", "http://LOCALHOST:3000/", "http://127.0.0.1:3000", "http://[::1]:3000", "http://app.localhost:3000", "http://127.0.0.2"] {
+            assert!(is_dev_server(dev), "{dev}");
+        }
+        for live in ["https://www.boredroom.cc", "https://boredroom.cc", "https://localhost.example.com", "https://staging.boredroom.cc", "not a url"] {
+            assert!(!is_dev_server(live), "{live}");
+        }
+    }
+
+    #[test]
     fn signing_out_clears_every_opt_in() {
         let mut c = Config { token: Some("t".into()), screen_help: true, screen_help_consent: 2, use_mac: true, file_work: true, use_mac_at: Some(1), file_work_at: Some(1), ..Default::default() };
         clear_session(&mut c);
@@ -1145,6 +1463,95 @@ mod tests {
         let old: Config = serde_json::from_str(r#"{ "token": "t", "screenHelp": true, "screenHelpAt": 5 }"#).unwrap();
         assert_eq!(look::consent_of(old.screen_help, old.screen_help_consent), 1);
         assert!(!old.use_mac && old.companion.is_none() && !old.look_preview);
+    }
+
+    /// One sign-in (owner request, 24 October 2026): the window's sign-in and handoff routes are Rust's own; the device
+    /// code's stay reachable for Rust's own link_start and link_poll.
+    #[test]
+    fn api_refuses_desktop_app_paths() {
+        for p in ["/api/desktop/app/handoff", "/api/desktop/app/auth/token", "/api/desktop/app/handoff/redeem", "/api/Desktop/App/sign-out", "/api/desktop/./app/handoff", "/api/desktop/%61pp/handoff", "/api/desktop//app/auth/start"] {
+            assert!(!look::path_allowed(p), "{p}");
+        }
+        assert!(look::path_allowed("/api/desktop/link"));
+        assert!(look::path_allowed("/api/desktop/link/poll"));
+        assert!(look::path_allowed("/api/desktop/apps"), "only the app routes");
+    }
+
+    /// §7.2: the notch's links.
+    #[test]
+    fn notch_links_open_in_the_window_or_the_browser() {
+        let b = "https://www.boredroom.cc";
+        assert_eq!(route(b, "/app/acme/calls/1?from=notch"), Route::Window("/app/acme/calls/1?from=notch".into()));
+        assert_eq!(route(b, "https://www.boredroom.cc/app/acme/home?chat=x"), Route::Window("/app/acme/home?chat=x".into()));
+        assert_eq!(route(b, "https://www.boredroom.cc/desktop/link?code=ABCD"), Route::Browser("https://www.boredroom.cc/desktop/link?code=ABCD".into()));
+        assert_eq!(route(b, "/pricing"), Route::Browser("https://www.boredroom.cc/pricing".into()));
+        for bad in ["/desktop/app/start?t=x", "/desktop/app", "/api/orgs/acme/x", "https://evil.com/app", "https://www.boredroom.cc.evil.com/app", "//evil.com/x", "/app/../desktop/app/start", "javascript:alert(1)", "app/x"] {
+            assert_eq!(route(b, bad), Route::Refused, "{bad}");
+        }
+        assert_eq!(route("http://localhost:3000", "/app"), Route::Window("/app".into()));
+        assert_eq!(route("http://localhost:3000", "https://www.boredroom.cc/app"), Route::Refused, "another server");
+    }
+
+    #[test]
+    fn one_sign_in_config() {
+        // An old brenda.json without the new fields still reads.
+        let old: Config = serde_json::from_str(r#"{ "token": "t", "workspaceSlug": "acme", "screenHelp": true }"#).unwrap();
+        assert!(old.user_digest.is_none() && !old.first_run_done);
+        let mut c = Config { token: Some("t".into()), user_digest: Some("abc".into()), ..Default::default() };
+        clear_session(&mut c);
+        assert!(c.user_digest.is_none());
+        // The same person keeps their opt-ins; someone else doesn't.
+        let link = |d: &str| serde_json::json!({ "status": "approved", "token": "new", "workspace": { "slug": "acme", "name": "Acme" }, "displayName": "Ada", "userDigest": d });
+        let mut c = Config { token: Some("old".into()), user_digest: Some("d1".into()), screen_help: true, use_mac: true, click_consent_at: Some(1), ..Default::default() };
+        apply_link(&mut c, &link("d1"));
+        assert!(c.screen_help && c.use_mac && c.click_consent_at.is_some());
+        assert_eq!((c.token.as_deref(), c.workspace_slug.as_deref(), c.display_name.as_deref(), c.user_digest.as_deref()), (Some("new"), Some("acme"), Some("Ada"), Some("d1")));
+        apply_link(&mut c, &link("d2"));
+        assert!(!c.screen_help && !c.use_mac && c.click_consent_at.is_none(), "another person's consent goes");
+        assert_eq!(c.user_digest.as_deref(), Some("d2"));
+        // The device code (no digest) after a sign-out keeps today's behaviour.
+        let mut c = Config { screen_help: true, ..Default::default() };
+        apply_link(&mut c, &serde_json::json!({ "status": "approved", "token": "t" }));
+        assert!(c.screen_help && c.user_digest.is_none());
+        // A digest that isn't one is ignored.
+        let mut c = Config::default();
+        apply_link(&mut c, &link("x\"y"));
+        assert!(c.user_digest.is_none());
+    }
+
+    #[test]
+    fn names_on_the_wire() {
+        assert_eq!(user_agent(), format!("Boredroom for Mac/{} (macOS)", env!("CARGO_PKG_VERSION")));
+        assert_eq!(device_name(), "Boredroom on this Mac");
+        assert_eq!(visible_label(true, "Max"), "Tuck Max away when idle");
+        assert_eq!(toggle_label(false, "Max"), "Show Max");
+    }
+
+    /// §5.5's five branches.
+    #[test]
+    fn when_the_window_opens_at_launch() {
+        assert!(launch_opens_window(Some(true), true, true, true), "an update restart with it open");
+        assert!(!launch_opens_window(Some(false), false, false, false), "an update restart with it closed");
+        assert!(launch_opens_window(None, false, true, true), "the first launch");
+        assert!(launch_opens_window(None, true, false, true), "not signed in");
+        assert!(!launch_opens_window(None, true, true, true), "at login");
+        assert!(launch_opens_window(None, true, true, false), "the person opened it");
+    }
+
+    /// §12.1 item 13: the bundle's promises.
+    #[test]
+    fn the_bundle_declares_the_scheme_and_the_camera() {
+        let plist = include_str!("../Info.plist");
+        assert!(plist.contains("<key>CFBundleURLSchemes</key>") && plist.contains("<string>boredroom</string>"));
+        assert!(plist.contains("<key>NSCameraUsageDescription</key>"));
+        assert!(plist.contains("<key>NSMicrophoneUsageDescription</key>"));
+        assert!(plist.contains("<key>LSUIElement</key>"));
+        let ent = include_str!("../Entitlements.plist");
+        assert!(ent.contains("com.apple.security.device.camera") && ent.contains("com.apple.security.device.audio-input"));
+        let conf: serde_json::Value = serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        assert_eq!(conf["productName"], "Boredroom");
+        assert_eq!(conf["identifier"], "cc.boredroom.brenda", "brenda.json and the Mac's permissions carry over");
+        assert_eq!(conf["version"], "0.2.0");
     }
 
     /// The app ACL (0b.14): every command the notch page invokes is allowed to the notch, every command registered is
@@ -1203,6 +1610,35 @@ mod tests {
                 assert!(!cap["windows"].as_array().unwrap().iter().any(|x| x == w), "{w} must have no capability");
             }
             assert!(!text.contains("\"companion\""));
+        }
+
+        /// The Boredroom window loads remote pages, so it may call nothing (owner request, 24 October 2026): no capability
+        /// file names it, any window or webview by a wildcard, or a remote origin.
+        #[test]
+        fn the_boredroom_window_has_no_capability() {
+            let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/capabilities");
+            let mut n = 0;
+            for entry in std::fs::read_dir(dir).unwrap() {
+                let path = entry.unwrap().path();
+                let text = std::fs::read_to_string(&path).unwrap();
+                n += 1;
+                let v: serde_json::Value = if path.extension().and_then(|e| e.to_str()) == Some("json") {
+                    serde_json::from_str(&text).unwrap()
+                } else {
+                    panic!("{} is not JSON: check it by hand and extend this test", path.display());
+                };
+                for key in ["windows", "webviews"] {
+                    for w in v[key].as_array().into_iter().flatten() {
+                        let w = w.as_str().unwrap_or("");
+                        assert_ne!(w, crate::dashboard::LABEL, "{} names the Boredroom window", path.display());
+                        assert!(!w.contains(['*', '?', '[']), "{} matches windows by a pattern ({w})", path.display());
+                    }
+                }
+                assert!(v.get("remote").is_none(), "{} lets remote pages call commands", path.display());
+                assert!(!text.contains("\"remote\""), "{}", path.display());
+            }
+            assert!(n >= 1);
+            assert_eq!(capability()["windows"], serde_json::json!(["notch"]), "the notch's capability is unchanged");
         }
 
         #[test]

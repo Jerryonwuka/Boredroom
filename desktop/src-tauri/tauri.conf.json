@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Brenda",
-  "version": "0.1.0",
+  "productName": "Boredroom",
+  "version": "0.2.0",
   "identifier": "cc.boredroom.brenda",
   "build": {
     "frontendDist": "../src"
@@ -33,13 +33,50 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": [
+      "app",
+      "dmg"
+    ],
+    "createUpdaterArtifacts": true,
+    "publisher": "Boredroom",
+    "copyright": "© 2026 Boredroom",
+    "category": "Productivity",
+    "shortDescription": "Boredroom for Mac: your dashboard in its own window, and Brenda in your notch.",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "macOS": {
+      "minimumSystemVersion": "14.0",
+      "signingIdentity": "-",
+      "hardenedRuntime": true,
+      "entitlements": "./Entitlements.plist",
+      "dmg": {
+        "windowSize": {
+          "width": 540,
+          "height": 380
+        },
+        "appPosition": {
+          "x": 140,
+          "y": 190
+        },
+        "applicationFolderPosition": {
+          "x": 400,
+          "y": 190
+        }
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEU0NDZDNThEOEI1NDZFMTQKUldRVWJsU0xqY1ZHNUwxQXJndjdNcVV1VjBSdVRkMFVxanlOU3VLTEcvRjJoWndHMGV4NUxwSzcK",
+      "endpoints": [
+        "https://github.com/Jerryonwuka/boredroom-releases/releases/latest/download/latest.json"
+      ],
+      "requireSignedVersion": true
+    }
   }
 }

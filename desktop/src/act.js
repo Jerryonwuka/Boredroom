@@ -127,14 +127,14 @@ const Act = (() => {
     return {
       accessibility: {
         title: "One more step on your Mac",
-        sub: `Your Mac will ask you to allow Brenda under Privacy & Security › Accessibility. Turn on Brenda there. ${n} uses it only during a task you said yes to.`,
+        sub: `Your Mac will ask you to allow Boredroom under Privacy & Security › Accessibility. Turn on Boredroom there. ${n} uses it only during a task you said yes to.`,
         notNow: "Not now", go: "Continue",
       },
       accessibilityDenied: {
-        title: "Allow Brenda in System Settings",
-        sub: "Privacy & Security › Accessibility, then turn on Brenda. You may need to quit and reopen Brenda afterwards.",
+        title: "Allow Boredroom in System Settings",
+        sub: "Privacy & Security › Accessibility, then turn on Boredroom. You may need to quit and reopen Boredroom afterwards.",
         notNow: "Not now", check: "Check again", open: "Open System Settings",
-        stillOff: "Brenda isn't allowed yet. Turn it on in that list, then check again.",
+        stillOff: "Boredroom isn't allowed yet. Turn it on in that list, then check again.",
       },
       finder: {
         title: "One more step on your Mac",
@@ -486,6 +486,8 @@ const Act = (() => {
       case "sharing": return { title: "Your screen looks shared", sub: "I don't look or work while it's being shared." };
       case "busy_task": return { title: "I'm still on the last job", sub: "Wait for it to finish, or stop it in the notch." };
       case "answer_first": return { title: "Answer this one first", sub: "" };
+      // Boredroom's own window (owner request, 24 October 2026): never clicked or typed in.
+      case "own_window": return { title: "That's Boredroom itself", sub: "I can't click or type in it." };
       case "cap": return { title: "That took more steps than I'm allowed", sub: after };
       case "too_big": return { title: "This task got too big to send", sub: after };
       case "time": return { title: "That took longer than ten minutes", sub: "I stopped. What I did stays done." };

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Boredroom for Mac's entitlements under the hardened runtime (owner request, 24 October 2026). The same file serves the
+  ad-hoc build now and the Developer ID build later. Screen Recording, Accessibility and Input Monitoring need none.
+-->
+<plist version="1.0">
+<dict>
+  <!-- Hold to talk: the hardened runtime blocks the microphone without this. -->
+  <key>com.apple.security.device.audio-input</key>
+  <true/>
+  <!-- Calls in the Boredroom window (owner request, 24 October 2026). -->
+  <key>com.apple.security.device.camera</key>
+  <true/>
+  <!-- Asking Finder which files are selected, and emptying the Trash on a yes (osascript). -->
+  <key>com.apple.security.automation.apple-events</key>
+  <true/>
+</dict>
+</plist>

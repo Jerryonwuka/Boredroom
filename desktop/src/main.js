@@ -248,7 +248,7 @@
 //
 // Calls (owner decisions, 8 October 2026, confirmed 10 October 2026: phase 8, "build Phase 8, cook"; contract F). Screen
 // recording for tasks is gone; people call each other, one to one, in a group or as a team, on every plan, and the call
-// itself runs in the person's browser (WKWebView's camera, microphone and screen-share limits, the notch's size, and no
+// itself runs in Boredroom's window (WKWebView's camera, microphone and screen-share limits, the notch's size, and no
 // Rust change in this phase). Up here the notch rings, answers and declines:
 // - The ring poll (`pollCalls`): GET /calls/now through the existing `api` command, again after each answer at the
 //   server's `pollMs` clamped to 2 to 60 s (4 s, 2 s while ringing, 60 s before migration 0054 or without LiveKit), with
@@ -266,12 +266,12 @@
 //   poll says `?ring=1` while the notch can ring aloud, and a browser on the same network then stays silent); Esc
 //   silences it and the card stays; it never folds on its own while the ring lives, and closes when the ring leaves
 //   /calls/now (answered elsewhere, cancelled, timed out). Accept answers the call (POST /calls/:id/accept) and opens
-//   the call page in the browser (`?from=notch`, where Join turns its sound on), "Opening the call in your browser" for
+//   the call page in Boredroom's window (`?from=notch`, where Join turns its sound on), "Opening the call in Boredroom" for
 //   3 s; Decline says "Declined." for 1.2 s.
 // - A missed call is a notification card (Join while the call is still on, Call back for a direct call, else Open); the
 //   call's notes are the plain card. Both wait through quiet hours like any notification.
 // - On a call, the compact bar says so first: the live dot, the call's clock in orange digits, "On a call in #Design";
-//   a click opens the call in the browser. Teammates on a call carry a small phone mark on their faces.
+//   a click opens the call in Boredroom's window. Teammates on a call carry a small phone mark on their faces.
 // desktop/README.md ("Calls") writes down what the notch does not do and the Rust follow-ups.
 //
 // Screen help, phase 1 (owner decisions, 11 October 2026: "start building with your recommendations"; owner request the
@@ -280,7 +280,7 @@
 // window in front of them with their pointer ringed, and this page shows it before anything leaves the Mac:
 // - Only on the person's own press. The first time, the consent card (look.js, the proposal's exact words) opens from the
 //   Look button or the tray's "Turn on screen help…", never from the keys; the choice is kept on this Mac only (Rust's
-//   `set_screen_help`), never in Boredroom. Then the Screen Recording step, "Allow Brenda in System Settings" when it was
+//   `set_screen_help`), never in Boredroom. Then the Screen Recording step, "Allow Boredroom in System Settings" when it was
 //   refused, and "Screen help is on". "Turn off on my Macs" in Boredroom (the desktop state's `look.offAt`) turns it off
 //   here on the next poll, once.
 // - A look (`brenda://look`): "Looking at Figma…" with the live dot (and, from the keys with voice on, the running time
@@ -295,7 +295,7 @@
 //   look during one and asks Boredroom itself when the page has not said for 15 s).
 // - Nothing here works with the Rust of before (every look command is caught, and a missing `look_status` hides every look
 //   feature), nor with a server that sends no `look`. An `open` suggestion that points inside Boredroom (`?point=`) is drawn
-//   as Show me, which opens the page in the browser, where Brenda points at the thing (contract E).
+//   as Show me, which opens the page in Boredroom's window, where Brenda points at the thing (contract E).
 //
 // Brenda for Mac, phase 2 (owner request and rule, 12 October 2026; contract C). The owner tried phase 1 and asked for more:
 // no preview step, the whole screen under the pointer, her face by the pointer in her colour, smarter spoken answers, and
@@ -843,6 +843,7 @@ function moodOf() {
   }
   if (card.kind === "item_update") return card.u?.kind === "reply" || card.u?.status === "done" || (!card.u && card.n?.type === "assistant.reply") ? { mood: "happy", tone: "ok" } : {};
   if (card.kind === "error") return { mood: "sad", tone: "bad" };
+  if (card.kind === "update") return card.error ? { mood: "sad", tone: "bad" } : { mood: "happy" };
   // Follow-ups (owner decision, 8 October 2026: phase 4): an ask waits on the person (alert, the accent glow) until it is
   // sent (happy, green); an answer pleases only when it is one (happy, green), and a no-reply, a not now or a failure
   // stays neutral.
@@ -1159,7 +1160,7 @@ function compactView() {
   const working = wide ? [] : (Array.isArray(data?.team) ? data.team : []).filter((p) => p && (p.state === "running" || p.state === "paused")).slice(0, 3);
   const mood = waitingAsk && !t ? { mood: "think" } : moodOf();
   const said = `${label.trim() || plainOf(`${lead} ${text}`)}${badge ? `, ${total} unread` : ""}`;
-  const named = act === "call-open" ? `Open the call in your browser: ${said}` : act === "call-show" ? `Show the call: ${said}` : `Open ${me().name}${said ? `: ${said}` : ""}`;
+  const named = act === "call-open" ? `Open the call in Boredroom: ${said}` : act === "call-show" ? `Show the call: ${said}` : `Open ${me().name}${said ? `: ${said}` : ""}`;
   return `<div class="row" data-act="${act}"${href ? ` data-href="${esc(href)}"` : ""} aria-label="${esc(named)}">${face({ small: true, ...mood, dot })}${lead}<span class="tiny grow">${text}</span>${working.length ? `<span class="minis">${working.map(mini).join("")}</span>` : ""}${trail}${badge}</div>`;
 }
 /** The words of some markup, for a label (parsed by the page, never run). */
@@ -1172,13 +1173,15 @@ function plainOf(html) {
 function linkView() {
   if (editingServer) {
     return `<div class="row fade">${face(moodOf())}<div class="grow"><p class="title">Which Boredroom?</p><p class="sub">Leave empty for boredroom.cc. While developing, use http://localhost:3000.</p></div></div>
-      <input class="field" id="server" value="${esc(config?.baseUrl ?? "")}" placeholder="https://boredroom.cc" spellcheck="false">
+      <input class="field" id="server" value="${esc(config?.baseUrl ?? "")}" placeholder="https://www.boredroom.cc" spellcheck="false">
       <div class="actions"><button class="btn ghost" data-act="server-cancel">Cancel</button><button class="btn primary" data-act="server-save">Save</button></div>`;
   }
   if (!link) {
-    return `<div class="row fade">${face(moodOf())}<div class="grow"><p class="title">Hi, I'm Brenda.</p><p class="sub">Link me to your Boredroom and I'll keep your day in view up here.</p></div></div>
+    // One sign-in (owner request, 24 October 2026): Sign in opens Boredroom's window at its sign-in, and signing in there
+    // (or in the browser, for Google) signs the notch in too; the device code stays as "Use a code instead".
+    return `<div class="row fade">${face(moodOf())}<div class="grow"><p class="title">Sign in to Boredroom</p><p class="sub">Sign in once and I'll keep your day in view up here, with Boredroom in its own window.</p></div></div>
       ${error ? `<p class="err">${esc(error)}</p>` : ""}
-      <div class="actions"><button class="link" data-act="server">${esc(config?.baseUrl ?? "boredroom.cc")}</button><span class="grow"></span><button class="btn primary accent" data-act="link-start" ${busy ? "disabled" : ""}>Link to Boredroom</button></div>`;
+      <div class="actions"><button class="link" data-act="server">${esc(config?.baseUrl ?? "boredroom.cc")}</button><span class="grow"></span><button class="btn ghost" data-act="link-start" ${busy ? "disabled" : ""}>Use a code instead</button><button class="btn primary accent" data-act="sign-in" ${busy ? "disabled" : ""}>Sign in</button></div>`;
   }
   return `<div class="row fade">${face(moodOf())}<div class="grow"><p class="title">Approve this code in Boredroom</p><p class="sub">Check it matches, pick your workspace, approve. I'll be ready in a few seconds.</p></div></div>
     <div class="code fade">${esc(link.userCode)}</div>
@@ -1237,7 +1240,7 @@ function cardView() {
       ${waitingView()}
       ${teamView()}
       ${askBox()}
-      <div class="actions">${talkButton()}${lookButton()}<button class="btn ghost" data-act="close">Later</button><button class="btn" data-act="open-href" data-href="/app/${esc(config.workspaceSlug)}/tasks">Tasks</button>${first && !data.timer && data.clock ? `<button class="btn primary accent" data-act="start" data-id="${esc(first.id)}" ${busy ? "disabled" : ""}>Start ${esc(firstTitle.length > 22 ? `${firstTitle.slice(0, 21)}…` : firstTitle)}</button>` : ""}</div>`;
+      <div class="actions">${talkButton()}${lookButton()}<button class="btn ghost" data-act="close">Later</button><button class="btn ghost" data-act="open-app">Open Boredroom</button><button class="btn" data-act="open-href" data-href="/app/${esc(config.workspaceSlug)}/tasks">Tasks</button>${first && !data.timer && data.clock ? `<button class="btn primary accent" data-act="start" data-id="${esc(first.id)}" ${busy ? "disabled" : ""}>Start ${esc(firstTitle.length > 22 ? `${firstTitle.slice(0, 21)}…` : firstTitle)}</button>` : ""}</div>`;
   }
   // Before the first poll has answered, or when the state carries no briefing: a small day card, never an empty island
   // (owner decision, 9 October 2026).
@@ -1276,6 +1279,7 @@ function cardView() {
   if (card.kind === "loop") return loopView();
   if (card.kind === "standup") return standupView();
   if (card.kind === "standup_rollup") return rollupView();
+  if (card.kind === "update") return updateView();
   if (card.kind === "error") return `<div class="row fade">${face(moodOf())}<div class="grow"><p class="title">Can't reach Boredroom</p><p class="sub">${esc(card.message)}</p></div></div><div class="actions"><button class="btn" data-act="close">OK</button></div>`;
   // Never nothing (owner decision, 9 October 2026: the empty black island): a kind this page does not know draws its
   // notification as the plain card, or render() drops it.
@@ -1290,7 +1294,7 @@ function dayCardView() {
   const first = firstName(data?.me?.displayName ?? config?.displayName);
   return `${inboxStrip()}<div class="row fade">${face({ ...moodOf(), dot: data?.me?.presence })}<div class="grow"><p class="title">${greet}${first ? `, ${esc(first)}` : ""}.</p>${data ? "" : `<p class="sub">Getting your day from Boredroom…</p>`}</div></div>
     ${askBox()}
-    <div class="actions">${talkButton()}${lookButton()}<button class="btn ghost" data-act="close">Later</button></div>`;
+    <div class="actions">${talkButton()}${lookButton()}<button class="btn ghost" data-act="close">Later</button>${config?.signedIn ? `<button class="btn ghost" data-act="open-app">Open Boredroom</button>` : ""}</div>`;
 }
 
 // ---- notifications: one at a time, the summary and the pager -----------------------------------------------------
@@ -1923,7 +1927,7 @@ let stripRing = null;        // the ring drawn as the strip on a card that must 
 let stripNote = null, stripNoteTimer = null;   // what Accept in the strip did, for 3 s
 let callsSig = "";           // what the bar or the strip last showed, so a poll that changes nothing draws nothing
 const CALL_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const CALL_RESULT = { opening: "Opening the call in your browser", ended: "The call has ended.", declined: "Declined.", sent: "Sent and declined." };
+const CALL_RESULT = { opening: "Opening the call in Boredroom", ended: "The call has ended.", declined: "Declined.", sent: "Sent and declined." };
 
 /** GET /calls/now's answer as the notch keeps it, or null when it is not one. */
 function callsOf(r) {
@@ -2072,7 +2076,7 @@ function syncRingSound() {
   else if (!on && ringSoundTimer) { clearInterval(ringSoundTimer); ringSoundTimer = null; }
 }
 
-/** The call's page in the person's browser (Rust's open_in_browser opens Boredroom's own address only). */
+/** The call's page in Boredroom's window (Rust's open_in_browser opens Boredroom's own address only; owner request, 24 October 2026). */
 function openCallPage(id) {
   if (!CALL_ID.test(String(id))) return Promise.reject(new Error("That call isn't available."));
   return invoke("open_in_browser", { path: `/app/${encodeURIComponent(config.workspaceSlug)}/calls/${id}?from=notch` });
@@ -2090,7 +2094,7 @@ const callEnded = (err) => err?.code === "CALL_ENDED";
 
 /**
  * Accept (contract F.3): POST /calls/:id/accept (leaving the other call when the person is on one, as the card said), then
- * the call's page in the browser, where Join turns its sound on. 409 CALL_ENDED says so; anything else shows the
+ * the call's page in Boredroom's window, where Join turns its sound on. 409 CALL_ENDED says so; anything else shows the
  * server's words on the card and keeps its buttons.
  */
 async function acceptRing(ring) {
@@ -2177,7 +2181,7 @@ function missedJoinLeaves(c) {
   return c.joinLeaves === id || (!!calls?.active && CALL_ID.test(String(calls.active.id)) && calls.active.id !== id);
 }
 /**
- * Join, on a missed call that is still going (contract F.4): accepted as the person, then its page in the browser.
+ * Join, on a missed call that is still going (contract F.4): accepted as the person, then its page in Boredroom's window.
  * `leaveOther` ("Leave it and join"): the person's other call is left first, as the incoming card's Accept does. A plain
  * Join the server refuses with 409 IN_ANOTHER_CALL turns the card into that choice instead of a dead end.
  */
@@ -2224,6 +2228,9 @@ el.addEventListener("click", async (e) => {
   error = null;
   try {
     if (act === "home") return openCard({ kind: "home", origin: "hover" });
+    // Updates (owner request, 24 October 2026): only this press (or the tray's item) replaces and restarts her.
+    if (act === "update-install") { if (card?.kind === "update" && !card.installing) { card.installing = true; card.error = null; card.sticky = true; render(); await invoke("update_install"); } return; }
+    if (act === "update-later") return closeCard();
     // In the pager (owner decision, 9 October 2026), OK under what a press did moves on; anywhere else it folds.
     if (act === "close") return card?.pager && pager ? pagerGo(1) : closeCard();
     // Notifications, "A plus the grafts" (owner decision, 9 October 2026): the pager's footer, the summary's buttons and
@@ -2242,6 +2249,10 @@ el.addEventListener("click", async (e) => {
     if (act === "server-cancel") { editingServer = false; return render(); }
     if (act === "server-save") { config = await invoke("set_base_url", { url: document.getElementById("server").value }); editingServer = false; return render(); }
     if (act === "link-start") return startLink();
+    // The one sign-in (owner request, 24 October 2026): Boredroom's window, at its sign-in page.
+    if (act === "sign-in") { error = null; return invoke("open_in_browser", { path: "/app" }).catch((err) => { error = err?.message ?? String(err); render(); }); }
+    // Open Boredroom: its window, at the workspace (owner request, 24 October 2026).
+    if (act === "open-app") { await invoke("open_in_browser", { path: config?.workspaceSlug ? `/app/${encodeURIComponent(config.workspaceSlug)}` : "/app" }); return closeCard(); }
     if (act === "link-cancel") { link = null; clearTimeout(linkTimer); return render(); }
     if (act === "link-open") return invoke("open_in_browser", { path: link.verifyUrl });
     // Open, as before; `data-read-id` (9 October 2026) also reads the notification. In the pager it folds keeping its place
@@ -2302,7 +2313,7 @@ el.addEventListener("click", async (e) => {
     if (act === "su-unskip") return unskipStandup();
     // Calls (phase 8, owner decisions, 8 October 2026; contract F.3 to F.5): on the incoming card (or its strip, or the
     // bar) Accept, Decline, Message and a quick message; on a missed call Join and Call back; the bar while ringing shows
-    // the card, and on a call opens the call in the browser.
+    // the card, and on a call opens the call in Boredroom's window.
     if (act === "call-accept") return acceptRing(target.dataset.call ? ringsNow().find((x) => x.id === target.dataset.call) : card?.kind === "call" ? card.ring : null);
     if (act === "call-decline") return card?.kind === "call" ? declineRing(card, null) : target.dataset.call ? declineStripRing(ringsNow().find((x) => x.id === target.dataset.call)) : undefined;
     if (act === "call-message") { if (card?.kind === "call" && !card.result) { card.messages = !card.messages; render(); } return; }
@@ -2316,7 +2327,7 @@ el.addEventListener("click", async (e) => {
     if (act === "call-open") { const path = boredroomPath(target.dataset.href); if (path) await invoke("open_in_browser", { path }); return; }
     // Screen help (owner decisions, 11 October 2026; contract C.2): Look on her card, the consent's and the Mac's steps,
     // the preview's Send, Don't send and Never look at, OK on a refusal, and Show me on a reply that points inside
-    // Boredroom (it opens the page in the browser, where she points; no browser opens on its own).
+    // Boredroom (it opens the page in Boredroom's window, where she points; no browser opens on its own).
     if (act === "look") return lookPressed();
     // "Use my screen" under a chat reply (review, 12 October 2026): the person's press starts a look carrying their words.
     if (act === "use-screen") { screenAsk = card?.screenAsk?.words ? { words: card.screenAsk.words, at: Date.now() } : null; return lookPressed(); }
@@ -4054,7 +4065,7 @@ async function lookAskPermission() {
     openLook({ phase: lookStatus?.permission === "granted" ? "on" : "denied" });
   } catch (err) { busy = false; error = err?.message ?? String(err); Sound.play("error"); render(); }
 }
-/** Check again on "Allow Brenda in System Settings". */
+/** Check again on "Allow Boredroom in System Settings". */
 async function lookCheckAgain() {
   const s = await invoke("look_status").then(lookStatusOf).catch(() => null);
   if (s) lookStatus = s;
@@ -5179,7 +5190,7 @@ async function helpGo() {
   }
 }
 
-/** Check again on "Allow Brenda in System Settings". */
+/** Check again on "Allow Boredroom in System Settings". */
 async function helpCheck() {
   const c = card;
   if (c?.kind !== "help") return;
@@ -7971,6 +7982,46 @@ setInterval(() => {
   const e = document.getElementById("testimate"), share = estimateShare(); if (e && share !== null) e.style.transform = `scaleX(${share.toFixed(3)})`;
 }, 1000);
 
+// ---- updates ----------------------------------------------------------------------------------------------------
+// Updates (owner request, 24 October 2026): Rust checks quietly, downloads in the background and verifies the signature
+// (updater.rs); the notch only hears that one is ready. It offers it once per version, on a card that opens when nothing
+// else is going on (no card, no call, no task or job, not during quiet hours); the tray's "Restart to update" stays
+// until it is used. Nothing restarts without the person's press.
+let updateReady = null;
+const updateOffered = new Set();
+function updateView() {
+  const v = esc(card.v ?? "");
+  const line = card.installing && !card.error ? "Updating. She'll be back in a few seconds." : "Restart her to update. It takes a few seconds; anything she's doing now stops.";
+  return `<div class="row fade">${face(moodOf())}<div class="grow"><p class="title">Brenda ${v} is ready</p><p class="sub">${line}</p></div></div>
+    ${card.error ? `<p class="err">${esc(card.error)}</p>` : ""}
+    <div class="actions"><button class="btn ghost" data-act="update-later" ${card.installing && !card.error ? "disabled" : ""}>Later</button><span class="grow"></span><button class="btn primary" data-act="update-install" data-main ${card.installing && !card.error ? "disabled" : ""}>Restart to update</button></div>`;
+}
+const updateIdle = () => !card && !!config?.signedIn && !busy && !hovering && !task && !(job && JOB_LIVE.has(job.phase))
+  && !(front && ["routing", "doing", "done"].includes(front.phase)) && !calls?.active && !ringNow() && !quietNow();
+function offerUpdate() {
+  const v = updateReady?.version;
+  if (typeof v !== "string" || !v || updateOffered.has(v) || !updateIdle()) return;
+  updateOffered.add(v);
+  openCard({ kind: "update", v });
+}
+listen("brenda://update", ({ payload }) => {
+  if (typeof payload?.version === "string") { updateReady = { version: payload.version }; offerUpdate(); return; }
+  if (typeof payload?.error === "string") {
+    if (card?.kind === "update") { card.installing = false; card.error = payload.error; card.sticky = false; render(); scheduleClose(); }
+    else if (!card) openCard({ kind: "update", v: updateReady?.version ?? "", error: payload.error });
+  }
+});
+// Not idle when it arrived: offered at the next quiet minute instead.
+setInterval(offerUpdate, 60_000);
+
+// The one sign-in (owner request, 24 October 2026): signing in in Boredroom's window (or the browser) signed the notch in.
+listen("brenda://linked", ({ payload }) => {
+  if (!payload?.config || typeof payload.config !== "object") return;
+  config = payload.config; link = null; error = null; clearTimeout(linkTimer);
+  Sound.play("success");
+  start();
+});
+
 listen("brenda://signed-out", () => { stopNatural(); forgetNatural(); config = { ...config, signedIn: false }; lookStatus = null; lookOffAt = null; forgetPhase2(); data = null; card = null; talk = []; chat = newChat(); cached = null; talkWaiting = false; clearTimeout(talkWaitTimer); forgetNotices(); applyQuiet(); render(); });
 
 (async () => {
@@ -7983,5 +8034,6 @@ listen("brenda://signed-out", () => { stopNatural(); forgetNatural(); config = {
   Sound.setEnabled(soundsOn);
   alwaysVisible = !!config.alwaysVisible;
   voice = await invoke("voice_status");
+  invoke("update_status").then((u) => { if (u && typeof u.version === "string") updateReady = { version: u.version }; }).catch(() => {});
   if (config.signedIn) start(); else render();
 })();

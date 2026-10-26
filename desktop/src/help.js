@@ -189,7 +189,7 @@ const Help = (() => {
     return steps;
   }
 
-  /** The steps' words (M.2). The titles carry the assistant's name; macOS's prompts and System Settings say Brenda. */
+  /** The steps' words (M.2). The titles carry the assistant's name; macOS's prompts and System Settings say Boredroom (the app's name; owner request, 24 October 2026). */
   function stepWords(name, keys) {
     const n = nameOf(name);
     const k = keysOf(keys);
@@ -197,9 +197,9 @@ const Help = (() => {
     const she = b ? "she" : n, She = b ? "She" : n, her = b ? "her" : n;
     return {
       screen: { title: `Next: let ${n} see the screen`, sub: `Your Mac will ask to let Brenda record this computer's screen. That's how ${she} sees it when you ask: one picture each time, never a video.`, skip: "Skip", go: "Continue" },
-      "screen-denied": { title: "Allow Brenda in System Settings", sub: "Privacy & Security › Screen & System Audio Recording, then turn on Brenda. You may need to quit and reopen Brenda afterwards.", skip: "Skip", check: "Check again", open: "Open System Settings", stillOff: "Brenda isn't allowed yet. Turn it on in that list, then check again." },
-      accessibility: { title: `Next: let ${n} use the mouse and keyboard`, sub: `Your Mac will ask you to allow Brenda under Privacy & Security › Accessibility. ${She} uses it only during a task you said yes to. Opening apps, files and pages works without it; clicking and typing need it.`, skip: "Skip", go: "Continue" },
-      "accessibility-denied": { title: "Allow Brenda in System Settings", sub: "Privacy & Security › Accessibility, then turn on Brenda. You may need to quit and reopen Brenda afterwards.", skip: "Skip", check: "Check again", open: "Open System Settings", stillOff: "Brenda isn't allowed yet. Turn it on in that list, then check again." },
+      "screen-denied": { title: "Allow Boredroom in System Settings", sub: "Privacy & Security › Screen & System Audio Recording, then turn on Boredroom. You may need to quit and reopen Boredroom afterwards.", skip: "Skip", check: "Check again", open: "Open System Settings", stillOff: "Boredroom isn't allowed yet. Turn it on in that list, then check again." },
+      accessibility: { title: `Next: let ${n} use the mouse and keyboard`, sub: `Your Mac will ask you to allow Boredroom under Privacy & Security › Accessibility. ${She} uses it only during a task you said yes to. Opening apps, files and pages works without it; clicking and typing need it.`, skip: "Skip", go: "Continue" },
+      "accessibility-denied": { title: "Allow Boredroom in System Settings", sub: "Privacy & Security › Accessibility, then turn on Boredroom. You may need to quit and reopen Boredroom afterwards.", skip: "Skip", check: "Check again", open: "Open System Settings", stillOff: "Boredroom isn't allowed yet. Turn it on in that list, then check again." },
       finder: { title: `Next: let ${n} ask Finder`, sub: `Your Mac will ask whether Brenda can control Finder. Say OK so ${she} can see which files and folders you've selected. You can say no: dropping files on ${her} still works.`, skip: "Skip", go: "Continue" },
       "finder-denied": { title: "Finder said no", sub: `So drop files on ${her}, or name the folder. You can change it in System Settings › Privacy & Security › Automation.`, open: "Open System Settings", ok: "OK" },
       folders: {
