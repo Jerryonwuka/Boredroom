@@ -1,5 +1,5 @@
 /**
- * Every email Boredroom sends, on the design system: the black canvas, one card, one orange button, quiet grey
+ * Every email Boredroom sends, on the design system: the black canvas, one card, one white button, quiet grey
  * meta text. Built as tables with inline styles because that is what mail clients honour; web fonts are asked for
  * and fall back to the system sans. Each builder returns the HTML and a plain-text twin, so a client that shows
  * neither images nor HTML still gets the link.
@@ -26,6 +26,8 @@ export type EmailContent = {
 const C = {
   canvas: "#000000", card: "#121212", cardBorder: "#2a2a2a", inset: "#0a0a0a", insetBorder: "#242424",
   fg: "#ffffff", muted: "#a1a1a1", subtle: "#6b6b6b", accent: "#ff6c02", accentFg: "#140700", accentBorder: "#ff8226",
+  // The button is white like the app's primary (owner request, 26 October 2026: orange is an accent, never a button).
+  button: "#ffffff", buttonFg: "#0a0a0a", buttonBorder: "#ffffff",
 };
 // Single quotes inside: these land in double-quoted style attributes.
 const FONT = `Manrope, 'Helvetica Neue', Helvetica, Arial, sans-serif`;
@@ -40,8 +42,8 @@ export function renderEmail(c: EmailContent): { html: string; text: string } {
   const paragraphs = c.intro.map((p) => `<p style="margin:0 0 14px;font-family:${FONT};font-size:16px;line-height:1.55;color:${C.muted};">${e(p)}</p>`).join("");
   const button = c.cta ? `
     <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:24px 0 8px;">
-      <tr><td style="border-radius:14px;background:${C.accent};border:1px solid ${C.accentBorder};">
-        <a href="${e(c.cta.url)}" style="display:inline-block;padding:13px 24px;font-family:${FONT};font-size:15px;font-weight:700;line-height:18px;color:${C.accentFg};text-decoration:none;border-radius:14px;">${e(c.cta.label)}</a>
+      <tr><td style="border-radius:14px;background:${C.button};border:1px solid ${C.buttonBorder};">
+        <a href="${e(c.cta.url)}" style="display:inline-block;padding:13px 24px;font-family:${FONT};font-size:15px;font-weight:700;line-height:18px;color:${C.buttonFg};text-decoration:none;border-radius:14px;">${e(c.cta.label)}</a>
       </td></tr>
     </table>
     <p style="margin:0 0 20px;font-family:${FONT};font-size:12px;line-height:1.5;color:${C.subtle};">If the button does not work, copy this link into your browser:<br><a href="${e(c.cta.url)}" style="color:${C.muted};text-decoration:underline;word-break:break-all;">${e(c.cta.url)}</a></p>` : "";
