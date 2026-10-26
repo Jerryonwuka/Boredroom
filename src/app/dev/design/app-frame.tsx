@@ -11,8 +11,8 @@
  *
  * Accent rules (6 October 2026), five touches here: the current page's nav icon, the unread count on Messages (an
  * attention pill), the bell's unread dot, the active tab's underline, and the analytics card (the chosen metric's line
- * and its orange highlight series). The page's standout action would be a sixth: here "New task" stays the white
- * primary. The sidebar's trial card (accent tint) shows only while a trial runs, so it is left out of this sample.
+ * and its orange highlight series). "New task" is the white
+ * primary: no button is orange (owner request, 26 October 2026). The sidebar's trial card (accent tint) shows only while a trial runs, so it is left out of this sample.
  * Nav icons are the animated twins where they exist (components/ui/animated-icons): hover one.
  */
 import * as React from "react";

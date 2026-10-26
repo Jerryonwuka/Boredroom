@@ -214,7 +214,7 @@ export type FirstActionInput = {
   ownerFirstName: string | null;
 };
 
-/** The one thing to do next, by role (the end screen's one orange button, and the first item of Next steps). */
+/** The one thing to do next, by role (the end screen's main (white) button, and the first item of Next steps). */
 export function firstActionFor(i: FirstActionInput): FirstAction {
   const base = `/app/${i.slug}`;
   const W = WELCOME_WORDS.firstAction;

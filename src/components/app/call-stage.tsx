@@ -165,12 +165,10 @@ function NotConnected({ orgSlug, call, from, onChanged }: { orgSlug: string; cal
     } finally { setBusy(false); }
   };
   const leaveOther = !!call.me.elsewhere && call.me.elsewhere.callId !== call.id;
-  // The screen's one orange is Join, unless another call is ringing: then its card's Accept is (fix review, 10 October
-  // 2026: two orange buttons), and Join is white.
-  const accent = host.ringing.some((r) => r.id !== call.id) ? "primary" : "accent";
+  // Join is a white primary (owner request, 26 October 2026: no orange buttons; orange stays an accent).
   const joinButton = (label: string, o: { mic: boolean; camera: boolean }) => leaveOther ? (
-    <ConfirmButton variant={accent} tone="primary" title={CALL_WORDS.stage.inAnotherCall(call.me.elsewhere?.where.name ?? "another call")} confirmLabel={label} onConfirm={() => join({ ...o, leaveOther: true })} loading={busy}>{label}</ConfirmButton>
-  ) : <Button variant={accent} onClick={() => void join(o)} loading={busy}><Phone aria-hidden />{label}</Button>;
+    <ConfirmButton variant="primary" tone="primary" title={CALL_WORDS.stage.inAnotherCall(call.me.elsewhere?.where.name ?? "another call")} confirmLabel={label} onConfirm={() => join({ ...o, leaveOther: true })} loading={busy}>{label}</ConfirmButton>
+  ) : <Button variant="primary" onClick={() => void join(o)} loading={busy}><Phone aria-hidden />{label}</Button>;
 
   const inRoom = call.participants.filter((p) => p.inRoom);
   const title = callTitle(call.where);

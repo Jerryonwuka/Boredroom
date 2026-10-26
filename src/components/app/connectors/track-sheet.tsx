@@ -3,7 +3,7 @@
 /**
  * Track an issue as a to-do (owner decisions, 22 October 2026: connectors; spec §11.5): "A new to-do" (its title prefilled
  * with "{key} {title}", editable) or "One of your to-dos", "Start the timer now", and the readback (the team lead sees the
- * to-do like any to-do; a personal item's link stays private). "Track" is the sheet's one orange button, as the To-dos
+ * to-do like any to-do; a personal item's link stays private). "Track" is the sheet's main (white) button, as the To-dos
  * sheet's Start.
  */
 import { useEffect, useId, useState } from "react";
@@ -50,7 +50,7 @@ export function TrackSheet({ orgSlug, item, open, onClose, todos, lead }: { orgS
   }
   return (
     <Sheet size="sm" open={open} onClose={onClose} title={T.title(key)}
-      footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button variant="accent" loading={busy} disabled={mode === "existing" && !taskId} onClick={track}>{T.button}</Button></>}>
+      footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button variant="primary" loading={busy} disabled={mode === "existing" && !taskId} onClick={track}>{T.button}</Button></>}>
       <div className="space-y-4">
         {error ? <Alert tone="danger">{error}</Alert> : null}
         <div role="radiogroup" aria-label={T.title(key)} className="space-y-2">

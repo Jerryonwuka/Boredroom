@@ -20,7 +20,7 @@ export default async function CampaignsPage() {
   return (
     <>
       <PageHeader title="Campaigns" description="Create, pick the audience, preview, send a test, then schedule or send. Progress and outcomes stay on each campaign."
-        actions={can(admin, "marketing.create") ? <SheetButton label="New campaign" icon="plus" variant="accent" sheetSize="lg" title="New campaign" description="Saved as a draft; preview, test and send it from its page."><CampaignForm templates={templates} segments={segments} /></SheetButton> : null}
+        actions={can(admin, "marketing.create") ? <SheetButton label="New campaign" icon="plus" variant="primary" sheetSize="lg" title="New campaign" description="Saved as a draft; preview, test and send it from its page."><CampaignForm templates={templates} segments={segments} /></SheetButton> : null}
         tabs={MARKETING_TABS} tabsLabel="Marketing sections" />
       {campaigns.length === 0 ? <EmptyState icon={Send} title="No campaigns yet" description="A campaign is a one-off email to an audience." /> : (
         <DataTable caption="Campaigns">

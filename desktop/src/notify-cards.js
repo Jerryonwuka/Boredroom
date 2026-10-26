@@ -26,7 +26,7 @@
 // is gone ("capture.exception" with it); people call each other, and the notch rings, answers and declines while the call
 // itself opens in the browser. `ringCard` draws the incoming call: the caller's assistant's face, "Ada is calling", where,
 // "You're on another call. Accepting leaves it." when it applies, a hairline running down to the ring's end in the needs
-// colour, Decline, Message (three quick messages, the web's words) and Accept, the card's one orange button. `ringStrip`
+// colour, Decline, Message (three quick messages, the web's words) and Accept, the card's main (white) button. `ringStrip`
 // is the same ring as one row on a card that must stay (something being typed, said or pressed), `ringBar` and `callBar`
 // the compact bar while a call rings or runs. A missed call (`call.missed`) has its own card (`tCall`: Join while the call
 // is still on, Call back for a direct call, else Open); the call's notes (`call.recap`) are the plain card, from the
@@ -648,7 +648,7 @@ const NotifyCards = (() => {
     return {
       by: byline(k, [k.face({ who: s.who, mood: "alert" })], `<b>${k.e(nameOf(s.who))}</b>, for ${k.e(f || "them")}`),
       body: `${hl(k, head)}${change}${quote(k, one(w.note) || one(F?.note), s.who)}${note(k, why)}`,
-      actions: `${btn(k, { act: "ai-decline", html: "Decline" })}${btn(k, { cls: "primary accent", act: "ai-accept", main: true, html: `${icon("check")}Accept` })}`,
+      actions: `${btn(k, { act: "ai-decline", html: "Decline" })}${btn(k, { cls: "primary", act: "ai-accept", main: true, html: `${icon("check")}Accept` })}`,
     };
   }
 
@@ -668,7 +668,7 @@ const NotifyCards = (() => {
     return {
       by: byline(k, [k.face({ ...(thread ? {} : { who }), mood: "alert" })], ctx),
       body: `${hl(k, head)}${quote(k, question, who)}`,
-      actions: `${btn(k, { cls: "ghost", act: "fu-send", attrs: { "data-choice": "not_now" }, html: "Not now" })}${btn(k, { cls: "primary accent", act: "fu-send", main: true, disabled: !choice, html: "Send" })}`,
+      actions: `${btn(k, { cls: "ghost", act: "fu-send", attrs: { "data-choice": "not_now" }, html: "Not now" })}${btn(k, { cls: "primary", act: "fu-send", main: true, disabled: !choice, html: "Send" })}`,
     };
   }
 
@@ -704,7 +704,7 @@ const NotifyCards = (() => {
     return {
       by: byline(k, [k.face({ who: ask && from ? from.who : env.ws, mood: "alert" })], ask ? `<b>${k.e(from?.first || "Someone")}</b> asked you` : `<b>${k.e(nameOf(env.ws))}</b> noted a commitment`),
       body: `${hl(k, title, true)}${due ? lede(k, `Due ${due}`) : ""}${what && !echoes(title, what) ? quote(k, what, ask ? from?.who : env.me) : ""}${note(k, question)}`,
-      actions: `${openBtn(k, path)}${ask ? btn(k, { cls: "ghost", act: "lp-decline", html: LOOP_INBOX.decline }) : btn(k, { cls: "ghost", act: "lp-dismiss", html: LOOP_INBOX.dismiss })}${btn(k, { cls: "primary accent", act: "lp-accept", main: true, html: k.e(label) })}`,
+      actions: `${openBtn(k, path)}${ask ? btn(k, { cls: "ghost", act: "lp-decline", html: LOOP_INBOX.decline }) : btn(k, { cls: "ghost", act: "lp-dismiss", html: LOOP_INBOX.dismiss })}${btn(k, { cls: "primary", act: "lp-accept", main: true, html: k.e(label) })}`,
     };
   }
 
@@ -751,7 +751,7 @@ const NotifyCards = (() => {
     return {
       by: byline(k, [k.face({ mood: "alert" })], `<b>${k.e(nameOf(env.me))}</b> drafted your standup`),
       body: `${hl(k, fit("Standup ready to post", "Standup ready"))}${rows ? `<dl class="nc-rows">${rows}</dl>` : ""}${note(k, goes, "nc-goes")}`,
-      actions: `${btn(k, { cls: "ghost", act: "su-skip", html: STANDUP_SAY.skip })}${edit ? btn(k, { act: "open-href", attrs: { "data-href": edit, title: "Edit it in Boredroom" }, html: `${icon("pencil")}${STANDUP_SAY.edit}` }) : ""}${btn(k, { cls: "primary accent", act: "su-post", main: true, attrs: { "aria-label": `Post to ${to}`, "aria-describedby": "nc-goes" }, html: `${icon("send")}${k.e(`${STANDUP_SAY.post} to ${clip(to, 18)}`)}` })}`,
+      actions: `${btn(k, { cls: "ghost", act: "su-skip", html: STANDUP_SAY.skip })}${edit ? btn(k, { act: "open-href", attrs: { "data-href": edit, title: "Edit it in Boredroom" }, html: `${icon("pencil")}${STANDUP_SAY.edit}` }) : ""}${btn(k, { cls: "primary", act: "su-post", main: true, attrs: { "aria-label": `Post to ${to}`, "aria-describedby": "nc-goes" }, html: `${icon("send")}${k.e(`${STANDUP_SAY.post} to ${clip(to, 18)}`)}` })}`,
     };
   }
 
@@ -812,7 +812,7 @@ const NotifyCards = (() => {
         est !== null && est > 0 ? { icon: "timer", n: hm(est), after: "estimate", label: `${hm(est)} estimated` } : null,
         prio ? { icon: "flag", after: prio, tone: t.priority === "urgent" ? "attn" : "" } : null,
       ])}`,
-      actions: `${openBtn(k, pathOf(env, n.href), { read: true })}${start ? btn(k, { cls: "primary accent", act: "start", main: true, attrs: { "data-id": t.id }, html: `${icon("play")}Start timer` }) : okBtn(k)}`,
+      actions: `${openBtn(k, pathOf(env, n.href), { read: true })}${start ? btn(k, { cls: "primary", act: "start", main: true, attrs: { "data-id": t.id }, html: `${icon("play")}Start timer` }) : okBtn(k)}`,
     };
   }
 
@@ -919,7 +919,7 @@ const NotifyCards = (() => {
   /**
    * 19. A missed call (owner decisions, 8 October 2026: phase 8, contract F.4): the caller's face, sad; "Missed call from
    * Ada Obi" (or "from Ada", or "Missed call"); where it was and when it rang in the byline. The one thing to do is the
-   * card's one orange button: Join while the call is still on, Call back for a direct call, else Open its page; OK reads
+   * card's main (white) button: Join while the call is still on, Call back for a direct call, else Open its page; OK reads
    * it. Without the server's `call` facts, the plain card. `o.leaveOther` (main.js: the person is on another call, by
    * the ring poll or the server's 409 IN_ANOTHER_CALL; fix review, 10 October 2026): the card says so, and Join becomes
    * "Leave it and join", which leaves that call first (`data-leave-other`), as the incoming card's Accept does.
@@ -938,8 +938,8 @@ const NotifyCards = (() => {
     const leaves = F.live === true && k.opts.leaveOther === true;
     const ok = (main) => okBtn(k, main ? {} : { cls: "ghost", main: false });
     let actions;
-    if (F.live === true) actions = `${ok(false)}${btn(k, { cls: "primary accent", act: "call-join", main: true, attrs: { "data-call": F.callId, "data-read-id": read, "data-leave-other": leaves ? "1" : null }, html: `${icon("phone")}${k.e(leaves ? CALL_SAY.leaveAndJoin : CALL_SAY.join)}` })}`;
-    else if (back) actions = `${ok(false)}${btn(k, { cls: "primary accent", act: "call-back", main: true, attrs: { "data-to": back, "data-read-id": read }, html: `${icon("phone")}${k.e(CALL_SAY.callBack)}` })}`;
+    if (F.live === true) actions = `${ok(false)}${btn(k, { cls: "primary", act: "call-join", main: true, attrs: { "data-call": F.callId, "data-read-id": read, "data-leave-other": leaves ? "1" : null }, html: `${icon("phone")}${k.e(leaves ? CALL_SAY.leaveAndJoin : CALL_SAY.join)}` })}`;
+    else if (back) actions = `${ok(false)}${btn(k, { cls: "primary", act: "call-back", main: true, attrs: { "data-to": back, "data-read-id": read }, html: `${icon("phone")}${k.e(CALL_SAY.callBack)}` })}`;
     else { const path = pathOf(env, n.href); actions = path ? `${ok(false)}${openBtn(k, path, { read: true, cls: "primary", main: true })}` : ok(true); }
     return {
       by: byline(k, [k.face({ who: from?.who ?? env.assistantOf(null), mood: "sad" })], ctx, { at: F.at }),
@@ -1179,7 +1179,7 @@ const NotifyCards = (() => {
     const off = env.busy ? " disabled" : "";
     // Mark all read keeps the asks, so with only asks left it would do nothing: it is not offered (review, 9 October 2026).
     const readable = beyond > 0 || list.some((x) => x.group !== "ask");
-    return `<section class="nc nc-summary" data-template="summary" data-family="mix" aria-labelledby="nc-hl"><div class="nc-sum-top"><p class="nc-hey">${first ? `Hey <b>${e(first)}</b>, you have` : "Hey, you have"}</p></div><p class="nc-big" id="nc-hl"><span class="n">${total}</span><span class="w">${total === 1 ? "notification" : "notifications"}</span></p>${mates.length ? `<div class="nc-lineup" role="group" aria-label="Who sent them">${mates.join("")}</div>` : ""}${kinds ? `<div class="nc-kinds">${kinds}</div>` : ""}<div class="actions">${readable ? `<button class="btn ghost" type="button" data-act="pg-all"${off}>${icon("checks")}Mark all read</button>` : ""}<span class="grow"></span><button class="btn primary accent" type="button" data-act="pg-show" data-main${off}>Show them</button></div></section>`;
+    return `<section class="nc nc-summary" data-template="summary" data-family="mix" aria-labelledby="nc-hl"><div class="nc-sum-top"><p class="nc-hey">${first ? `Hey <b>${e(first)}</b>, you have` : "Hey, you have"}</p></div><p class="nc-big" id="nc-hl"><span class="n">${total}</span><span class="w">${total === 1 ? "notification" : "notifications"}</span></p>${mates.length ? `<div class="nc-lineup" role="group" aria-label="Who sent them">${mates.join("")}</div>` : ""}${kinds ? `<div class="nc-kinds">${kinds}</div>` : ""}<div class="actions">${readable ? `<button class="btn ghost" type="button" data-act="pg-all"${off}>${icon("checks")}Mark all read</button>` : ""}<span class="grow"></span><button class="btn primary" type="button" data-act="pg-show" data-main${off}>Show them</button></div></section>`;
   }
 
   /** The window of dots around the current one: at most `max`, the current one inside it. */
@@ -1287,7 +1287,7 @@ const NotifyCards = (() => {
    * review, 10 October 2026: the byline said the name the headline says right under it, so the byline now says where).
    * When even the first name is too long for the headline, it reads "Incoming call" and the byline keeps the name, with
    * where under the headline. Then a hairline running down to the ring's end; "+1 more calling" when others ring too.
-   * Decline and Message are ghost buttons; Accept is the card's one orange button and its main action. Message opens the
+   * Decline and Message are ghost buttons; Accept is the card's main (white) button and its main action. Message opens the
    * three quick messages (each a decline that sends it). `o`: { more, messages, result: { title, sub, tone, actions } } (what a press did, in place of
    * the body and the buttons). Never throws, never empty.
    */
@@ -1316,7 +1316,7 @@ const NotifyCards = (() => {
       : "";
     const actions = `${btn(k, { cls: "ghost", act: "call-decline", html: `${icon("phoneoff")}${k.e(CALL_SAY.decline)}` })}`
       + `${btn(k, { cls: "ghost", act: "call-message", attrs: { "aria-expanded": o.messages ? "true" : "false", "aria-controls": o.messages ? "nc-quick" : null }, html: `${icon("message")}${k.e(CALL_SAY.message)}` })}`
-      + `${btn(k, { cls: "primary accent", act: "call-accept", main: true, html: `${icon("phone")}${k.e(CALL_SAY.accept)}` })}`;
+      + `${btn(k, { cls: "primary", act: "call-accept", main: true, html: `${icon("phone")}${k.e(CALL_SAY.accept)}` })}`;
     return open(`${by}${hl(k, head)}${named ? "" : lede(k, ringWhere(r))}${r.inAnotherCall ? note(k, CALL_SAY.incoming.waiting) : ""}${hair}${quick}`, actions);
   }
 
@@ -1324,7 +1324,7 @@ const NotifyCards = (() => {
    * The ring as one row on a card that must stay (contract F.2's "bar": the talk keys held, something typed, pressed or
    * awaiting a Confirm): the caller's face, "Ada is calling", a quiet Decline (a ghost icon button, "Decline Ada's call";
    * fix review, 10 October 2026: without it the person had to wait out the 30 s), Accept. Accept here is white, never the
-   * card's main action (Enter belongs to the card underneath), so the card keeps its own one orange button.
+   * card's main action (Enter belongs to the card underneath), so the card keeps its own main button.
    */
   function ringStrip(ring, env0) {
     const env = envOf(env0);

@@ -107,7 +107,7 @@ export function CampaignForm({ campaign, templates, segments }: { campaign?: Cam
 
 /**
  * Preview, test send, schedule or send now, cancel. The send asks for confirmation and shows the audience size first.
- * "Send now" (or "Schedule") is the campaign page's one standout action: the orange button (accent rules).
+ * "Send now" (or "Schedule") is the campaign page's one standout action: the white primary (no orange buttons, owner request 26 October 2026).
  */
 export function CampaignControls({ campaign, audienceSize, canSend }: { campaign: CampaignRow; audienceSize: number; canSend: boolean }) {
   const [html, setHtml] = useState<string | null>(null);
@@ -139,7 +139,7 @@ export function CampaignControls({ campaign, audienceSize, canSend }: { campaign
           </div>
           <div className="flex flex-wrap items-end gap-2">
             <Labelled label="Schedule" hint="optional"><DatePicker mode="datetime" value={when} onChange={(v) => setWhen(v)} size="sm" aria-label="Schedule" /></Labelled>
-            <AdminAction path={base} body={{ action: "send", confirm: true, scheduledAt: when ? new Date(when).toISOString() : null }} variant="accent" confirm={{ title: when ? `Schedule for ${new Date(when).toLocaleString()}?` : `Send to ${audienceSize.toLocaleString()} people now?`, description: audienceSize > 500 ? "This is a large send. The worker delivers it in batches of 40; you can watch progress on this page." : "The worker delivers it in batches; you can watch progress on this page.", label: when ? "Schedule" : "Send now" }}>{when ? "Schedule" : "Send now"}</AdminAction>
+            <AdminAction path={base} body={{ action: "send", confirm: true, scheduledAt: when ? new Date(when).toISOString() : null }} variant="primary" confirm={{ title: when ? `Schedule for ${new Date(when).toLocaleString()}?` : `Send to ${audienceSize.toLocaleString()} people now?`, description: audienceSize > 500 ? "This is a large send. The worker delivers it in batches of 40; you can watch progress on this page." : "The worker delivers it in batches; you can watch progress on this page.", label: when ? "Schedule" : "Send now" }}>{when ? "Schedule" : "Send now"}</AdminAction>
           </div>
         </div>
       ) : null}

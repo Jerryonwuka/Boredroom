@@ -27,7 +27,7 @@ export function UpgradeGate({ feature, orgSlug, planName, upgradeTo, isOwner, la
       <h1 className="type-page-title mt-3">The {planName ?? "current"} plan does not include {midSentence(what)}</h1>
       <p className="mt-2 text-balance text-sm font-normal text-secondary">{lapsed ? "The paid plan has ended, so this module is paused. Everything it recorded is kept and comes back the moment the plan renews." : upgradeTo ? `Move this workspace to ${upgradeTo} and ${midSentence(what)} switches on at once, with nothing to set up.` : "Ask the platform team about a plan that includes it."}</p>
       <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
-        {isOwner ? <Link href={`/app/${orgSlug}/settings?section=billing&billing=1#billing`} className={buttonVariants({ variant: "accent" })}>{lapsed ? "Renew the plan" : upgradeTo ? `See ${upgradeTo}` : "See plans"}</Link> : null}
+        {isOwner ? <Link href={`/app/${orgSlug}/settings?section=billing&billing=1#billing`} className={buttonVariants({ variant: "primary" })}>{lapsed ? "Renew the plan" : upgradeTo ? `See ${upgradeTo}` : "See plans"}</Link> : null}
         <Link href={`/app/${orgSlug}/home`} className={buttonVariants({ variant: "secondary" })}>Back to <AssistantName /></Link>
       </div>
       {isOwner ? null : <p className="mt-4 text-meta font-normal text-secondary">Ask the organisation owner to change the plan.</p>}

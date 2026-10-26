@@ -12,10 +12,9 @@ import { withAnimatedIcons } from "@/components/ui/animated-icons";
  * - `secondary` (alias `outline`): the canvas colour with a 10% hairline; hover fill-0 and a 16% hairline.
  * - `ghost`: text only, secondary grey; hover fill-1 and the foreground.
  * - `subtle`: fill-1 with foreground text, no line (a quiet filled button).
- * - `accent`: Boredroom orange with near-black text, a lighter orange on hover (darker in light). THE STANDOUT ACTION:
- *   the one thing to do on a screen ("New document", "Add people", "Start" on the next to-do, an Upgrade) may be
- *   `variant="accent"` (on a Link: `buttonVariants({ variant: "accent" })`); every other primary stays white. Never
- *   two orange buttons on one screen (accent rules, owner decision 6 October 2026).
+ * - No button is orange (owner request, 26 October 2026: "I don't want any orange buttons on the platforms, orange
+ *   should just be accent colours"). The one thing to do on a screen is the white `primary`; orange stays on marks
+ *   (dots, the tab underline, counts, progress, checked boxes, the focus ring). The `accent` variant is gone.
  * - `danger`: outline with red text. `destructive`: red fill, for the confirm step of a destructive action.
  * - `link`: inline text link in the secondary grey; its underline is orange on hover (in running text prefer the
  *   `.link-inline` class: the foreground with a hairline underline that turns orange).
@@ -38,7 +37,6 @@ const buttonVariants = cva(
         outline: "border border-border-input bg-background text-foreground hover:border-border-input-hover hover:bg-[color-mix(in_srgb,var(--foreground)_2.4%,var(--background))] disabled:opacity-50",
         ghost: "bg-transparent text-secondary hover:bg-fill-1 hover:text-foreground aria-expanded:bg-fill-1 aria-expanded:text-foreground disabled:opacity-50",
         subtle: "bg-fill-1 text-foreground hover:bg-fill-150 disabled:opacity-50",
-        accent: "bg-accent text-accent-fg hover:bg-accent-hover disabled:opacity-50",
         danger: "border border-border-input bg-background text-danger hover:border-danger/40 hover:bg-danger/10 disabled:opacity-50",
         destructive: "bg-danger-solid text-white hover:bg-danger-solid/90 disabled:opacity-50",
         link: "h-auto! p-0! text-secondary underline-offset-4 hover:text-foreground hover:underline hover:decoration-accent disabled:opacity-50",

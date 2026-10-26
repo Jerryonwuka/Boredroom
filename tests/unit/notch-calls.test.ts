@@ -62,7 +62,7 @@ const ring = (o: Record<string, unknown> = {}) => ({
 });
 const group = (o: Record<string, unknown> = {}) => ring({ kind: "group", where: { conversationId: "c2", kind: "team", name: "#Design", href: "/app/k/messages?c=c2" }, ...o });
 const count = (html: string, re: RegExp) => (html.match(re) ?? []).length;
-const accentButtons = (html: string) => [...html.matchAll(/<button [^>]*class="btn [^"]*\baccent\b[^"]*"[^>]*>/g)].map((m) => m[0]);
+const primaryButtons = (html: string) => [...html.matchAll(/<button [^>]*class="btn [^"]*\bprimary\b[^"]*"[^>]*>/g)].map((m) => m[0]);
 
 describe("the incoming card (NotifyCards.ringCard)", () => {
   it("names the caller, says where, and has exactly one orange button: Accept, the main action", () => {
@@ -76,7 +76,7 @@ describe("the incoming card (NotifyCards.ringCard)", () => {
     expect(count(html, /Ada Obi/g)).toBe(1);
     expect(html).toContain('data-who="Nova"');
     expect(html).toContain("alert");
-    const accents = accentButtons(html);
+    const accents = primaryButtons(html);
     expect(accents).toHaveLength(1);
     expect(accents[0]).toContain('data-act="call-accept"');
     expect(accents[0]).toContain("data-main");
@@ -110,7 +110,7 @@ describe("the incoming card (NotifyCards.ringCard)", () => {
     expect(count(html, /data-act="call-decline-msg"/g)).toBe(3);
     CALL_WORDS.quickMessages.forEach((m, i) => expect(html).toContain(`data-i="${i}">${esc(m)}</button>`));
     expect(html).toContain('aria-expanded="true" aria-controls="nc-quick"');
-    expect(accentButtons(html)).toHaveLength(1);
+    expect(primaryButtons(html)).toHaveLength(1);
   });
 
   it("writes headlines of 30 characters or fewer, the short form for long names", () => {
@@ -252,7 +252,7 @@ describe("a missed call (call.missed) and a call's notes (call.recap)", () => {
     expect(main(html)).toContain('data-act="call-join"');
     expect(main(html)).toContain(`data-call="${CALL}"`);
     expect(main(html)).toContain('data-read-id="n1"');
-    expect(main(html)).toContain("accent");
+    expect(main(html)).toContain("primary");
     expect(html).toContain('id="nc-hl">Missed call from Ben Okafor</h3>');
     expect(html).toContain("<b>Ben</b>, in #Design");
     expect(html).toContain("The call is still going.");
@@ -264,11 +264,11 @@ describe("a missed call (call.missed) and a call's notes (call.recap)", () => {
     expect(main(html)).toContain('data-act="call-join"');
     expect(main(html)).toContain(`data-call="${CALL}"`);
     expect(main(html)).toContain('data-leave-other="1"');
-    expect(main(html)).toContain("accent");
+    expect(main(html)).toContain("primary");
     expect(html).toContain(`${esc(CALL_WORDS.leaveAndJoin)}</button>`);
     expect(html).toContain(`>${esc(CALL_WORDS.errors.inAnotherCall)}</p>`);
     expect(count(html, / data-main/g)).toBe(1);
-    expect(accentButtons(html)).toHaveLength(1);
+    expect(primaryButtons(html)).toHaveLength(1);
     // Not on another call: plain Join, nothing about leaving.
     const plain = card(live);
     expect(plain).not.toContain("data-leave-other");
@@ -302,7 +302,7 @@ describe("a missed call (call.missed) and a call's notes (call.recap)", () => {
     for (const f of [facts(), facts({ live: true }), facts({ direct: false, callBack: null }), facts({ callBack: { membershipId: "not-an-id" } }), null, { v: 1, kind: "call" }]) {
       const html = card(f);
       expect(count(html, / data-main/g)).toBe(1);
-      expect(accentButtons(html).length).toBeLessThanOrEqual(1);
+      expect(primaryButtons(html).length).toBeLessThanOrEqual(1);
     }
   });
 

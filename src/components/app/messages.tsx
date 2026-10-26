@@ -216,7 +216,7 @@ export function Composer({ orgSlug, conversationId, task, prefill, placeholder, 
                   actions={voice.recording ? <>
                     <IconButton variant="round" aria-label="Cancel" data-tip="Discard the voice note" onClick={() => voice.cancel()} disabled={sendingVoice}><Trash2 aria-hidden /></IconButton>
                     {/* Under a second there is nothing to send yet: it says so (aria-disabled) but keeps the focus it was given. */}
-                    <Button ref={sendNote} type="button" size="md" variant="accent" onClick={() => { if (voice.seconds >= 1) void sendVoice(); }} disabled={sendingVoice} aria-disabled={voice.seconds < 1 || undefined}
+                    <Button ref={sendNote} type="button" size="md" variant="primary" onClick={() => { if (voice.seconds >= 1) void sendVoice(); }} disabled={sendingVoice} aria-disabled={voice.seconds < 1 || undefined}
                       className="aria-disabled:pointer-events-auto aria-disabled:cursor-not-allowed aria-disabled:opacity-50"><ArrowUp aria-hidden />Send</Button>
                   </> : null} />
               </div>
@@ -231,7 +231,7 @@ export function Composer({ orgSlug, conversationId, task, prefill, placeholder, 
                 {canRecord && !body.trim() ? <PromptAction aria-label="Record a voice note" disabled={pending} onClick={() => void voice.start()}><Mic aria-hidden /></PromptAction> : null}
                 <button type="submit" aria-label={pending ? "Sending" : "Send"} disabled={!ready}
                   className={cn("grid size-9 shrink-0 place-items-center rounded-full transition-colors duration-75 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ring)] disabled:cursor-not-allowed",
-                    ready ? "bg-accent text-accent-fg hover:bg-accent-hover" : "bg-fill-150 text-subtle")}>
+                    ready ? "bg-primary text-primary-fg hover:bg-primary-hover" : "bg-fill-150 text-subtle")}>
                   {pending ? <Loader2 className="size-4 animate-spin" aria-hidden /> : <ArrowUp className="size-[18px]" strokeWidth={2.25} aria-hidden />}
                 </button>
               </div>

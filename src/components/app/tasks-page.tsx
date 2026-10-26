@@ -7,7 +7,7 @@
  * reassigning and the task's details are sheets too.
  *
  * Accent rules (owner decision, 6 October 2026): the running task is orange (its "Working now" badge and its arc); the
- * other arcs stay quiet. On your own list only the next to-do's Start is the orange standout; every other row has a
+ * other arcs stay quiet. On your own list only the next to-do's Start is the white standout; every other row has a
  * quiet ghost Start (polish: a white Start on every row was too loud). An overdue date is a small red dot beside the
  * word, never red text.
  */
@@ -59,7 +59,7 @@ export function NewAssignedTask({ orgSlug, people, self, selfName, canKeep = tru
   return (
     <>
       {/* The Tasks page's one standout action for whoever hands out work (accent rules, 6 October 2026). */}
-      <Button size="sm" variant="accent" onClick={() => setOpen(true)} aria-haspopup="dialog" data-brenda-target="tasks-new"><Plus aria-hidden />New task</Button>
+      <Button size="sm" variant="primary" onClick={() => setOpen(true)} aria-haspopup="dialog" data-brenda-target="tasks-new"><Plus aria-hidden />New task</Button>
       {open ? <NewTaskSheet orgSlug={orgSlug} people={people} self={self} selfName={selfName} canKeep={canKeep} projects={projects} onClose={() => setOpen(false)} /> : null}
     </>
   );
@@ -152,7 +152,7 @@ export function TaskTable({ orgSlug, rows, viewer, mine, runningTaskId, people, 
   // The action column is wide enough for a worded button (Start, Mark done, Open the clock) only when a row has one.
   const wideAction = mine || rows.some((r) => r.assignee_membership_id === viewer.membershipId && OPEN.includes(r.status));
   // Your next to-do (nothing running): the first one already started, else the first waiting to start. Its Start is
-  // the screen's one orange button; the rest are quiet.
+  // the screen's main (white) button; the rest are quiet.
   const nextId = mine && !runningTaskId ? (visible.find((r) => r.status === "in_progress") ?? visible.find((r) => r.status === "todo"))?.id ?? null : null;
   const bulk = async (body: { action: "archive" | "reassign"; assigneeMembershipId?: string }) => {
     setPending(true); setError(null);
@@ -399,7 +399,7 @@ export function PickUpTask({ orgSlug, taskId, running, anyRunning, standout = fa
   if (running) return <Link href={`/app/${orgSlug}/my-day`} className={buttonVariants({ variant: "ghost", size: "sm" })}>Open the clock</Link>;
   return (
     <div className="inline-flex flex-col items-end gap-1">
-      <Button size={anyRunning ? "icon-sm" : "sm"} variant={anyRunning ? "ghost" : standout ? "accent" : "ghost"} disabled={pending} data-tip={anyRunning ? "Your timer is on another task; this switches it here" : undefined} onClick={async () => {
+      <Button size={anyRunning ? "icon-sm" : "sm"} variant={anyRunning ? "ghost" : standout ? "primary" : "ghost"} disabled={pending} data-tip={anyRunning ? "Your timer is on another task; this switches it here" : undefined} onClick={async () => {
         setPending(true); setError(null);
         try {
           if (anyRunning) {

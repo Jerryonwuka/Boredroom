@@ -26,7 +26,7 @@ export default async function ContactsPage({ searchParams }: { searchParams: Pro
       <PageHeader title="Contacts" description="Product users, marketing contacts and the waitlist, one record each, traceable from first signup to paid."
         actions={<>
           {can(admin, "waitlist.export") ? <CsvLink href={`/api/admin/contacts/export?${qs}`} /> : null}
-          {can(admin, "marketing.create") ? <SheetButton label="Import contacts" icon="upload" variant="accent" title="Import contacts" description="Paste a list. Existing contacts are updated, never duplicated."><ContactImportForm /></SheetButton> : null}
+          {can(admin, "marketing.create") ? <SheetButton label="Import contacts" icon="upload" variant="primary" title="Import contacts" description="Paste a list. Existing contacts are updated, never duplicated."><ContactImportForm /></SheetButton> : null}
         </>}
         tabs={MARKETING_TABS} tabsLabel="Marketing sections" />
       <Filters>

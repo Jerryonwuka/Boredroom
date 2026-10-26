@@ -228,7 +228,7 @@ export function SessionTimer({ orgSlug, initial, tasks, onSessionChange }: Props
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {live ? <IconButton variant="outline" aria-label="Pause" onClick={pause} disabled={!!busy}><Pause aria-hidden /></IconButton> : null}
-          {paused ? <Button size="icon" variant="accent" aria-label="Resume" onClick={resume} disabled={!!busy}><Play aria-hidden /></Button> : null}
+          {paused ? <Button size="icon" variant="primary" aria-label="Resume" onClick={resume} disabled={!!busy}><Play aria-hidden /></Button> : null}
           <IconButton variant="outline" aria-label="Switch task" onClick={() => setStopDialog({ mode: "switch", nextTaskId: "" })} disabled={!!busy || !canSwitch} aria-describedby={canSwitch ? undefined : "timer-no-switch"}><ArrowLeftRight aria-hidden /></IconButton>
           <IconButton variant="outline" aria-label="Stop" className="text-danger hover:text-danger" onClick={() => setStopDialog({ mode: "stop" })} disabled={!!busy}><Square className="fill-current !size-3.5" aria-hidden /></IconButton>
           {!canSwitch ? <span id="timer-no-switch" className="sr-only">Nothing else on your list to switch to.</span> : null}

@@ -7,7 +7,7 @@
  * a 40px square, the title 14/20 semibold, a line of the text, who can see it and when it changed. One button opens a
  * fresh document in the editor. Brenda writes here too, so the empty state points at her.
  *
- * Accent rules (owner decision, 6 October 2026): "New document" is the screen's one orange button; the chosen folder
+ * Accent rules (owner decision, 6 October 2026): "New document" is the screen's main (white) button; the chosen folder
  * has the 2px orange marker. The empty library offers Brenda and writing one yourself as two outline buttons, so the
  * page never shows two primaries (polish, 6 October 2026).
  *
@@ -55,7 +55,7 @@ export function DocsHeader(props: React.ComponentProps<typeof PageHeader>) {
 }
 
 /** Creates a blank document (in the folder being looked at, if any) and opens it in the editor. */
-export function NewDocButton({ orgSlug, folder = null, variant = "accent", size = "sm", label = "New document" }: { orgSlug: string; folder?: string | null; variant?: "accent" | "primary" | "outline"; size?: "sm" | "md"; label?: string }) {
+export function NewDocButton({ orgSlug, folder = null, variant = "primary", size = "sm", label = "New document" }: { orgSlug: string; folder?: string | null; variant?: "primary" | "outline"; size?: "sm" | "md"; label?: string }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);

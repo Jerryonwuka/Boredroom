@@ -52,7 +52,7 @@ const ROLE_LABEL: Record<string, string> = { owner: "Organisation owner", hr: "H
 
 /**
  * "Add new person" (owner decision, 26 September 2026: a pop-up with email, role, team, employee ID), v4: the page
- * header's one orange standout ("Add people", accent rules 6 October 2026) opens a side sheet; Cancel and Invite sit in
+ * header's main (white) button ("Add people", accent rules 6 October 2026) opens a side sheet; Cancel and Invite sit in
  * its footer; a green-dot toast confirms.
  */
 export function InviteForm({ orgSlug, teams, isOwner, label = "Invite someone", defaultOpen = false }: { orgSlug: string; teams: Team[]; isOwner: boolean; label?: string; /** Open on arrival (`?invite=1`). */ defaultOpen?: boolean }) {
@@ -63,7 +63,7 @@ export function InviteForm({ orgSlug, teams, isOwner, label = "Invite someone", 
   const close = () => { if (!pending) setOpen(false); };
   return (
     <>
-      <Button size="sm" variant="accent" onClick={() => { reset(); setOpen(true); }} aria-haspopup="dialog" data-brenda-target="people-invite"><Plus aria-hidden />{label}</Button>
+      <Button size="sm" variant="primary" onClick={() => { reset(); setOpen(true); }} aria-haspopup="dialog" data-brenda-target="people-invite"><Plus aria-hidden />{label}</Button>
       <Sheet open={open} onClose={close} title="Add a person" description="They get an email link that creates their account with this role and team. For quick joining, share the join code instead."
         footer={<><Button variant="secondary" disabled={pending} onClick={close}>Cancel</Button><Button type="submit" form={formId} loading={pending}>{pending ? "Sending…" : "Invite"}</Button></>}>
         <form id={formId} className="grid gap-5" onSubmit={(e) => { e.preventDefault(); const f = new FormData(e.currentTarget); void submit(() => api(`/api/orgs/${orgSlug}/invitations`, { method: "POST", body: { email: f.get("email"), role: f.get("role"), teamId: f.get("teamId") || null, employeeCode: f.get("employeeCode") || null } }), () => { successToast(`Invitation sent to ${String(f.get("email"))}`); setOpen(false); }); }}>
@@ -192,7 +192,7 @@ export function InvitationRow({ orgSlug, id, email, role, team, state, expires, 
 }
 
 /** "Add new team" (owner decision, 26 September 2026: a pop-up with the one field that matters); opens the new team. */
-export function NewTeamForm({ orgSlug, variant = "accent", defaultOpen = false }: { orgSlug: string; variant?: "accent" | "primary" | "secondary"; /** Open on arrival (`?new=team`). */ defaultOpen?: boolean }) {
+export function NewTeamForm({ orgSlug, variant = "primary", defaultOpen = false }: { orgSlug: string; variant?: "primary" | "secondary"; /** Open on arrival (`?new=team`). */ defaultOpen?: boolean }) {
   const router = useRouter();
   const [open, setOpen] = useState(defaultOpen);
   useDropParam(defaultOpen, "new");

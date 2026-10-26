@@ -10,7 +10,7 @@
  *
  * The asking assistant's face is drawn in its own look and stays quiet (it is not the person's own). What their
  * assistant will share is one disclosure away, so the person knows exactly what goes back. "Send reply" is a white
- * primary (the screen's one orange button stays with the app's other standout); it waits for a choice.
+ * primary (the screen's main (white) button stays with the app's other standout); it waits for a choice.
  */
 import { useEffect, useId, useRef, useState } from "react";
 import Link from "next/link";

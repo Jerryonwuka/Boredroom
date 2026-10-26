@@ -1109,7 +1109,9 @@ html[data-motion="paused"] .lp-hero-drift::before, html[data-motion="paused"] .l
    writes their height as --mac-banners, and --shell-banners includes the 16px of gaps so every "screen less banners"
    height already fits the page), `[data-shell-drag]` (the parts that move the window: the app asks the page where they
    are and what in them is clickable), `[data-web-only]` (not in the app: Brenda's floating button; she is in the notch).
-   `data-shell-sim` (development, `?shell=mac`) paints a stand-in for the vibrancy a browser can't show.
+   `data-shell-sim` (development, `?shell=mac`) paints a stand-in for the vibrancy a browser can't show. The Control
+   Center's frame (components/admin/shell.tsx, nav.tsx) carries the same hooks, so it floats the same way (26 October
+   2026); `[data-shell-keep]` in the sidebar's top row stays visible at its right end (its "Admin" badge).
    --------------------------------------------------------------------------------------------------------------- */
 html[data-shell="mac"] {
   --mac-gap: 8px;
@@ -1171,6 +1173,9 @@ html[data-shell="mac"]:has([data-app-shell]) {
   /* Its top row is the title bar: the traffic lights' room, no logo (the Dock and the menu bar name the app). */
   & [data-shell-header] { height: var(--mac-titlebar); padding: 0; }
   & [data-shell-header] > * { display: none !important; }
+  /* …except a `[data-shell-keep]` (the Control Center's "Admin" badge), at the row's right end; not on the rail. */
+  & [data-shell-header] > [data-shell-keep] { display: inline-flex !important; margin-left: auto; margin-right: 12px; }
+  &[data-sidebar="collapsed"] [data-shell-header] > [data-shell-keep] { display: none !important; }
   /* The wider rail keeps its 32px items centred. */
   &[data-sidebar="collapsed"] [data-app-sidebar] > div > div:not([data-shell-header]) { padding-inline: calc((var(--mac-rail-w) - 32px) / 2); }
 

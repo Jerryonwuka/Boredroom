@@ -27,7 +27,7 @@ const MODE_LABEL: Record<LaunchSettings["mode"], string> = { waitlist: "Waitlist
 /**
  * The launch switch: the current mode, what each mode means, and a confirmed, reasoned change. The modes are a radio
  * group drawn as cards (the chosen one: an orange ring and dot, fill-1); the mode in force carries its status badge.
- * "Switch to …" is the tab's one standout action, the orange button (accent rules).
+ * "Switch to …" is the tab's one standout action, the white primary (no orange buttons, owner request 26 October 2026).
  */
 export function LaunchControl({ launch, canEdit }: { launch: LaunchSettings; canEdit: boolean }) {
   const [target, setTarget] = useState<LaunchSettings["mode"]>(launch.mode);
@@ -63,7 +63,7 @@ export function LaunchControl({ launch, canEdit }: { launch: LaunchSettings; can
           ) : null}
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-meta font-normal text-secondary">{changed ? `Ready to switch to ${label}.` : "Choose a mode or change a setting to switch."}</p>
-            <AdminAction path="/api/admin/launch" body={{ mode: target, waitlistOpen, appAccess, message }} reason variant="accent" disabled={!changed} confirm={{ title: `Switch the platform to ${label}?`, description: target === "live" ? "Public registration opens for everyone the moment you confirm." : target === "waitlist" ? "New registration closes; the waitlist form takes its place. Everyone who already has an account keeps it." : appAccess ? "Registration closes and users see the notice; the app stays reachable." : "Registration closes and the app is unavailable to everyone but administrators.", label: `Switch to ${label}` }}>Switch to {label}</AdminAction>
+            <AdminAction path="/api/admin/launch" body={{ mode: target, waitlistOpen, appAccess, message }} reason variant="primary" disabled={!changed} confirm={{ title: `Switch the platform to ${label}?`, description: target === "live" ? "Public registration opens for everyone the moment you confirm." : target === "waitlist" ? "New registration closes; the waitlist form takes its place. Everyone who already has an account keeps it." : appAccess ? "Registration closes and users see the notice; the app stays reachable." : "Registration closes and the app is unavailable to everyone but administrators.", label: `Switch to ${label}` }}>Switch to {label}</AdminAction>
           </div>
         </div>
       ) : <p className="text-sm font-normal text-secondary">Your role can see the launch state but not change it.</p>}
@@ -122,10 +122,10 @@ export function FeatureFlagsForm({ value, keys }: { value: FeatureFlags; keys: r
   );
 }
 
-/** Add an administrator: the account must exist already. The submit is the page's standout action, orange. */
+/** Add an administrator: the account must exist already. The submit is the page's standout action, the white primary. */
 export function AdminCreateForm() {
   return (
-    <JsonForm path="/api/admin/admins" transform={(d) => ({ email: String(d.email), role: String(d.role) })} submitLabel="Add administrator" successMessage="Administrator added." submitVariant="accent">
+    <JsonForm path="/api/admin/admins" transform={(d) => ({ email: String(d.email), role: String(d.role) })} submitLabel="Add administrator" successMessage="Administrator added." submitVariant="primary">
       <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_220px]">
         <Labelled label="Account email" hint="an existing Boredroom account"><input name="email" type="email" className={inputCls} required /></Labelled>
         <Labelled label="Role"><select name="role" defaultValue="support" className={inputCls}>{ADMIN_ROLES.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}</select></Labelled>

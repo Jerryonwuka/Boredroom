@@ -11,6 +11,7 @@ import { ROLE_LABEL, type Permission } from "@/server/admin/permissions";
 import type { Admin } from "@/server/admin/auth";
 import type { LaunchSettings } from "@/server/admin/settings";
 import { cn } from "@/lib/utils";
+import { ViewTransition } from "react";
 
 const NAV: { title: string; items: { label: string; href: string; icon: AdminNavGroup["items"][number]["icon"]; permission: Permission }[] }[] = [
   { title: "Overview", items: [
@@ -65,8 +66,14 @@ const MODE = { waitlist: { tone: "warning", label: "Waitlist" }, live: { tone: "
  * own top level ends in `<PageNotes>` (its content in one wrapper, then the notes, in a fragment) turns the page
  * wrapper into a column, where the notes' `margin-top: auto` puts them at the bottom of a short page and after the
  * content on a long one. Pages without notes stay a plain block, exactly as before.
+ *
+ * Boredroom for Mac's window (owner request, 26 October 2026: the Control Center "still looks like the web version"
+ * there): the frame carries the Mac app shell's hooks as the workspace's does (`data-app-shell`, `data-app-sidebar` with
+ * its `data-shell-header` row, `data-app-main`, `data-app-topbar`, and `data-shell-drag` on the parts that move the
+ * window; globals.css §7, desktop/src-tauri/src/chrome.rs), so the sidebar floats, the traffic lights sit in its top
+ * row, the page is a rounded surface with its top bar sticky, and `mac` cross-fades the pages. A browser sees no change.
  */
-export function AdminShell({ admin, launch, children }: { admin: Admin; launch: LaunchSettings; children: React.ReactNode }) {
+export function AdminShell({ admin, launch, mac = false, children }: { admin: Admin; launch: LaunchSettings; mac?: boolean; children: React.ReactNode }) {
   const groups: AdminNavGroup[] = NAV.map((g) => ({ title: g.title, items: g.items.filter((i) => admin.permissions.has(i.permission)).map(({ label, href, icon }) => ({ label, href, icon })) })).filter((g) => g.items.length);
   const pages: AdminPage[] = [
     ...groups.flatMap((g) => g.items.map((i) => ({ label: i.label, href: i.href, group: g.title }))),
@@ -75,10 +82,10 @@ export function AdminShell({ admin, launch, children }: { admin: Admin; launch: 
   const mode = MODE[launch.mode];
   return (
     <MotionRoot>
-      <div className="flex min-h-dvh">
+      <div data-app-shell className="flex min-h-dvh">
         <AdminSidebar groups={groups} />
-        <div className="flex min-w-0 flex-1 flex-col">
-          <header className={cn("sticky top-0 z-[var(--z-sticky)] isolate grid h-[50px] shrink-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b border-border px-3",
+        <div data-app-main className="flex min-w-0 flex-1 flex-col">
+          <header data-app-topbar data-shell-drag className={cn("sticky top-0 z-[var(--z-sticky)] isolate grid h-[50px] shrink-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b border-border px-3",
             "before:pointer-events-none before:absolute before:inset-0 before:-z-10 before:bg-[var(--header-bg)] before:backdrop-blur-[8px] lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]")}>
             <div className="flex min-w-0 items-center gap-2">
               <AdminMobileNav groups={groups} className="md:hidden" />
@@ -99,7 +106,7 @@ export function AdminShell({ admin, launch, children }: { admin: Admin; launch: 
             </div>
           </header>
           <main id="main" className="flex w-full min-w-0 flex-1 flex-col px-5 pb-16 pt-6">
-            <PageRise className="min-w-0 flex-1 has-[>[data-page-notes]]:flex has-[>[data-page-notes]]:flex-col">{children}</PageRise>
+            <PageRise className="min-w-0 flex-1 has-[>[data-page-notes]]:flex has-[>[data-page-notes]]:flex-col">{mac ? <ViewTransition default="shell-page">{children}</ViewTransition> : children}</PageRise>
           </main>
         </div>
       </div>

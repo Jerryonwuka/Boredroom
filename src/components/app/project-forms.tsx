@@ -39,7 +39,7 @@ export function NewProjectForm({ orgSlug, members }: { orgSlug: string; members:
   return (
     <>
       {/* The Projects page's one standout action (accent rules, 6 October 2026). */}
-      <Button size="sm" variant="accent" onClick={() => setOpen(true)} aria-haspopup="dialog"><Plus aria-hidden />New project</Button>
+      <Button size="sm" variant="primary" onClick={() => setOpen(true)} aria-haspopup="dialog"><Plus aria-hidden />New project</Button>
       {open ? <NewProjectSheet orgSlug={orgSlug} members={members} onClose={() => setOpen(false)} /> : null}
     </>
   );

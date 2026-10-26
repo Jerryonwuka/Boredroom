@@ -168,7 +168,7 @@ export function AssistantEditor({ value, onChange, idPrefix, disabled = false, e
         const on = chosen === k;
         return (
           <label key={k} className={cn("relative flex min-h-[72px] min-w-0 flex-col items-center justify-center gap-2 rounded-xl border px-1.5 py-3 text-center text-meta font-medium transition-colors duration-75", FOCUS_OUTSIDE,
-            on ? "border-accent bg-fill-1 text-foreground" : "border-border bg-background text-secondary hover:bg-fill-0 hover:text-foreground",
+            on ? "border-foreground bg-fill-1 text-foreground" : "border-border bg-background text-secondary hover:bg-fill-0 hover:text-foreground",
             disabled ? "cursor-not-allowed opacity-50" : "cursor-pointer")}>
             <input type="radio" name={`${idPrefix}-${field}`} value={k} checked={on} disabled={disabled} onChange={() => pick(k)} className={cn(HIDDEN_RADIO, "rounded-xl")} />
             <LazyFace size="md" look={faceLook(k)} quiet className="pointer-events-none" />

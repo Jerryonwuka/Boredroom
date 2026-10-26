@@ -348,7 +348,7 @@ const Front = (() => {
    * The refused card (F.2 "front · refused", S.5): Rust's own `{ title, sub, enable? }`, or a reason (`why`) with the
    * names it needs, or a server error `{ code, message }`. `enable` names what is missing: "mac" and "files" (Turn it
    * on: the setup card), "accessibility" and "screen" (Allow it: that setup step), "folder" and "finder" (Open System
-   * Settings at that pane). Turn it on and Allow it are the card's one orange button (Q.3). Q.1 passes the assistant's
+   * Settings at that pane). Turn it on and Allow it are the card's main (white) button (Q.3). Q.1 passes the assistant's
    * name too; S.5's words never need it ("Brenda" there is the app), so it is not read (integration, 16 October 2026).
    */
   function refusedModel(e = {}) {

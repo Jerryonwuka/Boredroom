@@ -26,7 +26,7 @@ const ROLE = { owner: "Organisation owner", hr: "HR administrator", manager: "Te
 
 /**
  * People and teams, v4: the title with underline tabs (Teams, People, Invitations) and the tab's one action on the
- * right, the screen's orange standout (accent rules, 6 October 2026: "Add people"); calm tables underneath. The People tab opens with the join code in a section card.
+ * right, the screen's white standout (accent rules, 6 October 2026: "Add people"); calm tables underneath. The People tab opens with the join code in a section card.
  * What team leads do and how joining works are the tab's page notes at the bottom (owner request, 7 October 2026).
  * Nobody is asked to agree to anything since phase 8 (owner decision, 8 October 2026), so the agreement column went.
  * The welcome's first actions open a sheet from the address (owner request, 11 October 2026): `?tab=people&invite=1`

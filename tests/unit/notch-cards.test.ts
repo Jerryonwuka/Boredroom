@@ -202,13 +202,13 @@ describe("NotifyCards.card", () => {
     ...Object.entries(fromState).map(([k, c]): [string, Card] => [`state ${k}`, c]),
     ...Object.entries(missingState).map(([k, c]): [string, Card] => [`missing ${k}`, c]),
   ];
-  it.each(all)("%s: draws a whole card, one main action, one orange button at most", (_, c) => {
+  it.each(all)("%s: draws a whole card, one main action, no orange button", (_, c) => {
     const html = NC.card(c, E);
     expect(html.startsWith('<section class="nc')).toBe(true);
     expect(html).toContain('id="nc-hl"');
     expect(html).toMatch(/<div class="actions">[\s\S]*<\/div><\/section>$/);
     expect(count(html, / data-main/g)).toBe(1);
-    expect(count(html, /class="btn [^"]*\baccent\b/g)).toBeLessThanOrEqual(1);
+    expect(count(html, /class="btn [^"]*\baccent\b/g)).toBe(0);
     const info = NC.cardInfo(c, E);
     expect(html).toContain(`data-template="${info.template}"`);
     expect(info.words).toBeGreaterThan(0);
@@ -387,7 +387,7 @@ describe("the summary, its wash and the pager's footer", () => {
     expect(s).toMatch(/data-family="needs" aria-label="2 need you\. Show them"><i class="dot"><\/i><span class="n">2<\/span>need you/);
     expect(s).toContain("1</span>approved");
     expect(count(s, / data-main/g)).toBe(1);
-    expect(count(s, /class="btn [^"]*\baccent\b/g)).toBe(1);
+    expect(count(s, /class="btn [^"]*\baccent\b/g)).toBe(0);
   });
   it("is singular for one, and says hello without a name", () => {
     const s = NC.summary(list.slice(0, 1), env({ displayName: "" }));

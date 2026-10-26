@@ -22,7 +22,7 @@ export default async function AdminsPage() {
       <div>
         <PageHeader title="Admins and permissions" description="Who can open the Control Center and what each role may do."
           actions={superAdmin ? (
-            <SheetButton label="Add administrator" icon="plus" variant="accent" title="Add an administrator" description="The person needs a Boredroom account first; then pick their role.">
+            <SheetButton label="Add administrator" icon="plus" variant="primary" title="Add an administrator" description="The person needs a Boredroom account first; then pick their role.">
               <AdminCreateForm />
             </SheetButton>
           ) : null} />

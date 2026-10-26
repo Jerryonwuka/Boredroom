@@ -264,7 +264,7 @@ function Board({ orgSlug, today, initialSession, planned, ownTodos, fromLeads, d
           {!hasList ? (newRow ? null : (
             <EmptyState icon={ListTodo} title="Nothing on your list yet"
               description={`Write down what you are doing today, or say it and ${name} writes it down, then press Start when you begin.`}
-              action={<Button size="sm" variant="accent" onClick={openAdd}><Plus aria-hidden />Add your first to-do</Button>} />
+              action={<Button size="sm" variant="primary" onClick={openAdd}><Plus aria-hidden />Add your first to-do</Button>} />
           )) : (
             <ul className={cn("space-y-0.5", newRow ? "mt-1" : "mt-3")} aria-label="To-dos">
               {shown.length === 0 && !(tab === "done" && doneToday.length) && !(tab === "todo" && adding) ? <li className="px-2 py-10 text-center text-sm font-normal text-secondary">{emptyLine}</li> : null}
@@ -342,7 +342,7 @@ function TodoSheet({ t, orgSlug, self, running, anyRunning, timeZone, nowMs, onS
         <>
           {!running && !editing ? <EditButton iconOnly label="Edit to-do" onClick={() => setEditing(true)} /> : null}
           {/* The sheet's one standout (accent rules): Start on this to-do. */}
-          {!running ? <Button size="sm" variant="accent" disabled={anyRunning} onClick={() => onStart()}><Play aria-hidden />Start</Button> : null}
+          {!running ? <Button size="sm" variant="primary" disabled={anyRunning} onClick={() => onStart()}><Play aria-hidden />Start</Button> : null}
           {running || t.status === "in_progress" || t.status === "blocked" ? (confirmDone
             ? <><Button size="sm" variant="ghost" onClick={() => setConfirmDone(false)}>Not yet</Button><Button size="sm" onClick={() => { setConfirmDone(false); onDone(); }}><Check aria-hidden />Yes, mark done</Button></>
             : <Button size="sm" variant={running ? "primary" : "secondary"} onClick={() => setConfirmDone(true)}><Check aria-hidden />Mark done</Button>) : null}

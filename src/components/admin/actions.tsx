@@ -97,7 +97,7 @@ export function EditSheet({ title, description, label = "Edit", size, children }
 
 /**
  * A button that opens a right-side sheet: "New plan", "Import contacts". The page's one standout action may pass
- * `variant="accent"` (accent rules: never two orange buttons on a screen); the rest stay outline.
+ * `variant="primary"` (the white primary; no button is orange, owner request 26 October 2026); the rest stay outline.
  */
 export function SheetButton({ label, title, description, icon, variant = "secondary", size = "sm", sheetSize, children }: { label: ReactNode; title: string; description?: ReactNode; icon?: "plus" | "upload"; variant?: ButtonProps["variant"]; size?: ButtonProps["size"]; sheetSize?: "sm" | "md" | "lg"; children: ReactNode }) {
   const [open, setOpen] = useState(false);

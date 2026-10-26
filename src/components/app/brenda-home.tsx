@@ -576,7 +576,7 @@ export function BrendaHome({ data }: { data: HomeData }) {
                 {role === "owner" ? "She does the work for your people: plans their day, follows up and writes documents." : "Ask your organisation owner to add her."}
               </p>
               {/* The one standout on this screen (accent rules): there is no Send to press without her. */}
-              {role === "owner" ? <Link className={`${buttonVariants({ variant: "accent", size: "sm" })} mt-3`} href="/app/billing">Upgrade the plan</Link> : null}
+              {role === "owner" ? <Link className={`${buttonVariants({ variant: "primary", size: "sm" })} mt-3`} href="/app/billing">Upgrade the plan</Link> : null}
             </div>
           )}
           {/* Next steps after the welcome (owner request, 11 October 2026): the last thing in the column, only what is left. */}

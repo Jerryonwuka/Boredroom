@@ -13,7 +13,7 @@
  *   afternoon check, which only ever speaks when something needs them). Save creates it paused, or saves the change, then
  *   opens Preview. Changing the teams of a routine that is on turns it off until it is enabled again, and says so first.
  * - **Preview**: what it would send now (nothing is sent; routine-preview), then "When it's on, Max will:" and its
- *   lines; "Not now" and **Enable** (the sheet's one orange button: the one thing to do). Enable sends the preview's hash,
+ *   lines; "Not now" and **Enable** (the sheet's main (white) button: the one thing to do). Enable sends the preview's hash,
  *   so it agrees to exactly what was shown; a routine changed meanwhile is refused (409) with the server's words and
  *   previewed again. A routine already on shows Close instead.
  * - **History**: its runs (routine-history).
@@ -137,7 +137,7 @@ export function RoutineSheet({ orgSlug, mode, onClose, onChange, chase, unavaila
     readOnly || routine?.enabled ? <Button variant="secondary" onClick={onClose}>Close</Button> : <>
       <Button variant="ghost" onClick={onClose}>{ROUTINE_WORDS.preview.notNow}</Button>
       {/* The sheet's one standout (accent rules): what the preview asks the person to do. */}
-      <Button variant="accent" loading={enabling} disabled={preview.state.status !== "ready"} onClick={() => void enable()}>{enabling ? "Enabling…" : ROUTINE_WORDS.preview.enable}</Button>
+      <Button variant="primary" loading={enabling} disabled={preview.state.status !== "ready"} onClick={() => void enable()}>{enabling ? "Enabling…" : ROUTINE_WORDS.preview.enable}</Button>
     </>
   ) : undefined;
 

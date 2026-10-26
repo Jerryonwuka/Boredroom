@@ -32,7 +32,7 @@
 // The accent rules (owner decision, 6 October 2026: "it looks too monochromatic, let's add nice accents of orange"):
 // orange marks what is live, active, chosen or the one thing to do, as on the web (docs/design-system.md). Here that is
 // a running timer's dot and digits (`live`), Brenda listening or working, teammates' running timers, progress, the
-// unread count, the ask pill's focus ring, and one standout button per card (`btn primary accent`): Send once there are
+// unread count, the ask pill's focus ring, and one standout button per card (`btn primary`): Send once there are
 // words, Start on the briefing, Resume on a paused timer, Link to Boredroom / Open Boredroom, Turn on voice. style.css
 // turns the card's other orange button white while Send is lit. Only classes changed; behaviour is as it was.
 //
@@ -129,7 +129,7 @@
 //   (requests waiting, overdue tasks, answers to their follow-ups, messages from other assistants, reviews for leads) as a
 //   list, label left and number right ("not available" in grey, never 0), or the calm line on a quiet day, and up to
 //   three one-tap actions made for those counts: a link opens that Boredroom page, an ask puts its words in the ask box
-//   and never sends them (owner decision, 5 October 2026). The first is the card's one orange button. An older server (no
+//   and never sends them (owner decision, 5 October 2026). The first is the card's main (white) button. An older server (no
 //   `opener`) gets the briefing card as before. It never opens during quiet hours; once they end, or on a new day while
 //   the notch keeps running, it opens on the next poll once the pointer has moved in the last two minutes, so it is not
 //   spent on an empty desk.
@@ -155,7 +155,7 @@
 // - A noted commitment (`brenda.commitment`: the workspace's assistant noted they said they'd do something in a group
 //   chat) opens its card: the workspace assistant's face, the sentence, what it is in a quoted bubble, when it is due,
 //   then Open, Not a commitment and the accept button in the server's words ("Add to my to-dos", or "Accept" for the owner
-//   and HR, who hold no to-dos), the card's one orange button. An open ask (`brenda.open_ask`: someone asked them and
+//   and HR, who hold no to-dos), the card's main (white) button. An open ask (`brenda.open_ask`: someone asked them and
 //   nobody agreed in the thread) opens the same card with Take it on, Decline (with a reason, if they like: the asker is
 //   told, privately) and Open. Accept is the consent (owner decision: a to-do from someone else's words always asks):
 //   nothing is added to their list until they press it here or in Boredroom, whatever their act mode says.
@@ -189,7 +189,7 @@
 //   colour), Open and OK. `brenda.standup_failed` is the plain card with Open.
 // - The day card lists "Standup for Design ready" first among what is waiting, and a lead's unseen rollups last.
 // - A Confirm for remember_preference or forget_preference (the chat's answer) shows its summary in the quoted bubble, why
-//   it still asks, "Only you", and Remember or Forget as the card's one orange button: what her assistant remembers about
+//   it still asks, "Only you", and Remember or Forget as the card's main (white) button: what her assistant remembers about
 //   the person is always their own press, whatever their act mode says.
 // - Voice switched off for the workspace (`assistant.voice` false): the talk keys say "Voice is switched off for Max.
 //   Change it in Boredroom Settings." once per press and do nothing else, the talk and Listen controls go, and nothing is
@@ -261,7 +261,7 @@
 //   ring nothing.
 // - The incoming card (NotifyCards.ringCard): the caller's assistant's face, "Ada is calling", where, the waiting line
 //   when the person is on another call, a hairline to the ring's end, Decline, Message (three quick messages, each a
-//   decline that sends it as the person's own message) and Accept, the card's one orange button. The ring sounds every
+//   decline that sends it as the person's own message) and Accept, the card's main (white) button. The ring sounds every
 //   2.5 s while the card shows (quiet hours and the tray's mute silence it; one ringer, fix review 10 October 2026: each
 //   poll says `?ring=1` while the notch can ring aloud, and a browser on the same network then stays silent); Esc
 //   silences it and the card stays; it never folds on its own while the ring lives, and closes when the ring leaves
@@ -1181,12 +1181,12 @@ function linkView() {
     // (or in the browser, for Google) signs the notch in too; the device code stays as "Use a code instead".
     return `<div class="row fade">${face(moodOf())}<div class="grow"><p class="title">Sign in to Boredroom</p><p class="sub">Sign in once and I'll keep your day in view up here, with Boredroom in its own window.</p></div></div>
       ${error ? `<p class="err">${esc(error)}</p>` : ""}
-      <div class="actions"><button class="link" data-act="server">${esc(config?.baseUrl ?? "boredroom.cc")}</button><span class="grow"></span><button class="btn ghost" data-act="link-start" ${busy ? "disabled" : ""}>Use a code instead</button><button class="btn primary accent" data-act="sign-in" ${busy ? "disabled" : ""}>Sign in</button></div>`;
+      <div class="actions"><button class="link" data-act="server">${esc(config?.baseUrl ?? "boredroom.cc")}</button><span class="grow"></span><button class="btn ghost" data-act="link-start" ${busy ? "disabled" : ""}>Use a code instead</button><button class="btn primary" data-act="sign-in" ${busy ? "disabled" : ""}>Sign in</button></div>`;
   }
   return `<div class="row fade">${face(moodOf())}<div class="grow"><p class="title">Approve this code in Boredroom</p><p class="sub">Check it matches, pick your workspace, approve. I'll be ready in a few seconds.</p></div></div>
     <div class="code fade">${esc(link.userCode)}</div>
     ${error ? `<p class="err">${esc(error)}</p>` : ""}
-    <div class="actions"><button class="btn ghost" data-act="link-cancel">Cancel</button><button class="btn primary accent" data-act="link-open">Open Boredroom</button></div>`;
+    <div class="actions"><button class="btn ghost" data-act="link-cancel">Cancel</button><button class="btn primary" data-act="link-open">Open Boredroom</button></div>`;
 }
 
 function cardView() {
@@ -1240,7 +1240,7 @@ function cardView() {
       ${waitingView()}
       ${teamView()}
       ${askBox()}
-      <div class="actions">${talkButton()}${lookButton()}<button class="btn ghost" data-act="close">Later</button><button class="btn ghost" data-act="open-app">Open Boredroom</button><button class="btn" data-act="open-href" data-href="/app/${esc(config.workspaceSlug)}/tasks">Tasks</button>${first && !data.timer && data.clock ? `<button class="btn primary accent" data-act="start" data-id="${esc(first.id)}" ${busy ? "disabled" : ""}>Start ${esc(firstTitle.length > 22 ? `${firstTitle.slice(0, 21)}…` : firstTitle)}</button>` : ""}</div>`;
+      <div class="actions">${talkButton()}${lookButton()}<button class="btn ghost" data-act="close">Later</button><button class="btn ghost" data-act="open-app">Open Boredroom</button><button class="btn" data-act="open-href" data-href="/app/${esc(config.workspaceSlug)}/tasks">Tasks</button>${first && !data.timer && data.clock ? `<button class="btn primary" data-act="start" data-id="${esc(first.id)}" ${busy ? "disabled" : ""}>Start ${esc(firstTitle.length > 22 ? `${firstTitle.slice(0, 21)}…` : firstTitle)}</button>` : ""}</div>`;
   }
   // Before the first poll has answered, or when the state carries no briefing: a small day card, never an empty island
   // (owner decision, 9 October 2026).
@@ -1250,14 +1250,14 @@ function cardView() {
     if (t) {
       // Laid out like My Day's timer card: the task and its state on the left, the clock large on the right, the
       // estimate as an orange hairline underneath, and the controls with their words on them. Running, the dot and
-      // digits are orange (live); paused, Resume is the card's orange standout action.
+      // digits are orange (live); paused, Resume is the card's white standout action.
       const live = t.state === "running";
       const state = live ? "On the clock" : t.state === "paused" ? "Paused" : "Connection interrupted";
       const share = estimateShare();
       return `${inboxStrip()}<div class="row fade">${face({ ...moodOf(), dot: data.me?.presence })}<div class="grow"><p class="title">${esc(t.taskTitle)}</p><p class="sub"><span class="status"><span class="d ${esc(t.state)}"></span>${state}</span>${t.estimateMinutes ? `, estimated ${dur(t.estimateMinutes)}` : ""}</p></div><span class="big ${live ? "live" : "dim"}" id="tclock" role="timer">${hms(elapsed())}</span>${t.taskVersion ? `<button class="ring-btn" data-act="progress" title="Add 10% progress" aria-label="Add 10% progress">${ring(t.progress)}</button>` : ""}</div>
         ${share !== null ? `<div class="est fade" aria-hidden="true"><i id="testimate" style="transform:scaleX(${share.toFixed(3)})"></i></div>` : ""}
         ${askBox()}
-        <div class="actions">${talkButton()}${lookButton()}<button class="btn ghost" data-act="briefing">Today</button>${live ? `<button class="btn" data-act="pause" ${busy ? "disabled" : ""}>${icon("pause")}Pause</button>` : `<button class="btn primary accent" data-act="resume" ${busy ? "disabled" : ""}>${icon("play")}Resume</button>`}<button class="btn danger" data-act="stop" ${busy ? "disabled" : ""}>${icon("stop")}Stop</button></div>`;
+        <div class="actions">${talkButton()}${lookButton()}<button class="btn ghost" data-act="briefing">Today</button>${live ? `<button class="btn" data-act="pause" ${busy ? "disabled" : ""}>${icon("pause")}Pause</button>` : `<button class="btn primary" data-act="resume" ${busy ? "disabled" : ""}>${icon("play")}Resume</button>`}<button class="btn danger" data-act="stop" ${busy ? "disabled" : ""}>${icon("stop")}Stop</button></div>`;
     }
     card = { kind: "briefing", origin: card.origin, openedAt: card.openedAt };
     return cardView();
@@ -1884,7 +1884,7 @@ function noticeOpts(c, env) {
     if (c.phase === "sent") o.result = { title: `Sent. ${from.name} passes it to ${first || "them"}.`, sub: `Your reply: “${c.sentNote}”`, tone: "ok", actions: closeOk };
     else if (c.phase === "gone") o.result = { title: itemTitle(w), sub: c.message, tone: "", actions: okButton(c) };
     else if (c.phase === "result") o.result = { title: itemResult(c), sub: `${from.name} lets ${first || "them"} know.`, tone: c.item?.status === "done" ? "ok" : c.item?.status === "failed" ? "bad" : "", actions: closeOk };
-    else if (c.replying) { o.slot = itemNoteBox("Reply in one line"); o.actions = `<button class="btn ghost" data-act="ai-back" ${off}>Back</button><button class="btn primary accent" data-act="ai-send" data-main ${busy || !cleanNote(c.note) ? "disabled" : ""}>Send</button>`; }
+    else if (c.replying) { o.slot = itemNoteBox("Reply in one line"); o.actions = `<button class="btn ghost" data-act="ai-back" ${off}>Back</button><button class="btn primary" data-act="ai-send" data-main ${busy || !cleanNote(c.note) ? "disabled" : ""}>Send</button>`; }
     else if (c.declining) { o.slot = itemNoteBox("Say why, if you like"); o.actions = `<button class="btn ghost" data-act="ai-back" ${off}>Back</button><button class="btn primary" data-act="ai-decline" data-main ${off}>Decline</button>`; }
     else if (w.kind === "message" && w.canReply === false) o.actions = `<button class="btn primary" data-act="ai-seen" data-main ${off}>Seen</button>`;
   } else if (c.kind === "loop") {
@@ -2042,7 +2042,7 @@ function callView() {
   }
   const name = esc(String(c.ring.caller?.name ?? "Someone"));
   return `<div class="row fade">${face({ who: c.ring.caller?.assistant, mood: c.result ? "" : "alert" })}<div class="grow"><p class="title">${c.result ? esc(c.result.title) : `${name} is calling`}</p></div></div>`
-    + (c.result ? "" : `<div class="actions"><button class="btn ghost" data-act="call-decline" ${busy ? "disabled" : ""}>Decline</button><button class="btn primary accent" data-act="call-accept" data-main ${busy ? "disabled" : ""}>Accept</button></div>`);
+    + (c.result ? "" : `<div class="actions"><button class="btn ghost" data-act="call-decline" ${busy ? "disabled" : ""}>Decline</button><button class="btn primary" data-act="call-accept" data-main ${busy ? "disabled" : ""}>Accept</button></div>`);
 }
 
 /** The strip's markup: the ring on a card that must stay, or what Accept in it did, or "". */
@@ -2614,7 +2614,7 @@ const mic = icon("mic");
 function askBox(placeholder, follow = false) {
   if (data && !data.brendaEnabled) return "";
   const name = me().name;
-  return `<form class="ask fade" data-ask${follow ? " data-follow" : ""}><input class="field" id="ask" name="q" maxlength="4000" placeholder="${esc(placeholder ?? `Ask ${name}…`)}" autocomplete="off" spellcheck="true" aria-label="${esc(`Message ${name}`)}"><button class="btn accent icon-send" aria-label="Send" title="Send">${icon("send")}</button></form>`;
+  return `<form class="ask fade" data-ask${follow ? " data-follow" : ""}><input class="field" id="ask" name="q" maxlength="4000" placeholder="${esc(placeholder ?? `Ask ${name}…`)}" autocomplete="off" spellcheck="true" aria-label="${esc(`Message ${name}`)}"><button class="btn primary icon-send" aria-label="Send" title="Send">${icon("send")}</button></form>`;
 }
 
 el.addEventListener("submit", (e) => {
@@ -3125,7 +3125,7 @@ function voiceView() {
     // The fixed line names the switch, unless her reply already did (review, 12 October 2026: the same sentence twice).
     const offerLine = offer?.line && !(offer.names ?? []).some((n) => String(c.reply ?? "").toLowerCase().includes(n.toLowerCase())) ? `<p class="cap help-line fade">${esc(offer.line)}</p>` : "";
     const screenBtn = c.screenAsk && !offer ? `<button class="btn ghost" data-act="close">Not now</button><button class="btn primary" data-act="use-screen" title="${esc(`${me().name} sees the screen this card is on, then asks before doing anything`)}">${icon("eye")}Use my screen</button>` : "";
-    const offerBtn = offer ? `<button class="btn primary accent" data-act="${offer.act}" data-which="${esc(offer.which)}"${offer.title ? ` title="${esc(offer.title)}"` : ""}>${esc(offer.button)}</button>` : "";
+    const offerBtn = offer ? `<button class="btn primary" data-act="${offer.act}" data-which="${esc(offer.which)}"${offer.title ? ` title="${esc(offer.title)}"` : ""}>${esc(offer.button)}</button>` : "";
     return `<div class="row fade top">${face(moodOf())}<div class="grow">${pill ? `<div class="said-row">${said}${pill}</div>` : said}<div class="reply">${md(c.reply)}</div>${note}${offerLine}</div></div>
       ${c.actions?.length ? `<ul class="list fade">${shownLines(c.actions, confirms.length ? 2 : 4).map(({ a, i }) => doneLine(a, i)).join("")}</ul>` : ""}
       ${offers.length ? `<ul class="list fade">${offers.map(({ p, i }) => `<li><span class="t">${offerLabel(p)}</span>${p.done ? `<span class="k ok end">${esc(p.done)}</span>` : `<button class="btn" data-act="offer" data-i="${i}" ${busy ? "disabled" : ""}>${icon(OFFER[p.kind].icon)}${OFFER[p.kind].label}</button>`}</li>`).join("")}</ul>` : ""}
@@ -3136,7 +3136,7 @@ function voiceView() {
   }
   if (c.phase === "off") {
     return `<div class="row fade">${face(moodOf())}<div class="grow"><p class="title">Talk to ${esc(me().name)}</p><p class="sub">Hold <kbd>${esc(voice.shortcut)}</kbd>, say what you need, let go. I only listen while you hold the keys, and your voice is turned into text on this computer. The first time, I download a 148 MB speech model.</p></div></div>
-      <div class="actions"><button class="btn ghost" data-act="close">Not now</button><button class="btn primary accent" data-act="voice-on">Turn on voice</button></div>`;
+      <div class="actions"><button class="btn ghost" data-act="close">Not now</button><button class="btn primary" data-act="voice-on">Turn on voice</button></div>`;
   }
   if (c.phase === "downloading") {
     const p = Math.round((c.progress ?? 0) * 100);
@@ -3156,14 +3156,14 @@ function voiceView() {
 // message when there is one, then Not now and Confirm (Y and N on the first). "How I like things done" (owner decisions,
 // 8–9 October 2026: phase 7c): remembering or forgetting one of the person's preferences shows the summary (“Remember:
 // “Keep replies to three lines.””) in the quoted bubble instead, "Only you" as who gets it (unless the server's readback
-// says), and Remember or Forget as the card's one orange button. It is a Confirm like any other: the person's own press,
+// says), and Remember or Forget as the card's main (white) button. It is a Confirm like any other: the person's own press,
 // the server's token, whatever their act mode says.
 
 /** The button's word for a preference's Confirm ("Remember", "Forget"), or null (own keys only, never the prototype). */
 const PREF_WORDS = { remember_preference: "Remember", forget_preference: "Forget" };
 const prefWord = (p) => (typeof p?.tool === "string" && Object.hasOwn(PREF_WORDS, p.tool) ? PREF_WORDS[p.tool] : null);
 
-/** One Confirm (`i`: its place on the card, `standout`: it is the card's one orange button). */
+/** One Confirm (`i`: its place on the card, `standout`: it is the card's main (white) button). */
 function confirmView(p, i, standout) {
   // From a look on a v2 Mac (owner rule, 12 October 2026; contract A.6.5, 0b.6): the same Confirm, asked as "Do you want me
   // to do this?" with No and Yes, which her keys can answer too (Rust hears it; the press below is still the Confirm path).
@@ -3177,7 +3177,7 @@ function confirmView(p, i, standout) {
     : `<p class="sub">${icon("shield")}<span>${esc(p.summary)}${why ? `<span class="why">${esc(why)}</span>` : ""}</span></p>`;
   const described = [pref ? `pq${i}` : "", rb ? `rb${i}` : ""].filter(Boolean).join(" ");
   const detail = p.detail ? `<div class="detail" tabindex="0" aria-label="${p.tool === "create_routine" || p.tool === "update_routine" ? "The preview and what it does each time" : "The full message"}">${esc(p.detail)}</div>` : "";
-  return `<div class="confirm${pref ? " pref" : ""} fade">${head}${rb}${detail}<div class="actions">${i === 0 ? listenButton() : ""}<button class="btn ghost" data-act="not-now" data-token="${esc(p.token)}">Not now${i === 0 ? " <kbd>N</kbd>" : ""}</button><button class="btn primary${pref && standout ? " accent" : ""}" data-act="confirm" data-token="${esc(p.token)}" ${described ? `aria-describedby="${described}"` : ""} ${busy ? "disabled" : ""}>${icon("check")}${pref ?? "Confirm"}${i === 0 ? " <kbd>Y</kbd>" : ""}</button></div></div>`;
+  return `<div class="confirm${pref ? " pref" : ""} fade">${head}${rb}${detail}<div class="actions">${i === 0 ? listenButton() : ""}<button class="btn ghost" data-act="not-now" data-token="${esc(p.token)}">Not now${i === 0 ? " <kbd>N</kbd>" : ""}</button><button class="btn primary" data-act="confirm" data-token="${esc(p.token)}" ${described ? `aria-describedby="${described}"` : ""} ${busy ? "disabled" : ""}>${icon("check")}${pref ?? "Confirm"}${i === 0 ? " <kbd>Y</kbd>" : ""}</button></div></div>`;
 }
 
 /** A look's Confirm on a v2 Mac: the summary, "Do you want me to do this?", No and Yes (Y and N on the first, as before). */
@@ -3919,9 +3919,9 @@ function lookButton() {
 function openButton(p, i, list, plain = false) {
   const path = boredroomPath(p.href);
   if (path && Look.points(path)) {
-    // White when the card has a setup offer, its one orange button (phase 3, companion2 J.3).
+    // The first such one is the primary (white), unless the card has a setup offer (phase 3, companion2 J.3).
     const first = !plain && list.findIndex((x) => Look.points(boredroomPath(x.href) ?? "")) === i;
-    return `<button class="btn${first ? " accent" : ""}" data-act="look-show" data-href="${esc(path)}" title="${esc(p.label)}">${icon("pointer")}${esc(Look.words().show)}</button>`;
+    return `<button class="btn${first ? " primary" : ""}" data-act="look-show" data-href="${esc(path)}" title="${esc(p.label)}">${icon("pointer")}${esc(Look.words().show)}</button>`;
   }
   return `<button class="btn" data-act="open-href" data-href="${esc(p.href)}">${esc(p.label)}${icon("open")}</button>`;
 }
@@ -4363,15 +4363,15 @@ function lookView() {
     };
     return `<div class="row fade">${face(m)}<div class="grow"><p class="title wrap" id="ltitle">${esc(k.title)}</p></div></div>
       <div class="look-consent fade" tabindex="0" role="region" aria-labelledby="ltitle">${k.paras.map(para).join("")}<p class="sub">${esc(k.fixed)}</p></div>
-      <div class="actions"><button class="btn ghost" data-act="look-not-now">${esc(k.notNow)}</button><button class="btn primary accent" data-act="look-turn-on" ${busy ? "disabled" : ""}>${esc(k.turnOn)}</button></div>
+      <div class="actions"><button class="btn ghost" data-act="look-not-now">${esc(k.notNow)}</button><button class="btn primary" data-act="look-turn-on" ${busy ? "disabled" : ""}>${esc(k.turnOn)}</button></div>
       <p class="cap look-foot fade">${esc(k.footer)}</p>`;
   }
   if (c.phase === "permission") {
-    return plainCard(w.permission.title, w.permission.sub, `<div class="actions"><button class="btn ghost" data-act="look-not-now">${esc(w.permission.notNow)}</button><button class="btn primary accent" data-act="look-continue" ${busy ? "disabled" : ""}>${esc(w.permission.go)}</button></div>`);
+    return plainCard(w.permission.title, w.permission.sub, `<div class="actions"><button class="btn ghost" data-act="look-not-now">${esc(w.permission.notNow)}</button><button class="btn primary" data-act="look-continue" ${busy ? "disabled" : ""}>${esc(w.permission.go)}</button></div>`);
   }
   if (c.phase === "denied") {
     return `${plainCard(w.denied.title, w.denied.sub, "")}${c.note ? `<p class="cap fade">${esc(c.note)}</p>` : ""}
-      <div class="actions"><button class="btn ghost" data-act="look-not-now">${esc(w.denied.notNow)}</button><button class="btn" data-act="look-check">${esc(w.denied.check)}</button><button class="btn primary accent" data-act="look-open-settings">${esc(w.denied.open)}</button></div>`;
+      <div class="actions"><button class="btn ghost" data-act="look-not-now">${esc(w.denied.notNow)}</button><button class="btn" data-act="look-check">${esc(w.denied.check)}</button><button class="btn primary" data-act="look-open-settings">${esc(w.denied.open)}</button></div>`;
   }
   if (c.phase === "on") return plainCard(w.on.title, w.on.sub, lookV2() ? `<div class="actions"><button class="btn ghost" data-act="look-settings">${esc(Look.settingsWords(name).open)}</button><button class="btn primary" data-act="look-ok" data-main>${esc(w.on.ok)}</button></div>` : ok(w.on.ok));
   // Phase 2 (contract A.11, E.1.1): screen help's settings on this Mac, and the update card after the consent changed.
@@ -4388,7 +4388,7 @@ function lookView() {
     const why = c.dictMessage ? `<p class="cap">${esc(c.dictMessage)}</p>` : "";
     return `<div class="row fade">${face(m)}<div class="grow"><p class="title">${esc(w.looking.title)}</p>${why}</div><span class="mic"><span class="rec-dot"></span></span></div>
       <form class="fu-note fade" data-look><div class="fu-field"><input class="field" id="lq" name="q" maxlength="${Look.QUESTION_MAX}" value="${esc(c.question ?? "")}" placeholder="${esc(w.v2.typePlaceholder)}" aria-label="${esc(w.v2.typeLabel)}" aria-describedby="fdict" autocomplete="off" spellcheck="true">${talkKeys()}</div><div class="fu-meta"><div class="grow" id="fdict">${dictView()}</div></div></form>
-      <div class="actions"><button class="btn ghost" data-act="look-discard">${esc(w.preview.discard)}</button><button class="btn primary accent" id="lsend" data-act="look-send">${icon("send")}${esc(w.v2.send)}</button></div>`;
+      <div class="actions"><button class="btn ghost" data-act="look-discard">${esc(w.preview.discard)}</button><button class="btn primary" id="lsend" data-act="look-send">${icon("send")}${esc(w.v2.send)}</button></div>`;
   }
   if (c.phase === "looking" && lookV2() && c.transcribing) {
     // Let go (contract A.2.2): her words are being written out on the Mac.
@@ -4416,7 +4416,7 @@ function lookView() {
       <figure class="look-shot fade"><span class="look-frame"><img src="${esc(Look.safeImage(c.image) ?? "")}" alt="${esc(w.preview.alt)}"${ratio}>${mark}</span><figcaption class="cap">${esc(Look.previewCaption(c.source, c.pointer, name))}</figcaption></figure>
       <form class="fu-note fade" data-look><div class="fu-field"><input class="field" id="lq" name="q" maxlength="${Look.QUESTION_MAX}" value="${esc(c.question ?? "")}" placeholder="${esc(w.preview.placeholder)}" aria-label="${esc(w.preview.label)}" aria-describedby="fhold fdict lnote" autocomplete="off" spellcheck="true" ${busy ? "disabled" : ""}>${talkKeys()}</div><div class="fu-meta"><div class="grow" id="fdict">${dictView()}</div><span class="cap" id="fcount"></span></div></form>
       <p class="cap fade" id="lnote">${esc(w.preview.nothingLeaves)}</p>
-      <div class="actions"><button class="btn ghost look-never" data-act="look-never" ${busy ? "disabled" : ""}>${esc(w.preview.never)}</button><button class="btn ghost" data-act="look-discard">${esc(w.preview.discard)}</button><button class="btn primary accent" id="lsend" data-act="look-send" ${pm.canSend ? "" : "disabled"}>${icon("send")}${esc(w.preview.send)}</button></div>`;
+      <div class="actions"><button class="btn ghost look-never" data-act="look-never" ${busy ? "disabled" : ""}>${esc(w.preview.never)}</button><button class="btn ghost" data-act="look-discard">${esc(w.preview.discard)}</button><button class="btn primary" id="lsend" data-act="look-send" ${pm.canSend ? "" : "disabled"}>${icon("send")}${esc(w.preview.send)}</button></div>`;
   }
   if (c.phase === "sending" && c.reply) {
     // Phase 2 (contract A.2.3): her answer fills in as it streams, under the question and where she looked.
@@ -4889,7 +4889,7 @@ function openTaskCard(origin = "hover") {
   return true;
 }
 
-/** The act cards (contract C.4): at most one orange button, and none while she asks, asks again or waits after a pause. */
+/** The act cards (contract C.4): at most one main button (white), and none while she asks, asks again or waits after a pause. */
 function actView() {
   const c = card, name = me().name;
   const m = moodOf();
@@ -4910,7 +4910,7 @@ function actView() {
     const r = Act.refusal(c.reason, { name, app: c.app, n: c.n, pages: c.pages, message: c.message });
     // Never just "off" (phase 3, companion2 A.4): a switch that is off offers Turn it on, which opens the setup card.
     const which = c.reason === "use_mac_off" ? "mac" : c.reason === "files_off" ? "files" : null;
-    if (which && lookStatus?.supported) return plainCard(r.title, r.sub, `<div class="actions"><button class="btn ghost" data-act="act-ok">OK</button><button class="btn primary accent" data-act="act-turn-on" data-which="${which}" data-main>${esc(Help.enableWords(which, name).button)}</button></div>`);
+    if (which && lookStatus?.supported) return plainCard(r.title, r.sub, `<div class="actions"><button class="btn ghost" data-act="act-ok">OK</button><button class="btn primary" data-act="act-turn-on" data-which="${which}" data-main>${esc(Help.enableWords(which, name).button)}</button></div>`);
     return plainCard(r.title, r.sub, ok());
   }
   if (c.phase === "unresolved") {
@@ -5255,7 +5255,7 @@ function helpOfferOf(c) {
   return null;
 }
 
-/** The setup card and macOS's steps (companion2 A.1, J.3): one orange button (Turn these on, or Ask again). */
+/** The setup card and macOS's steps (companion2 A.1, J.3): one primary button (Turn these on, or Ask again). */
 function helpView() {
   const c = card, name = me().name, keys = keysLabel();
   const m = moodOf();
@@ -5286,7 +5286,7 @@ function helpView() {
         <ul class="hs-promises">${w.promises.map((t) => `<li class="cap">${esc(t)}</li>`).join("")}</ul>
         <p><button class="link toggle" data-act="help-read" aria-expanded="${!!c.read}" aria-controls="hsread">${icon("chevron")}${esc(c.read ? w.less : w.read)}</button></p>${read}
       </div>${note}
-      <div class="actions"><button class="btn ghost" data-act="help-not-now">${esc(w.notNow)}</button><button class="btn primary accent" data-act="help-turn-on" ${label && !busy ? "" : "disabled"}>${esc(label ?? w.turnOnMany)}</button></div>
+      <div class="actions"><button class="btn ghost" data-act="help-not-now">${esc(w.notNow)}</button><button class="btn primary" data-act="help-turn-on" ${label && !busy ? "" : "disabled"}>${esc(label ?? w.turnOnMany)}</button></div>
       <p class="cap look-foot fade">${esc(w.footer)}</p>`;
   }
   const go = (s) => `<div class="actions"><button class="btn ghost" data-act="help-skip">${esc(s.skip)}</button><button class="btn primary" data-act="help-go" data-main ${dis}>${esc(s.go)}</button></div>`;
@@ -5317,7 +5317,7 @@ function helpView() {
     const list = lines.length ? `<ul class="list fade">${lines.map((l) => `<li><span class="act-li">${icon("check")}</span><span class="t">${esc(l)}</span></li>`).join("")}</ul>` : "";
     const again = k ? `<p class="said fade">${esc(s.asked(k.words))}</p>` : "";
     const actions = k
-      ? `<div class="actions"><button class="btn ghost" data-act="help-skip">${esc(s.ok)}</button><button class="btn primary accent" data-act="help-again" data-main>${esc(s.again)}</button></div>`
+      ? `<div class="actions"><button class="btn ghost" data-act="help-skip">${esc(s.ok)}</button><button class="btn primary" data-act="help-again" data-main>${esc(s.again)}</button></div>`
       : `<div class="actions"><button class="btn primary" data-act="help-skip" data-main>${esc(s.ok)}</button></div>`;
     return `${plain(s.title, s.sub, "")}${list}${again}${actions}`;
   }
@@ -6166,17 +6166,17 @@ function frontView() {
   }
   if (c.phase === "refused") {
     const r = c.model ?? { title: "", sub: "", enable: null, ok: "OK" };
-    const way = r.enable ? `<button class="btn primary${r.enable.accent ? " accent" : ""}" data-act="front-enable" data-which="${esc(r.enable.which)}">${esc(r.enable.button)}</button>`
+    const way = r.enable ? `<button class="btn primary" data-act="front-enable" data-which="${esc(r.enable.which)}">${esc(r.enable.button)}</button>`
       : r.retry && c.request ? `<button class="btn primary" data-act="front-retry" data-main>${esc(r.retry)}</button>` : "";
     return plainCard(r.title, r.sub, `<div class="actions">${way ? `<button class="btn ghost" data-act="front-ok">${esc(r.ok)}</button>${way}` : `<button class="btn primary" data-act="front-ok" data-main>${esc(r.ok)}</button>`}</div>`);
   }
   if (c.phase === "said") return `<div class="row fade">${face(m)}<div class="grow"><p class="title wrap">${esc(c.words ?? "")}</p></div></div>`;
   if (c.phase === "consent") {
-    // Her happy face, the three promises, and the card's one orange button (helpers contract S.7, Q.3).
+    // Her happy face, the three promises, and the card's main (white) button (helpers contract S.7, Q.3).
     const k = c.model ?? Front.consentModel(name);
     return `<div class="row fade top">${face({ mood: "happy" })}<div class="grow"><p class="title full act-plan" id="cctitle">${esc(k.title)}</p><p class="sub">${esc(k.lead)}</p></div></div>
       <ul class="hs-promises fade" aria-labelledby="cctitle">${k.promises.map((t) => `<li class="cap">${esc(t)}</li>`).join("")}</ul>${note}
-      <div class="actions"><button class="btn ghost" data-act="consent-no" ${busy ? "disabled" : ""}>${esc(k.notNow)}</button><button class="btn primary accent" data-act="consent-yes" ${busy ? "disabled" : ""}>${esc(k.allow)}</button></div>
+      <div class="actions"><button class="btn ghost" data-act="consent-no" ${busy ? "disabled" : ""}>${esc(k.notNow)}</button><button class="btn primary" data-act="consent-yes" ${busy ? "disabled" : ""}>${esc(k.allow)}</button></div>
       <p class="cap look-foot fade">${esc(k.footer)}</p>`;
   }
   return "";
@@ -6253,7 +6253,7 @@ function dropView() {
       <ul class="list">${c.files.map((f) => `<li><span class="t">${esc(f.name)}</span><span class="k ${f.problem ? "bad" : ""}">${esc(f.problem ?? kb(f.size))}</span></li>`).join("")}</ul>
       ${ok.length ? `<select class="field" id="droptask" data-act="drop-task" aria-label="Task">${tasks.map((t) => `<option value="${esc(t.id)}" ${t.id === c.taskId ? "selected" : ""}>${esc(t.title)}${t.id === data?.timer?.taskId ? " (timer running)" : ""}</option>`).join("")}</select>
       <input class="field" id="dropnote" maxlength="2000" placeholder="Note for your reviewer (optional)" autocomplete="off">` : ""}
-      ${c.working ? `<form class="ask fade" data-dropwork><input class="field" id="dwq" name="w" maxlength="2000" placeholder="What should I make from it?" aria-label="${esc(`What ${me().name} should make from it`)}" autocomplete="off" spellcheck="true"><button class="btn accent icon-send" aria-label="Ask" title="Ask">${icon("send")}</button></form>` : ""}
+      ${c.working ? `<form class="ask fade" data-dropwork><input class="field" id="dwq" name="w" maxlength="2000" placeholder="What should I make from it?" aria-label="${esc(`What ${me().name} should make from it`)}" autocomplete="off" spellcheck="true"><button class="btn primary icon-send" aria-label="Ask" title="Ask">${icon("send")}</button></form>` : ""}
       <div class="actions">${fileWorkOn() && !c.working ? `<button class="btn ghost" data-act="drop-work">${esc(`Ask ${me().name} to work on it`)}</button>` : ""}<button class="btn ghost" data-act="close">Cancel</button>${ok.length ? `<button class="btn primary" data-act="drop-send" ${busy ? "disabled" : ""}>Send for review</button>` : ""}</div>`;
   }
   if (c.phase === "uploading") {
@@ -6430,7 +6430,7 @@ function askParts(c) {
   const note = `<form class="fu-note fade" data-fu><div class="fu-field"><input class="field" id="fnote" name="note" maxlength="${FU_NOTE_MAX}" value="${esc(c.note)}" placeholder="Add a line, if you like" aria-label="Add a line, if you like" aria-describedby="fhold fdict" autocomplete="off" spellcheck="true" ${off}>${talkKeys()}</div><div class="fu-meta"><div class="grow" id="fdict">${dictView()}</div><span class="cap num" id="fcount">${countText(c.note)}</span></div></form>`;
   const foot = facts.length || task ? `<div class="fu-foot fade">${facts.length ? `<button type="button" class="link toggle" data-act="fu-facts" aria-expanded="${!!c.factsOpen}" aria-controls="ffacts">${icon("chevron")}What your assistant will share</button>` : ""}${task ? `<button type="button" class="link" data-act="fu-task" data-href="${esc(task)}">Open task${icon("open")}</button>` : ""}</div>` : "";
   const list = facts.length ? `<ul class="facts fade" id="ffacts" ${c.factsOpen ? "" : "hidden"}>${facts.map((l) => `<li>${esc(l)}</li>`).join("")}</ul>` : "";
-  const actions = `<span class="cap lead">${w.taskTitle ? "This doesn't change the task." : "This doesn't change any of your tasks."}</span><button class="btn ghost" data-act="fu-send" data-choice="not_now" ${off}>Not now</button><button class="btn primary accent" data-act="fu-send" data-main ${busy || !c.choice ? "disabled" : ""}>Send</button>`;
+  const actions = `<span class="cap lead">${w.taskTitle ? "This doesn't change the task." : "This doesn't change any of your tasks."}</span><button class="btn ghost" data-act="fu-send" data-choice="not_now" ${off}>Not now</button><button class="btn primary" data-act="fu-send" data-main ${busy || !c.choice ? "disabled" : ""}>Send</button>`;
   return { due, choices, note, foot, list, actions, slot: `<p class="nc-note">${esc(due)}</p>${choices}${note}${foot}${list}` };
 }
 
@@ -6848,7 +6848,7 @@ function itemView() {
       <p class="cap fade">${esc(how)}</p>
       ${c.replying ? itemNoteBox("Reply in one line") : ""}
       <div class="actions stick">${c.replying
-        ? `<button class="btn ghost" data-act="ai-back" ${off}>Back</button><button class="btn primary accent" data-act="ai-send" ${busy || !cleanNote(c.note) ? "disabled" : ""}>Send</button>`
+        ? `<button class="btn ghost" data-act="ai-back" ${off}>Back</button><button class="btn primary" data-act="ai-send" ${busy || !cleanNote(c.note) ? "disabled" : ""}>Send</button>`
         : `<button class="btn ghost" data-act="ai-seen" ${off}>Seen</button>${w.canReply !== false ? `<button class="btn" data-act="ai-reply" ${off}>Reply</button>` : ""}`}</div>`;
   }
   const lines = (Array.isArray(w.lines) ? w.lines : []).filter((l) => typeof l === "string" && l.trim()).slice(0, 8);
@@ -6861,7 +6861,7 @@ function itemView() {
     ${c.declining ? itemNoteBox("Say why, if you like") : ""}
     <div class="actions stick">${c.declining
       ? `<button class="btn ghost" data-act="ai-back" ${off}>Back</button><button class="btn primary" data-act="ai-decline" ${off}>Decline</button>`
-      : `<button class="btn ghost" data-act="ai-decline" ${off}>Decline</button><button class="btn primary accent" data-act="ai-accept" ${off}>Accept</button>`}</div>`;
+      : `<button class="btn ghost" data-act="ai-decline" ${off}>Decline</button><button class="btn primary" data-act="ai-accept" ${off}>Accept</button>`}</div>`;
 }
 
 /** What answering a request did, in one line: "Done: added to your to-dos.", "Couldn't be done: …", "Declined.". */
@@ -7151,7 +7151,7 @@ function openerView() {
   const greet = h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening";
   const calm = counts.length ? null : o.calm ?? "Nothing is waiting on you.";
   // The first action is the card's one standout (accent rules); the rest are outline buttons; Later is ghost.
-  const actions = o.actions.map((a, i) => `<button type="button" class="btn${i === 0 ? " primary accent" : ""}" ${a.kind === "link" ? `data-act="open-href" data-href="${esc(mdHref(a.href))}"` : `data-act="opener-ask" data-i="${i}" title="Puts it in the box below for you to send"`}>${icon(OPENER_ICONS.includes(a.icon) ? a.icon : "chevron")}${esc(a.label)}</button>`);
+  const actions = o.actions.map((a, i) => `<button type="button" class="btn${i === 0 ? " primary" : ""}" ${a.kind === "link" ? `data-act="open-href" data-href="${esc(mdHref(a.href))}"` : `data-act="opener-ask" data-i="${i}" title="Puts it in the box below for you to send"`}>${icon(OPENER_ICONS.includes(a.icon) ? a.icon : "chevron")}${esc(a.label)}</button>`);
   return `<div class="row fade">${face({ ...moodOf(), dot: data?.me?.presence })}<div class="grow"><p class="title" id="otitle">${greet}${first ? `, ${esc(first)}` : ""}.</p><p class="sub">${calm ? esc(calm) : "Here's where things stand."}</p></div></div>
     ${counts.length ? `<ul class="list counts fade" aria-labelledby="otitle">${counts.map(countRow).join("")}</ul>` : ""}
     ${actions.length ? `<div class="starts fade" role="group" aria-label="Start with">${actions.join("")}</div>` : ""}
@@ -7410,7 +7410,7 @@ function loopView() {
     ${c.declining ? itemNoteBox(LOOP_INBOX.declinePlaceholder, "data-loop") : ""}
     <div class="actions stick">${c.declining
       ? `<button class="btn ghost" data-act="lp-back" ${off}>Back</button><button class="btn primary" data-act="lp-decline" ${off}>${LOOP_INBOX.decline}</button>`
-      : `${openBtn}${ask ? `<button class="btn ghost" data-act="lp-decline" ${off}>${LOOP_INBOX.decline}</button>` : `<button class="btn ghost" data-act="lp-dismiss" ${off}>${LOOP_INBOX.dismiss}</button>`}<button class="btn primary accent" data-act="lp-accept" ${off}>${esc(accept)}</button>`}</div>`;
+      : `${openBtn}${ask ? `<button class="btn ghost" data-act="lp-decline" ${off}>${LOOP_INBOX.decline}</button>` : `<button class="btn ghost" data-act="lp-dismiss" ${off}>${LOOP_INBOX.dismiss}</button>`}<button class="btn primary" data-act="lp-accept" ${off}>${esc(accept)}</button>`}</div>`;
 }
 
 /** Decline on an open ask opens its reason box under the card, focused; Back closes it. */
@@ -7662,7 +7662,7 @@ function standupSection(e, s, i) {
 
 /**
  * The standup card. Open: the team and the day, the three sections, who it goes to, then Skip today, Edit (in Boredroom)
- * and Post, the card's one orange button and the person's consent: nothing posts until it is pressed. Then what happened:
+ * and Post, the card's main (white) button and the person's consent: nothing posts until it is pressed. Then what happened:
  * posted (with Open), skipped (with Undo while the server allows it), undone, or gone (answered in Boredroom, the day
  * passed, standup switched off) in the server's words.
  */
@@ -7693,7 +7693,7 @@ function standupView() {
   return `${head(STANDUP_SAY.title(team), sub(str(e.dateLabel).trim()))}
     <div class="standup fade" role="group" aria-label="${esc(STANDUP_SAY.title(team))}">${STANDUP_SECTIONS.map((s, i) => standupSection(e, s, i)).join("")}</div>
     <p class="cap fade" id="sgoes">${esc(STANDUP_SAY.goesTo(to, STANDUP_SAY.members(e.postTo?.members), me().name))}</p>
-    <div class="actions stick"><button class="btn ghost" data-act="su-skip" ${off}>${STANDUP_SAY.skip}</button>${edit ? `<button class="btn" data-act="open-href" data-href="${esc(edit)}" title="Edit it in Boredroom" ${off}>${STANDUP_SAY.edit}${icon("open")}</button>` : ""}<button class="btn primary accent" data-act="su-post" aria-label="${esc(`Post to ${to}`)}" aria-describedby="sgoes" ${off}>${STANDUP_SAY.post}</button></div>`;
+    <div class="actions stick"><button class="btn ghost" data-act="su-skip" ${off}>${STANDUP_SAY.skip}</button>${edit ? `<button class="btn" data-act="open-href" data-href="${esc(edit)}" title="Edit it in Boredroom" ${off}>${STANDUP_SAY.edit}${icon("open")}</button>` : ""}<button class="btn primary" data-act="su-post" aria-label="${esc(`Post to ${to}`)}" aria-describedby="sgoes" ${off}>${STANDUP_SAY.post}</button></div>`;
 }
 
 /**

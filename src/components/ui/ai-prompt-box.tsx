@@ -9,9 +9,9 @@
  * breaks the line.
  *
  * Accent rules (owner decision, 6 October 2026): while the pill has focus its 1px ring turns orange (--accent-ring);
- * Send is orange with a near-black arrow when there is something to send (the screen's standout action), grey when the
- * box is empty or a reply is on its way. While dictating (live) the ring stays orange and the microphone becomes an
- * orange stop square on a quiet grey disc, so the one solid orange button is still Send.
+ * Send is the white primary (near-black in light) when there is something to send, grey when the box is empty or a
+ * reply is on its way (owner request, 26 October 2026: no orange buttons). While dictating (live) the ring stays orange
+ * and the microphone becomes an orange stop square on a quiet grey disc (a live mark, not a filled orange button).
  *
  * While dictating, the voice card sits above the text, inside the pill (owner decision, 5 October 2026; VoiceCapture),
  * in ElevenLabs' recording look since 7 October 2026: the live time, the live waveform scrolling with the voice (read
@@ -161,7 +161,7 @@ export const PromptInputBox = React.forwardRef<HTMLDivElement, PromptInputBoxPro
                   </button>
                 ) : null}
                 <button type="button" onClick={submit} disabled={isLoading || !hasContent} aria-label="Send" data-tip={recording ? "Stop dictating and send" : undefined}
-                  className={cn(round, "disabled:cursor-not-allowed", hasContent && !isLoading ? "bg-accent text-accent-fg hover:bg-accent-hover" : "bg-fill-150 text-subtle")}>
+                  className={cn(round, "disabled:cursor-not-allowed", hasContent && !isLoading ? "bg-primary text-primary-fg hover:bg-primary-hover" : "bg-fill-150 text-subtle")}>
                   {isLoading ? <Square className="!size-3 animate-pulse fill-current" aria-hidden /> : <AnimatedArrowUp strokeWidth={2.25} aria-hidden />}
                 </button>
               </div>
@@ -191,7 +191,7 @@ export const PromptInputBox = React.forwardRef<HTMLDivElement, PromptInputBoxPro
             {/* The tooltip layer reads the accessible name; `data-tip` says more while dictating, where Send also stops the microphone. */}
             <button type="button" onClick={submit} disabled={isLoading || !hasContent} aria-label="Send" data-tip={recording ? "Stop dictating and send" : undefined}
               className={cn("grid size-9 place-items-center rounded-full transition-colors duration-75 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ring)] disabled:cursor-not-allowed",
-                hasContent && !isLoading ? "bg-accent text-accent-fg hover:bg-accent-hover" : "bg-fill-150 text-subtle")}>
+                hasContent && !isLoading ? "bg-primary text-primary-fg hover:bg-primary-hover" : "bg-fill-150 text-subtle")}>
               {isLoading ? <Square className="size-3 animate-pulse fill-current" aria-hidden /> : <AnimatedArrowUp className="size-[18px]" strokeWidth={2.25} aria-hidden />}
             </button>
           </PromptInputActions>

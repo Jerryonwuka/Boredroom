@@ -18,6 +18,9 @@
  * - Escape folds a notch opened by hover or focus until the next hover or focus move (review fix, 10 October 2026:
  *   content that appears on hover must be dismissible). The whole notch is one `nav` landmark at every width.
  * - Without JavaScript it stays open. Under reduced motion every state is instant.
+ * Download (owner request, 26 October 2026: "Download Boredroom for Mac" in the header): an outline "Download" with the
+ * download icon before Log in and the call to action, and a "Download Boredroom for Mac" row in the phone menu, both to
+ * /download (the page explains the first-open step macOS asks for); not shown when the download is off (`download`).
  * The call to action is unchanged: signed in it opens the workspace; in waitlist mode it goes to the form and there is
  * no Log in link (owner decision, 25 September 2026); in maintenance (review fix, 10 October 2026) sign-ups are off, so
  * it is Log in; otherwise Log in (ghost) and Get started.
@@ -56,7 +59,7 @@ import { LogoArt } from "@/components/logo";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { IconButton } from "@/components/ui/icon-button";
 import { buttonVariants } from "@/components/ui/button";
-import { AnimatedChevronRight } from "@/components/ui/animated-icons";
+import { AnimatedChevronRight, AnimatedDownload } from "@/components/ui/animated-icons";
 import { WaitlistLink } from "@/components/landing/waitlist-link";
 import { PageIcon } from "@/components/marketing/page-icon";
 import { NAV, navItemFor } from "@/lib/marketing/nav";
@@ -95,7 +98,7 @@ const WIDE = "(min-width: 1152px)";
 const megaId = (hub: string) => `mega-${hub.slice(1)}`;
 const groupId = (hub: string) => `m-${hub.slice(1)}`;
 
-export function SiteNavClient({ signedIn, waitlist = false, maintenance = false, menus = [] }: { signedIn: boolean; waitlist?: boolean; maintenance?: boolean; menus?: readonly NavMenu[] }) {
+export function SiteNavClient({ signedIn, waitlist = false, maintenance = false, menus = [], download = false }: { signedIn: boolean; waitlist?: boolean; maintenance?: boolean; menus?: readonly NavMenu[]; /** Boredroom for Mac is on offer. */ download?: boolean }) {
   const [menu, setMenu] = useState(false);
   /** At the top of the page (true on the server, so without JavaScript the notch stays open). */
   const [atTop, setAtTop] = useState(true);
@@ -369,6 +372,12 @@ export function SiteNavClient({ signedIn, waitlist = false, maintenance = false,
     : maintenance ? <Link href="/login" className={primary(extra)}>Log in</Link>
     : <Link href="/signup" className={primary(extra)}>Get started</Link>;
   const login = (extra?: string) => (!signedIn && !waitlist && !maintenance ? <Link href="/login" className={cn(buttonVariants({ variant: "ghost", size: "sm" }), extra)}>Log in</Link> : null);
+  // Boredroom for Mac (owner request, 26 October 2026): an outline button, quieter than the call to action beside it.
+  const downloadLink = download ? (
+    <Link href="/download" aria-current={pathname === "/download" ? "page" : undefined} className={cn(buttonVariants({ variant: "secondary", size: "sm" }), "group aria-[current]:bg-fill-1")}>
+      <AnimatedDownload aria-hidden />Download
+    </Link>
+  ) : null;
   const showLabel = !!named && !open;
   const hasLogin = !signedIn && !waitlist && !maintenance;
   /** `aria-current`: "page" on the section page itself, "true" on a page inside the section. */
@@ -424,6 +433,7 @@ export function SiteNavClient({ signedIn, waitlist = false, maintenance = false,
             <div className={s.foldInner}>
               <div className="flex items-center gap-1.5 px-1.5">
                 <ThemeToggle />
+                {downloadLink}
                 {login()}
                 {cta()}
               </div>
@@ -490,6 +500,15 @@ export function SiteNavClient({ signedIn, waitlist = false, maintenance = false,
                     );
                   })}
                 </ul>
+                {download ? (
+                  <div className="mt-2 border-t border-border pt-2">
+                    <Link href="/download" aria-current={pathname === "/download" ? "page" : undefined}
+                      className="group flex h-11 items-center gap-3 rounded-lg px-3 text-base font-medium text-foreground transition-colors duration-75 hover:bg-fill-1 aria-[current]:bg-fill-1">
+                      <AnimatedDownload aria-hidden className="size-[18px] shrink-0 text-secondary" />
+                      <span className="min-w-0 flex-1 truncate">Download Boredroom for Mac</span>
+                    </Link>
+                  </div>
+                ) : null}
                 {/* The theme with its name, so the sheet never ends on a lone icon (review fix, 10 October 2026). */}
                 <div className="mt-2 flex h-12 items-center gap-2 border-t border-border pl-3 pr-1 pt-2">
                   <span className="text-base font-medium text-secondary">Theme</span>

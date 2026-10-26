@@ -60,7 +60,7 @@ export function BillingCard({ orgSlug, data, notice, preselect }: { orgSlug: str
   const currentPrice = currentPlan ? priceOf(currentPlan) : 0;
   // Moving from a paid plan to a free one switches modules off at once, so it asks first.
   const onPaidPlan = !!currentPlan && (currentPlan.monthly_price > 0 || currentPlan.annual_price > 0);
-  // The one orange button: the plan picked on the pricing page, else the first plan above the current one.
+  // The one primary (white) button: the plan picked on the pricing page, else the first plan above the current one.
   const picked = data.plans.find((p) => p.code === preselect && p.code !== s?.plan_code);
   const standout = picked ?? data.plans.find((p) => p.code !== s?.plan_code && priceOf(p) > currentPrice);
   const renewal = s?.current_period_end ? (s.status === "trial" ? "Trial ends" : s.auto_renew ? "Renews" : "Ends") : null;
@@ -121,7 +121,7 @@ export function BillingCard({ orgSlug, data, notice, preselect }: { orgSlug: str
                 {current ? <p className="flex h-8 items-center text-meta font-normal text-secondary">You are on this plan.</p>
                   : price === 0 && onPaidPlan
                     ? <ConfirmButton size="md" variant="secondary" className="w-full" disabled={pending !== null} title={`Move to ${p.name} now?`} description="The paid plan ends at once and its modules pause. Everything they recorded is kept and comes back when you upgrade again." confirmLabel={`Move to ${p.name}`} pendingLabel="Switching…" onConfirm={() => choose(p.id, p.name)}>{action}</ConfirmButton>
-                    : <Button size="md" variant={standout?.id === p.id ? "accent" : "secondary"} className="w-full" loading={pending === p.id} disabled={pending !== null || cantPay} onClick={() => void choose(p.id, p.name)}>{action}</Button>}
+                    : <Button size="md" variant={standout?.id === p.id ? "primary" : "secondary"} className="w-full" loading={pending === p.id} disabled={pending !== null || cantPay} onClick={() => void choose(p.id, p.name)}>{action}</Button>}
                 {cantPay && !current ? <p className="mt-2 text-xs font-medium text-subtle">Payments are not switched on for this workspace yet. Ask the platform team.</p> : null}
               </div>
             </div>

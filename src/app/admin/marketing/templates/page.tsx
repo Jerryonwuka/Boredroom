@@ -20,7 +20,7 @@ export default async function TemplatesPage() {
     <>
       <div>
         <PageHeader title="Email templates" description="Every email a campaign or automation can send, on the Boredroom design."
-          actions={editable ? <SheetButton label="New template" icon="plus" variant="accent" sheetSize="lg" title="New template"><TemplateForm /></SheetButton> : null}
+          actions={editable ? <SheetButton label="New template" icon="plus" variant="primary" sheetSize="lg" title="New template"><TemplateForm /></SheetButton> : null}
           tabs={MARKETING_TABS} tabsLabel="Marketing sections" />
         {templates.length === 0 ? <EmptyState icon={FileText} title="No templates yet" description="Campaigns and automations send from these." /> : null}
         {groups.map((g) => g.items.length ? (

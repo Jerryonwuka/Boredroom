@@ -3,6 +3,7 @@ import Image from "next/image";
 import { ChevronRight } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
 import { WaitlistLink } from "@/components/landing/waitlist-link";
+import { AnimatedDownload } from "@/components/ui/animated-icons";
 import { HeroStage } from "@/components/landing/hero-stage";
 import { FlipLine } from "@/components/landing/flip-words";
 import { HERO_WORDS } from "@/components/landing/hero-assistants";
@@ -32,7 +33,7 @@ const USERS = [
 const CATEGORY = "Remote team management software";
 
 /** The hero's buttons: the v4 lg button a little larger for the page (44px, 15px). */
-export const heroButton = (variant: "primary" | "secondary" | "accent") => cn(buttonVariants({ variant, size: "lg" }), "h-11 px-5 text-[15px]");
+export const heroButton = (variant: "primary" | "secondary") => cn(buttonVariants({ variant, size: "lg" }), "h-11 px-5 text-[15px]");
 
 /** Two lines on a laptop, so the headline stays the page's largest paint at every size (review fix, 10 October 2026: "No
  * status meetings, no productivity score" moved out; the fairness section says it). */
@@ -57,11 +58,17 @@ const LEAD_SHORT = "Each person's Brenda answers “any update?” from their re
  * admin's copy (Control Center, landingSettings) replaces the headline, the lead and the button's words in waitlist
  * mode; an admin headline is plain text, with no flip, after the category line.
  *
+ * Under the buttons, when Boredroom for Mac is on offer (`download`; owner request, 26 October 2026: "Download Boredroom
+ * for Mac" early on the home page), one quiet line: the download icon, "Download Boredroom for Mac" and what it is,
+ * linking to /download, which explains the first-open step macOS asks for. A link, not a third button.
+ *
  * Server-rendered: the backdrop in coral, the pill, the headline ("team is doing"), the lead and the buttons paint with
  * the HTML and nothing waits for script; the Brendas arrive after hydration.
  */
-export function Hero({ signedIn, waitlist = false, maintenance = false, notice = "", copy = { headline: "", subheadline: "", cta: "" } }: {
+export function Hero({ signedIn, waitlist = false, maintenance = false, notice = "", copy = { headline: "", subheadline: "", cta: "" }, download = false }: {
   signedIn: boolean; waitlist?: boolean; maintenance?: boolean;
+  /** Boredroom for Mac is on offer (DESKTOP_DOWNLOAD_URL is not "off"). */
+  download?: boolean;
   /** The admin's maintenance notice (launch.message); a default when empty. */
   notice?: string;
   copy?: LandingCopy;
@@ -107,6 +114,14 @@ export function Hero({ signedIn, waitlist = false, maintenance = false, notice =
           : <Link href="/signup?intent=org" className={heroButton("primary")}>Get started</Link>}
         <a href="#how" className={heroButton("secondary")}>How it works</a>
       </div>
+      {download ? (
+        <p className="mt-5 flex justify-center">
+          <Link href="/download" className="group inline-flex min-h-8 max-w-full items-center gap-2 rounded-full px-2 text-meta font-medium text-secondary transition-colors duration-75 hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ring)] pointer-coarse:min-h-10">
+            <AnimatedDownload aria-hidden className="size-4 shrink-0" />
+            <span className="min-w-0"><span className="text-foreground underline decoration-[var(--border-input-hover)] underline-offset-[3px] transition-[text-decoration-color] duration-75 group-hover:decoration-accent">Download Boredroom for Mac</span><span className="max-[479px]:hidden">, with Brenda in your notch</span></span>
+          </Link>
+        </p>
+      ) : null}
     </HeroStage>
   );
 }

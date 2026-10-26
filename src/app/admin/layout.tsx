@@ -8,7 +8,7 @@ import { AdminShell } from "@/components/admin/shell";
 import { Logo } from "@/components/logo";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { signInPath } from "@/server/lib/desktop-app";
+import { shell, signInPath } from "@/server/lib/desktop-app";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: { default: "Control Center", template: "%s · Control Center" } };
@@ -29,6 +29,6 @@ export default async function AdminLayout({ children }: { children: React.ReactN
       </main>
     );
   }
-  const launch = await launchSettings(true);
-  return <AdminShell admin={admin} launch={launch}>{children}</AdminShell>;
+  const [launch, frame] = await Promise.all([launchSettings(true), shell()]);
+  return <AdminShell admin={admin} launch={launch} mac={frame === "mac"}>{children}</AdminShell>;
 }

@@ -19,7 +19,7 @@ export default async function SegmentsPage() {
   return (
     <>
       <PageHeader title="Segments" description="Dynamic audiences: conditions on the contact, its account, plan and activity, evaluated at send time."
-        actions={editable ? <SheetButton label="New segment" icon="plus" variant="accent" title="New segment" description="Every condition must hold for a contact to be in it."><SegmentForm /></SheetButton> : null}
+        actions={editable ? <SheetButton label="New segment" icon="plus" variant="primary" title="New segment" description="Every condition must hold for a contact to be in it."><SegmentForm /></SheetButton> : null}
         tabs={MARKETING_TABS} tabsLabel="Marketing sections" />
       {segments.length === 0 ? <EmptyState icon={Filter} title="No segments yet" description="The audiences built into campaigns (waitlist, free, paid, trial, expiring) need none." /> : (
         <div className="grid gap-3 md:grid-cols-2">

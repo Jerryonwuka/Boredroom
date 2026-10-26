@@ -24,7 +24,7 @@ export default async function PlansPage() {
     <>
       <div>
         <PageHeader title="Plans" description="What organisations can be on."
-          actions={can(admin, "plan.create") ? <SheetButton label="New plan" icon="plus" variant="accent" sheetSize="lg" title="New plan"><PlanForm featureKeys={FEATURE_KEYS} /></SheetButton> : null} divider />
+          actions={can(admin, "plan.create") ? <SheetButton label="New plan" icon="plus" variant="primary" sheetSize="lg" title="New plan"><PlanForm featureKeys={FEATURE_KEYS} /></SheetButton> : null} divider />
         {plans.length === 0 ? <EmptyState icon={Tags} title="No plans yet" description="Organisations choose from these on the pricing page." /> : (
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {plans.map((p) => {

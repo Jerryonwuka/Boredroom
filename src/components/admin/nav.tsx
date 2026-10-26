@@ -98,13 +98,17 @@ function BackToApp({ variant }: { variant: Variant }) {
 export function AdminSidebar({ groups }: { groups: AdminNavGroup[] }) {
   return (
     // The outer box animates its width; the inner one switches at once, so nothing reflows while the rail slides.
-    <aside id={SIDEBAR_ID} aria-label="Sidebar"
+    // data-app-sidebar, data-shell-header, data-shell-drag: the Mac app shell's hooks (globals.css §7): in Boredroom for
+    // Mac's window the panel floats and its logo row is the window's title bar (the traffic lights, no logo; it moves
+    // the window).
+    <aside id={SIDEBAR_ID} data-app-sidebar aria-label="Sidebar"
       className="sticky top-0 hidden h-dvh w-64 shrink-0 overflow-hidden border-r border-border bg-sidebar transition-[width] duration-200 ease-out md:block [[data-sidebar=collapsed]_&]:w-14">
       <div className="flex h-full w-64 flex-col in-data-[sidebar=collapsed]:w-14">
-        <div className="flex h-[50px] shrink-0 items-center gap-2 pl-[18px] pr-3 in-data-[sidebar=collapsed]:justify-center in-data-[sidebar=collapsed]:px-0">
+        <div data-shell-header data-shell-drag className="flex h-[50px] shrink-0 items-center gap-2 pl-[18px] pr-3 in-data-[sidebar=collapsed]:justify-center in-data-[sidebar=collapsed]:px-0">
           <Logo href="/admin" height={16} className="in-data-[sidebar=collapsed]:hidden" />
           <Logo href="/admin" variant="mark" height={18} className="hidden in-data-[sidebar=collapsed]:inline-flex" />
-          <Badge size="sm" className="in-data-[sidebar=collapsed]:hidden">Admin</Badge>
+          {/* data-shell-keep: the one thing the Mac title bar keeps, at its right end (the traffic lights take the left). */}
+          <span data-shell-keep className="inline-flex in-data-[sidebar=collapsed]:hidden"><Badge size="sm">Admin</Badge></span>
         </div>
         <div className="scroll-thin min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 pb-3 pt-1">
           <AdminNav groups={groups} variant="rail" />

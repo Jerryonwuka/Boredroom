@@ -123,9 +123,9 @@ function markEntrySeen(orgSlug: string, id: string) {
 
 type Press = "post" | "skip" | "unskip" | "save";
 
-export function StandupCard({ orgSlug, entry: given, timeZone, standout = true, highlight = false, className, onChange }: {
+export function StandupCard({ orgSlug, entry: given, timeZone, highlight = false, className, onChange }: {
   orgSlug: string; entry: StandupEntryView; timeZone: string;
-  /** Post is the screen's one orange button; false keeps it white (another draft or her Send already is). */ standout?: boolean;
+  /** Unused since 26 October 2026 (no orange buttons: Post is always the white primary); kept so callers need no change. */ standout?: boolean;
   /** The standup a link pointed at (`?e=`, the notification): a 1px orange border, scrolled to and focused. */ highlight?: boolean;
   className?: string;
   /** After a press changed it, with the entry as it is now. */ onChange?: (e: StandupEntryView) => void;
@@ -360,7 +360,7 @@ export function StandupCard({ orgSlug, entry: given, timeZone, standout = true, 
           <Button variant="ghost" size="sm" disabled={!!busy} loading={busy === "skip"} onClick={() => void skip()}>{SW.card.skip}</Button>
           <Button ref={editButton} variant="secondary" size="sm" disabled={!!busy} onClick={startEdit}>{SW.card.edit}</Button>
           {/* The card's one standout (accent rules): posting is the person's consent, and nothing posts without it. */}
-          <Button variant={standout ? "accent" : "primary"} size="sm" disabled={!!busy && busy !== "post"} loading={busy === "post"} onClick={() => void post()}>
+          <Button variant="primary" size="sm" disabled={!!busy && busy !== "post"} loading={busy === "post"} onClick={() => void post()}>
             <AnimatedSend aria-hidden />{busy === "post" ? "Posting…" : W.post(e.team.name)}
           </Button>
         </div>

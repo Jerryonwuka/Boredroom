@@ -2,6 +2,7 @@ import { CalendarClock, CalendarDays, CircleCheck, CircleQuestionMark, CreditCar
 import { MotionRoot } from "@/components/ui/motion";
 import { LINE_ICON, type Icon3DName } from "@/components/ui/icon";
 import { ToolSquare } from "@/components/ui/tool-tile";
+import { desktopDownloadUrl } from "@/lib/desktop-download";
 import { Hero } from "@/components/landing/hero";
 import { QuestionsMarquee } from "@/components/landing/marquee";
 import { JoinDemo } from "@/components/landing/join-demo";
@@ -138,7 +139,7 @@ export default async function LandingPage() {
         <SiteNav signedIn={!!user} waitlist={waitlist} maintenance={maintenance} />
 
         <main id="main">
-          <Hero signedIn={!!user} waitlist={waitlist} maintenance={maintenance} notice={notice} copy={copy} />
+          <Hero signedIn={!!user} waitlist={waitlist} maintenance={maintenance} notice={notice} copy={copy} download={desktopDownloadUrl() !== null} />
 
           <DashboardSection />
 

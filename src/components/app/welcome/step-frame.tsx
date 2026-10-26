@@ -6,7 +6,7 @@
  * h1, display 28/36, 32/40 from 860px, left-aligned, focused after the person moves), the lede, the body 32px below,
  * then the footer: an outline Back on the left; on the right a ghost secondary ("Keep Brenda", "Later") then the primary,
  * white with an "↵" chip, since Enter in any single-line field continues (the card is one form and the primary is its
- * submit). The end screen's primary is a link instead (`href`), the flow's one orange button (`accent`); Enter on the
+ * submit). The end screen's primary is a link instead (`href`), the flow's main (white) button (`accent`); Enter on the
  * page follows it too.
  *
  * Errors for the whole step sit in one polite live region above the footer (fields keep their own). The footer is sticky
@@ -125,13 +125,13 @@ export function StepFrame(props: StepFrameProps): React.JSX.Element {
   };
   const primaryEl = href ? (
     <Link ref={link} href={href} aria-keyshortcuts="Enter"
-      className={cn(buttonVariants({ variant: primary.accent ? "accent" : "primary", size: "lg" }), primary.disabled && "pointer-events-none opacity-50")}
+      className={cn(buttonVariants({ variant: "primary", size: "lg" }), primary.disabled && "pointer-events-none opacity-50")}
       aria-disabled={primary.disabled || undefined}>
       {label}<span aria-hidden><EnterChip /></span>
     </Link>
   ) : (
     // aria-disabled, not disabled: the form's submit ignores it while held, and focus stays on it.
-    <Button type="submit" size="lg" variant={primary.accent ? "accent" : "primary"} aria-disabled={held || undefined} aria-busy={busy || undefined}
+    <Button type="submit" size="lg" variant="primary" aria-disabled={held || undefined} aria-busy={busy || undefined}
       aria-keyshortcuts="Enter" className={cn(held && "cursor-not-allowed opacity-50")}>
       {busy ? <Loader2 className="animate-spin" aria-hidden /> : null}{label}<span aria-hidden><EnterChip /></span>
     </Button>

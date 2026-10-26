@@ -23,7 +23,7 @@ export default async function AutomationsPage() {
     <>
       <div>
         <PageHeader title="Automations" description="Lifecycle and billing emails that run from platform events (at once) or from the daily scheduler (account age, inactivity, expiry)."
-          actions={editable ? <SheetButton label="New automation" icon="plus" variant="accent" title="New automation"><AutomationForm templates={templates} /></SheetButton> : null}
+          actions={editable ? <SheetButton label="New automation" icon="plus" variant="primary" title="New automation"><AutomationForm templates={templates} /></SheetButton> : null}
           tabs={MARKETING_TABS} tabsLabel="Marketing sections" />
         {autos.length === 0 ? <EmptyState icon={Workflow} title="No automations yet" description="Lifecycle and billing emails appear here once they exist." /> : (
           <DataTable caption="Automations">

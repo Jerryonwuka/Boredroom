@@ -96,7 +96,7 @@ export function IncomingCallCard({ ring, more = 0, onAccept, onDecline, busy = n
       <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
         <Button variant="secondary" size="sm" onClick={() => onDecline()} disabled={busy !== null} loading={busy === "decline" && !composing}><PhoneOff aria-hidden />{CALL_WORDS.decline}</Button>
         <Button variant="ghost" size="sm" aria-expanded={composing} onClick={() => setComposing((v) => !v)} disabled={busy !== null}><MessageSquare aria-hidden />{CALL_WORDS.message}</Button>
-        <Button ref={acceptRef} variant="accent" size="sm" data-tip={CALL_WORDS.incoming.acceptTip} onClick={onAccept} disabled={busy !== null} loading={busy === "accept"}><Phone aria-hidden />{CALL_WORDS.accept}</Button>
+        <Button ref={acceptRef} variant="primary" size="sm" data-tip={CALL_WORDS.incoming.acceptTip} onClick={onAccept} disabled={busy !== null} loading={busy === "accept"}><Phone aria-hidden />{CALL_WORDS.accept}</Button>
       </div>
     </div>
   );

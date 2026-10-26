@@ -215,11 +215,10 @@ function Accents() {
               <Badge tone="attention">2 waiting for you</Badge>
               <span className="flex items-center gap-1.5 text-sm">Docs <NewBadge /></span>
             </Rule>
-            <Rule name="The standout action">
-              <Button variant="accent"><Plus aria-hidden />New document</Button>
+            <Rule name="Buttons are never orange">
+              <Button variant="primary"><Plus aria-hidden />New document</Button>
               <Button variant="secondary">Import</Button>
-              <Button>Save</Button>
-              <Cap className="basis-full">One per screen at most; every other primary stays white.</Cap>
+              <Cap className="basis-full">The one thing to do is the white primary; orange stays on marks, never on a button (owner request, 26 October 2026).</Cap>
             </Rule>
             <Rule name="Live and now">
               <span className="inline-flex items-center gap-2"><StatusDot tone="live" label="Timer running" /><span className="font-mono text-sm tabular-nums text-accent-text">01:24:09</span></span>
@@ -273,12 +272,12 @@ function Accents() {
   );
 }
 
-/** A sample screen with five touches of orange: the tab underline, the running timer, the standout Start, a ticked to-do and progress. */
+/** A sample screen with four touches of orange: the tab underline, the running timer, a ticked to-do and progress (Start is the white primary). */
 function SampleScreen({ theme }: { theme: Theme }) {
   const [tab, setTab] = React.useState("today");
   return (
     <div className="space-y-4">
-      <Cap>Sample screen, 5 touches: tab underline, running timer, the one orange button, a ticked to-do, today&apos;s progress.</Cap>
+      <Cap>Sample screen, 4 touches: tab underline, running timer, a ticked to-do, today&apos;s progress. Start is the white primary: buttons are never orange.</Cap>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="type-page-title">My Day</p>
         <Button size="sm" variant="secondary"><Plus aria-hidden />Add a to-do</Button>
@@ -297,7 +296,7 @@ function SampleScreen({ theme }: { theme: Theme }) {
         <li className="flex min-h-14 items-center gap-3 rounded-xl px-2 py-2">
           <span className="size-2 shrink-0 rounded-full bg-faint" aria-hidden />
           <div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">Review the brand deck</p><p className="text-meta font-normal text-secondary">Next, due 15:00</p></div>
-          <Button size="sm" variant="accent">Start</Button>
+          <Button size="sm" variant="primary">Start</Button>
         </li>
         <li className="flex min-h-14 items-center gap-3 rounded-xl px-2 py-2">
           <Checkbox aria-label="Send the invoice, done" defaultChecked />
@@ -310,16 +309,16 @@ function SampleScreen({ theme }: { theme: Theme }) {
 
 // ---- Buttons ----------------------------------------------------------------------------------------------------------
 
-const VARIANTS = ["primary", "secondary", "ghost", "subtle", "accent", "danger", "destructive", "link"] as const;
+const VARIANTS = ["primary", "secondary", "ghost", "subtle", "danger", "destructive", "link"] as const;
 const HOVER: Record<(typeof VARIANTS)[number], string> = {
   primary: "bg-primary-hover", secondary: "border-border-input-hover bg-[color-mix(in_srgb,var(--foreground)_2.4%,var(--background))]", ghost: "bg-fill-1 text-foreground",
-  subtle: "bg-fill-150", accent: "bg-accent-hover", danger: "border-danger/40 bg-danger/10", destructive: "bg-danger/90", link: "text-foreground underline",
+  subtle: "bg-fill-150", danger: "border-danger/40 bg-danger/10", destructive: "bg-danger/90", link: "text-foreground underline",
 };
 const FOCUS = "outline-2 outline-offset-2 outline-[var(--ring)]";
 
 function Buttons() {
   return (
-    <Section id="buttons" title="Buttons" description="Primary is white (one per view); secondary is the outline; accent (orange, near-black text) is the one standout action, at most once per screen.">
+    <Section id="buttons" title="Buttons" description="Primary is white (one per view); secondary is the outline. No button is orange (owner request, 26 October 2026): orange is for marks only.">
       <Both>
         {() => (
           <div className="space-y-6">

@@ -173,7 +173,7 @@ export function NotchMock({ className }: { className?: string }) {
                 </li>
               ))}
             </ul>
-            <span className={cn(buttonVariants({ variant: "accent", size: "xs" }), FAKE_BUTTON, "lp-item mt-3 w-full rounded-full")} style={arrive(0, 1980)}>Start on the briefing</span>
+            <span className={cn(buttonVariants({ variant: "primary", size: "xs" }), FAKE_BUTTON, "lp-item mt-3 w-full rounded-full")} style={arrive(0, 1980)}>Start on the briefing</span>
           </div>
         </div>
       </div>

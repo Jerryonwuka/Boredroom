@@ -12,9 +12,8 @@
    - Live and now: a running timer's dot (it breathes) and digits, the open microphone (the live dot and the recording
      time beside the waveform, and the wash), voice getting ready (the orb's dot), a teammate's running timer, and the
      Stop square on a reply while she reads it aloud.
-   - The one standout action per card is an orange button with near-black text (`.btn.accent`): Send once there are words,
-     Start on the briefing, Resume on a paused timer, Link to Boredroom / Open Boredroom, Turn on voice. Every other
-     primary stays white, and while the ask box holds words Send is the only orange button (the other one turns white).
+   - No button is orange (owner request, 26 October 2026): a card's main action (Send, Accept, Start timer, Post,
+     Resume, Open Boredroom, Turn on voice …) is the white primary; orange stays on the marks listed here.
    - Progress: the estimate hairline, the progress ring (green once done), download and upload bars.
    - Attention: the unread count and the "New task" badge (orange on dark brown); the ask pill's focus ring; a link's
      underline on hover; the keyboard focus ring.
@@ -46,7 +45,7 @@
    Brenda keeps the loops closed (owner decision, 8 October 2026: phase 7a). The morning opener: the counts as the
    near-black list, each row a quiet button that opens its page (words left, the number right in Geist Mono in the text
    colour, "not available" in the secondary grey), and its one-tap actions as outline buttons with their icons, the first
-   the card's one orange button (`.starts`). A routine's card: its lines in the list, each running to two lines with a
+   the card's main (white) button (`.starts`). A routine's card: its lines in the list, each running to two lines with a
    small Open (`.lines`). A Confirm's readback: "Goes to" as the small label over a compact list of who receives it, and
    "What they get" in the secondary grey, aligned with the summary's words (`.readback`). Quiet hours add no styles: the
    compact bar's words say it. No new orange beyond the opener's one standout.
@@ -61,11 +60,11 @@
    Standup, abilities and "How I like things done" (owner decisions, 8–9 October 2026: phase 7c). The standup card: the
    three sections in one near-black panel (`.standup`: a small label over each section's lines, 13/19.5, each line running
    to two lines before it is cut, "and 2 more" in the secondary grey), the readback under it in the caption grey, and
-   actions that stay in view: Skip today ghost, Edit outline (it opens Boredroom), Post the card's one orange button. The
+   actions that stay in view: Skip today ghost, Edit outline (it opens Boredroom), Post the card's main (white) button. The
    rollup card: the blockers as the routine's two-line rows (who in medium, their words in regular) and who has no update
    as one plain line of names in the secondary grey (`.names`: a list read as one; never amber or red, never an icon). A
    preference's Confirm: the summary in the quoted bubble with why it still asks under it (`.pref-q`), "Only you" as its
-   readback, and Remember / Forget the card's one orange button. No other new orange; badges keep their words (amber only
+   readback, and Remember / Forget the card's main (white) button. No other new orange; badges keep their words (amber only
    for a draft that couldn't be made).
    Notifications, "A plus the grafts" (owner decision, 9 October 2026: the approved mockup, direction A "Glance" with B's
    and C's grafts; the section at the end, "Notifications"), redrawn in v4 on 17 October 2026. Every notification, the
@@ -121,7 +120,7 @@
   --fill-1: rgb(255 255 255 / .043);
   --fill-150: rgb(255 255 255 / .07);
   --primary: #fff; --primary-hover: #cfcfcf; --primary-fg: #0f0f10;
-  --accent: #ff6c02;                      /* fills and marks: the standout button, live dots, progress */
+  --accent: #ff6c02;                      /* fills and marks: live dots, progress, checked boxes (never a button) */
   --accent-hover: #ff7f24;
   --accent-fg: #0f0f10;                   /* near-black on orange: white on orange fails contrast */
   --accent-soft: #4a1f04;                 /* the "New" badge and unread count fill */
@@ -259,14 +258,11 @@ svg.ic { width: 14px; height: 14px; flex: none; }
 .btn.ghost:hover { background: var(--surface); color: var(--foreground); }
 .btn.danger { color: var(--danger); }
 .btn.danger:hover { border-color: color-mix(in srgb, var(--danger) 40%, transparent); background: var(--tint-danger); }
-/* The standout action, one per card at most (accent rules; the web's `variant="accent"`): orange with near-black text, a
-   lighter orange on hover.
-   It is marked `btn primary accent`, so disabled it greys like any primary. While the ask box holds words its Send is
-   the standout, and the card's other orange button goes back to white, so two never show at once. */
-.btn.accent { background: var(--accent); border-color: transparent; color: var(--accent-fg); }
-.btn.accent:hover { background: var(--accent-hover); }
-.notch:has(.ask .field:not(:placeholder-shown)) .btn.accent:not(.icon-send):not(:disabled) { background: var(--primary); color: var(--primary-fg); }
-.notch:has(.ask .field:not(:placeholder-shown)) .btn.accent:not(.icon-send):not(:disabled):hover { background: var(--primary-hover); }
+/* No orange buttons (owner request, 26 October 2026: "orange should just be accent colours"): a card's main action
+   (Accept, Send, Start timer, Post, Turn on voice …) is the white primary above, and orange stays on the marks below.
+   While the ask box holds words its Send is the card's one white primary: the card's other primary turns outline. */
+.notch:has(.ask .field:not(:placeholder-shown)) .btn.primary:not(.icon-send):not(:disabled) { background: var(--background); border-color: var(--border-input); color: var(--foreground); }
+.notch:has(.ask .field:not(:placeholder-shown)) .btn.primary:not(.icon-send):not(:disabled):hover { background: var(--background-hover); border-color: var(--border-input-hover); }
 .btn:disabled { opacity: .5; cursor: default; pointer-events: none; }
 .btn.primary:disabled { opacity: 1; background: var(--border-input-hover); color: var(--subtle); }
 .btn .ic { width: 14px; height: 14px; }
@@ -595,7 +591,7 @@ kbd { display: inline-flex; align-items: center; justify-content: center; box-si
 .list li > .rowlink:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
 .list li .k.n { font-family: var(--font-mono); font-size: 14px; line-height: 20px; font-weight: 500; color: var(--foreground); }
 /* Its one-tap actions: outline buttons that wrap within the card (never sideways), each with its icon; the first is the
-   card's one orange button. */
+   card's main (white) button. */
 .starts { display: flex; flex-wrap: wrap; gap: 6px; }
 .starts .btn { max-width: 100%; }
 /* A routine's lines: plain text that may run to two lines (the whole line is its tooltip), each with a small Open. */
@@ -936,7 +932,7 @@ button.nc-fact:focus-visible { outline: 2px solid var(--ring); outline-offset: 2
    notification card (`.nc.nc-call`): the caller's face, the headline, where, the waiting line, then a hairline running
    down to the ring's end in orange (live and running out; its own, so the pointer resting on the card never pauses it:
    the ring times out on the server whatever the pointer does), the quick messages as one column of the web's subtle
-   32px buttons (as its incoming call), and Decline, Message and Accept (the card's one orange button). The strip is the
+   32px buttons (as its incoming call), and Decline, Message and Accept (the card's main (white) button). The strip is the
    same ring as one row on a card that must stay, on the web's accent card tint with a word beside the colour; its Accept
    is white. The bar on a call: the live dot (orange,
    breathing like a running timer's) and the clock in orange digits. A teammate on a call: a small white phone on their
@@ -965,7 +961,7 @@ button.nc-fact:focus-visible { outline: 2px solid var(--ring); outline-offset: 2
 }
 
 /* Screen help (owner decisions, 11 October 2026: "start building with your recommendations"; contract C.2 and
-   docs/design-system.md, "The notch's look cards"). One card kind, `look`, with at most one orange button: Turn on screen
+   docs/design-system.md, "The notch's look cards"). One card kind, `look`, with at most one main button (white): Turn on screen
    help, Continue, Open System Settings, or Send once the question has words. While she looks her eyes lower to your window
    with a slight squint and drift slowly across it (`look`; a still pose under reduced motion), with the accent glow and the
    live dot (`.rec-dot`): she is looking now. The preview's picture is contained in a 10px-round frame with a hairline, at
@@ -1053,10 +1049,10 @@ button.nc-fact:focus-visible { outline: 2px solid var(--ring); outline-offset: 2
    docs/design-system.md, "Brenda by your pointer"). The setup card, `help`: her face, the title and the lead; three rows,
    each a checkbox (orange when ticked: the accent rules' checked box; an ability already on is grey and disabled with "On"
    at its right), its label and its sub-line; the promises in the caption grey; Read everything under a link. Its middle
-   scrolls and its buttons stay in view. Turn these on is the card's one orange button; macOS's steps keep white
+   scrolls and its buttons stay in view. Turn these on is the card's main (white) button; macOS's steps keep white
    primaries; the done card's Ask again is orange. A plan's asking card stays neutral: its lines are the near-black list,
    one per row with a small grey icon by step; "Show the 14" is a link. Under a reply, the fixed "… is off on this Mac."
-   line sits under her words and Turn it on / Set up is the card's one orange button. */
+   line sits under her words and Turn it on / Set up is the card's main (white) button. */
 .hs-mid { max-height: 260px; gap: 12px; }
 .hs-rows { display: grid; gap: 2px; margin: 0 -8px; }
 .hs-row { display: flex; align-items: flex-start; gap: 10px; padding: 8px; border-radius: var(--radius-control); cursor: pointer; }
