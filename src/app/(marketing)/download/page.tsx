@@ -79,7 +79,7 @@ export default function DownloadPage() {
     <>
       <ProductHero path={PATH} jsonLd={[macAppJsonLd(url)]}
         lead={<p>Boredroom for Mac puts your dashboard in its own window and Brenda in your Mac&apos;s notch. Hold Option and Space to ask her something, see reminders and calls as they come, and let her help on this Mac when you say so.</p>}
-        sub={<p>Free, for {MAC_REQUIREMENTS.macos} on {MAC_REQUIREMENTS.chips}. One download runs on both.</p>}
+        sub={<p>Free, for {MAC_REQUIREMENTS.macos} on {MAC_REQUIREMENTS.chips}. One download runs on both. The first time you open it, macOS asks you to confirm once in Privacy &amp; Security: <a href="#first-open">see the steps</a>.</p>}
         actions={url ? (
           <>
             <a href={url} className={heroButton("primary")}>Download for Mac</a>
