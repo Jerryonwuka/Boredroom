@@ -4,6 +4,7 @@ import { TooltipLayer } from "@/components/ui/tooltips";
 import { getPage } from "@/lib/marketing/registry";
 import { OG_IMAGE_SIZE, SITE_NAME, SITE_URL, ogImagePath } from "@/lib/marketing/site";
 import { ogImageAlt } from "@/lib/marketing/metadata";
+import { shellScript } from "@/lib/desktop-app";
 
 /**
  * The site's defaults (owner request, 17 October 2026: SEO analysis, A1, A2, A8). `metadataBase` is the canonical www
@@ -30,7 +31,10 @@ export const viewport: Viewport = { themeColor: "#0f0f10", width: "device-width"
  * Applies the saved theme and sidebar state before first paint. Dark unless the person chose light (see ThemeToggle).
  * Fonts (Inter for the interface, Geist for display, Geist Mono for code and timers) load from globals.css.
  */
-const THEME_SCRIPT = `(function(){try{var t=localStorage.getItem("boredroom-theme");if(t!=="light"&&t!=="dark")t="dark";document.documentElement.dataset.theme=t;if(localStorage.getItem("boredroom-sidebar")==="collapsed")document.documentElement.dataset.sidebar="collapsed";if(t==="light"){var m=document.querySelector('meta[name="theme-color"]');if(m)m.setAttribute("content","#ffffff")}}catch(e){}})();`;
+const THEME_SCRIPT = `(function(){try{var t=localStorage.getItem("boredroom-theme");if(t!=="light"&&t!=="dark")t="dark";document.documentElement.dataset.theme=t;if(localStorage.getItem("boredroom-sidebar")==="collapsed")document.documentElement.dataset.sidebar="collapsed";if(t==="light"){var m=document.querySelector('meta[name="theme-color"]');if(m)m.setAttribute("content","#ffffff")}}catch(e){}})();` +
+  // Boredroom for Mac's window (owner request, 26 October 2026: the Mac app shell): <html data-shell="mac"> before first
+  // paint, from the user agent (lib/desktop-app.ts; in development also ?shell=mac). The page stays static: no headers().
+  `(function(){try{${shellScript(process.env.NODE_ENV === "development")}}catch(e){}})();`;
 
 // The whole site and app are written in British English, so the root language is en-GB, matching og:locale en_GB and
 // the JSON-LD inLanguage (review fix, 17 October 2026: SEO analysis).

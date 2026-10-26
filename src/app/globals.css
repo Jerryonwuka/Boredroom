@@ -1090,3 +1090,131 @@ html[data-motion="paused"] .lp-hero-drift::before, html[data-motion="paused"] .l
   .mk-acc-plus, .mk-acc details::details-content { transition: none !important; }
   .mk-acc-fig:not([hidden]) { animation: none; }
 }
+
+/* ---------------------------------------------------------------------------------------------------------------
+   7. Boredroom for Mac's window (owner request, 26 October 2026: "make it look a little different from the web app like
+   WhatsApp desktop vs web", "make the side bar float on the app", "and other nice UI modification that makes it nicer
+   feel"). Everything here hangs off <html data-shell="mac">, which the root layout's first-paint script sets only in the
+   app's window (lib/desktop-app.ts), so a browser never sees any of it.
+
+   The window has no title bar of its own: the app draws macOS's vibrancy behind a transparent page, and the app frame
+   floats on it. The sidebar is an inset, rounded, slightly see-through panel (the traffic lights sit in its top row,
+   which is the window's title bar: it moves the window), and the page is a rounded opaque surface beside it that
+   scrolls inside itself, its top bar sticky at its top. 8px of vibrancy around and between them; a hairline and a soft
+   shadow on each. Other pages in the window (the sign-in) keep their canvas, with room for the traffic lights.
+
+   HOOKS (components keep them): the frame `[data-app-shell]` (`[data-bleed]` for Messages-like pages), the sidebar
+   `[data-app-sidebar]` with its top row `[data-shell-header]`, the page column `[data-app-main]`, the top bars
+   `[data-app-topbar]`/`[data-shell-topbar]` (the loading skeleton's), the banners `[data-shell-banners]` (ShellBanners
+   writes their height as --mac-banners, and --shell-banners includes the 16px of gaps so every "screen less banners"
+   height already fits the page), `[data-shell-drag]` (the parts that move the window: the app asks the page where they
+   are and what in them is clickable), `[data-web-only]` (not in the app: Brenda's floating button; she is in the notch).
+   `data-shell-sim` (development, `?shell=mac`) paints a stand-in for the vibrancy a browser can't show.
+   --------------------------------------------------------------------------------------------------------------- */
+html[data-shell="mac"] {
+  --mac-gap: 8px;
+  --mac-radius: 12px;
+  --mac-sidebar-w: 240px;
+  /* The collapsed rail is wider than the browser's 56px: the traffic lights (60px) sit in its top row. */
+  --mac-rail-w: 84px;
+  /* The sidebar's top row, the window's title bar: the traffic lights are centred in it (the app places them). */
+  --mac-titlebar: 44px;
+  --header-height: 44px;
+  --mac-sidebar-bg: color-mix(in srgb, var(--sidebar) 58%, transparent);
+  --mac-edge: rgb(255 255 255 / 0.08);
+  --mac-shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 10px 30px -12px rgb(0 0 0 / 0.55);
+  --mac-sim: #29292b;
+}
+html[data-shell="mac"][data-theme="light"] {
+  --mac-sidebar-bg: color-mix(in srgb, var(--sidebar) 66%, transparent);
+  --mac-edge: rgb(0 0 0 / 0.08);
+  --mac-shadow: 0 1px 2px rgb(0 0 0 / 0.05), 0 10px 28px -14px rgb(0 0 0 / 0.16);
+  --mac-sim: #e3e3e6;
+}
+/* Not in the app. */
+html[data-shell="mac"] [data-web-only] { display: none !important; }
+
+/* Chrome behaves like an app's, not a page's: no text selection or link dragging in the sidebar and the top bars, and
+   the arrow (not the pointing hand) over buttons, tabs, menu items and the sidebar's links. Links in what people read
+   (`.link-inline`, messages, documents) keep the hand, as in Mail or Slack. */
+html[data-shell="mac"] :is([data-app-sidebar], [data-app-topbar], [data-shell-topbar], [data-shell-banners]) { -webkit-user-select: none; user-select: none; }
+html[data-shell="mac"] :is([data-app-sidebar], [data-app-topbar]) :is(a, img, svg) { -webkit-user-drag: none; }
+html[data-shell="mac"] :is(button, [role="button"], [role="tab"], [role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"], [role="switch"], [role="radio"], summary, select, label, .menu-item, .subnav-item),
+html[data-shell="mac"] :is([data-app-sidebar], [data-app-topbar]) a { cursor: default; }
+
+/* The frame: no page scroll, a transparent canvas over the vibrancy, the panels inset by the gap. */
+html[data-shell="mac"]:has([data-app-shell]) {
+  background: transparent;
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+  scroll-behavior: auto;
+  & body { background: transparent; height: 100dvh; min-height: 0; overflow: hidden; }
+  & [data-app-shell] { height: 100dvh; min-height: 0; padding: var(--mac-gap); gap: var(--mac-gap); overflow: hidden; }
+  /* A banner (billing, impersonation, maintenance) lies over the top of the page, under its rounded corners; the page
+     starts below it. */
+  & [data-shell-banners] {
+    position: fixed; top: var(--mac-gap); right: var(--mac-gap); left: calc(var(--mac-sidebar-w) + 2 * var(--mac-gap));
+    border-radius: var(--mac-radius) var(--mac-radius) 0 0; overflow: hidden;
+  }
+  &[data-sidebar="collapsed"] [data-shell-banners] { left: calc(var(--mac-rail-w) + 2 * var(--mac-gap)); }
+
+  /* The floating sidebar. */
+  & [data-app-sidebar] {
+    position: relative; top: 0; height: 100%; width: var(--mac-sidebar-w);
+    border: 0; border-radius: var(--mac-radius);
+    background: var(--mac-sidebar-bg);
+    box-shadow: 0 0 0 1px var(--mac-edge), var(--mac-shadow);
+  }
+  & [data-app-sidebar] > div { width: var(--mac-sidebar-w); }
+  &[data-sidebar="collapsed"] [data-app-sidebar], &[data-sidebar="collapsed"] [data-app-sidebar] > div { width: var(--mac-rail-w); }
+  /* Its top row is the title bar: the traffic lights' room, no logo (the Dock and the menu bar name the app). */
+  & [data-shell-header] { height: var(--mac-titlebar); padding: 0; }
+  & [data-shell-header] > * { display: none !important; }
+  /* The wider rail keeps its 32px items centred. */
+  &[data-sidebar="collapsed"] [data-app-sidebar] > div > div:not([data-shell-header]) { padding-inline: calc((var(--mac-rail-w) - 32px) / 2); }
+
+  /* The page: a rounded surface that scrolls inside itself, its top bar sticky at its top. */
+  & [data-app-main] {
+    height: 100%; min-height: 0;
+    overflow-x: hidden; overflow-y: auto; overscroll-behavior-y: contain;
+    border-radius: var(--mac-radius);
+    background: var(--background);
+    box-shadow: 0 0 0 1px var(--mac-edge), var(--mac-shadow);
+    scrollbar-width: thin; scrollbar-color: var(--scrollbar) transparent;
+    padding-top: var(--mac-banners, 0px);
+  }
+  & :is([data-app-topbar], [data-shell-topbar]) { top: var(--mac-banners, 0px); height: var(--header-height); }
+  & [data-app-shell][data-bleed] [data-app-main] { overflow: hidden; }
+  & [data-app-shell][data-bleed] #main { height: calc(100% - var(--header-height) - var(--mac-banners, 0px)); }
+  /* Brenda's chat hides the top bar and fills the page. */
+  &[data-brenda-chat] [data-app-sidebar], & [data-app-shell]:has([data-brenda-chat-view]) [data-app-sidebar] { height: 100%; }
+}
+/* The phone layout (a narrow window, or a large zoom): no sidebar; the top bar makes room for the traffic lights. */
+@media (max-width: 767.98px) {
+  html[data-shell="mac"]:has([data-app-shell]) :is([data-app-topbar], [data-shell-topbar]) { padding-left: 84px; }
+  html[data-shell="mac"]:has([data-app-shell]) [data-shell-banners] { left: var(--mac-gap); }
+}
+/* Other pages in the window (the sign-in, picking a workspace): their own canvas, with the traffic lights' row kept
+   clear above them. */
+html[data-shell="mac"]:not(:has([data-app-shell])) body { padding-top: 40px; min-height: 100dvh; box-sizing: border-box; }
+/* Development stand-in for the vibrancy (`?shell=mac` in a browser). */
+html[data-shell="mac"][data-shell-sim]:has([data-app-shell]) { background: var(--mac-sim); }
+/* …and the traffic lights the app draws (where it puts them: 12px into the sidebar's top row, centred in it). */
+html[data-shell="mac"][data-shell-sim] [data-shell-header] { position: relative; }
+html[data-shell="mac"][data-shell-sim] [data-shell-header]::before {
+  content: ""; position: absolute; left: 12px; top: calc(50% - 7px); width: 60px; height: 14px;
+  background: radial-gradient(circle at 7px 7px, #ff5f57 6.5px, transparent 7px), radial-gradient(circle at 30px 7px, #febc2e 6.5px, transparent 7px), radial-gradient(circle at 53px 7px, #28c840 6.5px, transparent 7px);
+}
+
+/* Between pages, a short cross-fade (React's ViewTransition, `default="shell-page"`, mounted only in the app):
+   opacity only, 160ms, and none under reduced motion. The frame itself does not move. */
+::view-transition-group(.shell-page) { animation-duration: 160ms; animation-timing-function: var(--ease-out); }
+::view-transition-old(.shell-page) { animation: 120ms var(--ease-out) both shell-fade-out; }
+::view-transition-new(.shell-page) { animation: 160ms var(--ease-out) both shell-fade-in; }
+html[data-shell="mac"]::view-transition-group(root) { animation-duration: 0s; }
+@keyframes shell-fade-out { to { opacity: 0; } }
+@keyframes shell-fade-in { from { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }
+}

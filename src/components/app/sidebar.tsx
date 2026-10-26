@@ -202,7 +202,9 @@ export function Sidebar({ items, orgSlug, orgName, workspaces = [], isOrg = fals
     <aside id="workspace-sidebar" data-app-sidebar data-ready="" aria-label="Sidebar"
       className="sticky top-[var(--shell-banners,0px)] hidden h-[calc(100dvh-var(--shell-banners,0px))] w-64 shrink-0 overflow-hidden border-r border-border bg-sidebar transition-[width] duration-200 ease-out md:block [[data-sidebar=collapsed]_&]:w-14">
       <div className="flex h-full w-64 flex-col in-data-[sidebar=collapsed]:w-14">
-        <div className="flex h-[50px] shrink-0 items-center pl-[18px] pr-3 in-data-[sidebar=collapsed]:justify-center in-data-[sidebar=collapsed]:px-0">
+        {/* The logo row. In Boredroom for Mac's window (the Mac app shell, 26 October 2026) it is the window's title bar
+            instead: the traffic lights sit in it, the logo steps aside, and it moves the window (data-shell-drag). */}
+        <div data-shell-header data-shell-drag className="flex h-[50px] shrink-0 items-center pl-[18px] pr-3 in-data-[sidebar=collapsed]:justify-center in-data-[sidebar=collapsed]:px-0">
           <Logo href={`/app/${orgSlug}`} height={16} className="in-data-[sidebar=collapsed]:hidden" />
           <Logo href={`/app/${orgSlug}`} variant="mark" height={18} className="hidden in-data-[sidebar=collapsed]:inline-flex" />
         </div>

@@ -4,9 +4,9 @@
  * notch's link (or shows the sign-in); everywhere else to `/login?next=…`, as before. The user agent is for the
  * experience only: `/desktop/app` without the app is just the sign-in page's way round.
  */
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { safeNextPath } from "@/components/auth/next-path";
-import { desktopEntryPath, isDesktopAppUserAgent } from "@/lib/desktop-app";
+import { SHELL_COOKIE, desktopEntryPath, isDesktopAppUserAgent, shellFor, type Shell } from "@/lib/desktop-app";
 
 /** The sign-in path for `next`, chosen from a user agent. Pure (tested). */
 export function signInPathFor(userAgent: string | null | undefined, next: string): string {
@@ -22,4 +22,15 @@ export async function signInPath(next: string): Promise<string> {
 /** Whether this request comes from Boredroom for Mac's window (for the experience only, never for security). */
 export async function inDesktopApp(): Promise<boolean> {
   return isDesktopAppUserAgent((await headers()).get("user-agent"));
+}
+
+/**
+ * The app shell for this request (owner request, 26 October 2026: the Mac app shell): "mac" in Boredroom for Mac's
+ * window, else "web"; in development the `boredroom-shell` cookie (`?shell=mac`) can force it. For what the server
+ * renders differently (the pages' cross-fade); the look itself hangs off `<html data-shell>` in CSS.
+ */
+export async function shell(): Promise<Shell> {
+  const development = process.env.NODE_ENV === "development";
+  const [h, c] = await Promise.all([headers(), development ? cookies() : null]);
+  return shellFor(h.get("user-agent"), c?.get(SHELL_COOKIE)?.value, development);
 }

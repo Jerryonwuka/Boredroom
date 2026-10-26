@@ -162,6 +162,8 @@ export function AssistantDrawer({ orgSlug, isOrg, firstName, floating = false, t
     <>
       {floating ? (
         <button ref={fabRef} type="button" aria-label={name} aria-expanded={open} aria-controls="assistant-drawer" data-tip={`${name}. Drag to move`} data-brenda-target="ask-assistant"
+          // Not in Boredroom for Mac's window (the Mac app shell, 26 October 2026): there the assistant lives in the notch.
+          data-web-only
           onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={() => { drag.current = null; }}
           onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpen((v) => !v); } }}
           style={pos ? { left: pos.x, top: pos.y, right: "auto", bottom: "auto" } : undefined}

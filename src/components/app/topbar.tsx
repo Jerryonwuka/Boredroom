@@ -215,7 +215,8 @@ export function TopBar({ orgSlug, orgName, user, roleLabel, isOrg, unread, atten
   const [searchOpen, setSearchOpen] = useState(false);
   return (
     <>
-    <header data-app-topbar
+    {/* data-shell-drag: in Boredroom for Mac's window its empty parts move the window (the app reads where they are). */}
+    <header data-app-topbar data-shell-drag
       className={cn("sticky top-[var(--shell-banners,0px)] z-[var(--z-sticky)] isolate grid h-[50px] shrink-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b border-border px-3",
         "before:pointer-events-none before:absolute before:inset-0 before:-z-10 before:bg-[var(--header-bg)] before:backdrop-blur-[8px] lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]", className)}>
       <div className="flex min-w-0 items-center gap-2">

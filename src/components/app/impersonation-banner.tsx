@@ -44,11 +44,18 @@ export function ShellBanners({ children }: { children: React.ReactNode }) {
     const el = ref.current;
     if (!el) return;
     const root = document.documentElement;
-    const write = () => root.style.setProperty("--shell-banners", `${el.getBoundingClientRect().height}px`);
+    // In Boredroom for Mac's window (the Mac app shell, 26 October 2026) the banners lie over the page's top, and the
+    // 16px of gaps around the floating page come off the screen's height too (globals.css, "Boredroom for Mac's window").
+    const write = () => {
+      const h = el.getBoundingClientRect().height;
+      const mac = root.dataset.shell === "mac";
+      root.style.setProperty("--shell-banners", `${mac ? h + 16 : h}px`);
+      if (mac) root.style.setProperty("--mac-banners", `${h}px`); else root.style.removeProperty("--mac-banners");
+    };
     const sizes = new ResizeObserver(write);
     sizes.observe(el);
     write();
-    return () => { sizes.disconnect(); root.style.removeProperty("--shell-banners"); };
+    return () => { sizes.disconnect(); root.style.removeProperty("--shell-banners"); root.style.removeProperty("--mac-banners"); };
   }, []);
-  return <div ref={ref} className="sticky top-0 z-[var(--z-sticky)]">{children}</div>;
+  return <div ref={ref} data-shell-banners className="sticky top-0 z-[var(--z-sticky)]">{children}</div>;
 }

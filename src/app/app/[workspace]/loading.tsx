@@ -10,10 +10,12 @@ import { Skeleton } from "@/components/ui/states";
  */
 export default function WorkspaceLoading() {
   return (
-    <div className="flex min-h-dvh" role="status">
+    // data-app-shell, data-app-sidebar, data-shell-header, data-app-main, data-shell-topbar: the Mac app shell's hooks
+    // (globals.css), so the skeleton floats in Boredroom for Mac's window like the page it stands in for.
+    <div data-app-shell className="flex min-h-dvh" role="status">
       <span className="sr-only">Loading</span>
-      <aside aria-hidden className="sticky top-0 hidden h-dvh w-64 shrink-0 flex-col overflow-hidden border-r border-border bg-sidebar md:flex [[data-sidebar=collapsed]_&]:w-14">
-        <div className="flex h-[50px] shrink-0 items-center pl-[18px] in-data-[sidebar=collapsed]:justify-center in-data-[sidebar=collapsed]:pl-0">
+      <aside aria-hidden data-app-sidebar className="sticky top-0 hidden h-dvh w-64 shrink-0 flex-col overflow-hidden border-r border-border bg-sidebar md:flex [[data-sidebar=collapsed]_&]:w-14">
+        <div data-shell-header className="flex h-[50px] shrink-0 items-center pl-[18px] in-data-[sidebar=collapsed]:justify-center in-data-[sidebar=collapsed]:pl-0">
           <LogoArt height={16} className="in-data-[sidebar=collapsed]:hidden" />
           <LogoArt variant="mark" height={18} className="hidden in-data-[sidebar=collapsed]:inline-flex" />
         </div>
@@ -26,8 +28,8 @@ export default function WorkspaceLoading() {
           <div className="flex h-8 items-center gap-2 px-2 in-data-[sidebar=collapsed]:px-1.5"><Skeleton className="size-5 shrink-0 rounded-full" /><Skeleton className="h-3.5 w-24 in-data-[sidebar=collapsed]:hidden" /></div>
         </div>
       </aside>
-      <div aria-hidden className="flex min-w-0 flex-1 flex-col">
-        <div className="sticky top-0 z-[var(--z-sticky)] grid h-[50px] shrink-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b border-border bg-background px-3 lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
+      <div aria-hidden data-app-main className="flex min-w-0 flex-1 flex-col">
+        <div data-shell-topbar className="sticky top-0 z-[var(--z-sticky)] grid h-[50px] shrink-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b border-border bg-background px-3 lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
           <div className="flex items-center gap-2"><Skeleton className="size-8 rounded-[10px]" /><Skeleton className="h-3.5 w-28" /></div>
           <Skeleton className="hidden h-8 w-[230px] rounded-xl lg:block" />
           <div className="flex items-center justify-end gap-1"><Skeleton className="size-8 rounded-[10px]" /><Skeleton className="size-8 rounded-[10px]" /><Skeleton className="ml-1 size-8 rounded-full" /></div>

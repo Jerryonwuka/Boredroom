@@ -18,9 +18,10 @@ export function useMacOrNull(): boolean | null {
 
 /**
  * Inside Boredroom for Mac's own window (owner request, 24 October 2026: option A), read after hydration like the
- * above: false on the server. For the experience only (the user agent can say anything).
+ * above: false on the server. For the experience only (the user agent can say anything). `<html data-shell="mac">`
+ * (the Mac app shell, 26 October 2026) counts too, so a development browser forced with `?shell=mac` agrees.
  */
-const inDesktopApp = () => navigator.userAgent.includes("BoredroomDesktop/");
+const inDesktopApp = () => navigator.userAgent.includes("BoredroomDesktop/") || document.documentElement.dataset.shell === "mac";
 export function useIsDesktopApp(): boolean {
   return useSyncExternalStore(noop, inDesktopApp, () => false);
 }

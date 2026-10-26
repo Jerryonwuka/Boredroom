@@ -10,7 +10,7 @@ import { MessageToasts } from "@/components/app/message-toasts";
 import { AssistantDrawer } from "@/components/app/assistant-drawer";
 import { BrendaPresence } from "@/components/app/brenda";
 import { BrendaPointer } from "@/components/app/brenda-pointer";
-import { cloneElement, Fragment, isValidElement, Suspense, type ReactElement, type ReactNode } from "react";
+import { cloneElement, Fragment, isValidElement, Suspense, ViewTransition, type ReactElement, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { ImpersonationBanner, ShellBanners } from "@/components/app/impersonation-banner";
 import { BillingBanner, ShellStrip } from "@/components/app/billing-banner";
@@ -24,6 +24,8 @@ import { AssistantSetup } from "@/components/app/assistant-setup";
 import { assistantProfiles } from "@/server/services/assistant-profile";
 import { welcomeReady } from "@/server/services/welcome";
 import { DEFAULT_ASSISTANT_NAME } from "@/lib/assistant-look";
+import { shell } from "@/server/lib/desktop-app";
+import { MacShell } from "@/components/app/mac-shell";
 
 export const ROLE_LABEL: Record<string, string> = { owner: "Organisation owner", hr: "HR administrator", manager: "Team lead", employee: "Staff" };
 
@@ -152,7 +154,8 @@ export async function AppShell({ ctx, counts, teams = [], children, bleed = fals
   // own assistant and the workspace's are read alongside (owner decision, 7 October 2026: personal assistants), cached
   // per request so the page reads the same ones.
   // Whether the first-run welcome is in (migration 0056; owner request, 11 October 2026) is read alongside: never throws.
-  const [launch, admin, mine, assistants, welcomeOn] = await Promise.all([launchSettings(), getAdmin(), listMyWorkspaces(ctx.user.profileId).catch(() => []), assistantProfiles(ctx), welcomeReady()]);
+  const [launch, admin, mine, assistants, welcomeOn, frame] = await Promise.all([launchSettings(), getAdmin(), listMyWorkspaces(ctx.user.profileId).catch(() => []), assistantProfiles(ctx), welcomeReady(), shell()]);
+  const mac = frame === "mac";
   // Maintenance: administrators pass; everyone else sees the notice (unless app access was left on).
   if (launch.mode === "maintenance" && !launch.app_access && !admin) {
     return (
@@ -192,15 +195,16 @@ export async function AppShell({ ctx, counts, teams = [], children, bleed = fals
       {isOrg ? <BillingBanner orgSlug={ctx.org.slug} plan={ctx.plan} /> : null}
       {launch.mode === "maintenance" && launch.app_access ? <ShellStrip tone="warning">{launch.message || "Maintenance is under way; some things may be slow for a while."}</ShellStrip> : null}
     </ShellBanners>
-    <div className={cn("flex min-h-[calc(100dvh-var(--shell-banners,0px))]", bleed && "md:h-[calc(100dvh-var(--shell-banners,0px))] md:overflow-hidden")}>
+    {/* data-app-shell and data-app-main are the Mac app shell's hooks (globals.css, "Boredroom for Mac's window"). */}
+    <div data-app-shell data-bleed={bleed || undefined} className={cn("flex min-h-[calc(100dvh-var(--shell-banners,0px))]", bleed && "md:h-[calc(100dvh-var(--shell-banners,0px))] md:overflow-hidden")}>
       <Sidebar {...nav} />
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div data-app-main className="flex min-w-0 flex-1 flex-col">
         <TopBar orgSlug={ctx.org.slug} orgName={ctx.org.name} roleLabel={ROLE_LABEL[ctx.membership.role]} isOrg={isOrg} unread={counts.unread} attention={counts.attention} recent={counts.recent ?? []} pages={pages} brenda={brenda}
           user={{ profileId: ctx.user.profileId, displayName: ctx.user.displayName, email: ctx.user.email, avatarKey: ctx.user.avatarKey, title: ctx.user.title, statusText: ctx.user.statusText, presence: ctx.user.presence, isAdmin: !!admin }}
           menu={<MobileNav {...nav} className="md:hidden" />} />
         {bleed
-          ? <main id="main" className="flex min-h-0 flex-1 flex-col md:h-[calc(100dvh-var(--header-height)-var(--shell-banners,0px))]">{children}</main>
-          : <PageColumn>{children}</PageColumn>}
+          ? <main id="main" className="flex min-h-0 flex-1 flex-col md:h-[calc(100dvh-var(--header-height)-var(--shell-banners,0px))]">{mac ? <PageFade>{children}</PageFade> : children}</main>
+          : <PageColumn fade={mac}>{children}</PageColumn>}
         {ctx.plan.features.AI_ASSISTANT ? <AssistantDrawer orgSlug={ctx.org.slug} isOrg={isOrg} firstName={ctx.user.displayName.split(" ")[0]} timeZone={ctx.org.timezone} floating /> : null}
         {ctx.plan.features.AI_ASSISTANT && !isOrg ? <BrendaPresence orgSlug={ctx.org.slug} /> : null}
         {/* Brenda points (owner request, 11 October 2026): `?point=<key>` or her chat's "Show me" draws her beside an element
@@ -209,6 +213,7 @@ export async function AppShell({ ctx, counts, teams = [], children, bleed = fals
         {showSetup ? <AssistantSetup orgSlug={ctx.org.slug} orgName={ctx.org.name} /> : null}
         <RealtimeRefresher orgSlug={ctx.org.slug} />
         <Suspense fallback={null}><MessageToasts orgSlug={ctx.org.slug} /></Suspense>
+        {mac ? <MacShell /> : null}
       </div>
     </div>
     </AssistantProvider>
@@ -222,13 +227,23 @@ export async function AppShell({ ctx, counts, teams = [], children, bleed = fals
  * offset) never covers the end of their last line once the page is scrolled to the bottom; from lg up the notes'
  * 72ch measure stays left of it.
  */
-function PageColumn({ children }: { children: ReactNode }) {
+function PageColumn({ children, fade = false }: { children: ReactNode; fade?: boolean }) {
   const notes: ReactElement<{ className?: string }>[] = [];
   const content = liftPageNotes(children, notes);
   return (
     <main id="main" className="flex w-full min-w-0 flex-1 flex-col px-5 pb-16 pt-6">
-      <PageRise>{content}</PageRise>
+      <PageRise>{fade ? <PageFade>{content}</PageFade> : content}</PageRise>
       {notes.map((n, i) => cloneElement(n, { key: `page-notes-${i}`, className: cn(n.props.className, "max-lg:pb-8") }))}
     </main>
   );
+}
+
+/**
+ * Boredroom for Mac's window only (the Mac app shell, owner request 26 October 2026): a short cross-fade between pages,
+ * as a native app changes view. React's ViewTransition runs the browser's View Transitions on the router's navigations;
+ * the `shell-page` class times it (globals.css: 160ms, opacity only, nothing under reduced motion). In a browser the
+ * page is not wrapped, so nothing changes there.
+ */
+function PageFade({ children }: { children: ReactNode }) {
+  return <ViewTransition default="shell-page">{children}</ViewTransition>;
 }
