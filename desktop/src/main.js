@@ -239,11 +239,12 @@
 // no media URL), and natural-voice.js plays it with Web Audio while her faces follow the measured level of what plays.
 // Anything that goes wrong (an audio context that will not run, a refusal such as the ElevenLabs plan running out of
 // credits (Boredroom sets no daily cap since 12 October 2026), ElevenLabs failing, no answer within 15 s, audio that will
-// not decode) speaks with the computer voice at once, as
-// before: the notch never goes silent, and an answer that comes late is dropped. Voice off and quiet hours decide whether
-// she speaks, as before; the offer only decides how. Stop, typing to her, a new question, closing the card, the talk keys
-// and signing out stop the natural voice as they stop Rust's. The card keeps its offer (`card.speech`), so Listen says it
-// in the same voice while the token lasts (30 minutes); after that, or without an offer, Listen uses the computer voice.
+// not decode) leaves her quiet, the words on the card (owner request, 27 October 2026: "I want everything to be ElevenLabs
+// voice and no local voice at all"; the computer voice used to stand in, so her voice alternated). A line without an
+// offer of its own is signed by Boredroom first (`offerFor`). Voice off and quiet hours decide whether she speaks, as
+// before. Stop, typing to her, a new question, closing the card, the talk keys and signing out stop the natural voice.
+// The card keeps its offer (`card.speech`), so Listen says it in the same voice while the token lasts (30 minutes); after
+// that Listen asks Boredroom for a new one.
 // desktop/README.md writes down the Rust change for later (a native player, if WKWebView ever refuses Web Audio).
 //
 // Calls (owner decisions, 8 October 2026, confirmed 10 October 2026: phase 8, "build Phase 8, cook"; contract F). Screen
@@ -351,8 +352,8 @@
 //   which matches common commands on the Mac ("Open Figma", "Turn the volume down", "Hide everything") or asks the
 //   router, and does routine things straight away. No Yes/No: the "Doing it" strip (the compact bar) shows the orange live
 //   dot and "Opening Figma", then the green check and "Opened Figma" (with Undo when it can be undone), and tucks away.
-//   The short line is said at once when the request was spoken (`sayLine`: a clip in her natural voice kept on this Mac,
-//   else the Mac's own voice at once, `speak_now`, and the natural clip fetched for next time). Only what deletes, sends,
+//   The short line is said when the request was spoken (`sayLine`: a clip in her natural voice kept on this Mac, else
+//   fetched from ElevenLabs and kept; never the Mac's own voice, 27 October 2026). Only what deletes, sends,
 //   pays or touches security asks first (the neutral ask card); "Check with me before every task" (the person's own
 //   switch, default off) brings the Yes/No back for everything. Several files: "Which one?". Questions about the screen go
 //   on as looks; quick ones answer at once, hard ones after "Let me look properly."
@@ -485,7 +486,7 @@ function keepNatural(token, audio, run = naturalRun) {
   naturalKept.set(token, audio);
   while (naturalKept.size > NATURAL_KEEP) naturalKept.delete(naturalKept.keys().next().value);
 }
-// What the speech route answers when the computer voice should speak (contract E.1, D.1): not worth the app's log.
+// What the speech route answers when she should stay quiet (contract E.1, D.1): not worth the app's log.
 const ORDINARY_REFUSALS = ["VOICE_UNAVAILABLE", "SPEECH_TOKEN"];
 const reduceMotion = window.matchMedia ? window.matchMedia("(prefers-reduced-motion: reduce)") : null;
 const TUCK = { w: 96, h: 5 };
@@ -2772,20 +2773,68 @@ const voiceOff = () => data?.assistant?.voice === false || offHere("voice");
 const offHere = (key) => { const off = data?.abilities?.off; return Array.isArray(off) && off.includes(key); };
 
 /**
- * Reads `text` aloud. With the reply's `speech` offer (natural voice, owner decision 9 October 2026, contract G.2), in the
- * voice the person chose from ElevenLabs; without one, or when that fails in any way, Rust says it with the computer's
- * own voice (it renders first, so the first sound comes a moment later), as before.
+ * Reads `text` aloud, only ever in her ElevenLabs voice (owner request, 27 October 2026: "I want everything to be
+ * ElevenLabs voice and no local voice at all"). With the reply's `speech` offer (contract G.2) its words are said; a line
+ * without one (one the notch words itself: a plan and its question, a step's question, a doing or done line) gets its
+ * offer from Boredroom first (`offerFor`). When ElevenLabs can't say it (no voice, no key, a refusal, no answer in 15 s,
+ * audio that will not play) she stays quiet: the words still show, and the Listen button says why in its tooltip. The
+ * computer's own voice never stands in, so she never switches voices between replies.
+ * `onAudio(base64)`: the audio once it is had (the short-line clips kept on this Mac).
  */
-function sayAloud(text, offer) {
+function sayAloud(text, offer, onAudio = null) {
   if (!text || voiceOff()) return;
-  stopNatural(); // a new answer replaces the last (Rust's speak stops its own)
+  stopNatural(); // a new answer replaces the last
+  invoke("stop_speaking").catch(() => {});
+  const gen = natural.gen;
+  if (typeof NaturalVoice !== "object" || !NaturalVoice?.supported) return void quietInstead(gen, "no Web Audio");
   talkWaiting = true;
-  waitToTalk();
+  waitToTalk(NATURAL_WAIT_MS + 2_000);
   showTalking();
   const o = naturalOffer(offer, text);
-  if (o) return void sayNaturally(text, o, natural.gen);
-  invoke("speak", { text }).catch(() => { talkWaiting = false; showTalking(); });
+  if (o) return void sayNaturally(o.text, o, gen, onAudio);
+  natural.pending = true;
+  void offerFor(text).then((got) => {
+    if (gen !== natural.gen) return;
+    if (!got) return quietInstead(gen, null);
+    sayNaturally(got.text, got, gen, onAudio);
+  });
 }
+/**
+ * An offer for a line the notch says itself (POST /assistant/front/line: Boredroom signs it for this person), or null:
+ * no natural voice available (Voice off, no key), an older server, or no answer.
+ */
+async function offerFor(text) {
+  const t = String(text ?? "").replace(SPEECH_CONTROL, "").replace(/\s+/g, " ").trim();
+  if (!t || !config?.workspaceSlug) return null;
+  // One utterance at most (src/lib/natural-voices SPEECH_MAX_CHARS), cut at a sentence end where there is one.
+  let words = t;
+  if (words.length > SPEECH_MAX) {
+    const head = words.slice(0, SPEECH_MAX);
+    let cut = -1;
+    for (const m of head.matchAll(/[.!?…](?=\s|$)/g)) cut = m.index + 1;
+    words = (cut >= SPEECH_MAX * 0.4 ? head.slice(0, cut) : head.slice(0, Math.max(1, head.lastIndexOf(" ")))).trim();
+  }
+  try {
+    const r = await call("POST", org("/assistant/front/line"), { text: words });
+    return offerOf({ speech: r?.speech });
+  } catch { return null; }
+}
+const SPEECH_MAX = 600;
+/**
+ * ElevenLabs could not say it: she stays quiet (never the computer's voice; owner request, 27 October 2026). The words
+ * are on the card; the Listen button's tooltip says her voice could not be reached (`voiceMissedAt`), for a minute.
+ */
+function quietInstead(gen, why) {
+  if (gen !== natural.gen) return;
+  natural.pending = false; natural.stop = null;
+  if (why) report(`natural voice: she stayed quiet (${why})`);
+  if (typeof NaturalVoice === "object" && NaturalVoice) NaturalVoice.release();
+  voiceMissedAt = Date.now();
+  talkWaiting = false; clearTimeout(talkWaitTimer);
+  showTalking();
+}
+let voiceMissedAt = 0;
+const VOICE_MISSED_MS = 60_000;
 /**
  * She never started (nothing to say, or the microphone opened meanwhile): the button goes back to Listen after 12 s, or
  * `ms` (the natural voice's wait for its audio, and a moment more).
@@ -2826,7 +2875,8 @@ function talkEnded() {
 // Owner decision, 9 October 2026: natural voice (ElevenLabs), contract G (the header says what she does). The words go to
 // Boredroom's speech route with the reply's signed token, through Rust's `api` (the webview holds no token and its CSP
 // allows no media URL), and come back whole as base64; natural-voice.js (`NaturalVoice`) plays them with Web Audio and
-// measures them for her faces. Every failure speaks with the computer voice at once: the notch never goes silent.
+// measures them for her faces. Every failure leaves her quiet (the words still show): never the computer's voice
+// (owner request, 27 October 2026).
 
 /** The talk keys are down, or the listening card is open: the microphone is (about to be) open. */
 // A look's own recording counts too (screen help, contract C.2: the looking card while its microphone is open).
@@ -2848,11 +2898,16 @@ function offerOf(r) {
   if (s.path !== org("/assistant/speech") || typeof s.token !== "string" || !s.token || typeof s.text !== "string" || !s.text.trim()) return null;
   return { path: s.path, token: s.token, text: s.text };
 }
-/** The offer for saying exactly `text` in the natural voice, or null (no offer, other words, or no Web Audio here). */
+/**
+ * The offer to use for `text`, or null (no offer, or no Web Audio here). The offer's own words are what is said: they are
+ * the server's words for this same reply, which the page may word a little differently (Markdown taken out, `spoken`
+ * shortened). Turning such an offer down used to hand the reply to the computer's voice (27 October 2026: the voices
+ * alternated); `text` is only the fallback for a missing offer.
+ */
 function naturalOffer(offer, text) {
   if (typeof NaturalVoice !== "object" || !NaturalVoice?.supported) return null;
-  const o = offerOf({ speech: offer });
-  return o && sameWords(o.text, text) ? o : null;
+  void text;
+  return offerOf({ speech: offer });
 }
 
 /** Stops the natural voice and drops any answer still coming for it. Her face ends a moment later, as Rust's `spoken` ends it. */
@@ -2872,27 +2927,19 @@ function stopNatural() {
  * Asks Boredroom for `offer`'s audio and plays it (contract G.2). Before asking, the audio context must be running (so a
  * webview that will not play never spends the workspace's characters); no answer within 15 s, a refusal (VOICE_UNAVAILABLE:
  * the ElevenLabs plan out of credits, ElevenLabs failing; nothing else is told apart up here), audio that will not
- * decode or a context that will not run: the computer voice says `text` at once. A context that is only slow to wake
- * (a Bluetooth output) costs that one utterance; one that truly will not run turns the natural voice off for the rest of
- * the run (NaturalVoice decides, contract G.3; review, 9 October 2026). Whatever stops it before it plays lets the context
+ * decode or a context that will not run: she stays quiet (`quietInstead`; never the computer's voice). A context that is
+ * slow to wake (a Bluetooth output) is waited for (NaturalVoice.warm, up to 2 s). Whatever stops it before it plays lets the context
  * sleep again (`NaturalVoice.release`). Audio heard once is kept for Listen again (`naturalKept`).
  */
-async function sayNaturally(text, offer, gen) {
+async function sayNaturally(text, offer, gen, onAudio = null) {
   natural.pending = true;
   // She stays "getting ready" (Stop on the button) for as long as the audio may still come.
   waitToTalk(NATURAL_WAIT_MS + 2_000);
-  // Whatever Rust was saying gives way; its `spoken` is not read while this is fetched, so her face ends here.
   if (talking) talkEnded();
-  invoke("stop_speaking").catch(() => {});
-  const fallback = (why) => {
-    if (gen !== natural.gen) return; // hushed, or something newer is being said
-    natural.pending = false; natural.stop = null;
-    // Why, in the app's log (never the words or the token); a refusal by Boredroom is ordinary and not reported.
-    if (why) report(`natural voice: the computer voice spoke instead (${why})`);
-    NaturalVoice.release();
-    waitToTalk();
-    invoke("speak", { text }).catch(() => { talkWaiting = false; showTalking(); });
-  };
+  // Why, in the app's log (never the words or the token); a refusal by Boredroom is ordinary and not reported. She
+  // stays quiet: never the computer's voice (owner request, 27 October 2026).
+  const fallback = (why) => quietInstead(gen, why);
+  void text;
   if (!(await NaturalVoice.warm())) return fallback("suspended");
   if (gen !== natural.gen) return;
   let r = null, timer = null;
@@ -2900,7 +2947,7 @@ async function sayNaturally(text, offer, gen) {
   const run = naturalRun;
   if (kept) r = { audio: kept };
   else try {
-    // Kept whenever it comes, even after the 15 s gave way to the computer voice: Boredroom has counted (and ElevenLabs
+    // Kept whenever it comes, even after the 15 s ran out: Boredroom has counted (and ElevenLabs
     // billed) it by then, so Listen plays it from here instead of paying for the same words again (fix review, 9 October
     // 2026). Nothing can cancel the request itself (Rust's bridge), so its answer is never just dropped.
     const asked = call("POST", offer.path, { token: offer.token, text: offer.text, as: "base64" });
@@ -2910,12 +2957,21 @@ async function sayNaturally(text, offer, gen) {
       new Promise((_, reject) => { timer = setTimeout(() => reject({ timeout: true }), NATURAL_WAIT_MS); }),
     ]);
   } catch (err) {
-    // A token past its 30 minutes (Listen long after the reply): the card's offer goes, so the next Listen asks nothing.
-    if (err?.code === "SPEECH_TOKEN" && card?.speech?.token === offer.token) card.speech = null;
+    // A token past its 30 minutes (Listen long after the reply): the card's offer goes, and the same words are signed
+    // again once (`offerFor`), so a late Listen is still her voice.
+    if (err?.code === "SPEECH_TOKEN") {
+      if (card?.speech?.token === offer.token) card.speech = null;
+      if (!offer.renewed) {
+        const again = await offerFor(offer.text);
+        if (gen !== natural.gen) return;
+        if (again) { if (card?.kind && card.spokenText) card.speech = again; return void sayNaturally(again.text, { ...again, renewed: true }, gen, onAudio); }
+      }
+    }
     return fallback(err?.timeout ? "no answer in 15 s" : ORDINARY_REFUSALS.includes(err?.code) ? null : `status ${Number(err?.status) || 0}`);
   } finally { clearTimeout(timer); }
   if (gen !== natural.gen) return;
   if (typeof r?.audio !== "string" || !r.audio) return fallback("no audio");
+  if (typeof onAudio === "function") { try { onAudio(r.audio); } catch { /* a full cache is no reason to stay quiet */ } }
   // The talk keys went down meanwhile: nothing is said (Rust's speak would answer `unspoken` too).
   if (micOpen()) { natural.pending = false; talkWaiting = false; clearTimeout(talkWaitTimer); NaturalVoice.release(); return showTalking(); }
   natural.stop = NaturalVoice.play({
@@ -2932,7 +2988,9 @@ async function sayNaturally(text, offer, gen) {
  * `aria-pressed` carries the state and the tooltip says what a press does. Stop's square is orange (live, accent rules).
  * Only when the answer has something to say, and never while the workspace has voice switched off (phase 7c).
  */
-const listenButton = () => (card?.spokenText && !voiceOff() ? `<button class="btn ghost icon" data-act="listen" aria-label="Listen to this reply" aria-pressed="${aloud()}" title="${aloud() ? "Stop" : "Listen"}">${icon(aloud() ? "stop" : "volume")}</button>` : "");
+const listenButton = () => (card?.spokenText && !voiceOff() ? `<button class="btn ghost icon" data-act="listen" aria-label="Listen to this reply" aria-pressed="${aloud()}" title="${listenTitle()}">${icon(aloud() ? "stop" : "volume")}</button>` : "");
+/** Stop or Listen; a small note for a minute after her voice could not be reached (she stayed quiet). */
+const listenTitle = () => (aloud() ? "Stop" : Date.now() - voiceMissedAt < VOICE_MISSED_MS ? "Listen (her voice couldn't be reached just now)" : "Listen");
 
 /** Her faces and the Listen button as `talking` and `talkWaiting` now say, in place. */
 function showTalking() {
@@ -2943,7 +3001,7 @@ function showTalking() {
   const on = aloud();
   for (const b of el.querySelectorAll('[data-act="listen"]')) {
     b.setAttribute("aria-pressed", String(on));
-    b.title = on ? "Stop" : "Listen";
+    b.title = listenTitle();
     b.innerHTML = icon(on ? "stop" : "volume");
   }
   if (talking) talkLevel(talkLast);
@@ -3636,8 +3694,9 @@ async function openChat() {
 // OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 const Wave = (() => {
-  // 2px bars 1px apart, never shorter than 4px (silence is a row of short bars), as ElevenLabs' recording parts.
-  const BAR = 2, GAP = 1, STEP = BAR + GAP, MIN = 4, RATE = 30, FADE = 20;
+  // Slim and calm (owner request, 27 October 2026: "too big and bulky … a nice voice wave"): 2px bars 2px apart, never
+  // shorter than 2px (silence is a quiet row), one every 45 ms, in an 18px strip (style.css `.wave`).
+  const BAR = 2, GAP = 2, STEP = BAR + GAP, MIN = 2, RATE = 45, FADE = 16;
   const reduce = window.matchMedia ? window.matchMedia("(prefers-reduced-motion: reduce)") : null;
   let mode = "idle";        // live | processing | idle
   let hist = [];            // what was heard, newest last
@@ -3653,7 +3712,7 @@ const Wave = (() => {
     if (!cv || mode === "idle") return;
     const reduced = !!reduce?.matches;
     if (mode === "live") {
-      smooth += (target - smooth) * (target > smooth ? 0.5 : 0.15);
+      smooth += (target - smooth) * (target > smooth ? 0.35 : 0.12); // calm: eases up, settles slowly
       if (!lastPush || now - lastPush > RATE * 4) lastPush = now - RATE; // first sample now; never catch up in a burst
       while (now - lastPush >= RATE) { hist.push(Math.max(0.05, Math.min(1, smooth))); lastPush += RATE; }
       const keep = Math.ceil((cv.clientWidth || 400) / STEP) + 3;
@@ -4543,39 +4602,34 @@ function dropHeld() {
 /** The reply card asks follow-ups about the same pictures while Rust holds them, a minute at most. */
 const followUpOpen = () => lookV2() && !!held && Date.now() < held.until && card?.kind === "voice" && card.phase === "reply" && !!card.looked && (!card.lookId || card.lookId === held.lookId);
 
-// ---- her sentences as they stream in (contract B.10 `speak_queue`, C.3) -----------------------------------------------
-// The first sentence of a look cuts off whatever was being said, the rest follow in order. The computer voice queues in
-// Rust (`speak_queue`); her natural voice fetches each sentence's audio as soon as it arrives and plays them one at a
-// time here. A sentence the natural voice cannot say (no offer, a refusal, no answer in 15 s, audio that will not decode)
-// is said by the computer voice, and so is everything after it, so the order never breaks. Stop, a new question, the talk
-// keys and signing out end it all (`natural.gen` moves on).
-const sayQ = { gen: -1, items: [], playing: false, mode: "computer", rustSaid: 0 };
+// ---- her sentences as they stream in (contract B.10, C.3) ----------------------------------------------------------
+// The first sentence of a look cuts off whatever was being said, the rest follow in order, all in her ElevenLabs voice
+// (owner request, 27 October 2026: no local voice at all): each sentence's audio is fetched as soon as it arrives (a
+// sentence without an offer of its own gets one from Boredroom, `offerFor`) and they play one at a time here. A sentence
+// ElevenLabs cannot say is skipped quietly (its words are on the card) and the next one plays; the computer's voice
+// never takes over, so two voices never alternate. Stop, a new question, the talk keys and signing out end it all
+// (`natural.gen` moves on).
+const sayQ = { gen: -1, items: [], playing: false };
 
 /** Says one streamed sentence (the first of a look: `first`). */
 function sayStreamed(text, speech, first) {
   if (!text || voiceOff()) return;
   if (first) {
     stopNatural();
-    // The voice is chosen by the first sentence: her natural voice when it carries an offer, else the computer's.
-    Object.assign(sayQ, { gen: natural.gen, items: [], playing: false, mode: naturalOffer(speech, text) ? "natural" : "computer", rustSaid: 0 });
+    invoke("stop_speaking").catch(() => {});
+    Object.assign(sayQ, { gen: natural.gen, items: [], playing: false });
     talkWaiting = true; waitToTalk(NATURAL_WAIT_MS + 2_000); showTalking();
   }
   if (sayQ.gen !== natural.gen) return; // hushed since this look began
-  if (sayQ.mode === "computer") return sayByComputer(text);
-  // In the natural voice every sentence waits its turn; one without an offer is said by the computer voice at its turn,
-  // and so is everything after it (playQueued), so two voices never overlap.
+  if (typeof NaturalVoice !== "object" || !NaturalVoice?.supported) return void quietInstead(sayQ.gen, "no Web Audio");
   const o = naturalOffer(speech, text);
   const item = { text, audio: null };
-  item.ready = o ? fetchNatural(o).then((a) => { item.audio = a; }, (err) => { if (err?.message && err.message !== "suspended") report(`natural voice: the computer voice spoke instead (${err.message})`); }) : Promise.resolve();
+  const why = (err) => { if (err?.message && err.message !== "suspended") report(`natural voice: a sentence stayed quiet (${err.message})`); };
+  item.ready = (o ? Promise.resolve(o) : offerFor(text))
+    .then((got) => (got ? fetchNatural(got) : null))
+    .then((a) => { item.audio = a; }, why);
   sayQ.items.push(item);
   if (!sayQ.playing) playQueued(sayQ.gen);
-}
-/** One sentence in the computer voice, queued in Rust (an older Rust without `speak_queue`: `speak`). */
-function sayByComputer(text) {
-  const first = sayQ.rustSaid === 0;
-  sayQ.rustSaid++;
-  talkWaiting = true; waitToTalk();
-  invoke("speak_queue", { text, first }).catch(() => (first ? invoke("speak", { text }) : null)).catch(() => { talkWaiting = false; showTalking(); });
 }
 /** A sentence's natural audio (base64), kept for Listen again; throws when it cannot be had. */
 async function fetchNatural(offer) {
@@ -4592,24 +4646,24 @@ async function fetchNatural(offer) {
     return r.audio;
   } finally { clearTimeout(timer); }
 }
-/** Plays the next queued sentence in the natural voice, or hands it and the rest to the computer voice. */
+/** Plays the next queued sentence in her natural voice; one that could not be had is skipped quietly. */
 async function playQueued(gen) {
   if (gen !== natural.gen || sayQ.gen !== gen) return;
   const item = sayQ.items.shift();
-  if (!item) { sayQ.playing = false; return; }
+  if (!item) {
+    sayQ.playing = false;
+    if (natural.on) { natural.on = false; talkEnded(); companionSpeaking(false); }
+    else if (talkWaiting) { talkWaiting = false; clearTimeout(talkWaitTimer); showTalking(); }
+    NaturalVoice.release();
+    return;
+  }
   sayQ.playing = true;
   natural.pending = true;
   await item.ready;
   if (gen !== natural.gen) return;
   natural.pending = false;
-  const toComputer = () => {
-    sayQ.mode = "computer"; sayQ.playing = false;
-    if (natural.on) { natural.on = false; talkEnded(); companionSpeaking(false); }
-    NaturalVoice.release();
-    for (const t of [item.text, ...sayQ.items.splice(0).map((x) => x.text)]) sayByComputer(t);
-  };
   if (micOpen()) { sayQ.items = []; sayQ.playing = false; talkWaiting = false; NaturalVoice.release(); return showTalking(); }
-  if (!item.audio) return toComputer();
+  if (!item.audio) { voiceMissedAt = Date.now(); return void playQueued(gen); }
   natural.stop = NaturalVoice.play({
     audioBase64: item.audio,
     onStart: () => { if (gen !== natural.gen) return; if (!natural.on) { natural.on = true; talkStarted(); companionSpeaking(true); } },
@@ -4620,7 +4674,7 @@ async function playQueued(gen) {
       if (sayQ.items.length) return void playQueued(gen);
       sayQ.playing = false; natural.on = false; talkEnded(); companionSpeaking(false);
     },
-    onFail: () => { if (gen !== natural.gen) return; natural.stop = null; toComputer(); },
+    onFail: () => { if (gen !== natural.gen) return; natural.stop = null; voiceMissedAt = Date.now(); playQueued(gen); },
   });
 }
 /** The companion talks while her natural voice plays (Rust's own voice drives it itself; contract B.10). */
@@ -5665,36 +5719,29 @@ function keepFrontTurn(f) {
 
 /**
  * A short line said at once (helpers contract K.4, M.2): only when the request was spoken and the person's speaking rule
- * says so. Her natural voice from a clip kept on this Mac when she has said it before; otherwise the Mac's own voice at once
- * (`speak_now`; `speak` on a Rust without it), and the natural clip fetched in the background for next time. A line the
- * server made comes with its own offer (`offer`) and plays as her streamed sentences do.
+ * says so, and only ever in her ElevenLabs voice (owner request, 27 October 2026: the Mac's own voice used to say a line
+ * the first time and the kept clip after, so her voice alternated). A clip kept on this Mac plays at once; otherwise the
+ * line's offer (its own, or one from Boredroom) is fetched and said, and the clip kept for next time. When ElevenLabs
+ * can't say it she stays quiet: the strip shows the words.
  */
 function sayLine(text, spoken, offer = null) {
   const t = String(text ?? "").replace(/\s+/g, " ").trim().slice(0, 200);
   if (!t || !speaksFor(spoken)) return;
-  if (offer && naturalOffer(offer, t)) return sayAloud(t, offer);
   const key = Front.lineKey(naturalVoiceOf(), t);
   const kept = key ? lineCache.get(key) : null;
-  if (kept && typeof NaturalVoice === "object" && NaturalVoice?.supported) return void playLine(t, kept);
-  sayNow(t);
-  if (key) void fetchLine(key, t);
+  if (kept && typeof NaturalVoice === "object" && NaturalVoice?.supported) return void playLine(t, kept, offer);
+  sayAloud(t, offer, key ? (audio) => lineCache.put(key, audio) : null);
 }
-/** The Mac's own voice, at once. */
-function sayNow(t) {
+/** A kept clip in her natural voice; one that will not play is fetched again from ElevenLabs (never the Mac's voice). */
+async function playLine(text, audio, offer = null) {
   stopNatural();
-  talkWaiting = true; waitToTalk(); showTalking();
-  invoke("speak_now", { text: t }).catch(() => invoke("speak", { text: t })).catch(() => { talkWaiting = false; showTalking(); });
-}
-/** A kept clip in her natural voice; anything that goes wrong says it in the Mac's own voice at once. */
-async function playLine(text, audio) {
-  stopNatural();
+  invoke("stop_speaking").catch(() => {});
   const gen = natural.gen;
   talkWaiting = true; waitToTalk(); showTalking();
   if (talking) talkEnded();
-  invoke("stop_speaking").catch(() => {});
   natural.pending = true;
-  const fallback = () => { if (gen !== natural.gen) return; natural.pending = false; natural.stop = null; NaturalVoice.release(); sayNow(text); };
-  if (!(await NaturalVoice.warm())) return fallback();
+  const fallback = () => { if (gen !== natural.gen) return; natural.pending = false; natural.stop = null; NaturalVoice.release(); sayAloud(text, offer); };
+  if (!(await NaturalVoice.warm())) return quietInstead(gen, "suspended");
   if (gen !== natural.gen) return;
   if (micOpen()) { natural.pending = false; talkWaiting = false; NaturalVoice.release(); return showTalking(); }
   natural.stop = NaturalVoice.play({
@@ -5704,20 +5751,6 @@ async function playLine(text, audio) {
     onEnd: () => { if (gen !== natural.gen) return; natural.stop = null; natural.on = false; talkEnded(); companionSpeaking(false); },
     onFail: fallback,
   });
-}
-/** Fetches a short line's natural clip for next time (helpers contract M.2): one at a time per line; failures are silent. */
-const linesAsked = new Set();
-async function fetchLine(key, text) {
-  if (linesAsked.has(key) || typeof NaturalVoice !== "object" || !NaturalVoice?.supported) return;
-  linesAsked.add(key);
-  try {
-    const r = await call("POST", org("/assistant/front/line"), { text });
-    const o = offerOf({ speech: r?.speech });
-    if (!o || !sameWords(o.text, text)) return;
-    const a = await call("POST", o.path, { token: o.token, text: o.text, as: "base64" });
-    if (typeof a?.audio === "string" && a.audio) lineCache.put(key, a.audio);
-  } catch { /* silent (M.2): the Mac's own voice said it */ }
-  finally { linesAsked.delete(key); }
 }
 
 // Rust's front desk events (helpers contract P.3).

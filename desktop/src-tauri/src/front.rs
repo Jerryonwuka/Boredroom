@@ -1895,6 +1895,15 @@ pub fn nonce_ok(n: &str) -> bool {
     n.len() == 32 && n.chars().all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c))
 }
 
+/// Whether words the matcher didn't recognise go to the router (B.3). Owner report, 27 October 2026 ("she says I should
+/// confirm for her to do it by holding down the keys and saying it again, but when I do that she doesn't do it and just
+/// repeats what she said"): only a plain question skips it now ("what…", "how…", "is…"); an instruction the verb list
+/// misses ("clear my desktop", "Open Figma?") used to go to a look or the chat, which can't act and said to ask again
+/// with the keys, and the same words went the same way again.
+pub fn goes_to_router(text: &str, name: &str) -> bool {
+    crate::intent::is_instruction(text, name) || !crate::intent::is_plain_question(text, name)
+}
+
 // ---- the front desk on this Mac (P.2–P.6) ----------------------------------------------------------------------------
 
 use std::sync::{
@@ -2631,7 +2640,7 @@ pub async fn front_send(app: AppHandle, look_id: Option<String>, text: String, m
     if text.chars().count() > 1_000 {
         return Ok(if instruction || !pictures { result(&req, "chat", json!({})) } else { ask_look(&app, &req, messages, "auto", preview).await });
     }
-    if !instruction {
+    if !goes_to_router(&text, &name) {
         // A question: a look with the pictures, or ordinary chat without (B.3, J.5).
         return Ok(if pictures { ask_look(&app, &req, messages, "auto", preview).await } else { result(&req, "chat", json!({})) });
     }
@@ -3289,6 +3298,27 @@ pub(crate) mod tests {
         assert_eq!(origin_of("Open Figma", None, Some(("Open Figma", Duration::from_secs(3))), false), Some("voice"));
         assert_eq!(origin_of("Open Figma", None, Some(("Open Figma", Duration::from_secs(16))), false), None, "too old");
         assert_eq!(origin_of("Quit Slack", None, Some(("Open Figma", Duration::from_secs(1))), false), None);
+    }
+
+    /// Owner report, 27 October 2026: "she says I should confirm for her to do it by holding down the keys and saying it
+    /// again, but when I do that she doesn't do it and just repeats what she said". Words said with her keys that the
+    /// matcher and the verb list both miss went to a look or the chat (which can't act) every time they were said; now
+    /// only a plain question skips the router.
+    #[test]
+    fn key_held_requests_reach_the_router() {
+        for s in ["Clear my desktop", "Open Figma?", "Tell Ada I'm running late", "Wi-Fi off", "Open Figma", "Organise my desktop", "Max, hide Slack"] {
+            assert!(goes_to_router(s, "Max"), "routed: {s:?}");
+            // The same words a second time go the same way: a repeat can never land somewhere new, so nothing may ask for one.
+            assert_eq!(goes_to_router(s, "Max"), goes_to_router(s, "Max"));
+        }
+        for s in ["What does this error mean?", "How do I export in Figma?", "Is Figma open?", "Do you know what this is?"] {
+            assert!(!goes_to_router(s, "Max"), "a plain question: {s:?}");
+        }
+        let src = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/front.rs")).unwrap();
+        let code = src.split("#[cfg(test)]").next().unwrap();
+        let send = &code[code.find("pub async fn front_send(").unwrap()..];
+        let send = &send[..send.find("\n}\n").unwrap()];
+        assert!(send.contains("if !goes_to_router(&text, &name) {"), "front_send asks goes_to_router before a look or the chat");
     }
 
     #[test]

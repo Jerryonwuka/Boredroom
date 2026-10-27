@@ -5,13 +5,14 @@
 // a failure once heard (onEnd, never a restart). Nothing here reaches ElevenLabs or Boredroom: the audio is bytes made here.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import * as web from "@/lib/assistant-speech/level";
 
 type PlayOptions = { audioBase64?: unknown; onStart?: () => void; onLevel?: (l: number) => void; onEnd?: () => void; onFail?: (why: string) => void };
 type NaturalVoiceApi = {
-  T: { RESUME_MS: number; REFUSE_MS: number; IDLE_MS: number; FFT: number; GAIN: number; ATTACK_MS: number; DECAY_MS: number; FLOOR: number; MAX_BYTES: number };
+  T: { WAKE_MS: number; IDLE_MS: number; FFT: number; GAIN: number; ATTACK_MS: number; DECAY_MS: number; FLOOR: number; MAX_BYTES: number };
   readonly supported: boolean;
   disable(): void;
   release(): void;
@@ -111,8 +112,7 @@ describe("the script", () => {
     expect(Object.isFrozen(NV)).toBe(true);
     expect(Object.keys(NV).sort()).toEqual(["T", "base64ToArrayBuffer", "disable", "play", "playing", "release", "rmsLevel", "speakingLevel", "stop", "supported", "warm"]);
     expect(NV.T.FLOOR).toBe(0.08);
-    expect(NV.T.RESUME_MS).toBe(300);
-    expect(NV.T.REFUSE_MS).toBe(2000);
+    expect(NV.T.WAKE_MS).toBe(2000);
   });
   it("is supported until disabled, for the rest of the run", async () => {
     const NV = load();
@@ -283,14 +283,14 @@ describe("play", () => {
     expect(calls).toEqual(["start"]);
   });
 
-  it("fails with `suspended` when the context will not run within 300 ms, and plays nothing", async () => {
+  it("fails with `suspended` when the context will not run within WAKE_MS, and plays nothing", async () => {
     vi.useFakeTimers();
     audio.initial = "suspended";
     audio.resumable = false;
     const NV = load();
     const calls: string[] = [];
     NV.play({ audioBase64: sound, onStart: () => calls.push("start"), onEnd: () => calls.push("end"), onFail: (w) => calls.push(`fail:${w}`) });
-    await vi.advanceTimersByTimeAsync(299);
+    await vi.advanceTimersByTimeAsync(NV.T.WAKE_MS - 1);
     expect(calls).toEqual([]);
     await vi.advanceTimersByTimeAsync(1);
     expect(calls).toEqual(["fail:suspended"]);
@@ -304,7 +304,7 @@ describe("play", () => {
     audio.resumable = false;
     const NV = load();
     const w = NV.warm();
-    await vi.advanceTimersByTimeAsync(300);
+    await vi.advanceTimersByTimeAsync(NV.T.WAKE_MS);
     expect(await w).toBe(false);
     audio.resumable = true;
     expect(await NV.warm()).toBe(true);
@@ -388,7 +388,7 @@ describe("play", () => {
     expect(audio.contexts).toHaveLength(1); // the one context, reused
   });
 
-  it("a failure once heard ends it (onEnd), never onFail, so the computer voice does not start it again", async () => {
+  it("a failure once heard ends it (onEnd), never onFail, so it is not started again", async () => {
     vi.stubGlobal("requestAnimationFrame", () => { throw new Error("no frames"); });
     const NV = load();
     const calls: string[] = [];
@@ -410,39 +410,37 @@ describe("play", () => {
     expect(calls).toEqual(["start", "end"]);
   });
 
-  it("a slow wake-up costs one utterance only: the natural voice stays on, and the context sleeps again (review, 9 October 2026)", async () => {
+  it("a slow wake-up is waited for (AirPods): the utterance still plays in her voice (owner request, 27 October 2026)", async () => {
     vi.useFakeTimers();
     audio.initial = "suspended";
     audio.resumable = false;
     const NV = load();
     const w = NV.warm();
-    await vi.advanceTimersByTimeAsync(300);
-    expect(await w).toBe(false); // this utterance: the computer voice
-    // The output wakes a second later (AirPods): still supported, and back to sleep after IDLE_MS as nothing plays.
-    audio.contexts[0].state = "running";
-    await vi.advanceTimersByTimeAsync(1_700);
+    await vi.advanceTimersByTimeAsync(300); // it used to give up here and hand the utterance to the computer voice
+    audio.contexts[0].state = "running"; // the output wakes a moment later
+    await vi.advanceTimersByTimeAsync(NV.T.WAKE_MS - 300);
+    expect(await w).toBe(true);
     expect(NV.supported).toBe(true);
-    await vi.advanceTimersByTimeAsync(NV.T.IDLE_MS);
-    expect(audio.contexts[0].state).toBe("suspended");
   });
 
-  it("a context that never runs (or refuses) turns the natural voice off for the run", async () => {
+  it("a context that never runs (or refuses) costs that utterance only: the next one tries again", async () => {
     vi.useFakeTimers();
     audio.initial = "suspended";
     audio.resumable = false;
     let NV = load();
-    void NV.warm();
-    await vi.advanceTimersByTimeAsync(1_999);
+    const w = NV.warm();
+    await vi.advanceTimersByTimeAsync(NV.T.WAKE_MS);
+    expect(await w).toBe(false);
     expect(NV.supported).toBe(true);
-    await vi.advanceTimersByTimeAsync(1);
-    expect(NV.supported).toBe(false);
+    audio.contexts[0].state = "running";
+    expect(await NV.warm()).toBe(true);
 
     NV = load();
     const Ctx = FakeContext.prototype.resume;
     FakeContext.prototype.resume = function () { return Promise.reject(new Error("NotAllowedError")); };
     try {
       expect(await NV.warm()).toBe(false);
-      expect(NV.supported).toBe(false);
+      expect(NV.supported).toBe(true);
     } finally { FakeContext.prototype.resume = Ctx; }
   });
 
@@ -470,5 +468,32 @@ describe("play", () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(calls).toEqual(["start"]);
     expect(audio.contexts[0].state).toBe("running");
+  });
+});
+
+// Owner request, 27 October 2026: "It alternates between the local computer's voice and the ElevenLabs voice … I want
+// everything to be ElevenLabs voice and no local voice at all."
+describe("no computer voice on the notch", () => {
+  const main = readFileSync("desktop/src/main.js", "utf8");
+  it("never asks Rust to speak (say, NSSpeechSynthesizer): every line goes to her ElevenLabs voice", () => {
+    expect(main).not.toMatch(/invoke\("speak(?:_now|_queue)?"/);
+    expect(main).not.toMatch(/speechSynthesis/);
+  });
+  it("a line without its own offer is signed by Boredroom first, and a failure leaves her quiet", () => {
+    const sayAloud = main.slice(main.indexOf("function sayAloud("), main.indexOf("function waitToTalk("));
+    expect(sayAloud).toMatch(/offerFor\(text\)/);
+    expect(sayAloud).toMatch(/quietInstead\(gen/);
+    expect(main).toMatch(/call\("POST", org\("\/assistant\/front\/line"\), \{ text: words \}\)/);
+    const naturally = main.slice(main.indexOf("async function sayNaturally("), main.indexOf("const listenButton"));
+    expect(naturally).toMatch(/const fallback = \(why\) => quietInstead\(gen, why\);/);
+  });
+  it("an offer is used even when the page words the reply a little differently (that used to switch voices)", () => {
+    const fn = main.slice(main.indexOf("function naturalOffer("), main.indexOf("function stopNatural("));
+    expect(fn).not.toMatch(/sameWords/);
+  });
+  it("short lines are never said by the Mac first and by ElevenLabs the next time", () => {
+    const fn = main.slice(main.indexOf("function sayLine("), main.indexOf("// Rust's front desk events"));
+    expect(fn).not.toMatch(/sayNow|speak_now/);
+    expect(fn).toMatch(/sayAloud\(t, offer, key \?/);
   });
 });

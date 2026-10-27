@@ -106,6 +106,49 @@ fn verb_stem_at(word: &str) -> bool {
 /// this error mean?", "How do I export in Figma?", "Is Figma open?") is not one. Deterministic.
 pub fn is_instruction(text: &str, assistant_name: &str) -> bool {
     let folded = crate::yes::fold(text);
+    let t = meaning_words(text, assistant_name);
+    let joined = format!(" {} ", t.join(" "));
+    // "Slack and Figma side by side" asks for windows to be arranged, verb or not (review, 16 October 2026).
+    let side_by_side = joined.contains(" side by side ");
+    if t.is_empty() || !(t.iter().any(|w| verb_stem_at(w)) || (0..t.len()).any(|i| pair_at(&t, i)) || side_by_side) {
+        return false;
+    }
+    let asks = REQUEST_MARKERS.iter().any(|m| joined.contains(&format!(" {m} ")));
+    // A question ("what…", "is…", "do you…") is an instruction only in a request form.
+    if starts_as_question(&t) {
+        return false;
+    }
+    if asks {
+        return true;
+    }
+    // A question mark with no request form: a question.
+    if folded.contains('?') || folded.contains('？') {
+        return false;
+    }
+    // An imperative: one of the first three words is a verb of doing ("hide everything", "right, rename these").
+    side_by_side || t.iter().take(3).enumerate().any(|(i, w)| ACTION_VERBS.contains(&w.replace('\'', "").as_str()) || pair_at(&t, i))
+}
+
+/// The words starting with a question word ("what…", "is…") or "do you…".
+fn starts_as_question(t: &[String]) -> bool {
+    t.first().is_some_and(|w| QUESTION_START.contains(&w.as_str())) || (t.first().is_some_and(|w| w == "do") && t.get(1).is_some_and(|w| PEOPLE.contains(&w.as_str())))
+}
+
+/// Whether the front desk's words are plainly a question (owner report, 27 October 2026): nothing at all once her name
+/// and the fillers are set aside, or a question word first ("what…", "how…", "is…", "do you…"). Only these skip the
+/// router and go straight to a look (or plain chat without pictures). Everything else the person says with her keys or
+/// types in her notch reaches the router, even when `is_instruction` misses its verb ("clear my desktop", "tell Ada I'm
+/// late", "Wi-Fi off", a transcript that ends "Open Figma?"): before, those went to a look or the chat, which can't do
+/// things on the Mac and told the person to hold the keys and say it again, and saying it again came back to the same
+/// place, every time.
+pub fn is_plain_question(text: &str, assistant_name: &str) -> bool {
+    // "what's" and "how's" read as "whats" and "hows" here (`is_instruction` keeps the server's port exactly).
+    let t: Vec<String> = meaning_words(text, assistant_name).into_iter().map(|w| w.replace('\'', "")).collect();
+    t.is_empty() || starts_as_question(&t) || t.first().is_some_and(|w| ["hows", "whys", "whens"].contains(&w.as_str()))
+}
+
+/// The person's words with her name and the openers before them set aside.
+fn meaning_words(text: &str, assistant_name: &str) -> Vec<String> {
     let all = words_of(text);
     let name = yes_tokens(assistant_name);
     let mut t: Vec<String> = Vec::with_capacity(all.len());
@@ -126,26 +169,7 @@ pub fn is_instruction(text: &str, assistant_name: &str) -> bool {
         t.push(all[i].clone());
         i += 1;
     }
-    let joined = format!(" {} ", t.join(" "));
-    // "Slack and Figma side by side" asks for windows to be arranged, verb or not (review, 16 October 2026).
-    let side_by_side = joined.contains(" side by side ");
-    if t.is_empty() || !(t.iter().any(|w| verb_stem_at(w)) || (0..t.len()).any(|i| pair_at(&t, i)) || side_by_side) {
-        return false;
-    }
-    let asks = REQUEST_MARKERS.iter().any(|m| joined.contains(&format!(" {m} ")));
-    // A question ("what…", "is…", "do you…") is an instruction only in a request form.
-    if QUESTION_START.contains(&t[0].as_str()) || (t[0] == "do" && t.get(1).is_some_and(|w| PEOPLE.contains(&w.as_str()))) {
-        return false;
-    }
-    if asks {
-        return true;
-    }
-    // A question mark with no request form: a question.
-    if folded.contains('?') || folded.contains('？') {
-        return false;
-    }
-    // An imperative: one of the first three words is a verb of doing ("hide everything", "right, rename these").
-    side_by_side || t.iter().take(3).enumerate().any(|(i, w)| ACTION_VERBS.contains(&w.replace('\'', "").as_str()) || pair_at(&t, i))
+    t
 }
 
 #[cfg(test)]
@@ -249,6 +273,35 @@ mod tests {
         assert!(verb_stem_at("dropped") && verb_stem_at("dropping") && verb_stem_at("summarised"));
         assert!(!verb_stem_at("yesterday"));
         assert!(doubles("stop") && !doubles("rename") && !doubles("go"));
+    }
+
+    /// Owner report, 27 October 2026: things said with her keys that `is_instruction` misses still reach the router, so
+    /// she never answers "hold the keys and say it again" to words she will read the same way the second time.
+    #[test]
+    fn what_reaches_the_router() {
+        let missed_but_routed = [
+            "Clear my desktop",
+            "Tell Ada I'm running late",
+            "Wi-Fi off",
+            "Open Figma?",
+            "Brenda, Spotify next song",
+            "I want to see my Downloads",
+            "Lock my screen",
+            "Can you tell Ada the deck is ready?",
+        ];
+        for s in missed_but_routed {
+            assert!(!is_plain_question(s, "Max"), "goes to the router: {s:?}");
+        }
+        // The loop needed both: not an instruction by the verb list, so before it never reached the router.
+        assert!(!is_instruction("Clear my desktop", "Max") && !is_instruction("Open Figma?", "Max"));
+        let questions = ["What does this error mean?", "How do I export in Figma?", "Is Figma open?", "Do you know what this is?", "what's on my plate today", "", "hmm", "Max", "Brenda, why is this red?"];
+        for s in questions {
+            assert!(is_plain_question(s, "Max"), "a plain question: {s:?}");
+        }
+        // Every instruction is routed (never a plain question).
+        for s in ["Open Figma", "Can you summarise this PDF?", "Hide everything", "Max, hide Slack"] {
+            assert!(is_instruction(s, "Max") && !is_plain_question(s, "Max"), "{s:?}");
+        }
     }
 
     #[test]

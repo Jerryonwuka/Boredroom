@@ -3,42 +3,27 @@
  * page. Every Listen button, the chat's auto-speak, the Settings sample and every face of hers go through this module,
  * so there is one utterance at a time, and every face talks while it plays.
  *
- * - The computer voice is on-device only: the browser's speech synthesis, with a voice whose `localService` is true
- *   (assistant-speech/voices). A network voice would send the reply to a third party's speech service, so one is never
- *   assigned; with no local voice `supported` is false. The voice and speed come from this device's choice
- *   (assistant-speech/prefs), else the best local voice for the page's language. The only voice that leaves the
- *   computer is the natural voice the person chose themselves, through our own server (below).
- * - What is said is `speakable(reply)` (assistant-speech/speakable), queued one sentence per utterance: Chrome cuts long
- *   utterances off, and sentence breaks give natural pauses. Every queued utterance is referenced until it ends (Chrome
- *   garbage-collects unreferenced ones and their end event never fires).
+ * - Only her ElevenLabs voice speaks (owner request, 27 October 2026: "I want everything to be ElevenLabs voice and no
+ *   local voice at all"). The browser's own speech synthesis is never used to say anything: the computer voice used to
+ *   say replies with no offer and stand in when the natural voice failed, so her voice alternated. A reply without an
+ *   offer this page can play is not said (`speak` answers false); a natural voice that fails before a sound ends quietly
+ *   as `blocked`, its reason kept in `naturalFailed`, and the words stay on the page. (`supported` and `voices` still
+ *   report this device's voices for older callers; nothing speaks with them.)
  * - It stops on Stop, on a new utterance, when a microphone on the page opens (she never talks over a recording or
- *   dictation; use-voice-recorder `subscribeMicrophone`), on pagehide and on a synthesis error. The chat stops it on
- *   typing, sending, New chat and leaving (components/app/brenda-chat).
- * - The level her faces follow is made up from word boundary events (assistant-speech/envelope), read once per animation
- *   frame while she speaks and handed to `subscribeLevel` listeners, then 0 once at the end.
+ *   dictation; use-voice-recorder `subscribeMicrophone`) and on pagehide. The chat stops it on typing, sending, New chat
+ *   and leaving (components/app/brenda-chat).
  *
- * Browser quirks handled here: Chrome loads voices late (`voiceschanged`, which can fire again later; after 1.5 s with
- * no local voice `supported` is false until one appears); Chrome can drop a speak() in the same tick as cancel() (a
- * 60 ms gap); iOS Safari only speaks after it spoke inside a user gesture (`prime()`, a silent utterance); a blocked
- * start (no `start` event in 3 s) goes idle and says so (`blocked`); Chrome sometimes never sends the last `end` event (idle synthesiser for
- * half a second while she seems to speak ends it).
- *
- * Natural voice (owner decision, 9 October 2026: natural voice (ElevenLabs), contract F.1). When the person chose one of
- * the curated ElevenLabs voices, each reply carries an offer (`speech`: our own route, a short-lived token bound to them
- * and to these words, and the words); `speak(text, { natural: offer })` plays it through the natural player
- * (assistant-speech/natural) instead. It is the same utterance in every way that matters: Listen shows Stop at once,
- * `talking` comes with the audio's `playing`, Stop and everything that stops her today stop it (the request is aborted
+ * Natural voice (owner decision, 9 October 2026: natural voice (ElevenLabs), contract F.1). Each reply carries an offer
+ * (`speech`: our own route, a short-lived token bound to the person and to these words, and the words);
+ * `speak(text, { natural: offer })` plays it through the natural player (assistant-speech/natural). Listen shows Stop at
+ * once, `talking` comes with the audio's `playing`, Stop and everything that stops her stop it (the request is aborted
  * and nothing is kept), it never plays while a microphone is open, and her faces follow the level measured from the real
- * audio each frame (assistant-speech/level) through the same `subscribeLevel`, in place of the made-up envelope. Any
- * failure before the audio begins (a refusal, the caps, ElevenLabs or the network failing, a timeout, the browser
- * refusing to play) falls back in place: the same utterance goes on in the computer voice, so the person always hears
- * the reply; why is kept in `naturalFailed` for Settings. With no computer voice to fall back on it ends quietly as
- * `blocked`. A failure after the audio began ends the utterance. `playSample()` plays a natural voice's sample the same
- * way. `supported` still means "this computer has voices of its own"; a natural reply plays where it is false.
+ * audio each frame (assistant-speech/level) through `subscribeLevel` (made up from the envelope where the audio does not
+ * go through Web Audio). `playSample()` plays a natural voice's sample the same way.
  *
  * Touches `window` only inside functions, so importing it while server rendering is safe. The on-device path needs a
  * browser and is not unit-tested itself (its pure parts are: tests/unit/assistant-speech.test.ts); the natural path and
- * its fallback are, with stubbed browser objects (tests/unit/assistant-speech-natural.test.ts). `rehearse()` drives the
+ * its quiet failure are, with stubbed browser objects (tests/unit/assistant-speech-natural.test.ts). `rehearse()` drives the
  * faces with no audio for the gallery (/dev/brenda) and for browsers with no voices.
  */
 import { microphoneOpen, subscribeMicrophone, subscribeMicrophoneAsked } from "@/hooks/use-voice-recorder";
@@ -46,9 +31,8 @@ import type { NaturalVoiceReason, SpeechOffer } from "@/lib/natural-voices";
 import { createEnvelope, type SpeechEnvelope } from "./envelope";
 import { LEVEL_FLOOR, speakingLevel } from "./level";
 import { haltNatural, isSamplePath, naturalAvailable, playNaturalSample, playNaturalSpeech, primeNatural, usableOffer, type NaturalPlayback } from "./natural";
-import { readVoicePrefs, SPEEDS, type VoiceSpeed } from "./prefs";
-import { speakable } from "./speakable";
-import { localVoices, normaliseLang, pickVoice, voiceKey, type LocalVoice } from "./voices";
+import { readVoicePrefs, type VoiceSpeed } from "./prefs";
+import { localVoices, normaliseLang, voiceKey, type LocalVoice } from "./voices";
 
 export type SpeechSnapshot = {
   supported: boolean | null;
@@ -85,8 +69,6 @@ export type SpeakOptions = {
 };
 
 const VOICES_WAIT_MS = 1500;
-const START_WAIT_MS = 3000;
-const AFTER_CANCEL_MS = 60;
 const STALLED_MS = 500;
 
 type Utterance = {
@@ -114,17 +96,13 @@ const levelListeners = new Set<(level: number) => void>();
 let current: Utterance | null = null;
 let wired = false;
 let voicesAsked = false;
-let primed = false;
 let looping = false;
 /** voiceURI to the browser's own voice object (Chrome only accepts the real object on an utterance). */
 const native = new Map<string, SpeechSynthesisVoice>();
 
 const now = () => (typeof performance !== "undefined" ? performance.now() : Date.now());
-const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 const synth = (): SpeechSynthesis | null =>
   typeof window !== "undefined" && "speechSynthesis" in window && typeof SpeechSynthesisUtterance !== "undefined" ? window.speechSynthesis : null;
-/** The length of the word starting at `i` (Safari's boundary events carry no charLength). */
-const wordAt = (text: string, i: number) => /^[\p{L}\p{N}'’-]+/u.exec(text.slice(Math.max(0, i || 0)))?.[0].length ?? 5;
 
 function set(patch: Partial<SpeechSnapshot>) {
   const next = { ...snapshot, ...patch };
@@ -212,14 +190,6 @@ function end(me: Utterance, cancel: boolean) {
   set({ speaking: false, talking: false, id: null });
 }
 
-/** One queued sentence finished (or was cancelled from outside): the last one ends the utterance. */
-function finished(me: Utterance, u: SpeechSynthesisUtterance) {
-  if (current !== me) return;
-  const at = me.queue.indexOf(u);
-  if (at >= 0) me.queue.splice(at, 1);
-  if (!me.queue.length) end(me, false);
-}
-
 /**
  * The level at `t`: the made-up envelope for the computer voice; for a natural voice the real audio's, measured and
  * smoothed (`advance`: once per frame, by the loop), 0 until it plays, and made up too where the audio does not go
@@ -279,74 +249,15 @@ function stop(idPrefix?: string): void {
   end(me, true);
 }
 
-/** This device's voice for an utterance (the choice, else Automatic), only ever a local one; null when there is none. */
-function localVoice(opts: SpeakOptions): SpeechSynthesisVoice | null {
-  const chosen = pickVoice(snapshot.voices, { voiceURI: opts.voiceURI !== undefined ? opts.voiceURI : readVoicePrefs().voiceURI, langs: pageLangs() });
-  const voice = chosen ? native.get(chosen.voiceURI) : undefined;
-  return voice && voice.localService === true ? voice : null; // never a voice that sends the words away
-}
-
 /**
- * Says `said` with the computer voice on `me`, which is already the current utterance: one sentence per queued
- * utterance, after a short gap when the synthesiser was busy (see the header), and `blocked` if it never starts.
+ * The natural voice failed before a sound (contract F.1): she stays quiet and the reply's words stay on the page (owner
+ * request, 27 October 2026: "I want everything to be ElevenLabs voice and no local voice at all"; the computer voice
+ * used to take over here, so her voice alternated). It ends as `blocked`, so the Listen button can say so quietly.
  */
-function startLocal(me: Utterance, s: SpeechSynthesis, voice: SpeechSynthesisVoice, said: string, opts: SpeakOptions, busy: boolean): void {
-  const rate = clamp(opts.rate ?? SPEEDS[readVoicePrefs().speed].rate, 0.5, 2);
-  const sentences = said.split(/(?<=[.!?…])\s+/).filter(Boolean);
-  const go = () => {
-    if (current !== me) return;
-    try {
-      for (const sentence of sentences) {
-        const u = new SpeechSynthesisUtterance(sentence);
-        u.voice = voice;
-        u.lang = voice.lang;
-        u.rate = rate;
-        u.onstart = () => {
-          if (current !== me || me.started) return;
-          me.started = true;
-          me.env.start(now());
-          set({ talking: true });
-        };
-        u.onboundary = (e) => { if (current === me) me.env.boundary(now(), e.charLength || wordAt(sentence, e.charIndex)); };
-        u.onend = () => finished(me, u);
-        // "interrupted" and "canceled" are a cancel, not a failure: that sentence is simply over.
-        u.onerror = (e) => (e.error === "interrupted" || e.error === "canceled" ? finished(me, u) : end(me, true));
-        me.queue.push(u);
-        s.speak(u);
-      }
-    } catch { end(me, true); }
-  };
-  if (busy) {
-    try { s.cancel(); } catch { /* already silent */ }
-    me.timers.push(setTimeout(go, AFTER_CANCEL_MS));
-  } else go();
-  // No start event at all (the browser refused to speak without a gesture): idle again rather than a Stop that hangs.
-  // It says so (`blocked`), so the Listen button or the sample can tell the person rather than go quiet with no word.
-  me.timers.push(setTimeout(() => {
-    if (current !== me || me.started) return;
-    end(me, true);
-    set({ blocked: me.id ?? "" });
-  }, START_WAIT_MS + (busy ? AFTER_CANCEL_MS : 0)));
-  run();
-}
-
-/**
- * The natural voice failed before a sound (contract F.1): the same utterance goes on in the computer voice, so Listen
- * stays Stop and the faces carry on; with no computer voice here it ends quietly as `blocked`.
- */
-function fallBack(me: Utterance, said: string, opts: SpeakOptions): void {
+function quiet(me: Utterance): void {
   if (current !== me) return;
-  me.natural?.playback?.stop();
-  me.natural = null;
-  me.started = false;
-  const s = synth();
-  const voice = s && snapshot.supported === true && said && !microphoneOpen() ? localVoice(opts) : null;
-  if (!s || !voice) {
-    end(me, false);
-    set({ blocked: me.id ?? "" });
-    return;
-  }
-  startLocal(me, s, voice, said, opts, false);
+  end(me, false);
+  set({ blocked: me.id ?? "" });
 }
 
 /** Her faces start on the natural voice's first sound (never over an open microphone). */
@@ -361,29 +272,26 @@ function naturalPlaying(me: Utterance): void {
 }
 
 /**
- * Says `text` (a reply: its speakable version): in the person's natural voice when the reply carries an offer this page
- * can play, else in this device's local voice. false when it cannot be said now.
+ * Says a reply in the person's natural voice (ElevenLabs), from the offer it carries. Never in this device's own voice
+ * (owner request, 27 October 2026): without an offer this page can play, nothing is said and it answers false.
  */
 function speak(text: string, opts: SpeakOptions = {}): boolean {
   init();
-  const s = synth();
-  const busy = !!current || (!!s && (s.speaking || s.pending));
   stop();
   if (microphoneOpen()) return false;
-  const said = opts.raw ? text.replace(/\s+/g, " ").trim() : speakable(text);
+  void text;
   const offer = usableOffer(opts.natural);
   if (offer && naturalAvailable()) {
     const me = utterance(opts.id, true);
     current = me;
     set({ speaking: true, talking: false, id: me.id, blocked: null });
-    const fallbackWords = said || speakable(offer.text);
     const playback = playNaturalSpeech(offer, opts.speed ?? readVoicePrefs().speed, {
       onPlaying: () => { naturalPlaying(me); if (current === me) set({ naturalFailed: null }); },
       onEnded: () => end(me, false),
       onFailed: (reason) => {
         if (current !== me) return;
         set({ naturalFailed: reason });
-        fallBack(me, fallbackWords, opts);
+        quiet(me);
       },
     });
     if (me.natural) me.natural.playback = playback;
@@ -391,14 +299,7 @@ function speak(text: string, opts: SpeakOptions = {}): boolean {
     run();
     return true;
   }
-  if (!s || snapshot.supported !== true || !said) return false;
-  const voice = localVoice(opts);
-  if (!voice) return false;
-  const me = utterance(opts.id);
-  current = me;
-  set({ speaking: true, talking: false, id: me.id, blocked: null });
-  startLocal(me, s, voice, said, opts, busy);
-  return true;
+  return false;
 }
 
 /**
@@ -437,24 +338,11 @@ function playSample(path: string, opts: { id?: string } = {}): boolean {
  */
 function prime(opts: { natural?: boolean } = {}): void {
   init();
-  // Never with the microphone open (Send while dictating): on iOS Safari even a silent utterance can switch the audio
-  // session in the middle of a recording.
+  // Never with the microphone open (Send while dictating): on iOS Safari it can switch the audio session mid-recording.
   if (microphoneOpen()) return;
-  // The natural voice's player too (contract F.1): its element unlocked once, and its AudioContext when wanted.
+  // Only the natural voice's player (contract F.1): its element unlocked once, and its AudioContext when wanted. No
+  // silent utterance in this device's voice any more: nothing is ever said in it (27 October 2026).
   primeNatural(opts.natural === true);
-  const s = synth();
-  if (primed || current || !s || snapshot.supported !== true) return;
-  const local = pickVoice(snapshot.voices, { voiceURI: readVoicePrefs().voiceURI, langs: pageLangs() });
-  const voice = local ? native.get(local.voiceURI) : undefined;
-  if (!voice || voice.localService !== true) return;
-  try {
-    const u = new SpeechSynthesisUtterance(" ");
-    u.voice = voice;
-    u.lang = voice.lang;
-    u.volume = 0;
-    s.speak(u);
-    primed = true;
-  } catch { /* the real speak will try anyway */ }
 }
 
 /** The current 0 to 1 level (0 when she is not speaking); cheap, call every frame. */

@@ -15,7 +15,7 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
-import { LOOK_TOOLS, LOOK_TOOLS_FRONT, LOOK_TOOLS_FRONT_THINK, LOOK_TOOLS_NO_TASKS, LOOK_TOOLS_PLAN, MAC_CHAT_TOOLS, TOOLS } from "@/server/services/copilot";
+import { LOOK_TOOLS, LOOK_TOOLS_FRONT, LOOK_TOOLS_FRONT_THINK, LOOK_TOOLS_NO_TASKS, LOOK_TOOLS_PLAN, MAC_CHAT_TOOLS, TOOLS, lookToolsFor } from "@/server/services/copilot";
 
 const root = process.cwd();
 const read = (p: string) => readFileSync(join(root, p), "utf8");
@@ -106,13 +106,21 @@ describe("only the person's own look request can start a task (contract 0.8)", (
     // Plans are offered only in a look turn whose words ask for something, from a Mac that runs them (contract D.1.1).
     const copilot = read("src/server/services/copilot.ts");
     expect(copilot).toMatch(/const plans = asked && \(v2\?\.look\.abilities\.plans \?\? 0\) >= 1 && /);
-    expect(copilot).toMatch(/: asked \? \(plans \? LOOK_TOOLS_PLAN : LOOK_TOOLS\) : LOOK_TOOLS_NO_TASKS/);
-    // A front-capable Mac's look never proposes (decision 0b.4): its tools have no propose_task, and asked is false.
+    expect(copilot).toMatch(/return o\.asked \? \(o\.plans \? LOOK_TOOLS_PLAN : LOOK_TOOLS\) : LOOK_TOOLS_NO_TASKS;/);
+    expect(copilot).toMatch(/const lookTools = lookToolsFor\(\{ front: front \? \{ quick: front\.model !== front\.thinkModel \} : null, asked, plans \}\);/);
+    // A front-capable Mac's look proposes only when the words ask for something (owner report, 27 October 2026: it used
+    // to tell them to ask again with their keys, and the same words came back to the same look).
     expect(names(LOOK_TOOLS_FRONT)).not.toContain("propose_task");
     expect(names(LOOK_TOOLS_FRONT_THINK)).not.toContain("propose_task");
     expect(names(LOOK_TOOLS_FRONT).slice(-1)).toEqual(["think_harder"]);
     expect(names(LOOK_TOOLS_FRONT_THINK)).not.toContain("think_harder");
-    expect(copilot).toMatch(/const asked = !!v2 && !front && /);
+    expect(lookToolsFor({ front: { quick: true }, asked: false, plans: false })).toEqual(LOOK_TOOLS_FRONT);
+    expect(lookToolsFor({ front: { quick: false }, asked: false, plans: true })).toEqual(LOOK_TOOLS_FRONT_THINK);
+    expect(names(lookToolsFor({ front: { quick: true }, asked: true, plans: false })).slice(-2)).toEqual(["propose_task", "think_harder"]);
+    expect(lookToolsFor({ front: { quick: false }, asked: true, plans: true })).toEqual(LOOK_TOOLS_PLAN);
+    expect(lookToolsFor({ front: { quick: false }, asked: true, plans: false })).toEqual(LOOK_TOOLS);
+    expect(lookToolsFor({ front: null, asked: false, plans: false })).toBe(LOOK_TOOLS_NO_TASKS);
+    expect(copilot).toMatch(/const asked = !!v2 && v2\.act\.available && isInstruction\(/);
   });
   it("no page of the notch calls the act or look routes (only Rust does)", () => {
     for (const p of readdirSync(join(root, "desktop", "src"))) {

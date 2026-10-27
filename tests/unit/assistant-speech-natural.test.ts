@@ -46,10 +46,10 @@ describe("level: the loudness of the real audio", () => {
 
 describe("naturalVoiceNote: why the computer voice speaks instead", () => {
   const cases: [NaturalVoiceReason, string][] = [
-    ["not_ready", "Natural voices need a database update first. Max uses the computer voice until then."],
-    ["no_key", "Natural voices aren't available right now, so Max uses the computer voice."],
-    ["key_rejected", "ElevenLabs refused the workspace's key, so Max uses the computer voice. An owner or HR can check it in Settings."],
-    ["upstream", "ElevenLabs didn't answer just now, so Max used the computer voice."],
+    ["not_ready", "Natural voices need a database update first. Max doesn't read replies aloud until then."],
+    ["no_key", "Natural voices aren't available right now, so Max doesn't read replies aloud. The words still show."],
+    ["key_rejected", "ElevenLabs refused the workspace's key, so Max doesn't read replies aloud. An owner or HR can check it in Settings."],
+    ["upstream", "ElevenLabs didn't answer just now, so Max didn't read that reply aloud."],
   ];
   it.each(cases)("%s", (reason, words) => {
     expect(naturalVoiceNote(reason, "Max")).toBe(words);
@@ -58,9 +58,9 @@ describe("naturalVoiceNote: why the computer voice speaks instead", () => {
   // No limit of Boredroom's (owner request, 12 October 2026): only ElevenLabs' own refusal for credits stops the voice.
   it("allowance_low is ElevenLabs' own plan running out, with the reset date when it has one", () => {
     expect(naturalVoiceNote("allowance_low", "Max", "2026-11-09T07:47:00Z", "UTC"))
-      .toBe("Your ElevenLabs plan has run out of credits, so Max uses the computer voice until it resets on 9 November 2026.");
-    expect(naturalVoiceNote("allowance_low", "Max", null)).toBe("Your ElevenLabs plan has run out of credits, so Max uses the computer voice until it resets.");
-    expect(naturalVoiceNote("allowance_low", "Max", "not a date")).toBe("Your ElevenLabs plan has run out of credits, so Max uses the computer voice until it resets.");
+      .toBe("Your ElevenLabs plan has run out of credits, so Max doesn't read replies aloud until it resets on 9 November 2026.");
+    expect(naturalVoiceNote("allowance_low", "Max", null)).toBe("Your ElevenLabs plan has run out of credits, so Max doesn't read replies aloud until it resets.");
+    expect(naturalVoiceNote("allowance_low", "Max", "not a date")).toBe("Your ElevenLabs plan has run out of credits, so Max doesn't read replies aloud until it resets.");
   });
 
   it("the old cap reasons say nothing (they are never given any more)", () => {
@@ -257,13 +257,6 @@ function install({ voices = true }: { voices?: boolean } = {}) {
 const audioAnswer = () => new Response(MP3, { status: 200, headers: { "content-type": "audio/mpeg" } });
 const refusal = (status: number, reason: string) => new Response(JSON.stringify({ code: "VOICE_UNAVAILABLE", message: "No.", details: { reason } }), { status, headers: { "content-type": "application/json" } });
 
-/** Every snapshot from now on, for checking that Listen never flickers back to idle during a fallback. */
-function watch() {
-  const seen: ReturnType<Controller["speech"]["getSnapshot"]>[] = [];
-  speech.subscribe(() => seen.push(speech.getSnapshot()));
-  return seen;
-}
-
 describe("the controller's natural voice", () => {
   beforeEach(async () => {
     vi.resetModules();
@@ -335,41 +328,32 @@ describe("the controller's natural voice", () => {
     [409, "allowance_low"],
     [502, "upstream"],
     [502, "key_rejected"],
-  ])("falls back to the computer voice in place on a %i (%s), keeping the reason", async (status, reason) => {
-    const seen = watch();
+  ])("stays quiet on a %i (%s), never the computer voice (owner request, 27 October 2026), keeping the reason", async (status, reason) => {
     fetchMock.mockResolvedValue(refusal(status, reason));
     speech.speak("Hello there. All done.", { id: "r1", natural: OFFER });
     await settle();
-    expect(synth!.spoken.map((u) => u.text)).toEqual(["Hello there.", "All done."]);
-    expect(speech.getSnapshot()).toMatchObject({ speaking: true, id: "r1", naturalFailed: reason });
-    // Listen never went back to idle in between (the same utterance went on).
-    const after = seen.slice(seen.findIndex((s) => s.speaking));
-    expect(after.every((s) => s.speaking && s.id === "r1")).toBe(true);
-    synth!.spoken[0].onstart!();
-    expect(speech.getSnapshot().talking).toBe(true);
-    synth!.spoken[0].onend!();
-    synth!.spoken[1].onend!();
-    expect(speech.getSnapshot()).toMatchObject({ speaking: false, id: null, naturalFailed: reason });
+    expect(synth!.spoken).toHaveLength(0);
+    expect(speech.getSnapshot()).toMatchObject({ speaking: false, talking: false, id: null, blocked: "r1", naturalFailed: reason });
     expect(audio()?.plays ?? []).toHaveLength(0);
   });
 
-  it("falls back when a refusal carries no reason we know, with no reason kept", async () => {
+  it("stays quiet when a refusal carries no reason we know, with no reason kept", async () => {
     fetchMock.mockResolvedValue(new Response(JSON.stringify({ code: "SPEECH_TOKEN", message: "This reply can't be said aloud any more." }), { status: 400 }));
     speech.speak("Hello there.", { id: "r1", natural: OFFER });
     await settle();
-    expect(synth!.spoken).toHaveLength(1);
-    expect(speech.getSnapshot()).toMatchObject({ speaking: true, id: "r1", naturalFailed: null });
+    expect(synth!.spoken).toHaveLength(0);
+    expect(speech.getSnapshot()).toMatchObject({ speaking: false, blocked: "r1", naturalFailed: null });
   });
 
-  it("falls back when the network fails", async () => {
+  it("stays quiet when the network fails", async () => {
     fetchMock.mockRejectedValue(new TypeError("Failed to fetch"));
     speech.speak("Hello there.", { id: "r1", natural: OFFER });
     await settle();
-    expect(synth!.spoken).toHaveLength(1);
-    expect(speech.getSnapshot()).toMatchObject({ speaking: true, id: "r1" });
+    expect(synth!.spoken).toHaveLength(0);
+    expect(speech.getSnapshot()).toMatchObject({ speaking: false, blocked: "r1" });
   });
 
-  it("falls back when our route sends no headers within 15 seconds, and aborts the request", async () => {
+  it("stays quiet when our route sends no headers within 15 seconds, and aborts the request", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     let signal: AbortSignal | undefined;
     fetchMock.mockImplementation((_: string, init: RequestInit) => new Promise((_, reject) => {
@@ -385,8 +369,8 @@ describe("the controller's natural voice", () => {
     expect(synth!.spoken).toHaveLength(0);
     await vi.advanceTimersByTimeAsync(200);
     expect(signal?.aborted).toBe(true);
-    expect(synth!.spoken).toHaveLength(1);
-    expect(speech.getSnapshot()).toMatchObject({ speaking: true, id: "r1", naturalFailed: "upstream" });
+    expect(synth!.spoken).toHaveLength(0);
+    expect(speech.getSnapshot()).toMatchObject({ speaking: false, blocked: "r1", naturalFailed: "upstream" });
   });
 
   it("Stop while the audio is still on its way aborts the request at once, and nothing speaks", async () => {
@@ -435,25 +419,25 @@ describe("the controller's natural voice", () => {
     expect(synth!.spoken).toHaveLength(0);
   });
 
-  it("falls back when no audio starts within 4 seconds of the answer", async () => {
+  it("stays quiet when no audio starts within 4 seconds of the answer", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     fetchMock.mockResolvedValue(audioAnswer());
     speech.speak("Hello there.", { id: "r1", natural: OFFER });
     await vi.advanceTimersByTimeAsync(10);
     expect(audio().plays).toHaveLength(1);
     await vi.advanceTimersByTimeAsync(4100);
-    expect(synth!.spoken).toHaveLength(1);
-    expect(speech.getSnapshot()).toMatchObject({ speaking: true, id: "r1" });
+    expect(synth!.spoken).toHaveLength(0);
+    expect(speech.getSnapshot()).toMatchObject({ speaking: false, blocked: "r1" });
     expect(audio().getAttribute("src")).toBeNull();
   });
 
-  it("falls back when the browser refuses to play", async () => {
+  it("stays quiet when the browser refuses to play", async () => {
     FakeAudio.next = "reject";
     fetchMock.mockResolvedValue(audioAnswer());
     speech.speak("Hello there.", { id: "r1", natural: OFFER });
     await settle();
-    expect(synth!.spoken).toHaveLength(1);
-    expect(speech.getSnapshot()).toMatchObject({ speaking: true, id: "r1", naturalFailed: null });
+    expect(synth!.spoken).toHaveLength(0);
+    expect(speech.getSnapshot()).toMatchObject({ speaking: false, blocked: "r1", naturalFailed: null });
     expect(revoked.length).toBeGreaterThan(0);
   });
 
@@ -568,7 +552,7 @@ describe("the controller's natural voice", () => {
     expect(Math.max(...levels)).toBeGreaterThan(0.3);
   });
 
-  it("falls back when the AudioContext it already plays through won't run", async () => {
+  it("stays quiet when the AudioContext it already plays through won't run", async () => {
     fetchMock.mockResolvedValue(audioAnswer());
     speech.speak("Hello.", { id: "r1", natural: OFFER });
     await settle();
@@ -582,8 +566,8 @@ describe("the controller's natural voice", () => {
     fetchMock.mockResolvedValue(audioAnswer());
     speech.speak("Hello there.", { id: "r2", natural: OFFER });
     await new Promise((r) => setTimeout(r, 350));
-    expect(synth!.spoken).toHaveLength(1);
-    expect(speech.getSnapshot()).toMatchObject({ speaking: true, id: "r2" });
+    expect(synth!.spoken).toHaveLength(0);
+    expect(speech.getSnapshot()).toMatchObject({ speaking: false, blocked: "r2" });
   });
 
   it("with no computer voice, a failed natural reply ends quietly as blocked", async () => {
@@ -601,11 +585,10 @@ describe("the controller's natural voice", () => {
 
   it("never fetches an offer whose path is not our own speech route", () => {
     for (const path of ["https://api.elevenlabs.io/v1/text-to-speech/x/stream", "//evil.example/api/orgs/a/assistant/speech", "/api/orgs/a/assistant/speech?x=1", "/api/orgs/a/brenda/undo"]) {
-      speech.speak("Hello there.", { id: "r1", natural: { ...OFFER, path } });
+      expect(speech.speak("Hello there.", { id: "r1", natural: { ...OFFER, path } })).toBe(false);
       expect(fetchMock).not.toHaveBeenCalled();
-      expect(synth!.spoken.length).toBeGreaterThan(0); // the computer voice said it
+      expect(synth!.spoken).toHaveLength(0); // and never the computer voice
       speech.stop();
-      synth!.spoken = [];
     }
   });
 
@@ -711,5 +694,14 @@ describe("the controller's natural voice", () => {
     fetchMock.mockImplementation(async () => audioAnswer());
     speech.speak("Hello there. All done.", { id: "r1", natural: OFFER });
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("no computer voice on the web (owner request, 27 October 2026)", () => {
+  it("the controller never builds a speech synthesis utterance, and a reply without an offer is not said", async () => {
+    const { readFileSync } = await import("node:fs");
+    const src = readFileSync("src/lib/assistant-speech/controller.ts", "utf8");
+    expect(src).not.toMatch(/new SpeechSynthesisUtterance/);
+    expect(src).not.toMatch(/\.speak\(u\)/);
   });
 });

@@ -4,8 +4,8 @@
  * Settings → Your assistant → Voice → the voice itself (owner decision, 9 October 2026: natural voice (ElevenLabs),
  * contract F.2). The first row after "When {name} speaks" in MyVoiceSettings (assistant-voice-settings):
  *
- * - A radio group, "{name}'s voice": **Computer voice** first (the default; built into this computer, the words stay on
- *   it), then the eight curated ElevenLabs voices (lib/natural-voices), each with its one-line description and a ghost
+ * - A radio group, "{name}'s voice": the eight curated ElevenLabs voices (Alice until the person picks another; there is
+ *   no Computer voice since the owner's request, 27 October 2026: "everything ElevenLabs, no local voice at all") (lib/natural-voices), each with its one-line description and a ghost
  *   "Play a sample" button on the right that becomes Stop (the orange square, live and now) while it plays. A sample is
  *   the voice's own preview, through our server, so it costs no characters; it plays through the one voice on the page,
  *   so her faces follow it and leaving the page stops it.
@@ -16,12 +16,11 @@
  *   them in the key's account history until Boredroom deletes them (review, 9 October 2026).
  * - Without any key (neither the workspace's nor Boredroom's), the samples could never play: their buttons are left out
  *   and one line says when they will play (review, 9 October 2026).
- * - When a natural voice is chosen but the computer voice speaks instead (the caps, the allowance, no key, ElevenLabs not
- *   answering), an info alert says why in plain words (assistant-speech/natural-words). Before migration 0053 the radios
+ * - When she can't read replies aloud (the allowance, no key, ElevenLabs not answering; she stays quiet then, never the
+ *   computer voice), an info alert says why in plain words (assistant-speech/natural-words). Before migration 0053 the radios
  *   are disabled under an info alert. If the page could not read the choice, the card reads it itself.
  *
- * `useNaturalVoiceChoice` holds the saved choice for the card, so MyVoiceSettings can word the computer voice's rows and
- * the footer from it.
+ * `useNaturalVoiceChoice` holds the saved choice for the card, so MyVoiceSettings can word its footer from it.
  */
 import { useEffect, useId, useRef, useState } from "react";
 import { Square, Volume2 } from "lucide-react";
@@ -43,7 +42,7 @@ const samplePath = (orgSlug: string, voiceId: string) => `/api/orgs/${encodeURIC
 export type NaturalVoiceChoice = {
   /** What the server last said (null while it is read, or when it could not be). */
   view: NaturalVoiceView | null;
-  /** The voice shown as chosen (the one on its way to being saved, else the saved one); null is Computer voice. */
+  /** The voice shown as chosen (the one on its way to being saved, else the saved one; the default voice when none was saved). */
   chosen: string | null;
   choose(voiceId: string | null): void;
   /** No choosing: signed in as the person, before 0053, or nothing read yet. */
@@ -113,7 +112,7 @@ export function useNaturalVoiceChoice(orgSlug: string, initial: NaturalVoiceView
   return { view, chosen, choose, locked, busy, status, failure, clearStatus: () => setStatus(null), unreadable };
 }
 
-/** The Voice row: Computer voice or one of the natural voices, with samples, the privacy line and why-not notes. */
+/** The Voice row: one of the natural voices (no computer voice since 27 October 2026), with samples, the privacy line and why-not notes. */
 export function NaturalVoicePicker({ orgSlug, name, choice }: { orgSlug: string; name: string; choice: NaturalVoiceChoice }) {
   const id = useId();
   const hintId = `${id}-hint`;
@@ -135,7 +134,7 @@ export function NaturalVoicePicker({ orgSlug, name, choice }: { orgSlug: string;
   };
   const failedSample = voices.find((v) => voice.blocked === sampleId(v.id) && !playing(v)) ?? null;
 
-  // Why the computer voice speaks although a natural voice is chosen: the server's view, or (when that says it is
+  // Why she is quiet although a natural voice is chosen: the server's view, or (when that says it is
   // available) what this page just saw happen to a reply.
   const saved = view?.chosen ?? null;
   const reason = !view || !saved || chosen !== saved ? null : view.available ? voice.naturalFailed : view.reason;
@@ -153,9 +152,6 @@ export function NaturalVoicePicker({ orgSlug, name, choice }: { orgSlug: string;
           <p id={hintId} className="mt-0.5 text-meta font-normal text-secondary">{NATURAL_WORDS.picker.hint}</p>
         </div>
         <div className="grid min-w-0 gap-3">
-          <Radio name="assistant-natural-voice" value="" checked={chosen === null} disabled={locked} onChange={() => choice.choose(null)} hint={NATURAL_WORDS.picker.computerHint}>
-            {NATURAL_WORDS.picker.computer}
-          </Radio>
           {voices.map((v) => {
             const on = playing(v);
             return (

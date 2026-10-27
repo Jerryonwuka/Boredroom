@@ -61,19 +61,21 @@ struct Cursor {
 /// island, so nothing under it is blocked.
 #[cfg(target_os = "macos")]
 const ISLAND_LEVEL: isize = 1000 + 1; // the screen-saver level, where macOS 26 draws each app's menu titles, plus one
-/// canJoinAllSpaces (1) | stationary (16) | ignoresCycle (64) | fullScreenAuxiliary (256)
+/// canJoinAllSpaces (1) | stationary (16) | ignoresCycle (64) | fullScreenAuxiliary (256), as a non-activating panel
+/// (overlay.rs: the only kind of window that enters another app's full-screen Space whatever Boredroom's policy).
 #[cfg(target_os = "macos")]
-const BEHAVIOUR: usize = 1 | 16 | 64 | 256;
+const NOTCH: crate::overlay::Want = crate::overlay::Want { level: ISLAND_LEVEL, behaviour: crate::overlay::OVER_FULL_SCREEN };
 
+/// Main thread (lib.rs's setup).
 #[cfg(target_os = "macos")]
 fn above_menu_bar(window: &WebviewWindow) {
-    use objc2::{msg_send, runtime::AnyObject};
+    use objc2::runtime::AnyObject;
     if let Ok(ns) = window.ns_window() {
         let ns = ns as *mut AnyObject;
         if !ns.is_null() {
             unsafe {
-                let _: () = msg_send![&*ns, setLevel: ISLAND_LEVEL];
-                let _: () = msg_send![&*ns, setCollectionBehavior: BEHAVIOUR];
+                // The panel first: the frame rule below is set on the window's class, which this changes.
+                crate::overlay::ensure(ns, NOTCH);
                 keep_frames_where_put(ns);
             }
         }
@@ -127,42 +129,15 @@ unsafe fn keep_frames_where_put(ns: *mut objc2::runtime::AnyObject) {
 /// before Brenda became a menu-bar app, the window server never let it into full-screen Spaces (it listed it on the two
 /// ordinary desktops only), and ordering it in again did not change that; lib.rs now makes it after. This is the safety
 /// net: the behaviour put back if anything reset it, and the window ordered in when it is not on the Space showing.
+///
+/// Since the Boredroom window (owner report, 27 October 2026: "Brenda doesn't show in apps when I open apps in full
+/// screen"), the app switches between a menu-bar app and a Dock app, and an ordinary window of a Dock app never enters
+/// another app's full-screen Space. The notch is now a non-activating panel, which does under either policy, and this
+/// poll (overlay::ensure) also puts back its panel style, level and behaviour, sets the behaviour again after each
+/// policy change, and orders it in when it is visible but not on the Space showing.
 #[cfg(target_os = "macos")]
 fn keep_above_menu_bar(window: &WebviewWindow) {
-    use objc2::{msg_send, runtime::AnyObject};
-    let w = window.clone();
-    let _ = window.run_on_main_thread(move || {
-        if let Ok(ns) = w.ns_window() {
-            let ns = ns as *mut AnyObject;
-            if !ns.is_null() {
-                unsafe {
-                    let level: isize = msg_send![&*ns, level];
-                    if level != ISLAND_LEVEL {
-                        let _: () = msg_send![&*ns, setLevel: ISLAND_LEVEL];
-                    }
-                    join_this_space(ns);
-                }
-            }
-        }
-    });
-}
-
-/// The window on the Space showing now (main thread; see keep_above_menu_bar). Only while it is meant to be visible.
-#[cfg(target_os = "macos")]
-unsafe fn join_this_space(ns: *mut objc2::runtime::AnyObject) {
-    use objc2::msg_send;
-    let visible: bool = msg_send![&*ns, isVisible];
-    if !visible {
-        return;
-    }
-    let behaviour: usize = msg_send![&*ns, collectionBehavior];
-    if behaviour != BEHAVIOUR {
-        let _: () = msg_send![&*ns, setCollectionBehavior: BEHAVIOUR];
-    }
-    let here: bool = msg_send![&*ns, isOnActiveSpace];
-    if !here {
-        let _: () = msg_send![&*ns, orderFrontRegardless];
-    }
+    crate::overlay::ensure_window(window, NOTCH);
 }
 
 /// Moves the window's top-left corner to (x, top) in logical screen coordinates, measured from the top of the main screen.
@@ -203,11 +178,14 @@ pub fn menu_bar_app_now() {
             let _: bool = msg_send![&*ns_app, setActivationPolicy: 1isize];
         }
     }
+    crate::overlay::after_policy_change();
 }
 
 /// Makes Boredroom an ordinary Mac app (a Dock icon, ⌘Tab, the menu bar) at once, on the main thread, for the Boredroom
 /// window (owner request, 24 October 2026). The notch stays the window made at launch while a menu-bar app (see
-/// `menu_bar_app_now`), so it keeps entering other apps' full-screen Spaces; it is never remade. Main thread only.
+/// `menu_bar_app_now`); it is never remade. As an ordinary window of a Dock app it no longer entered other apps'
+/// full-screen Spaces (owner report, 27 October 2026), so Brenda's windows are non-activating panels and are put right
+/// after each policy change (overlay.rs). Main thread only.
 pub fn regular_app_now() {
     #[cfg(target_os = "macos")]
     unsafe {
@@ -219,6 +197,7 @@ pub fn regular_app_now() {
             let _: () = msg_send![&*ns_app, activateIgnoringOtherApps: true];
         }
     }
+    crate::overlay::after_policy_change();
 }
 
 /// Brenda's own windows (the notch and its helpers) stay when the person hides Boredroom (⌘H) and are never listed in

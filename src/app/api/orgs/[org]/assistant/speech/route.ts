@@ -15,7 +15,7 @@ export const dynamic = "force-dynamic";
  * web (cookie) or from the notch (its desktop token, `Authorization: Bearer`), through the same `orgContext`.
  *
  * Answers an MP3 stream (`as: "stream"`, the web), or the whole MP3 as base64 JSON (`as: "base64"`, the notch, whose
- * bridge returns JSON only). 409 VOICE_UNAVAILABLE `{ details: { reason } }` when the computer voice should speak instead
+ * bridge returns JSON only). 409 VOICE_UNAVAILABLE `{ details: { reason } }` when she should stay quiet instead (never the computer voice, 27 October 2026)
  * (no voice chosen, Voice off, no key, a cap, the allowance low, ElevenLabs held as down); 502 when ElevenLabs failed
  * (the characters are given back); 429 past 30 a minute; 402 when the plan no longer has the assistant (the offer
  * needed it). The client falls back to the computer voice on any of them.
@@ -69,6 +69,6 @@ export const POST = route<{ org: string }>(async (req, { params }) => {
     if (err instanceof AppError) throw err;
     // Only the error's code (a Postgres code, say): never its message, which could carry the words.
     console.warn(`[voice] speech failed (${String((err as { code?: unknown } | null)?.code ?? "unknown")})`);
-    throw new AppError(502, "VOICE_UNAVAILABLE", "ElevenLabs didn't answer, so the computer voice is used.", { details: { reason: "upstream" } });
+    throw new AppError(502, "VOICE_UNAVAILABLE", "ElevenLabs didn't answer, so this reply wasn't read aloud.", { details: { reason: "upstream" } });
   }
 });

@@ -9,13 +9,11 @@
 // the real audio as they follow `say`'s render. Nothing is kept: the bytes live only as long as the utterance.
 //
 // It never decides whether she speaks (Voice off and quiet hours stay with main.js) and never falls back by itself: any
-// failure is `onFail(why)`, and main.js then speaks with the computer voice at once, so the notch never goes silent.
-// `supported` goes false for the rest of the run once the context truly will not run (contract G.3: if WKWebView will
-// not start Web Audio without a press, the notch keeps the computer voice; desktop/README.md has the Rust change for
-// later). Truly (review, 9 October 2026): resume() refused, or still not running REFUSE_MS after it was asked. A slow
-// wake-up (a Bluetooth output such as AirPods, an output device gone idle) only makes that one utterance the computer
-// voice's: warm() answers false after RESUME_MS, but goes on watching, and a context that runs a moment later keeps the
-// natural voice for the next one.
+// failure is `onFail(why)`, and main.js then stays quiet (owner request, 27 October 2026: "everything ElevenLabs, no
+// local voice at all"; the computer voice used to stand in, so her voice alternated). A slow wake-up (a Bluetooth output
+// such as AirPods, an output device gone idle) is waited for, up to WAKE_MS: it used to give up after 300 ms and hand
+// that utterance to the computer voice. A context that will not run (resume() refused, or not running after WAKE_MS)
+// only costs that utterance; the next one tries again, so she is never left silent for the rest of the run.
 //
 // The level maths are the web's, exactly (src/lib/assistant-speech/level.ts, contract F.1; change one, change the other):
 // the RMS of each analyser frame times 6 (ordinary speech, an RMS of about 0.15, is 0.9), followed with a fast attack
@@ -25,8 +23,7 @@
 // A global for main.js, a later classic script on the page (and module.exports for Node, at the end).
 const NaturalVoice = (() => {
   const T = Object.freeze({
-    RESUME_MS: 300,   // the context must be running this soon after resume() for this utterance, else "suspended"
-    REFUSE_MS: 2_000, // not running this long after resume() (or resume() refused): it never will, the natural voice is off for the run
+    WAKE_MS: 2_000,   // the context must be running this soon after resume() for this utterance, else "suspended"
     IDLE_MS: 1_800,   // the context is suspended this long after the last utterance, so an idle notch costs no CPU (as sound.js)
     FFT: 1024,        // the analyser's frame (about 23 ms at 44.1 kHz)
     ATTACK_MS: 30,    // the web's ATTACK_TAU_MS
@@ -97,7 +94,7 @@ const NaturalVoice = (() => {
   }
 
   /**
-   * The context, running: true at once when it runs, after resume() when that works within RESUME_MS, else false (no
+   * The context, running: true at once when it runs, after resume() when that works within WAKE_MS, else false (no
    * Web Audio, or a webview that will not start audio without a press). main.js asks before fetching the audio, so a
    * context that will not run never costs the workspace's characters.
    */
@@ -108,21 +105,11 @@ const NaturalVoice = (() => {
     clearTimeout(idleTimer);
     if (c.state === "running") return Promise.resolve(true);
     return new Promise((resolve) => {
-      let done = false, settled = false;
-      const finish = (v) => { if (!done) { done = true; clearTimeout(timer); resolve(v); } };
-      // After the answer: running at last (a slow wake-up) goes back to sleep if nothing plays; never running, or
-      // refused, turns the natural voice off for the run.
-      const verdict = (running) => {
-        if (settled) return;
-        settled = true; clearTimeout(refuse);
-        // Too late for this utterance (the answer was already false): nothing will play on it, so it sleeps again.
-        if (running) { if (done && !current) idle(); } else supported = false;
-        finish(running);
-      };
-      const timer = setTimeout(() => finish(c.state === "running"), T.RESUME_MS);
-      const refuse = setTimeout(() => verdict(c.state === "running"), T.REFUSE_MS);
-      try { Promise.resolve(c.resume()).then(() => { if (c.state === "running") verdict(true); }, () => verdict(false)); }
-      catch { verdict(false); }
+      let done = false;
+      const finish = (v) => { if (done) return; done = true; clearTimeout(timer); resolve(v); if (!v && !current) idle(); };
+      const timer = setTimeout(() => finish(c.state === "running"), T.WAKE_MS);
+      try { Promise.resolve(c.resume()).then(() => { if (c.state === "running") finish(true); }, () => finish(false)); }
+      catch { finish(false); }
     });
   }
 
@@ -161,7 +148,7 @@ const NaturalVoice = (() => {
    * Plays one utterance (`audioBase64`, an MP3 or anything Web Audio decodes) and returns `stop()`. One at a time: a new
    * play stops the last. `onStart()` once the first sound is scheduled, `onLevel(0..1)` on every animation frame while it
    * plays, `onEnd()` when it finished (or failed once heard), `onFail(why)` instead of all of them when it could not start: "decode"
-   * (not audio, or nothing Web Audio can read), "suspended" (the context would not run within 300 ms), "unsupported" (no
+   * (not audio, or nothing Web Audio can read), "suspended" (the context would not run within WAKE_MS), "unsupported" (no
    * Web Audio) or "error". Callbacks always come later, never from inside play(). `stop()` is silent: the caller knows.
    */
   function play({ audioBase64, onStart, onLevel, onEnd, onFail } = {}) {
@@ -222,7 +209,7 @@ const NaturalVoice = (() => {
 
   return Object.freeze({
     T,
-    /** False for the rest of the run once the context would not run (resume() refused, or not running after REFUSE_MS), or `disable()`. */
+    /** False only after `disable()` (or with no Web Audio at all, which warm() reports itself). */
     get supported() { return supported; },
     disable() { supported = false; },
     /**

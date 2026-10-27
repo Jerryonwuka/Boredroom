@@ -72,6 +72,7 @@ mod jobs;
 mod look;
 mod macos;
 mod open;
+mod overlay;
 mod plan;
 mod policy;
 mod risk;

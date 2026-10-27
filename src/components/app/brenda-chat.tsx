@@ -79,10 +79,10 @@
  *
  * Natural voice (owner decision, 9 October 2026: natural voice (ElevenLabs), contract F.1). A reply comes with an offer
  * to say its words in the natural voice the person chose (`speech`: our own route, a short-lived token for these words
- * and this person, and the words), kept on the reply in memory only: never saved with the conversation, so a past chat
- * opened again reads aloud in the computer voice. Auto-speak and Listen hand it to the one voice on the page, which plays
- * it or, when it can't, says the same reply in the computer voice at once. Listen shows on a reply with an offer even in
- * a browser with no voice of its own. Voice off and quiet hours decide whether she speaks, as before; the offer only
+ * and this person, and the words), kept on the reply in memory only: never saved with the conversation, so Listen on a
+ * past chat opened again asks Boredroom to sign its words first (POST /assistant/front/line). Only her ElevenLabs voice
+ * ever speaks (owner request, 27 October 2026: "everything ElevenLabs, no local voice at all"): when it can't, she stays
+ * quiet and the words stay on the page. Voice off and quiet hours decide whether she speaks, as before; the offer only
  * decides how.
  *
  * Brenda points (owner request, 11 October 2026: "press the two buttons, ask Brenda a question about what I'm pointing at
@@ -125,7 +125,7 @@ import { speakable } from "@/lib/assistant-speech/speakable";
 import { api, isApiFailure, type ApiFailure } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import { attention, READ_BLUR_HOLD_MS, type BrendaState, type ReadCue } from "@/lib/brenda-character/engine";
-import type { SpeechOffer } from "@/lib/natural-voices";
+import { SPEECH_MAX_CHARS, type SpeechOffer } from "@/lib/natural-voices";
 import type { Action, ChatResult, Proposal } from "@/server/services/copilot";
 import type { Conversation, ConversationSummary, StoredMessage } from "@/server/services/brenda-history";
 
@@ -540,8 +540,18 @@ export function useBrendaChat({ orgSlug, keysActive = true, visible = true, onLe
     const id = speechId(m);
     const now = speech.getSnapshot();
     if (now.speaking && now.id === id) { speech.stop(); return; }
-    speech.prime({ natural: !!m.speech });
-    speech.speak(m.content, { id, natural: m.speech });
+    speech.prime({ natural: true });
+    if (m.speech) { speech.speak(m.content, { id, natural: m.speech }); return; }
+    // A reply without an offer (a past chat opened again; offers are never saved): Boredroom signs its words for this
+    // person first, so it is still her ElevenLabs voice, never the computer's (owner request, 27 October 2026).
+    void (async () => {
+      const words = speakable(m.content).slice(0, SPEECH_MAX_CHARS).trim();
+      if (!words) return;
+      try {
+        const r = await api<{ speech: SpeechOffer | null }>(`/api/orgs/${encodeURIComponent(orgSlug)}/assistant/front/line`, { method: "POST", body: { text: words }, retries: 0 });
+        if (r.speech) speech.speak(m.content, { id, natural: r.speech });
+      } catch { /* she stays quiet; the words are on the page */ }
+    })();
   };
   /** Stops what this chat is reading aloud, and only that (the drawer, as it closes). */
   const quiet = useCallback(() => speech.stop(`${me}:`), [me]);
@@ -933,10 +943,10 @@ export function BrendaMessages({ chat, onLeave, size = "md" }: { chat: BrendaCha
               <div className={cn("flex items-start", lg ? "gap-3" : "gap-2.5")}>
                 <BrendaFace size={lg ? "md" : "sm"} className={lg ? "mt-px" : "mt-0.5"} mood={mi === lastIndex ? look.mood : null} />
                 <Markdown variant="chat" source={m.content} base={`/app/${chat.orgSlug}`} onNavigate={open} className="flex-1 font-normal text-foreground" />
-                {(voice.supported === true || !!m.speech) && voiceOn ? <ListenButton content={m.content} playing={voice.speaking && voice.id === chat.speechId(m)} small={!lg} onPress={() => chat.listen(m)} /> : null}
+                {voiceOn ? <ListenButton content={m.content} playing={voice.speaking && voice.id === chat.speechId(m)} small={!lg} onPress={() => chat.listen(m)} /> : null}
               </div>
               {voice.blocked !== null && voice.blocked === chat.speechId(m) ? (
-                <p role="status" className={cn("text-xs font-normal text-subtle", indent)}>{name} couldn&apos;t speak in this browser.</p>
+                <p role="status" className={cn("text-xs font-normal text-subtle", indent)}>{name}&apos;s voice couldn&apos;t be reached just now. The reply is above.</p>
               ) : null}
               {/* Done lines first; a confirmed follow-up's live card goes after the Confirm it came from, below (visual
                   review, 8 October 2026: the result read before the question that produced it). */}

@@ -31,7 +31,7 @@ import {
   HISTORY_JOB, NO_LIMIT, forgetSpoken, naturalSpeech, naturalVoiceView, resetNaturalVoiceForTests, runHistoryForgetJob, saveMyNaturalVoice,
   speechOffer, voiceConnectionStatus,
 } from "@/server/services/natural-voice";
-import { speechText, type SpeechOffer } from "@/lib/natural-voices";
+import { DEFAULT_NATURAL_VOICE_ID, speechText, type SpeechOffer } from "@/lib/natural-voices";
 import { POST as speechPOST } from "@/app/api/orgs/[org]/assistant/speech/route";
 import { GET as voiceGET, PUT as voicePUT } from "@/app/api/orgs/[org]/assistant/voice/route";
 import { GET as sampleGET } from "@/app/api/orgs/[org]/assistant/voice/samples/[voiceId]/route";
@@ -316,12 +316,12 @@ describe("Boredroom's key, for every workspace (owner request, 27 October 2026: 
 describe("the person's own voice", () => {
   const path = "/api/orgs/company-a/assistant/voice";
 
-  it("starts as the computer voice; any member reads the view", async () => {
+  it("starts in the default natural voice, never the computer voice (owner request, 27 October 2026); any member reads the view", async () => {
     as(a.employee2);
     const r = await call(voiceGET, "GET", path, ORG);
     expect(r.status).toBe(200);
     const v = await bodyOf(r);
-    expect(v).toMatchObject({ ready: true, chosen: null, available: false, reason: null, usedToday: 0, personDailyLimit: NO_LIMIT, samples: true });
+    expect(v).toMatchObject({ ready: true, chosen: DEFAULT_NATURAL_VOICE_ID, available: true, reason: null, usedToday: 0, personDailyLimit: NO_LIMIT, samples: true });
     expect((v.voices as unknown[]).length).toBe(8);
   });
 
@@ -334,8 +334,9 @@ describe("the person's own voice", () => {
     expect(ok.status).toBe(200);
     expect(await bodyOf(ok)).toMatchObject({ ready: true, chosen: GEORGE, available: true, reason: null });
     expect(await adminQuery(`SELECT natural_voice FROM assistant_profiles WHERE membership_id = $1`, [ada.membership.id])).toEqual([{ natural_voice: GEORGE }]);
+    // null (an older page's "Computer voice") is the default natural voice now: there is no computer voice.
     const back = await call(voicePUT, "PUT", path, ORG, { voiceId: null });
-    expect(await bodyOf(back)).toMatchObject({ chosen: null, available: false, reason: null });
+    expect(await bodyOf(back)).toMatchObject({ chosen: DEFAULT_NATURAL_VOICE_ID, available: true, reason: null });
   });
 
   it("a person with no profile row yet gets one, setup still not done", async () => {
@@ -369,14 +370,14 @@ describe("the chat reply's speech offer", () => {
   const path = "/api/orgs/company-a/assistant/chat";
   const ask = { messages: [{ role: "user", content: "What can you do?" }] };
 
-  it("is null with the computer voice, and carries the spoken words with a token for a chosen voice", async () => {
+  it("carries an offer even with no voice chosen (the default voice: never the computer voice), and for a chosen voice", async () => {
     await saveMyNaturalVoice(ada, { voiceId: null });
     as(a.employee);
     const plain = await call(chatPOST, "POST", path, ORG, ask);
     expect(plain.status).toBe(200);
     const p = await bodyOf(plain);
     expect(typeof p.spoken).toBe("string");
-    expect(p.speech).toBeNull();
+    expect(p.speech).toMatchObject({ path: "/api/orgs/company-a/assistant/speech" });
 
     await saveMyNaturalVoice(ada, { voiceId: LILY });
     el.calls = []; // the saved view read the subscription (free)
@@ -402,6 +403,23 @@ describe("the chat reply's speech offer", () => {
 });
 
 // ---- The speech route -------------------------------------------------------------------------------------------------------
+
+// Owner request, 27 October 2026: "It alternates between the local computer's voice and the ElevenLabs voice … I want
+// everything to be ElevenLabs voice and no local voice at all." The notch's own lines (a plan and its question, a step's
+// question, a doing line said the first time) used to get no offer and were said by the Mac's voice.
+describe("every line the notch says gets an offer (no computer voice)", () => {
+  it("a line the Mac words itself is signed for the person and can be said", async () => {
+    await saveMyNaturalVoice(ada, { voiceId: null });
+    as(a.employee);
+    const { frontLineOffer } = await import("@/server/services/front");
+    for (const line of ["Opening Figma.", "Rename the file to Invoice. Do you want me to do this?", "Which one?"]) {
+      const { speech } = await frontLineOffer(ada, line);
+      expect(speech).toMatchObject({ path: "/api/orgs/company-a/assistant/speech", text: line });
+      const r = await speak(speech as SpeechOffer);
+      expect(r.status).toBe(200);
+    }
+  });
+});
 
 describe("the speech route", () => {
   beforeEach(async () => { await saveMyNaturalVoice(ada, { voiceId: LILY }); as(a.employee); });
@@ -545,12 +563,12 @@ describe("the speech route", () => {
     await back.arrayBuffer();
   });
 
-  it("409 no_voice when the person has gone back to the computer voice", async () => {
+  it("a person with no voice saved is said in the default natural voice (no 409 no_voice: there is no computer voice)", async () => {
     const offer = await offerFor(ada, "Hello.");
     await saveMyNaturalVoice(ada, { voiceId: null });
     const r = await speak(offer);
-    expect(r.status).toBe(409);
-    expect((await bodyOf(r)).details?.reason).toBe("no_voice");
+    expect(r.status).toBe(200);
+    expect(ttsCalls().at(-1)?.url).toContain(DEFAULT_NATURAL_VOICE_ID);
   });
 
   it("402 when the plan no longer has the assistant (a token from before still says nothing)", async () => {
@@ -588,8 +606,8 @@ describe("the speech route", () => {
     const b = await bodyOf(r);
     // ElevenLabs' own refusal for credits says so (owner request, 12 October 2026: the only stop there is).
     const message = reason === "allowance_low"
-      ? "The ElevenLabs plan has run out of credits for this month, so the computer voice is used until it resets or the plan is upgraded."
-      : "ElevenLabs didn't answer, so the computer voice is used.";
+      ? "The ElevenLabs plan has run out of credits for this month, so replies aren't read aloud until it resets or the plan is upgraded."
+      : "ElevenLabs didn't answer, so this reply wasn't read aloud.";
     expect(b).toMatchObject({ code: "VOICE_UNAVAILABLE", message, details: { reason } });
     expect(await usageOf(ada)).toEqual([{ characters: 0, utterances: 0, key_source: "environment" }]);
     // At once, without asking ElevenLabs again.

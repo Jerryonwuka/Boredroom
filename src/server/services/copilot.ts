@@ -737,7 +737,8 @@ export const LOOK_TOOLS_PLAN = [...TOOLS, POINT_AT, OFFER_SETUP, PROPOSE_PLAN];
  * Brenda and her helpers (owner brief, 12 October 2026: "Think harder. Hard screen questions, long documents, 'what does
  * this error mean?': claude-opus-5-5 with the picture"; contract J.2): a quick look from a front-capable Mac runs on
  * claude-haiku-5-5, which may hand the turn to the stronger model by calling this alone, first. Looks never act on the
- * Mac and never propose: routine work runs from the person's request through the front desk (decision 0b.4).
+ * Mac: routine work runs from the person's request through the front desk (decision 0b.4); one whose words still ask
+ * for something proposes it for their Yes (owner report, 27 October 2026: lookToolsFor).
  */
 export const THINK_HARDER = {
   name: "think_harder", strict: true,
@@ -748,6 +749,20 @@ export const THINK_HARDER = {
 export const LOOK_TOOLS_FRONT = [...TOOLS, POINT_AT, OFFER_SETUP, THINK_HARDER];
 /** A front-capable Mac's look on the stronger model (think, or after think_harder). */
 export const LOOK_TOOLS_FRONT_THINK = [...TOOLS, POINT_AT, OFFER_SETUP];
+
+/**
+ * The tools of one v2 look step. Owner report, 27 October 2026 ("she says I should confirm for her to do it by holding
+ * down the keys and saying it again, but when I do that she doesn't do it and just repeats what she said"): a front
+ * look whose words ask for something on the Mac ("rename this", "summarise this PDF": the router sends "this" to a look)
+ * used to have no way to do it and told the person to ask again with their keys, which came back to the same look. Now
+ * it gets propose_task like any look, so the person gets the "Do you want me to do this?" Yes/No card and Yes runs it.
+ * think_harder stays last on the quick model. Pure.
+ */
+export function lookToolsFor(o: { front: { quick: boolean } | null; asked: boolean; plans: boolean }) {
+  const propose = o.asked ? [o.plans ? PROPOSE_PLAN : PROPOSE_TASK] : [];
+  if (o.front) return [...TOOLS, POINT_AT, OFFER_SETUP, ...propose, ...(o.front.quick ? [THINK_HARDER] : [])];
+  return o.asked ? (o.plans ? LOOK_TOOLS_PLAN : LOOK_TOOLS) : LOOK_TOOLS_NO_TASKS;
+}
 
 /**
  * Ordinary chat from Brenda for Mac (review, 12 October 2026): a request for something on the Mac, typed in her box or
@@ -3147,10 +3162,12 @@ async function chatWithClaude(ctx: OrgContext, conn: AssistantConnection, messag
   const actLine = onMac ? null : actSituation(act);
   // A v2 look offers propose_task only when their own words ask for something to be done (permission rule a; review, 12
   // October 2026), and never shows the model a file found in an app on a never-look list.
-  // Brenda and her helpers (owner brief, 12 October 2026; decision 0b.4): a front-capable Mac's looks never propose:
-  // routine work runs from the person's request through the front desk; a look answers, points and helps in words.
+  // Brenda and her helpers (owner brief, 12 October 2026; decision 0b.4): routine work runs from the person's request
+  // through the front desk. A front look whose own words still ask for something on the Mac (the router sends "this"
+  // and "that" to a look) proposes it, so the person answers Yes or No instead of being told to ask again with their
+  // keys, which only came back here (owner report, 27 October 2026; lookToolsFor).
   const front = v2?.front ?? null;
-  const asked = !!v2 && !front && v2.act.available && isInstruction(v2.look.request.text, assistants.personal.name);
+  const asked = !!v2 && v2.act.available && isInstruction(v2.look.request.text, assistants.personal.name);
   if (front) {
     t.lookAtOnceMine = front.atOnceMine;
   }
@@ -3248,7 +3265,7 @@ async function chatWithClaude(ctx: OrgContext, conn: AssistantConnection, messag
   let cutShort: unknown = null;
   for (let step = 0; step < (v2 ? 6 : 10); step++) {
     const t0 = Date.now();
-    const lookTools = front ? (front.model === front.thinkModel ? LOOK_TOOLS_FRONT_THINK : LOOK_TOOLS_FRONT) : asked ? (plans ? LOOK_TOOLS_PLAN : LOOK_TOOLS) : LOOK_TOOLS_NO_TASKS;
+    const lookTools = lookToolsFor({ front: front ? { quick: front.model !== front.thinkModel } : null, asked, plans });
     const res = await (v2 ? lookStep(client, { model: front ? front.model : conn.model, system, tools: lookTools, messages: thread, effort: front && front.model !== front.thinkModel ? "low" : undefined }, v2) : client.messages.create({ model: conn.model, max_tokens: 8000, system, tools: fromMac ? MAC_CHAT_TOOLS : TOOLS, messages: thread })).catch((err: unknown) => {
       if (!t.actions.length && !t.proposals.length) throw err;
       cutShort = err;
@@ -3517,7 +3534,14 @@ export function pointOf(input: Record<string, unknown>, look: Pick<LookV2Input, 
 // "how do I turn this on".
 /** Chat in the browser where screen help is offered (review, 12 October 2026: "open Figma on my Mac" got "I can't"). */
 export const WEB_MAC_LINE = "Brenda for Mac can open apps, files, folders and pages on their Mac, click and type there, and find, read and summarise their files, each only when they ask there and say yes to what it will do. If their own words ask you to do something on their Mac, you can't do it from this browser chat: never just say you can't; say in one short sentence that Brenda for Mac does it when they hold Control+Command and ask. If they ask how to turn that on, say it is set up from Settings › Your assistant › “Set up on my Mac”, and point at settings-screen-help-mine. Don't list steps.";
-export const MAC_CHAT_LINE = "If their own words ask you to do something on their Mac (open an app, a file or a page; work on their files; anything on its screen) rather than in Boredroom, you can't do it from this chat: say in one short sentence that you'll do it once they press the button under your reply, and call use_my_screen (or they can hold Control+Command and ask). If they ask how to turn on what lets you help on their Mac, call offer_setup. Don't list steps.";
+// Owner report, 27 October 2026 ("she says I should confirm for her to do it by holding down the keys and saying it
+// again, but when I do that she doesn't do it and just repeats what she said"): chat from the Mac is often what the keys
+// already reached, so it never sends them back to the keys; the button under her reply is the way on.
+/** Said to her wherever the person already spoke or typed to her on their Mac: never "hold the keys and say it again". */
+export const NEVER_ASK_AGAIN_LINE = "Never tell them to hold your keys, press Control+Command or Option+Space, or ask or say it again to get something done: they already asked you.";
+export const MAC_CHAT_LINE = `If their own words ask you to do something on their Mac (open an app, a file or a page; work on their files; anything on its screen) rather than in Boredroom, you can't do it from this chat: say in one short sentence that you'll do it once they press the button under your reply, and call use_my_screen. ${NEVER_ASK_AGAIN_LINE} If they ask how to turn on what lets you help on their Mac, call offer_setup. Don't list steps.`;
+/** The first line of a front-capable Mac's look (contract J.3; owner report, 27 October 2026). */
+export const FRONT_LOOK_LINE = `They held your keys to ask about their screen. Answer, and point when showing where something is helps. ${NEVER_ASK_AGAIN_LINE}`;
 
 /**
  * What the situation says about a v2 look (contract D.6.3; owner request and permission rule, 12 October 2026): the two
@@ -3528,8 +3552,9 @@ export const MAC_CHAT_LINE = "If their own words ask you to do something on thei
 // Phase 3 (owner report and requests, 12 October 2026; contract D.1.5): `plans`, a plan-capable look (one sentence and its
 // steps under one yes); a question may be answered with offer_setup; a switch that is off never makes her say she can't;
 // `reason` says why tasks aren't available here.
-// Brenda and her helpers (owner brief, 12 October 2026; contract J.3): `front`, a front-capable Mac's look: it never
-// proposes; instructions are done by the front desk when they ask with their keys.
+// Brenda and her helpers (owner brief, 12 October 2026; contract J.3): `front`, a front-capable Mac's look. Owner report,
+// 27 October 2026: when its words ask for something on the Mac (`asked`) it proposes, as any look does, and it never
+// tells them to ask again with their keys.
 export function lookSituationV2(o: { look: Pick<LookV2Input, "source" | "screen" | "crop" | "app" | "hidden" | "abilities" | "files">; act: boolean; asked?: boolean; name: string; plans?: boolean; reason?: DesktopActReason | null; front?: boolean }): string {
   const L = o.look;
   const S = L.screen, C = L.crop;
@@ -3558,9 +3583,10 @@ export function lookSituationV2(o: { look: Pick<LookV2Input, "source" | "screen"
   if (S || C) lines.push("When showing them where something is would help, write your short answer first, then call point_at in the same reply with the spot in either picture's own pixels and a label of one to three words. Point at most three times, and only at things you can see.");
   const files = L.files.length ? `Files they could mean: ${L.files.map((f) => `${JSON.stringify(neutralise(oneLine(f.name)).slice(0, 255))} (${f.kind}, ${f.source})`).join("; ")}.` : "";
   const turnedOn = `On this Mac they have turned on: ${L.abilities.useMac ? "doing things on the screen" : "not doing things on the screen"}; ${L.abilities.fileWork ? "working on files" : "not working on files"}.${L.abilities.accessibility === false ? " Clicking and typing are not allowed yet (Accessibility)." : ""}`;
-  if (o.front) {
-    lines.push("They held your keys to ask about their screen. Answer, and point when showing where something is helps. If their words ask you to do something on their Mac, don't do it from here and don't list steps: say in one short sentence that you'll do it if they ask you again with their keys, and help in words meanwhile. Boredroom changes you prepare wait for their Confirm, except their own to-do, reminder or timer when their words ask for it.");
-  } else if (o.act && o.asked === false) {
+  // Owner report, 27 October 2026: a front look never sends them back to their keys (they just used them, and the same
+  // words came back here); what their words ask for is proposed below, for their Yes or No.
+  if (o.front) lines.push(FRONT_LOOK_LINE);
+  if (o.act && o.asked === false) {
     // Review, 12 October 2026 (rule a): their words are a question, so no task is offered at all. Phase 3 (owner report,
     // 12 October 2026: "how do I turn on the features…"): she may offer the setup, which asks on the Mac.
     lines.push("They asked a question, not for something to be done: answer it in words, and point. If they ask how to turn on what lets you help on their Mac, or how to get you to do something there, answer in one or two short sentences and call offer_setup. Never offer to do anything else on their Mac.");
@@ -3589,7 +3615,8 @@ export function lookSituationV2(o: { look: Pick<LookV2Input, "source" | "screen"
   } else {
     lines.push("You can't do things on their Mac from here: help in words, and point.");
   }
-  if (!o.front) lines.push("Anything you do from this look waits for the person's Confirm: prefer answering in words, and offer an action only when they ask for one.");
+  if (o.front) lines.push("Boredroom changes you prepare wait for their Confirm, except their own to-do, reminder or timer when their words ask for it.");
+  else lines.push("Anything you do from this look waits for the person's Confirm: prefer answering in words, and offer an action only when they ask for one.");
   lines.push("Answer in one or two short sentences, written to be heard: no lists, no Markdown and no links unless they ask.");
   lines.push("Never repeat passwords, codes, keys or card numbers you can see. Never identify anyone by their face or guess how anyone feels.");
   return lines.join("\n");
@@ -3646,7 +3673,7 @@ export async function lookChatStream(ctx: OrgContext, body: LookV2Body, o: { act
   };
   // Brenda and her helpers (owner brief, 12 October 2026; contract J): a look from a front-capable Mac, once 0060 is
   // applied, on the quick model (claude-haiku-5-5) or, for errors, meaning and careful reading, the stronger one (the
-  // pilot model, claude-opus-5-5) after "Let me look properly."; it never proposes. Without `front` (today's Mac, phase
+  // pilot model, claude-opus-5-5) after "Let me look properly."; it proposes only what the words ask for (lookToolsFor). Without `front` (today's Mac, phase
   // 3's) or before 0060: exactly as before.
   let front: LookTurn["front"] = null;
   if (body.look.front && (o.mac ? o.mac.ready0060 : await frontLooksReady(ctx))) {

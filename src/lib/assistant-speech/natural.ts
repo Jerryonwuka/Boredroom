@@ -16,7 +16,7 @@
  *   sample route's URL (`media-src 'self'`).
  * - Failures before any audio say why (`onFailed`: the server's `details.reason` on a refusal, "upstream" when our server
  *   gave no headers within 15 s, null for this browser's own trouble: no network, `play()` refused, a media or decode
- *   error, no `playing` within 4 s of the audio being handed over), so the controller can fall back to the computer voice
+ *   error, no `playing` within 4 s of the audio being handed over), so the controller can stay quiet (never the computer voice)
  *   at once. A failure after the audio began ends it (`onEnded`; what was heard stands).
  * - `stop()` aborts the request, cancels the stream, pauses and empties the element, ends the MediaSource and revokes
  *   its URL; no event comes after it. Nothing is stored on disk or on the server.

@@ -31,10 +31,20 @@ export const NATURAL_VOICES: readonly NaturalVoice[] = Object.freeze([
 
 const BY_ID = new Map(NATURAL_VOICES.map((v) => [v.id, v]));
 
+/**
+ * Her voice when the person has not picked one (owner request, 27 October 2026: "I want everything to be ElevenLabs voice
+ * and no local voice at all"): there is no "Computer voice" any more, so nobody is left on the computer's own voice.
+ * Alice: clear and friendly, the first in the list.
+ */
+export const DEFAULT_NATURAL_VOICE_ID = "Xb7hH8MSUJpSbSDYk0k2";
+
 /** In the catalogue (the only ids that ever reach an ElevenLabs URL). */
 export const isNaturalVoiceId = (v: unknown): v is string => typeof v === "string" && BY_ID.has(v);
 
 export const naturalVoice = (id: string | null | undefined): NaturalVoice | null => (id ? BY_ID.get(id) ?? null : null);
+
+/** The voice that speaks for a saved choice: the choice when it is in the catalogue, else the default (never none). */
+export const voiceOrDefault = (id: unknown): string => (isNaturalVoiceId(id) ? id : DEFAULT_NATURAL_VOICE_ID);
 
 /** Per utterance (speakable() already stops at ~400). */
 export const SPEECH_MAX_CHARS = 600;
@@ -43,7 +53,7 @@ export const SPEECH_MAX_CHARS = 600;
 export const SPEECH_SPEEDS = { slower: 0.9, normal: 1, faster: 1.1 } as const;
 export type SpeechSpeed = keyof typeof SPEECH_SPEEDS;
 
-/** Why the computer voice speaks instead (null: the natural voice is available). */
+/** Why she stays quiet instead (null: the natural voice is available). The computer voice never stands in (27 October 2026). */
 export type NaturalVoiceReason =
   | "not_ready"
   | "no_voice"
@@ -62,7 +72,7 @@ export type SpeechOffer = { path: string; token: string; text: string };
 export type NaturalVoiceView = {
   /** Migration 0053 applied. */
   ready: boolean;
-  /** A catalogue id; null = "Computer voice" (the default). */
+  /** A catalogue id: the person's choice, else DEFAULT_NATURAL_VOICE_ID (null only before 0053). */
   chosen: string | null;
   /** A chosen voice would be used right now. */
   available: boolean;

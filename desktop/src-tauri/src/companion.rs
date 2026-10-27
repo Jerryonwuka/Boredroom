@@ -85,6 +85,8 @@ pub const MAX_LEVELS_PER_S: f64 = 30.0;
 /// canJoinAllSpaces | stationary | ignoresCycle | fullScreenAuxiliary.
 pub const LEVEL: isize = 100;
 pub const BEHAVIOUR: usize = 1 | 16 | 64 | 256;
+#[cfg(target_os = "macos")]
+const WANT: crate::overlay::Want = crate::overlay::Want { level: LEVEL, behaviour: BEHAVIOUR };
 
 pub const FOLLOWER: &str = "companion";
 pub const RING: &str = "companion-ring";
@@ -838,6 +840,9 @@ mod mac {
             .ok()?;
         let _ = w.set_ignore_cursor_events(true);
         crate::island::helper_window_flags(&w);
+        // A non-activating panel at once, so she enters full-screen Spaces even when made while Boredroom's window
+        // is open (overlay.rs).
+        crate::overlay::ensure_window(&w, WANT);
         std::thread::sleep(Duration::from_millis(300)); // the page loads before the first message
         Some(w)
     }
@@ -857,8 +862,7 @@ mod mac {
     fn set_frame(w: &WebviewWindow, r: Bounds, show: bool) {
         let f = cocoa_frame(r);
         ns(w, move |n| unsafe {
-            let _: () = msg_send![n, setLevel: LEVEL];
-            let _: () = msg_send![n, setCollectionBehavior: BEHAVIOUR];
+            crate::overlay::ensure(n as *const AnyObject as *mut AnyObject, WANT);
             let _: () = msg_send![n, setFrame: f, display: true];
             if show {
                 let _: () = msg_send![n, orderFrontRegardless];
@@ -874,15 +878,10 @@ mod mac {
         });
     }
 
-    /// The window framework re-applies its own "always on top" level when a window is shown; put hers back (island.rs).
+    /// The window framework re-applies its own "always on top" level when a window is shown; put hers back, with the
+    /// panel style and behaviour that let her into full-screen Spaces (overlay.rs).
     fn assert_level(w: &WebviewWindow) {
-        ns(w, |n| unsafe {
-            let level: isize = msg_send![n, level];
-            if level != LEVEL {
-                let _: () = msg_send![n, setLevel: LEVEL];
-                let _: () = msg_send![n, setCollectionBehavior: BEHAVIOUR];
-            }
-        });
+        crate::overlay::ensure_window(w, WANT);
     }
 
     fn order_out(w: &WebviewWindow) {

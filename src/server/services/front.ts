@@ -33,7 +33,8 @@ import type { NdjsonWrite } from "@/server/lib/ndjson";
 import { AI_BURST, AI_BURST_MESSAGE, checkAiBurst, newRequestId, recordActUsage, recordUsage } from "@/server/services/ai-usage";
 import { actClient, aiErrorCode, actSafe, withBusyRetry } from "@/server/services/act-model";
 import { checkRoute, routerMessages, routerSituation, runRouter, type RouteDecision, type RouterContext } from "@/server/services/front-model";
-import { FRONT_LIMITS, FRONT_WORDS, MAC_ACTION_KINDS, frontLineOk, type JobHelper } from "@/lib/front";
+import { FRONT_LIMITS, FRONT_WORDS, MAC_ACTION_KINDS, type JobHelper } from "@/lib/front";
+import { SPEECH_MAX_CHARS } from "@/lib/natural-voices";
 import { speakable } from "@/lib/assistant-speech/speakable";
 import { classify, riskKindOfAction } from "@/lib/mac-risk";
 import { rateLimited } from "@/server/lib/errors";
@@ -428,11 +429,17 @@ export async function recordFront(mc: MacContext, body: z.infer<typeof recordBod
 
 // ---- The first short line in her natural voice (contract M.2) ------------------------------------------------------------------
 
-export const lineSchema = z.object({ text: z.string().min(1).max(FRONT_LIMITS.lineChars) });
+/**
+ * Up to one utterance (SPEECH_MAX_CHARS). Every line the notch says goes through here when it has no offer of its own
+ * (owner request, 27 October 2026: "everything ElevenLabs, no local voice at all"): the fixed doing and done lines (S.1),
+ * and the lines the Mac words itself (a plan and "Do you want me to do this?", a step's question, a job's end, a
+ * refusal). The offer is signed for this person only and plays only to them; the speech route's burst guard
+ * (SPEECH_BURST) bounds it as it bounds every utterance.
+ */
+export const lineSchema = z.object({ text: z.string().min(1).max(SPEECH_MAX_CHARS) });
 
-/** A speech offer for one of the fixed doing and done lines (S.1), and only those; else null. */
+/** A speech offer for a line the notch says to its own person (else null: no voice, Voice off, no key). */
 export async function frontLineOffer(ctx: OrgContext, text: string): Promise<{ speech: unknown }> {
-  if (!frontLineOk(text)) return { speech: null };
   const { speechOfferFor } = await import("@/server/services/natural-voice");
   return { speech: await speechOfferFor(ctx)(text).catch(() => null) };
 }

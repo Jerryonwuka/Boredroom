@@ -162,7 +162,7 @@ describe("the situation (contract D.6.3), every branch", () => {
   });
   it("ordinary chat from the Mac offers the person's own press to let her see the screen (contract D.6.7; review, 12 October 2026)", () => {
     // Phase 3 (contract D.1.6).
-    expect(MAC_CHAT_LINE).toBe("If their own words ask you to do something on their Mac (open an app, a file or a page; work on their files; anything on its screen) rather than in Boredroom, you can't do it from this chat: say in one short sentence that you'll do it once they press the button under your reply, and call use_my_screen (or they can hold Control+Command and ask). If they ask how to turn on what lets you help on their Mac, call offer_setup. Don't list steps.");
+    expect(MAC_CHAT_LINE).toBe("If their own words ask you to do something on their Mac (open an app, a file or a page; work on their files; anything on its screen) rather than in Boredroom, you can't do it from this chat: say in one short sentence that you'll do it once they press the button under your reply, and call use_my_screen. Never tell them to hold your keys, press Control+Command or Option+Space, or ask or say it again to get something done: they already asked you. If they ask how to turn on what lets you help on their Mac, call offer_setup. Don't list steps.");
     expect(USE_MY_SCREEN.strict).toBe(true);
     expect(USE_MY_SCREEN.input_schema.required).toEqual([]);
     expect(MAC_CHAT_TOOLS).toEqual([...TOOLS, USE_MY_SCREEN, OFFER_SETUP]);

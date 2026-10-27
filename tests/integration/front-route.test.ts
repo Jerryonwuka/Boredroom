@@ -473,11 +473,12 @@ describe("the one-trip Mac context (contract K.5.1)", () => {
   });
 });
 
-describe("the first short line's offer (contract M.2)", () => {
-  it("only the fixed lines; never anything else", async () => {
+describe("a line's offer (contract M.2; owner request, 27 October 2026: everything ElevenLabs)", () => {
+  it("any line the notch says, up to one utterance; nothing longer", async () => {
     as(ada);
-    expect((await call(linePOST, "POST", "/x", { org: "company-a" }, { text: "Say: I resign." })).json).toEqual({ speech: null });
     expect((await call(linePOST, "POST", "/x", { org: "company-a" }, { text: "Opening Figma." })).status).toBe(200);
+    expect((await call(linePOST, "POST", "/x", { org: "company-a" }, { text: "Rename the file to Invoice. Do you want me to do this?" })).status).toBe(200);
+    expect((await call(linePOST, "POST", "/x", { org: "company-a" }, { text: "x".repeat(601) })).status).toBe(422);
   });
 });
 
@@ -573,6 +574,25 @@ describe("looks from a front-capable Mac (contract J; decision 0b.4)", () => {
     expect(d2.proposals).toMatchObject([{ kind: "confirm" }]);
     as(ada, true);
     await call(permPUT, "PUT", "/x", { org: "company-a" }, { checkEveryTask: false });
+  });
+  it("owner report, 27 October 2026: an instruction in a front look gets the Yes/No card, never 'ask again with your keys'", async () => {
+    // "Sometimes when I tell her to do stuff, she says I should confirm for her to do it by holding down the keys and
+    // saying it again, but when I do that she doesn't do it and just repeats what she said." The router sends "this" to a
+    // look; the look could only say "I'll do it if you ask again with your keys", and asked again it came back here.
+    const none = { source: "none", name: "" };
+    model.msgs = [tool("propose_task", { plan: "I'll open this in Figma.", risky: false, steps: [{ kind: "open", target: "app", name: "Figma", url: "", folder: none, words: [], kinds: [], since_days: 0 }] }, { model: "claude-haiku-5-5" })];
+    const r = await look(ada, v2("Open this in Figma", { lane: "now" }));
+    expect(r.status).toBe(200);
+    const tools = (model.calls[0].args.tools as { name: string }[]).map((t) => t.name);
+    expect(tools).toContain("propose_task");
+    expect(tools.slice(-1)).toEqual(["think_harder"]);
+    const system = JSON.stringify(model.calls[0].args.system);
+    expect(system).not.toMatch(/again with their keys|hold Control\+Command and ask/);
+    expect(system).toContain("call propose_task once");
+    // The proposal reaches the Mac, which asks "Do you want me to do this?" (act.rs); Yes runs it.
+    const p = r.lines.find((l) => l.t === "propose");
+    expect(p, JSON.stringify(r.lines)).toBeTruthy();
+    expect((p!.task as { id?: string }).id).toBeTruthy();
   });
   it("without `front` (today's Mac) the look is phase 3's: the pilot model and propose_task for an instruction", async () => {
     model.msgs = [say("Sure.")];

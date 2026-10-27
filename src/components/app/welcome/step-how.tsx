@@ -10,7 +10,7 @@
  *   server's words in the step's live region and the choice goes back.
  * - When {name} speaks: "When I talk to {name}", Always or Never (PUT /brenda/assistant/speak, the Voice card's ordered
  *   saves: the last choice in a burst wins, a failure goes back with the server's words). Hidden where the workspace's
- *   plan has no voice. "Play a sample" says "Hi Ada, I'm Max." in the computer voice; "Choose a voice" opens the natural
+ *   plan has no voice. "Play a sample" plays her natural voice's sample (never the computer voice, 27 October 2026); "Choose a voice" opens the natural
  *   voices with their free preview clips (owner decision, 9 October 2026), unchanged from Settings.
  *
  * The step stays on screen until its saves have answered (review, 11 October 2026): Continue and Back wait for them (the
@@ -26,9 +26,9 @@ import { Segmented } from "@/components/ui/segmented";
 import { StepFrame } from "@/components/app/welcome/step-frame";
 import { NaturalVoicePicker, type NaturalVoiceChoice } from "@/components/app/assistant-natural-voice";
 import type { ActModeControl } from "@/components/app/act-mode-pill";
-import { useSpeech, useVoicePrefs } from "@/hooks/use-assistant-speech";
+import { useSpeech } from "@/hooks/use-assistant-speech";
 import { speech } from "@/lib/assistant-speech/controller";
-import { SPEEDS } from "@/lib/assistant-speech/prefs";
+import { DEFAULT_NATURAL_VOICE_ID } from "@/lib/natural-voices";
 import { api, isApiFailure } from "@/lib/api-client";
 import { isAssistantSpeak, type AssistantSpeak } from "@/lib/assistant-look";
 import type { ActMode } from "@/lib/act-mode";
@@ -57,7 +57,6 @@ export type StepHowProps = {
 export function StepHow(p: StepHowProps) {
   const id = useId();
   const voice = useSpeech();
-  const prefs = useVoicePrefs();
   const { state } = p.act;
   const [open, setOpen] = useState(p.natural.chosen !== null);
   const [saving, setSaving] = useState(false);
@@ -122,13 +121,15 @@ export function StepHow(p: StepHowProps) {
     track(work);
   };
 
-  // The computer voice's sample; leaving the step stops it.
+  // A sample of her voice (the chosen natural voice, else the default; never the computer voice since the owner's
+  // request, 27 October 2026); leaving the step stops it.
   const playing = voice.speaking && voice.id === SAMPLE_ID;
   useEffect(() => () => speech.stop(SAMPLE_ID), []);
+  const sampleVoice = p.natural.chosen ?? DEFAULT_NATURAL_VOICE_ID;
   const sample = () => {
     if (playing) { speech.stop(); return; }
-    speech.prime();
-    speech.speak(H.voice.sampleText(p.first, p.name), { id: SAMPLE_ID, raw: true, voiceURI: prefs.voiceURI, rate: SPEEDS[prefs.speed].rate });
+    speech.prime({ natural: true });
+    speech.playSample(`/api/orgs/${encodeURIComponent(p.orgSlug)}/assistant/voice/samples/${sampleVoice}`, { id: SAMPLE_ID });
   };
 
   const notReady = !state.ready || state.locked === "not_ready";
@@ -172,7 +173,7 @@ export function StepHow(p: StepHowProps) {
             </p>
 
             <div className="mt-4 flex flex-wrap items-center gap-2">
-              {voice.supported === false ? (
+              {!p.naturalReady ? (
                 <p className="text-meta font-normal text-secondary">{H.voice.noVoice}</p>
               ) : (
                 <Button size="sm" variant="secondary" onClick={sample} aria-label={playing ? H.voice.stop : H.voice.sampleLabel}>

@@ -13,9 +13,9 @@
  * reply is on its way (owner request, 26 October 2026: no orange buttons). While dictating (live) the ring stays orange
  * and the microphone becomes an orange stop square on a quiet grey disc (a live mark, not a filled orange button).
  *
- * While dictating, the voice card sits above the text, inside the pill (owner decision, 5 October 2026; VoiceCapture),
- * in ElevenLabs' recording look since 7 October 2026: the live time, the live waveform scrolling with the voice (read
- * from the dictation's own microphone, which it shares), and Cancel; the microphone button is the Stop. The page-wide
+ * While dictating, one slim row sits above the text, inside the pill (owner decision, 5 October 2026; VoiceCapture; slim
+ * since 27 October 2026, no card of its own): the live time, a thin wave scrolling with the voice (read from the
+ * dictation's own microphone, which it shares), and Cancel; the microphone button is the Stop. The page-wide
  * tooltip layer labels the microphone and Send from their accessible names.
  *
  * Icons (owner request, 7 October 2026): the microphone and Send's arrow are animated twins (components/ui/animated-icons)
@@ -128,7 +128,7 @@ export const PromptInputBox = React.forwardRef<HTMLDivElement, PromptInputBoxPro
   const mic = !!onToggleRecording && recordingSupported;
   const hero = variant === "hero";
   const voice = recording && recordingView ? recordingView
-    : recording || transcribing ? <VoiceCapture compact phase={recording ? "listening" : "working"} hint={recordingHint} heard={recordingHeard} onCancel={onCancelRecording} className={hero ? "rounded-[10px]" : undefined} />
+    : recording || transcribing ? <VoiceCapture compact phase={recording ? "listening" : "working"} hint={recordingHint} heard={recordingHeard} onCancel={onCancelRecording} />
     : null;
 
   if (hero) {

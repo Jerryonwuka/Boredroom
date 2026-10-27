@@ -1,7 +1,9 @@
 /**
  * Natural voice (owner decision, 9 October 2026: natural voice (ElevenLabs), "use your recommendations"). Each person may
- * pick one of eight ElevenLabs voices for their own assistant (lib/natural-voices); the default stays the computer's own
- * voice. This file is the server's whole side of it:
+ * pick one of eight ElevenLabs voices for their own assistant (lib/natural-voices); without a choice she speaks in
+ * DEFAULT_NATURAL_VOICE_ID (owner request, 27 October 2026: "everything ElevenLabs, no local voice at all": the computer
+ * voice is gone everywhere, and when ElevenLabs cannot speak she stays quiet and the words still show). This file is the
+ * server's whole side of it:
  *
  * - Keys: Boredroom's key (`ELEVENLABS_API_KEY`) for every workspace (owner request, 27 October 2026: "as long as we
  *   have the ElevenLabs API key it works for all workspaces"), exactly as the Claude key works (services/assistant
@@ -16,7 +18,7 @@
  *   key for credits (quota), the breaker holds it (`allowance_low`) until the plan resets or is upgraded. Characters
  *   are still counted per person per day (the organisation's day) per key in `voice_usage_daily`, for Settings.
  * - A failure breaker (C.5): a rejected key, ElevenLabs' own refusal for credits or ElevenLabs being down is remembered
- *   for a while, so the speech route answers at once and the assistant speaks with the computer voice.
+ *   for a while, so the speech route answers at once and the assistant stays quiet (the words still show).
  * - The speech token (D): a reply carries `speech: { path, token, text }` only when its person has a natural voice; the
  *   token is signed, bound to the person, the workspace and a hash of exactly those words, so the speech route only ever
  *   says what the person's own assistant said to them, never arbitrary text.
@@ -49,7 +51,7 @@ import {
   streamSpeech, type ElevenLabsErrorKind, type SpeechRef, type Subscription,
 } from "@/server/services/elevenlabs";
 import {
-  NATURAL_VOICES, SPEECH_MAX_CHARS, SPEECH_SPEEDS, isNaturalVoiceId, speechText,
+  NATURAL_VOICES, SPEECH_MAX_CHARS, voiceOrDefault, SPEECH_SPEEDS, isNaturalVoiceId, speechText,
   type NaturalVoiceReason, type NaturalVoiceView, type SpeechOffer, type VoiceConnectionStatus,
 } from "@/lib/natural-voices";
 
@@ -186,7 +188,7 @@ function heldReason(keyRef: string, now = Date.now()): Held["reason"] | null {
   return null;
 }
 
-/** For Settings only: ElevenLabs failed in the last 15 minutes, so the person's assistant may just have used the computer voice. */
+/** For Settings only: ElevenLabs failed in the last 15 minutes, so the person's assistant may just have stayed quiet. */
 function recentlyFailed(keyRef: string, now = Date.now()): boolean {
   const at = lastFailure.get(keyRef);
   return at !== undefined && now - at < RECENT_MS;
@@ -366,7 +368,7 @@ async function voiceReadsIn(db: Db, ctx: OrgContext, today: string, burst: { buc
   return {
     ready: true,
     hits: r.hits === null ? null : Number(r.hits),
-    chosen: isNaturalVoiceId(r.natural_voice) ? r.natural_voice : null,
+    chosen: voiceOrDefault(r.natural_voice),
     voiceOff: Array.isArray(r.abilities_off) && r.abilities_off.includes("voice"),
     personToday: Number(r.person_today),
   };
@@ -401,11 +403,11 @@ async function personReads(ctx: OrgContext, today: string): Promise<VoiceReads |
   return r?.ready ? r : null;
 }
 
-/** The person's chosen voice inside a caller's transaction (null: "Computer voice", or before 0053). */
+/** The person's voice inside a caller's transaction: their choice, else the default (null only before 0053). */
 export async function readMyNaturalVoice(db: Db, membershipId: string): Promise<string | null> {
   if (!(await schema0053Ready(db))) return null;
   const r = await db.maybeOne<{ natural_voice: string | null }>(`SELECT natural_voice FROM assistant_profiles WHERE membership_id = $1`, [membershipId]);
-  return isNaturalVoiceId(r?.natural_voice) ? r.natural_voice : null;
+  return voiceOrDefault(r?.natural_voice);
 }
 
 const NOT_READY_VIEW: NaturalVoiceView = {
@@ -431,7 +433,7 @@ export async function naturalVoiceView(ctx: OrgContext): Promise<NaturalVoiceVie
   return { ...view, available: !!p.chosen && reason === null, reason, resetAt: sub?.ok ? sub.sub.resetAt : null };
 }
 
-/** What Settings → Your assistant → Voice sends: a voice from the catalogue, or null for "Computer voice". */
+/** What Settings → Your assistant → Voice sends: a voice from the catalogue (null, from an older page, is the default voice). */
 export const naturalVoiceSchema = z.object({
   voiceId: z.union([z.null(), z.string().refine(isNaturalVoiceId, { message: "Pick one of the voices shown." })], { error: "Pick one of the voices shown." }),
 });
@@ -616,18 +618,21 @@ export const SPEECH_BODY_MAX = 8192;
 export const SPEECH_BURST = { requests: 60, windowSeconds: 60 } as const;
 export const SPEECH_BURST_MESSAGE = "That's a lot to say in one minute. Wait a moment, then try again.";
 
-/** What a 409 says for each reason; the client reads `details.reason` and speaks with the computer voice. */
+/**
+ * What a 409 says for each reason; the client reads `details.reason` and stays quiet (the words still show). The computer
+ * voice never speaks instead (owner request, 27 October 2026).
+ */
 const UNAVAILABLE_WORDS: Record<NaturalVoiceReason, string> = {
-  not_ready: "Natural voices need a database update first, so the computer voice is used.",
-  no_voice: "No natural voice is chosen, so the computer voice is used.",
+  not_ready: "Her voice needs a database update first, so replies aren't read aloud yet.",
+  no_voice: "No voice is chosen, so replies aren't read aloud.",
   voice_off: "Voice is switched off for this workspace.",
-  no_key: "Natural voices aren't available right now, so the computer voice is used.",
-  key_rejected: "ElevenLabs refused the workspace's key, so the computer voice is used.",
+  no_key: "Her voice isn't available right now, so replies aren't read aloud.",
+  key_rejected: "ElevenLabs refused the workspace's key, so replies aren't read aloud.",
   // ElevenLabs' own refusal: the key's plan has run out of credits this month (the only allowance there is).
-  allowance_low: "The ElevenLabs plan has run out of credits for this month, so the computer voice is used until it resets or the plan is upgraded.",
-  upstream: "ElevenLabs didn't answer, so the computer voice is used.",
+  allowance_low: "The ElevenLabs plan has run out of credits for this month, so replies aren't read aloud until it resets or the plan is upgraded.",
+  upstream: "ElevenLabs didn't answer, so this reply wasn't read aloud.",
 };
-const UPSTREAM_WORDS = "ElevenLabs didn't answer, so the computer voice is used.";
+const UPSTREAM_WORDS = "ElevenLabs didn't answer, so this reply wasn't read aloud.";
 
 export const voiceUnavailable = (reason: NaturalVoiceReason) => new AppError(409, "VOICE_UNAVAILABLE", UNAVAILABLE_WORDS[reason], { details: { reason } });
 const voiceFailed = (reason: "upstream" | "key_rejected" | "allowance_low") =>

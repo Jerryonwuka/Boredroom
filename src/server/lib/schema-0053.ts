@@ -74,5 +74,5 @@ export async function retryWithout0053<T>(fn: () => Promise<T>): Promise<T> {
 function warnOnce() {
   if (warned) return;
   warned = true;
-  console.warn("[assistant] migration 0053 (natural voice) is not applied yet: everyone's assistant uses the computer voice until it is.");
+  console.warn("[assistant] migration 0053 (natural voice) is not applied yet: no assistant reads replies aloud until it is.");
 }

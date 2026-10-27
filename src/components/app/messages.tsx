@@ -207,11 +207,11 @@ export function Composer({ orgSlug, conversationId, task, prefill, placeholder, 
           <div className={cn("rounded-[26px] bg-surface transition-shadow duration-150",
             // Accent rules (6 October 2026), as on Brenda's prompt pill: an orange ring while it has focus or records.
             card ? "shadow-[0_0_0_1px_var(--accent-ring),var(--elev-natural-xs)]" : "shadow-[0_0_0_1px_var(--border),var(--elev-natural-xs)] focus-within:shadow-[0_0_0_1px_var(--accent-ring),var(--elev-natural-xs)]")}>
-            {/* Recording a voice note: the voice card in ElevenLabs' recording look (owner decision, 7 October 2026): the live
-                time, the waveform read from the recorder's own microphone, then Cancel and Send. The last minute is counted down. */}
+            {/* Recording a voice note: one slim row inside the composer (owner request, 27 October 2026: no bulky card): the
+                live time, a thin wave read from the recorder's own microphone, then Cancel and Send. The last minute is counted down. */}
             {card ? (
               <div className="p-2">
-                <VoiceCapture phase={voice.recording ? "listening" : "working"} title={voice.recording ? "Recording…" : "Sending your voice note…"} stream={voice.stream} seconds={voice.seconds} className="rounded-[20px]"
+                <VoiceCapture phase={voice.recording ? "listening" : "working"} title={voice.recording ? "Recording…" : "Sending your voice note…"} stream={voice.stream} seconds={voice.seconds}
                   hint={voice.recording && voice.seconds >= MAX_SECONDS - 60 ? <><span className="tabular-nums">{fmt(Math.max(0, MAX_SECONDS - voice.seconds))}</span> left: at {fmt(MAX_SECONDS)} the note sends itself.</> : undefined}
                   actions={voice.recording ? <>
                     <IconButton variant="round" aria-label="Cancel" data-tip="Discard the voice note" onClick={() => voice.cancel()} disabled={sendingVoice}><Trash2 aria-hidden /></IconButton>

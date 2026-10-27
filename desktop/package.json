@@ -1,7 +1,7 @@
 {
   "name": "brenda-desktop",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Boredroom for Mac: the dashboard and Brenda in your notch.",
   "scripts": {
     "dev": "tauri dev",

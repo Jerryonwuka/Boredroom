@@ -151,11 +151,11 @@ describe("the consents (contract E.2, E.3)", () => {
   });
   it("words the Mac's own permission steps (contract E.4)", () => {
     const w = Act.permissionWords("Max");
-    expect(w.accessibility).toEqual({ title: "One more step on your Mac", sub: "Your Mac will ask you to allow Brenda under Privacy & Security › Accessibility. Turn on Brenda there. Max uses it only during a task you said yes to.", notNow: "Not now", go: "Continue" });
-    expect(w.accessibilityDenied.title).toBe("Allow Brenda in System Settings");
-    expect(w.accessibilityDenied.sub).toBe("Privacy & Security › Accessibility, then turn on Brenda. You may need to quit and reopen Brenda afterwards.");
+    expect(w.accessibility).toEqual({ title: "One more step on your Mac", sub: "Your Mac will ask you to allow Boredroom under Privacy & Security › Accessibility. Turn on Boredroom there. Max uses it only during a task you said yes to.", notNow: "Not now", go: "Continue" });
+    expect(w.accessibilityDenied.title).toBe("Allow Boredroom in System Settings");
+    expect(w.accessibilityDenied.sub).toBe("Privacy & Security › Accessibility, then turn on Boredroom. You may need to quit and reopen Boredroom afterwards.");
     expect([w.accessibilityDenied.notNow, w.accessibilityDenied.check, w.accessibilityDenied.open]).toEqual(["Not now", "Check again", "Open System Settings"]);
-    expect(w.accessibilityDenied.stillOff).toBe("Brenda isn't allowed yet. Turn it on in that list, then check again.");
+    expect(w.accessibilityDenied.stillOff).toBe("Boredroom isn't allowed yet. Turn it on in that list, then check again.");
     expect(w.finder.sub).toBe("Your Mac will ask whether Brenda can control Finder. Say OK so Max can see which files you select. You can say no: dropping files on Max still works.");
     expect(w.finder.go).toBe("Continue");
     expect(w.finderDenied.sub).toBe("Finder said no, so drop files on Max instead. You can change it in System Settings › Privacy & Security › Automation.");
@@ -428,10 +428,10 @@ describe("the notch page (contract 0.2, 0.9, C.0, C.9)", () => {
     expect(main).toMatch(/Y and N are never used for tasks/);
   });
   it("guards every new command, so today's Rust (without them) keeps working", () => {
-    for (const cmd of ["act_status", "act_answer", "act_stop", "act_continue", "act_expect_answer", "act_set_use_mac", "act_set_file_work", "act_request_accessibility", "act_open_accessibility_settings", "act_reveal", "act_open_output", "act_file_from_drop", "look_set_options", "look_follow_up", "look_drop_held", "speak_queue", "companion_set_look", "companion_speaking"]) {
+    for (const cmd of ["act_status", "act_answer", "act_stop", "act_continue", "act_expect_answer", "act_set_use_mac", "act_set_file_work", "act_request_accessibility", "act_open_accessibility_settings", "act_reveal", "act_open_output", "act_file_from_drop", "look_set_options", "look_follow_up", "look_drop_held", "companion_set_look", "companion_speaking"]) {
       expect(main, cmd).toContain(`"${cmd}"`);
     }
-    for (const m of main.matchAll(/invoke\("(act_stop|act_continue|act_expect_answer|act_reveal|act_open_output|act_open_accessibility_settings|look_drop_held|companion_set_look|companion_speaking|speak_queue)"/g)) {
+    for (const m of main.matchAll(/invoke\("(act_stop|act_continue|act_expect_answer|act_reveal|act_open_output|act_open_accessibility_settings|look_drop_held|companion_set_look|companion_speaking)"/g)) {
       const call = main.slice(m.index, main.indexOf(";\n", m.index));
       expect(call, m[1]).toMatch(/\.catch\(/);
     }

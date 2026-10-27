@@ -204,8 +204,8 @@ describe("the other cards' words (contract C.4.2 to C.4.8)", () => {
   it("asks for the Mac's permission and says where to allow it", () => {
     expect(w.permission.title).toBe("One more step on your Mac");
     expect(w.permission.sub).toBe("Your Mac will ask whether Max may record the screen. That's what macOS calls letting an app see a window. Max looks only when you hold Control+Command or press Look, and nothing is kept.");
-    expect(w.denied.title).toBe("Allow Brenda in System Settings");
-    expect(w.denied.sub).toBe("Privacy & Security › Screen Recording (Screen & System Audio Recording on newer macOS), then turn on Brenda. You may need to quit and reopen Brenda afterwards.");
+    expect(w.denied.title).toBe("Allow Boredroom in System Settings");
+    expect(w.denied.sub).toBe("Privacy & Security › Screen Recording (Screen & System Audio Recording on newer macOS), then turn on Boredroom. You may need to quit and reopen Boredroom afterwards.");
     expect([w.denied.notNow, w.denied.check, w.denied.open]).toEqual(["Not now", "Check again", "Open System Settings"]);
   });
   it("says on and off", () => {

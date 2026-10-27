@@ -1153,8 +1153,9 @@ mod mac {
                 let ns = ns as *mut AnyObject;
                 if !ns.is_null() {
                     unsafe {
-                        let _: () = msg_send![&*ns, setLevel: OUTLINE_LEVEL];
-                        let _: () = msg_send![&*ns, setCollectionBehavior: OUTLINE_BEHAVIOUR];
+                        // A non-activating panel, so the outline shows over a full-screen app whatever Boredroom's
+                        // activation policy (overlay.rs).
+                        crate::overlay::ensure(ns, crate::overlay::Want { level: OUTLINE_LEVEL, behaviour: OUTLINE_BEHAVIOUR });
                         let _: () = msg_send![&*ns, setFrame: r, display: true];
                         let _: () = msg_send![&*ns, orderFrontRegardless];
                     }

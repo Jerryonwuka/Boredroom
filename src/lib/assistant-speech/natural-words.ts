@@ -1,7 +1,7 @@
 /**
  * The words around natural voices (owner decision, 9 October 2026: natural voice (ElevenLabs), contract F.2 to F.4):
- * the person's voice picker (Settings → Your assistant → Voice), the note that says why the computer voice is speaking
- * instead, and the owners' and HR's key and usage card (Settings → Brenda → Natural voice). Plain British English; pure,
+ * the person's voice picker (Settings → Your assistant → Voice), the note that says why she is quiet (the computer voice
+ * never speaks instead since the owner's request, 27 October 2026: "everything ElevenLabs, no local voice at all"), and the owners' and HR's key and usage card (Settings → Brenda → Natural voice). Plain British English; pure,
  * so the tests read the same strings the pages show (tests/unit/assistant-speech-natural.test.ts).
  */
 import type { NaturalVoiceReason } from "@/lib/natural-voices";
@@ -22,22 +22,22 @@ export function formatResetDate(iso: string | null | undefined, timeZone?: strin
 export const formatCount = (n: number) => Math.max(0, Math.round(Number.isFinite(n) ? n : 0)).toLocaleString("en-GB");
 
 /**
- * Why the person's assistant uses the computer voice although they chose a natural one, for Settings (contract F.4).
- * null when there is nothing to say: the natural voice is available, Voice is switched off for the workspace (its own
- * words cover that) or no natural voice is chosen.
+ * Why the person's assistant isn't reading replies aloud right now, for Settings (contract F.4). She stays quiet then;
+ * the computer voice never stands in (owner request, 27 October 2026). null when there is nothing to say: the natural
+ * voice is available, or Voice is switched off for the workspace (its own words cover that).
  */
 export function naturalVoiceNote(reason: NaturalVoiceReason | null | undefined, name: string, resetAt?: string | null, timeZone?: string): string | null {
   switch (reason) {
-    case "not_ready": return `Natural voices need a database update first. ${name} uses the computer voice until then.`;
-    case "no_key": return `Natural voices aren't available right now, so ${name} uses the computer voice.`;
-    case "key_rejected": return `ElevenLabs refused the workspace's key, so ${name} uses the computer voice. An owner or HR can check it in Settings.`;
+    case "not_ready": return `Natural voices need a database update first. ${name} doesn't read replies aloud until then.`;
+    case "no_key": return `Natural voices aren't available right now, so ${name} doesn't read replies aloud. The words still show.`;
+    case "key_rejected": return `ElevenLabs refused the workspace's key, so ${name} doesn't read replies aloud. An owner or HR can check it in Settings.`;
     // No limit of Boredroom's any more (owner request, 12 October 2026: "remove the limit for ElevenLabs voice"): only
     // ElevenLabs' own refusal for credits stops the natural voice.
     case "allowance_low": {
       const date = formatResetDate(resetAt, timeZone);
-      return `Your ElevenLabs plan has run out of credits, so ${name} uses the computer voice until it resets${date ? ` on ${date}` : ""}.`;
+      return `Your ElevenLabs plan has run out of credits, so ${name} doesn't read replies aloud until it resets${date ? ` on ${date}` : ""}.`;
     }
-    case "upstream": return `ElevenLabs didn't answer just now, so ${name} used the computer voice.`;
+    case "upstream": return `ElevenLabs didn't answer just now, so ${name} didn't read that reply aloud.`;
     default: return null; // voice_off, no_voice, null: no note
   }
 }
@@ -54,27 +54,20 @@ export const NATURAL_WORDS = {
     label: "Voice",
     hint: "Saved to your account, so the desktop app uses it too.",
     legend: (name: string) => `${name}'s voice`,
-    computer: "Computer voice",
-    computerHint: "Built into this computer. The words stay on it.",
     play: (voice: string) => `Play a sample of ${voice}`,
     stop: (voice: string) => `Stop the sample of ${voice}`,
     sampleFailed: (voice: string) => `The sample of ${voice} couldn't play just now. Try again in a moment.`,
     sampleUnplayable: "This browser can't play the samples.",
     /** No key on Boredroom's side: the samples are not offered. */
     noSamples: "Samples play once natural voices are available.",
-    notReady: (name: string) => `Natural voices need a database update first. ${name} uses the computer voice until then.`,
+    notReady: (name: string) => `Natural voices need a database update first. ${name} doesn't read replies aloud until then.`,
     unreadable: "Couldn't load the natural voices just now. Reload the page to try again.",
   },
-  /** The computer voice's rows, under the picker. */
-  computer: {
-    label: "Computer voice",
-    hint: "From this computer. Kept in this browser only.",
-    hintFallback: "Used when the natural voice isn't available. Kept in this browser only.",
-    sample: "Play a sample of the computer voice",
-  },
-  section: (name: string) => `Hear ${name}'s replies out loud, in a natural voice or your computer's own.`,
+  /** Speed, under the picker (kept in this browser; sent with each reply). */
+  speed: { hint: "How fast replies are read. Kept in this browser only." },
+  section: (name: string) => `Hear ${name}'s replies out loud, in a natural voice from ElevenLabs.`,
   /** The "Your assistant" page note's voice sentence. */
-  pageNote: "Natural voices come from ElevenLabs; your computer's voices stay on this computer, and your choice of computer voice and speed is kept in this browser.",
+  pageNote: "Natural voices come from ElevenLabs; your choice of speed is kept in this browser.",
   /**
    * Settings → Brenda → "AI and voice" (owners and HR), read-only since the owner's request (27 October 2026: "remove every
    * API key store"): Claude and the natural voices are Boredroom's, for every workspace; no key to add.
@@ -89,16 +82,16 @@ export const NATURAL_WORDS = {
     claudeOffLine: "A simple built-in helper answers until it's back, and only suggests.",
     voice: "Natural voice",
     voiceOn: "Connected",
-    voiceOff: "Computer voice only",
-    voiceHint: "From ElevenLabs, when someone picks a natural voice for their assistant.",
-    voiceOffLine: "Assistants use the computer voice.",
-    notReady: "Natural voices need a database update first. Assistants use the computer voice until then.",
+    voiceOff: "Not available right now",
+    voiceHint: "From ElevenLabs, for everyone's assistant.",
+    voiceOffLine: "Assistants don't read replies aloud until it's back. The words still show.",
+    notReady: "Natural voices need a database update first. Assistants don't read replies aloud until then.",
     workspace: "Said aloud",
     workspaceHint: "Characters spoken in a natural voice in this workspace.",
     /** Characters said aloud (no daily share or limit since the owner's request, 12 October 2026). */
     workspaceValue: (today: number, month: number) => `${formatCount(today)} characters today; ${formatCount(month)} this month`,
     /** Boredroom's key ran out (its own usage and reset date are not shown to a workspace). */
-    lowShared: "Natural voices have reached this month's allowance, so assistants use the computer voice for now. Nothing to do on your side.",
+    lowShared: "Natural voices have reached this month's allowance, so assistants don't read replies aloud for now. Nothing to do on your side.",
     privacyNote: "What each assistant says aloud in a natural voice is sent to ElevenLabs to turn into speech. Boredroom deletes each one from ElevenLabs' history once it's said, and keeps no words or audio.",
     anthropicNote: "Each request Brenda makes goes to Anthropic: the request and what she needed to read for it, and only what the person asking is allowed to see.",
   },

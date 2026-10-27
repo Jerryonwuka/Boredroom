@@ -4,18 +4,19 @@
  * The voice card: dictation and voice notes everywhere in the web app (Brenda's prompt boxes and the drawer's pill, My
  * Day's dictated to-dos, voice notes in Messages), and the notch's voice card in the same look (desktop/src/main.js).
  *
- * The recording look is ElevenLabs' (owner decision, 7 October 2026: "I want our voice note recording to look exactly
- * like ElevenLabs' one, the whole wave thing when recording"): one row with the live mark and the elapsed time on the
- * left (an orange live dot and orange digits in Geist Mono: a recording is live, accent rules), the live waveform
- * filling the middle (`LiveWaveform`: thin rounded bars in the foreground colour scrolling in from the right with the
- * voice, softer when quiet, edges fading), and the controls on the right: Cancel (a ghost ✕) and Stop (an orange square
- * on a quiet grey disc, as the prompt box's microphone while it records), then the caller's own (a voice note's Send).
- * While the words are worked on, the dot goes grey, the time stops and the bars become a slow travelling wave. Under
- * the row, when there is something to say: the title ("Listening…", shimmering while working; announced as a status),
- * the words heard so far in italic quotes, and the hint. With nothing under it the title is still announced.
+ * The recording look started as ElevenLabs' (owner decision, 7 October 2026): one row with the live mark and the elapsed
+ * time on the left (an orange live dot and orange digits in Geist Mono: a recording is live, accent rules), the live
+ * waveform filling the middle (`LiveWaveform`: thin rounded bars scrolling in from the right with the voice, softer
+ * when quiet, edges fading), and the controls on the right: Cancel (a ghost ✕) and Stop (an orange square on a quiet
+ * grey disc), then the caller's own (a voice note's Send). While the words are worked on, the dot goes grey, the time
+ * stops and the bars become a slow travelling wave.
  *
- * The card is fill-0 with a hairline, r16 (r18 inside the prompt pill, concentric with its r26), and keeps its faint
- * orange light rising from the bottom while the microphone is open (`.brenda-wash`, globals.css).
+ * Slimmer since 27 October 2026 (owner request: "the voice wave is too big and bulky. Make it very simple, a nice voice
+ * wave. It doesn't have to be big or any big different rectangle. It can still be in the same box or simpler."): no card
+ * of its own any more (no fill, hairline or orange wash): one quiet row inside the box it is in (the prompt pill, the
+ * message composer), the live dot and time, a 20px wave of thin bars 2px apart in the secondary text colour scrolling
+ * slowly, and the controls; under it at most one line (the words heard, else the hint; "Getting your words…" while
+ * working). The title is always announced as a status.
  *
  * One microphone per recording: the waveform measures `stream` when the caller passes it (a voice note), else the
  * microphone a recording on the page shares (`useSharedMicrophone`: dictation shares its own), and opens one of its own
@@ -153,45 +154,41 @@ export function VoiceCapture({ phase, title, hint, heard, level, seconds, onStop
   const shared = useSharedMicrophone();
   const counted = useElapsed(listening && seconds === undefined);
   const elapsed = seconds ?? counted;
-  const said = heard?.trim() ? latest(heard) : null;
+  const said = heard?.trim() ? latest(heard, 120) : null;
   const heading = title ?? (listening ? "Listening…" : "Getting your words…");
-  // The line under the waveform: only when there is something to read, or the card is working (its shimmering title).
-  const details = !!(said || hint || !listening);
-  // Round 32px controls (36px in the larger card; 40px on touch screens), as the prompt box's.
+  // Round 28px controls (32px in the larger row; 40px on touch screens).
   const round = cn("grid shrink-0 place-items-center rounded-full transition-colors duration-75 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ring)] pointer-coarse:size-10",
-    compact ? "size-8 [&_svg]:size-4" : "size-9 [&_svg]:size-[18px]");
-  const status = <p role="status" className={details ? cn("truncate text-meta font-medium text-foreground", !listening && "brenda-shimmer") : "sr-only"}>{heading}</p>;
+    compact ? "size-7 [&_svg]:size-4" : "size-8 [&_svg]:size-4");
+  // One quiet line under the wave: the words heard so far, else the hint; the title is always announced, and shown
+  // (shimmering) only while the words are worked on.
+  const line = said ? <>“{said}”</> : hint ?? null;
   return (
-    <div data-tone={listening ? "accent" : undefined}
-      className={cn("brenda-wash relative overflow-hidden border border-border bg-fill-0", compact ? "rounded-[18px] p-1.5" : "rounded-2xl p-2", className)}>
-      <div className={cn("flex items-center", compact ? "gap-2" : "gap-3")}>
+    <div data-voice-capture={phase} className={cn("min-w-0", compact ? "px-1.5 pt-1" : "px-1 py-0.5", className)}>
+      <div className={cn("flex min-w-0 items-center", compact ? "gap-2" : "gap-2.5")}>
         {/* The live mark and the time: orange while recording (live), grey and still once it stops. */}
-        <span className={cn("inline-flex shrink-0 items-center gap-2", compact ? "pl-2" : "pl-2.5")}>
-          <StatusDot tone={listening ? "live" : "neutral"} size={compact ? 6 : 8} />
+        <span className="inline-flex shrink-0 items-center gap-1.5 pl-1">
+          <StatusDot tone={listening ? "live" : "neutral"} size={6} />
           <span role="timer" aria-label={`${listening ? "Recording" : "Recorded"} ${clock(elapsed)}`}
-            className={cn("font-mono text-meta font-medium tabular-nums", listening ? "text-accent-text" : "text-secondary")}>{clock(elapsed)}</span>
+            className={cn("font-mono text-xs font-medium tabular-nums", listening ? "text-accent-text" : "text-secondary")}>{clock(elapsed)}</span>
         </span>
+        {/* A slim, calm wave in the text colour: thin bars 2px apart, 20px tall at most, scrolling slowly. */}
         <LiveWaveform aria-hidden active={listening} processing={!listening} stream={stream ?? shared} level={level}
-          barWidth={compact ? 2 : 3} barGap={1} fadeWidth={compact ? 20 : 24} className={cn("flex-1", compact ? "h-8" : "h-9")} />
+          barWidth={2} barGap={2} minBarHeight={2} sensitivity={1.3} updateRate={45} fadeWidth={16}
+          className="h-5 min-w-0 flex-1 text-secondary" />
         {onCancel || (onStop && listening) || actions ? (
-          <div className="flex shrink-0 items-center gap-1">
+          <div className="flex shrink-0 items-center gap-0.5">
             {onCancel ? (
               <button type="button" onClick={onCancel} aria-label="Cancel" className={cn(round, "text-secondary hover:bg-fill-1 hover:text-foreground")}><X aria-hidden /></button>
             ) : null}
             {onStop && listening ? (
-              <button type="button" onClick={onStop} aria-label="Stop" className={cn(round, "bg-fill-1 text-accent hover:bg-fill-150")}><Square className="!size-3.5 fill-current" aria-hidden /></button>
+              <button type="button" onClick={onStop} aria-label="Stop" className={cn(round, "bg-fill-1 text-accent hover:bg-fill-150")}><Square className="!size-3 fill-current" aria-hidden /></button>
             ) : null}
             {actions}
           </div>
         ) : null}
       </div>
-      {details ? (
-        <div className={cn("min-w-0", compact ? "px-2 pb-1 pt-1.5" : "px-2.5 pb-1 pt-2")}>
-          {status}
-          {said ? <p className="line-clamp-2 text-meta font-normal italic text-secondary">“{said}”</p> : null}
-          {hint ? <div className="mt-0.5 line-clamp-2 text-xs font-normal text-secondary">{hint}</div> : null}
-        </div>
-      ) : status}
+      <p role="status" className={listening ? "sr-only" : cn("truncate pl-1 pt-1 text-xs font-medium text-secondary brenda-shimmer")}>{heading}</p>
+      {line ? <div className="truncate pl-1 pt-0.5 text-xs font-normal text-secondary">{line}</div> : null}
     </div>
   );
 }

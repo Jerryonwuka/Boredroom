@@ -2,15 +2,15 @@ import { route, orgContext, ok, parseBody, requireFeature } from "@/server/lib/a
 import { frontLineOffer, lineSchema } from "@/server/services/front";
 
 /**
- * The first short line in the person's natural voice (Brenda and her helpers, build 1; owner's approved brief, 12 October
- * 2026: "She speaks a short line at once ('Opening Figma') … first sound ≤ 1 s"; contract M.2). The notch page says the
- * line at once in the Mac's own voice and asks here, in the background, for a speech offer so the ElevenLabs clip is
- * kept for next time. Only the fixed doing and done lines (S.1) with a plain name get one; anything else `{speech: null}`.
- * The page may call it (it is not one of the Rust-only routes); nothing is stored or logged.
+ * A speech offer for a line the notch says (Brenda and her helpers, contract M.2; owner request, 27 October 2026:
+ * "everything ElevenLabs, no local voice at all"). The notch never speaks with the Mac's own voice any more: a line
+ * without an offer of its own (the doing and done lines, a plan and its question, a step's question, a job's end) is
+ * signed here for this person and said in their ElevenLabs voice; `{speech: null}` when they have none available (she
+ * then stays quiet). The page may call it (it is not one of the Rust-only routes); nothing is stored or logged.
  */
 export const POST = route<{ org: string }>(async (req, { params }) => {
   const ctx = await orgContext(params.org);
   requireFeature(ctx, "AI_ASSISTANT");
-  const body = await parseBody(req, lineSchema, { maxBytes: 2_048 });
+  const body = await parseBody(req, lineSchema, { maxBytes: 4_096 });
   return ok(await frontLineOffer(ctx, body.text));
 });
