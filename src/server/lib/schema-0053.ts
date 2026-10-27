@@ -1,7 +1,8 @@
 /**
  * Migration 0053 (owner decision, 9 October 2026: natural voice (ElevenLabs), contract C.2) adds the person's chosen
  * natural voice (`assistant_profiles.natural_voice`), the workspace's own ElevenLabs key (`organisation_voice_secrets`)
- * and the characters spoken each day (`voice_usage_daily`). The code may run before it is applied (a deploy, the running
+ * and the characters spoken each day (`voice_usage_daily`). The check leaves out `organisation_voice_secrets`: no code
+ * reads it since the owner's request (27 October 2026: no workspace keys), and db/pending/0065 drops it. The code may run before it is applied (a deploy, the running
  * dev server), so callers ask here first and fall back:
  * - nobody has a natural voice (`reason: "not_ready"`): every assistant speaks with the computer voice, replies carry no
  *   speech offer and the speech route answers 409;
@@ -22,7 +23,6 @@ const NOT_READY_TTL_MS = 30_000;
 
 /** The check itself, a boolean SQL expression, so one query can ask it together with others (SCHEMA_0050_CHECK). */
 export const SCHEMA_0053_CHECK = `(EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid = to_regclass('public.assistant_profiles') AND attname = 'natural_voice' AND NOT attisdropped)
-        AND to_regclass('public.organisation_voice_secrets') IS NOT NULL
         AND to_regclass('public.voice_usage_daily') IS NOT NULL)`;
 
 /** The cached answer without asking: true, false (a "not yet" under 30 seconds old), or null (ask). */
@@ -42,7 +42,7 @@ export function noteSchema0053(ok: boolean): boolean {
   return ready;
 }
 
-/** True once migration 0053 is applied (the column and both tables). Cached true for the process. */
+/** True once migration 0053 is applied (the column and the usage table). Cached true for the process. */
 export async function schema0053Ready(db: Db): Promise<boolean> {
   const known = schema0053Known();
   if (known !== null) return known;

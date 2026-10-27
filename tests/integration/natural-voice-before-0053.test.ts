@@ -26,12 +26,13 @@ import { issueSession } from "@/server/auth";
 import { forget0053, schema0053Ready } from "@/server/lib/schema-0053";
 import { setElevenLabsFetchForTests } from "@/server/services/elevenlabs";
 import {
-  clearVoiceKey, naturalVoiceView, readMyNaturalVoice, resetNaturalVoiceForTests, saveMyNaturalVoice, setVoiceKey, signSpeechToken,
+  naturalVoiceView, readMyNaturalVoice, resetNaturalVoiceForTests, saveMyNaturalVoice, signSpeechToken,
   speechOffer, voiceConnectionStatus,
 } from "@/server/services/natural-voice";
 import { POST as speechPOST } from "@/app/api/orgs/[org]/assistant/speech/route";
 import { GET as voiceGET, PUT as voicePUT } from "@/app/api/orgs/[org]/assistant/voice/route";
 import { GET as keyGET, POST as keyPOST, DELETE as keyDELETE } from "@/app/api/orgs/[org]/settings/voice/route";
+import { GET as aiGET, POST as aiPOST, DELETE as aiDELETE } from "@/app/api/orgs/[org]/settings/assistant/route";
 import { POST as chatPOST } from "@/app/api/orgs/[org]/assistant/chat/route";
 import type { OrgContext } from "@/server/lib/api";
 
@@ -146,17 +147,24 @@ describe("before 0053, nobody has a natural voice and nothing throws", () => {
     expect(await r.json()).toMatchObject({ ready: false, source: "environment" });
   });
 
-  it("choosing a voice and connecting or removing a key answer 503, without asking ElevenLabs", async () => {
+  it("choosing a voice answers 503 and a workspace key 410 (no workspace keys since 27 October 2026), without asking ElevenLabs", async () => {
     await expect(saveMyNaturalVoice(ada, { voiceId: LILY })).rejects.toMatchObject(NOT_READY);
-    await expect(setVoiceKey(owner, { apiKey: "sk_test_workspace_org_key_000000000000abcd" })).rejects.toMatchObject(NOT_READY);
-    await expect(clearVoiceKey(owner)).rejects.toMatchObject(NOT_READY);
     as(a.employee);
     const put = await call(voicePUT, "PUT", "/api/orgs/company-a/assistant/voice", ORG, { voiceId: LILY });
     expect(put.status).toBe(503);
     expect(await put.json()).toMatchObject({ code: "NOT_READY", message: NOT_READY.message });
     as(a.owner);
-    expect((await call(keyPOST, "POST", "/api/orgs/company-a/settings/voice", ORG, { apiKey: "sk_test_workspace_org_key_000000000000abcd" })).status).toBe(503);
-    expect((await call(keyDELETE, "DELETE", "/api/orgs/company-a/settings/voice", ORG)).status).toBe(503);
+    expect((await call(keyPOST, "POST", "/api/orgs/company-a/settings/voice", ORG, { apiKey: "sk_test_workspace_org_key_000000000000abcd" })).status).toBe(410);
+    expect((await call(keyDELETE, "DELETE", "/api/orgs/company-a/settings/voice", ORG)).status).toBe(410);
+    // Nor an Anthropic key: the route answers 410 KEYS_REMOVED and stores nothing; GET says it is Boredroom's.
+    const ai = await call(aiPOST, "POST", "/api/orgs/company-a/settings/assistant", ORG, { apiKey: "sk-ant-test-0000000000000000" });
+    expect(ai.status).toBe(410);
+    expect(await ai.json()).toMatchObject({ code: "KEYS_REMOVED" });
+    expect((await call(aiDELETE, "DELETE", "/api/orgs/company-a/settings/assistant", ORG)).status).toBe(410);
+    expect(await adminQuery("SELECT 1 FROM organisation_secrets")).toEqual([]);
+    const st = await call(aiGET, "GET", "/api/orgs/company-a/settings/assistant", ORG);
+    expect(st.status).toBe(200);
+    expect(["environment", "none"]).toContain((await st.json()).source);
     expect(elCalls).toEqual([]);
   });
 

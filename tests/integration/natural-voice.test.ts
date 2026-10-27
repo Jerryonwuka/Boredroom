@@ -167,6 +167,18 @@ async function setUsage(ctx: OrgContext, characters: number, source: "environmen
     [ctx.org.id, ctx.membership.id, todayLocal(ctx.org.timezone), source, characters]);
 }
 
+/**
+ * A workspace key stored before the owner's request (27 October 2026: no workspace keys), while the table is still there
+ * (db/pending/0065 drops it); nothing may read it. False once the table is gone.
+ */
+async function storeOldWorkspaceKey(apiKey = ORG_KEY): Promise<boolean> {
+  const [t] = await adminQuery<{ ok: boolean }>(`SELECT to_regclass('public.organisation_voice_secrets') IS NOT NULL AS ok`);
+  if (!t.ok) return false;
+  await adminQuery(`INSERT INTO organisation_voice_secrets(organisation_id, key_enc, key_hint) VALUES ($1, $2, '…wxyz')
+    ON CONFLICT (organisation_id) DO UPDATE SET key_enc = EXCLUDED.key_enc`, [owner.org.id, (await import("@/server/lib/crypto")).encryptSecret(apiKey)]);
+  return true;
+}
+
 async function bodyOf(r: Response) { return r.json() as Promise<{ code?: string; message?: string; details?: { reason?: string }; fieldErrors?: Record<string, string[]> } & Record<string, unknown>>; }
 
 beforeAll(async () => {
@@ -187,7 +199,7 @@ beforeEach(async () => {
   reqState.cookie = null; reqState.bearer = null;
   await adminQuery(`DELETE FROM auth_rate_limits`);
   await adminQuery(`DELETE FROM voice_usage_daily`);
-  await adminQuery(`DELETE FROM organisation_voice_secrets`);
+  await adminQuery(`DO $$ BEGIN IF to_regclass('public.organisation_voice_secrets') IS NOT NULL THEN DELETE FROM organisation_voice_secrets; END IF; END $$`);
   await adminQuery(`DELETE FROM jobs WHERE type = $1`, [HISTORY_JOB]);
   await adminQuery(`UPDATE brenda_settings SET abilities_off = '{}' WHERE organisation_id = $1`, [owner.org.id]);
 });
@@ -222,17 +234,6 @@ describe("the tables' row security", () => {
     expect((await usageOf(ada))[0].characters).toBe(120);
   });
 
-  it("the workspace's key: owners and HR only; an employee or a manager reads nothing and writes nothing", async () => {
-    await adminQuery(`INSERT INTO organisation_voice_secrets(organisation_id, key_enc, key_hint) VALUES ($1, 'x.y.z', '…wxyz')`, [owner.org.id]);
-    const read = (u: OrgContext) => appQueryAs(u.user.profileId, `SELECT key_hint FROM organisation_voice_secrets`);
-    expect(await read(owner)).toEqual([{ key_hint: "…wxyz" }]);
-    expect(await read(hr)).toEqual([{ key_hint: "…wxyz" }]);
-    expect(await read(ada)).toEqual([]);
-    expect(await read(a.managerCtx)).toEqual([]);
-    await expect(appQueryAs(ada.user.profileId, `INSERT INTO organisation_voice_secrets(organisation_id, key_enc, key_hint) VALUES ($1, 'a.b.c', '…abcd')
-      ON CONFLICT (organisation_id) DO UPDATE SET key_enc = 'a.b.c'`, [owner.org.id])).rejects.toMatchObject({ code: "42501" });
-  });
-
   it("the chosen voice's format is checked by the database too", async () => {
     await expect(adminQuery(`INSERT INTO assistant_profiles(membership_id, organisation_id, natural_voice) VALUES ($1, $2, '../v1/x')
       ON CONFLICT (membership_id) DO UPDATE SET natural_voice = '../v1/x'`, [ben.membership.id, ben.org.id])).rejects.toMatchObject({ code: "23514" });
@@ -241,16 +242,22 @@ describe("the tables' row security", () => {
 
 // ---- The workspace's key (Settings → Brenda → Natural voice) ---------------------------------------------------------------
 
-describe("the workspace's key", () => {
+describe("Boredroom's key, for every workspace (owner request, 27 October 2026: no workspace keys)", () => {
   const path = "/api/orgs/company-a/settings/voice";
 
-  it("employees and managers may not see or change it", async () => {
+  it("employees and managers may not see the status; nobody can add or remove a key any more (410), nothing is stored or asked", async () => {
     for (const u of [a.employee, a.manager]) {
       as(u);
       expect((await call(keyGET, "GET", path, ORG)).status).toBe(403);
-      expect((await call(keyPOST, "POST", path, ORG, { apiKey: ORG_KEY })).status).toBe(403);
-      expect((await call(keyDELETE, "DELETE", path, ORG)).status).toBe(403);
     }
+    for (const u of [a.owner, a.hr, a.employee]) {
+      as(u);
+      const r = await call(keyPOST, "POST", path, ORG, { apiKey: ORG_KEY });
+      expect(r.status).toBe(410);
+      expect(await bodyOf(r)).toMatchObject({ code: "KEYS_REMOVED" });
+      expect((await call(keyDELETE, "DELETE", path, ORG)).status).toBe(410);
+    }
+    expect(await adminQuery(`SELECT 1 FROM audit_events WHERE action IN ('voice.connected', 'voice.disconnected')`)).toEqual([]);
     expect(el.calls).toEqual([]);
   });
 
@@ -270,65 +277,21 @@ describe("the workspace's key", () => {
     expect(subCalls().map((c) => c.key)).toEqual([ENV_KEY]);
   });
 
-  it("refuses a key ElevenLabs rejects, one that can't read its usage, and says so when ElevenLabs is down; nothing stored", async () => {
-    as(a.hr);
-    const cases: [string, RegExp][] = [
-      [BAD_KEY, /^ElevenLabs didn't accept this key\. Copy it again from your ElevenLabs profile, under API keys\.$/],
-      [NOPERM_KEY, /^This key can't read its usage\. In ElevenLabs, give the key access to Text to Speech, Voices \(read\) and User \(read\), then try again\.$/],
-      [DOWN_KEY, /^Couldn't reach ElevenLabs\. Try again in a moment\.$/],
-    ];
-    for (const [key, words] of cases) {
-      const r = await call(keyPOST, "POST", path, ORG, { apiKey: key });
-      expect(r.status).toBe(422);
-      const b = await bodyOf(r);
-      expect(b.code).toBe("INVALID_INPUT");
-      expect(b.message).toMatch(words);
-      expect(b.fieldErrors?.apiKey?.[0]).toMatch(words);
-      expect(JSON.stringify(b)).not.toContain(key);
-    }
-    expect(await adminQuery(`SELECT 1 FROM organisation_voice_secrets`)).toEqual([]);
-    expect((await call(keyPOST, "POST", path, ORG, { apiKey: "short" })).status).toBe(422);
-    expect(ttsCalls()).toEqual([]);
-  });
-
-  it("HR connects one (tested once, stored encrypted, hint only), speech then uses it; the owner removes it", async () => {
-    as(a.hr);
-    el.sub = { used: 100, limit: 100_000 };
-    const r = await call(keyPOST, "POST", path, ORG, { apiKey: `  ${ORG_KEY}  ` });
-    expect(r.status).toBe(200);
-    const s = await bodyOf(r);
-    expect(s).toMatchObject({ ready: true, source: "organisation", hint: "…wxyz", monthError: null, low: false, sharedFull: false });
-    expect(typeof s.connectedAt).toBe("string");
-    // The workspace's own key: its own month is shown.
-    expect(s.month).toMatchObject({ used: 100, limit: 100_000 });
-    expect(typeof (s.month as { resetAt: string }).resetAt).toBe("string");
-    expect(JSON.stringify(s)).not.toContain(ORG_KEY);
-    // One free test request, and the status reused its answer.
-    expect(subCalls().map((c) => c.key)).toEqual([ORG_KEY]);
-    const [row] = await adminQuery<{ key_enc: string; key_hint: string; updated_by: string }>(`SELECT key_enc, key_hint, updated_by FROM organisation_voice_secrets WHERE organisation_id = $1`, [owner.org.id]);
-    expect(row.key_enc).not.toContain(ORG_KEY);
-    expect(row.key_enc).not.toContain("wxyz");
-    expect(row.key_hint).toBe("…wxyz");
-    expect(row.updated_by).toBe(hr.membership.id);
-    const [audit] = await adminQuery<{ metadata: Record<string, unknown>; actor_membership_id: string }>(`SELECT metadata, actor_membership_id FROM audit_events WHERE action = 'voice.connected' ORDER BY occurred_at DESC LIMIT 1`);
-    expect(audit).toEqual({ metadata: { hint: "…wxyz" }, actor_membership_id: hr.membership.id });
-
-    // Speech now goes through the workspace's own key, counted against it.
+  it("a key the workspace stored before is never read: status, samples and speech all use Boredroom's key", async () => {
+    await storeOldWorkspaceKey();
+    expect(await voiceConnectionStatus(owner)).toMatchObject({ ready: true, source: "environment", hint: null, connectedAt: null, month: null });
     await saveMyNaturalVoice(ada, { voiceId: LILY });
     as(a.employee);
     const offer = await offerFor(ada, "Your to-do is saved.");
     const said = await speak(offer);
     expect(said.status).toBe(200);
     await said.arrayBuffer();
-    expect(ttsCalls().map((c) => c.key)).toEqual([ORG_KEY]);
-    expect(await usageOf(ada)).toEqual([{ characters: offer.text.length, utterances: 1, key_source: "organisation" }]);
-
-    as(a.owner);
-    const d = await call(keyDELETE, "DELETE", path, ORG);
-    expect(d.status).toBe(200);
-    expect(await bodyOf(d)).toMatchObject({ source: "environment", hint: null, connectedAt: null });
-    expect(await adminQuery(`SELECT 1 FROM organisation_voice_secrets`)).toEqual([]);
-    expect(await adminQuery(`SELECT 1 FROM audit_events WHERE action = 'voice.disconnected' AND actor_membership_id = $1`, [owner.membership.id])).toHaveLength(1);
+    expect(ttsCalls().map((c) => c.key)).toEqual([ENV_KEY]);
+    expect(await usageOf(ada)).toEqual([{ characters: offer.text.length, utterances: 1, key_source: "environment" }]);
+    expect(el.calls.some((c) => c.key === ORG_KEY)).toBe(false);
+    // The workspace's characters today and this month, old workspace-key rows included.
+    await setUsage(ben, 500, "organisation");
+    expect(await voiceConnectionStatus(hr)).toMatchObject({ today: { used: offer.text.length + 500, share: NO_LIMIT }, workspaceMonth: offer.text.length + 500 });
   });
 
   it("with no key anywhere: none, and nobody's assistant gets an offer", async () => {
@@ -340,15 +303,9 @@ describe("the workspace's key", () => {
     expect(el.calls).toEqual([]);
   });
 
-  it("a rejected workspace key reads as key_rejected; a rejected Boredroom key as upstream", async () => {
-    await adminQuery(`INSERT INTO organisation_voice_secrets(organisation_id, key_enc, key_hint) VALUES ($1, $2, '…0000')`,
-      [owner.org.id, (await import("@/server/lib/crypto")).encryptSecret(BAD_KEY)]);
-    expect(await voiceConnectionStatus(owner)).toMatchObject({ source: "organisation", month: null, monthError: "key_rejected" });
-    await saveMyNaturalVoice(ada, { voiceId: LILY });
-    expect(await naturalVoiceView(ada)).toMatchObject({ available: false, reason: "key_rejected" });
-    await adminQuery(`DELETE FROM organisation_voice_secrets`);
-    resetNaturalVoiceForTests();
+  it("a rejected Boredroom key reads as upstream", async () => {
     process.env.ELEVENLABS_API_KEY = BAD_KEY;
+    await saveMyNaturalVoice(ada, { voiceId: LILY });
     expect(await voiceConnectionStatus(owner)).toMatchObject({ source: "environment", monthError: "upstream" });
     expect(await naturalVoiceView(ada)).toMatchObject({ available: false, reason: "upstream" });
   });
@@ -659,32 +616,6 @@ describe("the speech route", () => {
     expect(await naturalVoiceView(ada)).toMatchObject({ available: true, reason: null });
   });
 
-  it("busy (429) on a workspace's own key holds that workspace for a minute", async () => {
-    await adminQuery(`INSERT INTO organisation_voice_secrets(organisation_id, key_enc, key_hint) VALUES ($1, $2, '…wxyz')`,
-      [owner.org.id, (await import("@/server/lib/crypto")).encryptSecret(ORG_KEY)]);
-    el.tts = () => json(429, { detail: { status: "too_many_concurrent_requests" } });
-    const offer = await offerFor(ada, words);
-    expect((await speak(offer)).status).toBe(502);
-    el.tts = () => audio();
-    const again = await speak(offer);
-    expect(again.status).toBe(409);
-    expect((await bodyOf(again)).details?.reason).toBe("upstream");
-    expect(ttsCalls()).toHaveLength(1);
-  });
-
-  it("a rejected workspace key is key_rejected, held for the workspace", async () => {
-    await adminQuery(`INSERT INTO organisation_voice_secrets(organisation_id, key_enc, key_hint) VALUES ($1, $2, '…wxyz')`,
-      [owner.org.id, (await import("@/server/lib/crypto")).encryptSecret(ORG_KEY)]);
-    el.tts = () => json(401, { detail: { status: "invalid_api_key" } });
-    const offer = await offerFor(ada, words);
-    const r = await speak(offer);
-    expect(r.status).toBe(502);
-    expect((await bodyOf(r)).details?.reason).toBe("key_rejected");
-    expect(await usageOf(ada)).toEqual([{ characters: 0, utterances: 0, key_source: "organisation" }]);
-    const again = await speak(offer);
-    expect((await bodyOf(again)).details?.reason).toBe("key_rejected");
-  });
-
   it("concurrent requests are all said and all counted (no cap to cross since the owner's request, 12 October 2026)", async () => {
     const long = `${"Here is a sentence of plain words to say. ".repeat(7)}End.`.trim(); // about 300 characters
     const offer = await offerFor(ada, long);
@@ -724,10 +655,6 @@ describe("deleting what was said from the key's ElevenLabs History", () => {
   beforeEach(async () => { await saveMyNaturalVoice(ada, { voiceId: LILY }); as(a.employee); });
   const envKey = () => ({ apiKey: ENV_KEY, source: "environment" as const, keyRef: "env" });
   const orgKey = (apiKey = ORG_KEY) => ({ apiKey, source: "organisation" as const, keyRef: `org:${owner.org.id}` });
-  async function connect(apiKey = ORG_KEY) {
-    await adminQuery(`INSERT INTO organisation_voice_secrets(organisation_id, key_enc, key_hint) VALUES ($1, $2, '…wxyz')
-      ON CONFLICT (organisation_id) DO UPDATE SET key_enc = EXCLUDED.key_enc`, [owner.org.id, (await import("@/server/lib/crypto")).encryptSecret(apiKey)]);
-  }
 
   it("by the request's own id once it has been said (2 s after), never another item with the same words; the job goes", async () => {
     const offer = await offerFor(ada, "Your to-do is saved.");
@@ -764,8 +691,7 @@ describe("deleting what was said from the key's ElevenLabs History", () => {
     expect(deletesOf()).toEqual(["HISTitem0042"]);
   }, 10_000);
 
-  it("with neither id nothing is deleted at all, whatever the words: counted for the workspace's owners and HR", async () => {
-    await connect();
+  it("with neither id nothing is deleted at all, whatever the words (Boredroom's key: Boredroom's to see, never a workspace's)", async () => {
     el.history = [{ history_item_id: "holderplay1", request_id: "reqHolder77", voice_id: LILY, text: "Done.", model_id: "eleven_flash_v2_5" }];
     el.tts = () => audio({});
     const r = await speak(await offerFor(ada, "Done."));
@@ -775,12 +701,8 @@ describe("deleting what was said from the key's ElevenLabs History", () => {
     await new Promise((done) => setTimeout(done, 100));
     expect(historyCalls()).toEqual([]);
     as(a.owner);
-    expect((await voiceConnectionStatus(owner)).historyLeft).toBe(1);
-    expect((await voiceConnectionStatus(hr)).historyLeft).toBe(1);
-    // Counted for this key only: a new key starts with none.
-    await connect("sk_test_another_org_key_0000000000000000");
-    resetNaturalVoiceForTests();
     expect((await voiceConnectionStatus(owner)).historyLeft).toBe(0);
+    expect((await voiceConnectionStatus(hr)).historyLeft).toBe(0);
   });
 
   it("a lost DELETE answer is retried on the same id only, never another item; the worker's job then finds it gone", async () => {
@@ -805,10 +727,9 @@ describe("deleting what was said from the key's ElevenLabs History", () => {
     expect(historyCalls().filter((c) => c.method === "GET")).toEqual([]);
   });
 
-  it("survives a restart: the worker's job deletes it by its ids alone, with the key that is still the workspace's", async () => {
-    await connect();
+  it("survives a restart: the worker's job deletes it by its ids alone, with Boredroom's key", async () => {
     // No in-process tries at all (the process went away before the first).
-    forgetSpoken(owner.org.id, orgKey(), { historyItemId: "HISTitem0077", requestId: null, voiceId: LILY, sinceUnix: 0 }, []);
+    forgetSpoken(owner.org.id, envKey(), { historyItemId: "HISTitem0077", requestId: null, voiceId: LILY, sinceUnix: 0 }, []);
     await until(async () => expect(await historyJobs()).toHaveLength(1));
     const [job] = await historyJobs();
     expect(job.state).toBe("pending");
@@ -816,10 +737,20 @@ describe("deleting what was said from the key's ElevenLabs History", () => {
     expect(historyCalls()).toEqual([]);
     el.calls = [];
     await runHistoryForgetJob(job.payload);
-    expect(el.calls.map((c) => [c.method, c.url.split("/").pop(), c.key])).toEqual([["DELETE", "HISTitem0077", ORG_KEY]]);
-    // The key replaced since: the new key cannot reach the old account, so nothing is asked.
+    expect(el.calls.map((c) => [c.method, c.url.split("/").pop(), c.key])).toEqual([["DELETE", "HISTitem0077", ENV_KEY]]);
+    // Boredroom's key replaced since: the new key cannot reach the old account, so nothing is asked.
     el.calls = [];
-    await connect("sk_test_another_org_key_0000000000000000");
+    process.env.ELEVENLABS_API_KEY = "sk_test_another_env_key_0000000000000000";
+    await runHistoryForgetJob(job.payload);
+    expect(el.calls).toEqual([]);
+  });
+
+  it("a job queued for a workspace's own key before the owner's request (27 October 2026) ends without reading any stored key", async () => {
+    await storeOldWorkspaceKey();
+    forgetSpoken(owner.org.id, orgKey(), { historyItemId: "HISTitem0078", requestId: null, voiceId: LILY, sinceUnix: 0 }, []);
+    await until(async () => expect(await historyJobs()).toHaveLength(1));
+    const [job] = await historyJobs();
+    el.calls = [];
     await runHistoryForgetJob(job.payload);
     expect(el.calls).toEqual([]);
   });
@@ -835,35 +766,7 @@ describe("deleting what was said from the key's ElevenLabs History", () => {
     expect((await historyJobs()).map((j) => [j.state, j.last_error])).toEqual([["failed", "voice history: key refused"]]);
   });
 
-  it("a workspace key without History access: owners and HR are told, nothing is dropped, and access granted later is seen", async () => {
-    await connect();
-    el.historyDelete = () => json(401, { detail: { status: "missing_permissions" } });
-    forgetSpoken(owner.org.id, orgKey(), { historyItemId: "HISTblocked01", requestId: null, voiceId: LILY, sinceUnix: 0 }, [0, 0, 0]);
-    await until(() => expect(deletesOf()).toEqual(["HISTblocked01"]));
-    await until(async () => expect((await voiceConnectionStatus(owner)).historyBlocked).toBe(true));
-    // Said while blocked: not tried here, but queued all the same.
-    el.calls = [];
-    forgetSpoken(owner.org.id, orgKey(), { historyItemId: "HISTblocked02", requestId: null, voiceId: LILY, sinceUnix: 0 }, [0]);
-    await until(async () => expect(await historyJobs()).toHaveLength(2));
-    await new Promise((done) => setTimeout(done, 50));
-    expect(historyCalls()).toEqual([]);
-    // The worker meets the same answer: tried again in 10 minutes (a new job), and still shown after a restart.
-    const jobs = await historyJobs();
-    await runHistoryForgetJob(jobs[0].payload);
-    const again = (await historyJobs()).find((j) => j.payload.blockedRounds === 1)!;
-    expect(again).toMatchObject({ state: "pending", payload: { historyItemId: "HISTblocked01" } });
-    expect(new Date(again.next_run_at).getTime()).toBeGreaterThan(Date.now() + 9 * 60_000);
-    resetNaturalVoiceForTests();
-    expect((await voiceConnectionStatus(owner)).historyBlocked).toBe(true);
-    // Access granted in ElevenLabs: the next round deletes it.
-    el.historyDelete = () => json(200, { status: "ok" });
-    el.calls = [];
-    await runHistoryForgetJob(again.payload);
-    expect(deletesOf()).toEqual(["HISTblocked01"]);
-  });
-
   it("a revoked old key's answer never blocks the key that replaced it (fix review, 9 October 2026)", async () => {
-    await connect();
     el.historyDelete = () => json(401, { detail: { status: "invalid_api_key" } });
     forgetSpoken(owner.org.id, orgKey("sk_test_old_revoked_key_000000000000000"), { historyItemId: "HISTold00001", requestId: null, voiceId: LILY, sinceUnix: 0 }, [0, 0, 0]);
     await until(() => expect(deletesOf()).toEqual(["HISTold00001"]));
@@ -941,22 +844,21 @@ describe("the subscription cache across the workspace's midnight (fix review, 9 
   afterEach(() => { vi.useRealTimers(); });
 
   it("a new day's count starts from nothing (no share to work out any more)", async () => {
-    await adminQuery(`INSERT INTO organisation_voice_secrets(organisation_id, key_enc, key_hint) VALUES ($1, $2, '…wxyz')`,
-      [owner.org.id, (await import("@/server/lib/crypto")).encryptSecret(ORG_KEY)]);
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date("2026-11-07T22:55:00Z"));
     el.sub = { used: 32_000, limit: 38_373 };
     el.resetUnix = Math.floor(Date.parse("2026-11-09T07:47:00Z") / 1000);
-    await setUsage(ada, 3000, "organisation");
+    await setUsage(ada, 3000);
     const before = await voiceConnectionStatus(owner);
     expect(before.today).toEqual({ used: 3000, share: NO_LIMIT });
-    expect(before.month).toMatchObject({ used: 32_000, limit: 38_373 });
+    // Boredroom's key: its month is every workspace's, never shown to one.
+    expect(before.month).toBeNull();
     expect(subCalls()).toHaveLength(1);
     // 00:03 on 8 November in Lagos: a new day, so today's count starts from nothing; the month is ElevenLabs' own figure.
     vi.setSystemTime(new Date("2026-11-07T23:03:00Z"));
     const after = await voiceConnectionStatus(owner);
     expect(after.today).toEqual({ used: 0, share: NO_LIMIT });
-    expect(after.month).toMatchObject({ used: 32_000, limit: 38_373 });
+    expect(after.workspaceMonth).toBe(3000);
   });
 });
 

@@ -35,7 +35,7 @@
  */
 import { cache } from "react"; // React 19 exports cache in Node too (a pass-through outside a render), so the worker can import this file
 import { z } from "zod";
-import { withSystem, withUser, type Db } from "@/server/db";
+import { withUser, type Db } from "@/server/db";
 import type { OrgContext } from "@/server/lib/api";
 import { AppError, forbidden } from "@/server/lib/errors";
 import { logAction } from "@/server/services/brenda";
@@ -234,16 +234,12 @@ export const assistantProfiles = cache(async (ctx: OrgContext): Promise<Assistan
 });
 
 /**
- * Whether the workspace has an AI connection (its own key, or the server's), read without decrypting anything or calling
- * the model (review, 8 October 2026: act without asking needs it; the built-in helper always asks). A failed read says
- * yes, so nothing claims it is missing when it may not be.
+ * Whether Brenda's AI connection exists: Boredroom's own key (ANTHROPIC_API_KEY), the same for every workspace (owner
+ * request, 27 October 2026: no workspace keys). Act without asking needs it; the built-in helper always asks.
  */
 export async function aiConnected(orgId: string): Promise<boolean> {
-  if (process.env.ANTHROPIC_API_KEY) return true;
-  try {
-    const r = await withSystem((db) => db.maybeOne<{ ok: boolean }>(`SELECT assistant_key_enc IS NOT NULL AS ok FROM organisation_secrets WHERE organisation_id = $1`, [orgId]));
-    return !!r?.ok;
-  } catch { return true; }
+  void orgId;
+  return !!process.env.ANTHROPIC_API_KEY?.trim();
 }
 
 // ---- Saving --------------------------------------------------------------------------------------------------------------

@@ -19,7 +19,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Activity, ArrowLeft, BarChart3, Bell, Building2, ChevronRight, CreditCard, FileClock, Gauge, LayoutGrid, LifeBuoy, LogOut, Mail, Megaphone, PanelLeft, Rocket, Settings, ShieldAlert, ShieldCheck, Tags, UsersRound, Wallet, X } from "lucide-react";
+import { Activity, ArrowLeft, BarChart3, Bell, Bot, Building2, ChevronRight, CreditCard, FileClock, Gauge, LayoutGrid, LifeBuoy, LogOut, Mail, Megaphone, PanelLeft, Rocket, Settings, ShieldAlert, ShieldCheck, Tags, UsersRound, Wallet, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -31,7 +31,7 @@ import { setSidebarCollapsed, useSidebarCollapsed } from "@/components/app/sideb
 import { api } from "@/lib/api-client";
 import { signedOutInApp } from "@/components/auth/forms";
 
-const ICONS = { dashboard: Gauge, organisations: Building2, users: UsersRound, plans: Tags, subscriptions: CreditCard, payments: Wallet, usage: Activity, moderation: ShieldAlert, support: LifeBuoy, marketing: Megaphone, communications: Mail, launch: Rocket, system: BarChart3, audit: FileClock, admins: ShieldCheck, settings: Settings, notifications: Bell };
+const ICONS = { dashboard: Gauge, organisations: Building2, users: UsersRound, plans: Tags, subscriptions: CreditCard, payments: Wallet, usage: Activity, ai: Bot, moderation: ShieldAlert, support: LifeBuoy, marketing: Megaphone, communications: Mail, launch: Rocket, system: BarChart3, audit: FileClock, admins: ShieldCheck, settings: Settings, notifications: Bell };
 export type AdminNavGroup = { title: string; items: { label: string; href: string; icon: keyof typeof ICONS }[] };
 export type AdminPage = { label: string; href: string; group: string };
 

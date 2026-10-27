@@ -3876,7 +3876,7 @@ async function builtinTodos(ctx: OrgContext, last: string, opts: { connected?: b
   const proposals: Proposal[] = items.map((it) => ({ kind: "todo", title: it.title, description: it.description, dueAt: it.dueAt, assigneeMembershipId: it.assigneeMembershipId, assigneeName: it.assigneeName, estimateMinutes: it.estimateMinutes }));
   if (!proposals.length) return null;
   // The to-dos themselves are the rows under the reply, each with its Add button: the words do not list them again.
-  return { reply: `I read ${plural(proposals.length, "to-do")} in that. Check the titles below and add the ones you want.${opts.connected ? "" : "\n\nConnect Claude under Settings, AI assistant, and I'll add them myself."}`, engine: "builtin", actions: [], proposals, note: null, tainted: false };
+  return { reply: `I read ${plural(proposals.length, "to-do")} in that. Check the titles below and add the ones you want.${opts.connected ? "" : "\n\nOnce the AI is back, I'll add them myself."}`, engine: "builtin", actions: [], proposals, note: null, tainted: false };
 }
 
 /**
@@ -4060,7 +4060,7 @@ export async function chatBuiltin(ctx: OrgContext, messages: { role: "user" | "a
       ...(refusalOf("assistant_talk") ? [] : ["**Pass a message to someone's assistant**: ask “Tell Ben's assistant the client moved the deadline to Friday”"]),
       "**Turn a note into to-dos** you add with one press",
     ], 6),
-    ...(opts.connected ? [] : ["Connect Claude under Settings, AI assistant, and I'll do the work myself instead of offering it."]),
+    ...(opts.connected ? [] : ["Once the AI is back, I'll do the work myself instead of offering it."]),
   ].join("\n\n"), pages.slice(0, 4).map((p) => ({ kind: "open", href: `${base}${p.path}`, label: p.label })));
 }
 

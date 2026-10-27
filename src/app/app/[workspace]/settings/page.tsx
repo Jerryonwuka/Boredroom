@@ -9,7 +9,7 @@ import { Alert } from "@/components/ui/states";
 import { Badge } from "@/components/ui/badge";
 import { ProgressBar } from "@/components/ui/progress-arc";
 import { settingsView } from "@/server/services/views";
-import { OrgSettingsForm, ScheduleForm, PolicyForm, StandardNoticeButton, AssistantConnectionForm, SettingsSection, SettingsGroup, SettingsRow, SettingsFooter } from "@/components/app/settings-forms";
+import { OrgSettingsForm, ScheduleForm, PolicyForm, StandardNoticeButton, SettingsSection, SettingsGroup, SettingsRow, SettingsFooter } from "@/components/app/settings-forms";
 import { assistantStatus, DEFAULT_NOTICE, PHASE8_DEFAULT_NOTICE, noticeMentionsScreenRecording } from "@/server/services/orgs";
 import { brendaOverview } from "@/server/services/brenda";
 import { listDevices } from "@/server/services/desktop";
@@ -63,7 +63,7 @@ import { abilitiesView } from "@/server/services/abilities";
 import { listPreferences } from "@/server/services/preferences";
 import { ABILITY_WORDS, type AbilitiesView } from "@/lib/abilities";
 import { PREFERENCE_WORDS, type PreferenceList } from "@/lib/preferences";
-import { VoiceConnectionSettings } from "@/components/app/voice-connection-settings";
+import { AiProvidedSettings } from "@/components/app/ai-provided-settings";
 import { naturalVoiceView, voiceConnectionStatus } from "@/server/services/natural-voice";
 import { NATURAL_WORDS } from "@/lib/assistant-speech/natural-words";
 import type { NaturalVoiceView, VoiceConnectionStatus } from "@/lib/natural-voices";
@@ -104,7 +104,7 @@ const SECTIONS: { key: SectionKey; label: string; icon: ReactNode }[] = [
   { key: "billing", label: "Billing", icon: <CreditCard aria-hidden /> },
   { key: "desktop", label: "Desktop", icon: <Laptop aria-hidden /> },
 ];
-/** Settings → Brenda → Natural voice when its status could not be read: shown as not ready (nothing to change). */
+/** Settings → Brenda → AI and voice when the voice status could not be read: shown as not ready (nothing to change). */
 const VOICE_UNREADABLE: VoiceConnectionStatus = {
   ready: false, source: "none", hint: null, connectedAt: null, month: null, monthError: null, low: false, workspaceMonth: 0,
   today: { used: 0, share: 0 }, sharedFull: false, historyBlocked: false, historyLeft: 0, personDailyLimit: 0,
@@ -115,8 +115,7 @@ const VOICE_UNREADABLE: VoiceConnectionStatus = {
  * Working hours, Monitoring notice, Brenda, Your assistant, Billing, Desktop; a scrolling row of the same items on a phone)
  * beside the chosen section. Each section is a set of cards of form rows: the label and a hint on the left, the control
  * on the right. The section is in the address (?section=), so links land on it: the billing banner, the Paystack
- * callback and the pricing page (?billing= or ?plan=) open Billing. Only owners publish the monitoring notice and change the
- * AI key. Every change is audited. That, and each section's explanations (time zone, what is logged, what is sent to
+ * callback and the pricing page (?billing= or ?plan=) open Billing. Only owners publish the monitoring notice. Every change is audited. That, and each section's explanations (time zone, what is logged, what is sent to
  * Anthropic), are page notes at the bottom (owner request, 7 October 2026). The "Monitoring notice" section was
  * "Recording" until phase 8 (owner decisions, 8 October 2026): old `?section=recording` links still land on it.
  *
@@ -131,7 +130,7 @@ const VOICE_UNREADABLE: VoiceConnectionStatus = {
  * Personal assistants, phase 3 (owner decision, 8 October 2026): "Your assistant" ends with "What Max did", the latest
  * five things the person's assistant did or read for them and a link to the whole list (/home/activity). The Brenda
  * section gains "Usage this month" for owners and HR (requests and tokens by purpose and the people with the most
- * requests; no prices), after the daily report and before the AI connection.
+ * requests; no prices), after the daily report and before AI and voice.
  *
  * Personal assistants, phase 4 (owner decision, 8 October 2026: assistant-to-assistant follow-ups): "Your assistant"
  * gains "Follow-ups" after Voice, the person's choice of how their assistant answers another person's assistant about
@@ -144,7 +143,7 @@ const VOICE_UNREADABLE: VoiceConnectionStatus = {
  * "Messages" after "Updates before the report", for owners and HR: "Let people ask their assistant in Messages" (on by
  * default), whether "@Max …" in a conversation makes the person's own assistant reply there. It reads its own column with
  * a readiness check (migration 0041) and shows disabled under an info alert until it is applied. The notes say that
- * replies show who asked and, for owners under AI connection, that the conversation's recent messages go to Anthropic.
+ * replies show who asked and, under AI and voice, that the conversation's recent messages go to Anthropic.
  *
  * Personal assistants, phase 6 (owner decision, 8 October 2026: assistants talk to each other): "Your assistant" gains
  * "Other people's assistants" after Follow-ups: "Let people tag {name} in Messages" (on by default) and the colleagues
@@ -184,10 +183,11 @@ const VOICE_UNREADABLE: VoiceConnectionStatus = {
  * Natural voice (owner decision, 9 October 2026: natural voice (ElevenLabs), contract F.2 and F.3): "Your assistant" →
  * Voice starts with the person's choice of voice, Computer voice (the default) or one of the curated natural voices
  * with a sample each, read here (`naturalVoiceView`; a failed read: the card reads it itself) and saved to the account;
- * the privacy line sits beside it. The Brenda section gains "Natural voice" right after "AI connection", for owners and
- * HR (both manage it): the workspace's own ElevenLabs key (tested with one free request, stored encrypted, removable;
- * without one Boredroom's key is used, with no daily limit: owner request, 12 October 2026) and this month's usage (`voiceConnectionStatus`; a failed
- * read shows the card as not ready). Both show disabled under an info alert until migration 0053 is applied.
+ * the privacy line sits beside it. The Brenda section ends with "AI and voice", for owners and HR: read-only since the
+ * owner's request (27 October 2026: "remove every API key store"; Claude and ElevenLabs are Boredroom's keys for every
+ * workspace), whether each is connected and the characters this workspace said aloud (`voiceConnectionStatus`; a failed
+ * read shows it as not ready). It was "AI connection" (the workspace's own Anthropic key and model) and "Natural voice"
+ * (its own ElevenLabs key) until then. The voice picker shows disabled under an info alert until migration 0053 is applied.
  *
  * Calls (owner decision, 10 October 2026: incoming calls get their own sound setting, separate from the assistant's
  * chimes, on by default): "Your assistant" gains "Calls" after Quiet hours, one switch, "Ring for incoming calls",
@@ -435,12 +435,9 @@ export default async function SettingsPage({ params, searchParams }: { params: P
         <ReportNotesSettings orgSlug={ctx.org.slug} initial={notesSetting} reportEnabled={brenda.settings.dailyReportEnabled} canEdit={admin} />
         {/* This month's requests and tokens (owner decision, 8 October 2026: personal assistants, phase 3). */}
         <BrendaUsageCard usage={usage} />
-        <SettingsSection id="ai" title="AI connection" description="Brenda runs on Claude. Connect an Anthropic API key so she can act; without one a simple built-in helper answers and only suggests, and says so.">
-          {isOwner ? <AssistantConnectionForm orgSlug={ctx.org.slug} status={ai} /> : <Alert tone="info">Only owners can connect Brenda to Claude.</Alert>}
-        </SettingsSection>
-        {/* Natural voices for everyone's assistant, for owners and HR (owner decision, 9 October 2026: natural voice). */}
-        <SettingsSection id="natural-voice" title={NATURAL_WORDS.connection.title} description={NATURAL_WORDS.connection.description}>
-          <VoiceConnectionSettings orgSlug={ctx.org.slug} status={voiceKey} timeZone={ctx.org.timezone} />
+        {/* Claude and natural voices, both Boredroom's for every workspace (owner request, 27 October 2026: no keys). */}
+        <SettingsSection id="ai" title={NATURAL_WORDS.connection.title} description={NATURAL_WORDS.connection.description}>
+          <AiProvidedSettings claude={ai.source !== "none"} voice={voiceKey} />
         </SettingsSection>
       </>
     );
@@ -458,16 +455,9 @@ export default async function SettingsPage({ params, searchParams }: { params: P
         <PageNote section="Messages">Replies show who asked. Anything only the person asking can see stays private to them.</PageNote>
         <PageNote section="Notes from the team">{ASSISTANT_ITEM_WORDS.settings.notesPageNote}</PageNote>
         <PageNote section="Usage this month">Usage counts requests from this month only and resets on the 1st.</PageNote>
-        {isOwner ? (
-          <>
-            <PageNote section="AI connection">The key is tested with one request, then stored encrypted and never shown again.</PageNote>
-            <PageNote section="AI connection">Each request Brenda makes to Anthropic is billed to the key. What is sent: the request and what she needed to read for it, and only what the person asking is allowed to see.</PageNote>
-            <PageNote section="AI connection">When someone asks to catch up on messages, the messages read for them are sent to Anthropic too, only from conversations they are in.</PageNote>
-            <PageNote section="AI connection">When someone tags their assistant in Messages, the conversation&apos;s recent messages are sent to Anthropic too.</PageNote>
-          </>
-        ) : null}
-        {/* Owners and HR both manage the ElevenLabs key (owner decision, 9 October 2026). */}
-        <PageNote section={NATURAL_WORDS.connection.title}>{NATURAL_WORDS.connection.keyNote}</PageNote>
+        <PageNote section={NATURAL_WORDS.connection.title}>{NATURAL_WORDS.connection.anthropicNote}</PageNote>
+        <PageNote section={NATURAL_WORDS.connection.title}>When someone asks to catch up on messages, the messages read for them are sent to Anthropic too, only from conversations they are in.</PageNote>
+        <PageNote section={NATURAL_WORDS.connection.title}>When someone tags their assistant in Messages, the conversation&apos;s recent messages are sent to Anthropic too.</PageNote>
         <PageNote section={NATURAL_WORDS.connection.title}>{NATURAL_WORDS.connection.privacyNote}</PageNote>
       </>
     );

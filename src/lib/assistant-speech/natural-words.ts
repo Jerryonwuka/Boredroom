@@ -29,7 +29,7 @@ export const formatCount = (n: number) => Math.max(0, Math.round(Number.isFinite
 export function naturalVoiceNote(reason: NaturalVoiceReason | null | undefined, name: string, resetAt?: string | null, timeZone?: string): string | null {
   switch (reason) {
     case "not_ready": return `Natural voices need a database update first. ${name} uses the computer voice until then.`;
-    case "no_key": return `Natural voices aren't set up for this workspace yet, so ${name} uses the computer voice.`;
+    case "no_key": return `Natural voices aren't available right now, so ${name} uses the computer voice.`;
     case "key_rejected": return `ElevenLabs refused the workspace's key, so ${name} uses the computer voice. An owner or HR can check it in Settings.`;
     // No limit of Boredroom's any more (owner request, 12 October 2026: "remove the limit for ElevenLabs voice"): only
     // ElevenLabs' own refusal for credits stops the natural voice.
@@ -60,8 +60,8 @@ export const NATURAL_WORDS = {
     stop: (voice: string) => `Stop the sample of ${voice}`,
     sampleFailed: (voice: string) => `The sample of ${voice} couldn't play just now. Try again in a moment.`,
     sampleUnplayable: "This browser can't play the samples.",
-    /** No key at all (neither the workspace's nor Boredroom's): the samples are not offered. */
-    noSamples: "Samples play once natural voices are set up for this workspace.",
+    /** No key on Boredroom's side: the samples are not offered. */
+    noSamples: "Samples play once natural voices are available.",
     notReady: (name: string) => `Natural voices need a database update first. ${name} uses the computer voice until then.`,
     unreadable: "Couldn't load the natural voices just now. Reload the page to try again.",
   },
@@ -75,55 +75,31 @@ export const NATURAL_WORDS = {
   section: (name: string) => `Hear ${name}'s replies out loud, in a natural voice or your computer's own.`,
   /** The "Your assistant" page note's voice sentence. */
   pageNote: "Natural voices come from ElevenLabs; your computer's voices stay on this computer, and your choice of computer voice and speed is kept in this browser.",
-  /** Settings → Brenda → Natural voice (owners and HR; contract F.3). */
+  /**
+   * Settings → Brenda → "AI and voice" (owners and HR), read-only since the owner's request (27 October 2026: "remove every
+   * API key store"): Claude and the natural voices are Boredroom's, for every workspace; no key to add.
+   */
   connection: {
-    title: "Natural voice",
-    description: "Natural voices for everyone's assistant, from ElevenLabs. Without a key of your own, Boredroom's key is used.",
-    row: "Connection",
-    connected: "Connected",
-    boredroom: "Boredroom's key",
-    none: "Not connected",
-    organisationLine: (hint: string | null, date: string | null) => `Your workspace's key${hint ? `, ending ${hint}` : ""}${date ? `, connected ${date}` : ""}`,
-    environmentLine: "Using Boredroom's key. Add your workspace's own key to use your own allowance.",
-    noneLine: "Assistants use the computer voice.",
-    keyLabel: "ElevenLabs API key",
-    keyHint: "From elevenlabs.io, under your profile, API keys. It needs Text to Speech, Voices (read), User (read) and History (read and write), so what's said can be deleted from the key's history.",
-    connect: "Connect and test",
-    testing: "Testing…",
-    cancel: "Cancel",
-    replace: "Replace key",
-    remove: "Remove",
-    removing: "Removing…",
-    removeTitle: "Remove the ElevenLabs key?",
-    removeDescription: "The stored key is deleted. Boredroom's key is used again, or the computer voice when there isn't one.",
-    removed: "Removed. The stored key is deleted.",
-    success: "Connected. ElevenLabs answered.",
-    tooShort: "That's too short to be an ElevenLabs API key.",
+    title: "AI and voice",
+    description: "Brenda's AI and natural voice are provided by Boredroom. There's nothing to set up or pay for separately.",
+    claude: "Claude",
+    claudeOn: "Connected",
+    claudeOff: "Not available right now",
+    claudeHint: "Brenda's thinking, for everyone's assistant.",
+    claudeOffLine: "A simple built-in helper answers until it's back, and only suggests.",
+    voice: "Natural voice",
+    voiceOn: "Connected",
+    voiceOff: "Computer voice only",
+    voiceHint: "From ElevenLabs, when someone picks a natural voice for their assistant.",
+    voiceOffLine: "Assistants use the computer voice.",
     notReady: "Natural voices need a database update first. Assistants use the computer voice until then.",
-    usage: "Usage this month",
-    /** ElevenLabs counts its allowance in credits, not characters (Flash costs half a credit a character). */
-    used: "Credits used",
-    usedValue: (used: number, limit: number) => `${formatCount(used)} of ${formatCount(limit)}`,
-    usedLabel: "ElevenLabs credits used this month",
-    usedText: (used: number, limit: number) => `${formatCount(used)} of ${formatCount(limit)} credits`,
-    resets: "Resets",
-    keyInUse: "Key in use",
-    organisationKey: "Your workspace's key",
-    boredroomKey: "Boredroom's key",
-    workspace: "This workspace",
+    workspace: "Said aloud",
+    workspaceHint: "Characters spoken in a natural voice in this workspace.",
     /** Characters said aloud (no daily share or limit since the owner's request, 12 October 2026). */
     workspaceValue: (today: number, month: number) => `${formatCount(today)} characters today; ${formatCount(month)} this month`,
-    low: (date: string | null) => `Your ElevenLabs plan has run out of credits, so assistants use the computer voice until it resets${date ? ` on ${date}` : ""}. A bigger plan in your ElevenLabs account fixes it sooner.`,
-    /** Boredroom's key (its own usage and reset date are not shown to a workspace). */
-    lowShared: "Boredroom's ElevenLabs plan has run out of credits, so assistants use the computer voice until it resets. Add your workspace's own key to carry on.",
-    historyBlocked: "This key can't delete what assistants say from its ElevenLabs history, so whoever holds that ElevenLabs account can read it there. Give the key History (read and write) access in ElevenLabs: Boredroom keeps trying for a day, so what was said meanwhile is deleted once it can.",
-    /** What could not be deleted from the key's history in the last 30 days (fix review, 9 October 2026). */
-    historyLeft: (n: number) => n === 1
-      ? "One thing said aloud in the last 30 days couldn't be deleted from this key's ElevenLabs history, so whoever holds that ElevenLabs account can read it there. You can delete it in ElevenLabs, under History."
-      : `${formatCount(n)} things said aloud in the last 30 days couldn't be deleted from this key's ElevenLabs history, so whoever holds that ElevenLabs account can read them there. You can delete them in ElevenLabs, under History.`,
-    monthUpstream: "Couldn't read the usage from ElevenLabs just now.",
-    monthRejected: "ElevenLabs refused the workspace's key. Replace it or remove it.",
-    keyNote: "The key is tested with one free request, then stored encrypted and never shown again.",
-    privacyNote: "What each assistant says aloud in a natural voice is sent to ElevenLabs to turn into speech. ElevenLabs keeps it in the history of the account that owns the key, where that account's holder can read it, so Boredroom deletes each one once it's said (the key needs History access for that). If ElevenLabs doesn't answer in time, Boredroom can't tell which one it was and leaves it; with your workspace's own key, the Natural voice card counts those. Boredroom keeps no words or audio.",
+    /** Boredroom's key ran out (its own usage and reset date are not shown to a workspace). */
+    lowShared: "Natural voices have reached this month's allowance, so assistants use the computer voice for now. Nothing to do on your side.",
+    privacyNote: "What each assistant says aloud in a natural voice is sent to ElevenLabs to turn into speech. Boredroom deletes each one from ElevenLabs' history once it's said, and keeps no words or audio.",
+    anthropicNote: "Each request Brenda makes goes to Anthropic: the request and what she needed to read for it, and only what the person asking is allowed to see.",
   },
 } as const;

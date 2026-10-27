@@ -51,7 +51,7 @@ import { usageSummary } from "@/server/services/ai-usage";
 import { assertLookAllowed, saveMyScreenHelp, saveScreenHelp } from "@/server/services/screen-help";
 import { createConversation, createConversationSchema, getConversation } from "@/server/services/brenda-history";
 import { encryptSecret, verifyPayload } from "@/server/lib/crypto";
-import { naturalSpeech, resetNaturalVoiceForTests, verifySpeechToken } from "@/server/services/natural-voice";
+import { resetNaturalVoiceForTests, verifySpeechToken } from "@/server/services/natural-voice";
 import { NATURAL_VOICES } from "@/lib/natural-voices";
 import { whyStillAsking } from "@/lib/act-mode";
 import { stripImageMetadata } from "@/server/lib/image-meta";
@@ -62,11 +62,10 @@ const JPEG = "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODw
 const STRIPPED = stripImageMetadata("image/jpeg", Buffer.from(JPEG, "base64"))!.toString("base64");
 const MARKER = "ZEBRA-7731";
 const LOOK_MODEL = "claude-look-pilot-test";
-const WORKSPACE_MODEL = "claude-workspace-own-test";
+const WORKSPACE_MODEL = "claude-ordinary-chat-test";
 const ENV_KEY = "test-env-key-not-real";
-const WORKSPACE_KEY = "test-workspace-key-not-real";
 
-const saved = { key: process.env.ANTHROPIC_API_KEY, ws: process.env.BRENDA_LOOK_WORKSPACES, model: process.env.BRENDA_LOOK_MODEL };
+const saved = { key: process.env.ANTHROPIC_API_KEY, ws: process.env.BRENDA_LOOK_WORKSPACES, model: process.env.BRENDA_LOOK_MODEL, chat: process.env.ASSISTANT_MODEL };
 let a: CompanyFixture;
 let owner: OrgContext, hr: OrgContext, ada: OrgContext, ben: OrgContext;
 const tokens = new Map<string, string>();
@@ -127,8 +126,9 @@ beforeAll(async () => {
   process.env.BRENDA_LOOK_MODEL = LOOK_MODEL;
   a = await buildCompany("a");
   owner = a.ownerCtx; hr = a.hrCtx; ada = a.employeeCtx; ben = a.employee2Ctx;
-  // The workspace's own key and model: a look must never use them; its ledger rows read as the workspace's model.
-  await adminQuery(`INSERT INTO organisation_secrets(organisation_id, assistant_key_enc, assistant_model) VALUES ($1, $2, $3)`, [owner.org.id, encryptSecret(WORKSPACE_KEY), WORKSPACE_MODEL]);
+  // The ordinary chat model (ASSISTANT_MODEL, Boredroom's for every workspace since 27 October 2026): a look never runs on
+  // it, but its ledger rows read as it, so owners see an ordinary chat request.
+  process.env.ASSISTANT_MODEL = WORKSPACE_MODEL;
   // A workspace created while it is offered is available at once (the row, contract D.5): company-a was.
   expect(await count("SELECT count(*)::int AS n FROM screen_help_settings WHERE organisation_id = $1 AND available_from <= now()", [owner.org.id])).toBe(1);
   let n = 1;
@@ -139,7 +139,7 @@ beforeAll(async () => {
 });
 
 afterAll(() => {
-  for (const [k, v] of [["ANTHROPIC_API_KEY", saved.key], ["BRENDA_LOOK_WORKSPACES", saved.ws], ["BRENDA_LOOK_MODEL", saved.model]] as const) {
+  for (const [k, v] of [["ANTHROPIC_API_KEY", saved.key], ["BRENDA_LOOK_WORKSPACES", saved.ws], ["BRENDA_LOOK_MODEL", saved.model], ["ASSISTANT_MODEL", saved.chat]] as const) {
     if (v === undefined) delete process.env[k]; else process.env[k] = v;
   }
   reqState.cookie = null; reqState.bearer = null;
@@ -301,7 +301,7 @@ describe("owners can't tell a look happened (contract 0.6, D.8, D.9)", () => {
     expect(mine.actions.map((x) => x.summary)).toEqual(expect.arrayContaining(["Added to-do: Words to-do", "Added to-do: Look to-do"]));
   });
 
-  it("the ledger: one ordinary chat request with the picture's tokens taken out, under the workspace's model; the real cost has no workspace and no person", async () => {
+  it("the ledger: one ordinary chat request with the picture's tokens taken out, under the ordinary chat model; the real cost has no workspace and no person", async () => {
     await adminQuery("DELETE FROM ai_usage");
     await adminQuery("DELETE FROM look_usage_daily");
     model.script = [tool("get_my_day", {}), say("Two tasks.")];
@@ -544,7 +544,6 @@ describe("her spoken answer never goes through the workspace's own ElevenLabs ke
       ON CONFLICT (membership_id) DO UPDATE SET natural_voice = $3, updated_at = now()`, [ada.membership.id, ada.org.id, NATURAL_VOICES[0].id]);
   });
   afterAll(async () => {
-    await adminQuery("DELETE FROM organisation_voice_secrets WHERE organisation_id = $1", [ada.org.id]);
     await adminQuery("UPDATE assistant_profiles SET natural_voice = NULL WHERE membership_id = $1", [ada.membership.id]);
     if (savedVoiceKey === undefined) delete process.env.ELEVENLABS_API_KEY; else process.env.ELEVENLABS_API_KEY = savedVoiceKey;
     resetNaturalVoiceForTests();
@@ -559,15 +558,16 @@ describe("her spoken answer never goes through the workspace's own ElevenLabs ke
     expect(verifySpeechToken(ada, speech!.token, speech!.text)).toEqual({ boredroomKeyOnly: true });
   });
 
-  it("with the workspace's own key: no offer (the Mac's own voice), and an earlier look's token is refused on that key", async () => {
-    model.script = [say("That's the Export button.")];
-    const before = (await lookOk(ada, body())).speech as { token: string; text: string };
-    await adminQuery(`INSERT INTO organisation_voice_secrets(organisation_id, key_enc, key_hint) VALUES ($1, $2, 'test') ON CONFLICT (organisation_id) DO UPDATE SET key_enc = $2`,
+  it("a workspace key stored before the owner's request (27 October 2026) is never used: still offered on Boredroom's key", async () => {
+    const [t] = await adminQuery<{ ok: boolean }>(`SELECT to_regclass('public.organisation_voice_secrets') IS NOT NULL AS ok`);
+    if (t.ok) await adminQuery(`INSERT INTO organisation_voice_secrets(organisation_id, key_enc, key_hint) VALUES ($1, $2, 'test') ON CONFLICT (organisation_id) DO UPDATE SET key_enc = $2`,
       [ada.org.id, encryptSecret("test-org-voice-key-not-real-0000")]);
     model.script = [say("That's the Export button.")];
     const r = await lookOk(ada, body());
-    expect(r.speech).toBeNull();
-    await expect(naturalSpeech(ada, { token: before.token, text: before.text, speed: "normal", as: "base64" }, new AbortController().signal))
-      .rejects.toMatchObject({ code: "VOICE_UNAVAILABLE" });
+    const speech = r.speech as { token: string; text: string } | null;
+    expect(speech).not.toBeNull();
+    expect(verifySpeechToken(ada, speech!.token, speech!.text)).toEqual({ boredroomKeyOnly: true });
+    if (t.ok) await adminQuery("DELETE FROM organisation_voice_secrets WHERE organisation_id = $1", [ada.org.id]);
   });
+
 });

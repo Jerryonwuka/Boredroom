@@ -586,51 +586,18 @@ export async function syncTeamProjectMember(db: Db, orgId: string, teamId: strin
 }
 
 // ---------------------------------------------------------------------------
-// AI assistant connection (per organisation)
+// AI assistant connection (Boredroom's, the same for every organisation)
 // ---------------------------------------------------------------------------
-export const assistantKeySchema = z.object({
-  apiKey: z.string().trim().min(20).max(400),
-  model: z.string().trim().min(3).max(80).optional(),
-});
-
-export type AssistantStatus = { source: "organisation" | "environment" | "none"; hint: string | null; model: string | null; connectedAt: string | null };
+/**
+ * Brenda's AI connection, read-only (owner request, 27 October 2026: "the organisation should not have to put any API key
+ * inside"): Boredroom's own key from the environment for every workspace, or none. Workspaces can no longer store a key
+ * (the settings route answers 410), and keys stored before are never read (db/pending/0065 removes them).
+ */
+export type AssistantStatus = { source: "environment" | "none"; model: string | null };
 
 export async function assistantStatus(ctx: OrgContext): Promise<AssistantStatus> {
-  const row = await withSystem((db) => db.maybeOne<{ assistant_key_hint: string | null; assistant_model: string | null; assistant_connected_at: string | null; assistant_key_enc: string | null }>(`SELECT assistant_key_hint, assistant_model, assistant_connected_at, assistant_key_enc FROM organisation_secrets WHERE organisation_id = $1`, [ctx.org.id]));
-  if (row?.assistant_key_enc) return { source: "organisation", hint: row.assistant_key_hint, model: row.assistant_model, connectedAt: row.assistant_connected_at };
-  if (process.env.ANTHROPIC_API_KEY) return { source: "environment", hint: null, model: process.env.ASSISTANT_MODEL ?? null, connectedAt: null };
-  return { source: "none", hint: null, model: null, connectedAt: null };
-}
-
-/** Stores the organisation's Anthropic API key after one real test request succeeds. Owners only. */
-export async function setAssistantKey(ctx: OrgContext, input: z.infer<typeof assistantKeySchema>, verify: (apiKey: string, model: string) => Promise<{ model: string; reply: string }>) {
-  if (ctx.membership.role !== "owner") throw forbidden("Only owners can connect the AI assistant.");
-  const { DEFAULT_ASSISTANT_MODEL } = await import("@/server/services/assistant");
-  const model = input.model || process.env.ASSISTANT_MODEL || DEFAULT_ASSISTANT_MODEL;
-  let test: { model: string; reply: string };
-  try { test = await verify(input.apiKey, model); }
-  catch (err) {
-    const e = err as { status?: number; message?: string };
-    if (e?.status === 401) throw invalid("Anthropic rejected this key. Copy it again from console.anthropic.com → API keys.", { apiKey: ["Key rejected."] });
-    if (e?.status === 404) throw invalid(`The model "${model}" is not available to this key.`, { model: ["Model not found."] });
-    if (e?.status === 429 || e?.status === 400) throw invalid(`Anthropic answered: ${(e.message ?? "request refused").slice(0, 200)}`);
-    throw invalid(`Could not reach Anthropic: ${(e?.message ?? String(err)).slice(0, 200)}`);
-  }
-  const { encryptSecret } = await import("@/server/lib/crypto");
-  await withUser(ctx.user.profileId, async (db) => {
-    await db.query(`INSERT INTO organisation_secrets(organisation_id, assistant_key_enc, assistant_key_hint, assistant_model, assistant_connected_at, updated_by, updated_at)
-      VALUES ($1, $2, $3, $4, now(), $5, now())
-      ON CONFLICT (organisation_id) DO UPDATE SET assistant_key_enc = EXCLUDED.assistant_key_enc, assistant_key_hint = EXCLUDED.assistant_key_hint, assistant_model = EXCLUDED.assistant_model, assistant_connected_at = now(), updated_by = EXCLUDED.updated_by, updated_at = now()`,
-      [ctx.org.id, encryptSecret(input.apiKey), `…${input.apiKey.slice(-4)}`, model, ctx.membership.id]);
-    await audit(db, { organisationId: ctx.org.id, actorMembershipId: ctx.membership.id, action: "assistant.connected", subjectType: "organisation", subjectId: ctx.org.id, metadata: { model } });
-  });
-  return { model: test.model, reply: test.reply };
-}
-
-export async function clearAssistantKey(ctx: OrgContext) {
-  if (ctx.membership.role !== "owner") throw forbidden("Only owners can disconnect the AI assistant.");
-  await withUser(ctx.user.profileId, async (db) => {
-    await db.query(`DELETE FROM organisation_secrets WHERE organisation_id = $1`, [ctx.org.id]);
-    await audit(db, { organisationId: ctx.org.id, actorMembershipId: ctx.membership.id, action: "assistant.disconnected", subjectType: "organisation", subjectId: ctx.org.id });
-  });
+  void ctx;
+  const { environmentAssistant } = await import("@/server/services/assistant");
+  const conn = environmentAssistant();
+  return conn ? { source: "environment", model: conn.model } : { source: "none", model: null };
 }

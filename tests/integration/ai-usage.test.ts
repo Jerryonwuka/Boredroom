@@ -25,7 +25,7 @@ beforeAll(async () => {
   await resetTestDatabase();
   a = await buildCompany("a");
   b = await buildCompany("b");
-  await adminQuery("DELETE FROM organisation_secrets WHERE organisation_id IN ($1, $2)", [a.ownerCtx.org.id, b.ownerCtx.org.id]);
+  await adminQuery(`DO $$ BEGIN IF to_regclass('public.organisation_secrets') IS NOT NULL THEN DELETE FROM organisation_secrets; END IF; END $$`);
 });
 
 afterAll(() => {

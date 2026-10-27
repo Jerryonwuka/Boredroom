@@ -26,6 +26,8 @@ const NAV: { title: string; items: { label: string; href: string; icon: AdminNav
   ] },
   { title: "Product", items: [
     { label: "Usage and activity", href: "/admin/usage", icon: "usage", permission: "usage.view" },
+    // Which company spends the most on AI, and how many assistants each has (owner request, 27 October 2026).
+    { label: "AI usage", href: "/admin/ai-usage", icon: "ai", permission: "usage.view" },
     { label: "Moderation", href: "/admin/moderation", icon: "moderation", permission: "moderation.view" },
     { label: "Support", href: "/admin/support", icon: "support", permission: "support.view" },
   ] },

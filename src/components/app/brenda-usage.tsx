@@ -5,7 +5,8 @@
  * to-do planner calls, team reports asked for, follow-up asks between assistants (phase 4: one ask, one request,
  * whether it covers one person or 25) and assistants tagged in Messages (phase 5: one mention, one request), each
  * counted once whatever the number of model calls; tokens come from the API's own usage block. No prices
- * anywhere (owner decision): the key's bill is between the owner and Anthropic.
+ * anywhere in the workspace (owner decision): since 27 October 2026 every workspace runs on Boredroom's key, and the
+ * Control Center's AI usage page estimates what each one costs.
  *
  * Server-safe (no hooks): the Settings page renders it with `usageSummary(ctx)`. Before migration 0037 the ledger does
  * not exist yet and the card says usage appears after the next database update.
@@ -22,7 +23,7 @@ import type { UsagePurpose, UsageSummary } from "@/server/services/ai-usage";
 // person's look for loose ends, and "commitments": the workspace assistant noticing commitments in group chats (owner
 // decision, 8 October 2026: phase 7b); "standup": one person's standup draft rewritten by their assistant, one call a
 // person a standup day (owner decisions, 8–9 October 2026: phase 7c).
-const PURPOSE_LABEL: Record<UsagePurpose, string> = {
+export const PURPOSE_LABEL: Record<UsagePurpose, string> = {
   chat: "Chat", plan: "To-do planner", report: "Team reports", summary: "Summaries", test: "Connection tests", other: "Other", followup: "Follow-ups",
   mention: "Mentions in Messages", loose_ends: "Loose ends", commitments: "Commitments in group chats",
   standup: "Standup drafts",

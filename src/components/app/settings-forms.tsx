@@ -13,10 +13,8 @@ import { Button } from "@/components/ui/button";
 import { ConfirmButton, ConfirmDialog } from "@/components/ui/confirm";
 import { Input, InputAdorned, Textarea, Select } from "@/components/ui/input";
 import { Alert } from "@/components/ui/states";
-import { Badge } from "@/components/ui/badge";
 import { SectionTitle } from "@/components/ui/card";
 import { api, isApiFailure } from "@/lib/api-client";
-import { dateOnly } from "@/lib/format";
 import { TimePicker } from "@/components/ui/time-picker";
 import { useAssistant } from "@/components/app/assistant-context";
 import { cn } from "@/lib/utils";
@@ -224,45 +222,6 @@ export function StandardNoticeButton({ orgSlug, text, reminderMinutesBeforeEnd }
         onConfirm={() => submit(() => api(`/api/orgs/${orgSlug}/settings/policy`, { method: "POST", body: { noticeText: text, reminderMinutesBeforeEnd } }), "The new standard notice is published.")}>Use the new standard notice</ConfirmButton>
       {error ? <p role="alert" className="text-meta font-medium text-danger">{error}</p> : null}
       {ok ? <p role="status" className="text-meta font-normal text-secondary">{ok}</p> : null}
-    </div>
-  );
-}
-
-// ---- Brenda's AI connection ---------------------------------------------------------------------------------------
-
-type AiStatus = { source: "organisation" | "environment" | "none"; hint: string | null; model: string | null; connectedAt: string | null };
-
-/** Connect / replace / remove the organisation's Anthropic API key. */
-export function AssistantConnectionForm({ orgSlug, status }: { orgSlug: string; status: AiStatus }) {
-  const { pending, error, ok, fieldErrors, submit } = useForm();
-  const [open, setOpen] = useState(status.source !== "organisation");
-  const [reply, setReply] = useState<string | null>(null);
-  const state = status.source === "organisation"
-    ? <>Key ending <span className="font-mono tabular-nums">{status.hint}</span>, {status.model}{status.connectedAt ? <>, connected <time dateTime={status.connectedAt} suppressHydrationWarning>{dateOnly(status.connectedAt)}</time></> : ""}</>
-    : status.source === "environment" ? "Using the server's ANTHROPIC_API_KEY. Add an organisation key to override it." : "Not connected. A simple built-in helper answers and only suggests.";
-  return (
-    <div className={SETTINGS_GROUP}>
-      {error ? <SettingsAlert>{error}</SettingsAlert> : null}
-      {ok && reply ? <SettingsAlert tone="success">Claude says: “{reply}”</SettingsAlert> : null}
-      {/* How the key is kept, what each request sends and who pays for it are page notes on Settings, Brenda. */}
-      <SettingsRow label="Connection" align="text">
-        <span className="flex flex-wrap items-center gap-2"><Badge tone={status.source === "none" ? "warning" : "success"} dot>{status.source === "none" ? "Not connected" : "Connected"}</Badge><span className="text-secondary">{state}</span></span>
-      </SettingsRow>
-      {open ? (
-        <form className="divide-y divide-border" onSubmit={(e) => { e.preventDefault(); const f = new FormData(e.currentTarget); const form = e.currentTarget; setReply(null); submit(async () => { const r = await api<{ model: string; reply: string }>(`/api/orgs/${orgSlug}/settings/assistant`, { method: "POST", body: { apiKey: f.get("apiKey"), model: f.get("model") || undefined } }); setReply(r.reply); form.reset(); setOpen(false); return r; }, "Connected. Brenda now runs on Claude."); }}>
-          <SettingsRow label="Anthropic API key" hint="From console.anthropic.com under API keys; starts with sk-ant-." htmlFor="ai-key" error={fieldErrors.apiKey}><Input id="ai-key" name="apiKey" type="password" autoComplete="off" required minLength={20} placeholder="sk-ant-…" className="font-mono" /></SettingsRow>
-          <SettingsRow label="Model" hint="Optional." htmlFor="ai-model" error={fieldErrors.model}><Select id="ai-model" name="model" defaultValue=""><option value="">Claude Opus 5.5 (default)</option><option value="claude-sonnet-5">Claude Sonnet 5 (faster, cheaper)</option><option value="claude-opus-5-5">Claude Opus 5.5</option><option value="claude-opus-5">Claude Opus 5</option></Select></SettingsRow>
-          <SettingsFooter status={ok}>
-            {status.source === "organisation" ? <Button type="button" size="md" variant="ghost" onClick={() => setOpen(false)}>Cancel</Button> : null}
-            <Button type="submit" size="md" loading={pending}>{pending ? "Testing…" : "Connect and test"}</Button>
-          </SettingsFooter>
-        </form>
-      ) : (
-        <SettingsFooter status={ok}>
-          <ConfirmButton size="md" variant="danger" disabled={pending} title="Disconnect Brenda from Claude?" description="The stored key is deleted. Until a key is added again, a simple built-in helper answers and only suggests." confirmLabel="Disconnect" pendingLabel="Disconnecting…" onConfirm={() => submit(() => api(`/api/orgs/${orgSlug}/settings/assistant`, { method: "DELETE" }), "Disconnected. The built-in helper answers until a key is added.")}>Disconnect</ConfirmButton>
-          <Button size="md" variant="secondary" onClick={() => setOpen(true)}>Replace key</Button>
-        </SettingsFooter>
-      )}
     </div>
   );
 }

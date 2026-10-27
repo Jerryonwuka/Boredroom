@@ -47,7 +47,7 @@ describe("level: the loudness of the real audio", () => {
 describe("naturalVoiceNote: why the computer voice speaks instead", () => {
   const cases: [NaturalVoiceReason, string][] = [
     ["not_ready", "Natural voices need a database update first. Max uses the computer voice until then."],
-    ["no_key", "Natural voices aren't set up for this workspace yet, so Max uses the computer voice."],
+    ["no_key", "Natural voices aren't available right now, so Max uses the computer voice."],
     ["key_rejected", "ElevenLabs refused the workspace's key, so Max uses the computer voice. An owner or HR can check it in Settings."],
     ["upstream", "ElevenLabs didn't answer just now, so Max used the computer voice."],
   ];
@@ -76,26 +76,18 @@ describe("naturalVoiceNote: why the computer voice speaks instead", () => {
   it("keeps the owner's privacy line and the usage words exact", () => {
     expect(NATURAL_WORDS.privacy).toBe("Natural voices are made by ElevenLabs: the words your assistant says are sent to ElevenLabs to turn into speech.");
     expect(formatResetDate("2026-11-09T07:47:00Z", "UTC")).toBe("9 November 2026");
-    expect(NATURAL_WORDS.connection.usedValue(1234, 38373)).toBe("1,234 of 38,373");
     expect(NATURAL_WORDS.connection.workspaceValue(312, 4560)).toBe("312 characters today; 4,560 this month");
     // No daily limit or share (owner request, 12 October 2026): no words promise one.
     expect("person" in NATURAL_WORDS.connection).toBe(false);
     expect("personValue" in NATURAL_WORDS.connection).toBe(false);
     expect("sharedFull" in NATURAL_WORDS.connection).toBe(false);
-    expect(NATURAL_WORDS.connection.description).toBe("Natural voices for everyone's assistant, from ElevenLabs. Without a key of your own, Boredroom's key is used.");
-    expect(NATURAL_WORDS.connection.removeDescription).toBe("The stored key is deleted. Boredroom's key is used again, or the computer voice when there isn't one.");
-    expect(NATURAL_WORDS.connection.low("9 November 2026")).toBe("Your ElevenLabs plan has run out of credits, so assistants use the computer voice until it resets on 9 November 2026. A bigger plan in your ElevenLabs account fixes it sooner.");
     expect(JSON.stringify(NATURAL_WORDS)).not.toMatch(/daily share|a day each|characters a day|until tomorrow/);
-    expect(NATURAL_WORDS.connection.organisationLine("…ab12", "9 October 2026")).toBe("Your workspace's key, ending …ab12, connected 9 October 2026");
   });
 
-  it("calls ElevenLabs' allowance credits, and counts what couldn't be deleted from the key's history (fix review, 9 October 2026)", () => {
-    expect(NATURAL_WORDS.connection.used).toBe("Credits used");
-    expect(NATURAL_WORDS.connection.usedText(1234, 38373)).toBe("1,234 of 38,373 credits");
-    expect(NATURAL_WORDS.connection.historyLeft(1)).toMatch(/^One thing said aloud in the last 30 days couldn't be deleted .* You can delete it in ElevenLabs, under History\.$/);
-    expect(NATURAL_WORDS.connection.historyLeft(1200)).toMatch(/^1,200 things said aloud .* can read them there\. You can delete them in ElevenLabs, under History\.$/);
-    expect(NATURAL_WORDS.connection.keyHint).toContain("History (read and write)");
-    expect(NATURAL_WORDS.connection.historyBlocked).toContain("History (read and write)");
+  it("asks no workspace for a key: the voices are Boredroom's (owner request, 27 October 2026)", () => {
+    expect(NATURAL_WORDS.connection.description).toBe("Brenda's AI and natural voice are provided by Boredroom. There's nothing to set up or pay for separately.");
+    for (const k of ["keyLabel", "keyHint", "connect", "replace", "remove", "removeDescription", "organisationLine", "keyNote", "historyBlocked", "historyLeft"]) expect(k in NATURAL_WORDS.connection).toBe(false);
+    expect(JSON.stringify(NATURAL_WORDS)).not.toMatch(/API key|your own key|workspace's own key|Add your/i);
   });
 });
 

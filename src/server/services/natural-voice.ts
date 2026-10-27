@@ -3,9 +3,11 @@
  * pick one of eight ElevenLabs voices for their own assistant (lib/natural-voices); the default stays the computer's own
  * voice. This file is the server's whole side of it:
  *
- * - Keys (contract B): the workspace's own ElevenLabs key first (entered by owners or HR in Settings, tested with one free
- *   request, stored encrypted in `organisation_voice_secrets`), else Boredroom's key (`ELEVENLABS_API_KEY`), exactly as
- *   the Claude key works (services/assistant `resolveAssistant`).
+ * - Keys: Boredroom's key (`ELEVENLABS_API_KEY`) for every workspace (owner request, 27 October 2026: "as long as we
+ *   have the ElevenLabs API key it works for all workspaces"), exactly as the Claude key works (services/assistant
+ *   `resolveAssistant`). Workspaces no longer enter a key (the settings route answers 410); keys stored before in
+ *   `organisation_voice_secrets` are never read (db/pending/0065 drops the table). The "organisation" key source is
+ *   kept in types and old `voice_usage_daily` rows only.
  * - The person's choice (B.4): `assistant_profiles.natural_voice`, saved as the person.
  * - No limit of Boredroom's (owner request, 12 October 2026: "remove the limit for ElevenLabs voice"): the natural
  *   voice is used whenever a voice is chosen, Voice is on and a key works. The per-person daily cap, the workspace's
@@ -30,7 +32,7 @@
  * Before migration 0053 (server/lib/schema-0053) nobody has a natural voice (`not_ready`), replies carry no offer, the
  * speech route answers 409 and saves answer 503 NOT_READY; nothing throws.
  *
- * Never logged and never stored: the key (encrypted at rest only), the words, the token, the audio. Errors from here are
+ * Never logged and never stored: the key, the words, the token, the audio. Errors from here are
  * AppErrors with fixed words, so `errorResponse` never logs a raw error carrying any of them.
  */
 import { createHash } from "node:crypto";
@@ -38,11 +40,10 @@ import { z } from "zod";
 import { batchIn, getPool, withSystem, withUser, type Db } from "@/server/db";
 import type { OrgContext } from "@/server/lib/api";
 import { AppError, forbidden, invalid, notFound, rateLimited } from "@/server/lib/errors";
-import { decryptSecret, encryptSecret, signPayload, verifyPayload } from "@/server/lib/crypto";
+import { signPayload, verifyPayload } from "@/server/lib/crypto";
 import { SCHEMA_0053_CHECK, forget0053, isMissingSchema, noteSchema0053, retryWithout0053, schema0053Known, schema0053Ready } from "@/server/lib/schema-0053";
 import { SCHEMA_0050_CHECK, forget0050, noteSchema0050, schema0050Known } from "@/server/lib/schema-0050";
 import { todayLocal } from "@/server/lib/time";
-import { audit } from "@/server/services/common";
 import {
   ElevenLabsError, deleteHistoryItem, fetchPreview, findHistoryItem, getSubscription, getVoicePreviewUrl, isAbort,
   streamSpeech, type ElevenLabsErrorKind, type SpeechRef, type Subscription,
@@ -116,20 +117,14 @@ async function read0053<T>(fn: () => Promise<T | null>): Promise<T | null> {
   }
 }
 
-/** The workspace's own key (before 0053: none), else Boredroom's, else null (`no_key`). */
+/** Boredroom's key, for every workspace (owner request, 27 October 2026), else null (`no_key`). No database read. */
 export async function resolveVoiceKey(orgId: string): Promise<VoiceKey | null> {
-  const enc = await read0053(() => withSystem(async (db) => {
-    if (!(await schema0053Ready(db))) return null;
-    const r = await db.maybeOne<{ key_enc: string }>(`SELECT key_enc FROM organisation_voice_secrets WHERE organisation_id = $1`, [orgId]);
-    return r?.key_enc ?? null;
-  }));
-  return keyOf(orgId, enc);
+  void orgId;
+  return keyOf();
 }
 
-/** The key from the workspace's stored (encrypted) key, if any, else Boredroom's, else null. */
-function keyOf(orgId: string, enc: string | null): VoiceKey | null {
-  const own = enc ? decryptSecret(enc) : null;
-  if (own) return { apiKey: own, source: "organisation", keyRef: `org:${orgId}` };
+/** Boredroom's key, else null. A workspace's own stored key is never read (owner request, 27 October 2026). */
+function keyOf(): VoiceKey | null {
   const env = envKey();
   return env ? { apiKey: env, source: "environment", keyRef: "env" } : null;
 }
@@ -195,14 +190,6 @@ function heldReason(keyRef: string, now = Date.now()): Held["reason"] | null {
 function recentlyFailed(keyRef: string, now = Date.now()): boolean {
   const at = lastFailure.get(keyRef);
   return at !== undefined && now - at < RECENT_MS;
-}
-
-/** A replaced or removed key starts afresh. */
-function forgetKey(keyRef: string): void {
-  subs.delete(keyRef);
-  held.delete(keyRef);
-  lastFailure.delete(keyRef);
-  for (const k of [...historyBlocked.keys()]) if (k.startsWith(`${keyRef}:`)) historyBlocked.delete(k);
 }
 
 /** Clears every cache and the breaker (tests only). */
@@ -340,7 +327,7 @@ export async function refund(ctx: OrgContext, source: VoiceKeySource, n: number,
  * since the owner's request, 12 October 2026). With `burst`, the same statement counts the request against the person's
  * burst limit (`hits`, as rateLimitIn counts it). `ready`: false before 0053, and then nothing but the burst limit is read.
  */
-type VoiceReads = { ready: boolean; hits: number | null; chosen: string | null; voiceOff: boolean; keyEnc: string | null; personToday: number };
+type VoiceReads = { ready: boolean; hits: number | null; chosen: string | null; voiceOff: boolean; personToday: number };
 
 /** 0053 and 0050, from the cache or in one query (instead of one each) the first time in a process. */
 async function voiceSchemasIn(db: Db): Promise<{ v53: boolean; v50: boolean }> {
@@ -361,7 +348,7 @@ async function voiceReadsIn(db: Db, ctx: OrgContext, today: string, burst: { buc
        `
     : "";
   const hits = burst ? "(SELECT hits FROM rl)" : "NULL::int";
-  const none: VoiceReads = { ready: false, hits: null, chosen: null, voiceOff: false, keyEnc: null, personToday: 0 };
+  const none: VoiceReads = { ready: false, hits: null, chosen: null, voiceOff: false, personToday: 0 };
   if (!v53) {
     if (!burst) return none;
     const r = await db.one<{ hits: number }>(`${rl}SELECT ${hits} AS hits`, [burst.bucket, burst.windowSeconds]);
@@ -369,20 +356,18 @@ async function voiceReadsIn(db: Db, ctx: OrgContext, today: string, burst: { buc
   }
   // Before 0050 the workspace cannot switch Voice off.
   const off = v50 ? "b.abilities_off" : "NULL::text[] AS abilities_off";
-  const r = await db.one<{ hits: number | null; natural_voice: string | null; abilities_off: string[] | null; key_enc: string | null; person_today: number }>(
-    `${rl}SELECT ${hits} AS hits, p.natural_voice, ${off}, s.key_enc,
+  const r = await db.one<{ hits: number | null; natural_voice: string | null; abilities_off: string[] | null; person_today: number }>(
+    `${rl}SELECT ${hits} AS hits, p.natural_voice, ${off},
             (SELECT COALESCE(sum(u.characters), 0)::bigint FROM voice_usage_daily u WHERE u.membership_id = $1 AND u.day = $3::date) AS person_today
        FROM (SELECT 1) one
        LEFT JOIN assistant_profiles p ON p.membership_id = $1
-       LEFT JOIN brenda_settings b ON b.organisation_id = $2
-       LEFT JOIN organisation_voice_secrets s ON s.organisation_id = $2`,
+       LEFT JOIN brenda_settings b ON b.organisation_id = $2`,
     [ctx.membership.id, ctx.org.id, today, ...(burst ? [burst.bucket, burst.windowSeconds] : [])]);
   return {
     ready: true,
     hits: r.hits === null ? null : Number(r.hits),
     chosen: isNaturalVoiceId(r.natural_voice) ? r.natural_voice : null,
     voiceOff: Array.isArray(r.abilities_off) && r.abilities_off.includes("voice"),
-    keyEnc: r.key_enc,
     personToday: Number(r.person_today),
   };
 }
@@ -438,8 +423,8 @@ const NOT_READY_VIEW: NaturalVoiceView = {
 export async function naturalVoiceView(ctx: OrgContext): Promise<NaturalVoiceView> {
   const p = await personReads(ctx, todayLocal(ctx.org.timezone));
   if (!p) return { ...NOT_READY_VIEW, samples: !!envKey() };
-  const view: NaturalVoiceView = { ready: true, chosen: p.chosen, available: false, reason: null, resetAt: null, usedToday: p.personToday, personDailyLimit: NO_LIMIT, samples: !!p.keyEnc || !!envKey(), voices: NATURAL_VOICES };
-  const key = p.chosen && !p.voiceOff ? keyOf(ctx.org.id, p.keyEnc) : null;
+  const view: NaturalVoiceView = { ready: true, chosen: p.chosen, available: false, reason: null, resetAt: null, usedToday: p.personToday, personDailyLimit: NO_LIMIT, samples: !!envKey(), voices: NATURAL_VOICES };
+  const key = p.chosen && !p.voiceOff ? keyOf() : null;
   const hold = key ? heldReason(key.keyRef) ?? (recentlyFailed(key.keyRef) ? "upstream" : null) : null;
   const reason = naturalVoiceReason({ ready: true, voiceOff: p.voiceOff, chosen: p.chosen, key: !!key, held: hold });
   const sub = reason === "allowance_low" && key?.source === "organisation" ? await subscriptionFor(key) : null;
@@ -473,130 +458,45 @@ export async function saveMyNaturalVoice(ctx: OrgContext, input: NaturalVoiceInp
 
 const notReady = () => new AppError(503, "NOT_READY", NOT_READY_WORDS);
 
-// ---- The workspace's key (B.3), owners and HR -----------------------------------------------------------------------------
+// ---- Natural voice status (Settings), owners and HR ---------------------------------------------------------------------
 
 const canManage = (ctx: OrgContext) => ctx.membership.role === "owner" || ctx.membership.role === "hr";
 function requireManager(ctx: OrgContext) {
-  if (!canManage(ctx)) throw forbidden("Only the organisation owner or HR can manage natural voices.");
+  if (!canManage(ctx)) throw forbidden("Only the organisation owner or HR can see natural voice usage.");
 }
 
-export const voiceKeySchema = z.object({
-  apiKey: z.string({ error: "Paste the ElevenLabs API key." }).trim()
-    .min(20, { message: "That's too short to be an ElevenLabs API key." })
-    .max(200, { message: "That's too long to be an ElevenLabs API key." }),
-});
-export type VoiceKeyInput = z.infer<typeof voiceKeySchema>;
-export const VOICE_KEY_BODY_MAX = 2048;
-
 /**
- * Settings → Brenda → Natural voice: which key is in use, this month's usage on it, and what the workspace said today
- * and this month. No limit of Boredroom's to show since the owner's request (12 October 2026): `today.share` and
- * `personDailyLimit` are 0 (none) and `sharedFull` false, kept for older pages. `low`: ElevenLabs refused the key for
- * credits (the breaker holds it), or its subscription says the plan has none left this month.
+ * Settings → Brenda → Natural voice, read-only since the owner's request (27 October 2026: no workspace keys): whether
+ * Boredroom's key is there, and what the workspace said today and this month. On Boredroom's key the subscription is every
+ * workspace's together (and Boredroom's plan): never shown to one of them (review, 9 October 2026); `low` says only that
+ * ElevenLabs refused it for credits, or its plan has none left. `hint`, `connectedAt`, `month`, `historyBlocked` and
+ * `historyLeft` stay empty (they were about a workspace's own key), kept for older pages, as `today.share`,
+ * `personDailyLimit` and `sharedFull` are (no limit since the owner's request, 12 October 2026).
  */
 export async function voiceConnectionStatus(ctx: OrgContext): Promise<VoiceConnectionStatus> {
   requireManager(ctx);
-  const env = envKey();
+  const key = keyOf();
   const empty: VoiceConnectionStatus = {
-    ready: false, source: env ? "environment" : "none", hint: null, connectedAt: null, month: null, monthError: null, low: false,
+    ready: false, source: key ? "environment" : "none", hint: null, connectedAt: null, month: null, monthError: null, low: false,
     workspaceMonth: 0, today: { used: 0, share: NO_LIMIT }, sharedFull: false, historyBlocked: false, historyLeft: 0, personDailyLimit: NO_LIMIT,
   };
   const today = todayLocal(ctx.org.timezone);
-  // Today's counts for either key come with the row (review, 9 October 2026: one transaction instead of two).
+  // Both of the workspace's counts in one statement (characters on either key source, old workspace-key rows included).
   const row = await read0053(() => withSystem(async (db) => {
     if (!(await schema0053Ready(db))) return null;
-    return db.one<{ key_enc: string | null; key_hint: string | null; connected_at: string | null; month_chars: number; org_today: number; env_today: number }>(
-      `SELECT s.key_enc, s.key_hint, s.connected_at,
-              (SELECT COALESCE(sum(u.characters), 0)::bigint FROM voice_usage_daily u WHERE u.organisation_id = $1 AND u.day BETWEEN $2::date AND $3::date) AS month_chars,
-              (SELECT COALESCE(sum(u.characters), 0)::bigint FROM voice_usage_daily u WHERE u.organisation_id = $1 AND u.day = $3::date AND u.key_source = 'organisation') AS org_today,
-              (SELECT COALESCE(sum(u.characters), 0)::bigint FROM voice_usage_daily u WHERE u.organisation_id = $1 AND u.day = $3::date AND u.key_source = 'environment') AS env_today
-         FROM (SELECT 1) one LEFT JOIN organisation_voice_secrets s ON s.organisation_id = $1`,
+    return db.one<{ month_chars: number; today_chars: number }>(
+      `SELECT COALESCE(sum(characters) FILTER (WHERE day BETWEEN $2::date AND $3::date), 0)::bigint AS month_chars,
+              COALESCE(sum(characters) FILTER (WHERE day = $3::date), 0)::bigint AS today_chars
+         FROM voice_usage_daily WHERE organisation_id = $1 AND day BETWEEN $2::date AND $3::date`,
       [ctx.org.id, `${today.slice(0, 8)}01`, today]);
   }));
   if (!row) return empty;
-  const own = row.key_enc ? decryptSecret(row.key_enc) : null;
-  const key: VoiceKey | null = own ? { apiKey: own, source: "organisation", keyRef: `org:${ctx.org.id}` } : env ? { apiKey: env, source: "environment", keyRef: "env" } : null;
-  const base: VoiceConnectionStatus = {
-    ...empty, ready: true,
-    source: key?.source ?? "none",
-    hint: own ? row.key_hint : null,
-    connectedAt: own ? row.connected_at : null,
-    workspaceMonth: Number(row.month_chars),
-  };
+  const base: VoiceConnectionStatus = { ...empty, ready: true, workspaceMonth: Number(row.month_chars), today: { used: Number(row.today_chars), share: NO_LIMIT } };
   if (!key) return base;
-  // History: only the workspace's own key is the workspace's to fix. Boredroom's key is Boredroom's (its log), never a
-  // workspace's warning (fix review, 9 October 2026).
-  let blocked = false;
-  let historyLeft = 0;
-  if (key.source === "organisation") {
-    const hash = keyHashOf(key.apiKey);
-    const h = await historyStateOf(ctx.org.id, hash).catch(() => ({ blocked: false, left: 0 }));
-    blocked = historyBlockedNow(blockKeyOf(key.keyRef, hash)) || h.blocked;
-    historyLeft = h.left;
-  }
-  const used = Number(key.source === "organisation" ? row.org_today : row.env_today);
   const refused = heldReason(key.keyRef) === "allowance_low";
   const st = await subscriptionFor(key);
-  if (!st.ok) return { ...base, monthError: st.reason, low: refused, today: { used, share: NO_LIMIT }, historyBlocked: blocked, historyLeft };
-  // On Boredroom's key the subscription is every workspace's together (and Boredroom's plan): never shown to one of them,
-  // only this workspace's own counters and whether the key has run out of credits (review, 9 October 2026).
-  return {
-    ...base,
-    month: key.source === "environment" ? null : { used: st.sub.used, limit: st.sub.limit, resetAt: st.sub.resetAt },
-    low: refused || outOfCredits(st.sub),
-    today: { used, share: NO_LIMIT },
-    historyBlocked: blocked,
-    historyLeft,
-  };
-}
-
-/** Why a key was refused, in words people can act on (contract B.3). Never ElevenLabs' own words or the key. */
-function keyRefusal(err: unknown): AppError {
-  const kind = err instanceof ElevenLabsError ? err.kind : "network";
-  const words =
-    kind === "key_rejected" ? "ElevenLabs didn't accept this key. Copy it again from your ElevenLabs profile, under API keys."
-    : kind === "missing_permissions" ? "This key can't read its usage. In ElevenLabs, give the key access to Text to Speech, Voices (read) and User (read), then try again."
-    : kind === "quota" ? "ElevenLabs says this key's plan has run out of credits this month. Try again after it resets, upgrade the plan in ElevenLabs, or use another key."
-    : "Couldn't reach ElevenLabs. Try again in a moment.";
-  return invalid(words, { apiKey: [words] });
-}
-
-/**
- * Connects the workspace's own ElevenLabs key: tested with ONE free request (GET /v1/user/subscription, which Settings
- * reads for the month's usage), then stored encrypted. Owners and HR (owner decision: "entered by owners/HR"). Audited with the hint only.
- */
-export async function setVoiceKey(ctx: OrgContext, input: VoiceKeyInput, verify: (apiKey: string) => Promise<Subscription> = (k) => getSubscription(k)): Promise<VoiceConnectionStatus> {
-  requireManager(ctx);
-  if (!(await withSystem((db) => schema0053Ready(db)))) throw notReady();
-  let sub: Subscription;
-  try { sub = await verify(input.apiKey); } catch (err) { throw keyRefusal(err); }
-  const hint = `…${input.apiKey.slice(-4)}`;
-  const keyRef = `org:${ctx.org.id}`;
-  await retryWithout0053(() => withSystem(async (db) => {
-    if (!(await schema0053Ready(db))) throw notReady();
-    await db.query(
-      `INSERT INTO organisation_voice_secrets(organisation_id, key_enc, key_hint, connected_at, updated_by, updated_at)
-       VALUES ($1, $2, $3, now(), $4, now())
-       ON CONFLICT (organisation_id) DO UPDATE SET key_enc = EXCLUDED.key_enc, key_hint = EXCLUDED.key_hint, connected_at = now(), updated_by = EXCLUDED.updated_by, updated_at = now()`,
-      [ctx.org.id, encryptSecret(input.apiKey), hint, ctx.membership.id]);
-    await audit(db, { organisationId: ctx.org.id, actorMembershipId: ctx.membership.id, action: "voice.connected", subjectType: "organisation", subjectId: ctx.org.id, metadata: { hint } });
-  }));
-  forgetKey(keyRef);
-  // The test's answer is this key's subscription: no second request for the status below.
-  subs.set(keyRef, { ...sub, fetchedAt: Date.now(), keyHash: keyHashOf(input.apiKey) });
-  return voiceConnectionStatus(ctx);
-}
-
-/** Removes the workspace's key: Boredroom's key is used again, or the computer voice without one. */
-export async function clearVoiceKey(ctx: OrgContext): Promise<VoiceConnectionStatus> {
-  requireManager(ctx);
-  await retryWithout0053(() => withSystem(async (db) => {
-    if (!(await schema0053Ready(db))) throw notReady();
-    const gone = await db.query(`DELETE FROM organisation_voice_secrets WHERE organisation_id = $1 RETURNING organisation_id`, [ctx.org.id]);
-    if (gone.length) await audit(db, { organisationId: ctx.org.id, actorMembershipId: ctx.membership.id, action: "voice.disconnected", subjectType: "organisation", subjectId: ctx.org.id });
-  }));
-  forgetKey(`org:${ctx.org.id}`);
-  return voiceConnectionStatus(ctx);
+  if (!st.ok) return { ...base, monthError: st.reason, low: refused };
+  return { ...base, low: refused || outOfCredits(st.sub) };
 }
 
 // ---- The speech token (D.1) ------------------------------------------------------------------------------------------------
@@ -691,7 +591,7 @@ function readForOffer(ctx: OrgContext, opts: { boredroomKeyOnly?: boolean } = {}
     if (!ctx.plan?.features?.AI_ASSISTANT) return null;
     const p = await personReads(ctx, todayLocal(ctx.org.timezone));
     if (!p || !p.chosen || p.voiceOff) return null;
-    const key = keyOf(ctx.org.id, p.keyEnc);
+    const key = keyOf();
     if (!key) return null;
     if (opts.boredroomKeyOnly && key.source !== "environment") return null;
     return p;
@@ -721,7 +621,7 @@ const UNAVAILABLE_WORDS: Record<NaturalVoiceReason, string> = {
   not_ready: "Natural voices need a database update first, so the computer voice is used.",
   no_voice: "No natural voice is chosen, so the computer voice is used.",
   voice_off: "Voice is switched off for this workspace.",
-  no_key: "Natural voices aren't set up for this workspace yet, so the computer voice is used.",
+  no_key: "Natural voices aren't available right now, so the computer voice is used.",
   key_rejected: "ElevenLabs refused the workspace's key, so the computer voice is used.",
   // ElevenLabs' own refusal: the key's plan has run out of credits this month (the only allowance there is).
   allowance_low: "The ElevenLabs plan has run out of credits for this month, so the computer voice is used until it resets or the plan is upgraded.",
@@ -779,7 +679,7 @@ export async function prepareSpeechIn(db: Db, ctx: OrgContext, body: SpeechInput
   if (!reads.ready) return refused(voiceUnavailable("not_ready"));
   if (!reads.chosen) return refused(voiceUnavailable("no_voice"));
   if (reads.voiceOff) return refused(voiceUnavailable("voice_off"));
-  const key = keyOf(ctx.org.id, reads.keyEnc);
+  const key = keyOf();
   if (!key) return refused(voiceUnavailable("no_key"));
   // A look's answer is never said on the workspace's own key (signSpeechToken), even if one was added since the offer.
   if (claims.boredroomKeyOnly && key.source !== "environment") return refused(voiceUnavailable("no_key"));
@@ -852,9 +752,7 @@ export const HISTORY_JOB_DELAY_MS = 180_000;
 export const HISTORY_BLOCKED_MS = 10 * 60_000;
 /** ...for a day at most, then what it held is counted as not deleted. */
 export const HISTORY_BLOCKED_ROUNDS = 144;
-/** Utterances not deleted are counted for owners and HR over this many days. */
-const HISTORY_LEFT_DAYS = 30;
-/** `last_error` of a job that could not delete its utterance (counted in Settings); never the words. */
+/** `last_error` of a job that could not delete its utterance (Boredroom's log); never the words. */
 const HISTORY_LEFT_PREFIX = "voice history: ";
 
 /**
@@ -969,17 +867,12 @@ function historyForgetOf(raw: Record<string, unknown>): HistoryForget | null {
   return { organisationId, keyRef, keyHash, historyItemId, requestId, voiceId, sinceUnix, ...(rounds > 0 ? { blockedRounds: Math.floor(rounds) } : {}) };
 }
 
-/** The key a keyRef names now (Boredroom's, or the workspace's own), or null. */
+/**
+ * The key a keyRef names now: Boredroom's ("env"), or null. A workspace's own key ("org:<id>", from a job queued before
+ * the owner's request, 27 October 2026) is never read again: the job ends as "the key was removed".
+ */
 async function apiKeyOf(keyRef: string): Promise<string | null> {
-  if (keyRef === "env") return envKey();
-  const orgId = /^org:([0-9a-f-]{36})$/i.exec(keyRef)?.[1];
-  if (!orgId) return null;
-  const enc = await read0053(() => withSystem(async (db) => {
-    if (!(await schema0053Ready(db))) return null;
-    const r = await db.maybeOne<{ key_enc: string }>(`SELECT key_enc FROM organisation_voice_secrets WHERE organisation_id = $1`, [orgId]);
-    return r?.key_enc ?? null;
-  }));
-  return enc ? decryptSecret(enc) : null;
+  return keyRef === "env" ? envKey() : null;
 }
 
 /**
@@ -1009,19 +902,6 @@ export async function runHistoryForgetJob(raw: Record<string, unknown>): Promise
     if (kind === "key_rejected") { await recordUndeleted(p, "key refused"); return; }
     throw new Error(`${HISTORY_LEFT_PREFIX}${kind}`);
   }
-}
-
-/**
- * For Settings: whether this key (by its hash) is waiting for History access (a job re-queued for it), and how many
- * utterances on it could not be deleted in the last 30 days. Zero and false before anything was queued.
- */
-async function historyStateOf(orgId: string, keyHash: string): Promise<{ blocked: boolean; left: number }> {
-  const r = await withSystem((db) => db.one<{ blocked: boolean | null; left: number }>(
-    `SELECT bool_or(state IN ('pending', 'running') AND payload ? 'blockedRounds') AS blocked,
-            count(*) FILTER (WHERE state IN ('failed', 'dead') AND last_error LIKE $3 AND created_at > now() - make_interval(days => $4))::int AS left
-       FROM jobs WHERE type = $5 AND payload->>'organisationId' = $1 AND payload->>'keyHash' = $2`,
-    [orgId, keyHash, `${HISTORY_LEFT_PREFIX}%`, HISTORY_LEFT_DAYS, HISTORY_JOB]));
-  return { blocked: !!r.blocked, left: Number(r.left) || 0 };
 }
 
 /** The whole utterance (the notch's `as: "base64"`: its bridge returns JSON only), at most 2 MB. */

@@ -9,13 +9,11 @@
  *    works offline and costs nothing. The response says which engine produced the proposals.
  *
  * Usage (owner decision, 8 October 2026: personal assistants, phase 3): every model call here is recorded in the usage
- * ledger (purpose "plan", or "test" for the connection test in Settings), and a planner call counts as one of the
+ * ledger (purpose "plan"; "test" rows are from the old connection test in Settings, gone since 27 October 2026), and a planner call counts as one of the
  * person's daily requests; past the limit the built-in parser reads the note and says so.
  */
 import { z } from "zod";
 import type { OrgContext } from "@/server/lib/api";
-import { withSystem } from "@/server/db";
-import { decryptSecret } from "@/server/lib/crypto";
 import { assignableMembers } from "@/server/services/tasks";
 import { aiAllowance, recordUsage, type ModelUsage } from "@/server/services/ai-usage";
 import { assistantProfiles } from "@/server/services/assistant-profile";
@@ -23,28 +21,22 @@ import { todayLocal, localTimeOn, addDays, weekdayOf } from "@/server/lib/time";
 
 export const DEFAULT_ASSISTANT_MODEL = "claude-opus-5-5";
 
-export type AssistantConnection = { apiKey: string; model: string; source: "organisation" | "environment" };
-
-/** The organisation's own key (Settings → AI assistant) wins; the server's ANTHROPIC_API_KEY is the fallback. */
-export async function resolveAssistant(orgId: string): Promise<AssistantConnection | null> {
-  const row = await withSystem((db) => db.maybeOne<{ assistant_key_enc: string | null; assistant_model: string | null }>(`SELECT assistant_key_enc, assistant_model FROM organisation_secrets WHERE organisation_id = $1`, [orgId]));
-  const orgKey = row?.assistant_key_enc ? decryptSecret(row.assistant_key_enc) : null;
-  if (orgKey) return { apiKey: orgKey, model: row?.assistant_model || process.env.ASSISTANT_MODEL || DEFAULT_ASSISTANT_MODEL, source: "organisation" };
-  if (process.env.ANTHROPIC_API_KEY) return { apiKey: process.env.ANTHROPIC_API_KEY, model: process.env.ASSISTANT_MODEL || DEFAULT_ASSISTANT_MODEL, source: "environment" };
-  return null;
-}
+export type AssistantConnection = { apiKey: string; model: string; source: "environment" };
 
 /**
- * Makes one tiny request with a candidate key so Settings can say "connected" only when it really works. With `ctx` (the
- * owner connecting the key) the call is recorded in the usage ledger as a connection test.
+ * Boredroom's own key, for every workspace (owner request, 27 October 2026: "remove every API key store … API keys stay on
+ * our back end"): ANTHROPIC_API_KEY and ASSISTANT_MODEL (claude-opus-5-5 by default). No workspace key is read any more,
+ * stored ones included (db/pending/0065 removes them); without the server's key the built-in helper answers.
  */
-export async function testAssistantKey(apiKey: string, model: string, ctx?: OrgContext): Promise<{ model: string; reply: string }> {
-  const { default: Anthropic } = await import("@anthropic-ai/sdk");
-  const client = new Anthropic({ apiKey, maxRetries: 1, timeout: 30_000 });
-  const res = await client.messages.create({ model, max_tokens: 40, messages: [{ role: "user", content: "Reply with one short friendly sentence confirming you are connected to Boredroom." }] });
-  if (ctx) await recordUsage(ctx, { purpose: "test", model: res.model ?? model, usage: res.usage });
-  const text = res.content.map((b) => (b.type === "text" ? b.text : "")).join("").trim();
-  return { model: res.model, reply: text || "Connected." };
+export async function resolveAssistant(orgId: string): Promise<AssistantConnection | null> {
+  void orgId;
+  return environmentAssistant();
+}
+
+/** The server's connection, or null without ANTHROPIC_API_KEY. */
+export function environmentAssistant(): AssistantConnection | null {
+  const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
+  return apiKey ? { apiKey, model: process.env.ASSISTANT_MODEL || DEFAULT_ASSISTANT_MODEL, source: "environment" } : null;
 }
 
 export const planRequestSchema = z.object({ text: z.string().trim().min(1).max(4000) });
@@ -59,7 +51,7 @@ export type PlanResult = { items: ProposedTodo[]; engine: "claude" | "builtin"; 
 
 type Person = { id: string; display_name: string };
 
-/** Whether an AI connection exists for this organisation (its own key or the server's). */
+/** Whether Boredroom's AI connection exists (the server's key; the same for every workspace). */
 export async function assistantConfigured(orgId: string): Promise<boolean> { return !!(await resolveAssistant(orgId)); }
 
 export async function planFromText(ctx: OrgContext, input: z.infer<typeof planRequestSchema>): Promise<PlanResult> {

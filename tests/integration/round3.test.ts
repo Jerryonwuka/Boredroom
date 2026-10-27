@@ -9,7 +9,8 @@ import { quickTodo, completeTask, clearPastTasks, assignableMembers } from "@/se
 import { myDay, notificationsView, reviewQueue } from "@/server/services/views";
 import { startSession, stopSession, currentSession } from "@/server/services/sessions";
 import { reviewSubmission } from "@/server/services/evidence";
-import { setAssistantKey, clearAssistantKey, assistantStatus } from "@/server/services/orgs";
+import { assistantStatus } from "@/server/services/orgs";
+import { encryptSecret } from "@/server/lib/crypto";
 import { planFromText, resolveAssistant } from "@/server/services/assistant";
 
 let a: CompanyFixture;
@@ -113,25 +114,26 @@ describe("the to-do assistant", () => {
   });
 });
 
-describe("connecting the organisation's own AI key", () => {
-  it("stores the key only after a successful test call, encrypted, readable by the server and owners only", async () => {
-    const okVerify = async (_k: string, model: string) => ({ model, reply: "Connected to Boredroom." });
-    const badVerify = async () => { throw Object.assign(new Error("invalid x-api-key"), { status: 401 }); };
-    await expect(setAssistantKey(a.employeeCtx, { apiKey: "sk-ant-test-0000000000000000" }, okVerify)).rejects.toMatchObject({ status: 403 });
-    await expect(setAssistantKey(a.ownerCtx, { apiKey: "sk-ant-test-0000000000000000" }, badVerify)).rejects.toMatchObject({ status: 422 });
-    expect((await assistantStatus(a.ownerCtx)).source).toBe(process.env.ANTHROPIC_API_KEY ? "environment" : "none");
-    const r = await setAssistantKey(a.ownerCtx, { apiKey: "sk-ant-test-0000000000000000", model: "claude-sonnet-5" }, okVerify);
-    expect(r.reply).toBe("Connected to Boredroom.");
-    const st = await assistantStatus(a.ownerCtx);
-    expect(st).toMatchObject({ source: "organisation", hint: "…0000", model: "claude-sonnet-5" });
-    const raw = await adminQuery<{ assistant_key_enc: string }>("SELECT assistant_key_enc FROM organisation_secrets WHERE organisation_id = $1", [a.ownerCtx.org.id]);
-    expect(raw[0].assistant_key_enc).not.toContain("sk-ant-test");
-    const conn = await resolveAssistant(a.ownerCtx.org.id);
-    expect(conn).toMatchObject({ apiKey: "sk-ant-test-0000000000000000", model: "claude-sonnet-5", source: "organisation" });
-    // Staff cannot read the secrets row at all.
-    const { withUser } = await import("@/server/db");
-    expect(await withUser(a.employeeCtx.user.profileId, (db) => db.query("SELECT 1 FROM organisation_secrets WHERE organisation_id = $1", [a.ownerCtx.org.id]))).toHaveLength(0);
-    await clearAssistantKey(a.ownerCtx);
-    expect((await assistantStatus(a.ownerCtx)).source).not.toBe("organisation");
+describe("Brenda's AI key is Boredroom's, for every workspace (owner request, 27 October 2026)", () => {
+  it("never reads a key a workspace stored before: the server's ANTHROPIC_API_KEY and ASSISTANT_MODEL, or none", async () => {
+    // A key left from before (db/pending/0065 removes them): ignored. Only while the table is still there.
+    const [t] = await adminQuery<{ ok: boolean }>(`SELECT to_regclass('public.organisation_secrets') IS NOT NULL AS ok`);
+    if (t.ok) await adminQuery(`INSERT INTO organisation_secrets(organisation_id, assistant_key_enc, assistant_key_hint, assistant_model) VALUES ($1, $2, '…0000', 'claude-sonnet-5')
+      ON CONFLICT (organisation_id) DO UPDATE SET assistant_key_enc = EXCLUDED.assistant_key_enc, assistant_model = EXCLUDED.assistant_model`,
+      [a.ownerCtx.org.id, encryptSecret("sk-ant-test-0000000000000000")]);
+    const saved = { key: process.env.ANTHROPIC_API_KEY, model: process.env.ASSISTANT_MODEL };
+    try {
+      delete process.env.ANTHROPIC_API_KEY;
+      expect(await resolveAssistant(a.ownerCtx.org.id)).toBeNull();
+      expect(await assistantStatus(a.ownerCtx)).toEqual({ source: "none", model: null });
+      process.env.ANTHROPIC_API_KEY = "sk-ant-server-key-for-tests-000000";
+      delete process.env.ASSISTANT_MODEL;
+      expect(await resolveAssistant(a.ownerCtx.org.id)).toEqual({ apiKey: "sk-ant-server-key-for-tests-000000", model: "claude-opus-5-5", source: "environment" });
+      expect(await assistantStatus(a.ownerCtx)).toEqual({ source: "environment", model: "claude-opus-5-5" });
+    } finally {
+      if (saved.key === undefined) delete process.env.ANTHROPIC_API_KEY; else process.env.ANTHROPIC_API_KEY = saved.key;
+      if (saved.model === undefined) delete process.env.ASSISTANT_MODEL; else process.env.ASSISTANT_MODEL = saved.model;
+      if (t.ok) await adminQuery("DELETE FROM organisation_secrets WHERE organisation_id = $1", [a.ownerCtx.org.id]);
+    }
   });
 });
