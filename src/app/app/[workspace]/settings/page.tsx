@@ -59,6 +59,10 @@ import { ASSISTANT_ITEM_WORDS } from "@/lib/assistant-items";
 import { ACT_WORDS, actStateOf } from "@/lib/act-mode";
 import { AbilitiesSettings } from "@/components/app/abilities-settings";
 import { PreferencesSettings } from "@/components/app/preferences-settings";
+// What Brenda has learned (owner decision, 28 October 2026).
+import { LearnedSettings } from "@/components/app/learned-settings";
+import { listLearned } from "@/server/services/learning";
+import type { LearnedList } from "@/lib/learning";
 import { abilitiesView } from "@/server/services/abilities";
 import { listPreferences } from "@/server/services/preferences";
 import { ABILITY_WORDS, type AbilitiesView } from "@/lib/abilities";
@@ -227,6 +231,8 @@ export default async function SettingsPage({ params, searchParams }: { params: P
   // The open section's explanatory notes, shown at the bottom of the page after "Every change is audited."
   let notes: ReactNode = null;
   if (section === "assistant") {
+    // What Brenda has learned (owner decision, 28 October 2026): read beside the rest; a failed read: the card reads it itself.
+    const learnedP = listLearned(ctx).catch((): LearnedList | null => null);
     const [a, activity, followUps, talk, mutes, ai, routines, quiet, abilities, preferences, natural, welcome, screenHelp, myScreen, macPerm] = await Promise.all([assistantProfiles(ctx), listActivity(ctx, { limit: 5 }), followUpPreference(ctx), assistantTalkPreferences(ctx), listMutes(ctx), aiConnected(ctx.org.id),
       // Phase 7a: the person's routines and quiet hours (ready: false before 0046). A failed read: the card reads it itself.
       listRoutines(ctx).catch(() => null), quietHoursFor(ctx).catch(() => null),
@@ -258,6 +264,8 @@ export default async function SettingsPage({ params, searchParams }: { params: P
         {/* What the assistant may do for the person, then how they like it done (owner decisions, 8–9 October 2026: phase 7c). */}
         <AbilitiesSettings orgSlug={ctx.org.slug} scope="personal" name={name} initial={abilities} />
         <PreferencesSettings orgSlug={ctx.org.slug} name={name} initial={preferences} />
+        {/* What the assistant learned from how the person uses it, right after what they told it (owner decision, 28 October 2026). */}
+        <LearnedSettings orgSlug={ctx.org.slug} name={name} timeZone={ctx.org.timezone} initial={await learnedP} />
         {/* Their own calendar and work apps (owner decisions, 22 October 2026: connectors), after "How I like things done". */}
         {apps?.ready ? <YourConnections orgSlug={ctx.org.slug} view={apps} name={name} timeZone={ctx.org.timezone} /> : null}
         {/* What the assistant does on a schedule, then when it keeps quiet (owner decision, 8 October 2026: phase 7a). */}

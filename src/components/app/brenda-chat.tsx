@@ -698,7 +698,13 @@ export function useBrendaChat({ orgSlug, keysActive = true, visible = true, onLe
     }
   }
 
-  const decline = (mi: number, pi: number) => mark(mi, pi, "Not done");
+  const decline = (mi: number, pi: number) => {
+    // What Brenda has learned (owner decision, 28 October 2026): "Not now" is one of the person's own signals; the card's
+    // signed token says which action. Fire and forget: nothing runs, and a failure changes nothing on screen.
+    const p = messages[mi]?.proposals?.[pi];
+    if (p?.kind === "confirm" && p.token) void api(`/api/orgs/${orgSlug}/brenda/learned/declined`, { method: "POST", body: { token: p.token }, retries: 0 }).catch(() => undefined);
+    mark(mi, pi, "Not done");
+  };
 
   /** Changes one of her done lines in place (its Undo spent or refused), unless New chat replaced that conversation. */
   const changeAction = (mine: number, mi: number, ai: number, change: (a: ChatAction) => ChatAction) => {

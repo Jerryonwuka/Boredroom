@@ -13,7 +13,7 @@ vi.mock("@/server/db", () => {
   return { withUser: refuse, withSystem: refuse, withWorker: refuse };
 });
 
-import { LOOK_REFUSAL, RULES, SCREEN_HELP_POLICY, TOOLS, lookSituation, pointKeyOf } from "@/server/services/copilot";
+import { LEARNING_RULES, LEARNING_TOOLS, LOOK_REFUSAL, RULES, SCREEN_HELP_POLICY, TOOLS, lookSituation, pointKeyOf } from "@/server/services/copilot";
 import { decideAct, type ActContext } from "@/server/services/act-decision";
 import { ASK_REASONS, whyStillAsking, type ActState } from "@/lib/act-mode";
 
@@ -23,9 +23,13 @@ describe("the cached prefix", () => {
   it("RULES and TOOLS are byte for byte what they were before screen help (the hashes of c3d0a04)", () => {
     // Connected apps (owner decisions, 22 October 2026: the cached prefix changes once): their rules and tools are
     // appended at the end; everything before them is still byte for byte what it was.
-    expect(RULES.endsWith(`\n${CONNECTOR_RULES}`)).toBe(true);
-    expect(sha(RULES.slice(0, RULES.length - CONNECTOR_RULES.length - 1))).toBe("a382a034ee96c7846dca689f57463d304dde426f7965fa0ed154c0efb086cc3b");
-    expect(sha(JSON.stringify(TOOLS.slice(0, -CONNECTOR_TOOLS.length)))).toBe("677790e21c61136b36bbbae087566a737c441b32fe4f5daefea46dc738b2146d");
+    // What Brenda has learned (owner decision, 28 October 2026): its rules and tool come after the connected apps', at
+    // the very end; everything before them is still byte for byte what it was.
+    const tail = `\n${CONNECTOR_RULES}\n${LEARNING_RULES}`;
+    expect(RULES.endsWith(tail)).toBe(true);
+    expect(sha(RULES.slice(0, RULES.length - tail.length))).toBe("a382a034ee96c7846dca689f57463d304dde426f7965fa0ed154c0efb086cc3b");
+    expect(TOOLS.slice(-LEARNING_TOOLS.length)).toEqual(LEARNING_TOOLS);
+    expect(sha(JSON.stringify(TOOLS.slice(0, -(CONNECTOR_TOOLS.length + LEARNING_TOOLS.length))))).toBe("677790e21c61136b36bbbae087566a737c441b32fe4f5daefea46dc738b2146d");
   });
 });
 

@@ -46,6 +46,8 @@ import { markdownToHtml } from "@/server/lib/markdown-html";
 import { aiAllowance, recordActUsage } from "@/server/services/ai-usage";
 import { assistantProfiles } from "@/server/services/assistant-profile";
 import { recordAction } from "@/server/services/brenda";
+// What Brenda has learned (owner decision, 28 October 2026): the person's yes or no to a task, its apps and formats.
+import { noteMacAnswer } from "@/server/services/learning";
 import { ownerWords } from "@/server/services/assistant-activity";
 import { createDoc } from "@/server/services/docs";
 import { desktopLook, isDesktopSession, onLiveCall, type LookV2Input } from "@/server/services/screen-help";
@@ -333,10 +335,14 @@ export async function answerTask(ctx: OrgContext, id: string, input: AnswerInput
   const name = yes ? await assistantName(ctx) : DEFAULT_ASSISTANT_NAME;
   const allowance = yes ? await aiAllowance(ctx).catch(() => null) : null;
   const words = typeof input.text === "string" ? input.text.trim().slice(0, ACT_LIMITS.confirmText) : "";
-  return tx(ctx, async (db): Promise<Out<AnswerResult>> => {
+  // What Brenda has learned (owner decision, 28 October 2026): what the task was (its kind, the apps it opens, the formats
+  // it writes; never a file's name, a folder or an address), noted once the answer is recorded.
+  let shape: { kind: string; apps: string[]; formats: string[] } | null = null;
+  const answered = await tx(ctx, async (db): Promise<Out<AnswerResult>> => {
     const r = await readRow(db, ctx, id);
     if (!r) return { err: fail(404, "ACT_NOT_FOUND", E.notFound) };
     if (r.status !== "proposed") return { err: fail(409, "ACT_ENDED", E.ended) };
+    shape = taskShape(r);
     const plan = r.kind === "plan";
     if (r.answer_passed) {
       await endRow(db, r.id, { status: "expired", reason: "expired", plan });
@@ -371,6 +377,21 @@ export async function answerTask(ctx: OrgContext, id: string, input: AnswerInput
     await endRow(db, r.id, { status: input.via === "timeout" ? "expired" : "said_no", reason, plan });
     return { ok: { status: "said_no" } };
   });
+  // A timeout or an unresolved answer is not the person's choice: only a real yes or no is noted.
+  const s = shape as { kind: string; apps: string[]; formats: string[] } | null;
+  if (s && (answered.status === "running" || input.via === "button" || input.via === "voice" || input.via === "typed")) noteMacAnswer(ctx, { yes: answered.status === "running", ...s });
+  return answered;
+}
+
+/** What Brenda has learned (owner decision, 28 October 2026): a task's kind, the apps it opens and the formats it writes. */
+function taskShape(r: Pick<TaskRow, "kind" | "steps" | "output_format">): { kind: string; apps: string[]; formats: string[] } {
+  const apps: string[] = [], formats: string[] = [];
+  if (r.output_format) formats.push(r.output_format);
+  for (const st of r.steps ?? []) {
+    if (st.kind === "open" && st.target === "app" && st.name) apps.push(st.name);
+    if ((st.kind === "folder" || st.kind === "file") && st.output?.format) formats.push(st.output.format);
+  }
+  return { kind: r.kind, apps, formats };
 }
 
 /** A plan's wall clock from the yes: 15 minutes when it reads files (a folder or file job), else 10 (contract D.5). */

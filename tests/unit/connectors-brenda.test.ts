@@ -4,7 +4,7 @@
  * quoted blocks. No database, no model.
  */
 import { describe, expect, it } from "vitest";
-import { ACTION_TOOLS, ALWAYS_CONFIRM, IMMEDIATE_TOOLS, RULES, SHARED_TOOL_CLASS, TOOLS } from "@/server/services/copilot";
+import { ACTION_TOOLS, ALWAYS_CONFIRM, IMMEDIATE_TOOLS, LEARNING_TOOL_NAMES, RULES, SHARED_TOOL_CLASS, TOOLS } from "@/server/services/copilot";
 import { AUTO_RULES, decideAct, type ActContext, type ActFacts } from "@/server/services/act-decision";
 import { whyStillAsking } from "@/lib/act-mode";
 import { CONNECTOR_TOOL_NAMES, CONNECTOR_READ_TOOLS, CONNECTOR_ACTION_TOOLS, CONNECTOR_ALWAYS_CONFIRM, isConnectorTool } from "@/server/connectors/brenda/tools";
@@ -17,9 +17,10 @@ const ask: ActContext = { ...auto, state: { ready: true, mode: "ask", allowed: t
 const turn = (o: Partial<{ tainted: boolean; look: boolean; onMac: boolean }> = {}) => ({ tainted: !!o.tainted, shared: false, look: !!o.look, onMac: !!o.onMac });
 
 describe("the tool list (§9.1)", () => {
+  // What Brenda has learned (owner decision, 28 October 2026): its one tool comes after them, last.
   it("eleven tools, in order, at the end of TOOLS", () => {
     expect(CONNECTOR_TOOL_NAMES).toEqual(["connected_apps", "my_calendar", "my_work_items", "find_in_apps", "read_app_item", "track_app_item", "hide_app_item", "calendar_action", "work_item_action", "notion_action", "post_to_channel"]);
-    expect(TOOLS.slice(-11).map((t) => t.name)).toEqual(CONNECTOR_TOOL_NAMES);
+    expect(TOOLS.slice(0, -LEARNING_TOOL_NAMES.length).slice(-11).map((t) => t.name)).toEqual(CONNECTOR_TOOL_NAMES);
     expect(new Set(TOOLS.map((t) => t.name)).size).toBe(TOOLS.length);
   });
   it("the acting tools can be confirmed; what others see always asks; reads are not actions", () => {

@@ -58,7 +58,12 @@ export const AI_BURST_MESSAGE = "That's a lot of requests in one minute. Wait a 
  * allowance; the call's id is its request id, so a retried recap counts once) and capped per organisation per day
  * (NOTES_LIMITS.recapsPerOrgPerDay). Before 0054 no call has notes, so nothing is recorded.
  */
-export const USAGE_PURPOSES = ["chat", "plan", "report", "summary", "test", "other", "followup", "mention", "loose_ends", "commitments", "standup", "call_recap"] as const;
+//
+// 'learning' (owner decision, 28 October 2026: "What Brenda has learned"; migration 0067 widens the CHECK the same way):
+// the cheap model reading one person's own signals to learn their habits, recorded for the workspace with no person (it
+// never spends anyone's allowance, and owners never see who has learning on). Before 0067 nothing is learned, so nothing
+// is recorded.
+export const USAGE_PURPOSES = ["chat", "plan", "report", "summary", "test", "other", "followup", "mention", "loose_ends", "commitments", "standup", "call_recap", "learning"] as const;
 export type UsagePurpose = (typeof USAGE_PURPOSES)[number];
 /**
  * Purposes that count towards the person's daily limit. A team report the person asked for counts too (review,
