@@ -118,7 +118,7 @@ export function LearnedSettings({ orgSlug, name, timeZone, initial }: {
                 })}
               </ul>
             ) : <p className="px-5 py-4 text-sm font-normal text-secondary">{enabled ? W.empty(name) : W.off(name)}</p>}
-            {items.length && !enabled ? <p className="px-5 pb-3 text-meta font-normal text-secondary">{W.off(name)}</p> : null}
+            {items.length && !enabled ? <p className="px-5 py-3 text-meta font-normal text-secondary">{W.off(name)}</p> : null}
             <div className="flex flex-wrap items-center justify-between gap-2 rounded-b-[15px] bg-fill-0 px-5 py-3">
               <span className="text-meta font-normal tabular-nums text-secondary">{W.count(items.length)}</span>
               <ConfirmButton title={W.forgetTitle(name)} description={W.forgetBody(name)} confirmLabel={W.forgetConfirm} pendingLabel="Forgetting…" onConfirm={forgetAll}
