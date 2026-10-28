@@ -68,6 +68,9 @@ async function turn(c: OrgContext, content: string) {
 
 beforeAll(async () => {
   await resetTestDatabase();
+  // 0067 is applied now (owner, 28 October 2026: "apply 0066 and 0067"), so the reset database has it: take its tables
+  // and guard away to start from a database without it, as before.
+  await adminQuery("DROP TABLE IF EXISTS assistant_learned, assistant_signals, assistant_learning CASCADE; DROP FUNCTION IF EXISTS assistant_learned_guard();");
   forget0067();
   a = await buildCompany("a", { names: { owner: "Grace Owner", hr: "Mary HR", manager: "David Lead", employee: "Ada Obi", employee2: "Ben Okafor" } });
   ada = a.employeeCtx; ben = a.employee2Ctx;
@@ -102,7 +105,7 @@ describe("before migration 0067", () => {
   });
 
   it("then 0067 applies cleanly, twice", async () => {
-    const sql = readFileSync(join(process.cwd(), "db", "pending", "0067_learned_habits.sql"), "utf8");
+    const sql = readFileSync(join(process.cwd(), "db", "migrations", "0067_learned_habits.sql"), "utf8");
     await adminQuery(sql);
     await adminQuery(sql);
     forget0067();

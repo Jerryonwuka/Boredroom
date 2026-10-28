@@ -55,7 +55,7 @@ import { GET as listGET } from "@/app/api/orgs/[org]/brenda/research/route";
 import { GET as fileGET } from "@/app/api/orgs/[org]/brenda/research/[id]/file/route";
 import { POST as stopPOST } from "@/app/api/orgs/[org]/brenda/research/[id]/stop/route";
 
-const sql = () => readFileSync(join(process.cwd(), "db", "pending", "0066_research.sql"), "utf8");
+const sql = () => readFileSync(join(process.cwd(), "db", "migrations", "0066_research.sql"), "utf8");
 const saved = { key: process.env.ANTHROPIC_API_KEY, daily: process.env.BRENDA_RESEARCH_DAILY, sw: process.env.BRENDA_RESEARCH, base: process.env.ANTHROPIC_BASE_URL };
 const usage = (searches = 0, fetches = 0) => ({ input_tokens: 5000, output_tokens: 800, cache_read_input_tokens: 1200, cache_creation_input_tokens: 300, server_tool_use: { web_search_requests: searches, web_fetch_requests: fetches } });
 let a: CompanyFixture;
@@ -95,6 +95,9 @@ const reportTurn: Msg = {
 beforeAll(async () => {
   for (const k of ["error", "warn", "log", "info"] as const) vi.spyOn(console, k).mockImplementation((...args: unknown[]) => { logs.push(args.map(String).join(" ")); });
   await resetTestDatabase();
+  // 0066 is applied now (owner, 28 October 2026: "apply 0066 and 0067"), so the reset database has it: take its table
+  // away to start from a database without it, as before (its purpose stays in the CHECK, which changes nothing here).
+  await adminQuery("DROP TABLE IF EXISTS research_reports CASCADE;");
   forget0066();
   process.env.ANTHROPIC_API_KEY = "test-env-key-not-real";
   delete process.env.ANTHROPIC_BASE_URL;

@@ -350,16 +350,22 @@ export async function chat(ctx: OrgContext, input: z.infer<typeof chatSchema>, o
   const result = await chatTurn(ctx, input, o);
   // What Brenda has learned (owner decision, 28 October 2026): the person's own words this turn, what ran and what waits
   // for Confirm, recorded after the answer (services/learning; nothing before 0067, with learning off or while
-  // impersonated); a run due after it learns in the same after().
-  noteLearning(ctx, "chat", input.messages, result);
+  // impersonated); a run due after it learns in the same after(). Chat from Brenda for Mac keeps no words (contract 0.3,
+  // 0b.8: nothing on the Mac keeps a request's words; merge, 28 October 2026), only what ran; fails closed like chatTurn.
+  const fromMac = await isDesktopSession(ctx).catch(() => true);
+  noteLearning(ctx, "chat", input.messages, result, fromMac);
   return result;
 }
 
 // ---- What Brenda has learned (owner decision, 28 October 2026) ----
-/** The turn's signals for learning: the person's last message (never other people's words: only role "user"). */
-function noteLearning(ctx: OrgContext, channel: "chat" | "look", messages: readonly { role: string; content: string }[], result: Pick<ChatResult, "actions" | "proposals">): void {
+/**
+ * The turn's signals for learning: the person's last message (never other people's words: only role "user"), and only
+ * from the web chat. A look's words and chat from the Mac keep none (contract 0.3, 0b.8, D.10: a look's question lives
+ * only in their Past chats; nothing on the Mac keeps a request's words), only what ran and what waits for Confirm.
+ */
+function noteLearning(ctx: OrgContext, channel: "chat" | "look", messages: readonly { role: string; content: string }[], result: Pick<ChatResult, "actions" | "proposals">, fromMac = false): void {
   const last = messages[messages.length - 1];
-  const words = last?.role === "user" ? last.content : null;
+  const words = channel === "chat" && !fromMac && last?.role === "user" ? last.content : null;
   try { noteTurn(ctx, { channel, words, actions: result.actions, proposals: result.proposals }); }
   catch (err) { console.warn(`[assistant] learning note skipped: ${(err as Error)?.message ?? err}`); }
 }

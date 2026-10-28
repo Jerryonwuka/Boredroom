@@ -257,7 +257,8 @@ export async function routeFront(mc: MacContext, body: FrontBody, write: NdjsonW
     const extra = decision.lane === "mac" ? decision.actions.slice(0, 5).map((a) => ({ kind: "mac" as const, detail: `${a.kind}${a.app ? ` in ${a.app}` : ""}` }))
       : decision.lane === "quick" ? [{ kind: "ran" as const, detail: decision.tool }]
       : decision.lane === "job" ? [{ kind: "mac" as const, detail: `job for the ${decision.helper} helper` }] : [];
-    noteTurn(ctx, { channel: "mac", words: req.text, extra });
+    // No words (contract 0.3, 0b.8: nothing on the Mac keeps a request's words; merge, 28 October 2026): the lane's facts only.
+    noteTurn(ctx, { channel: "mac", words: null, extra });
   }
   const record = recordOf(decision, req);
   if (record) later(() => retryWithout0060(() => withUser(ctx.user.profileId, (db) => insertRequest(db, ctx, record))).catch((err) => {

@@ -1,6 +1,6 @@
 /**
  * Migration 0066 (Brenda's research in the background; owner decision, 28 October 2026), read as text: it waits in
- * db/pending (never db/migrations), holds exactly what the code knows (formats, statuses, the ledger's purposes), keeps
+ * db/migrations (applied 28 October 2026), holds exactly what the code knows (formats, statuses, the ledger's purposes), keeps
  * the person's rows to them and the worker, never touches a role, and does not depend on 0065.
  */
 import { existsSync, readFileSync } from "node:fs";
@@ -9,13 +9,13 @@ import { describe, expect, it } from "vitest";
 import { USAGE_PURPOSES } from "@/server/services/ai-usage";
 import { RESEARCH_FORMATS, RESEARCH_STATUSES } from "@/lib/research";
 
-const file = join(process.cwd(), "db", "pending", "0066_research.sql");
+const file = join(process.cwd(), "db", "migrations", "0066_research.sql");
 const code = readFileSync(file, "utf8").split("\n").map((l) => l.replace(/--.*$/, "")).join("\n");
 const listed = (re: RegExp) => re.exec(code)?.[1].split(",").map((s) => s.trim().replace(/^'|'$/g, ""));
 
 describe("0066_research.sql", () => {
-  it("waits in db/pending, not db/migrations", () => {
-    expect(existsSync(join(process.cwd(), "db", "migrations", "0066_research.sql"))).toBe(false);
+  it("is applied (owner, 28 October 2026: \"apply 0066 and 0067\"): in db/migrations, no longer in db/pending", () => {
+    expect(existsSync(join(process.cwd(), "db", "pending", "0066_research.sql"))).toBe(false);
   });
   it("lists the formats, the statuses and every ledger purpose the code knows", () => {
     expect(listed(/research_reports_format_check CHECK \(format IN \(([^)]*)\)\)/)).toEqual([...RESEARCH_FORMATS]);

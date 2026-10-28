@@ -185,11 +185,11 @@ describe("her cached rules and tools", () => {
 });
 
 describe("migration 0067 as written", () => {
-  const pending = join(process.cwd(), "db", "pending", "0067_learned_habits.sql");
-  const sql = existsSync(pending) ? readFileSync(pending, "utf8") : "";
-  it("waits in db/pending, never in db/migrations", () => {
+  const applied = join(process.cwd(), "db", "migrations", "0067_learned_habits.sql");
+  const sql = existsSync(applied) ? readFileSync(applied, "utf8") : "";
+  it("is applied (owner, 28 October 2026: \"apply 0066 and 0067\"): in db/migrations, no longer in db/pending", () => {
     expect(sql.length).toBeGreaterThan(0);
-    expect(existsSync(join(process.cwd(), "db", "migrations", "0067_learned_habits.sql"))).toBe(false);
+    expect(existsSync(join(process.cwd(), "db", "pending", "0067_learned_habits.sql"))).toBe(false);
   });
   it("is private to the person, keeps the worker to the purge, and never changes a role", () => {
     const code = sql.replace(/--.*$/gm, "");

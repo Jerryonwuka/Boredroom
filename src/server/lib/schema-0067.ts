@@ -1,7 +1,7 @@
 /**
  * Migration 0067 ("What Brenda has learned"; owner decision, 28 October 2026: "I want her to learn from the person's usage
  * and interaction with her and interact with the person based on that") adds `assistant_learning`, `assistant_signals`
- * and `assistant_learned`, and 'learning' to ai_usage's purposes. It waits in db/pending for the owner's go-ahead, and
+ * and `assistant_learned`, and 'learning' to ai_usage's purposes. Applied 28 October 2026 (owner: "apply 0066 and 0067"); this still guards a database without it, and
  * the code runs before it (a deploy, the running dev server), so callers ask here first and fall back:
  * - nothing is recorded and nothing is learned; her situation carries nothing learned;
  * - Settings › Your assistant says "What Brenda has learned" is coming; its routes answer 503 NOT_READY;

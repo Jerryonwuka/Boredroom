@@ -1,6 +1,6 @@
 /**
  * Migration 0066 (Brenda's research in the background; owner decision, 28 October 2026: "Brenda, research X and give me
- * a PDF when you're done") waits in db/pending until the owner's go-ahead. It adds `research_reports` and the ai_usage
+ * a PDF when you're done") was applied on 28 October 2026 (owner: "apply 0066 and 0067"); this still guards a database without it. It adds `research_reports` and the ai_usage
  * purpose 'research'. The code runs before it is applied, so, as with 0061 and 0064, nothing probes for it: a query that
  * fails for want of its table is noted here (`noteMissing0066`, no query), and from then on, for ten minutes at a time,
  * `schema0066Missing()` is true and the research paths take their fallbacks:
