@@ -38,6 +38,8 @@ import { SPEECH_MAX_CHARS } from "@/lib/natural-voices";
 import { speakable } from "@/lib/assistant-speech/speakable";
 import { classify, riskKindOfAction } from "@/lib/mac-risk";
 import { rateLimited } from "@/server/lib/errors";
+// What Brenda has learned (owner decision, 28 October 2026): the person's own requests on their Mac.
+import { noteTurn } from "@/server/services/learning";
 
 const E = FRONT_WORDS.errors;
 export const frontFail = (status: number, code: string, message: string) => new AppError(status, code, message);
@@ -248,6 +250,15 @@ export async function routeFront(mc: MacContext, body: FrontBody, write: NdjsonW
   const decision: RouteDecision = run.stopReason === "refusal"
     ? { lane: "ask", question: FRONT_WORDS.router.refusal }
     : checkRoute(run.content, { abilities: body.context.abilities, pictures: body.context.pictures, checkEvery: mc.checkEvery });
+  // What Brenda has learned (owner decision, 28 October 2026): the person's request on their Mac, with the lane and, for
+  // what the Mac does itself, each action's kind and app (never an address or a file). A request that goes on to her
+  // chat or a look is noted there instead, once.
+  if (decision.lane !== "boredroom" && decision.lane !== "look" && decision.lane !== "look_screen") {
+    const extra = decision.lane === "mac" ? decision.actions.slice(0, 5).map((a) => ({ kind: "mac" as const, detail: `${a.kind}${a.app ? ` in ${a.app}` : ""}` }))
+      : decision.lane === "quick" ? [{ kind: "ran" as const, detail: decision.tool }]
+      : decision.lane === "job" ? [{ kind: "mac" as const, detail: `job for the ${decision.helper} helper` }] : [];
+    noteTurn(ctx, { channel: "mac", words: req.text, extra });
+  }
   const record = recordOf(decision, req);
   if (record) later(() => retryWithout0060(() => withUser(ctx.user.profileId, (db) => insertRequest(db, ctx, record))).catch((err) => {
     // A replay that raced this one: the first row stands.

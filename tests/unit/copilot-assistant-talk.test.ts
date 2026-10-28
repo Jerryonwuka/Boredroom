@@ -57,6 +57,7 @@ vi.mock("@/server/services/assistant-items", () => {
 
 import {
   ACTION_TOOLS, ALWAYS_CONFIRM, IMMEDIATE_TOOLS, RULES, SHARED_TOOL_CLASS, TOOLS, chatBuiltin, runBrendaTool, taintRefusal, type Proposal,
+  LEARNING_TOOL_NAMES,
 } from "@/server/services/copilot";
 import { ASSISTANT_ITEMS_NOTE, ASSISTANT_ITEMS_TAG, neutralise, renderAssistantItems } from "@/server/services/copilot-excerpt";
 import { verifyPayload } from "@/server/lib/crypto";
@@ -105,7 +106,7 @@ describe("her tools for other people's assistants", () => {
 
   it("has the five tools after the others, with their required fields", () => {
     // Connected apps (owner decisions, 22 October 2026) come after these, last: positions are counted without them.
-    const names = TOOLS.slice(0, -(CONNECTOR_TOOL_NAMES.length + RESEARCH_TOOL_NAMES.length)).map((x) => x.name);
+    const names = TOOLS.slice(0, -(CONNECTOR_TOOL_NAMES.length + RESEARCH_TOOL_NAMES.length + LEARNING_TOOL_NAMES.length)).map((x) => x.name);
     // Phase 7a (owner decision, 8 October 2026): the three routine tools come after them; phase 7c's four after those.
     expect(names.slice(-12, -7)).toEqual(["pass_message", "hand_over_request", "add_report_note", "assistant_inbox", "respond_to_item"]);
     expect(names.slice(-7, -4)).toEqual(["list_routines", "create_routine", "update_routine"]);

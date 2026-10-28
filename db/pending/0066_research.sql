@@ -74,7 +74,8 @@ CREATE POLICY research_reports_own ON research_reports FOR ALL
 GRANT SELECT, INSERT, UPDATE, DELETE ON research_reports TO boardroom_app;   -- DELETE: the worker's 90-day purge
 REVOKE TRUNCATE ON research_reports FROM boardroom_app;
 
--- 0054's purposes + 'research' (Brenda's research for the person; its own cap, not in the 150 a day).
+-- 0054's purposes + 'research' (Brenda's research for the person; its own cap, not in the 150 a day), and 0067's
+-- 'learning' too, so applying 0066 after 0067 never drops it (merge, 28 October 2026).
 ALTER TABLE ai_usage DROP CONSTRAINT IF EXISTS ai_usage_purpose_check;
 ALTER TABLE ai_usage ADD CONSTRAINT ai_usage_purpose_check
-  CHECK (purpose IN ('chat', 'plan', 'report', 'summary', 'test', 'other', 'followup', 'mention', 'loose_ends', 'commitments', 'standup', 'call_recap', 'research'));
+  CHECK (purpose IN ('chat', 'plan', 'report', 'summary', 'test', 'other', 'followup', 'mention', 'loose_ends', 'commitments', 'standup', 'call_recap', 'research', 'learning'));

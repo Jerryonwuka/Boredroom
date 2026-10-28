@@ -63,7 +63,12 @@ export const AI_BURST_MESSAGE = "That's a lot of requests in one minute. Wait a 
  * the worker (the report's id is its request id, so one report counts once). Not in LIMITED_PURPOSES: research has its
  * own cap (BRENDA_RESEARCH_DAILY, 5 a day). Before 0066 no research runs, so nothing is recorded.
  */
-export const USAGE_PURPOSES = ["chat", "plan", "report", "summary", "test", "other", "followup", "mention", "loose_ends", "commitments", "standup", "call_recap", "research"] as const;
+//
+// 'learning' (owner decision, 28 October 2026: "What Brenda has learned"; migration 0067 widens the CHECK the same way):
+// the cheap model reading one person's own signals to learn their habits, recorded for the workspace with no person (it
+// never spends anyone's allowance, and owners never see who has learning on). Before 0067 nothing is learned, so nothing
+// is recorded.
+export const USAGE_PURPOSES = ["chat", "plan", "report", "summary", "test", "other", "followup", "mention", "loose_ends", "commitments", "standup", "call_recap", "research", "learning"] as const;
 export type UsagePurpose = (typeof USAGE_PURPOSES)[number];
 /**
  * Purposes that count towards the person's daily limit. A team report the person asked for counts too (review,

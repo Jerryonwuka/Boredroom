@@ -31,6 +31,9 @@ export const PURPOSE_LABEL: Record<UsagePurpose, string> = {
   call_recap: "Call notes",
   // "research": Brenda's research in the background (owner decision, 28 October 2026).
   research: "Research",
+  // "learning": what assistants learned from how people use them, for the workspace with no person (owner decision,
+  // 28 October 2026: "What Brenda has learned").
+  learning: "Learning habits",
 };
 
 const exact = new Intl.NumberFormat("en-GB");

@@ -11,6 +11,9 @@
  * and that always asks (remember_preference, even when they act without asking; never in a turn holding other people's
  * words).
  *
+ * What the assistant notices from how the person uses it is kept apart, as learned habits (owner decision, 28 October
+ * 2026: lib/learning, "What Brenda has learned"): never added to this list, and this list always wins over them.
+ *
  * Client-safe: imports nothing.
  */
 

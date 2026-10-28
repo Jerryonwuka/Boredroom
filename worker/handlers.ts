@@ -388,6 +388,11 @@ const purgeExpired: Handler = async () => {
   // Brenda for Mac, phase 2 (owner request and permission rule, 12 October 2026; contract D.12): a task's note goes 30
   // days after it ended; a proposal nobody answered expires; a task still live past its wall clock is stopped. The
   // person's words go with every end. No-op before 0058. Counts only in the log, never a word or an id.
+  // What Brenda has learned (owner decision, 28 October 2026): the person's signals go after 30 days. No-op before 0067.
+  // Counts only in the log.
+  const { purgeSignals } = await import("../src/server/services/learning");
+  await purgeSignals().then((r) => { if (r.deleted) console.log(`[worker] learning signals deleted: ${r.deleted}`); })
+    .catch((err) => console.error("[worker] purging learning signals", (err as { code?: string })?.code ?? "error"));
   const { purgeTasks } = await import("../src/server/services/act");
   await purgeTasks().then((r) => { if (r.deleted || r.expired || r.stopped) console.log(`[worker] tasks on Macs: ${JSON.stringify(r)}`); })
     .catch((err) => console.error("[worker] purging tasks on Macs", (err as { code?: string })?.code ?? "error"));

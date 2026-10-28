@@ -94,7 +94,9 @@ const LOOK_ALIKE: Record<string, string> = {
 export const TAG_WORDS = ["conversationexcerpt", "messagesearchresults", "followuprequest", "followupfacts", "theirreply", "followupanswers", "assistantitems",
   "looseends", "commitments", "waitingon", "messagestoclassify", "participants", "standup", "stylepreferences", "preferences",
   // Security audit, 23 October 2026 (issue 5): a document's text reaches her only inside <document_text> (read_doc).
-  "documenttext"];
+  "documenttext",
+  // What Brenda has learned (owner decision, 28 October 2026): the person's learned habits reach her inside <learned_habits>.
+  "learnedhabits"];
 /** NFKC (full-width and other compatibility forms), lower case, look-alike letters folded, invisible characters dropped. */
 const fold = (s: string) => s.normalize("NFKC").toLowerCase().replace(/[\u0261\u0370-\u03FF\u0400-\u04FF]/g, (ch) => LOOK_ALIKE[ch] ?? ch).replace(/\p{Cf}/gu, "");
 /** What follows a "<", as letters only. */

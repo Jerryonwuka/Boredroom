@@ -5,7 +5,7 @@
  */
 import { inflateRawSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
-import { RULES, SHARED_TOOL_CLASS, TOOLS, ACTION_TOOLS, IMMEDIATE_TOOLS } from "@/server/services/copilot";
+import { LEARNING_RULES, LEARNING_TOOL_NAMES, RULES, SHARED_TOOL_CLASS, TOOLS, ACTION_TOOLS, IMMEDIATE_TOOLS } from "@/server/services/copilot";
 import { RESEARCH_RULE, RESEARCH_TOOL_NAMES, isResearchTool, runResearchTool } from "@/server/research/brenda-tools";
 import { researchDailyLimit, researchSwitchedOn } from "@/server/research/service";
 import { BUDGET_SPENT, RESEARCH_SYSTEM, stepParams, userPrompt } from "@/server/research/run";
@@ -20,12 +20,12 @@ import type { OrgContext } from "@/server/lib/api";
 const tool = (name: string) => TOOLS.find((t) => t.name === name) as { name: string; description: string; input_schema: { properties: Record<string, { enum?: string[] }>; required: string[] } } | undefined;
 
 describe("the tools and the rule", () => {
-  it("two tools, in TOOLS once each, last (after the connected apps: everything before stays byte for byte)", () => {
+  it("two tools, in TOOLS once each, after the connected apps (everything before stays byte for byte; what Brenda has learned comes last)", () => {
     expect(RESEARCH_TOOL_NAMES).toEqual(["start_research", "research_status"]);
     const names = TOOLS.map((t) => t.name);
     expect(new Set(names).size).toBe(names.length);
-    expect(names.slice(-3)).toEqual(["post_to_channel", "start_research", "research_status"]);
-    expect(RULES.endsWith(`\n${RESEARCH_RULE}`)).toBe(true);
+    expect(names.slice(0, -LEARNING_TOOL_NAMES.length).slice(-3)).toEqual(["post_to_channel", "start_research", "research_status"]);
+    expect(RULES.endsWith(`\n${RESEARCH_RULE}\n${LEARNING_RULES}`)).toBe(true);
     expect(isResearchTool("start_research") && isResearchTool("research_status") && !isResearchTool("create_doc")).toBe(true);
   });
   it("start_research takes the topic, an optional focus and the format (pdf, docx, md)", () => {

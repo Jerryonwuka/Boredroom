@@ -62,6 +62,7 @@ vi.mock("@/server/services/preferences", () => ({
 import {
   ACTION_TOOLS, ALWAYS_CONFIRM, IMMEDIATE_TOOLS, NON_INTERACTIVE_SESSIONS, PREFERENCE_NOT_FOUND, PREFERENCE_NOT_OWN_WORDS, PREFERENCE_TAINTED, RULES, SHARED_TOOL_CLASS, TAINT_ERROR, TOOLS,
   chatBuiltin, confirmAction, phase7cSituation, runBrendaTool, taintRefusal, type Proposal,
+  LEARNING_TOOL_NAMES,
 } from "@/server/services/copilot";
 import { AUTO_RULES, type ActContext } from "@/server/services/act-decision";
 import { TAG_WORDS, neutralise } from "@/server/services/copilot-excerpt";
@@ -123,7 +124,7 @@ describe("the registry and the sets", () => {
 
   it("has the four tools last, with the contract's required fields, and every tool one thread class", () => {
     // Connected apps (owner decisions, 22 October 2026) come after these, last: positions are counted without them.
-    const names = TOOLS.slice(0, -(CONNECTOR_TOOL_NAMES.length + RESEARCH_TOOL_NAMES.length)).map((x) => x.name);
+    const names = TOOLS.slice(0, -(CONNECTOR_TOOL_NAMES.length + RESEARCH_TOOL_NAMES.length + LEARNING_TOOL_NAMES.length)).map((x) => x.name);
     expect(names.slice(-4)).toEqual(NEW);
     expect(tool("standup")?.input_schema.required).toEqual([]);
     expect(tool("standup_action")?.input_schema.required).toEqual(["entryId", "action"]);

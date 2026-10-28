@@ -65,7 +65,7 @@ vi.mock("@/server/services/routine-templates", async (importOriginal) => ({
 }));
 
 import { CONSENT_RULE, READBACK, READBACK_WORDS, cleanReadback, members, shownLines } from "@/lib/confirm-readback";
-import { NON_INTERACTIVE_SESSIONS, RULES, SHARED_TOOL_CLASS, TOOLS, ACTION_TOOLS, ALWAYS_CONFIRM, IMMEDIATE_TOOLS, confirmAction, prepareConfirm, runBrendaTool, taintRefusal, type Proposal } from "@/server/services/copilot";
+import { LEARNING_TOOL_NAMES, NON_INTERACTIVE_SESSIONS, RULES, SHARED_TOOL_CLASS, TOOLS, ACTION_TOOLS, ALWAYS_CONFIRM, IMMEDIATE_TOOLS, confirmAction, prepareConfirm, runBrendaTool, taintRefusal, type Proposal } from "@/server/services/copilot";
 import { AUTO_RULES, type ActContext } from "@/server/services/act-decision";
 import { createConversationSchema, stripTokens } from "@/server/services/brenda-history";
 import type { ActState } from "@/lib/act-mode";
@@ -138,7 +138,7 @@ describe("the consent rule (G.2)", () => {
 describe("the routine tools", () => {
   it("are defined as the contract says, and every tool has one thread class", () => {
     // Connected apps (owner decisions, 22 October 2026) come after these, last: positions are counted without them.
-    const names = TOOLS.slice(0, -(CONNECTOR_TOOL_NAMES.length + RESEARCH_TOOL_NAMES.length)).map((x) => x.name);
+    const names = TOOLS.slice(0, -(CONNECTOR_TOOL_NAMES.length + RESEARCH_TOOL_NAMES.length + LEARNING_TOOL_NAMES.length)).map((x) => x.name);
     // Phase 7c (owner decisions, 8–9 October 2026): the standup and preference tools come after them.
     expect(names.slice(-7, -4)).toEqual(["list_routines", "create_routine", "update_routine"]);
     expect(names.slice(-4)).toEqual(["standup", "standup_action", "remember_preference", "forget_preference"]);

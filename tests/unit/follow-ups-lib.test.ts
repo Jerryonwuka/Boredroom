@@ -176,7 +176,7 @@ describe("migration 0039", () => {
     // Phase 7b (owner decision, 8 October 2026): 0048 adds 'loose_ends' and 'commitments' (loops-migration.test.ts).
     // Phase 7c (owner decisions, 8–9 October 2026): 0050 adds 'standup' (loops-migration.test.ts).
     // Phase 8 (owner decisions, 8 October 2026): 0054 adds 'call_recap' (loops-migration.test.ts).
-    expect(listed(/ai_usage_purpose_check CHECK \(purpose IN \(([^)]*)\)\)/)).toEqual(USAGE_PURPOSES.filter((p) => p !== "mention" && p !== "loose_ends" && p !== "commitments" && p !== "standup" && p !== "call_recap" && p !== "research"));
+    expect(listed(/ai_usage_purpose_check CHECK \(purpose IN \(([^)]*)\)\)/)).toEqual(USAGE_PURPOSES.filter((p) => p !== "mention" && p !== "loose_ends" && p !== "commitments" && p !== "standup" && p !== "call_recap" && p !== "research" && p !== "learning"));
     expect(LIMITED_PURPOSES).toContain("followup");
     expect(code).toMatch(new RegExp(`char_length\\(question\\) BETWEEN 1 AND ${FOLLOW_UP_LIMITS.questionMax}`));
     expect(code).toMatch(new RegExp(`char_length\\(reply_note\\) BETWEEN 1 AND ${FOLLOW_UP_LIMITS.noteMax}`));

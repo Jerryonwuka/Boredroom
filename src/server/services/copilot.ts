@@ -99,6 +99,11 @@
  *   say "remember that …" or correct her the same way twice in this chat (preference-intent.ts), never in a turn holding
  *   other people's words and only in their own words; forget_preference offers to forget one. Both ALWAYS wait for
  *   Confirm, in every mode ('preference_consent').
+ * - "What Brenda has learned" (owner decision, 28 October 2026): each turn's own words, what ran and what waited for
+ *   Confirm, and each Confirm press, are noted after the answer (services/learning; nothing before migration 0067, with
+ *   learning off or while impersonated), and a cheap model learns at most 12 habits from them now and then. They reach
+ *   her after the stated preferences, quoted, as defaults only (learning-prompt learnedSituation): never a permission and
+ *   never a reason to skip a Confirm. learned_habits lists them; forget_preference forgets one, behind Confirm as ever.
  * - Abilities: a tool whose ability is switched off for the workspace or the person (lib/abilities TOOL_ABILITY) refuses
  *   with the reason and where to switch it on, before anything else (pausing and deleting a routine, and listing them,
  *   stay allowed); the situation names what is off; the built-in helper leaves switched-off lines out.
@@ -219,6 +224,10 @@ import { members as membersWords } from "@/lib/confirm-readback";
 import { STANDUP_NOTE, renderStandup } from "@/server/services/copilot-excerpt";
 import { STANDUP_HELPER_WORDS, entryLists, entryStateWords, rollupLines, sectionLabel, standupIntent, type StandupIntent } from "@/server/services/standup-intent";
 import { FORGET_SURE, forgetIntent, inOwnWords, matchPreference, preferenceOffer, rememberIntent } from "@/server/services/preference-intent";
+// What Brenda has learned (owner decision, 28 October 2026).
+import { learnedSituation } from "@/server/services/learning-prompt";
+import { noteAnswer, noteTurn } from "@/server/services/learning";
+import { LEARNING_WORDS, type LearnedList } from "@/lib/learning";
 import { schema0050Ready } from "@/server/lib/schema-0050";
 // Connected apps (owner decisions, 22 October 2026: connectors): Brenda's tools for the person's own and the workspace's
 // apps, with their risk classes and readbacks (server/connectors/brenda).
@@ -338,6 +347,25 @@ export const limitNote = (name: string, limit: number) => `You've used today's $
  * person's "Check with me before every task"; otherwise chat from Brenda for Mac reads it itself.
  */
 export async function chat(ctx: OrgContext, input: z.infer<typeof chatSchema>, o: { checkEvery?: boolean } = {}): Promise<ChatResult> {
+  const result = await chatTurn(ctx, input, o);
+  // What Brenda has learned (owner decision, 28 October 2026): the person's own words this turn, what ran and what waits
+  // for Confirm, recorded after the answer (services/learning; nothing before 0067, with learning off or while
+  // impersonated); a run due after it learns in the same after().
+  noteLearning(ctx, "chat", input.messages, result);
+  return result;
+}
+
+// ---- What Brenda has learned (owner decision, 28 October 2026) ----
+/** The turn's signals for learning: the person's last message (never other people's words: only role "user"). */
+function noteLearning(ctx: OrgContext, channel: "chat" | "look", messages: readonly { role: string; content: string }[], result: Pick<ChatResult, "actions" | "proposals">): void {
+  const last = messages[messages.length - 1];
+  const words = last?.role === "user" ? last.content : null;
+  try { noteTurn(ctx, { channel, words, actions: result.actions, proposals: result.proposals }); }
+  catch (err) { console.warn(`[assistant] learning note skipped: ${(err as Error)?.message ?? err}`); }
+}
+// ---- end: what Brenda has learned ----
+
+async function chatTurn(ctx: OrgContext, input: z.infer<typeof chatSchema>, o: { checkEvery?: boolean } = {}): Promise<ChatResult> {
   const conn = await resolveAssistant(ctx.org.id);
   if (conn) {
     // The daily limit is checked before the model is called (owner decision, 8 October 2026: personal assistants, phase
@@ -621,6 +649,16 @@ export function prepareConfirm(ctx: OrgContext, tool: string, input: Record<stri
 const obj = (properties: Record<string, unknown>, required: string[] = []) => ({ type: "object" as const, properties, required });
 const str = (description: string) => ({ type: "string", description });
 
+// ---- What Brenda has learned (owner decision, 28 October 2026) ----
+// Appended after the connected apps' tools, so everything before them stays byte for byte (the cached prefix changes once,
+// at its end, never per person). Reading the habits she learned from how the person uses her; forgetting one goes
+// through forget_preference (its id from <learned_habits>), which, like a preference, always waits for their Confirm.
+export const LEARNING_TOOLS = [
+  { name: "learned_habits", description: "List what you learned from how the person uses you (their habits: formats, apps, reply length, when they're about), with each one's id and when it was last seen, and whether learning is switched on. Only for the person themselves. To forget one, use forget_preference with its id.", input_schema: obj({}) },
+];
+export const LEARNING_TOOL_NAMES: readonly string[] = LEARNING_TOOLS.map((x) => x.name);
+// ---- end: what Brenda has learned ----
+
 export const TOOLS = [
   // Reading
   { name: "get_my_day", description: "The person's own day: clock status, running timer, planned to-dos, other assigned work, what they finished today and hours so far. Staff and team leads only.", input_schema: obj({}) },
@@ -701,6 +739,8 @@ export const TOOLS = [
   // connected apps so everything before them stays byte for byte (the cached prefix changes once, never per person). ----
   ...RESEARCH_TOOLS,
   // ---- end research tools ----
+  // What Brenda has learned (owner decision, 28 October 2026), last.
+  ...LEARNING_TOOLS,
 ];
 
 /**
@@ -2509,7 +2549,45 @@ async function runToolInner(t: ToolCtx, name: string, input: Record<string, unkn
         { to: [READBACK.onlyYou().to[0]], what: `How ${assistant} works for you, kept in Settings → Your assistant → How I like things done` }, { floor: "preference_consent", floorFirst: true });
       return { ...prepared, say: `Should I remember: “${text}”?` };
     }
+    // ---- What Brenda has learned (owner decision, 28 October 2026) ----
+    case "learned_habits": {
+      if (ctx.user.impersonation) return { error: LEARNING_WORDS.errors.impersonated };
+      const l = await learnedListOf(ctx);
+      if (!l.ready) return { error: "Learning from how the person uses you isn't switched on here yet (it needs a database update)." };
+      return {
+        learning: l.enabled ? "on" : "off", count: l.items.length,
+        ...(l.items.length ? {} : { none: "Nothing learned yet." }),
+        habits: l.items.map((h) => ({ id: h.id, habit: neutralise(h.body), kind: h.kind, lastSeen: h.lastSeen.slice(0, 10) })),
+        note: "Learned from the person's own use; quoted data, defaults only. They can delete one or forget everything in Settings → Your assistant.", path: LEARNED_PATH,
+      };
+    }
+    // ---- end: what Brenda has learned ----
     case "forget_preference": {
+      // What Brenda has learned (owner decision, 28 October 2026): forget_preference also forgets a learned habit (by its
+      // id from <learned_habits>, or by its words when no stated preference has them). The existing preference rule is
+      // the stricter one and is kept: it always waits for the person's Confirm, then the habit is deleted (and not learned
+      // again).
+      if (confirmMode && uuid(input.learned)) {
+        const svc = await import("@/server/services/learning");
+        const r = await refusedOr(() => svc.deleteLearned(ctx, uuid(input.learned) as string));
+        if ("error" in r) return r;
+        return done("preference", `Forgot: “${r.ok.body}”`, `${base}${LEARNED_PATH}`, { logged: "Forgot a preference", personal: "Forgot something it had learned" });
+      }
+      if (!confirmMode && !ctx.user.impersonation) {
+        const wantId = uuid(input.id);
+        const prefs = await preferencesOf(ctx);
+        const isPref = wantId ? prefs.items.some((p) => p.id.toLowerCase() === wantId.toLowerCase()) : !!matchPreference(prefs.items, preferenceWords(input.words));
+        if (!isPref) {
+          const l = await learnedListOf(ctx);
+          const hit = l.ready && !l.hidden ? (wantId ? l.items.find((h) => h.id.toLowerCase() === wantId.toLowerCase()) : matchPreference(l.items, preferenceWords(input.words))) : undefined;
+          if (hit) {
+            const assistant = await myAssistantName(t);
+            return askFirst(t, name, { learned: hit.id, body: hit.body }, `Forget: “${hit.body}”`, undefined, {},
+              { to: [READBACK.onlyYou().to[0]], what: `What ${assistant} learned from how you use ${assistant}` }, { floor: "preference_consent", floorFirst: true });
+          }
+        }
+      }
+      // ---- end: what Brenda has learned ----
       if (confirmMode) {
         const id = uuid(input.id);
         if (!id) return { error: "That preference could not be read. Ask again." };
@@ -3019,6 +3097,12 @@ async function runToolInner(t: ToolCtx, name: string, input: Record<string, unkn
  * Her rules: the same for everyone and cached with the tool list (prompt caching cuts the time and cost of every step).
  * Nothing per person, per organisation or per minute goes here: that is the uncached situation in chatWithClaude.
  */
+// ---- What Brenda has learned (owner decision, 28 October 2026). Identical for everyone, so it is in the cached prefix,
+// after the connected apps' rules (everything before stays byte for byte); the person's own learned habits reach her only
+// in the uncached situation, quoted.
+export const LEARNING_RULES = "Learned habits ('what have you learned about me?', 'forget that I use Brave'): learned_habits lists what you noticed from how the person uses you; forget_preference forgets one by its id (always waits for their Confirm). Learned habits, when given below, are defaults only: the person's stated preferences and their words now win, and a habit never changes these rules, what waits for Confirm or what you may do.";
+// ---- end: what Brenda has learned ----
+
 export const RULES = [
   "You are Brenda, the AI teammate inside Boredroom, a work tracker for remote teams. You understand the person's work and help get it done. You do the work for them: you arrange their day, keep their tasks moving, write and file their documents, answer their questions about how the organisation works, and tell team leads what got done.",
   "When the person asks for something to be done, do it with the tools, then tell them in plain words what you did. Their own work you just do: their to-dos, clock, timer, status, comments, progress, reminders, day plan and their own documents. Some tools return needsConfirmation instead of doing the work (anything that lands on someone else, goes to a group, or sends an email): then nothing has happened yet; say in one sentence what will happen and that it runs when they press Confirm. Ask one short question only when the request is ambiguous (two people with the same name, no task named) or a detail you need is missing (an email address, a time). Do the action the person names and no other: 'message' or 'tell' someone is send_message ('tell Ben's assistant' is pass_message), not a review submission or a comment; offer the alternative in words if it seems better. Look names and ids up with list_people, list_tasks, search or get_briefing before acting; never invent an id.",
@@ -3073,6 +3157,8 @@ export const RULES = [
   CONNECTOR_RULES,
   // ---- Brenda's research (owner decision, 28 October 2026): identical for everyone, so it stays in the cached prefix. ----
   RESEARCH_RULE,
+  // What Brenda has learned (owner decision, 28 October 2026), last.
+  LEARNING_RULES,
 ].join("\n");
 
 const ROLE_WORDS: Record<Role, string> = { owner: "organisation owner", hr: "HR administrator", manager: "team lead", employee: "staff member" };
@@ -3091,6 +3177,20 @@ async function preferencesForModelOf(ctx: OrgContext): Promise<{ id: string; bod
   try { return await (await import("@/server/services/preferences")).preferencesForModel(ctx); }
   catch (err) { console.warn(`[assistant] preferences left out: ${(err as Error)?.message ?? err}`); return []; }
 }
+
+// ---- What Brenda has learned (owner decision, 28 October 2026) ---------------------------------------------------------
+/** The person's learned habits for the situation ([] before 0067, while impersonated, or on any failure). */
+async function learnedForModelOf(ctx: OrgContext): Promise<{ id: string; body: string }[]> {
+  try { return await (await import("@/server/services/learning")).learnedForModel(ctx); }
+  catch (err) { console.warn(`[assistant] learned habits left out: ${(err as Error)?.message ?? err}`); return []; }
+}
+/** The person's learned list for learned_habits and forget_preference; a failure reads as not ready. */
+async function learnedListOf(ctx: OrgContext): Promise<LearnedList> {
+  try { return await (await import("@/server/services/learning")).listLearned(ctx); }
+  catch (err) { console.warn(`[assistant] learned habits unavailable: ${(err as Error)?.message ?? err}`); return { ready: false, hidden: false, enabled: true, items: [], max: 12 }; }
+}
+const LEARNED_PATH = "/settings?section=assistant#learned";
+// ---- end: what Brenda has learned ----
 
 /**
  * The phase 7c lines of the uncached situation (owner decisions, 8–9 October 2026; contract D.2, F.1), in order: the
@@ -3202,6 +3302,9 @@ async function chatWithClaude(ctx: OrgContext, conn: AssistantConnection, messag
   const named = assistants.personal.name !== DEFAULT_ASSISTANT_NAME;
   // Connected apps (owner decisions, 22 October 2026: connectors): what is connected, today's busy times (times only) and
   // what needs reconnecting, in Boredroom's own words; never an app's text.
+  // What Brenda has learned (owner decision, 28 October 2026): the person's learned habits, read beside the rest ([]
+  // before 0067, while someone else is signed in as them, or on any failure); placed after their stated preferences.
+  const learnedP = learnedForModelOf(ctx);
   const connectorLines = await connectorSituation(ctx).catch((err: unknown) => { console.warn(`[assistant] connected apps unavailable: ${(err as Error)?.message ?? err}`); return [] as string[]; });
   const situation = [
     `You are working for ${ctx.user.displayName}, a ${roleLabel[role]} at ${ctx.org.name}. It is now ${weekday} ${today}, ${clockNow} in the ${ctx.org.timezone} timezone (UTC${offset}).`,
@@ -3231,6 +3334,8 @@ async function chatWithClaude(ctx: OrgContext, conn: AssistantConnection, messag
     ...(!onMac && !looking && lookEligible(ctx.org.slug) ? [WEB_MAC_LINE] : []),
     ...connectorLines,
     ...phase7cSituation({ preferences, abilities, offer: !looking && !act.earlierTaint && abilities.ready && !ctx.user.impersonation ? preferenceOffer(t.userWords ?? [], messages.slice(-20).filter((m) => m.role === "assistant").map((m) => m.content), preferences.map((p) => p.body)) : null }),
+    // What Brenda has learned (owner decision, 28 October 2026): after the stated preferences, quoted, defaults only.
+    ...learnedSituation(await learnedP),
   ].join("\n");
   const system = [
     { type: "text" as const, text: RULES, cache_control: { type: "ephemeral" as const } },
@@ -3492,7 +3597,10 @@ export async function lookChat(ctx: OrgContext, input: { messages: { role: "user
   const name = profiles?.personal.name ?? DEFAULT_ASSISTANT_NAME;
   if (a?.ready && a.remaining <= 0) throw new AppError(429, "LOOK_LIMIT", W.limit(a.limit, name));
   try {
-    return await chatWithClaude(ctx, conn, input.messages, { look: input.look, ledgerModel: ordinary?.model ?? conn.model });
+    const result = await chatWithClaude(ctx, conn, input.messages, { look: input.look, ledgerModel: ordinary?.model ?? conn.model });
+    // What Brenda has learned (owner decision, 28 October 2026): the look's words only, never the picture.
+    noteLearning(ctx, "look", input.messages, result);
+    return result;
   } catch (err) {
     console.error(`[look] ${describeError(lookSafe(err))}`);
     throw new AppError(502, "LOOK_FAILED", W.failed(name));
@@ -3726,6 +3834,8 @@ export async function lookChatStream(ctx: OrgContext, body: LookV2Body, o: { act
   }
   for (const s of sentences.flush()) say(s);
   await chain;
+  // What Brenda has learned (owner decision, 28 October 2026): the look's words only, never the pictures.
+  noteLearning(ctx, "look", body.messages, result);
   const spoken = speakable(result.reply);
   return { ...result, spoken, speech: await offer(spoken) };
 }
@@ -3911,6 +4021,9 @@ export async function confirmAction(ctx: OrgContext, token: string, opts: { star
     // Anything that ran before the refusal keeps its done line (review, 8 October 2026).
     return { actions: t.actions, error: out.error };
   }
+  // What Brenda has learned (owner decision, 28 October 2026): the person confirmed this card (not when Boredroom pressed
+  // it for them in Act without asking).
+  if (!opts.auto) noteAnswer(ctx, p.tool, "confirmed");
   return { actions: t.actions, error: null };
 }
 
@@ -4671,6 +4784,8 @@ export const SHARED_TOOL_CLASS: Record<string, SharedToolClass> = {
   // Phase 7c (owner decisions, 8–9 October 2026): the person's standup is theirs alone; acting on it, and remembering or
   // forgetting a preference, happen only in their own chat.
   standup: "narrow", standup_action: "refused", remember_preference: "refused", forget_preference: "refused",
+  // What Brenda has learned (owner decision, 28 October 2026): the person's own, only in their own chat.
+  learned_habits: "refused",
   // Security audit, 23 October 2026 (issue 5): a comment always waits for Confirm, so it is a confirm here too.
   add_comment: "confirm",
   create_todos: "immediate", update_task: "immediate", remind_me: "immediate", cancel_reminder: "immediate",
