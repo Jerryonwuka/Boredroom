@@ -6,7 +6,7 @@
 import { describe, expect, it } from "vitest";
 import { AppError } from "@/server/lib/errors";
 import { lookBodyVersion, parseLookJson, readLookBodyV2, readLookBodyV2Value } from "@/server/services/screen-help";
-import { LOOK_TOOLS, LOOK_TOOLS_NO_TASKS, MAC_CHAT_LINE, MAC_CHAT_TOOLS, OFFER_SETUP, POINT_AT, PROPOSE_TASK, TOOLS, USE_MY_SCREEN, lookSituationV2, pointOf } from "@/server/services/copilot";
+import { LOOK_TOOLS, LOOK_TOOLS_NO_TASKS, MAC_CHAT_LINE, MAC_CHAT_TOOLS, MAC_KEYS_LINE, OFFER_SETUP, POINT_AT, PROPOSE_TASK, TOOLS, USE_MY_SCREEN, lookSituationV2, pointOf } from "@/server/services/copilot";
 
 const JPEG = "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAAYACgDASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwD6D1/WbfQ7NLm7SV43kEYEQBOSCe5HpXP/APCw9J/5977/AL4T/wCKo+Kn/IvW/wD19L/6A9eWV8rm+b4jCYh0qTVrLofWZPk+GxeGVWqne76ns2geKrHXLx7a0iuUkSMyEyqoGAQOxPrW/Xlnwr/5GG4/69W/9DSvU69fKMVUxeHVWrvdnj5xhKeExLpUtrIKKKK9M8sKKKKACiiigAooooA//9k=";
 const PNG = "iVBORw0KGgoAAAANSUhEUgAAACgAAAAYCAIAAAAH5iiXAAAATUlEQVR4nO3VIQ4AIAxD0dHgSTgvkvOScQP8HIhO0O8qlidX3N0yQopqgonVsNvoV/d7rjcYlhQEswJNCgmmhe/gon/MCjQpJJhWGnwA+AEI0Z1Jq1kAAAAASUVORK5CYII=";
@@ -162,7 +162,7 @@ describe("the situation (contract D.6.3), every branch", () => {
   });
   it("ordinary chat from the Mac offers the person's own press to let her see the screen (contract D.6.7; review, 12 October 2026)", () => {
     // Phase 3 (contract D.1.6).
-    expect(MAC_CHAT_LINE).toBe("If their own words ask you to do something on their Mac (open an app, a file or a page; work on their files; anything on its screen) rather than in Boredroom, you can't do it from this chat: say in one short sentence that you'll do it once they press the button under your reply, and call use_my_screen. Never tell them to hold your keys, press Control+Command or Option+Space, or ask or say it again to get something done: they already asked you. If they ask how to turn on what lets you help on their Mac, call offer_setup. Don't list steps.");
+    expect(MAC_CHAT_LINE).toBe("If their own words ask you to do something on their Mac (open an app, a file or a page; work on their files; anything on its screen) rather than in Boredroom, you can't do it from this chat: say in one short sentence that you'll do it once they press the button under your reply, and call use_my_screen. Never tell them to hold your keys, press Control+Command or Option+Space, or ask or say it again to get something done: they already asked you. If they ask how to turn on what lets you help on their Mac, call offer_setup. Don't list steps. " + MAC_KEYS_LINE);
     expect(USE_MY_SCREEN.strict).toBe(true);
     expect(USE_MY_SCREEN.input_schema.required).toEqual([]);
     expect(MAC_CHAT_TOOLS).toEqual([...TOOLS, USE_MY_SCREEN, OFFER_SETUP]);

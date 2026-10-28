@@ -11,7 +11,7 @@
  */
 import { describe, expect, it } from "vitest";
 import {
-  FRONT_LOOK_LINE, LOOK_TOOLS_FRONT, MAC_CHAT_LINE, NEVER_ASK_AGAIN_LINE, WEB_MAC_LINE, lookSituationV2, lookToolsFor,
+  FRONT_LOOK_LINE, LOOK_TOOLS_FRONT, MAC_CHAT_LINE, MAC_KEYS_LINE, NEVER_ASK_AGAIN_LINE, WEB_MAC_LINE, lookSituationV2, lookToolsFor,
 } from "@/server/services/copilot";
 
 const S = { mediaType: "image/jpeg" as const, data: "", width: 1568, height: 1019, pointer: { x: 980, y: 214 } };
@@ -62,6 +62,16 @@ describe("she never asks for a key-held repeat (owner report, 27 October 2026)",
     expect(MAC_CHAT_LINE).toContain(NEVER_ASK_AGAIN_LINE);
     expect(NEVER_ASK_AGAIN_LINE).toBe("Never tell them to hold your keys, press Control+Command or Option+Space, or ask or say it again to get something done: they already asked you.");
     // The browser is different: there Brenda for Mac really is somewhere else (they haven't held any keys yet).
-    expect(WEB_MAC_LINE).toContain("when they hold Control+Command and ask");
+    expect(WEB_MAC_LINE).toContain("when they ask there (hold Option+Space and say it, or type it in the notch)");
+    expect(said(WEB_MAC_LINE)).not.toMatch(SEND_BACK);
+  });
+
+  it("asked how to use Brenda for Mac, she names the right keys (owner request, 28 October 2026)", () => {
+    for (const line of [MAC_CHAT_LINE, WEB_MAC_LINE]) {
+      expect(line).toContain(MAC_KEYS_LINE);
+      expect(said(line)).not.toMatch(SEND_BACK);
+    }
+    expect(MAC_KEYS_LINE).toContain("Option+Space, held while they speak, asks you anything");
+    expect(MAC_KEYS_LINE).toContain("Control+Command, held while they ask, lets you see the screen their pointer is on");
   });
 });

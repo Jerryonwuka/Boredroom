@@ -3532,14 +3532,18 @@ export function pointOf(input: Record<string, unknown>, look: Pick<LookV2Input, 
  */
 // Phase 3 (owner report, 12 October 2026; contract D.1.6): opening things and file work count, and offer_setup answers
 // "how do I turn this on".
+// Owner request, 28 October 2026 ("fix Brenda's app list and Mac shortcut"): she named Control+Command as the way to talk
+// to her; it is the key for asking about the screen, and Option+Space the key for talking.
+/** Brenda for Mac's keys, said only when the person asks how to use her there. */
+export const MAC_KEYS_LINE = "Only if they ask how to use Brenda for Mac or what its keys are: Option+Space, held while they speak, asks you anything (you listen only while the keys are held); Control+Command, held while they ask, lets you see the screen their pointer is on; clicking the notch lets them type. Never name other keys.";
 /** Chat in the browser where screen help is offered (review, 12 October 2026: "open Figma on my Mac" got "I can't"). */
-export const WEB_MAC_LINE = "Brenda for Mac can open apps, files, folders and pages on their Mac, click and type there, and find, read and summarise their files, each only when they ask there and say yes to what it will do. If their own words ask you to do something on their Mac, you can't do it from this browser chat: never just say you can't; say in one short sentence that Brenda for Mac does it when they hold Control+Command and ask. If they ask how to turn that on, say it is set up from Settings › Your assistant › “Set up on my Mac”, and point at settings-screen-help-mine. Don't list steps.";
+export const WEB_MAC_LINE = `Brenda for Mac can open apps, files, folders and pages on their Mac, click and type there, and find, read and summarise their files, each only when they ask there and say yes to what it will do. If their own words ask you to do something on their Mac, you can't do it from this browser chat: never just say you can't; say in one short sentence that Brenda for Mac does it when they ask there (hold Option+Space and say it, or type it in the notch). If they ask how to turn that on, say it is set up from Settings › Your assistant › “Set up on my Mac”, and point at settings-screen-help-mine. Don't list steps. ${MAC_KEYS_LINE}`;
 // Owner report, 27 October 2026 ("she says I should confirm for her to do it by holding down the keys and saying it
 // again, but when I do that she doesn't do it and just repeats what she said"): chat from the Mac is often what the keys
 // already reached, so it never sends them back to the keys; the button under her reply is the way on.
 /** Said to her wherever the person already spoke or typed to her on their Mac: never "hold the keys and say it again". */
 export const NEVER_ASK_AGAIN_LINE = "Never tell them to hold your keys, press Control+Command or Option+Space, or ask or say it again to get something done: they already asked you.";
-export const MAC_CHAT_LINE = `If their own words ask you to do something on their Mac (open an app, a file or a page; work on their files; anything on its screen) rather than in Boredroom, you can't do it from this chat: say in one short sentence that you'll do it once they press the button under your reply, and call use_my_screen. ${NEVER_ASK_AGAIN_LINE} If they ask how to turn on what lets you help on their Mac, call offer_setup. Don't list steps.`;
+export const MAC_CHAT_LINE = `If their own words ask you to do something on their Mac (open an app, a file or a page; work on their files; anything on its screen) rather than in Boredroom, you can't do it from this chat: say in one short sentence that you'll do it once they press the button under your reply, and call use_my_screen. ${NEVER_ASK_AGAIN_LINE} If they ask how to turn on what lets you help on their Mac, call offer_setup. Don't list steps. ${MAC_KEYS_LINE}`;
 /** The first line of a front-capable Mac's look (contract J.3; owner report, 27 October 2026). */
 export const FRONT_LOOK_LINE = `They held your keys to ask about their screen. Answer, and point when showing where something is helps. ${NEVER_ASK_AGAIN_LINE}`;
 
