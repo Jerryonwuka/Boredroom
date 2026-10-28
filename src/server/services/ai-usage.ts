@@ -57,8 +57,13 @@ export const AI_BURST_MESSAGE = "That's a lot of requests in one minute. Wait a 
  * assistant's recap of a call its people agreed to have notes on, recorded with no person (it never spends anyone's
  * allowance; the call's id is its request id, so a retried recap counts once) and capped per organisation per day
  * (NOTES_LIMITS.recapsPerOrgPerDay). Before 0054 no call has notes, so nothing is recorded.
+ *
+ * 'research' (owner decision, 28 October 2026: "Brenda, research X and give me a PDF when you're done"; migration 0066
+ * widens the CHECK the same way): each model call of a piece of research the person asked for, recorded against them by
+ * the worker (the report's id is its request id, so one report counts once). Not in LIMITED_PURPOSES: research has its
+ * own cap (BRENDA_RESEARCH_DAILY, 5 a day). Before 0066 no research runs, so nothing is recorded.
  */
-export const USAGE_PURPOSES = ["chat", "plan", "report", "summary", "test", "other", "followup", "mention", "loose_ends", "commitments", "standup", "call_recap"] as const;
+export const USAGE_PURPOSES = ["chat", "plan", "report", "summary", "test", "other", "followup", "mention", "loose_ends", "commitments", "standup", "call_recap", "research"] as const;
 export type UsagePurpose = (typeof USAGE_PURPOSES)[number];
 /**
  * Purposes that count towards the person's daily limit. A team report the person asked for counts too (review,

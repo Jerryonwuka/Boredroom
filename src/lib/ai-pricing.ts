@@ -43,6 +43,19 @@ export function estimateUsd(model: string, t: TokenCounts): number {
   return (t.inputTokens * price.input + t.outputTokens * price.output + t.cacheReadTokens * price.cacheRead + t.cacheWriteTokens * price.cacheWrite) / 1_000_000;
 }
 
+/**
+ * Claude's server-side web search (Brenda's research; owner decision, 28 October 2026): US dollars per 1,000 searches,
+ * on top of the tokens (search results are billed as input tokens; web fetch has no charge of its own). Unverified, like
+ * the rest of this table: Anthropic's list price as Boredroom last knew it; check Anthropic's pricing page and edit here.
+ */
+export const WEB_SEARCH_USD_PER_1000 = 10;
+
+/** Estimated US dollars for `searches` web searches. */
+export function estimateWebSearchUsd(searches: number): number {
+  const n = Number(searches);
+  return Number.isFinite(n) && n > 0 ? (n * WEB_SEARCH_USD_PER_1000) / 1000 : 0;
+}
+
 const usd2 = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const usd4 = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 4 });
 

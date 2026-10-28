@@ -14,6 +14,9 @@
  *   out) and the front desk's router are also in the workspace's `ai_usage` as ordinary chat, so those overlap a little.
  * - Assistants ("Brendas"): every active member has their own, and each workspace has one of its own; `assistant_profiles`
  *   says who has set theirs up.
+ * - `research_reports` (0066, pending; owner decision, 28 October 2026): Brenda's research, per company: how many reports
+ *   were asked for and the web searches they ran, priced at WEB_SEARCH_USD_PER_1000 and added to the company's estimated
+ *   cost (its tokens are already in `ai_usage`, purpose 'research'). Skipped while the table is missing.
  *
  * Costs are estimates from lib/ai-pricing (list prices, one table). Each table is checked before it is read, so the page
  * works on a database without any of these migrations. One transaction per page, a handful of grouped statements: no
@@ -22,7 +25,7 @@
  */
 import { withSystem, type Db } from "@/server/db";
 import { notFound } from "@/server/lib/errors";
-import { estimateUsd, priceFor, type TokenCounts } from "@/lib/ai-pricing";
+import { estimateUsd, estimateWebSearchUsd, priceFor, type TokenCounts } from "@/lib/ai-pricing";
 import type { UsagePurpose } from "@/server/services/ai-usage";
 
 export const AI_PERIODS = [
@@ -73,13 +76,20 @@ function sumUsage(list: Usage[]): Usage {
   }), { ...ZERO });
 }
 
-type Ready = { ai: boolean; voice: boolean; looks: boolean; acts: boolean };
+type Ready = { ai: boolean; voice: boolean; looks: boolean; acts: boolean; research: boolean };
 async function readyIn(db: Db): Promise<Ready> {
-  const r = await db.one<{ ai: boolean; voice: boolean; looks: boolean; acts: boolean }>(
+  const r = await db.one<{ ai: boolean; voice: boolean; looks: boolean; acts: boolean; research: boolean }>(
     `SELECT to_regclass('public.ai_usage') IS NOT NULL AS ai, to_regclass('public.voice_usage_daily') IS NOT NULL AS voice,
-            to_regclass('public.look_usage_daily') IS NOT NULL AS looks, to_regclass('public.act_usage_daily') IS NOT NULL AS acts`);
-  return { ai: !!r.ai, voice: !!r.voice, looks: !!r.looks, acts: !!r.acts };
+            to_regclass('public.look_usage_daily') IS NOT NULL AS looks, to_regclass('public.act_usage_daily') IS NOT NULL AS acts,
+            to_regclass('public.research_reports') IS NOT NULL AS research`);
+  return { ai: !!r.ai, voice: !!r.voice, looks: !!r.looks, acts: !!r.acts, research: !!r.research };
 }
+
+// Brenda's research (owner decision, 28 October 2026): reports and web searches in the period, per company and per day.
+type ResearchSumRow = { organisation_id: string; day: string; reports: number; searches: number | string };
+const researchIn = (db: Db, since: Date, orgId?: string) => db.query<ResearchSumRow>(
+  `SELECT organisation_id, (created_at AT TIME ZONE 'UTC')::date::text AS day, count(*)::int AS reports, COALESCE(sum(searches), 0)::bigint AS searches
+     FROM research_reports WHERE created_at >= $1 ${orgId ? "AND organisation_id = $2" : ""} GROUP BY 1, 2`, orgId ? [since, orgId] : [since]);
 
 /** A model the price table does not name (priced as a guess), for the page note. */
 function unpricedOf(models: Iterable<string>): string[] {
@@ -95,6 +105,8 @@ export type OrgAiRow = Usage & {
   /** Members who set theirs up (named it, chose its look). */ setUp: number;
   /** People with at least one request in the period. */ people: number;
   voiceCharacters: number; voiceUtterances: number;
+  /** Brenda's research: reports asked for and the web searches they ran (their cost is in costUsd). */
+  researchReports: number; webSearches: number;
 };
 
 export type MacUsage = {
@@ -106,7 +118,7 @@ export type MacUsage = {
 
 export type AiUsageOverview = {
   period: AiPeriod; since: string; ready: Ready;
-  totals: Usage & { orgsUsing: number; people: number; assistants: number; setUp: number; voiceCharacters: number; voiceUtterances: number };
+  totals: Usage & { orgsUsing: number; people: number; assistants: number; setUp: number; voiceCharacters: number; voiceUtterances: number; researchReports: number; webSearches: number; webSearchUsd: number };
   orgs: OrgAiRow[];
   byDay: { day: string; tokens: number; costUsd: number }[];
   mac: MacUsage | null;
@@ -144,6 +156,12 @@ export async function aiUsageOverview(period: AiPeriod, now = new Date()): Promi
               COALESCE(sum(steps), 0)::bigint AS calls, COALESCE(sum(input_tokens), 0)::bigint AS input_tokens, COALESCE(sum(output_tokens), 0)::bigint AS output_tokens,
               COALESCE(sum(cache_read_tokens), 0)::bigint AS cache_read_tokens, COALESCE(sum(cache_write_tokens), 0)::bigint AS cache_write_tokens
          FROM act_usage_daily WHERE day >= $1::date GROUP BY model, kind`, [day]) : [];
+    const research = ready.research ? await researchIn(db, since) : [];
+    const researchByOrg = new Map<string, { reports: number; searches: number }>();
+    for (const r of research) {
+      const x = researchByOrg.get(r.organisation_id) ?? { reports: 0, searches: 0 };
+      researchByOrg.set(r.organisation_id, { reports: x.reports + (Number(r.reports) || 0), searches: x.searches + (Number(r.searches) || 0) });
+    }
 
     const usageByOrg = new Map<string, Usage>();
     for (const r of byOrgModel) usageByOrg.set(r.organisation_id, addModelRow(usageByOrg.get(r.organisation_id) ?? { ...ZERO }, r.model, r));
@@ -153,8 +171,10 @@ export async function aiUsageOverview(period: AiPeriod, now = new Date()): Promi
       const u = usageByOrg.get(o.id) ?? { ...ZERO };
       const q = reqByOrg.get(o.id);
       const v = voiceByOrg.get(o.id);
+      const rs = researchByOrg.get(o.id) ?? { reports: 0, searches: 0 };
       return {
-        ...u, requests: q?.requests ?? 0,
+        ...u, requests: q?.requests ?? 0, costUsd: u.costUsd + estimateWebSearchUsd(rs.searches),
+        researchReports: rs.reports, webSearches: rs.searches,
         id: o.id, name: o.name, slug: o.slug, status: o.status, plan: o.plan,
         members: o.members, assistants: o.members + 1, setUp: o.set_up, people: q?.people ?? 0,
         voiceCharacters: Number(v?.characters ?? 0), voiceUtterances: Number(v?.utterances ?? 0),
@@ -167,6 +187,10 @@ export async function aiUsageOverview(period: AiPeriod, now = new Date()): Promi
       const t = tokensOf(r);
       const d = dayMap.get(r.day) ?? { tokens: 0, costUsd: 0 };
       dayMap.set(r.day, { tokens: d.tokens + t.totalTokens, costUsd: d.costUsd + estimateUsd(r.model, t) });
+    }
+    for (const r of research) {
+      const d = dayMap.get(r.day) ?? { tokens: 0, costUsd: 0 };
+      dayMap.set(r.day, { tokens: d.tokens, costUsd: d.costUsd + estimateWebSearchUsd(Number(r.searches) || 0) });
     }
     const byDay: AiUsageOverview["byDay"] = [];
     for (let d = new Date(`${day}T00:00:00Z`); d <= now; d = new Date(d.getTime() + 86_400_000)) {
@@ -197,6 +221,8 @@ export async function aiUsageOverview(period: AiPeriod, now = new Date()): Promi
         ...all, orgsUsing: rows.filter((r) => r.calls > 0).length, people,
         assistants: rows.reduce((n, r) => n + r.assistants, 0), setUp: rows.reduce((n, r) => n + r.setUp, 0),
         voiceCharacters: rows.reduce((n, r) => n + r.voiceCharacters, 0), voiceUtterances: rows.reduce((n, r) => n + r.voiceUtterances, 0),
+        researchReports: rows.reduce((n, r) => n + r.researchReports, 0), webSearches: rows.reduce((n, r) => n + r.webSearches, 0),
+        webSearchUsd: estimateWebSearchUsd(rows.reduce((n, r) => n + r.webSearches, 0)),
       },
       orgs: rows, byDay, mac,
       unpriced: unpricedOf([...byOrgModel.map((r) => r.model), ...looks.map((r) => r.model), ...acts.map((r) => r.model)]),
@@ -209,7 +235,7 @@ export async function aiUsageOverview(period: AiPeriod, now = new Date()): Promi
 export type OrgAiDetail = {
   period: AiPeriod; since: string; ready: Ready;
   org: { id: string; name: string; slug: string; status: string; plan: string | null; members: number; assistants: number; setUp: number; workspaceAssistant: string };
-  totals: Usage & { people: number; voiceCharacters: number; voiceUtterances: number; voicePeople: number };
+  totals: Usage & { people: number; voiceCharacters: number; voiceUtterances: number; voicePeople: number; researchReports: number; webSearches: number; webSearchUsd: number };
   byPurpose: (Usage & { purpose: UsagePurpose })[];
   byModel: (Usage & { model: string; priced: string; exact: boolean })[];
   /** The people with the most requests (names only with `names`). */
@@ -247,6 +273,9 @@ export async function aiUsageForOrg(orgId: string, period: AiPeriod, opts: { nam
     const voice = ready.voice ? await db.one<{ characters: number | string; utterances: number | string; people: number }>(
       `SELECT COALESCE(sum(characters), 0)::bigint AS characters, COALESCE(sum(utterances), 0)::bigint AS utterances, count(DISTINCT membership_id) FILTER (WHERE characters > 0)::int AS people
          FROM voice_usage_daily WHERE organisation_id = $1 AND day >= $2::date`, [orgId, day]) : { characters: 0, utterances: 0, people: 0 };
+    const research = ready.research ? await researchIn(db, since, orgId) : [];
+    const researchReports = research.reduce((n, r) => n + (Number(r.reports) || 0), 0);
+    const webSearches = research.reduce((n, r) => n + (Number(r.searches) || 0), 0);
 
     // By purpose: tokens and cost from the per-model rows, requests counted once per purpose.
     const purposeMap = new Map<UsagePurpose, Usage>();
@@ -282,6 +311,10 @@ export async function aiUsageForOrg(orgId: string, period: AiPeriod, opts: { nam
       const d = dayMap.get(r.day) ?? { tokens: 0, costUsd: 0 };
       dayMap.set(r.day, { tokens: d.tokens + t.totalTokens, costUsd: d.costUsd + estimateUsd(r.model, t) });
     }
+    for (const r of research) {
+      const d = dayMap.get(r.day) ?? { tokens: 0, costUsd: 0 };
+      dayMap.set(r.day, { tokens: d.tokens, costUsd: d.costUsd + estimateWebSearchUsd(Number(r.searches) || 0) });
+    }
     const byDay: OrgAiDetail["byDay"] = [];
     for (let d = new Date(`${day}T00:00:00Z`); d <= now; d = new Date(d.getTime() + 86_400_000)) {
       const k = d.toISOString().slice(0, 10);
@@ -292,7 +325,8 @@ export async function aiUsageForOrg(orgId: string, period: AiPeriod, opts: { nam
     return {
       period, since: since.toISOString(), ready,
       org: { id: org.id, name: org.name, slug: org.slug, status: org.status, plan: org.plan, members: org.members, assistants: org.members + 1, setUp: org.set_up, workspaceAssistant: ws?.name || "Brenda" },
-      totals: { ...all, requests: overall.requests, people: overall.people, voiceCharacters: Number(voice.characters), voiceUtterances: Number(voice.utterances), voicePeople: voice.people },
+      totals: { ...all, costUsd: all.costUsd + estimateWebSearchUsd(webSearches), requests: overall.requests, people: overall.people, voiceCharacters: Number(voice.characters), voiceUtterances: Number(voice.utterances), voicePeople: voice.people,
+        researchReports, webSearches, webSearchUsd: estimateWebSearchUsd(webSearches) },
       byPurpose, byModel, topPeople, workspace, byDay,
       unpriced: unpricedOf(byPurposeModel.map((r) => r.model)),
     };

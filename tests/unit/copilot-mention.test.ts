@@ -129,7 +129,7 @@ describe("shared mode: every tool has exactly one class", () => {
     // chat (standup_action edits and skips at once, so it is an immediate tool refused in a thread).
     // Connected apps (owner decisions, 22 October 2026): never in a thread, every one of them refused there.
     expect(of("immediate")).toEqual([...IMMEDIATE_TOOLS].filter((x) => x !== "team_report" && x !== "standup_action" && !CONNECTOR_TOOL_NAMES.includes(x)).sort());
-    expect(of("refused")).toEqual(["forget_preference", "remember_preference", "standup_action", "team_report", ...CONNECTOR_TOOL_NAMES].sort());
+    expect(of("refused")).toEqual(["forget_preference", "remember_preference", "standup_action", "team_report", ...CONNECTOR_TOOL_NAMES, "start_research", "research_status"].sort());
     // Phase 6 (owner decision, 8 October 2026): sending to another assistant and answering what was brought wait for Confirm.
     // Phase 7a (owner decision, 8 October 2026): setting up or changing a routine waits for Confirm too.
     // Phase 7b (owner decision, 8 October 2026): answering a commitment or a block, and naming who a task waits on, too.

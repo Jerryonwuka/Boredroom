@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
+import { RESEARCH_RULE, RESEARCH_TOOLS } from "@/server/research/brenda-tools";
 import { CONNECTOR_RULES, CONNECTOR_TOOLS } from "@/server/connectors/brenda/tools";
 import { createHash } from "node:crypto";
 
@@ -23,9 +24,10 @@ describe("the cached prefix", () => {
   it("RULES and TOOLS are byte for byte what they were before screen help (the hashes of c3d0a04)", () => {
     // Connected apps (owner decisions, 22 October 2026: the cached prefix changes once): their rules and tools are
     // appended at the end; everything before them is still byte for byte what it was.
-    expect(RULES.endsWith(`\n${CONNECTOR_RULES}`)).toBe(true);
-    expect(sha(RULES.slice(0, RULES.length - CONNECTOR_RULES.length - 1))).toBe("a382a034ee96c7846dca689f57463d304dde426f7965fa0ed154c0efb086cc3b");
-    expect(sha(JSON.stringify(TOOLS.slice(0, -CONNECTOR_TOOLS.length)))).toBe("677790e21c61136b36bbbae087566a737c441b32fe4f5daefea46dc738b2146d");
+    // Brenda's research (owner decision, 28 October 2026) is appended after them the same way.
+    expect(RULES.endsWith(`\n${CONNECTOR_RULES}\n${RESEARCH_RULE}`)).toBe(true);
+    expect(sha(RULES.slice(0, RULES.length - CONNECTOR_RULES.length - RESEARCH_RULE.length - 2))).toBe("a382a034ee96c7846dca689f57463d304dde426f7965fa0ed154c0efb086cc3b");
+    expect(sha(JSON.stringify(TOOLS.slice(0, -(CONNECTOR_TOOLS.length + RESEARCH_TOOLS.length))))).toBe("677790e21c61136b36bbbae087566a737c441b32fe4f5daefea46dc738b2146d");
   });
 });
 

@@ -11,7 +11,7 @@ import { PageNote, PageNotes } from "@/components/ui/page-notes";
 import { PeriodSwitch } from "@/components/admin/period-switch";
 import { Big, SortHeader, sortLink, type SortDir } from "@/components/admin/ai-usage-parts";
 import { linkCls, subCls, words } from "@/components/admin/fields";
-import { PRICES_AS_OF, formatUsd } from "@/lib/ai-pricing";
+import { PRICES_AS_OF, WEB_SEARCH_USD_PER_1000, formatUsd } from "@/lib/ai-pricing";
 import { num } from "@/lib/format";
 
 export const metadata = { title: "AI usage" };
@@ -130,11 +130,26 @@ export default async function AiUsagePage({ searchParams }: { searchParams: Prom
                 </DataTable>
               </Card>
             ) : null}
+
+            {/* Brenda's research (owner decision, 28 October 2026): its tokens are in the companies' rows (purpose
+                Research); its web searches are priced here and added to each company's estimated cost. */}
+            {u.ready.research ? (
+              <Card className="mt-6 min-w-0">
+                <CardHeader title="Brenda's research, whole platform" description="Reports people asked Brenda for, and the web searches they ran. Search costs are in each company's estimated cost above." />
+                <DataTable caption={`Brenda's research, ${periodLabel.toLowerCase()}`}>
+                  <thead><tr><th>What</th><th>Count</th><th>Est. cost</th></tr></thead>
+                  <tbody>
+                    <tr><td>Reports asked for</td><td className="tabular-nums">{num(t.researchReports)}</td><td className="tabular-nums text-subtle">In the tokens</td></tr>
+                    <tr><td>Web searches<span className={subCls}>{formatUsd(WEB_SEARCH_USD_PER_1000)} per 1,000</span></td><td className="tabular-nums">{num(t.webSearches)}</td><td className="tabular-nums">{formatUsd(t.webSearchUsd)}</td></tr>
+                  </tbody>
+                </DataTable>
+              </Card>
+            ) : null}
           </>
         )}
       </div>
       <PageNotes>
-        <PageNote section="Estimated cost">An estimate at Anthropic&apos;s list prices as of {PRICES_AS_OF} (src/lib/ai-pricing.ts, one table to edit), with cache writes at the 5-minute rate. Anthropic&apos;s invoice is the real figure. Natural voice is not priced: ElevenLabs bills characters on Boredroom&apos;s plan.</PageNote>
+        <PageNote section="Estimated cost">An estimate at Anthropic&apos;s list prices as of {PRICES_AS_OF} (src/lib/ai-pricing.ts, one table to edit), with cache writes at the 5-minute rate. Anthropic&apos;s invoice is the real figure. Natural voice is not priced: ElevenLabs bills characters on Boredroom&apos;s plan. Brenda&apos;s web searches are priced at {formatUsd(WEB_SEARCH_USD_PER_1000)} per 1,000, unverified like the rest.</PageNote>
         {u.unpriced.length ? <PageNote section="Not in the price table">{u.unpriced.join(", ")}: priced as the nearest model until the table names {u.unpriced.length === 1 ? "it" : "them"}.</PageNote> : null}
         <PageNote section="Requests">One request is one thing asked (a chat turn, a report, a follow-up), however many model calls it took. Tokens are the API&apos;s own counts. This month starts on the 1st (UTC).</PageNote>
         <PageNote section="Assistants">Every active member has their own assistant, plus one for the company itself. &ldquo;Set up&rdquo; counts the people who named theirs and chose its look.</PageNote>

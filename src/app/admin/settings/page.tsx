@@ -1,5 +1,5 @@
 import { requireAdmin, can } from "@/server/admin/auth";
-import { generalSettings, billingSettings, featureFlags, FEATURE_KEYS } from "@/server/admin/settings";
+import { generalSettings, billingSettings, featureFlags, FEATURE_KEYS, PLATFORM_SWITCH_KEYS } from "@/server/admin/settings";
 import { paystackStatus } from "@/server/admin/paystack-config";
 import { brevoConfigured, brevoAccount } from "@/server/admin/marketing";
 import { googleConfigured } from "@/server/auth/google";
@@ -59,13 +59,13 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
             ]} />
           </Card>
         ) : null}
-        {tab === "flags" ? <Card><CardHeader title="Global feature flags" description="Platform-wide defaults." />{can(admin, "flags.edit") ? <FeatureFlagsForm value={await featureFlags()} keys={FEATURE_KEYS} /> : VIEW_ONLY}</Card> : null}
+        {tab === "flags" ? <Card><CardHeader title="Global feature flags" description="Platform-wide defaults." />{can(admin, "flags.edit") ? <FeatureFlagsForm value={await featureFlags()} keys={[...FEATURE_KEYS, ...PLATFORM_SWITCH_KEYS]} /> : VIEW_ONLY}</Card> : null}
       </div>
       <PageNotes>
         <PageNote>Secrets live in the server environment and are never shown here; this page says whether they are present and working.</PageNote>
         {tab === "brevo" ? <PageNote section="Brevo">Email delivery goes through Brevo&apos;s SMTP relay (SMTP_URL). The API key adds contact synchronisation, attributes and lists.</PageNote> : null}
         {tab === "paystack" && edit ? <PageNote section="Paystack">Events handled: charge.success, charge.failed, invoice.payment_failed, subscription.create, subscription.disable, subscription.not_renew, refund.processed. Every delivery is checked against the stored secrets and stored once.</PageNote> : null}
-        {tab === "flags" ? <PageNote section="Global feature flags">A plan&apos;s entitlements and an organisation&apos;s overrides win over these. Features with no flag set are on.</PageNote> : null}
+        {tab === "flags" ? <PageNote section="Global feature flags">A plan&apos;s entitlements and an organisation&apos;s overrides win over these. Features with no flag set are on. BRENDA_RESEARCH is platform-wide only (no plan or organisation override): Off stops Brenda starting research, and ends queued and running research at its next step.</PageNote> : null}
       </PageNotes>
     </>
   );

@@ -391,6 +391,21 @@ const purgeExpired: Handler = async () => {
   const { purgeTasks } = await import("../src/server/services/act");
   await purgeTasks().then((r) => { if (r.deleted || r.expired || r.stopped) console.log(`[worker] tasks on Macs: ${JSON.stringify(r)}`); })
     .catch((err) => console.error("[worker] purging tasks on Macs", (err as { code?: string })?.code ?? "error"));
+  // Brenda's research (owner decision, 28 October 2026): reports go 90 days after they were asked for; one still live 48
+  // hours after its last change is given up (the person told). No-op before 0066. Counts only in the log.
+  const { purgeResearch } = await import("../src/server/research/run");
+  await purgeResearch().then((r) => { if (r.deleted || r.stale) console.log(`[worker] research: ${JSON.stringify(r)}`); })
+    .catch((err) => console.error("[worker] purging research", (err as { code?: string })?.code ?? "error"));
+};
+
+/**
+ * Brenda's research (owner decision, 28 October 2026: "Brenda, research X and give me a PDF when you're done"): one step
+ * of one report, one model call (src/server/research/run.ts). Idempotent by the stored step; resumable from the stored
+ * conversation; throws only to try the same step again. Returns at once before 0066.
+ */
+const researchRun: Handler = async (payload) => {
+  const { runResearchStep } = await import("../src/server/research/run");
+  await runResearchStep(payload);
 };
 
 /**
@@ -434,5 +449,7 @@ export const handlers: Record<string, Handler> = {
   "deliverable.scan": scanDeliverable,
   "system.purge_expired": purgeExpired,
   "voice.history_forget": voiceHistoryForget,
+  // Brenda's research (owner decision, 28 October 2026).
+  "research.run": researchRun,
   ...connectorHandlers,
 };
