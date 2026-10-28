@@ -41,6 +41,7 @@ import {
   type ScreenHelpView, type macReportBodySchema,
 } from "@/lib/screen-help";
 import { ACT_LIMITS, FILE_SOURCES, type FileSource } from "@/lib/act";
+import { cleanMacRecent, macRecentSchema, type MacRecent } from "@/server/services/mac-recent";
 
 const W = SCREEN_HELP_WORDS;
 
@@ -658,6 +659,11 @@ export type LookV2Input = {
    */
   front?: boolean;
   lane?: "auto" | "now" | "think";
+  /**
+   * What Brenda did on this Mac in the last ten minutes, as the Mac records it (owner report, 28 October 2026; at most six
+   * of her fixed done lines, `cleanMacRecent`). Absent from a Mac that doesn't send it.
+   */
+  recent?: MacRecent;
 };
 export type LookV2Body = { look: LookV2Input; messages: LookBody["messages"] };
 
@@ -691,6 +697,8 @@ export const lookBodyV2Schema = z.object({
   // Brenda and her helpers (contract J.1): both optional; `lane` only with `front`.
   front: z.literal(1).optional(),
   lane: z.enum(["auto", "now", "think"]).optional(),
+  // Owner report, 28 October 2026: what Brenda did on this Mac lately (optional; older Macs leave it out).
+  recent: macRecentSchema.optional(),
 }).refine((b) => b.lane === undefined || b.front === 1);
 
 /** One picture decoded, sniffed, sized and stripped; the decoded buffers wiped. */
@@ -753,6 +761,7 @@ export function readLookBodyV2Value(parsed: unknown): LookV2Body {
       hidden: [...new Set(b.hidden.map((h) => h.replace(/\s+/g, " ").trim()))].slice(0, 20),
       abilities: b.abilities, files: b.files.map((f) => ({ ...f, name: f.name.trim() })),
       ...(b.front === 1 ? { front: true, lane: b.lane ?? "auto" } : {}),
+      ...(b.recent ? { recent: cleanMacRecent(b.recent) } : {}),
     },
     messages: b.messages,
   };

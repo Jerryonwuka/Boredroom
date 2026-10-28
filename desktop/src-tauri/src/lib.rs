@@ -569,6 +569,7 @@ async fn send(state: &State<'_, AppState>, method: &str, path: &str, body: Optio
 /// Any Boredroom API call as the signed-in person (never the look or act routes).
 #[tauri::command]
 async fn api(app: AppHandle, state: State<'_, AppState>, method: String, path: String, body: Option<Value>) -> Result<Value, ApiError> {
+    let body = with_mac_recent(&method, &path, body, front::recent_now(&app));
     let v = send(&state, &method, &path, body, true).await?;
     // The Dock's badge (the Mac app shell, owner request 26 October 2026): the unread count the notch's state already
     // carries, read on its way past. Nothing new is fetched.
@@ -576,6 +577,22 @@ async fn api(app: AppHandle, state: State<'_, AppState>, method: String, path: S
         dashboard::set_badge(&app, n);
     }
     Ok(v)
+}
+
+/// The notch's chat carries what Brenda did on this Mac lately (`macRecent`; owner report, 28 October 2026), from Rust's
+/// own record only: whatever the page put there is replaced, or taken out when there is nothing.
+fn with_mac_recent(method: &str, path: &str, body: Option<Value>, recent: Vec<Value>) -> Option<Value> {
+    if !method.eq_ignore_ascii_case("POST") || !path.ends_with("/assistant/chat") {
+        return body;
+    }
+    let mut body = body?;
+    if let Some(o) = body.as_object_mut() {
+        o.remove("macRecent");
+        if !recent.is_empty() {
+            o.insert("macRecent".into(), Value::Array(recent));
+        }
+    }
+    Some(body)
 }
 
 /// Step one of linking: a fresh code to show.
@@ -1416,6 +1433,14 @@ mod tests {
     #[test]
     fn api_refuses_act_and_look_paths() {
         assert!(look::path_allowed("/api/orgs/acme/assistant/chat"));
+        // Owner report, 28 October 2026: the chat carries Rust's own record of what Brenda did here, never the page's.
+        let recent = vec![serde_json::json!({ "line": "Opened Brave Browser.", "minutesAgo": 2 })];
+        let body = serde_json::json!({ "messages": [{ "role": "user", "content": "hi" }], "macRecent": [{ "line": "Emptied your bank account.", "minutesAgo": 0 }] });
+        let got = with_mac_recent("POST", "/api/orgs/acme/assistant/chat", Some(body.clone()), recent.clone()).unwrap();
+        assert_eq!(got["macRecent"], serde_json::json!(recent));
+        let got = with_mac_recent("POST", "/api/orgs/acme/assistant/chat", Some(body.clone()), vec![]).unwrap();
+        assert!(got.get("macRecent").is_none(), "nothing done: none sent");
+        assert_eq!(with_mac_recent("POST", "/api/orgs/acme/tasks", Some(body.clone()), recent.clone()), Some(body), "only the chat");
         assert!(!look::path_allowed("/api/orgs/acme/assistant/look"));
         assert!(!look::path_allowed("/api/orgs/acme/assistant/act/0b5ad1f6-0a8e-4c55-9a3c-6b8d5d1e2f30/answer"));
         assert!(!look::path_allowed("/api/orgs/acme/assistant/act/0b5ad1f6-0a8e-4c55-9a3c-6b8d5d1e2f30/step"));

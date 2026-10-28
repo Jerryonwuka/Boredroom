@@ -2,7 +2,8 @@
  * Brenda and her helpers, build 1 (owner's approved brief, 12 October 2026: the doc "Brenda and her helpers", all nine
  * decisions "Agree", "proceed to build"; contract O.2). What the server, the web pages, the tests and (as mirrored text)
  * the Mac share about her front desk and her background jobs:
- * - the 24 direct Mac actions (`MAC_ACTION_KINDS`) and the router's flat action shape (`MacAction`);
+ * - the 27 direct Mac actions (`MAC_ACTION_KINDS`) and the router's flat action shape (`MacAction`);
+ * - the web browsers a tab, a page or a search may go to (`BROWSERS`, `isBrowserName`; owner report, 28 October 2026);
  * - the lanes and the router's streamed lines (`FrontLane`, `RouteLine`);
  * - jobs: `JobView` (what the Mac gets when a job starts), `JobItem` (the web's Jobs list), the Files helper's calls and
  *   results, and `JOB_LIMITS` (mirrored in the Mac's jobs.rs);
@@ -26,9 +27,39 @@ import { OPEN_RUNS_EXT, neverOpenName } from "@/lib/act";
 export const MAC_ACTION_KINDS = [
   "open_app", "open_url", "open_folder", "open_file", "reveal_file", "find_files", "switch_app", "hide_app", "hide_others", "hide_all", "show_all",
   "minimise", "arrange", "fill", "half", "quit_app", "volume", "mute", "unmute", "screenshot", "copy_selection", "type_text", "wifi", "empty_trash",
+  // Owner report, 28 October 2026 ("open a new tab in Brave" opened Brave and said so): a new tab or window in a browser,
+  // and a web search. `app` is the browser ("" for the front one, else the Mac's default); a search's words are `text`.
+  "new_tab", "new_window", "search_web",
 ] as const;
 export type MacActionKind = (typeof MAC_ACTION_KINDS)[number];
 export const isMacActionKind = (v: unknown): v is MacActionKind => (MAC_ACTION_KINDS as readonly unknown[]).includes(v);
+
+/**
+ * The web browsers people name (owner report, 28 October 2026), the same table as `BROWSERS` in the Mac's open.rs: what
+ * they say and the apps' own names. Only one of these may be the `app` of an open_url, new_tab, new_window or search_web.
+ */
+export const BROWSERS: readonly { said: readonly string[]; names: readonly string[] }[] = [
+  { said: ["safari"], names: ["Safari"] },
+  { said: ["chrome", "google chrome"], names: ["Google Chrome"] },
+  { said: ["brave", "brave browser"], names: ["Brave Browser"] },
+  { said: ["arc"], names: ["Arc"] },
+  { said: ["firefox", "mozilla firefox", "fire fox"], names: ["Firefox"] },
+  { said: ["edge", "microsoft edge"], names: ["Microsoft Edge"] },
+  { said: ["opera"], names: ["Opera"] },
+  { said: ["vivaldi"], names: ["Vivaldi"] },
+  { said: ["orion"], names: ["Orion"] },
+  { said: ["zen", "zen browser"], names: ["Zen", "Zen Browser"] },
+  { said: ["duckduckgo", "duck duck go"], names: ["DuckDuckGo"] },
+];
+/** A name as a key, as the Mac's app index reads it ("the Brave app" → "brave"). */
+const appKey = (s: string) => s.normalize("NFKC").toLowerCase().trim().replace(/^(the|my)\s+/, "").replace(/\s+(app|application)$/, "").replace(/[^\p{L}\p{N}]+/gu, "");
+/** Whether a name (as people say it, or the app's own) is one of `BROWSERS`. */
+export function isBrowserName(name: unknown): boolean {
+  const k = appKey(String(name ?? ""));
+  return !!k && BROWSERS.some((b) => [...b.said, ...b.names].some((n) => appKey(n) === k));
+}
+/** The most a web search's words may be (characters; the Mac's open.rs `SEARCH_MAX`). */
+export const SEARCH_WORDS_MAX = 200;
 
 /** File kinds a search or a list may name (D.5; `any` is every kind). */
 export const SEARCH_KINDS = ["any", "image", "screenshot", "pdf", "document", "spreadsheet", "presentation", "video", "audio", "archive", "code", "design"] as const;
@@ -236,12 +267,17 @@ export const FRONT_LINES = {
     "Showing everything.", "Minimising {x}.", "Making {x} fill the screen.", "Putting {x} on the left.", "Putting {x} on the right.",
     "Putting {x} and {y} side by side.", "Quitting {x}.", "Volume up.", "Volume down.", "Volume {n} percent.", "Muted.", "Sound's back on.",
     "Taking a screenshot.", "Copying that.", "Typing it.", "Turning Wi-Fi on.", "Turning Wi-Fi off.", "Emptying the Trash.", "Let me look properly.", "One moment.",
+    // Owner report, 28 October 2026: tabs, pages in a browser, searches.
+    "Opening a new tab.", "Opening a new window.", "Opening a new tab in {x}.", "Opening a new window in {x}.", "Opening {x} in {y}.",
+    "Searching Google for {x}.", "Searching Google for {x} in {y}.",
   ],
   done: [
     "Opened {x}.", "Showed {x} in Finder.", "Found {n} files.", "Found one file.", "Switched to {x}.", "Hid {x}.", "Hid the other apps.", "Hid everything.",
     "Everything's back.", "Minimised {x}.", "{x} fills the screen.", "{x} is on the left.", "{x} is on the right.", "{x} and {y} are side by side.",
     "Quit {x}.", "{x} is asking about unsaved work.", "Screenshot saved to your Desktop.", "Copied.", "Typed it.", "Wi-Fi is on.", "Wi-Fi is off.",
     "The Trash is empty.", "Done.", "Okay, I won't.", "Okay, I won't click for you.", "Okay, I left them where they are.",
+    // Owner report, 28 October 2026: "a new tab" only when the keys went; otherwise the page it opened ("Opened {x} in {y}.").
+    "Opened a new tab in {x}.", "Opened a new window in {x}.", "Opened {x} in {y}.", "Searched Google for {x}.", "Searched Google for {x} in {y}.",
   ],
 } as const;
 
@@ -312,6 +348,8 @@ export const FRONT_WORDS = {
   /** When a request is refused (S.5): title and sub, by reason. */
   refused: {
     bad_url: { title: "I can't open that address", sub: "Only ordinary web pages, never downloads of apps or scripts." },
+    // Owner report, 28 October 2026: a page, a tab or a search goes only to a web browser.
+    not_browser: { title: "That isn't a web browser", sub: "I open pages, tabs and searches only in a browser, like Safari, Chrome or Brave." },
     secret: { title: "I don't open that file", sub: "It looks like a password or key file." },
     installer: { title: "I never open that kind of file", sub: "It's an installer, a disk image, a certificate, a script or a link file." },
     own: { title: "I can't quit myself", sub: "Use Quit Brenda in the menu bar." },

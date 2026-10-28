@@ -15,7 +15,7 @@ describe("risk.vectors (D.6)", () => {
     expect(c.reason).toBe(v.reason);
     if ("askKind" in v && v.askKind) expect(c.askKind).toBe(v.askKind);
   });
-  it("covers the contract's table (35 rows)", () => { expect(RISK_VECTORS).toHaveLength(35); });
+  it("covers the contract's table (35 rows, and 3 for browsers: owner report, 28 October 2026)", () => { expect(RISK_VECTORS).toHaveLength(38); });
 });
 
 describe("the rules around the table", () => {

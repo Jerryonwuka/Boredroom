@@ -120,15 +120,16 @@ impl Fact {
     fn rule(self) -> (Class, &'static [&'static str]) {
         const FILE_ITEMS: &[&str] = &["files.move", "files.copy", "files.rename", "files.trash", "files.organise", "files.rename_by_date"];
         match self {
-            Fact::Installer => (Class::Never, &["open_app", "open_file", "files.open"]),
-            Fact::Quarantined => (Class::Never, &["open_app", "switch_app"]),
-            Fact::OutsideApps => (Class::Never, &["open_app"]),
+            // The browser a page, a tab or a search opens in is an app like any other (owner report, 28 October 2026).
+            Fact::Installer => (Class::Never, &["open_app", "open_file", "files.open", "open_url", "new_tab", "new_window", "search_web"]),
+            Fact::Quarantined => (Class::Never, &["open_app", "switch_app", "open_url", "new_tab", "new_window", "search_web"]),
+            Fact::OutsideApps => (Class::Never, &["open_app", "open_url", "new_tab", "new_window", "search_web"]),
             Fact::Secret => (Class::Never, &["open_file", "reveal_file", "files.read", "files.open", "files.convert"]),
             Fact::NeverLook => (Class::Never, &["type_text", "copy_selection", "files.read"]),
             Fact::SecureField => (Class::Never, &["type_text", "copy_selection"]),
             Fact::Own => (Class::Never, &["quit_app", "hide_app", "type_text", "copy_selection"]),
             Fact::Finder => (Class::Never, &["quit_app"]),
-            Fact::BadUrl => (Class::Never, &["open_url"]),
+            Fact::BadUrl => (Class::Never, &["open_url", "search_web"]),
             Fact::OutsideAllowed => (Class::Never, &["files.list", "files.read", "files.make_folder", "files.move", "files.copy", "files.rename", "files.organise", "files.rename_by_date", "files.convert", "files.write", "files.trash", "files.open"]),
             Fact::HiddenOrSystem | Fact::RecentlyChanged => (Class::Never, FILE_ITEMS),
             Fact::CrossVolume => (Class::Never, &["files.move"]),
@@ -143,6 +144,8 @@ impl Fact {
 pub const ROUTINE_KINDS: &[&str] = &[
     "open_app", "open_url", "open_folder", "open_file", "reveal_file", "find_files", "switch_app", "hide_app", "hide_others", "hide_all", "show_all", "minimise",
     "arrange", "fill", "half", "quit_app", "volume", "mute", "unmute", "screenshot", "copy_selection", "type_text", "wifi_on",
+    // Owner report, 28 October 2026: a new tab or window in a browser, and a web search.
+    "new_tab", "new_window", "search_web",
     "files.list", "files.read", "files.make_folder", "files.move", "files.copy", "files.rename", "files.organise", "files.rename_by_date", "files.convert",
     "files.write", "files.open", "bd.remind_me", "bd.create_todos", "bd.timer", "job.files", "job.operator",
 ];
@@ -251,6 +254,9 @@ pub const VECTORS: &[Vector] = &[
     one(&["open_url"], &[], Class::Routine, "base", None),
     one(&["open_url"], &["bad_url"], Class::Never, "bad_url", None),
     one(&["open_file"], &["secret"], Class::Never, "secret", None),
+    one(&["new_tab"], &[], Class::Routine, "base", None),
+    one(&["search_web"], &["bad_url"], Class::Never, "bad_url", None),
+    one(&["open_url"], &["quarantined"], Class::Never, "quarantined", None),
     one(&["switch_app"], &["never_look"], Class::Routine, "base", None),
     one(&["quit_app"], &["never_look"], Class::Routine, "base", None),
     one(&["quit_app"], &["own"], Class::Never, "own", None),
@@ -304,7 +310,7 @@ mod tests {
             let got = run_vector(v);
             assert_eq!((got.class, got.reason, got.ask_kind), (v.class, v.reason, v.ask_kind), "{:?} {:?} check_every={}", v.kinds, v.facts, v.check_every);
         }
-        assert!(VECTORS.len() >= 35);
+        assert_eq!(VECTORS.len(), 38, "the same rows as RISK_VECTORS");
     }
 
     #[test]

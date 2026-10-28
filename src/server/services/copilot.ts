@@ -165,6 +165,7 @@ import type { PreparedChange } from "@/server/services/act";
 import { aiErrorCode, lookEffort, lookNowModel } from "@/server/services/act-model";
 import { forget0060, schema0060Ready } from "@/server/lib/schema-0060";
 import { FRONT_WORDS, THINK_LINE, thinkLane } from "@/lib/front";
+import { MAC_CAN_DO_LINE, macRecentLine, macRecentSchema, type MacRecent } from "@/server/services/mac-recent";
 import { SentenceBuffer } from "@/server/lib/sentences";
 import { speakable } from "@/lib/assistant-speech/speakable";
 import type { NdjsonWrite } from "@/server/lib/ndjson";
@@ -232,6 +233,9 @@ import { PROVIDER_LABELS } from "@/lib/connectors/types";
  */
 export const chatSchema = z.object({
   messages: z.array(z.object({ role: z.enum(["user", "assistant"]), content: z.string().trim().min(1).max(4000), tainted: z.boolean().optional() })).min(1).max(30),
+  // Owner report, 28 October 2026: the notch's chat carries what Brenda did on this Mac lately (Rust's own record;
+  // optional, bounded, and said only in chat from the Mac).
+  macRecent: macRecentSchema.optional(),
 });
 
 /**
@@ -341,7 +345,7 @@ export async function chat(ctx: OrgContext, input: z.infer<typeof chatSchema>, o
       const r = await chatBuiltin(ctx, input.messages, { connected: true });
       return { ...r, note: limitNote(name, a.limit) };
     }
-    try { return await chatWithClaude(ctx, conn, input.messages, o.checkEvery === undefined ? {} : { checkEvery: o.checkEvery }); }
+    try { return await chatWithClaude(ctx, conn, input.messages, { ...(o.checkEvery === undefined ? {} : { checkEvery: o.checkEvery }), ...(input.macRecent?.length ? { macRecent: input.macRecent } : {}) }); }
     catch (err) { const r = await chatBuiltin(ctx, input.messages, { connected: true }); return { ...r, note: `Claude could not be reached (${describeError(err)}); the built-in helper answered instead.` }; }
   }
   return chatBuiltin(ctx, input.messages);
@@ -3116,7 +3120,7 @@ function clockWords(now: Date, timeZone: string): { today: string; weekday: stri
  * model their ordinary chat uses (`o.ledgerModel`); what it really cost goes to look_usage_daily, with no workspace and no
  * person.
  */
-async function chatWithClaude(ctx: OrgContext, conn: AssistantConnection, messages: { role: "user" | "assistant"; content: string; tainted?: boolean }[], o: { look?: LookInput; ledgerModel?: string | Promise<string>; v2?: LookTurn; checkEvery?: boolean } = {}): Promise<ChatResult> {
+async function chatWithClaude(ctx: OrgContext, conn: AssistantConnection, messages: { role: "user" | "assistant"; content: string; tainted?: boolean }[], o: { look?: LookInput; ledgerModel?: string | Promise<string>; v2?: LookTurn; checkEvery?: boolean; macRecent?: MacRecent } = {}): Promise<ChatResult> {
   const { default: Anthropic } = await import("@anthropic-ai/sdk");
   const client = new Anthropic({ apiKey: conn.apiKey, maxRetries: 2, timeout: 90_000 });
   const role = ctx.membership.role;
@@ -3204,6 +3208,8 @@ async function chatWithClaude(ctx: OrgContext, conn: AssistantConnection, messag
     ...(look ? [lookSituation({ app: look.app.name, width: look.image.width, height: look.image.height, pointer: look.pointer, source: look.source })] : []),
     ...(v2 ? [lookSituationV2({ look: v2.look, act: v2.act.available, asked, name: assistants.personal.name, plans, reason: v2.act.reason, front: !!front })] : []),
     ...(fromMac ? [MAC_CHAT_LINE] : []),
+    // Owner report, 28 October 2026: what she did on their Mac lately (the Mac's record), only in chat from the Mac.
+    ...(onMac && !looking && macRecentLine(o.macRecent) ? [macRecentLine(o.macRecent)] : []),
     // Review, 12 October 2026 (owner report: "Brenda is meant to assist you do anything you need it to do"): in the
     // browser, where screen help is offered, she knows what Brenda for Mac does and where it is set up, instead of
     // saying she can't.
@@ -3559,7 +3565,10 @@ export const FRONT_LOOK_LINE = `They held your keys to ask about their screen. A
 // Brenda and her helpers (owner brief, 12 October 2026; contract J.3): `front`, a front-capable Mac's look. Owner report,
 // 27 October 2026: when its words ask for something on the Mac (`asked`) it proposes, as any look does, and it never
 // tells them to ask again with their keys.
-export function lookSituationV2(o: { look: Pick<LookV2Input, "source" | "screen" | "crop" | "app" | "hidden" | "abilities" | "files">; act: boolean; asked?: boolean; name: string; plans?: boolean; reason?: DesktopActReason | null; front?: boolean }): string {
+// Owner report, 28 October 2026 ("I can't control your browser, so my earlier 'Opened Brave Browser' replies were wrong"):
+// `look.recent`, what she did on their Mac lately as the Mac records it, is said as facts; a front look where tasks are
+// available is told what Brenda for Mac does (MAC_CAN_DO_LINE).
+export function lookSituationV2(o: { look: Pick<LookV2Input, "source" | "screen" | "crop" | "app" | "hidden" | "abilities" | "files" | "recent">; act: boolean; asked?: boolean; name: string; plans?: boolean; reason?: DesktopActReason | null; front?: boolean }): string {
   const L = o.look;
   const S = L.screen, C = L.crop;
   const lines: string[] = [];
@@ -3590,6 +3599,9 @@ export function lookSituationV2(o: { look: Pick<LookV2Input, "source" | "screen"
   // Owner report, 27 October 2026: a front look never sends them back to their keys (they just used them, and the same
   // words came back here); what their words ask for is proposed below, for their Yes or No.
   if (o.front) lines.push(FRONT_LOOK_LINE);
+  const recent = macRecentLine(L.recent);
+  if (recent) lines.push(recent);
+  if (o.front && o.act) lines.push(MAC_CAN_DO_LINE);
   if (o.act && o.asked === false) {
     // Review, 12 October 2026 (rule a): their words are a question, so no task is offered at all. Phase 3 (owner report,
     // 12 October 2026: "how do I turn on the features…"): she may offer the setup, which asks on the Mac.

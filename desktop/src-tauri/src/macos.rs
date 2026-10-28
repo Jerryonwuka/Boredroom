@@ -40,6 +40,12 @@ pub trait Mac {
     fn hand_back(&self, pid: i32) -> bool;
     fn open_path(&mut self, p: &Path) -> bool;
     fn open_url(&mut self, u: &str) -> bool;
+    /// `u` in the browser at `app` (owner report, 28 October 2026: "open a new tab in Brave").
+    fn open_url_in(&mut self, u: &str, app: &Path) -> bool;
+    /// The app macOS opens web pages with.
+    fn default_browser(&self) -> Option<PathBuf>;
+    /// ⌘T (or ⌘N for a window) to `pid`, only while `pid` is the front app (`input::browser_keys`); whether it went.
+    fn browser_keys(&self, pid: i32, window: bool) -> bool;
     fn reveal(&mut self, p: &Path) -> bool;
     fn activate(&self, pid: i32) -> bool;
     fn hide(&self, pid: i32) -> bool;
@@ -389,6 +395,24 @@ impl Mac for RealMac {
         self.opener.open_url(u)
     }
 
+    fn open_url_in(&mut self, u: &str, app: &Path) -> bool {
+        use crate::open::Opener;
+        self.opener.open_url_in(u, app)
+    }
+
+    fn default_browser(&self) -> Option<PathBuf> {
+        #[cfg(target_os = "macos")]
+        return real::on_main(&self.app, crate::open::default_browser_now).flatten();
+        #[cfg(not(target_os = "macos"))]
+        None
+    }
+
+    fn browser_keys(&self, pid: i32, window: bool) -> bool {
+        let app = self.app.clone();
+        let front_is = move || crate::capture::frontmost(&app).is_some_and(|f| f.pid == pid);
+        crate::input::browser_keys(window, &front_is)
+    }
+
     fn reveal(&mut self, p: &Path) -> bool {
         use crate::open::Opener;
         self.opener.reveal(p)
@@ -597,6 +621,7 @@ pub mod testing {
         pub trash_result: Result<(), MacRefusal>,
         pub typed: RefCell<Vec<String>>,
         pub slept: Cell<u64>,
+        pub default_browser: Option<PathBuf>,
     }
 
     pub fn app(pid: i32, name: &str, bundle: &str) -> RunningApp {
@@ -624,6 +649,7 @@ pub mod testing {
                 trash_result: Ok(()),
                 typed: RefCell::new(vec![]),
                 slept: Cell::new(0),
+                default_browser: Some(PathBuf::from("/Applications/Safari.app")),
             }
         }
 
@@ -657,6 +683,17 @@ pub mod testing {
         fn open_url(&mut self, u: &str) -> bool {
             self.note(format!("url {u}"));
             self.open_ok
+        }
+        fn open_url_in(&mut self, u: &str, app: &Path) -> bool {
+            self.note(format!("url {u} in {}", app.display()));
+            self.open_ok
+        }
+        fn default_browser(&self) -> Option<PathBuf> {
+            self.default_browser.clone()
+        }
+        fn browser_keys(&self, pid: i32, window: bool) -> bool {
+            self.note(format!("keys cmd+{} {pid}", if window { "n" } else { "t" }));
+            self.ax
         }
         fn reveal(&mut self, p: &Path) -> bool {
             self.note(format!("reveal {}", p.display()));

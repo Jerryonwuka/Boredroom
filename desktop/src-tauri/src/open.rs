@@ -432,6 +432,69 @@ pub fn front_url_ok(url: &str) -> Option<String> {
     Some(if parsed.path() == "/" && parsed.query().is_none() && parsed.fragment().is_none() { s.trim_end_matches('/').to_string() } else { s })
 }
 
+// ---- browsers (owner report, 28 October 2026) ---------------------------------------------------------------------------
+
+/// One web browser people name: what they say, the app's own names, its bundle ids. Owner report, 28 October 2026 ("open
+/// a new tab in Brave" got "Opened Brave Browser": the front desk only knew `open_app`): a tab, a page in a named
+/// browser and a search go only to an app in this table, the front app when it is one, or the Mac's default browser.
+/// The same names as `BROWSERS` in `src/lib/front.ts`.
+pub struct Browser {
+    pub said: &'static [&'static str],
+    pub names: &'static [&'static str],
+    pub bundle_ids: &'static [&'static str],
+}
+
+pub const BROWSERS: &[Browser] = &[
+    Browser { said: &["safari"], names: &["Safari"], bundle_ids: &["com.apple.Safari"] },
+    Browser { said: &["chrome", "google chrome"], names: &["Google Chrome"], bundle_ids: &["com.google.Chrome"] },
+    Browser { said: &["brave", "brave browser"], names: &["Brave Browser"], bundle_ids: &["com.brave.Browser"] },
+    Browser { said: &["arc"], names: &["Arc"], bundle_ids: &["company.thebrowser.Browser"] },
+    Browser { said: &["firefox", "mozilla firefox", "fire fox"], names: &["Firefox"], bundle_ids: &["org.mozilla.firefox"] },
+    Browser { said: &["edge", "microsoft edge"], names: &["Microsoft Edge"], bundle_ids: &["com.microsoft.edgemac"] },
+    Browser { said: &["opera"], names: &["Opera"], bundle_ids: &["com.operasoftware.Opera"] },
+    Browser { said: &["vivaldi"], names: &["Vivaldi"], bundle_ids: &["com.vivaldi.Vivaldi"] },
+    Browser { said: &["orion"], names: &["Orion"], bundle_ids: &["com.kagi.kagimacOS"] },
+    Browser { said: &["zen", "zen browser"], names: &["Zen", "Zen Browser"], bundle_ids: &["app.zen-browser.zen"] },
+    Browser { said: &["duckduckgo", "duck duck go"], names: &["DuckDuckGo"], bundle_ids: &["com.duckduckgo.macos.browser"] },
+];
+
+/// The browser a name means, by what people say or the app's own name ("brave", "Brave Browser", "chrome").
+pub fn browser_said(said: &str) -> Option<&'static Browser> {
+    let k = crate::appindex::key_of(&crate::appindex::clean_said(said));
+    if k.is_empty() {
+        return None;
+    }
+    BROWSERS.iter().find(|b| b.said.iter().chain(b.names).any(|n| crate::appindex::key_of(n) == k))
+}
+
+/// Whether an app is a web browser: its bundle id, else its own name, in `BROWSERS`.
+pub fn is_browser(name: &str, bundle_id: Option<&str>) -> bool {
+    if let Some(id) = bundle_id.filter(|i| !i.is_empty()) {
+        if BROWSERS.iter().any(|b| b.bundle_ids.iter().any(|x| x.eq_ignore_ascii_case(id))) {
+            return true;
+        }
+    }
+    let k = crate::appindex::key_of(name);
+    !k.is_empty() && BROWSERS.iter().any(|b| b.names.iter().any(|n| crate::appindex::key_of(n) == k))
+}
+
+/// The page a new tab falls back to when the keys can't be pressed (no Accessibility, or the browser wasn't open):
+/// Google's home page, as a search would use.
+pub const BROWSER_HOME: &str = "https://www.google.com";
+/// The most a search's words may be (characters).
+pub const SEARCH_MAX: usize = 200;
+
+/// Google's results for `words` (owner report, 28 October 2026): `https://www.google.com/search?q=…`, the words
+/// form-encoded. None for nothing to search, more than 200 characters, or control characters. The host and path are
+/// fixed, so the words can never make it another page.
+pub fn search_url(words: &str) -> Option<String> {
+    let w = words.trim();
+    if w.is_empty() || w.chars().count() > SEARCH_MAX || w.chars().any(char::is_control) {
+        return None;
+    }
+    reqwest::Url::parse_with_params("https://www.google.com/search", &[("q", w)]).ok().map(|u| u.to_string())
+}
+
 // ---- pages ----------------------------------------------------------------------------------------------------------
 
 /// Query parameters whose value is another address: a redirector ("google.com/url?q=https://paypal.com/…") would open a
@@ -522,6 +585,8 @@ pub trait Opener {
     fn open_path(&mut self, p: &Path) -> bool;
     fn reveal(&mut self, p: &Path) -> bool;
     fn open_url(&mut self, u: &str) -> bool;
+    /// `u` in the app at `app` (a browser; owner report, 28 October 2026), not the default browser.
+    fn open_url_in(&mut self, u: &str, app: &Path) -> bool;
 }
 
 /// Records what would have been opened (tests).
@@ -543,6 +608,10 @@ impl Opener for RecordingOpener {
     }
     fn open_url(&mut self, u: &str) -> bool {
         self.calls.push(format!("url {u}"));
+        true
+    }
+    fn open_url_in(&mut self, u: &str, app: &Path) -> bool {
+        self.calls.push(format!("url {u} in {}", app.display()));
         true
     }
 }
@@ -602,6 +671,78 @@ impl Opener for WorkspaceOpener {
     fn open_url(&mut self, u: &str) -> bool {
         self.on_main(Target::Url(u.to_string()))
     }
+    /// `openURLs:withApplicationAtURL:configuration:completionHandler:` on the main thread (owner report, 28 October
+    /// 2026). macOS answers in the completion handler: an error is a failure; no answer within 3 s is a browser still
+    /// launching, taken as opened (as an app's launch is, `launch_answer`).
+    fn open_url_in(&mut self, u: &str, app: &Path) -> bool {
+        let (tx, rx) = std::sync::mpsc::channel::<bool>();
+        let (u, app_path) = (u.to_string(), app.to_path_buf());
+        let sent = self.app.run_on_main_thread(move || {
+            if !open_in(&u, &app_path, tx.clone()) {
+                let _ = tx.send(false);
+            }
+        });
+        if sent.is_err() {
+            return false;
+        }
+        launch_answer(rx.recv_timeout(Duration::from_secs(3)), true)
+    }
+}
+
+/// Starts opening `u` with the app at `app`; `done` gets macOS's answer. Whether the call was made. Main thread only.
+#[cfg(target_os = "macos")]
+fn open_in(u: &str, app: &Path, done: std::sync::mpsc::Sender<bool>) -> bool {
+    use objc2::{msg_send, rc::Retained, runtime::AnyClass, runtime::AnyObject};
+    use objc2_foundation::NSString;
+    objc2::rc::autoreleasepool(|_| unsafe {
+        let (Some(ws_cls), Some(url_cls), Some(arr_cls), Some(cfg_cls)) = (AnyClass::get(c"NSWorkspace"), AnyClass::get(c"NSURL"), AnyClass::get(c"NSArray"), AnyClass::get(c"NSWorkspaceOpenConfiguration")) else { return false };
+        let ws: Option<Retained<AnyObject>> = msg_send![ws_cls, sharedWorkspace];
+        let Some(ws) = ws else { return false };
+        let us = NSString::from_str(u);
+        let url: Option<Retained<AnyObject>> = msg_send![url_cls, URLWithString: &*us];
+        let ps = NSString::from_str(&app.to_string_lossy());
+        let app_url: Option<Retained<AnyObject>> = msg_send![url_cls, fileURLWithPath: &*ps];
+        let (Some(url), Some(app_url)) = (url, app_url) else { return false };
+        let urls: Option<Retained<AnyObject>> = msg_send![arr_cls, arrayWithObject: &*url];
+        let config: Option<Retained<AnyObject>> = msg_send![cfg_cls, configuration];
+        let (Some(urls), Some(config)) = (urls, config) else { return false };
+        let _: () = msg_send![&*config, setActivates: true];
+        let done = std::sync::Mutex::new(Some(done));
+        let block = block2::RcBlock::new(move |_app: *mut AnyObject, error: *mut AnyObject| {
+            if let Some(tx) = done.lock().ok().and_then(|mut d| d.take()) {
+                let _ = tx.send(error.is_null());
+            }
+        });
+        let _: () = msg_send![&*ws, openURLs: &*urls, withApplicationAtURL: &*app_url, configuration: &*config, completionHandler: &*block];
+        true
+    })
+}
+
+#[cfg(not(target_os = "macos"))]
+fn open_in(_u: &str, _app: &Path, _done: std::sync::mpsc::Sender<bool>) -> bool {
+    false
+}
+
+/// The app macOS opens web pages with (`URLForApplicationToOpenURL:`), or None. Main thread only.
+#[cfg(target_os = "macos")]
+pub(crate) fn default_browser_now() -> Option<PathBuf> {
+    use objc2::{msg_send, rc::Retained, runtime::AnyClass, runtime::AnyObject};
+    use objc2_foundation::NSString;
+    objc2::rc::autoreleasepool(|_| unsafe {
+        let ws_cls = AnyClass::get(c"NSWorkspace")?;
+        let url_cls = AnyClass::get(c"NSURL")?;
+        let ws: Option<Retained<AnyObject>> = msg_send![ws_cls, sharedWorkspace];
+        let s = NSString::from_str(BROWSER_HOME);
+        let probe: Option<Retained<AnyObject>> = msg_send![url_cls, URLWithString: &*s];
+        let app: Option<Retained<AnyObject>> = msg_send![&*ws?, URLForApplicationToOpenURL: &*probe?];
+        let path: Option<Retained<NSString>> = msg_send![&*app?, path];
+        path.map(|p| PathBuf::from(p.to_string())).filter(|p| p.extension().is_some_and(|e| e.eq_ignore_ascii_case("app")))
+    })
+}
+
+#[cfg(not(target_os = "macos"))]
+pub(crate) fn default_browser_now() -> Option<PathBuf> {
+    None
 }
 
 #[cfg(target_os = "macos")]
@@ -667,6 +808,24 @@ mod tests {
         }
         assert!(front_url_ok(&format!("https://x.com/{}", "a".repeat(1_990))).is_none());
         assert!(front_url_ok(&format!("https://x.com/{}", "a".repeat(400))).is_some(), "no 170-character cap any more");
+    }
+
+    /// Owner report, 28 October 2026: the browsers people name, and Google's results for their words.
+    #[test]
+    fn browsers_and_searches() {
+        for (said, name) in [("brave", "Brave Browser"), ("Brave Browser", "Brave Browser"), ("chrome", "Google Chrome"), ("Safari", "Safari"), ("arc", "Arc"), ("Firefox", "Firefox"), ("edge", "Microsoft Edge"), ("opera", "Opera"), ("Vivaldi", "Vivaldi"), ("orion", "Orion"), ("zen", "Zen"), ("duck duck go", "DuckDuckGo"), ("the Brave app", "Brave Browser")] {
+            assert_eq!(browser_said(said).map(|b| b.names[0]), Some(name), "{said}");
+        }
+        for not in ["notes", "figma", "", "browser"] {
+            assert!(browser_said(not).is_none(), "{not}");
+        }
+        assert!(is_browser("Brave Browser", None) && is_browser("Whatever", Some("com.brave.Browser")) && is_browser("Zen Browser", None));
+        assert!(!is_browser("Notes", Some("com.apple.Notes")) && !is_browser("", None));
+        assert_eq!(search_url("remote work tools").as_deref(), Some("https://www.google.com/search?q=remote+work+tools"));
+        assert_eq!(search_url(" a&b=c#d ").as_deref(), Some("https://www.google.com/search?q=a%26b%3Dc%23d"), "the words never become another parameter");
+        assert_eq!(search_url("https://evil.example/x").map(|u| u.starts_with("https://www.google.com/search?q=")), Some(true), "Google's page, whatever the words");
+        assert!(search_url("").is_none() && search_url("   ").is_none() && search_url(&"x".repeat(201)).is_none() && search_url("a\u{0}b").is_none());
+        assert_eq!(super::BROWSERS.len(), 11);
     }
 
     /// Review, 16 October 2026: an app's launch is not waited for; a file or page still is.

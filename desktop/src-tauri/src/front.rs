@@ -86,6 +86,8 @@ pub struct MacAction {
 pub const KINDS: &[&str] = &[
     "open_app", "open_url", "open_folder", "open_file", "reveal_file", "find_files", "switch_app", "hide_app", "hide_others", "hide_all", "show_all", "minimise",
     "arrange", "fill", "half", "quit_app", "volume", "mute", "unmute", "screenshot", "copy_selection", "type_text", "wifi", "empty_trash",
+    // Owner report, 28 October 2026: a new tab or window in a browser, and a web search (`app` the browser, `text` the words).
+    "new_tab", "new_window", "search_web",
 ];
 
 impl MacAction {
@@ -386,6 +388,136 @@ fn match_typing(original: &str, name: &str) -> Option<String> {
     ((1..=2_000).contains(&n) && !["it", "that", "this"].contains(&lp.as_str())).then_some(p)
 }
 
+// ---- browsers (owner report, 28 October 2026) ---------------------------------------------------------------------------
+
+/// Words after "in" or "on" that mean a browser without naming one: the front browser, else the default one.
+const ANY_BROWSER: &[&str] = &[
+    "browser", "the browser", "my browser", "a browser", "a new tab", "new tab", "a tab", "a new window", "new window", "a new browser tab", "a new browser window",
+    "the web", "web", "the internet", "google",
+];
+/// Words that always mean a web search ("google remote work tools").
+const SEARCH_WEB_VERBS: &[&str] = &[
+    "google", "google for", "google search", "google search for", "search google", "search google for", "do a google search for", "search the web for",
+    "search online for", "search the internet for", "web search", "web search for", "do a web search for",
+];
+/// Words that mean a web search only with a browser or the web named ("search for X in Chrome", "look up X online");
+/// otherwise they may be about files, and go on to the router.
+const SEARCH_MAYBE_VERBS: &[&str] = &["search for", "search", "look up"];
+const WEB_MARKS: &[&str] = &["online", "on the web", "on the internet"];
+
+/// The app a browser phrase names ("brave", "the Brave browser", "chrome"): the browser table first (its own name when
+/// this Mac doesn't have it, so the refusal names it), then any app the index knows (refused when it runs, as it isn't
+/// a browser). None when it names nothing.
+fn browser_app(said: &str, ctx: &MatchCtx) -> Option<String> {
+    let mut w: Vec<&str> = said.split(' ').filter(|x| !x.is_empty()).collect();
+    while w.len() > 1 && ["the", "my", "a", "an", "new"].contains(&w[0]) {
+        w.remove(0);
+    }
+    if let Some(b) = crate::open::browser_said(&w.join(" ")) {
+        return Some(b.names.iter().find_map(|n| (ctx.resolve)(n).filter(|r| crate::open::is_browser(r, None))).unwrap_or_else(|| b.names[0].to_string()));
+    }
+    while w.len() > 1 && w.last().is_some_and(|l| ["browser", "app", "tab", "window"].contains(l)) {
+        w.pop();
+    }
+    let said = w.join(" ");
+    if let Some(b) = crate::open::browser_said(&said) {
+        return Some(b.names.iter().find_map(|n| (ctx.resolve)(n).filter(|r| crate::open::is_browser(r, None))).unwrap_or_else(|| b.names[0].to_string()));
+    }
+    one_app(&said, ctx)
+}
+
+/// "… in Brave", "… on the web", "… using Chrome": what comes before, and the app ("" for the front or default
+/// browser). A trailing "in a new tab" before the name goes too ("open github.com in a new tab in Brave"). None when the
+/// words don't end so.
+fn browser_tail(s: &str, ctx: &MatchCtx) -> Option<(String, String)> {
+    let generic_tail = |b: &str| -> String {
+        let mut b = b.trim().to_string();
+        for g in ANY_BROWSER {
+            if let Some(x) = b.strip_suffix(&format!(" in {g}")) {
+                b = x.trim().to_string();
+                break;
+            }
+        }
+        b
+    };
+    for joiner in [" in ", " on ", " using ", " with "] {
+        let mut at = s.len();
+        while let Some(i) = s[..at].rfind(joiner) {
+            at = i;
+            let (before, after) = (s[..i].trim(), s[i + joiner.len()..].trim());
+            if before.is_empty() || after.is_empty() {
+                continue;
+            }
+            if ANY_BROWSER.contains(&after) && joiner != " with " {
+                return Some((generic_tail(before), String::new()));
+            }
+            // "with" names a browser or nothing ("search for pasta with tomatoes").
+            let named = if joiner == " with " { crate::open::browser_said(after).and_then(|_| browser_app(after, ctx)) } else { browser_app(after, ctx) };
+            if let Some(app) = named {
+                return Some((generic_tail(before), app));
+            }
+        }
+    }
+    None
+}
+
+/// The words of a search, or None: not empty, not "it" or "that", at most 200 characters.
+fn search_words(q: &str) -> Option<String> {
+    let q = q.trim();
+    (!q.is_empty() && q.chars().count() <= crate::open::SEARCH_MAX && !["it", "that", "this", "them"].contains(&q)).then(|| q.to_string())
+}
+
+/// A new tab or window, a page in a browser, or a web search (R13b; owner report, 28 October 2026). `s` is normalised.
+fn match_browser(s: &str, ctx: &MatchCtx) -> Option<MacAction> {
+    // Some(window), Some(None) for a bare "window" (only with a browser named or "browser" said).
+    let tab_of = |s: &str| -> Option<(bool, bool)> {
+        let c = exactly(s, &[&["open", "open up", "make", "start", "create", "give me", ""], &["a new", "new", "another", "another new", "a fresh", "a"], &["tab", "browser tab", "window", "browser window"]])?;
+        Some((c[2].ends_with("window"), c[2].starts_with("browser")))
+    };
+    let tab = |window: bool, app: String| MacAction { app, ..MacAction::of(if window { "new_window" } else { "new_tab" }) };
+    let search = |q: &str, app: String| search_words(q).map(|q| MacAction { text: q, app, ..MacAction::of("search_web") });
+    let shortest = |v: Vec<(Vec<&str>, String)>| v.into_iter().map(|(_, r)| r).filter(|r| !r.is_empty()).min_by_key(|r| r.len());
+    if let Some((before, app)) = browser_tail(s, ctx) {
+        let browser = app.is_empty() || crate::open::is_browser(&app, None);
+        if let Some((window, _)) = tab_of(&before) {
+            return Some(tab(window, app));
+        }
+        for (_, u, _) in slot(&before, &[&["go to", "open", "visit", "load", "take me to", "bring up", "pull up"]], &[]) {
+            if is_hostish(&u) {
+                let u: String = u.chars().filter(|c| *c != ' ').collect();
+                return Some(MacAction { url: format!("https://{u}"), app, ..MacAction::of("open_url") });
+            }
+        }
+        if let Some(q) = shortest(prefixes(&before, &[SEARCH_WEB_VERBS])) {
+            return search(&q, app);
+        }
+        if browser {
+            if let Some(q) = shortest(prefixes(&before, &[SEARCH_MAYBE_VERBS])) {
+                return search(&q, app);
+            }
+        }
+        return None;
+    }
+    if let Some((window, said_browser)) = tab_of(s) {
+        // "Open a new window" alone could be any app's: it goes on to the router.
+        return (!window || said_browser).then(|| tab(window, String::new()));
+    }
+    for (_, mid, c) in slot(s, &[&["open", "open up", "make", "start", ""], &["a new", "new", "another", "a"]], &[&["tab", "window"]]) {
+        if let Some(app) = browser_app(&mid, ctx).filter(|a| crate::open::is_browser(a, None)) {
+            return Some(tab(c[0] == "window", app));
+        }
+    }
+    if let Some(q) = shortest(prefixes(s, &[SEARCH_WEB_VERBS])) {
+        return search(&q, String::new());
+    }
+    for (_, q, _) in slot(s, &[SEARCH_MAYBE_VERBS], &[WEB_MARKS]) {
+        if let Some(a) = search(&q, String::new()) {
+            return Some(a);
+        }
+    }
+    None
+}
+
 /// The on-Mac matcher (B.1): the first rule that matches wins; no match (or an app or folder that doesn't resolve) is
 /// None, and the request goes on to `intent.rs` and the router.
 pub fn match_command(text: &str, ctx: &MatchCtx) -> Option<Matched> {
@@ -533,6 +665,11 @@ pub fn match_command(text: &str, ctx: &MatchCtx) -> Option<Matched> {
             return one(MacAction::app("quit_app", &app));
         }
     }
+    // R13b (owner report, 28 October 2026: "open a new tab in Brave" opened Brave and said so): a new tab or window, a
+    // page in a named browser, a web search. Before R14, which would read "stripe.com in safari" as one address.
+    if let Some(a) = match_browser(&s, ctx) {
+        return one(a);
+    }
     // R14
     for (_, u, _) in slot(&s, &[&["go to", "open", "visit", "load", "take me to", "bring up", "pull up"]], &[]) {
         if is_hostish(&u) {
@@ -599,12 +736,25 @@ fn words_of(a: &MacAction) -> String {
     line_name(&a.words.join(" "))
 }
 
+/// " in Brave Browser" for an action naming its browser, else "".
+fn in_browser(a: &MacAction) -> String {
+    let x = line_name(&a.app);
+    if x.is_empty() {
+        String::new()
+    } else {
+        format!(" in {x}")
+    }
+}
+
 /// The doing line (S.1), said at once.
 pub fn doing_line(a: &MacAction) -> String {
     let x = line_name(&a.app);
     match a.kind.as_str() {
         "open_app" => format!("Opening {x}."),
-        "open_url" => format!("Opening {}.", line_name(&host_of(&a.url))),
+        "open_url" => format!("Opening {}{}.", line_name(&host_of(&a.url)), in_browser(a)),
+        "new_tab" => format!("Opening a new tab{}.", in_browser(a)),
+        "new_window" => format!("Opening a new window{}.", in_browser(a)),
+        "search_web" => format!("Searching Google for {}{}.", line_name(&a.text), in_browser(a)),
         "open_folder" => format!("Opening {}.", folder_words(&a.folder)),
         "open_file" | "reveal_file" | "find_files" => format!("Looking for {}.", words_of(a)),
         "switch_app" => format!("Switching to {x}."),
@@ -642,7 +792,11 @@ pub fn done_line(a: &MacAction, name: &str, n: usize) -> String {
     let x = line_name(&a.app);
     match a.kind.as_str() {
         "open_app" => format!("Opened {x}."),
-        "open_url" => format!("Opened {}.", line_name(&host_of(&a.url))),
+        "open_url" => format!("Opened {}{}.", line_name(&host_of(&a.url)), in_browser(a)),
+        // The keys went (`run_one`; without them the line says the page it opened instead).
+        "new_tab" => format!("Opened a new tab{}.", in_browser(a)),
+        "new_window" => format!("Opened a new window{}.", in_browser(a)),
+        "search_web" => format!("Searched Google for {}{}.", line_name(&a.text), in_browser(a)),
         "open_folder" => format!("Opened {}.", folder_words(&a.folder)),
         "open_file" => format!("Opened {}.", line_name(name)),
         "reveal_file" => format!("Showed {} in Finder.", line_name(name)),
@@ -674,7 +828,10 @@ fn check_phrase(a: &MacAction) -> String {
     let x = line_name(&a.app);
     match a.kind.as_str() {
         "open_app" => format!("open {x}"),
-        "open_url" => format!("open {}", line_name(&host_of(&a.url))),
+        "open_url" => format!("open {}{}", line_name(&host_of(&a.url)), in_browser(a)),
+        "new_tab" => format!("open a new tab{}", in_browser(a)),
+        "new_window" => format!("open a new window{}", in_browser(a)),
+        "search_web" => format!("search Google for {}{}", line_name(&a.text), in_browser(a)),
         "open_folder" => format!("open {}", folder_words(&a.folder)),
         "open_file" => format!("open {}", words_of(a)),
         "reveal_file" => format!("show {} in Finder", words_of(a)),
@@ -1035,13 +1192,22 @@ pub struct SeqOutcome {
     pub confirmed_via: Option<&'static str>,
     /// A screenshot's Undo.
     pub undo: Option<crate::fileops::Op>,
+    /// Each action's done line, in order ("Opened Brave Browser."): Boredroom's own record of what Brenda did on this
+    /// Mac, which a look and the chat are told (`Front::recent`; owner report, 28 October 2026). Never typed text.
+    pub lines: Vec<String>,
 }
 
 /// The facts the Mac sees for one action, right before it runs (D.3).
 fn facts_for(mac: &dyn Mac, host: &dyn Host, a: &MacAction, target: Option<&AppTarget>) -> Vec<Fact> {
     let mut f = Vec::new();
     match a.kind.as_str() {
-        "open_app" | "switch_app" => {
+        "open_app" | "switch_app" | "open_url" | "new_tab" | "new_window" | "search_web" => {
+            if a.kind == "open_url" && crate::open::front_url_ok(&a.url).is_none() {
+                f.push(Fact::BadUrl);
+            }
+            if a.kind == "search_web" && crate::open::search_url(&a.text).is_none() {
+                f.push(Fact::BadUrl);
+            }
             if let Some(t) = target {
                 match t.refused {
                     Some(crate::open::Why::Runs) => f.push(Fact::Installer),
@@ -1059,11 +1225,6 @@ fn facts_for(mac: &dyn Mac, host: &dyn Host, a: &MacAction, target: Option<&AppT
                 if a.kind == "quit_app" && t.bundle_id.as_deref() == Some(crate::guard::FINDER_ID) {
                     f.push(Fact::Finder);
                 }
-            }
-        }
-        "open_url" => {
-            if crate::open::front_url_ok(&a.url).is_none() {
-                f.push(Fact::BadUrl);
             }
         }
         "type_text" | "copy_selection" => {
@@ -1095,7 +1256,7 @@ fn facts_for(mac: &dyn Mac, host: &dyn Host, a: &MacAction, target: Option<&AppT
 
 /// The app an action is about, when it names one.
 fn target_of(host: &dyn Host, a: &MacAction) -> Option<AppTarget> {
-    (!a.app.is_empty() && ["open_app", "switch_app", "hide_app", "minimise", "fill", "half", "arrange", "quit_app"].contains(&a.kind.as_str())).then(|| host.app(&a.app)).flatten()
+    (!a.app.is_empty() && ["open_app", "switch_app", "hide_app", "minimise", "fill", "half", "arrange", "quit_app", "open_url", "new_tab", "new_window", "search_web"].contains(&a.kind.as_str())).then(|| host.app(&a.app)).flatten()
 }
 
 /// The request's class (D.1) with what the Mac sees now, never below the server's (D.4).
@@ -1160,6 +1321,84 @@ fn person_app(mac: &dyn Mac) -> Option<RunningApp> {
     Some(f)
 }
 
+fn not_a_browser(name: &str) -> Refusal {
+    refusal(format!("{} isn't a web browser", line_name(name)), "I open pages, tabs and searches only in a browser, like Safari, Chrome or Brave.")
+}
+
+/// The browser a tab, a page or a search goes to (owner report, 28 October 2026): the one named (refused when it isn't a
+/// browser, or is an app the rules don't open), else the front app when it is a browser, else the Mac's default
+/// browser. Ok(None): no browser to name (a page then goes to macOS's own choice).
+fn browser_for(mac: &dyn Mac, host: &dyn Host, a: &MacAction) -> Result<Option<AppTarget>, Refusal> {
+    if !a.app.is_empty() {
+        // The router may send the name as said ("Brave"): the browser table's own names first.
+        let known = crate::open::browser_said(&a.app);
+        let t = known.and_then(|b| b.names.iter().find_map(|n| host.app(n))).or_else(|| host.app(&a.app)).ok_or_else(|| app_refusal(known.map(|b| b.names[0]).unwrap_or(&a.app), crate::open::Why::None))?;
+        if !crate::open::is_browser(&t.name, t.bundle_id.as_deref()) {
+            return Err(not_a_browser(&t.name));
+        }
+        if let Some(r) = t.refused {
+            return Err(app_refusal(&t.name, r));
+        }
+        return Ok(Some(t));
+    }
+    if let Some(f) = mac.person_front().filter(|f| f.pid != mac.own_pid() && crate::open::is_browser(&f.name, f.bundle_id.as_deref())) {
+        return Ok(Some(AppTarget { name: f.name, path: f.path, pid: Some(f.pid), bundle_id: f.bundle_id, refused: None }));
+    }
+    let Some(path) = mac.default_browser() else { return Ok(None) };
+    let running = mac.running_apps().into_iter().find(|r| r.path.as_deref() == Some(path.as_path()));
+    let name = running.as_ref().map(|r| r.name.clone()).filter(|n| !n.is_empty()).unwrap_or_else(|| path.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default());
+    Ok(Some(AppTarget { name, pid: running.as_ref().map(|r| r.pid), bundle_id: running.and_then(|r| r.bundle_id), path: Some(path), refused: None }))
+}
+
+/// Where a browser's bundle is: the index's, else its running process's.
+fn app_path(mac: &dyn Mac, t: &AppTarget) -> Option<PathBuf> {
+    t.path.clone().or_else(|| t.pid.and_then(|pid| mac.running_apps().into_iter().find(|x| x.pid == pid)).and_then(|x| x.path))
+}
+
+/// A new tab (⌘T) or window (⌘N) in a browser (owner report, 28 October 2026: "open a new tab in Brave" brought Brave
+/// forward and said "Opened Brave Browser"). With Accessibility allowed and the browser open: brought to the front, then
+/// the keys, only while it is still in front (`input::browser_keys`). Otherwise Google's home page opened in it (a new
+/// tab in practice), and the done line says exactly that ("Opened google.com in Brave Browser."), never "a new tab".
+fn new_tab(mac: &mut dyn Mac, host: &mut dyn Host, a: &MacAction) -> Did {
+    let window = a.kind == "new_window";
+    let t = match browser_for(mac, host, a) {
+        Ok(Some(t)) => t,
+        Ok(None) => return Did::No(refusal("I couldn't find a web browser", "Open one once yourself, then ask me again.")),
+        Err(r) => return Did::No(r),
+    };
+    let name = line_name(&t.name);
+    let path = app_path(mac, &t);
+    if let Some(pid) = t.pid.filter(|p| mac.is_running(*p) && *p != mac.own_pid()) {
+        // Never keys into an app on the never-act lists (a browser can be on the person's own list).
+        let never = mac.running_apps().into_iter().find(|x| x.pid == pid).is_some_and(|x| host.never(&x).is_some());
+        if mac.accessibility() && !never {
+            let mut front = mac.hand_back(pid);
+            if !front {
+                // Brought forward by macOS instead (an open of a running app activates it), then waited for (≤ 1 s).
+                if let Some(p) = path.as_ref() {
+                    if mac.open_path(p) {
+                        for _ in 0..10 {
+                            if mac.person_front().is_some_and(|f| f.pid == pid) {
+                                front = true;
+                                break;
+                            }
+                            mac.sleep_ms(100);
+                        }
+                    }
+                }
+            }
+            if front && !host.stopped() && mac.browser_keys(pid, window) {
+                return Did::Done(format!("Opened a new {} in {name}.", if window { "window" } else { "tab" }));
+            }
+        }
+    }
+    match path {
+        Some(p) if mac.open_url_in(crate::open::BROWSER_HOME, &p) => Did::Done(format!("Opened {} in {name}.", host_of(crate::open::BROWSER_HOME))),
+        Some(_) => Did::No(failure("I couldn't do that", "macOS wouldn't open it.")),
+        None => Did::No(app_refusal(&t.name, crate::open::Why::None)),
+    }
+}
+
 fn run_one(mac: &mut dyn Mac, host: &mut dyn Host, nonce: &str, a: &MacAction) -> Did {
     let accessibility = |mac: &dyn Mac| if mac.accessibility() { Ok(()) } else { Err(accessibility_needed()) };
     match a.kind.as_str() {
@@ -1194,11 +1433,42 @@ fn run_one(mac: &mut dyn Mac, host: &mut dyn Host, nonce: &str, a: &MacAction) -
                 },
             }
         }
-        "open_url" => match crate::open::front_url_ok(&a.url) {
+        "open_url" if a.app.is_empty() => match crate::open::front_url_ok(&a.url) {
             Some(u) if mac.open_url(&u) => Did::Done(format!("Opened {}.", line_name(&host_of(&u)))),
             Some(_) => Did::No(failure("I couldn't do that", "macOS wouldn't open it.")),
             None => Did::No(refusal("I can't open that address", "Only ordinary web pages, never downloads of apps or scripts.")),
         },
+        // Owner report, 28 October 2026: "open stripe.com in Safari" opens it in Safari, and only in a browser.
+        "open_url" => {
+            let Some(u) = crate::open::front_url_ok(&a.url) else { return Did::No(refusal("I can't open that address", "Only ordinary web pages, never downloads of apps or scripts.")) };
+            let t = match browser_for(mac, host, a) {
+                Ok(Some(t)) => t,
+                Ok(None) => return Did::No(app_refusal(&a.app, crate::open::Why::None)),
+                Err(r) => return Did::No(r),
+            };
+            match app_path(mac, &t) {
+                Some(p) if mac.open_url_in(&u, &p) => Did::Done(format!("Opened {} in {}.", line_name(&host_of(&u)), line_name(&t.name))),
+                Some(_) => Did::No(failure("I couldn't do that", "macOS wouldn't open it.")),
+                None => Did::No(app_refusal(&t.name, crate::open::Why::None)),
+            }
+        }
+        "search_web" => {
+            let Some(u) = crate::open::search_url(&a.text) else { return Did::No(refusal("I couldn't search for that", "Say what to search for in a few words.")) };
+            let words = line_name(&a.text);
+            match browser_for(mac, host, a) {
+                Err(r) => Did::No(r),
+                Ok(Some(t)) => match app_path(mac, &t) {
+                    Some(p) if mac.open_url_in(&u, &p) => Did::Done(format!("Searched Google for {words} in {}.", line_name(&t.name))),
+                    Some(_) => Did::No(failure("I couldn't do that", "macOS wouldn't open the search.")),
+                    None if a.app.is_empty() && mac.open_url(&u) => Did::Done(format!("Searched Google for {words}.")),
+                    None => Did::No(app_refusal(&t.name, crate::open::Why::None)),
+                },
+                // No browser found: macOS's own choice for web pages.
+                Ok(None) if mac.open_url(&u) => Did::Done(format!("Searched Google for {words}.")),
+                Ok(None) => Did::No(failure("I couldn't do that", "macOS wouldn't open the search.")),
+            }
+        }
+        "new_tab" | "new_window" => new_tab(mac, host, a),
         "open_folder" => match host.folder(&a.folder) {
             Ok(p) if mac.open_path(&p) => Did::Done(format!("Opened {}.", folder_words(&a.folder))),
             Ok(_) => Did::No(failure("I couldn't do that", "macOS wouldn't open it.")),
@@ -1460,7 +1730,7 @@ fn run_one(mac: &mut dyn Mac, host: &mut dyn Host, nonce: &str, a: &MacAction) -
 /// failure ends the sequence. `pre`: the request's verdict (from `classify_actions`).
 pub fn run_actions(mac: &mut dyn Mac, host: &mut dyn Host, nonce: &str, actions: &[MacAction], pre: &Verdict, check_every: bool) -> SeqOutcome {
     let started = Instant::now();
-    let mut out = SeqOutcome { outcome: "done", actions: vec![], summary: String::new(), risk: pre.class, authorised_by: "request", confirmed_via: None, undo: None };
+    let mut out = SeqOutcome { outcome: "done", actions: vec![], summary: String::new(), risk: pre.class, authorised_by: "request", confirmed_via: None, undo: None, lines: vec![] };
     let actions: Vec<MacAction> = actions.iter().take(3).cloned().collect();
     if pre.class == Class::Never {
         // Refused before anything ran: the first action that is never says why.
@@ -1541,22 +1811,26 @@ pub fn run_actions(mac: &mut dyn Mac, host: &mut dyn Host, nonce: &str, actions:
         match run_one(mac, host, nonce, a) {
             Did::Done(line) => {
                 out.actions.push(ActionRecord { kind: a.kind.clone(), outcome: "done", words: record_words(a, &line) });
+                out.lines.push(line.clone());
                 last_line = line;
             }
             Did::Saved(line, op) => {
                 out.actions.push(ActionRecord { kind: a.kind.clone(), outcome: "done", words: record_words(a, &line) });
                 out.undo = Some(op);
                 show = true;
+                out.lines.push(line.clone());
                 last_line = line;
             }
             Did::Opened(line, rows) => {
                 out.actions.push(ActionRecord { kind: a.kind.clone(), outcome: "done", words: record_words(a, &line) });
                 others = rows;
+                out.lines.push(line.clone());
                 last_line = line;
             }
             Did::Found(count) => {
                 out.actions.push(ActionRecord { kind: a.kind.clone(), outcome: "done", words: done_line(a, "", count) });
                 last_line = done_line(a, "", count);
+                out.lines.push(last_line.clone());
             }
             Did::Said => {
                 host.emit(FrontEvent::SaidNo { nonce: nonce.into(), line: "Okay, I won't.".into() });
@@ -1855,6 +2129,43 @@ pub fn iso_of(ms: i64) -> String {
     format!("{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}.{:03}Z", rem / 3600, rem / 60 % 60, rem % 60, ms.rem_euclid(1_000))
 }
 
+// ---- what she did lately (owner report, 28 October 2026) ------------------------------------------------------------------
+
+/// How long a done line stays in Boredroom's record of what Brenda did on this Mac, and how many a look or the chat is
+/// told. Owner report, 28 October 2026: after "Opened Brave Browser" a look answered "I did not open any tab in Brave. I
+/// can't control your browser, so my earlier replies were wrong": it never knew what the front desk had done.
+pub const RECENT_KEEP: Duration = Duration::from_secs(600);
+pub const RECENT_MAX: usize = 6;
+pub const RECENT_LINE_CHARS: usize = 200;
+
+/// Adds a request's done lines (newest last), keeping only the last ten minutes and at most six.
+pub fn remember(list: &mut Vec<(Instant, String)>, lines: &[String], now: Instant) {
+    for l in lines {
+        let l: String = l.trim().chars().filter(|c| !c.is_control()).take(RECENT_LINE_CHARS).collect();
+        if !l.is_empty() {
+            list.push((now, l));
+        }
+    }
+    list.retain(|(t, _)| now.saturating_duration_since(*t) <= RECENT_KEEP);
+    let n = list.len();
+    if n > RECENT_MAX {
+        list.drain(..n - RECENT_MAX);
+    }
+}
+
+/// The record as a look's and the chat's `recent` / `macRecent` take it: `[{ "line": "Opened Brave Browser.",
+/// "minutesAgo": 3 }]`, oldest first, only the last ten minutes.
+pub fn recent_json(list: &[(Instant, String)], now: Instant) -> Vec<Value> {
+    let fresh: Vec<&(Instant, String)> = list.iter().filter(|(t, _)| now.saturating_duration_since(*t) <= RECENT_KEEP).collect();
+    let skip = fresh.len().saturating_sub(RECENT_MAX);
+    fresh.into_iter().skip(skip).map(|(t, l)| json!({ "line": l, "minutesAgo": (now.saturating_duration_since(*t).as_secs() / 60).min(10) })).collect()
+}
+
+/// This Mac's record now (empty before anything was done, or after signing out).
+pub fn recent_now(app: &AppHandle) -> Vec<Value> {
+    front(app).map(|f| recent_json(&f.recent.lock().unwrap(), Instant::now())).unwrap_or_default()
+}
+
 // ---- the request's origin (0.3, P.2) ----------------------------------------------------------------------------------------
 
 /// How long Option+Space's transcript counts as the request (P.2).
@@ -1950,6 +2261,8 @@ pub struct Front {
     kept: Mutex<Option<(String, Vec<Hit>)>>,
     /// The last screenshot's Undo: the nonce, the change, and its record.
     undo: Mutex<Option<(String, crate::fileops::Op, Value)>>,
+    /// What Brenda did on this Mac lately: each done line and when (`remember`; owner report, 28 October 2026).
+    recent: Mutex<Vec<(Instant, String)>>,
 }
 
 fn front(app: &AppHandle) -> Option<tauri::State<'_, Front>> {
@@ -2106,6 +2419,7 @@ pub fn forget(app: &AppHandle) {
         f.outbox.lock().unwrap().clear();
         *f.kept.lock().unwrap() = None;
         *f.undo.lock().unwrap() = None;
+        f.recent.lock().unwrap().clear();
         f.ready.store(false, Ordering::SeqCst);
         f.warmed.store(false, Ordering::SeqCst);
     }
@@ -2354,7 +2668,7 @@ fn do_actions(app: &AppHandle, req: &Req, actions: &[MacAction], matched: &str, 
         if let Some(id) = &req.look_id {
             crate::look::discard(app, id);
         }
-        let o = SeqOutcome { outcome: "refused", actions: actions.iter().map(|a| ActionRecord { kind: a.kind.clone(), outcome: "refused", words: String::new() }).collect(), summary: "Do things when I ask is off".into(), risk: Class::Routine, authorised_by: "request", confirmed_via: None, undo: None };
+        let o = SeqOutcome { outcome: "refused", actions: actions.iter().map(|a| ActionRecord { kind: a.kind.clone(), outcome: "refused", words: String::new() }).collect(), summary: "Do things when I ask is off".into(), risk: Class::Routine, authorised_by: "request", confirmed_via: None, undo: None, lines: vec![] };
         f.outbox.lock().unwrap().push(record_of(&req.nonce, &req.text, req.via, &req.at, matched, &o, false), Instant::now());
         return result(req, "enable", json!({ "enable": { "which": "mac" } }));
     }
@@ -2373,6 +2687,7 @@ fn do_actions(app: &AppHandle, req: &Req, actions: &[MacAction], matched: &str, 
         *f.undo.lock().unwrap() = Some((req.nonce.clone(), op, record.clone()));
     }
     f.outbox.lock().unwrap().push(record, Instant::now());
+    remember(&mut f.recent.lock().unwrap(), &o.lines, Instant::now());
     crate::companion::set_act(app, None, Some(o.outcome == "done"));
     result(req, "mac", json!({ "outcome": o.outcome, "summary": o.summary, "undo": o.undo.is_some() }))
 }
@@ -3130,7 +3445,7 @@ pub(crate) mod tests {
         assert_eq!(kinds("copy that"), ["copy_selection"]);
         assert_eq!(m("stop"), Some(Matched::Stop));
         assert_eq!(m("never mind"), Some(Matched::Stop));
-        for t in ["open the Q3 deck", "close this window", "write an email to Ada", "turn on dark mode", "what's the volume?", "open a new tab", "kill Spotify", "remind me at 3 to call Ada", "organise my desktop", "", "Max", "please"] {
+        for t in ["open the Q3 deck", "close this window", "write an email to Ada", "turn on dark mode", "what's the volume?", "open a new window", "kill Spotify", "remind me at 3 to call Ada", "organise my desktop", "", "Max", "please"] {
             assert_eq!(m(t), None, "no match: {t:?}");
         }
     }
@@ -3387,6 +3702,7 @@ pub(crate) mod tests {
                 "Figma" => Some(11),
                 "Slack" => Some(12),
                 "Spotify" => Some(13),
+                "Safari" => Some(14),
                 _ => None,
             };
             Some(AppTarget { path: Some(PathBuf::from(format!("/Applications/{name}.app"))), pid, bundle_id: None, refused: None, name })
@@ -3693,8 +4009,8 @@ pub(crate) mod tests {
         });
         let body = router_body(&request, &context, &router_messages(&[json!({ "role": "assistant", "content": "Hello" })], "Organise my desktop"));
         std::fs::write(format!("{dir}/rust-front-request.json"), serde_json::to_vec_pretty(&body).unwrap()).unwrap();
-        let o = SeqOutcome { outcome: "done", actions: vec![ActionRecord { kind: "open_app".into(), outcome: "done", words: "Opened Figma".into() }], summary: "Opened Figma".into(), risk: Class::Routine, authorised_by: "request", confirmed_via: None, undo: None };
-        let asked = SeqOutcome { outcome: "done", actions: vec![ActionRecord { kind: "empty_trash".into(), outcome: "done", words: "The Trash is empty".into() }], summary: "The Trash is empty".into(), risk: Class::Ask, authorised_by: "yes", confirmed_via: Some("button"), undo: None };
+        let o = SeqOutcome { outcome: "done", actions: vec![ActionRecord { kind: "open_app".into(), outcome: "done", words: "Opened Figma".into() }], summary: "Opened Figma".into(), risk: Class::Routine, authorised_by: "request", confirmed_via: None, undo: None, lines: vec![] };
+        let asked = SeqOutcome { outcome: "done", actions: vec![ActionRecord { kind: "empty_trash".into(), outcome: "done", words: "The Trash is empty".into() }], summary: "The Trash is empty".into(), risk: Class::Ask, authorised_by: "yes", confirmed_via: Some("button"), undo: None, lines: vec![] };
         let records = json!({ "version": 1, "records": [
             record_of(nonce, "Open Figma", "voice", "2026-10-12T15:04:05.120Z", "mac", &o, false),
             record_of("fedcba9876543210fedcba9876543210", "Empty the Trash", "typed", "2026-10-12T15:05:00.000Z", "mac", &asked, false),
@@ -3760,4 +4076,244 @@ pub(crate) mod tests {
         assert!(code[at..].find("run_actions(").is_some());
         assert_eq!(code.matches("do_actions(").count(), 3, "defined once; called for a match and for the router's mac lane");
     }
+
+    // ---- browsers (owner report, 28 October 2026) ----
+
+    fn browser_act(kind: &str, app: &str) -> MacAction {
+        MacAction { app: app.into(), ..MacAction::of(kind) }
+    }
+
+    /// Owner report, 28 October 2026: "open a new tab in Brave" matched "open Brave" and only brought Brave forward.
+    #[test]
+    fn browser_vectors() {
+        for t in ["Open a new tab", "new tab", "open new tab", "Max, open another tab please", "open a new browser tab"] {
+            assert_eq!(acts(t), vec![browser_act("new_tab", "")], "{t}");
+        }
+        for t in ["new tab in Brave", "Open a new tab in Brave.", "open a new Brave tab", "open a new tab in the Brave browser", "new tab on brave"] {
+            assert_eq!(acts(t), vec![browser_act("new_tab", "Brave Browser")], "{t}: Brave isn't on this Mac, so its own name goes on to be refused by name");
+        }
+        assert_eq!(acts("Open a new window in Chrome"), vec![browser_act("new_window", "Google Chrome")]);
+        assert_eq!(acts("new Safari window"), vec![browser_act("new_window", "Safari")]);
+        assert_eq!(acts("open a new browser window"), vec![browser_act("new_window", "")]);
+        assert_eq!(m("open a new window"), None, "a window of what: the router decides");
+        let url = |u: &str, app: &str| vec![MacAction { url: u.into(), app: app.into(), ..MacAction::of("open_url") }];
+        assert_eq!(acts("open stripe.com in Safari"), url("https://stripe.com", "Safari"), "never https://stripe.cominsafari");
+        assert_eq!(acts("go to github.com in Brave"), url("https://github.com", "Brave Browser"));
+        assert_eq!(acts("open github.com in a new tab in brave"), url("https://github.com", "Brave Browser"));
+        assert_eq!(acts("go to github dot com using Chrome"), url("https://github.com", "Google Chrome"));
+        assert_eq!(acts("open stripe.com in a new tab"), url("https://stripe.com", ""));
+        assert_eq!(acts("open stripe.com in Notes"), url("https://stripe.com", "Notes"), "refused when it runs: Notes isn't a browser");
+        assert_eq!(acts("Go to stripe.com"), url("https://stripe.com", ""), "unchanged");
+        let search = |q: &str, app: &str| vec![MacAction { text: q.into(), app: app.into(), ..MacAction::of("search_web") }];
+        assert_eq!(acts("Search for remote work tools in Chrome"), search("remote work tools", "Google Chrome"));
+        assert_eq!(acts("google remote work tools"), search("remote work tools", ""));
+        assert_eq!(acts("Google search for best pizza in London"), search("best pizza in london", ""), "London isn't an app");
+        assert_eq!(acts("look up the weather in Brave"), search("the weather", "Brave Browser"));
+        assert_eq!(acts("look up cheap flights online"), search("cheap flights", ""));
+        assert_eq!(acts("search for invoices on the web"), search("invoices", ""));
+        assert_eq!(acts("search the web for standing desks with Safari"), search("standing desks", "Safari"));
+        assert_eq!(acts("search for pasta with tomatoes on google"), search("pasta with tomatoes", ""));
+        for t in ["search for invoices", "look up the Q3 deck", "search for recipes in Notes", "google", "search for it in Chrome"] {
+            assert_eq!(m(t), None, "files or nothing to search, so the router: {t:?}");
+        }
+        // Their app, as before.
+        assert_eq!(acts("open Safari"), vec![MacAction::app("open_app", "Safari")]);
+        assert_eq!(acts("open google chrome"), vec![MacAction::app("open_app", "Google Chrome")]);
+    }
+
+    #[test]
+    fn browser_words() {
+        let a = MacAction { text: "remote work tools".into(), app: "Google Chrome".into(), ..MacAction::of("search_web") };
+        assert_eq!((doing_line(&a), done_line(&a, "", 0)), ("Searching Google for remote work tools in Google Chrome.".into(), "Searched Google for remote work tools in Google Chrome.".into()));
+        assert_eq!(done_line(&browser_act("new_tab", "Brave Browser"), "", 0), "Opened a new tab in Brave Browser.");
+        assert_eq!(doing_line(&browser_act("new_tab", "")), "Opening a new tab.");
+        assert_eq!(doing_line(&browser_act("new_window", "Safari")), "Opening a new window in Safari.");
+        let u = MacAction { url: "https://stripe.com".into(), app: "Safari".into(), ..MacAction::of("open_url") };
+        assert_eq!((doing_line(&u), done_line(&u, "", 0)), ("Opening stripe.com in Safari.".into(), "Opened stripe.com in Safari.".into()));
+        assert_eq!(check_sentence(&[browser_act("new_tab", "Brave Browser")]), "I'll open a new tab in Brave Browser.");
+        assert_eq!(check_sentence(&[a]), "I'll search Google for remote work tools in Google Chrome.");
+    }
+
+    fn with_safari(mac: &mut RecordingMac) {
+        mac.apps.borrow_mut().push(crate::macos::testing::app(14, "Safari", "com.apple.Safari"));
+    }
+
+    fn done_of(host: &ScriptedHost) -> String {
+        match host.events.last() {
+            Some(FrontEvent::Done { line, .. }) => line.clone(),
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn new_tab_presses_the_keys_only_when_it_can() {
+        // Accessibility on, Safari open: Safari to the front, then ⌘T.
+        let mut mac = RecordingMac::new();
+        with_safari(&mut mac);
+        let mut host = ScriptedHost::new();
+        let o = go(&mut mac, &mut host, &acts("open a new tab in Safari"), false);
+        assert_eq!(o.outcome, "done");
+        assert_eq!(mac.calls(), ["hand_back 14", "keys cmd+t 14"]);
+        assert_eq!(done_of(&host), "Opened a new tab in Safari.");
+        assert_eq!(o.lines, ["Opened a new tab in Safari."]);
+        assert!(host.asked.is_empty(), "routine");
+        // A window: ⌘N.
+        let mut mac = RecordingMac::new();
+        with_safari(&mut mac);
+        let mut host = ScriptedHost::new();
+        go(&mut mac, &mut host, &acts("open a new window in Safari"), false);
+        assert_eq!(mac.calls(), ["hand_back 14", "keys cmd+n 14"]);
+        assert_eq!(done_of(&host), "Opened a new window in Safari.");
+        // No Accessibility: Google's page opened in Safari, and the line says that, never "a new tab".
+        let mut mac = RecordingMac::new();
+        with_safari(&mut mac);
+        mac.ax = false;
+        let mut host = ScriptedHost::new();
+        let o = go(&mut mac, &mut host, &acts("open a new tab in Safari"), false);
+        assert_eq!(mac.calls(), ["url https://www.google.com in /Applications/Safari.app"]);
+        assert_eq!(done_of(&host), "Opened google.com in Safari.");
+        assert_eq!(o.actions[0].words, "Opened google.com in Safari");
+        // Safari on their never-act list: no keys into it.
+        let mut mac = RecordingMac::new();
+        with_safari(&mut mac);
+        let mut host = ScriptedHost::new();
+        host.never_names = vec!["Safari".into()];
+        go(&mut mac, &mut host, &acts("open a new tab in Safari"), false);
+        assert!(!mac.calls().iter().any(|c| c.starts_with("keys")), "{:?}", mac.calls());
+        // Not open yet: opened with Google's page (launching it), no keys.
+        let mut mac = RecordingMac::new();
+        let mut host = ScriptedHost::new();
+        go(&mut mac, &mut host, &acts("open a new tab in Safari"), false);
+        assert_eq!(mac.calls(), ["url https://www.google.com in /Applications/Safari.app"]);
+        assert_eq!(done_of(&host), "Opened google.com in Safari.");
+    }
+
+    #[test]
+    fn new_tab_goes_to_the_front_browser_else_the_default() {
+        // The front app is Brave: its tab.
+        let mut mac = RecordingMac::new();
+        let brave = crate::macos::testing::app(15, "Brave Browser", "com.brave.Browser");
+        mac.apps.borrow_mut().push(brave.clone());
+        mac.front = Some(brave);
+        let mut host = ScriptedHost::new();
+        go(&mut mac, &mut host, &acts("open a new tab"), false);
+        assert_eq!(mac.calls(), ["hand_back 15", "keys cmd+t 15"]);
+        assert_eq!(done_of(&host), "Opened a new tab in Brave Browser.");
+        // Figma in front: the default browser (Safari here).
+        let mut mac = RecordingMac::new();
+        with_safari(&mut mac);
+        let mut host = ScriptedHost::new();
+        go(&mut mac, &mut host, &acts("new tab"), false);
+        assert_eq!(mac.calls(), ["hand_back 14", "keys cmd+t 14"]);
+        assert_eq!(done_of(&host), "Opened a new tab in Safari.");
+        // No default browser at all: said plainly.
+        let mut mac = RecordingMac::new();
+        mac.default_browser = None;
+        let mut host = ScriptedHost::new();
+        let o = go(&mut mac, &mut host, &acts("new tab"), false);
+        assert_eq!(o.outcome, "refused");
+        assert!(matches!(&host.events[1], FrontEvent::Refused { title, .. } if title == "I couldn't find a web browser"), "{:?}", host.events);
+    }
+
+    #[test]
+    fn only_a_browser_is_the_target() {
+        let mut mac = RecordingMac::new();
+        let mut host = ScriptedHost::new();
+        let o = go(&mut mac, &mut host, &acts("open stripe.com in Notes"), false);
+        assert_eq!(o.outcome, "refused");
+        assert!(matches!(&host.events[1], FrontEvent::Refused { title, .. } if title == "Notes isn't a web browser"), "{:?}", host.events);
+        assert!(mac.calls().is_empty());
+        // Brave isn't on this Mac: refused by its name.
+        let mut mac = RecordingMac::new();
+        let mut host = ScriptedHost::new();
+        go(&mut mac, &mut host, &acts("new tab in Brave"), false);
+        assert!(matches!(&host.events[1], FrontEvent::Refused { title, .. } if title == "I couldn't find an app called “Brave Browser”"), "{:?}", host.events);
+        assert!(mac.calls().is_empty());
+        // The router's "brave", as said: the same.
+        let mut mac = RecordingMac::new();
+        let mut host = ScriptedHost::new();
+        go(&mut mac, &mut host, &[browser_act("new_tab", "brave")], false);
+        assert!(matches!(&host.events[1], FrontEvent::Refused { title, .. } if title == "I couldn't find an app called “Brave Browser”"), "{:?}", host.events);
+        // The router's "chrome": Google Chrome, as the index knows it.
+        let mut mac = RecordingMac::new();
+        let mut host = ScriptedHost::new();
+        go(&mut mac, &mut host, &[MacAction { url: "https://stripe.com".into(), ..browser_act("open_url", "chrome") }], false);
+        assert_eq!(mac.calls(), ["url https://stripe.com in /Applications/Google Chrome.app"]);
+        // The page in the named browser.
+        let mut mac = RecordingMac::new();
+        let mut host = ScriptedHost::new();
+        go(&mut mac, &mut host, &acts("open stripe.com in Safari"), false);
+        assert_eq!(mac.calls(), ["url https://stripe.com in /Applications/Safari.app"]);
+        assert_eq!(done_of(&host), "Opened stripe.com in Safari.");
+        // An installer download is refused whatever the browser (the existing rule).
+        let mut mac = RecordingMac::new();
+        let mut host = ScriptedHost::new();
+        let o = go(&mut mac, &mut host, &[MacAction { url: "https://x.com/setup.pkg".into(), app: "Safari".into(), ..MacAction::of("open_url") }], false);
+        assert_eq!(o.outcome, "refused");
+        assert!(matches!(&host.events[0], FrontEvent::Refused { title, .. } if title == "I can't open that address"));
+        assert!(mac.calls().is_empty());
+    }
+
+    #[test]
+    fn a_search_opens_googles_results() {
+        let mut mac = RecordingMac::new();
+        let mut host = ScriptedHost::new();
+        let o = go(&mut mac, &mut host, &acts("Search for remote work tools in Chrome"), false);
+        assert_eq!(o.outcome, "done");
+        assert_eq!(mac.calls(), ["url https://www.google.com/search?q=remote+work+tools in /Applications/Google Chrome.app"]);
+        assert_eq!(done_of(&host), "Searched Google for remote work tools in Google Chrome.");
+        // Figma in front, so the default browser (Safari).
+        let mut mac = RecordingMac::new();
+        let mut host = ScriptedHost::new();
+        go(&mut mac, &mut host, &[MacAction { text: "cafés & bars".into(), ..MacAction::of("search_web") }], false);
+        assert_eq!(mac.calls(), ["url https://www.google.com/search?q=caf%C3%A9s+%26+bars in /Applications/Safari.app"]);
+        // No default browser: macOS's own choice.
+        let mut mac = RecordingMac::new();
+        mac.default_browser = None;
+        let mut host = ScriptedHost::new();
+        go(&mut mac, &mut host, &acts("google remote work tools"), false);
+        assert_eq!(mac.calls(), ["url https://www.google.com/search?q=remote+work+tools"]);
+        assert_eq!(done_of(&host), "Searched Google for remote work tools.");
+        // Too long to search: never.
+        let long = MacAction { text: "x".repeat(201), ..MacAction::of("search_web") };
+        let mut mac = RecordingMac::new();
+        let mut host = ScriptedHost::new();
+        assert_eq!(go(&mut mac, &mut host, &[long], false).outcome, "refused");
+        assert!(mac.calls().is_empty());
+    }
+
+    #[test]
+    fn the_router_sends_the_new_kinds() {
+        let r = route_line(&json!({ "t": "route", "lane": "mac", "actions": [{ "kind": "new_tab", "app": "Brave Browser", "app2": "", "url": "", "folder": { "source": "none", "name": "" }, "words": [], "kinds": [], "since_days": 0, "pick": "none", "text": "", "level": 0, "change": "none", "side": "none", "on": false }], "risk": "routine" }));
+        assert_eq!(r, RouteLine::Mac { actions: vec![MacAction { pick: "none".into(), change: "none".into(), side: "none".into(), ..browser_act("new_tab", "Brave Browser") }], risk: Class::Routine });
+        let r = route_line(&json!({ "t": "route", "lane": "mac", "actions": [{ "kind": "search_web", "app": "", "text": "remote work tools" }], "risk": "routine" }));
+        assert!(matches!(r, RouteLine::Mac { ref actions, .. } if actions[0].text == "remote work tools"));
+    }
+
+    /// Owner report, 28 October 2026: a look and the chat are told what she did here lately (done lines only).
+    #[test]
+    fn what_she_did_lately() {
+        let t0 = Instant::now();
+        let mut list = Vec::new();
+        remember(&mut list, &["Opened Brave Browser.".into()], t0);
+        let later = t0 + Duration::from_secs(185);
+        assert_eq!(recent_json(&list, later), vec![json!({ "line": "Opened Brave Browser.", "minutesAgo": 3 })]);
+        assert!(recent_json(&list, t0 + Duration::from_secs(601)).is_empty(), "ten minutes at most");
+        for i in 0..8 {
+            remember(&mut list, &[format!("Opened app {i}.")], t0 + Duration::from_secs(10 + i));
+        }
+        let r = recent_json(&list, t0 + Duration::from_secs(20));
+        assert_eq!(r.len(), 6, "six at most");
+        assert_eq!(r.last().unwrap()["line"], "Opened app 7.", "newest last");
+        remember(&mut list, &["x".repeat(300), "  ".into()], t0 + Duration::from_secs(30));
+        assert_eq!(list.last().unwrap().1.chars().count(), RECENT_LINE_CHARS);
+        remember(&mut list, &[], t0 + Duration::from_secs(700));
+        assert!(list.is_empty(), "older than ten minutes goes");
+        // Typing is recorded as "Typed it.", never the text.
+        let mut mac = RecordingMac::new();
+        let mut host = ScriptedHost::new();
+        let o = go(&mut mac, &mut host, &acts("type my secret plan"), false);
+        assert_eq!(o.lines, ["Typed it."]);
+    }
+
 }

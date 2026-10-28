@@ -139,6 +139,12 @@ impl Index {
                 return Some(e);
             }
         }
+        // A browser by the name people use ("Brave" is "Brave Browser"; owner report, 28 October 2026).
+        if let Some(b) = crate::open::browser_said(&said) {
+            if let Some(e) = b.names.iter().find_map(|n| exact(&key_of(n))) {
+                return Some(e);
+            }
+        }
         let limit = if k.chars().count() >= 9 {
             2
         } else if k.chars().count() >= 5 {
@@ -287,6 +293,17 @@ pub(crate) mod tests {
         assert_eq!(name("Nots"), None, "too short to guess");
         assert_eq!(name("Photoshop"), None);
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// Owner report, 28 October 2026: "Brave" is "Brave Browser", "Zen" may be "Zen Browser".
+    #[test]
+    fn browsers_by_the_names_people_use() {
+        let mk = |n: &str| Entry { name: n.into(), key: key_of(n), path: None, where_: "Applications", pid: None, bundle_id: None };
+        let ix = Index { entries: vec![mk("Brave Browser"), mk("Zen Browser"), mk("Safari")] };
+        assert_eq!(ix.resolve("brave").unwrap().name, "Brave Browser");
+        assert_eq!(ix.resolve("the Brave app").unwrap().name, "Brave Browser");
+        assert_eq!(ix.resolve("zen").unwrap().name, "Zen Browser");
+        assert_eq!(ix.resolve("arc"), None, "not on this Mac");
     }
 
     #[test]

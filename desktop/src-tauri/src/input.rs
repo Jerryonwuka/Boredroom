@@ -1134,6 +1134,33 @@ pub fn type_into_focus(text: &str, stopped: &dyn Fn() -> bool) -> bool {
     }
 }
 
+/// ⌘T (a new tab) or ⌘N (a new window): the front desk's "open a new tab in Brave" (owner report, 28 October 2026).
+/// Exactly these two keys with Command and nothing else, down then up, and only while `front_is` says the browser the
+/// front desk just brought forward is still the front app (checked before each event). Never a character, never
+/// Return. Whether both went.
+pub fn browser_keys(window: bool, front_is: &dyn Fn() -> bool) -> bool {
+    let code: u16 = if window { 45 } else { 17 };
+    #[cfg(target_os = "macos")]
+    {
+        let Some(mut poster) = mac::CgPoster::new() else { return false };
+        for down in [true, false] {
+            if down && !front_is() {
+                return false;
+            }
+            if poster.post(&Synth::Key { code, down, flags: MOD_COMMAND }).is_err() {
+                return false;
+            }
+            LAST_POST_UNIX_MS.store(unix_ms(), Ordering::SeqCst);
+        }
+        true
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (code, front_is);
+        false
+    }
+}
+
 /// Puts the pointer back where it was at the yes (B.7.7). A warp, not an event: nothing is clicked or typed.
 pub fn restore_pointer(to: (f64, f64)) {
     #[cfg(target_os = "macos")]
@@ -1953,10 +1980,14 @@ pub(crate) mod tests {
                 assert!(!code.contains("CGEvent::post"), "{name} must not post events");
             }
         }
-        assert_eq!(posts, 3, "Ctx::emit, Ctx::release_all for buttons and keys already held, and the front desk's type_into_focus");
+        assert_eq!(posts, 4, "Ctx::emit, Ctx::release_all for buttons and keys already held, the front desk's type_into_focus, and its browser_keys (owner report, 28 October 2026)");
         let input = std::fs::read_to_string(format!("{dir}/input.rs")).unwrap();
         let code: String = input.split("#[cfg(test)]").next().unwrap().to_string();
         assert_eq!(code.matches("poster.post(&Synth::Text { units })").count(), 1, "type_into_focus posts only characters");
+        // browser_keys posts only ⌘T or ⌘N (owner report, 28 October 2026).
+        let bk = &code[code.find("pub fn browser_keys(").unwrap()..];
+        let bk = &bk[..bk.find("\n}\n").unwrap()];
+        assert!(bk.contains("let code: u16 = if window { 45 } else { 17 };") && bk.contains("poster.post(&Synth::Key { code, down, flags: MOD_COMMAND })"));
         // Only the front desk's Mac calls it.
         for entry in std::fs::read_dir(dir).unwrap() {
             let path = entry.unwrap().path();
@@ -1968,6 +1999,9 @@ pub(crate) mod tests {
             let code: String = src.split("#[cfg(test)]").next().unwrap().to_string();
             if code.contains("type_into_focus(") {
                 assert_eq!(name, "macos.rs", "{name} types");
+            }
+            if code.contains("browser_keys(") && name != "macos.rs" {
+                assert!(!code.contains("input::browser_keys("), "{name} presses browser keys");
             }
         }
     }

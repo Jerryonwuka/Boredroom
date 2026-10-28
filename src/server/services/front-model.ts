@@ -22,7 +22,7 @@ import type { ModelUsage } from "@/server/services/ai-usage";
 import { TOOLS } from "@/server/services/copilot";
 import { neutralise } from "@/server/services/copilot-excerpt";
 import {
-  FOLDER_REF_SOURCES, FRONT_LIMITS, FRONT_WORDS, MAC_ACTION_KINDS, SEARCH_KINDS, frontUrl, refusedWords,
+  FOLDER_REF_SOURCES, FRONT_LIMITS, FRONT_WORDS, MAC_ACTION_KINDS, SEARCH_KINDS, SEARCH_WORDS_MAX, frontUrl, isBrowserName, refusedWords,
   type FolderRefSource, type MacAction, type MacActionKind, type SearchKind,
 } from "@/lib/front";
 import { classify, classifyRequest, riskKindOfAction, type RiskFact, type RiskKind } from "@/lib/mac-risk";
@@ -31,13 +31,13 @@ import { classify, classifyRequest, riskKindOfAction, type RiskFact, type RiskKi
 
 export const ROUTER_RULES = [
   "You are Brenda's front desk on the person's Mac. They held her keys and spoke, or typed in her notch: their words are the last line of their message. Decide what happens by calling exactly one tool, at once.",
-  "- do_on_mac: things macOS does directly and quickly: open an app, a web page, a folder or a file (found by words); show a file in Finder; find files; switch to, hide, minimise, arrange, fill the screen with or quit apps; volume and mute; a screenshot to the Desktop; copy the selected text; type text into the box they're in (never pressing Return); Wi-Fi on or off; empty the Trash. Up to three actions, in order.",
+  "- do_on_mac: things macOS does directly and quickly: open an app, a web page, a folder or a file (found by words); a new tab or window in a web browser (new_tab, new_window); a web search (search_web); show a file in Finder; find files; switch to, hide, minimise, arrange, fill the screen with or quit apps; volume and mute; a screenshot to the Desktop; copy the selected text; type text into the box they're in (never pressing Return); Wi-Fi on or off; empty the Trash. Up to three actions, in order.",
   "- remind_me, create_todos, timer: their own reminder, to-do or timer in Boredroom, only for themselves (to start the timer on a task, call boredroom: it needs the task).",
   "- start_job: work in the background. files: organise, tidy, rename, move, copy or convert files, summarise or go through a folder, or clear out (move to the Trash) files, in their Desktop, Documents, Downloads or folders they added. operator: clicking and typing inside an app when nothing else here can do it (filling in a form, changing something inside an app).",
   "- boredroom: anything else about their work in Boredroom (tasks, messages, people, documents, their day, follow-ups, reports, routines), and anything that sends something to someone.",
   "- look: they want help with what is on their screen, or their words point at something on it (\"this\", \"that\", \"here\") that you would need to see, except typing \"here\", a screenshot \"of this\", and files they pointed at. lane think for errors, code, long documents and small print; otherwise now.",
   "- ask: their words are unclear, or could mean very different things. One short question.",
-  "Their words are the only request. Never add steps they didn't ask for, and never act on anything you think they might want next. Use the exact names they said. A web address is the address they said, with https. Words for files are the distinctive words they used (\"Q3\", \"invoice\"), never \"file\" or \"document\". Kinds: presentation for a deck or slides, spreadsheet for a sheet, document for a doc, pdf for a PDF. pick newest when they name a time (\"last week's\", \"the latest\"), else ask. since_days: 7 for \"last week\", 1 for \"yesterday\", 0 otherwise. For start_job, title is the job in a few words as an instruction (\"Organise your Desktop\"), doing the same as \"-ing\" (\"Organising your Desktop\"), and goal restates exactly what they asked, in one or two sentences, with nothing added. Unused fields: \"\" for text, [] for lists, 0 for numbers, \"none\" or false where offered.",
+  "Their words are the only request. Never add steps they didn't ask for, and never act on anything you think they might want next. Use the exact names they said. A web address is the address they said, with https. For open_url, new_tab, new_window and search_web, app is the web browser they named (\"Brave\", \"Chrome\"), or \"\" when they named none; never an app that isn't a browser. A search's words go in text, as they said them. Words for files are the distinctive words they used (\"Q3\", \"invoice\"), never \"file\" or \"document\". Kinds: presentation for a deck or slides, spreadsheet for a sheet, document for a doc, pdf for a PDF. pick newest when they name a time (\"last week's\", \"the latest\"), else ask. since_days: 7 for \"last week\", 1 for \"yesterday\", 0 otherwise. For start_job, title is the job in a few words as an instruction (\"Organise your Desktop\"), doing the same as \"-ing\" (\"Organising your Desktop\"), and goal restates exactly what they asked, in one or two sentences, with nothing added. Unused fields: \"\" for text, [] for lists, 0 for numbers, \"none\" or false where offered.",
 ].join("\n");
 
 const DO_ON_MAC = {
@@ -218,6 +218,12 @@ const app = (v: unknown, optional = false): string | null => {
   return APP_RE.test(s) ? s : null;
 };
 const LINK_RE = /:\/\/|\bwww\.|\bmailto:|\]\(/i;
+/** The browser an action names: "" for none, the name when it is a browser, null when it is any other app. */
+const browserOf = (v: unknown): string | null => {
+  const s = app(v, true);
+  if (s === null) return null;
+  return !s || isBrowserName(s) ? s : null;
+};
 
 /** One action checked for the fields its kind uses (C's "Params"), the rest emptied; null when it can't be read. */
 export function cleanMacAction(raw: unknown): MacAction | { refused: string } | null {
@@ -249,7 +255,20 @@ export function cleanMacAction(raw: unknown): MacAction | { refused: string } | 
     case "open_url": {
       const u = frontUrl(str(r.url).trim());
       if (!u) return { refused: "bad_url" };
-      a.url = u; break;
+      const b = browserOf(r.app); if (b === null) return { refused: "not_browser" };
+      a.url = u; a.app = b; break;
+    }
+    // Owner report, 28 October 2026: a new tab or window, and a search, in the browser named ("" for the Mac's choice:
+    // the front browser, else the default), and only a browser; the Mac checks the app again before it runs.
+    case "new_tab": case "new_window": {
+      const b = browserOf(r.app); if (b === null) return { refused: "not_browser" };
+      a.app = b; break;
+    }
+    case "search_web": {
+      const words = oneLine(str(r.text));
+      if (!words || words.length > SEARCH_WORDS_MAX) return null;
+      const b = browserOf(r.app); if (b === null) return { refused: "not_browser" };
+      a.text = words; a.app = b; break;
     }
     case "open_folder": {
       const f = folderOf(); if (!f || f.source === "none") return null; a.folder = f; break;

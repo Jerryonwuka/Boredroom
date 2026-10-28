@@ -250,6 +250,10 @@ const Front = (() => {
       case "type_text": return "type that into the box you're in";
       case "wifi": return a?.on === false ? "turn Wi-Fi off" : "turn Wi-Fi on";
       case "empty_trash": return "empty the Trash";
+      // Owner report, 28 October 2026: tabs and searches, in the browser named when there is one.
+      case "new_tab": return `open a new tab${a?.app ? ` in ${clip(a.app, 60)}` : ""}`;
+      case "new_window": return `open a new window${a?.app ? ` in ${clip(a.app, 60)}` : ""}`;
+      case "search_web": return `search Google for ${clip(a?.text || "that", 60)}${a?.app ? ` in ${clip(a.app, 60)}` : ""}`;
       case "find_files": return "";
       default: return "";
     }

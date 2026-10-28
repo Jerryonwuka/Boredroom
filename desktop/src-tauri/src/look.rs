@@ -1798,6 +1798,11 @@ struct LookBodyV2<'a> {
     front: Option<u8>,
     #[serde(skip_serializing_if = "Option::is_none")]
     lane: Option<&'a str>,
+    /// Boredroom's own record of what Brenda did on this Mac in the last ten minutes (`front::recent_json`: at most six
+    /// done lines and how many minutes ago; never screen text). Owner report, 28 October 2026: a look said "I did not open
+    /// any tab" and "I can't control your browser" because it never knew. Left out when there is none.
+    #[serde(skip_serializing_if = "<[Value]>::is_empty")]
+    recent: &'a [Value],
 }
 
 /// The v2 request body (B.3.2), ≤ 4,000,000 bytes, in a self-wiping buffer.
@@ -1808,6 +1813,11 @@ pub fn look_body_v2(c: &Capture, request: &Request, abilities: &Abilities, messa
 
 /// The v2 body with the front desk's lane (helpers-spec J.1): `front: 1` and `lane` when `lane` is given.
 pub fn look_body_v2_lane(c: &Capture, request: &Request, abilities: &Abilities, messages: &[Value], lane: Option<&str>) -> Result<WipeOnDrop, ApiError> {
+    look_body_v2_recent(c, request, abilities, messages, lane, &[])
+}
+
+/// The v2 body with the lane and what Brenda did on this Mac lately (`recent`; owner report, 28 October 2026).
+pub fn look_body_v2_recent(c: &Capture, request: &Request, abilities: &Abilities, messages: &[Value], lane: Option<&str>, recent: &[Value]) -> Result<WipeOnDrop, ApiError> {
     let app = if c.source == Source::Drop { None } else { Some(AppBody { name: c.app_name.as_deref().unwrap_or("your screen"), bundle_id: c.bundle_id.as_deref(), desktop: c.desktop }) };
     let files = if abilities.file_work { c.candidates.iter().map(Candidate::hint).collect() } else { Vec::new() };
     let body = LookBodyV2 {
@@ -1824,6 +1834,7 @@ pub fn look_body_v2_lane(c: &Capture, request: &Request, abilities: &Abilities, 
         messages,
         front: lane.map(|_| 1),
         lane,
+        recent,
     };
     to_wiped_json(&body, MAX_BODY_BYTES).ok_or_else(|| look_error("That picture is too large to send.", "PAYLOAD_TOO_LARGE"))
 }
@@ -1950,7 +1961,8 @@ async fn stream_look_lane(app: &AppHandle, capture: Capture, request: Request, m
     let available = act_available(app);
     let front = lane.as_ref().map(|_| 1);
     let abilities = Abilities { use_mac: use_mac && available, file_work: file_work && available, busy: act::busy_file(app).then_some("file"), plans: 1, accessibility: act::can_click_and_type(), front };
-    let body = if v2 { look_body_v2_lane(&capture, &request, &abilities, &messages, lane.as_deref())? } else { look_body(&capture, &messages)? };
+    let recent = crate::front::recent_now(app);
+    let body = if v2 { look_body_v2_recent(&capture, &request, &abilities, &messages, lane.as_deref(), &recent)? } else { look_body(&capture, &messages)? };
     *app.state::<Look>().last_messages.lock().unwrap() = messages;
     emit(app, LookEvent::Sending { look_id: look_id.clone() });
     companion::set_state(app, companion::State::Thinking);
@@ -2884,6 +2896,25 @@ mod tests {
         assert_eq!(request_via(q, None, "look1", true), Some("typed"));
         assert_eq!(request_via("something typed", Some(("look1", q)), "look1", true), Some("typed"), "edited words are typed words");
         assert_eq!(request_via("something typed", Some(("look1", q)), "look1", false), None, "and need the press");
+    }
+
+    /// Owner report, 28 October 2026: a look carries what Brenda did on this Mac lately, and nothing when she did nothing.
+    #[test]
+    fn body_v2_recent() {
+        let c = capture("a", Instant::now());
+        let messages = vec![json!({ "role": "user", "content": "Are you okay?" })];
+        let req = Request { text: "Are you okay?".into(), via: "voice", age_ms: 900 };
+        let ab = Abilities { use_mac: true, file_work: false, busy: None, plans: 1, accessibility: true, front: Some(1) };
+        let recent = vec![json!({ "line": "Opened Brave Browser.", "minutesAgo": 1 })];
+        let v: Value = serde_json::from_slice(&look_body_v2_recent(&c, &req, &ab, &messages, Some("auto"), &recent).unwrap().0).unwrap();
+        assert_eq!(v["recent"], json!(recent));
+        assert_eq!(v["front"], 1);
+        let v: Value = serde_json::from_slice(&look_body_v2_lane(&c, &req, &ab, &messages, Some("auto")).unwrap().0).unwrap();
+        assert!(v.get("recent").is_none(), "left out when empty, so an older server reads it as before");
+        let src = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/look.rs")).unwrap();
+        let at = src.find("async fn stream_look_lane(").expect("stream_look_lane");
+        let sl = &src[at..at + src[at..].find("\n}\n").unwrap()];
+        assert!(sl.contains("let recent = crate::front::recent_now(app);") && sl.contains("look_body_v2_recent("), "every v2 look sends the record");
     }
 
     #[test]

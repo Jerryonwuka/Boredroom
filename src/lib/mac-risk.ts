@@ -22,6 +22,8 @@ const RANK: Readonly<Record<RiskClass, number>> = { routine: 0, ask: 1, never: 2
 export const RISK_KINDS = [
   "open_app", "open_url", "open_folder", "open_file", "reveal_file", "find_files", "switch_app", "hide_app", "hide_others", "hide_all", "show_all",
   "minimise", "arrange", "fill", "half", "quit_app", "volume", "mute", "unmute", "screenshot", "copy_selection", "type_text", "wifi_on", "wifi_off", "empty_trash",
+  // Owner report, 28 October 2026: a new tab or window in a browser, and a web search (routine at base).
+  "new_tab", "new_window", "search_web",
   "files.list", "files.read", "files.make_folder", "files.move", "files.copy", "files.rename", "files.organise", "files.rename_by_date", "files.convert",
   "files.write", "files.open", "files.trash",
   "bd.remind_me", "bd.create_todos", "bd.timer", "bd.sends",
@@ -43,15 +45,16 @@ const EVERY_FILE: readonly RiskKind[] = RISK_KINDS.filter((k) => k.startsWith("f
 
 /** What each fact raises a kind to, and the kinds it applies to (D.3, in the table's order). */
 export const FACT_RULES: readonly { fact: RiskFact; raises: RiskClass; applies: readonly RiskKind[] }[] = [
-  { fact: "installer", raises: "never", applies: ["open_app", "open_file", "files.open"] },
-  { fact: "quarantined", raises: "never", applies: ["open_app", "switch_app"] },
-  { fact: "outside_apps", raises: "never", applies: ["open_app"] },
+  // The browser a page, a tab or a search opens in is an app like any other (owner report, 28 October 2026).
+  { fact: "installer", raises: "never", applies: ["open_app", "open_file", "files.open", "open_url", "new_tab", "new_window", "search_web"] },
+  { fact: "quarantined", raises: "never", applies: ["open_app", "switch_app", "open_url", "new_tab", "new_window", "search_web"] },
+  { fact: "outside_apps", raises: "never", applies: ["open_app", "open_url", "new_tab", "new_window", "search_web"] },
   { fact: "secret", raises: "never", applies: ["open_file", "reveal_file", "files.read", "files.open", "files.convert"] },
   { fact: "never_look", raises: "never", applies: ["type_text", "copy_selection", "files.read"] },
   { fact: "secure_field", raises: "never", applies: ["type_text", "copy_selection"] },
   { fact: "own", raises: "never", applies: ["quit_app", "hide_app", "type_text", "copy_selection"] },
   { fact: "finder", raises: "never", applies: ["quit_app"] },
-  { fact: "bad_url", raises: "never", applies: ["open_url"] },
+  { fact: "bad_url", raises: "never", applies: ["open_url", "search_web"] },
   { fact: "outside_allowed", raises: "never", applies: EVERY_FILE },
   { fact: "hidden_or_system", raises: "never", applies: FILE_CHANGES },
   { fact: "recently_changed", raises: "never", applies: FILE_CHANGES },
@@ -108,6 +111,9 @@ export const RISK_VECTORS: readonly RiskVector[] = [
   { kind: "open_url", facts: [], want: "routine", reason: "base" },
   { kind: "open_url", facts: ["bad_url"], want: "never", reason: "bad_url" },
   { kind: "open_file", facts: ["secret"], want: "never", reason: "secret" },
+  { kind: "new_tab", facts: [], want: "routine", reason: "base" },
+  { kind: "search_web", facts: ["bad_url"], want: "never", reason: "bad_url" },
+  { kind: "open_url", facts: ["quarantined"], want: "never", reason: "quarantined" },
   { kind: "switch_app", facts: ["never_look"], want: "routine", reason: "base" },
   { kind: "quit_app", facts: ["never_look"], want: "routine", reason: "base" },
   { kind: "quit_app", facts: ["own"], want: "never", reason: "own" },

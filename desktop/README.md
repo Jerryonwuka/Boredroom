@@ -529,7 +529,10 @@ this build's Rust (`LookStatus.v` 4) and Boredroom's `look.front.ready` (0060); 
   "Go to stripe.com", "Open my downloads", "Turn the volume down", "Mute", "Put Slack and Figma side by side", "Make Figma
   full screen", "Hide everything", "Quit Spotify" (the app's own save prompt protects unsaved work), "Take a screenshot of
   this" (saved to your Desktop, with Undo), "Copy that", "Write 'running five minutes late' here" (typed into the box you
-  are in, never pressing Return or Send), "Turn off Wi-Fi", "Empty the Trash". Anything else goes to Boredroom's router
+  are in, never pressing Return or Send), "Turn off Wi-Fi", "Empty the Trash", and in a web browser (see **Tabs, pages and
+  searches in a browser** below): "Open a new tab", "New tab in Brave", "Open a new window in Chrome", "Open stripe.com in
+  Safari", "Go to github.com in Brave", "Search for remote work tools in Chrome", "Google standing desks", "Look up the
+  weather in Brave". Anything else goes to Boredroom's router
   (claude-haiku-5-5) **as words, never a picture**, which picks the lane: a Mac action ("Open the Q3 deck": several
   matches, "Which one?"), your own reminder, to-do or timer (done at once, with Undo), a job, Boredroom's chat (anything
   that sends asks with a Confirm, as today), a look, or one short question back.
@@ -576,6 +579,44 @@ can start anything: no timer, notification, routine, server line or text on the 
 the words and shows what Rust says (`brenda://front`: `matched`, `routing`, `doing`, `ask`, `choose`, `found`, `done`,
 `refused`, `said_no`, `undone`, `consent`, `status`). Rust records every request with Boredroom for you alone, without
 making you wait (an outbox that retries for an hour). It never sends a picture to the router.
+
+### Tabs, pages and searches in a browser
+
+Owner report, 28 October 2026: "open a new tab in Brave" was heard as "open Brave", which only brought Brave forward, and
+she said "Opened Brave Browser"; a look a moment later said she couldn't control the browser. Now (`front.rs`
+`match_browser`, before the address rule, so "stripe.com in Safari" is never one address; the router's `do_on_mac` has
+the same kinds):
+
+- **"Open a new tab"**, **"New tab in Brave"**, **"Open a new Brave tab"**, **"Open a new window in Chrome"**,
+  **"Open a new browser window"** (`new_tab`, `new_window`). The browser named, else the front app when it is a browser,
+  else the Mac's default browser. With Accessibility allowed and the browser open, she brings it to the front and presses
+  ⌘T (⌘N for a window), only while it is still in front (`input::browser_keys`, never into an app on the never-act
+  lists): "Opened a new tab in Brave Browser." Otherwise (no Accessibility, or the browser not open yet) she opens
+  Google's home page in it, a new tab in practice, and says only that: "Opened google.com in Brave Browser." A bare "open
+  a new window" (of what?) goes to the router.
+- **"Open stripe.com in Safari"**, **"Go to github.com in Brave"** (`open_url` with the browser in `app`): the page in
+  that browser (NSWorkspace `openURLs:withApplicationAtURL:`), "Opened stripe.com in Safari." The address rules are
+  unchanged (no downloads of installers or scripts, no redirects); "Go to stripe.com" alone still opens the default browser.
+- **"Search for remote work tools in Chrome"**, **"Google X"**, **"Look up X in Brave"**, **"Look up X online"**
+  (`search_web`, the words in `text`, at most 200 characters): Google's results
+  (`https://www.google.com/search?q=…`, the words form-encoded) in the browser named, else the front or default one:
+  "Searched Google for remote work tools in Google Chrome." "Search for X" or "look up X" with no browser or "online" may
+  be about files, so it goes to the router.
+- Browsers she knows by name (`open::BROWSERS`, the same table as `BROWSERS` in `src/lib/front.ts`): Safari, Chrome,
+  Brave, Arc, Firefox, Edge, Opera, Vivaldi, Orion, Zen, DuckDuckGo. Only a browser can be the target: "Notes isn't a web
+  browser". A browser that isn't on this Mac is refused by name ("I couldn't find an app called “Brave Browser”").
+- All three are routine (they open; nothing is sent or changed), and a quarantined or out-of-place browser is refused as
+  any app is.
+
+### What she did lately (for a look and the chat)
+
+Rust keeps the done lines of the last ten minutes (`Front::recent`, at most six, cleared on signing out; typing is
+"Typed it.", never the text). Every v2 look sends them as `recent` (`[{ "line": "Opened Brave Browser.", "minutesAgo": 3
+}]`) and the notch's chat as `macRecent` (Rust sets it in `api`, replacing anything the page put there). Boredroom keeps
+only its own fixed lines and tells the model, as facts, "What you did on their Mac in the last few minutes (Boredroom's
+record): …"; a front look is also told what Brenda for Mac does (open apps, pages in the browser they name, new tabs,
+searches, files; acts after their yes), so she never says she can't control the browser. Neither field is required: an
+older Mac or server works as before.
 
 ### Jobs
 
