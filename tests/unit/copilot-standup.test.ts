@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { CONNECTOR_TOOL_NAMES } from "@/server/connectors/brenda/tools";
+// Brenda's research (owner decision, 28 October 2026) is appended after the connected apps.
+import { RESEARCH_TOOL_NAMES } from "@/server/research/brenda-tools";
 
 // The async standup and "How I like things done" in her chat (owner decisions, 8–9 October 2026: phase 7c, contract
 // F.1, D.2–D.4): the four tools, their place in the sets that decide what waits for Confirm and what a thread may do, the
@@ -121,7 +123,7 @@ describe("the registry and the sets", () => {
 
   it("has the four tools last, with the contract's required fields, and every tool one thread class", () => {
     // Connected apps (owner decisions, 22 October 2026) come after these, last: positions are counted without them.
-    const names = TOOLS.slice(0, -CONNECTOR_TOOL_NAMES.length).map((x) => x.name);
+    const names = TOOLS.slice(0, -(CONNECTOR_TOOL_NAMES.length + RESEARCH_TOOL_NAMES.length)).map((x) => x.name);
     expect(names.slice(-4)).toEqual(NEW);
     expect(tool("standup")?.input_schema.required).toEqual([]);
     expect(tool("standup_action")?.input_schema.required).toEqual(["entryId", "action"]);

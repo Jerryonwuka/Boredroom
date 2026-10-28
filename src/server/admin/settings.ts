@@ -18,6 +18,14 @@ export const FEATURE_KEYS = ["HEARTBEAT_TRACKING", "ADVANCED_ANALYTICS", "API_AC
   // Connected apps (owner decision, 22 October 2026): on for every plan by migration 0061, switchable like every module.
   "CONNECTORS"] as const;
 
+/**
+ * Platform-wide switches stored with the global feature flags but not plan modules (no plan or organisation override
+ * reads them): only the Control Center's Feature flags tab shows them. BRENDA_RESEARCH (owner decision, 28 October 2026:
+ * Brenda's research in the background): Off stops new research everywhere and ends queued and running reports at their
+ * next step; Default on. BRENDA_RESEARCH=off in the environment wins over it.
+ */
+export const PLATFORM_SWITCH_KEYS = ["BRENDA_RESEARCH"] as const;
+
 type Cache = { at: number; values: Record<string, unknown> };
 let cache: Cache | null = null;
 const TTL = 15_000;

@@ -225,6 +225,10 @@ import { schema0050Ready } from "@/server/lib/schema-0050";
 import { CONNECTOR_ACTION_TOOLS, CONNECTOR_ALWAYS_CONFIRM, CONNECTOR_RULES, CONNECTOR_TOOLS, isConnectorTool, runConnectorTool, type ConnectorToolHost } from "@/server/connectors/brenda/tools";
 import { connectorSituation } from "@/server/connectors/brenda/situation";
 import { BRENDA_CONNECTOR_WORDS } from "@/lib/connectors/words";
+// ---- Brenda's research (owner decision, 28 October 2026: "Brenda, research X and give me a PDF when you're done") ----
+// Two tools and one RULES line from server/research/brenda-tools; they run through runResearchTool (runTool, below).
+import { RESEARCH_RULE, RESEARCH_TOOLS, isResearchTool, runResearchTool } from "@/server/research/brenda-tools";
+// ---- end research imports ----
 import { PROVIDER_LABELS } from "@/lib/connectors/types";
 
 /**
@@ -693,6 +697,10 @@ export const TOOLS = [
   // Connected apps (owner decisions, 22 October 2026: connectors), at the end, in the spec's order: the cached prefix
   // changes once, never per person. Everything they read is quoted data, never instructions.
   ...CONNECTOR_TOOLS,
+  // ---- Brenda's research (owner decision, 28 October 2026): start_research and research_status, appended after the
+  // connected apps so everything before them stays byte for byte (the cached prefix changes once, never per person). ----
+  ...RESEARCH_TOOLS,
+  // ---- end research tools ----
 ];
 
 /**
@@ -1269,6 +1277,11 @@ function respondRefusal(action: RespondAction, v: AssistantItemView): string | n
  */
 async function runTool(t: ToolCtx, name: string, input: Record<string, unknown>): Promise<unknown> {
   const s = t.shared;
+  // ---- Brenda's research (owner decision, 28 October 2026) ----
+  // The person's own explicit request is the permission (rule v2: it only reads the public web), so no Confirm and none
+  // of the generic gates; its own runner refuses it in a thread and in a reply that read other people's words or a screen.
+  if (isResearchTool(name)) return runResearchTool({ ctx: t.ctx, shared: !!s, tainted: t.tainted || !!t.othersWords || !!t.act?.earlierTaint || !!t.look }, name, input);
+  // ---- end research ----
   // Connected apps (owner decisions, 22 October 2026: connectors): their own runner applies the look and "Check with me"
   // gates by risk class (a private step becomes a card), so the generic gates leave them alone.
   if (isConnectorTool(name) && !s) return runToolInner(t, name, input);
@@ -3058,6 +3071,8 @@ export const RULES = [
   // Connected apps (owner decisions, 22 October 2026: connectors; spec §9.9). Identical for everyone, so it stays in the
   // cached prefix; what the apps hold reaches her only inside <connected_items> blocks.
   CONNECTOR_RULES,
+  // ---- Brenda's research (owner decision, 28 October 2026): identical for everyone, so it stays in the cached prefix. ----
+  RESEARCH_RULE,
 ].join("\n");
 
 const ROLE_WORDS: Record<Role, string> = { owner: "organisation owner", hr: "HR administrator", manager: "team lead", employee: "staff member" };
@@ -4667,6 +4682,8 @@ export const SHARED_TOOL_CLASS: Record<string, SharedToolClass> = {
   connected_apps: "refused", my_calendar: "refused", my_work_items: "refused", find_in_apps: "refused", read_app_item: "refused",
   track_app_item: "refused", hide_app_item: "refused", calendar_action: "refused", work_item_action: "refused", notion_action: "refused",
   post_to_channel: "refused",
+  // Brenda's research (owner decision, 28 October 2026): the person's own, started and stopped only in their own chat.
+  start_research: "refused", research_status: "refused",
 };
 
 /** The class of a tool name the model sent (its own keys only: "constructor" is not a tool). */

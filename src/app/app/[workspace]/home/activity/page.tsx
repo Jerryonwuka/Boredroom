@@ -74,6 +74,8 @@ export default async function AssistantActivityPage({ params, searchParams }: { 
         actions={<>
           {/* Brenda and her helpers (owner brief, 12 October 2026; contract N.1): her background jobs, the person's own. */}
           {macTab ? <Link href={`${base}/home/jobs`} className={buttonVariants({ variant: "secondary", size: "sm" })}>Jobs</Link> : null}
+          {/* Brenda's research (owner decision, 28 October 2026): the person's own reports. */}
+          <Link href={`${base}/home/research`} className={buttonVariants({ variant: "secondary", size: "sm" })}>Research</Link>
           <Link href={`${base}/home/assistants`} className={buttonVariants({ variant: "secondary", size: "sm" })}>Between assistants</Link>
         </>}
         meta={allowance.ready && aiEnabled ? <><span className="tabular-nums">{allowance.used}</span> of <span className="tabular-nums">{allowance.limit}</span> requests used today</> : undefined}

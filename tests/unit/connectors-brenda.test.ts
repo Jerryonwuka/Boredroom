@@ -19,7 +19,9 @@ const turn = (o: Partial<{ tainted: boolean; look: boolean; onMac: boolean }> = 
 describe("the tool list (§9.1)", () => {
   it("eleven tools, in order, at the end of TOOLS", () => {
     expect(CONNECTOR_TOOL_NAMES).toEqual(["connected_apps", "my_calendar", "my_work_items", "find_in_apps", "read_app_item", "track_app_item", "hide_app_item", "calendar_action", "work_item_action", "notion_action", "post_to_channel"]);
-    expect(TOOLS.slice(-11).map((t) => t.name)).toEqual(CONNECTOR_TOOL_NAMES);
+    // Brenda's research (owner decision, 28 October 2026): its two tools come after these.
+    expect(TOOLS.slice(-13, -2).map((t) => t.name)).toEqual(CONNECTOR_TOOL_NAMES);
+    expect(TOOLS.slice(-2).map((t) => t.name)).toEqual(["start_research", "research_status"]);
     expect(new Set(TOOLS.map((t) => t.name)).size).toBe(TOOLS.length);
   });
   it("the acting tools can be confirmed; what others see always asks; reads are not actions", () => {

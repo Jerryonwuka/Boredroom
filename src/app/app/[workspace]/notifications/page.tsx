@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { ComponentType } from "react";
-import { AtSign, Bell, CalendarClock, CircleAlert, CircleCheck, ClipboardCheck, CreditCard, FileText, Handshake, Hourglass, MessageSquare, MessageSquareQuote, MessageSquareReply, NotebookPen, PhoneMissed, Repeat, ShieldCheck, SquareCheckBig, UserPlus } from "lucide-react";
+import { AtSign, Bell, CalendarClock, CircleAlert, CircleCheck, ClipboardCheck, CreditCard, FileSearch, FileText, Handshake, Hourglass, MessageSquare, MessageSquareQuote, MessageSquareReply, NotebookPen, PhoneMissed, Repeat, ShieldCheck, SquareCheckBig, UserPlus } from "lucide-react";
 import { workspacePage } from "@/server/lib/workspace-page";
 import { AppShell } from "@/components/app/shell";
 import { PageHeader } from "@/components/ui/card";
@@ -78,6 +78,8 @@ function kindsFor(personal: string, workspace: string): Record<string, string> {
     "brenda.mention_private": `From ${personal}`, "adjustment.requested": "Time correction requested",
     "assistant.message": "Passed-on message", "assistant.request": "Request to accept", "assistant.reply": "Reply", "assistant.outcome": "Request update",
     "assistant.tagged": "Your assistant in Messages", "assistant.thread_reply": "Reply in Messages",
+    // Brenda's research (owner decision, 28 October 2026): a report ready, or one that couldn't finish.
+    "brenda.research": `Research from ${personal}`, "brenda.research_failed": `Research from ${personal}`,
     ...ROUTINE_WORDS.notifications.kinds,
     ...LOOP_WORDS.notifications.kinds,
     ...CALL_WORDS.notifications.kinds,
@@ -115,6 +117,9 @@ function iconOf(type: string): Icon {
   // Routines (phase 7a): what ran on a schedule; one that couldn't run is a warning.
   if (type === "brenda.routine_failed") return CircleAlert;
   if (type === "brenda.routine" || type === "brenda.routine_bundle") return Repeat;
+  // Brenda's research (owner decision, 28 October 2026): a report; one that couldn't finish is a warning.
+  if (type === "brenda.research_failed") return CircleAlert;
+  if (type === "brenda.research") return FileSearch;
   if (type.startsWith("brenda.")) return BrendaGlyph as Icon;
   // Calls (phase 8): a missed call, and the notes from a call.
   if (type === "call.missed") return PhoneMissed;

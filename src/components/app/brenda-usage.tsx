@@ -29,6 +29,8 @@ export const PURPOSE_LABEL: Record<UsagePurpose, string> = {
   standup: "Standup drafts",
   // "call_recap": the workspace assistant's notes on a call (owner decisions, 8 October 2026: phase 8).
   call_recap: "Call notes",
+  // "research": Brenda's research in the background (owner decision, 28 October 2026).
+  research: "Research",
 };
 
 const exact = new Intl.NumberFormat("en-GB");
