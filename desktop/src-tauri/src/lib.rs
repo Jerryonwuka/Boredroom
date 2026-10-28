@@ -1577,7 +1577,7 @@ mod tests {
         let conf: serde_json::Value = serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
         assert_eq!(conf["productName"], "Boredroom");
         assert_eq!(conf["identifier"], "cc.boredroom.brenda", "brenda.json and the Mac's permissions carry over");
-        assert_eq!(conf["version"], "0.2.0");
+        assert_eq!(conf["version"], env!("CARGO_PKG_VERSION"));
     }
 
     /// The app ACL (0b.14): every command the notch page invokes is allowed to the notch, every command registered is

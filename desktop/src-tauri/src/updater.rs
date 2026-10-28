@@ -329,7 +329,7 @@ mod tests {
         assert_eq!(st(true, true, None, Err(())), Outcome::WrongPlace);
         assert_eq!(st(true, false, Some("0.3.0"), Err(())), Outcome::Ready("0.3.0".into()));
         assert_eq!(st(true, false, None, Ok(Some("0.3.0"))), Outcome::Downloading("0.3.0".into()));
-        assert_eq!(st(true, false, None, Ok(None)), Outcome::UpToDate("0.2.0".into()));
+        assert_eq!(st(true, false, None, Ok(None)), Outcome::UpToDate(env!("CARGO_PKG_VERSION").into()));
         assert_eq!(st(true, false, None, Err(())), Outcome::Failed);
         let (t, m, b) = outcome_words(&Outcome::Ready("0.3.0".into()), "Max");
         assert_eq!((t.as_str(), m.as_str()), ("Boredroom 0.3.0 is ready", "Restart Boredroom to update. Anything Max is doing now stops."));

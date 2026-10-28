@@ -931,7 +931,7 @@ mod tests {
     #[test]
     fn user_agent() {
         let ua = dashboard_user_agent(14);
-        assert!(ua.contains("BoredroomDesktop/0.2.0"));
+        assert!(ua.contains(&format!("BoredroomDesktop/{}", env!("CARGO_PKG_VERSION"))));
         assert!(ua.contains("Version/17.0 Safari/605.1.15"));
         assert!(dashboard_user_agent(15).contains("Version/18.0 "));
         assert!(dashboard_user_agent(26).contains("Version/26.0 "));
