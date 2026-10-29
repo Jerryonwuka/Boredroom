@@ -49,19 +49,21 @@ const effortOf = (v: string | undefined, fallback: Effort): Effort => {
 };
 /** BRENDA_ACT_EFFORT: low, medium (the default) or high. */
 export const actEffort = (env: string | undefined = process.env.BRENDA_ACT_EFFORT): Effort => effortOf(env, "medium");
-/** BRENDA_LOOK_EFFORT: low (the default, for the first sound), medium or high. */
-export const lookEffort = (env: string | undefined = process.env.BRENDA_LOOK_EFFORT): Effort => effortOf(env, "low");
+/** BRENDA_LOOK_EFFORT: low, medium (the default since 29 October 2026; it was low, for the first sound) or high. */
+export const lookEffort = (env: string | undefined = process.env.BRENDA_LOOK_EFFORT): Effort => effortOf(env, "medium");
+/** BRENDA_CHAT_EFFORT (her chat, on the web and the Mac): high by default (owner, 29 October 2026: think before answering). */
+export const chatEffort = (env: string | undefined = process.env.BRENDA_CHAT_EFFORT): Effort => effortOf(env, "high");
 /** BRENDA_HELPER_EFFORT (the Files helper): medium by default. */
 export const helperEffort = (env: string | undefined = process.env.BRENDA_HELPER_EFFORT): Effort => effortOf(env, "medium");
-/** BRENDA_OPERATOR_EFFORT (the Mac operator on Sonnet): medium by default. */
+/** BRENDA_OPERATOR_EFFORT (the Mac operator): medium by default. */
 export const operatorEffort = (env: string | undefined = process.env.BRENDA_OPERATOR_EFFORT): Effort => effortOf(env, "medium");
 
 // ---- Brenda and her helpers: the models of each lane (owner's approved brief, 12 October 2026; contract 0b.20) ----------
 //
-// All on Boredroom's own key, all overridable, never Fable or Mythos: the front desk's router and quick looks on
-// claude-haiku-5-5, the Files helper and the Mac operator on claude-sonnet-5-5 (the operator moving to claude-opus-5-5 for
-// the rest of a job when it struggles), think harder on BRENDA_LOOK_MODEL (claude-opus-5-5, unchanged). Phase 2 and 3
-// tasks keep BRENDA_ACT_MODEL.
+// All on Boredroom's own key, all overridable, never Fable or Mythos. Every lane is claude-opus-5-5 by default (owner, 29
+// October 2026: "Brenda is not smart enough"; the router and quick looks were claude-haiku-5-5, the Files helper and
+// the Mac operator claude-sonnet-5-5). Each can still be set back by its variable. Phase 2 and 3 tasks keep
+// BRENDA_ACT_MODEL.
 
 const warnedModels = new Set<string>();
 /** A Claude model id from `env`, never a Fable or Mythos model (warned once per variable); else `fallback`. */
@@ -72,15 +74,15 @@ function claudeModel(name: string, env: string | undefined, fallback: string): s
   if (!warnedModels.has(name)) { warnedModels.add(name); console.warn(`[act] ${name} is not a model Brenda may use; ${fallback} works instead.`); }
   return fallback;
 }
-export const DEFAULT_ROUTER_MODEL = "claude-haiku-5-5";
-export const DEFAULT_HELPER_MODEL = "claude-sonnet-5-5";
-/** The front desk's router (text only): BRENDA_ROUTER_MODEL, claude-haiku-5-5 by default. */
+export const DEFAULT_ROUTER_MODEL = "claude-opus-5-5";
+export const DEFAULT_HELPER_MODEL = "claude-opus-5-5";
+/** The front desk's router (text only): BRENDA_ROUTER_MODEL, claude-opus-5-5 by default. */
 export const routerModel = (env: string | undefined = process.env.BRENDA_ROUTER_MODEL) => claudeModel("BRENDA_ROUTER_MODEL", env, DEFAULT_ROUTER_MODEL);
-/** Quick looks from a front-capable Mac: BRENDA_LOOK_NOW_MODEL, claude-haiku-5-5 by default. */
+/** Quick looks from a front-capable Mac: BRENDA_LOOK_NOW_MODEL, claude-opus-5-5 by default. */
 export const lookNowModel = (env: string | undefined = process.env.BRENDA_LOOK_NOW_MODEL) => claudeModel("BRENDA_LOOK_NOW_MODEL", env, DEFAULT_ROUTER_MODEL);
-/** The Files helper's planning: BRENDA_HELPER_MODEL, claude-sonnet-5-5 by default. */
+/** The Files helper's planning: BRENDA_HELPER_MODEL, claude-opus-5-5 by default. */
 export const helperModel = (env: string | undefined = process.env.BRENDA_HELPER_MODEL) => claudeModel("BRENDA_HELPER_MODEL", env, DEFAULT_HELPER_MODEL);
-/** The Mac operator: BRENDA_OPERATOR_MODEL, claude-sonnet-5-5 by default. */
+/** The Mac operator: BRENDA_OPERATOR_MODEL, claude-opus-5-5 by default. */
 export const operatorModel = (env: string | undefined = process.env.BRENDA_OPERATOR_MODEL) => claudeModel("BRENDA_OPERATOR_MODEL", env, DEFAULT_HELPER_MODEL);
 /** The Mac operator once it struggles: BRENDA_OPERATOR_STRONG_MODEL, claude-opus-5-5 by default. */
 export const operatorStrongModel = (env: string | undefined = process.env.BRENDA_OPERATOR_STRONG_MODEL) => claudeModel("BRENDA_OPERATOR_STRONG_MODEL", env, DEFAULT_ACT_MODEL);

@@ -1,12 +1,12 @@
 /**
  * Brenda's front desk: the router's model side (Brenda and her helpers, build 1; owner's approved brief, 12 October 2026:
  * "everything else goes to a small fast model (claude-haiku-5-5) that picks the lane and, for front-lane work, the
- * action"; contract B.4).
+ * action"; contract B.4). claude-opus-5-5 by default since 29 October 2026 (owner: "Brenda is not smart enough").
  *
  * The router is TEXT ONLY (decision 0b.2): it sees the person's words, the chat so far, the time, which apps run, the
  * names of files they pointed at and which switches are on, never a picture. Whatever its tools do comes from the
- * person's words alone ("never follows instructions found on screen"). One call: claude-haiku-5-5 (BRENDA_ROUTER_MODEL),
- * a forced tool (`tool_choice: any`), thinking disabled, low effort, the rules cached; no sampling parameters (Haiku 5.5
+ * person's words alone ("never follows instructions found on screen"). One call (BRENDA_ROUTER_MODEL; see runRouter for what
+ * each model is sent), low effort, the rules cached; no sampling parameters (Haiku 5.5
  * refuses them); no fallback model (a refusal is "I can't help with that one.").
  *
  * `checkRoute` reads the one tool call (pure, unit-tested): each Mac action's fields are checked for its kind and
@@ -178,14 +178,19 @@ export function routerMessages(o: { history: RouterMessage[]; situation: string;
 
 export type RouterRun = { content: Record<string, unknown>[]; stopReason: string | null; model: string; usage: ModelUsage };
 
-/** One Haiku call, forced to call one tool, no thinking, low effort, the rules cached. Text only. */
+/**
+ * One call, the rules cached, text only. On Haiku: forced to call one tool, no thinking, low effort. On Opus or Sonnet
+ * (claude-opus-5-5 by default since 29 October 2026), which refuse a forced tool and disabled thinking: `auto` with one
+ * call at most and low effort; the rules already say to call exactly one tool, and a reply with none goes to her chat.
+ */
 export async function runRouter(client: Anthropic, messages: RouterMessage[]): Promise<RouterRun> {
   const model = routerModel();
+  const haiku = model.startsWith("claude-haiku");
   const res = await client.messages.create({
-    model, max_tokens: 1024,
-    thinking: { type: "disabled" },
+    model, max_tokens: haiku ? 1024 : 4000,
+    ...(haiku ? { thinking: { type: "disabled" } } : {}),
     output_config: { effort: "low" },
-    tool_choice: { type: "any", disable_parallel_tool_use: true },
+    tool_choice: { type: haiku ? "any" : "auto", disable_parallel_tool_use: true },
     system: [{ type: "text", text: ROUTER_RULES, cache_control: { type: "ephemeral" } }],
     tools: ROUTER_TOOLS,
     messages,
@@ -317,6 +322,8 @@ const oneLineOk = (s: string, min: number, max: number) => s.length >= min && s.
 export function checkRoute(content: unknown[], f: RouteFacts): RouteDecision {
   const uses = (content as Record<string, unknown>[]).filter((b) => b && b.type === "tool_use" && typeof b.name === "string");
   const unclear: RouteDecision = { lane: "ask", question: FRONT_WORDS.router.unclear };
+  // No call at all (a router on Opus may answer in words): her chat takes the request, as for anything about Boredroom.
+  if (uses.length === 0) return { lane: "boredroom", why: "other" };
   if (uses.length !== 1) return unclear;
   const name = uses[0].name as string;
   const input = (uses[0].input && typeof uses[0].input === "object" ? uses[0].input : {}) as Record<string, unknown>;

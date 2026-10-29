@@ -6,7 +6,7 @@
  */
 import { describe, expect, it } from "vitest";
 import {
-  ASK_BEFORE, CANNOT_CONTINUE, COMPUTER_MEMBERS, DELIVER, FINISHED, RULES_ACT, actEffort, actModel, askAnsweredMessage, cleanAction, csvParses, firstMessage, lookEffort,
+  ASK_BEFORE, CANNOT_CONTINUE, COMPUTER_MEMBERS, DELIVER, FINISHED, RULES_ACT, actEffort, actModel, chatEffort, askAnsweredMessage, cleanAction, csvParses, firstMessage, lookEffort,
   noteOf, readTurn, reminder, runFileJob, runStep, toolResult, withCacheMark, type ActMessage,
 } from "@/server/services/act-model";
 
@@ -33,8 +33,11 @@ describe("RULES_ACT and the tools (contract D.8.2, D.8.3)", () => {
     expect(actEffort(undefined)).toBe("medium");
     expect(actEffort("high")).toBe("high");
     expect(actEffort("max")).toBe("medium");
-    expect(lookEffort(undefined)).toBe("low");
-    expect(lookEffort("medium")).toBe("medium");
+    expect(lookEffort(undefined)).toBe("medium");
+    expect(lookEffort("low")).toBe("low");
+    expect(chatEffort(undefined)).toBe("high");
+    expect(chatEffort("medium")).toBe("medium");
+    expect(chatEffort("max")).toBe("high");
   });
 });
 

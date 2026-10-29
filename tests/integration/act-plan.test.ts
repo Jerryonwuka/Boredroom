@@ -284,7 +284,8 @@ describe("with migration 0059", () => {
         { i: 0, kind: "open", target: "app", name: "Figma", url: "", folder: none, words: [], kinds: [], sinceDays: 0 },
         { i: 1, kind: "boredroom", summary: expect.stringMatching(/Review the Figma file/), outward: false },
       ]);
-      expect(JSON.stringify(r.lines)).not.toContain("\"token\"");
+      // No Confirm token in what streams back; the signed speech token for her voice (ElevenLabs) is the only one.
+      expect(JSON.stringify(r.lines, (k, v) => (k === "speech" ? undefined : v))).not.toContain("\"token\"");
       // No separate Confirm card for the bound reminder.
       expect((r.done.proposals as { kind: string }[]).filter((p) => p.kind === "confirm")).toEqual([]);
       expect(r.done.reply).toBe("I'll open Figma and remind you to review it. Do you want me to do this?");

@@ -221,13 +221,15 @@ describe("the router's gates (contract B.4, 0.5)", () => {
     expect(await front(ada, body("Mute the sound", { nonce: n }))).toMatchObject({ status: 409, json: { code: "FRONT_REPLAY" } });
     expect(model.calls).toHaveLength(1);
   });
-  it("front.route.never_sees_pictures: one Haiku call, forced tool, no thinking, text only, the rules cached", async () => {
+  it("front.route.never_sees_pictures: one Opus call, one tool at most, low effort, text only, the rules cached", async () => {
     model.msgs = [doOnMac({ kind: "open_file", words: ["Q3"], kinds: ["presentation"], pick: "ask" })];
     const r = await front(ada, body("Open the Q3 deck"));
     seam("server-front-route-mac.ndjson", ndjsonOf(r.lines));
     expect(r.status).toBe(200);
     const args = model.calls[0].args;
-    expect(args).toMatchObject({ model: "claude-haiku-5-5", max_tokens: 1024, thinking: { type: "disabled" }, output_config: { effort: "low" }, tool_choice: { type: "any", disable_parallel_tool_use: true } });
+    // claude-opus-5-5 since 29 October 2026: Opus 5.5 refuses a forced tool and disabled thinking, so neither is sent.
+    expect(args).toMatchObject({ model: "claude-opus-5-5", max_tokens: 4000, output_config: { effort: "low" }, tool_choice: { type: "auto", disable_parallel_tool_use: true } });
+    expect(args.thinking).toBeUndefined();
     expect((args.system as { cache_control?: unknown }[])[0].cache_control).toEqual({ type: "ephemeral" });
     expect(JSON.stringify(args.messages)).not.toMatch(/"type":"image"|base64/);
     expect(args.temperature).toBeUndefined();
@@ -547,8 +549,10 @@ describe("looks from a front-capable Mac (contract J; decision 0b.4)", () => {
     seam("server-look-one-trip.json", { statementsBeforeThinkLine: beforeSaid.length, statementsBeforeModel: sql.filter((x) => x.model === 0).length });
   });
   it("a quick question on claude-haiku-5-5; think_harder hands the same thread to the stronger model", async () => {
+    // Quick looks run on claude-opus-5-5 by default since 29 October 2026 (no hand-off then); pinned to Haiku here.
+    process.env.BRENDA_LOOK_NOW_MODEL = "claude-haiku-5-5";
     model.msgs = [tool("think_harder", { why: "small_print" }), say("That's the export setting.")];
-    const r = await look(ada, v2("How do I export in Figma?"));
+    const r = await look(ada, v2("How do I export in Figma?")).finally(() => { delete process.env.BRENDA_LOOK_NOW_MODEL; });
     expect(model.calls.map((c) => c.args.model)).toEqual(["claude-haiku-5-5", LOOK_MODEL]);
     expect((model.calls[0].args.tools as { name: string }[]).map((t) => t.name).slice(-1)).toEqual(["think_harder"]);
     expect((model.calls[1].args.tools as { name: string }[]).map((t) => t.name)).not.toContain("think_harder");

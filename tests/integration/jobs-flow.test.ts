@@ -163,6 +163,11 @@ beforeEach(async () => {
                     WHERE status IN ('proposed', 'running', 'asking', 'paused')`);
 });
 
+// The helper and the operator run on claude-opus-5-5 by default since 29 October 2026; this file pins them to Sonnet so the
+// move to Opus when the operator struggles is still exercised.
+beforeAll(() => { process.env.BRENDA_HELPER_MODEL = SONNET; process.env.BRENDA_OPERATOR_MODEL = SONNET; });
+afterAll(() => { delete process.env.BRENDA_HELPER_MODEL; delete process.env.BRENDA_OPERATOR_MODEL; });
+
 describe("starting a job (contract G.2)", () => {
   it("jobs.create.needs_token: a forged, someone else's or an expired token starts nothing", async () => {
     expect(await create(ada, { token: "forged-token.not-signed-by-boredroom" })).toMatchObject({ status: 409, json: { code: "JOB_TOKEN" } });

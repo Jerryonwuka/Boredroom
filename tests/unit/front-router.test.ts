@@ -32,11 +32,11 @@ describe("the router's tools and rules (B.4)", () => {
     expect(ROUTER_RULES.split("\n")).toHaveLength(8);
     expect(createHash("sha256").update(ROUTER_RULES).digest("hex")).toMatch(/^[0-9a-f]{64}$/);
   });
-  it("runs on claude-haiku-5-5 unless overridden by a Claude model id (never Fable or Mythos)", () => {
-    expect(routerModel("")).toBe("claude-haiku-5-5");
-    expect(routerModel("claude-sonnet-5-5")).toBe("claude-sonnet-5-5");
-    expect(routerModel("claude-fable-1")).toBe("claude-haiku-5-5");
-    expect(routerModel("gpt-5")).toBe("claude-haiku-5-5");
+  it("runs on claude-opus-5-5 unless overridden by a Claude model id (never Fable or Mythos)", () => {
+    expect(routerModel("")).toBe("claude-opus-5-5");
+    expect(routerModel("claude-haiku-5-5")).toBe("claude-haiku-5-5");
+    expect(routerModel("claude-fable-1")).toBe("claude-opus-5-5");
+    expect(routerModel("gpt-5")).toBe("claude-opus-5-5");
   });
 });
 
@@ -87,7 +87,8 @@ describe("checkRoute (B.4 'Validating the call')", () => {
   });
   it("anything it can't read is the 'say it another way' question", () => {
     const unclear = { lane: "ask", question: "I didn't catch what to do. Say it another way?" };
-    expect(checkRoute([], ALL_ON)).toEqual(unclear);
+    // No call at all (a router on Opus may answer in words) goes to her chat.
+    expect(checkRoute([], ALL_ON)).toEqual({ lane: "boredroom", why: "other" });
     expect(checkRoute([...mac({ kind: "mute" }), toolUse("ask", { question: "Which?" })], ALL_ON)).toEqual(unclear);
     expect(checkRoute(mac({ kind: "open_app", app: "a/b" }), ALL_ON)).toEqual(unclear);
     expect(checkRoute(mac({ kind: "volume", change: "set", level: 140 }), ALL_ON)).toEqual(unclear);

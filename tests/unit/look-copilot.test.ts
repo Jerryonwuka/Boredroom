@@ -28,7 +28,8 @@ describe("the cached prefix", () => {
     // the very end; everything before them is still byte for byte what it was.
     const tail = `\n${CONNECTOR_RULES}\n${RESEARCH_RULE}\n${LEARNING_RULES}`;
     expect(RULES.endsWith(tail)).toBe(true);
-    expect(sha(RULES.slice(0, RULES.length - tail.length))).toBe("a382a034ee96c7846dca689f57463d304dde426f7965fa0ed154c0efb086cc3b");
+    // Who she is and the web (owner, 29 October 2026: "Brenda is not smart enough") changed the prefix once more.
+    expect(sha(RULES.slice(0, RULES.length - tail.length))).toBe("bc9da0ec26c8d00b20f5f72376ee410ff84b248007c72390e5aa72c29fb2389f");
     expect(TOOLS.slice(-LEARNING_TOOLS.length)).toEqual(LEARNING_TOOLS);
     expect(sha(JSON.stringify(TOOLS.slice(0, -(CONNECTOR_TOOLS.length + RESEARCH_TOOLS.length + LEARNING_TOOLS.length))))).toBe("677790e21c61136b36bbbae087566a737c441b32fe4f5daefea46dc738b2146d");
   });

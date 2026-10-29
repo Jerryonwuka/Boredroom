@@ -262,7 +262,7 @@ describe("looks (contract D.5, D.6)", () => {
     const call = model.calls[0];
     expect(call.kind).toBe("stream");
     expect(call.args.model).toBe(LOOK_MODEL);
-    expect(call.args.output_config).toEqual({ effort: "low" });
+    expect(call.args.output_config).toEqual({ effort: "medium" });
     expect(call.args.max_tokens).toBe(4000);
     const msgs = call.args.messages as { role: string; content: { type: string; source?: { data: string }; text?: string }[] }[];
     const last = msgs[msgs.length - 1].content;
