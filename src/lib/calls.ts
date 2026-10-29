@@ -36,7 +36,9 @@ export const CALL_LIMITS = {
   declineMessageMax: 280,
   historyPageSize: 30,
   capWarningMs: 5 * 60_000,
-  pollMs: { idle: 4_000, ringing: 2_000, notReady: 60_000, min: 2_000, max: 60_000 },
+  // The notch's idle ring poll is 15 s, not 4 s (owner, 29 October 2026: Vercel paused the site after a month of
+  // Macs asking every 4 s kept its functions provisioned around the clock). It stays under desktopRingerMs.
+  pollMs: { idle: 15_000, ringing: 2_000, notReady: 60_000, min: 2_000, max: 60_000 },
 } as const;
 
 export type CallKind = "direct" | "group";

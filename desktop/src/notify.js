@@ -208,13 +208,13 @@ const Notify = (() => {
 
   // ---- calls (owner decisions, 8 October 2026: phase 8, calls; contract F.1 and F.2) ----------------------------------
   // The notch rings, answers and declines; the call itself runs in the person's browser. GET /calls/now says what rings
-  // and how soon to ask again (`pollMs`: 4 s, 2 s while ringing, 60 s before migration 0054 or without LiveKit; the
+  // and how soon to ask again (`pollMs`: 15 s, 2 s while ringing, 60 s before migration 0054 or without LiveKit; the
   // numbers are CALL_LIMITS.pollMs in src/lib/calls.ts, which this file cannot import).
 
   /** The ring poll's bounds and fallbacks: the server's pollMs clamped to 2 to 60 s; 5 minutes for a server from before phase 8 (404); 15 s after any other failure. */
-  const CALL_POLL = Object.freeze({ MIN_MS: 2_000, MAX_MS: 60_000, IDLE_MS: 4_000, OLD_SERVER_MS: 300_000, RETRY_MS: 15_000 });
+  const CALL_POLL = Object.freeze({ MIN_MS: 2_000, MAX_MS: 60_000, IDLE_MS: 15_000, OLD_SERVER_MS: 300_000, RETRY_MS: 15_000 });
 
-  /** When to ask GET /calls/now again: the server's `pollMs`, clamped to 2 to 60 s (4 s when it sent none). */
+  /** When to ask GET /calls/now again: the server's `pollMs`, clamped to 2 to 60 s (15 s when it sent none). */
   function ringPollMs(pollMs) {
     const ms = typeof pollMs === "number" && Number.isFinite(pollMs) ? pollMs : CALL_POLL.IDLE_MS;
     return Math.min(CALL_POLL.MAX_MS, Math.max(CALL_POLL.MIN_MS, Math.round(ms)));

@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 /**
  * What is ringing for the person now and the call they are in (owner decisions, 8 October 2026: phase 8, calls):
  * `CallsNow`, for the web's incoming-call overlay and "On a call" dock and for the notch, which polls it every few seconds
- * through its existing `api` command (`pollMs` says how often: 2 s while ringing, 4 s otherwise, 60 s while calls are
+ * through its existing `api` command (`pollMs` says how often: 2 s while ringing, 15 s otherwise, 60 s while calls are
  * unavailable). One transaction (orgContextTx); no rate limit. Rings past their 30 seconds are settled after the answer
  * (C.6), so a lost ring-timeout job never leaves a call ringing. Before migration 0054, or without LiveKit:
  * `{ ready, available: false, ringing: [], active: null, pollMs: 60000, ringsOnDesktop: false }`.

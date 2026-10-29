@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 
 export type ChangeEvent = { table: string; op: string; id: string; at: string };
 export const CHANGE_EVENT = "boredroom:change";
+/** How long a tab stays in the background before it closes the event stream. */
+const HIDDEN_CLOSE_MS = 10 * 60_000;
 /** The calls tables whose changes the call components handle themselves (phase 8). */
 export const CALL_TABLES: ReadonlySet<string> = new Set(["calls", "call_participants", "call_note_consents"]);
 
@@ -36,9 +38,22 @@ export function RealtimeRefresher({ orgSlug }: { orgSlug: string }) {
         router.refresh();
       }, editing() ? 2000 : 400);
     };
-    const onVisible = () => { if (document.visibilityState === "visible" && held) { held = false; schedule(); } };
+    // A tab in the background for ten minutes lets go of the stream (owner, 29 October 2026: Vercel paused the site after
+    // open tabs and the Mac's dashboard window kept a function provisioned around the clock). Coming back reconnects
+    // and refreshes once, which catches up on whatever changed meanwhile.
+    let sleep: ReturnType<typeof setTimeout> | null = null;
+    let asleep = false;
+    const onVisible = () => {
+      if (document.visibilityState === "hidden") {
+        if (!sleep && !asleep) sleep = setTimeout(() => { sleep = null; asleep = true; es?.close(); es = null; if (retry) { clearTimeout(retry); retry = null; } }, HIDDEN_CLOSE_MS);
+        return;
+      }
+      if (sleep) { clearTimeout(sleep); sleep = null; }
+      if (asleep) { asleep = false; backoff = 1000; connect(); held = false; schedule(); return; }
+      if (held) { held = false; schedule(); }
+    };
     const connect = () => {
-      if (closed) return;
+      if (closed || asleep) return;
       es = new EventSource(`/api/orgs/${orgSlug}/events`);
       es.onmessage = (e) => {
         backoff = 1000;
@@ -53,13 +68,14 @@ export function RealtimeRefresher({ orgSlug }: { orgSlug: string }) {
       es.onopen = () => { backoff = 1000; };
       es.onerror = () => {
         es?.close();
-        if (!closed) retry = setTimeout(() => { retry = null; connect(); schedule(); }, backoff);
+        if (!closed && !asleep) retry = setTimeout(() => { retry = null; connect(); schedule(); }, backoff);
         backoff = Math.min(backoff * 2, 30000);
       };
     };
     connect();
     document.addEventListener("visibilitychange", onVisible);
-    return () => { closed = true; es?.close(); if (retry) clearTimeout(retry); if (timer.current) clearTimeout(timer.current); timer.current = null; document.removeEventListener("visibilitychange", onVisible); };
+    if (document.visibilityState === "hidden") onVisible();
+    return () => { closed = true; es?.close(); if (retry) clearTimeout(retry); if (sleep) clearTimeout(sleep); if (timer.current) clearTimeout(timer.current); timer.current = null; document.removeEventListener("visibilitychange", onVisible); };
   }, [orgSlug, router]);
   return null;
 }

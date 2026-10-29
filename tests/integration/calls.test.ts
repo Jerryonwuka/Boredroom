@@ -153,7 +153,7 @@ describe("a one-to-one call", () => {
     const adaNow = await now(a.employee);
     expect(adaNow.ringing).toEqual([]);
     expect(adaNow.active).toMatchObject({ id: callId, kind: "direct", inRoom: 1, href: `/app/company-a/calls/${callId}` });
-    expect(adaNow.pollMs).toBe(4000);
+    expect(adaNow.pollMs).toBe(15000);
 
     as(a.employee2);
     const joined = await call(joinPOST, "POST", `/api/orgs/company-a/calls/${callId}/join`, { org: "company-a", id: callId }, {});

@@ -225,12 +225,12 @@ describe("what a ring does (Notify.ringAction)", () => {
 
 describe("the ring poll's pace", () => {
   it("follows the server's pollMs, clamped to 2 to 60 s, 4 s when it sent none", () => {
-    expect(Notify.ringPollMs(CALL_LIMITS.pollMs.idle)).toBe(4_000);
+    expect(Notify.ringPollMs(CALL_LIMITS.pollMs.idle)).toBe(15_000);
     expect(Notify.ringPollMs(CALL_LIMITS.pollMs.ringing)).toBe(2_000);
     expect(Notify.ringPollMs(CALL_LIMITS.pollMs.notReady)).toBe(60_000);
     expect(Notify.ringPollMs(10)).toBe(2_000);
     expect(Notify.ringPollMs(10 * 60_000)).toBe(60_000);
-    for (const v of [undefined, null, "4000", NaN, Infinity]) expect(Notify.ringPollMs(v)).toBe(4_000);
+    for (const v of [undefined, null, "4000", NaN, Infinity]) expect(Notify.ringPollMs(v)).toBe(15_000);
     expect(Notify.CALL_POLL.MIN_MS).toBe(CALL_LIMITS.pollMs.min);
     expect(Notify.CALL_POLL.MAX_MS).toBe(CALL_LIMITS.pollMs.max);
   });

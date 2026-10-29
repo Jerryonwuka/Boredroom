@@ -252,7 +252,7 @@
 // itself runs in Boredroom's window (WKWebView's camera, microphone and screen-share limits, the notch's size, and no
 // Rust change in this phase). Up here the notch rings, answers and declines:
 // - The ring poll (`pollCalls`): GET /calls/now through the existing `api` command, again after each answer at the
-//   server's `pollMs` clamped to 2 to 60 s (4 s, 2 s while ringing, 60 s before migration 0054 or without LiveKit), with
+//   server's `pollMs` clamped to 2 to 60 s (15 s, 2 s while ringing, 60 s before migration 0054 or without LiveKit), with
 //   setTimeout, never setInterval. A server from before phase 8 (404) is asked again in 5 minutes, any other failure in
 //   15 s; a 401 signs out as everywhere. Nothing while signed out, and nothing of it is kept after signing out.
 // - What a ring does (Notify.ringAction): the incoming card replaces whatever is open (an incoming call outranks every

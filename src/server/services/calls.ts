@@ -522,7 +522,7 @@ export async function callHeartbeat(ctx: OrgContext, callId: string): Promise<{ 
  * organisation). `ringing`: the person's own rings still inside their 30 seconds in live calls, newest first, at most 3,
  * with the caller's face; `active`: the call they are in; both only in conversations the person still reads (fix
  * review, 10 October 2026); `expiredRings`: rings past their time that the route settles after answering. `pollMs`: 2 s
- * while ringing, 4 s otherwise, 60 s while calls are unavailable. `ringsOnDesktop`: a notch on the same `network` rings
+ * while ringing, 15 s otherwise, 60 s while calls are unavailable. `ringsOnDesktop`: a notch on the same `network` rings
  * for the person (noteDesktopRinger), so the browser shows the card without its own ring.
  */
 export async function callsNowIn(db: Db, ctx: OrgContext, o: { network?: string | null } = {}): Promise<CallsNow & { expiredRings: string[] }> {
