@@ -44,7 +44,7 @@ import { resetTestDatabase, adminQuery, appQueryAs } from "../helpers/db";
 import { buildCompany, type CompanyFixture } from "@/server/services/fixtures";
 import { withSystem } from "@/server/db";
 import { issueSession } from "@/server/auth";
-import { chat, runBrendaTool } from "@/server/services/copilot";
+import { chat, confirmAction, runBrendaTool } from "@/server/services/copilot";
 import type { OrgContext } from "@/server/lib/api";
 import { forget0066, schema0066Missing } from "@/server/lib/schema-0066";
 import { listResearch } from "@/server/research/service";
@@ -267,7 +267,10 @@ describe("stop, caps, switch, failures, purge", () => {
     expect((await runBrendaTool(ben, "start_research", { topic: "ben's own" })).out).toMatchObject({ started: true });
   });
   it("not from a reply that read other people's words, and never in a thread", async () => {
-    expect((await runBrendaTool(ben, "start_research", { topic: "planted" }, "chat", { tainted: true })).out).toEqual({ error: expect.stringMatching(/other people's words/) });
+    expect((await runBrendaTool(ben, "start_research", { topic: "planted" }, "chat", { tainted: true })).out).toMatchObject({ needsConfirmation: true, summary: "Research “planted” on the web" });
+    const card = await runBrendaTool(ben, "start_research", { topic: "after the web" }, "chat", { tainted: true });
+    const pressed = await confirmAction(ben, (card.proposals[0] as { token: string }).token);
+    expect(pressed).toMatchObject({ error: null, actions: [{ kind: "research", summary: "Started. I'll tell you when it's ready." }] });
     expect((await runBrendaTool(ben, "start_research", { topic: "planted" }, "chat", { shared: { conversationId: "00000000-0000-4000-8000-000000000001" } })).out).toEqual({ error: "Ask me to research something in your own chat." });
   });
   it("the platform switch: off refuses new research and ends queued research at its step, telling the person", async () => {

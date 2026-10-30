@@ -1336,8 +1336,20 @@ async function runTool(t: ToolCtx, name: string, input: Record<string, unknown>)
   const s = t.shared;
   // ---- Brenda's research (owner decision, 28 October 2026) ----
   // The person's own explicit request is the permission (rule v2: it only reads the public web), so no Confirm and none
-  // of the generic gates; its own runner refuses it in a thread and in a reply that read other people's words or a screen.
-  if (isResearchTool(name)) return runResearchTool({ ctx: t.ctx, shared: !!s, tainted: t.tainted || !!t.othersWords || !!t.act?.earlierTaint || !!t.look }, name, input);
+  // of the generic gates; its own runner refuses it in a thread. In a chat holding words from outside (other people's, a
+  // screen, the web) it becomes a Confirm card naming the topic, so planted text can't choose what she looks up and the
+  // person is never told to ask again in a chat where asking again can't work (owner, 30 October 2026). The press runs it.
+  if (isResearchTool(name)) {
+    const outside = t.mode === "chat" && (t.tainted || !!t.othersWords || !!t.act?.earlierTaint || !!t.look);
+    if (name === "start_research" && outside && !s) {
+      const topic = oneLine(String(input.topic ?? "")).slice(0, 200);
+      const focus = typeof input.focus === "string" ? oneLine(input.focus).slice(0, 500) : "";
+      return askFirst(t, name, input, `Research “${topic}” on the web`, focus || undefined);
+    }
+    const out = await runResearchTool({ ctx: t.ctx, shared: !!s, tainted: outside }, name, input) as { started?: boolean; say?: string; page?: string };
+    if (t.mode === "confirm" && out.started) t.actions.push({ kind: "research", summary: out.say ?? "", href: out.page });
+    return out;
+  }
   // ---- end research ----
   // Connected apps (owner decisions, 22 October 2026: connectors): their own runner applies the look and "Check with me"
   // gates by risk class (a private step becomes a card), so the generic gates leave them alone.
@@ -4012,7 +4024,7 @@ export async function confirmAction(ctx: OrgContext, token: string, opts: { star
   if (!p || p.k !== "brenda") throw invalid("That confirmation is not valid. Ask again.");
   if (p.exp * 1000 < Date.now()) throw invalid("That confirmation expired. Ask again.");
   if (p.o !== ctx.org.id || p.m !== ctx.membership.id) throw forbidden("That confirmation belongs to someone else.");
-  if (!ACTION_TOOLS.has(p.tool)) throw invalid("That action cannot be confirmed.");
+  if (!ACTION_TOOLS.has(p.tool) && p.tool !== "start_research") throw invalid("That action cannot be confirmed.");
   // The consent rule (owner decision, 8 October 2026: phase 7a; lib/confirm-readback CONSENT_RULE): only the person
   // confirms, from their own chat, a thread card or their own Act without asking. Nothing that runs for them elsewhere (a
   // follow-up being answered, a routine, the daily report) may press it, whatever arrived through another assistant.
