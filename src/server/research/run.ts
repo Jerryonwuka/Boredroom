@@ -64,7 +64,7 @@ export const RESEARCH_SYSTEM = [
 
 export const BUDGET_SPENT = "Your searches and page fetches for this report are used up. Do not search or fetch again: write the report now from what you found, in the shape you were given.";
 
-type Msg = { role: "assistant" | "system"; content: unknown };
+type Msg = { role: "assistant" | "system" | "user"; content: unknown };
 type Progress = { messages: Msg[]; tries: number; activeMs: number };
 type ReportRow = {
   id: string; organisation_id: string; membership_id: string; slug: string; timezone: string; topic: string; focus: string | null; format: ResearchFormat;
@@ -100,10 +100,16 @@ export function stepParams(r: Pick<ReportRow, "topic" | "focus" | "format" | "ti
   const messages = [{ role: "user" as const, content: userPrompt(r, now) }, ...progress.messages] as Anthropic.MessageParam[];
   // Both spent: ask for the report now (once; the conversation stays append-only).
   const spent = searchesLeft <= 0 && fetchesLeft <= 0;
-  const noted = progress.messages.some((m) => m.role === "system" && m.content === BUDGET_SPENT);
+  const noted = progress.messages.some((m) => (m.role === "system" || m.role === "user") && m.content === BUDGET_SPENT);
   if (spent && !noted && progress.messages.length) {
-    messages.push({ role: "system", content: BUDGET_SPENT });
-    progress.messages.push({ role: "system", content: BUDGET_SPENT });
+    // The API takes a system message only after a user message or a turn ending in a server tool result; after a turn
+    // that ended in her own words (a 400 in production, 3 November 2026) it goes as a user message instead.
+    const last = progress.messages.at(-1);
+    const blocks = Array.isArray(last?.content) ? (last.content as { type?: string }[]) : [];
+    const afterResult = last?.role === "assistant" && !!blocks.at(-1)?.type?.endsWith("_tool_result");
+    const note = { role: afterResult ? "system" : "user", content: BUDGET_SPENT } as Progress["messages"][number];
+    messages.push(note as Anthropic.MessageParam);
+    progress.messages.push(note);
   }
   return {
     model,

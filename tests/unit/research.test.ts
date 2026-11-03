@@ -111,12 +111,19 @@ describe("the research request", () => {
     expect((later.tools as { max_uses: number }[]).map((t) => t.max_uses)).toEqual([2, 6]);
   });
   it("once both budgets are spent, a system message asks for the report, once (the conversation stays append-only)", () => {
-    const progress = { messages: [{ role: "assistant" as const, content: [{ type: "server_tool_use", id: "s", name: "web_search", input: {} }] }], tries: 0, activeMs: 0 };
+    const progress = { messages: [{ role: "assistant" as const, content: [{ type: "server_tool_use", id: "s", name: "web_search", input: {} }, { type: "web_search_tool_result", tool_use_id: "s", content: [] }] }], tries: 0, activeMs: 0 };
     const p = stepParams({ ...row, searches: 16, fetches: 10 }, progress, "m", new Date());
     expect(p.messages.at(-1)).toEqual({ role: "system", content: BUDGET_SPENT });
     expect((p.tools as { max_uses: number }[]).map((t) => t.max_uses)).toEqual([1, 1]);
     const again = stepParams({ ...row, searches: 16, fetches: 10 }, progress, "m", new Date());
     expect(again.messages.filter((m) => m.role === "system")).toHaveLength(1);
+  });
+  it("after a turn that ended in her own words the note goes as a user message (the API refuses a system one there), once", () => {
+    const progress = { messages: [{ role: "assistant" as const, content: [{ type: "text", text: "Notes so far." }] }], tries: 0, activeMs: 0 };
+    const p = stepParams({ ...row, searches: 16, fetches: 10 }, progress, "m", new Date());
+    expect(p.messages.at(-1)).toEqual({ role: "user", content: BUDGET_SPENT });
+    const again = stepParams({ ...row, searches: 16, fetches: 10 }, progress, "m", new Date());
+    expect(again.messages.filter((m) => m.content === BUDGET_SPENT)).toHaveLength(1);
   });
 });
 
