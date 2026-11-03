@@ -231,7 +231,7 @@ import { LEARNING_WORDS, type LearnedList } from "@/lib/learning";
 import { schema0050Ready } from "@/server/lib/schema-0050";
 // Connected apps (owner decisions, 22 October 2026: connectors): Brenda's tools for the person's own and the workspace's
 // apps, with their risk classes and readbacks (server/connectors/brenda).
-import { CONNECTOR_ACTION_TOOLS, CONNECTOR_ALWAYS_CONFIRM, CONNECTOR_RULES, CONNECTOR_TOOLS, isConnectorTool, runConnectorTool, type ConnectorToolHost } from "@/server/connectors/brenda/tools";
+import { CONNECTOR_ACTION_TOOLS, CONNECTOR_ALWAYS_CONFIRM, CONNECTOR_READ_TOOLS, CONNECTOR_RULES, CONNECTOR_TOOLS, isConnectorTool, runConnectorTool, type ConnectorToolHost } from "@/server/connectors/brenda/tools";
 import { connectorSituation } from "@/server/connectors/brenda/situation";
 import { BRENDA_CONNECTOR_WORDS } from "@/lib/connectors/words";
 // ---- Brenda's research (owner decision, 28 October 2026: "Brenda, research X and give me a PDF when you're done") ----
@@ -3507,9 +3507,9 @@ async function chatWithClaude(ctx: OrgContext, conn: AssistantConnection, messag
     const linkOnly = uses.every((u) => u.type === "tool_use" && (u.name === "open_page" || (fromMac && (u.name === "use_my_screen" || u.name === "offer_setup")) || (!!v2 && (u.name === "point_at" || u.name === "offer_setup" || (u.name === "propose_task" && !!proposed)))));
     if (linkOnly && !refusedProposal) reply = text; else if (text) fallback = text;
     thread.push({ role: "assistant", content: res.content });
-    const results = [];
-    for (const u of uses) {
-      if (u.type !== "tool_use") continue;
+    type ToolResultBlock = { type: "tool_result"; tool_use_id: string; content: string; is_error?: true };
+    const runUse = async (u: (typeof uses)[number]): Promise<ToolResultBlock | null> => {
+      if (u.type !== "tool_use") return null;
       let out: unknown;
       let failed = false;
       const t1 = Date.now();
@@ -3517,8 +3517,7 @@ async function chatWithClaude(ctx: OrgContext, conn: AssistantConnection, messag
       if (v2Out.has(u.id)) {
         out = v2Out.get(u.id);
         const isErr = !!out && typeof out === "object" && "error" in (out as Record<string, unknown>);
-        results.push({ type: "tool_result" as const, tool_use_id: u.id, content: typeof out === "string" ? out : toolResultText(out), ...(isErr ? { is_error: true } : {}) });
-        continue;
+        return { type: "tool_result" as const, tool_use_id: u.id, content: typeof out === "string" ? out : toolResultText(out), ...(isErr ? { is_error: true as const } : {}) };
       }
       const cardsBefore = t.proposals.length;
       try { out = await runTool(t, u.name, (u.input ?? {}) as Record<string, unknown>); }
@@ -3540,7 +3539,17 @@ async function chatWithClaude(ctx: OrgContext, conn: AssistantConnection, messag
       // Connected apps log their own refusals, privately for a personal connection (connectors, 22 October 2026).
       if (isError && !alreadyLogged && !lookRefused && !isConnectorTool(u.name) && (ACTION_TOOLS.has(u.name) || IMMEDIATE_TOOLS.has(u.name))) void recordProblem(ctx, u.name, failed ? "failed" : "refused", String((out as { error?: string }).error ?? ""), (u.input ?? {}) as Record<string, unknown>, "chat", undefined, { look: looking });
       if (process.env.BRENDA_DEBUG) console.log("[brenda]   ", u.name, `${Date.now() - t1}ms`);
-      results.push({ type: "tool_result" as const, tool_use_id: u.id, content: toolResultText(out), ...(isError ? { is_error: true } : {}) });
+      return { type: "tool_result" as const, tool_use_id: u.id, content: toolResultText(out), ...(isError ? { is_error: true as const } : {}) };
+    };
+    // Parallel lookups (owner decision, 3 November 2026: "parallel helpers", part 1): reads asked for together run at the
+    // same time, in batches of consecutive reads, so anything that acts still runs alone and in order (a read before it
+    // has finished, and tainted the turn, before it starts). Only in the person's own chat: a thread's audience check and
+    // a look's gate read per-call state.
+    const results: ToolResultBlock[] = [];
+    const together = t.mode === "chat" && !t.shared && !t.look;
+    for (const batch of readBatches(uses.map((u) => (u.type === "tool_use" ? u.name : "")), together)) {
+      const done = await Promise.all(batch.map((i) => runUse(uses[i])));
+      for (const r of done) if (r) results.push(r);
     }
     thread.push({ role: "user", content: results });
     if (linkOnly && text) break;
@@ -3985,7 +3994,35 @@ export const ALWAYS_CONFIRM: ReadonlySet<string> = new Set(["send_message", "ass
 // team_report is not an ACTION_TOOL (it is never confirmed), but it writes a document and a log row and calls the model,
 // so it waits for the next message too (review, 8 October 2026).
 export const IMMEDIATE_TOOLS: ReadonlySet<string> = new Set([...[...ACTION_TOOLS].filter((x) => !ALWAYS_CONFIRM.has(x)), "team_report"]);
-export const TAINT_ERROR = "Not done: you read other people's messages (or the conversation names they chose) in this reply, so nothing runs on its own now. Tell the person what you would do; it runs when they ask for it in their next message.";
+/**
+ * The reads that may run at the same time as each other (owner decision, 3 November 2026: parallel lookups). Each only
+ * reads, logs at most its own row, and sets the turn's flags one way (tainted, othersWords: true), so their order never
+ * matters. Not here: anything that acts or prepares a card, open_page, research, and every tool not checked one by one.
+ */
+export const PARALLEL_READS: ReadonlySet<string> = new Set(["get_my_day", "get_team_status", "get_attendance", "list_people", "list_tasks", "search", "list_conversations", "read_conversation", "search_messages",
+  "follow_up_status", "get_briefing", "get_task", "list_reminders", "list_docs", "read_doc", "get_policy", "work_summary", "loose_ends", "commitments", "waiting_on", "assistant_inbox", "list_routines",
+  "standup", "learned_habits", ...CONNECTOR_READ_TOOLS]);
+/** At most this many reads at once (the pool has 20 connections per instance, and a read may hold two). */
+export const PARALLEL_READS_MAX = 4;
+
+/**
+ * The order one model turn's tool calls run in, as batches of indexes: consecutive parallel reads together (at most
+ * PARALLEL_READS_MAX a batch), every other call alone, in the order asked. `together` false: one call a batch.
+ */
+export function readBatches(names: readonly string[], together: boolean): number[][] {
+  const out: number[][] = [];
+  let run: number[] = [];
+  const flush = () => { if (run.length) out.push(run); run = []; };
+  names.forEach((name, i) => {
+    if (together && PARALLEL_READS.has(name)) {
+      if (run.length >= PARALLEL_READS_MAX) flush();
+      run.push(i);
+    } else { flush(); out.push([i]); }
+  });
+  flush();
+  return out;
+}
+export const TAINT_ERROR ="Not done: you read other people's messages (or the conversation names they chose) in this reply, so nothing runs on its own now. Tell the person what you would do; it runs when they ask for it in their next message.";
 export function taintRefusal(name: string, t: Pick<ToolCtx, "tainted" | "mode">): { error: string } | null {
   return t.tainted && t.mode === "chat" && IMMEDIATE_TOOLS.has(name) ? { error: TAINT_ERROR } : null;
 }
