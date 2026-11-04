@@ -44,6 +44,11 @@ async function signIn(ctx: OrgContext, serverId: string, server = fake, o: { den
 
 beforeAll(async () => {
   await resetTestDatabase();
+  // 0069 is in db/migrations now (owner, 4 November 2026), so the reset database has it: take it away to start from a
+  // database without it, as before.
+  await adminQuery(`DROP TABLE IF EXISTS mcp_oauth_states, mcp_server_oauth CASCADE;
+    ALTER TABLE mcp_servers DROP CONSTRAINT IF EXISTS mcp_servers_auth_check;
+    ALTER TABLE mcp_servers ADD CONSTRAINT mcp_servers_auth_check CHECK (auth_kind IN ('none', 'bearer', 'header'));`);
   forget0068(); forget0069();
   a = await buildCompany("a", { names: { owner: "Grace Owner", hr: "Mary HR", manager: "David Lead", employee: "Ada Obi", employee2: "Ben Okafor" } });
   owner = a.ownerCtx; hr = a.hrCtx; ada = a.employeeCtx;
@@ -68,7 +73,7 @@ describe("with 0069", () => {
   let serverId: string;
 
   beforeAll(async () => {
-    const sql = readFileSync(join(process.cwd(), "db", "pending", "0069_mcp_oauth.sql"), "utf8");
+    const sql = readFileSync(join(process.cwd(), "db", "migrations", "0069_mcp_oauth.sql"), "utf8");
     await adminQuery(sql);
     await adminQuery(sql); // idempotent
     forget0069();

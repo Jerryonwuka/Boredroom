@@ -116,6 +116,11 @@ const START = { profile: "ada@example.com" };
 
 beforeAll(async () => {
   await resetTestDatabase();
+  // 0070 is in db/migrations now (owner, 4 November 2026), so the reset database has it: put back 0060's checks to start
+  // from a database without it, as before.
+  await adminQuery(readFileSync(join(process.cwd(), "db", "migrations", "0070_browser_helper.sql"), "utf8")
+    .replace("helper IN ('files', 'operator', 'web')", "helper IN ('files', 'operator')")
+    .replace("'files', 'operator', 'web'));", "'files', 'operator'));"));
   forget0057(); forget0058(); forget0059(); forget0060(); forget0070();
   process.env.ANTHROPIC_API_KEY = "test-env-key-not-real";
   process.env.BRENDA_LOOK_WORKSPACES = "company-a";
@@ -146,7 +151,7 @@ describe("before migration 0070", () => {
 
 describe("with 0070", () => {
   beforeAll(async () => {
-    const sql = readFileSync(join(process.cwd(), "db", "pending", "0070_browser_helper.sql"), "utf8");
+    const sql = readFileSync(join(process.cwd(), "db", "migrations", "0070_browser_helper.sql"), "utf8");
     await adminQuery(sql);
     await adminQuery(sql); // idempotent
     forget0070();

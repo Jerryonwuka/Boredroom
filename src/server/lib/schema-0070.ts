@@ -1,6 +1,6 @@
 /**
  * Migration 0070 (the Browser helper; owner decisions, 4 November 2026: phase 2) lets a job's helper be 'web' and counts
- * its cost as 'web'. It waits in db/pending for the owner's go-ahead, so the code runs without it: the router doesn't offer
+ * its cost as 'web'. Applied with the owner's go-ahead (4 November 2026: "how do i apply 0069 and 0070?"); the code still runs without it: the router doesn't offer
  * browser jobs (it says this needs a database update), and nothing else changes.
  *
  * Same caching as schema-0060: once the schema is there the answer is kept for the life of the process; a "not yet" is

@@ -9,7 +9,8 @@
 --   3. mcp_oauth_states: single-use sign-in states (sha256 only, 10 minutes) bound to the person, the workspace and the
 --      server, with the sealed PKCE verifier. Boredroom's server contexts only.
 --
--- Waits in db/pending until the owner's go-ahead. The code runs without it: Settings says signing in needs a database
+-- Applied with the owner's go-ahead (4 November 2026: "how do i apply 0069 and 0070?"). The code still runs on a database without it (a deploy ahead of the
+-- migration, a restore): Settings says signing in needs a database
 -- update and keys keep working (server/lib/schema-0069.ts). Additive and idempotent; it needs 0068. Never ALTER ROLE.
 
 DO $$

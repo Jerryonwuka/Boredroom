@@ -1,6 +1,6 @@
 /**
  * Migration 0069 (signing in to MCP servers; owner request, 4 November 2026: phase 1b) adds `mcp_server_oauth`,
- * `mcp_oauth_states` and the 'oauth' sign-in kind. It waits in db/pending for the owner's go-ahead; the code runs
+ * `mcp_oauth_states` and the 'oauth' sign-in kind. Applied with the owner's go-ahead (4 November 2026: "how do i apply 0069 and 0070?"); the code still runs
  * without it. Like schema-0068, nothing asks the database up front: a query that fails for want of the tables (or the
  * 'oauth' kind's check) is noted here (`noteMissing0069`), and for ten minutes at a time `schema0069Missing()` is true:
  * - Settings offers "Sign in with the app" only as "needs a database update first", and the sign-in routes answer

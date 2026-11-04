@@ -6,7 +6,8 @@
 --   1. assistant_tasks.helper may be 'web';
 --   2. act_usage_daily.kind may be 'web' (what browser jobs cost Boredroom, per day and model, with no workspace or person).
 --
--- Waits in db/pending until the owner's go-ahead. The code runs without it: the router doesn't offer browser jobs
+-- Applied with the owner's go-ahead (4 November 2026: "how do i apply 0069 and 0070?"). The code still runs on a database without it (a deploy ahead of the
+-- migration, a restore): the router doesn't offer browser jobs
 -- (server/lib/schema-0070.ts). Idempotent; it needs 0060. Never ALTER ROLE.
 
 DO $$
