@@ -1,7 +1,7 @@
 /**
  * Brenda's own apps over MCP, and skills (owner decisions, 4 November 2026: phase 1, "go with your recommendations"),
  * against a local database and the in-process fake MCP server (no network, no account, no model):
- * - before migration 0068 (it waits in db/pending): the routes' services answer NOT_READY, Brenda's tools say so, and
+ * - before migration 0068 (a database without it): the routes' services answer NOT_READY, Brenda's tools say so, and
  *   read_skill still opens the starter skills;
  * - with 0068 applied here by hand: an owner adds a server (it lists its tools, all off), switches one tool to Read and
  *   one to Act; Brenda's app_tools lists them and taints; use_app_tool runs the Read tool and taints; act_with_app_tool
@@ -48,6 +48,9 @@ description: The person asks to write release notes for a version.
 
 beforeAll(async () => {
   await resetTestDatabase();
+  // 0068 is applied now (owner, 4 November 2026), so the reset database has it: take its tables away to start from a
+  // database without it, as before.
+  await adminQuery("DROP TABLE IF EXISTS mcp_tools, mcp_server_secrets, mcp_servers, brenda_skills CASCADE; DROP FUNCTION IF EXISTS mcp_tools_guard(), mcp_servers_guard(), brenda_skills_guard();");
   forget0068();
   a = await buildCompany("a", { names: { owner: "Grace Owner", hr: "Mary HR", manager: "David Lead", employee: "Ada Obi", employee2: "Ben Okafor" } });
   owner = a.ownerCtx; hr = a.hrCtx; ada = a.employeeCtx;
@@ -72,8 +75,8 @@ describe("with 0068", () => {
   let readId: string, actId: string;
 
   beforeAll(async () => {
-    await adminQuery(readFileSync(join(process.cwd(), "db", "pending", "0068_mcp_and_skills.sql"), "utf8"));
-    await adminQuery(readFileSync(join(process.cwd(), "db", "pending", "0068_mcp_and_skills.sql"), "utf8")); // idempotent
+    await adminQuery(readFileSync(join(process.cwd(), "db", "migrations", "0068_mcp_and_skills.sql"), "utf8"));
+    await adminQuery(readFileSync(join(process.cwd(), "db", "migrations", "0068_mcp_and_skills.sql"), "utf8")); // idempotent
     forget0068();
   });
 

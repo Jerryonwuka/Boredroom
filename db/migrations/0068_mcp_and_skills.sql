@@ -14,7 +14,7 @@
 --      code). Members read them; owner or HR write them.
 -- Control characters are refused by code point (not [[:cntrl:]], which some locales stretch to cover dashes).
 --
--- WAITS FOR THE OWNER'S GO-AHEAD. It lives in db/pending, NOT db/migrations. The code runs before it is applied: Settings
+-- Applied with the owner's go-ahead (4 November 2026: "apply 0068"). The code still runs on a database without it: Settings
 -- says MCP servers and skills need a database update, their routes answer 503 NOT_READY, and Brenda's app_tools,
 -- use_app_tool, act_with_app_tool and read_skill say they aren't switched on here yet (server/lib/schema-0068.ts).
 -- Additive and idempotent; it needs 0061 (connector_rate_budget for the hourly call budget). Never ALTER ROLE.

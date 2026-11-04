@@ -1,7 +1,7 @@
 /**
  * Migration 0068 (Brenda's own apps over MCP, and skills; owner decisions, 4 November 2026: phase 1, "go with your
- * recommendations") adds `mcp_servers`, `mcp_server_secrets`, `mcp_tools` and `brenda_skills`. It waits in db/pending
- * for the owner's go-ahead, and the code runs before it. Like schema-0061, nothing asks the database up front: a query
+ * recommendations") adds `mcp_servers`, `mcp_server_secrets`, `mcp_tools` and `brenda_skills`. Applied 4 November 2026
+ * (owner: "apply 0068"); the code still runs on a database without it (a deploy ahead of the migration, a restore). Like schema-0061, nothing asks the database up front: a query
  * that fails for want of the tables is noted here (`noteMissing0068`, no query), and for ten minutes at a time
  * `schema0068Missing()` is true and the paths fall back:
  * - Settings says MCP servers and skills need a database update first; their routes answer 503 NOT_READY;
