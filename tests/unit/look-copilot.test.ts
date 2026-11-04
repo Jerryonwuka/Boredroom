@@ -1,5 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { RESEARCH_RULE, RESEARCH_TOOLS } from "@/server/research/brenda-tools";
+import { MCP_RULES, MCP_TOOLS } from "@/server/connectors/mcp/brenda";
+import { SKILL_RULES, SKILL_TOOLS } from "@/server/skills/brenda";
 import { CONNECTOR_RULES, CONNECTOR_TOOLS } from "@/server/connectors/brenda/tools";
 import { createHash } from "node:crypto";
 
@@ -26,12 +28,13 @@ describe("the cached prefix", () => {
     // appended at the end; everything before them is still byte for byte what it was.
     // Brenda's research, then what she has learned (owner decisions, 28 October 2026), come after them the same way, at
     // the very end; everything before them is still byte for byte what it was.
-    const tail = `\n${CONNECTOR_RULES}\n${RESEARCH_RULE}\n${LEARNING_RULES}`;
+    // The workspace's own apps (MCP) and skills (owner decisions, 4 November 2026: phase 1) come last, the same way.
+    const tail = `\n${CONNECTOR_RULES}\n${RESEARCH_RULE}\n${LEARNING_RULES}\n${MCP_RULES}\n${SKILL_RULES}`;
     expect(RULES.endsWith(tail)).toBe(true);
     // Who she is and the web (owner, 29 October 2026: "Brenda is not smart enough") changed the prefix once more.
     expect(sha(RULES.slice(0, RULES.length - tail.length))).toBe("bc9da0ec26c8d00b20f5f72376ee410ff84b248007c72390e5aa72c29fb2389f");
-    expect(TOOLS.slice(-LEARNING_TOOLS.length)).toEqual(LEARNING_TOOLS);
-    expect(sha(JSON.stringify(TOOLS.slice(0, -(CONNECTOR_TOOLS.length + RESEARCH_TOOLS.length + LEARNING_TOOLS.length))))).toBe("677790e21c61136b36bbbae087566a737c441b32fe4f5daefea46dc738b2146d");
+    expect(TOOLS.slice(-(MCP_TOOLS.length + SKILL_TOOLS.length))).toEqual([...MCP_TOOLS, ...SKILL_TOOLS]);
+    expect(sha(JSON.stringify(TOOLS.slice(0, -(CONNECTOR_TOOLS.length + RESEARCH_TOOLS.length + LEARNING_TOOLS.length + MCP_TOOLS.length + SKILL_TOOLS.length))))).toBe("677790e21c61136b36bbbae087566a737c441b32fe4f5daefea46dc738b2146d");
   });
 });
 

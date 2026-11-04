@@ -80,6 +80,10 @@ import { whyStillAsking } from "@/lib/act-mode";
 import { DEFAULT_ASSISTANT } from "@/lib/assistant-look";
 import { LOOPS_NOT_READY } from "@/lib/commitments";
 import type { OrgContext } from "@/server/lib/api";
+import { MCP_TOOL_NAMES } from "@/server/connectors/mcp/brenda";
+import { SKILL_TOOLS } from "@/server/skills/brenda";
+// The workspace's own apps and skills (owner decisions, 4 November 2026: phase 1) come last of all.
+const PHASE1_TOOLS = MCP_TOOL_NAMES.length + SKILL_TOOLS.length;
 
 const ORG = "00000000-0000-4000-8000-0000000000a1";
 const OLU = "00000000-0000-4000-8000-0000000000b1";
@@ -135,7 +139,7 @@ describe("the registry", () => {
 
   it("has the seven tools with the contract's required fields, before the phase 6 and routine tools", () => {
     // Connected apps (owner decisions, 22 October 2026) come after these, last: positions are counted without them.
-    const names = TOOLS.slice(0, -(CONNECTOR_TOOL_NAMES.length + RESEARCH_TOOL_NAMES.length + LEARNING_TOOL_NAMES.length)).map((x) => x.name);
+    const names = TOOLS.slice(0, -(CONNECTOR_TOOL_NAMES.length + RESEARCH_TOOL_NAMES.length + LEARNING_TOOL_NAMES.length + PHASE1_TOOLS)).map((x) => x.name);
     for (const n of NEW) expect(names, n).toContain(n);
     expect(new Set(names).size).toBe(names.length);
     // Phase 7c (owner decisions, 8–9 October 2026): the standup and preference tools come last.

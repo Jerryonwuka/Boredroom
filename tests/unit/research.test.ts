@@ -16,6 +16,10 @@ import { estimateWebSearchUsd, WEB_SEARCH_USD_PER_1000 } from "@/lib/ai-pricing"
 import { USAGE_PURPOSES, LIMITED_PURPOSES } from "@/server/services/ai-usage";
 import { fileNameOf, RESEARCH_LIMITS } from "@/lib/research";
 import type { OrgContext } from "@/server/lib/api";
+import { MCP_RULES, MCP_TOOL_NAMES } from "@/server/connectors/mcp/brenda";
+import { SKILL_RULES, SKILL_TOOLS } from "@/server/skills/brenda";
+// The workspace's own apps and skills (owner decisions, 4 November 2026: phase 1) come last of all.
+const PHASE1_TOOLS = MCP_TOOL_NAMES.length + SKILL_TOOLS.length;
 
 const tool = (name: string) => TOOLS.find((t) => t.name === name) as { name: string; description: string; input_schema: { properties: Record<string, { enum?: string[] }>; required: string[] } } | undefined;
 
@@ -24,8 +28,8 @@ describe("the tools and the rule", () => {
     expect(RESEARCH_TOOL_NAMES).toEqual(["start_research", "research_status"]);
     const names = TOOLS.map((t) => t.name);
     expect(new Set(names).size).toBe(names.length);
-    expect(names.slice(0, -LEARNING_TOOL_NAMES.length).slice(-3)).toEqual(["post_to_channel", "start_research", "research_status"]);
-    expect(RULES.endsWith(`\n${RESEARCH_RULE}\n${LEARNING_RULES}`)).toBe(true);
+    expect(names.slice(0, -(LEARNING_TOOL_NAMES.length + PHASE1_TOOLS)).slice(-3)).toEqual(["post_to_channel", "start_research", "research_status"]);
+    expect(RULES.endsWith(`\n${RESEARCH_RULE}\n${LEARNING_RULES}\n${MCP_RULES}\n${SKILL_RULES}`)).toBe(true);
     expect(isResearchTool("start_research") && isResearchTool("research_status") && !isResearchTool("create_doc")).toBe(true);
   });
   it("start_research takes the topic, an optional focus and the format (pdf, docx, md)", () => {

@@ -41,6 +41,16 @@ export function registerInProcessHost(host: string, handler: InProcess | null): 
   else inProcessHosts.delete(host.toLowerCase());
 }
 
+/**
+ * True when connectorFetch would not reach the real network for `url`: a host answered in this process, a test fetch, or
+ * a test run (MCP's guarded transport, 4 November 2026, then leaves the call to connectorFetch and its test seams).
+ */
+export function connectorFetchIsSeamed(url: string): boolean {
+  if (testFetch || process.env.NODE_ENV === "test") return true;
+  if (process.env.NODE_ENV === "production" || !inProcessHosts.size) return false;
+  try { return inProcessHosts.has(new URL(url).hostname.toLowerCase()); } catch { return false; }
+}
+
 /** The fetch every connector call uses. */
 export function connectorFetch(url: string, init: RequestInit): Promise<Response> {
   if (process.env.NODE_ENV !== "production" && inProcessHosts.size) {
@@ -95,7 +105,7 @@ export function withQuery(url: string, query?: HttpRequest["query"]): string {
 }
 
 /** Reads at most MAX_RESPONSE_BYTES; more is TOO_LARGE. */
-async function readCapped(res: Response, max = MAX_RESPONSE_BYTES): Promise<Uint8Array> {
+export async function readCapped(res: Response, max = MAX_RESPONSE_BYTES): Promise<Uint8Array> {
   if (Number(res.headers.get("content-length") ?? 0) > max) {
     await res.body?.cancel().catch(() => undefined);
     throw new ConnectorError("TOO_LARGE", "response larger than the cap");

@@ -127,6 +127,8 @@ export const AUTO_RULES: Readonly<Record<string, (f: ActFacts) => true | AskReas
   work_item_action: (f: ActFacts) => (f.app?.risk === "destructive" ? "cant_undo" : "app_shared"),
   notion_action: () => "app_shared",
   post_to_channel: () => "app_post",
+  // The workspace's own apps (owner decisions, 4 November 2026: phase 1): a tool an admin marked Act always asks.
+  act_with_app_tool: () => "always_asks",
 } satisfies Record<string, (f: ActFacts) => true | AskReason>);
 
 const ask = (reason: AskReason | null): ActDecision => ({ act: false, reason });

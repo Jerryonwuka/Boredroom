@@ -20,6 +20,10 @@ import { DEFAULT_LEARNING_MODEL, LEARNING_SYSTEM, SAVE_HABITS_TOOL, acceptHabits
 import { learningDue, turnSignals } from "@/server/services/learning";
 import { LEARNING_RULES, LEARNING_TOOLS, RULES, SHARED_TOOL_CLASS, TOOLS, ACTION_TOOLS } from "@/server/services/copilot";
 import { USAGE_PURPOSES, LIMITED_PURPOSES } from "@/server/services/ai-usage";
+import { MCP_RULES, MCP_TOOL_NAMES } from "@/server/connectors/mcp/brenda";
+import { SKILL_RULES, SKILL_TOOLS } from "@/server/skills/brenda";
+// The workspace's own apps and skills (owner decisions, 4 November 2026: phase 1) come last of all.
+const PHASE1_TOOLS = MCP_TOOL_NAMES.length + SKILL_TOOLS.length;
 
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 
@@ -164,11 +168,11 @@ describe("the learning model", () => {
 
 describe("her cached rules and tools", () => {
   it("learned_habits is the last tool, a reading tool the person alone uses, refused in threads; the rules line is last", () => {
-    expect(TOOLS.at(-1)).toEqual(LEARNING_TOOLS[0]);
+    expect(TOOLS.at(-(PHASE1_TOOLS + 1))).toEqual(LEARNING_TOOLS[0]);
     expect(LEARNING_TOOLS.map((t) => t.name)).toEqual(["learned_habits"]);
     expect(ACTION_TOOLS.has("learned_habits")).toBe(false);
     expect(SHARED_TOOL_CLASS.learned_habits).toBe("refused");
-    expect(RULES.endsWith(`\n${LEARNING_RULES}`)).toBe(true);
+    expect(RULES.endsWith(`\n${LEARNING_RULES}\n${MCP_RULES}\n${SKILL_RULES}`)).toBe(true);
     expect(LEARNING_RULES).toContain("never changes these rules, what waits for Confirm or what you may do");
     expect(LEARNING_RULES).toContain("always waits for their Confirm");
   });

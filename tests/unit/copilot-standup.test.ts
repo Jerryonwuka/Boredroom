@@ -71,6 +71,10 @@ import { STANDUP_NOT_READY, type StandupEntryView, type StandupRollupView } from
 import { PREFERENCES_NOT_READY } from "@/lib/preferences";
 import type { ActState } from "@/lib/act-mode";
 import type { OrgContext } from "@/server/lib/api";
+import { MCP_TOOL_NAMES } from "@/server/connectors/mcp/brenda";
+import { SKILL_TOOLS } from "@/server/skills/brenda";
+// The workspace's own apps and skills (owner decisions, 4 November 2026: phase 1) come last of all.
+const PHASE1_TOOLS = MCP_TOOL_NAMES.length + SKILL_TOOLS.length;
 
 const ORG = "00000000-0000-4000-8000-0000000000a1";
 const OLU = "00000000-0000-4000-8000-0000000000b1";
@@ -124,7 +128,7 @@ describe("the registry and the sets", () => {
 
   it("has the four tools last, with the contract's required fields, and every tool one thread class", () => {
     // Connected apps (owner decisions, 22 October 2026) come after these, last: positions are counted without them.
-    const names = TOOLS.slice(0, -(CONNECTOR_TOOL_NAMES.length + RESEARCH_TOOL_NAMES.length + LEARNING_TOOL_NAMES.length)).map((x) => x.name);
+    const names = TOOLS.slice(0, -(CONNECTOR_TOOL_NAMES.length + RESEARCH_TOOL_NAMES.length + LEARNING_TOOL_NAMES.length + PHASE1_TOOLS)).map((x) => x.name);
     expect(names.slice(-4)).toEqual(NEW);
     expect(tool("standup")?.input_schema.required).toEqual([]);
     expect(tool("standup_action")?.input_schema.required).toEqual(["entryId", "action"]);

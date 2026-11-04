@@ -11,6 +11,10 @@ import { CONNECTOR_TOOL_NAMES, CONNECTOR_READ_TOOLS, CONNECTOR_ACTION_TOOLS, CON
 import { block, eventLine, issueLine, itemDetailBlock, safe, CONNECTED_TAG } from "@/server/connectors/brenda/render";
 import { APP_READBACK } from "@/lib/connectors/words";
 import { members } from "@/lib/confirm-readback";
+import { MCP_TOOL_NAMES } from "@/server/connectors/mcp/brenda";
+import { SKILL_TOOLS } from "@/server/skills/brenda";
+// The workspace's own apps and skills (owner decisions, 4 November 2026: phase 1) come last of all.
+const PHASE1_TOOLS = MCP_TOOL_NAMES.length + SKILL_TOOLS.length;
 
 const auto: ActContext = { state: { ready: true, mode: "auto", allowed: true, effective: "auto", locked: null }, engine: "claude", earlierTaint: false, assistantName: "Max" };
 const ask: ActContext = { ...auto, state: { ready: true, mode: "ask", allowed: true, effective: "ask", locked: null } };
@@ -21,8 +25,8 @@ describe("the tool list (§9.1)", () => {
   it("eleven tools, in order, at the end of TOOLS", () => {
     expect(CONNECTOR_TOOL_NAMES).toEqual(["connected_apps", "my_calendar", "my_work_items", "find_in_apps", "read_app_item", "track_app_item", "hide_app_item", "calendar_action", "work_item_action", "notion_action", "post_to_channel"]);
     // Brenda's research, then what she has learned (owner decisions, 28 October 2026), come after these.
-    expect(TOOLS.slice(0, -LEARNING_TOOL_NAMES.length).slice(-13, -2).map((t) => t.name)).toEqual(CONNECTOR_TOOL_NAMES);
-    expect(TOOLS.slice(0, -LEARNING_TOOL_NAMES.length).slice(-2).map((t) => t.name)).toEqual(["start_research", "research_status"]);
+    expect(TOOLS.slice(0, -(LEARNING_TOOL_NAMES.length + PHASE1_TOOLS)).slice(-13, -2).map((t) => t.name)).toEqual(CONNECTOR_TOOL_NAMES);
+    expect(TOOLS.slice(0, -(LEARNING_TOOL_NAMES.length + PHASE1_TOOLS)).slice(-2).map((t) => t.name)).toEqual(["start_research", "research_status"]);
     expect(new Set(TOOLS.map((t) => t.name)).size).toBe(TOOLS.length);
   });
   it("the acting tools can be confirmed; what others see always asks; reads are not actions", () => {

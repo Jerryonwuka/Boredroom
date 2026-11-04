@@ -130,7 +130,9 @@ describe("shared mode: every tool has exactly one class", () => {
     // Connected apps (owner decisions, 22 October 2026): never in a thread, every one of them refused there.
     expect(of("immediate")).toEqual([...IMMEDIATE_TOOLS].filter((x) => x !== "team_report" && x !== "standup_action" && !CONNECTOR_TOOL_NAMES.includes(x)).sort());
     // What Brenda has learned (owner decision, 28 October 2026): learned_habits is the person's own, only in their own chat.
-    expect(of("refused")).toEqual(["forget_preference", "learned_habits", "remember_preference", "standup_action", "team_report", ...CONNECTOR_TOOL_NAMES, "start_research", "research_status"].sort());
+    expect(of("refused")).toEqual(["forget_preference", "learned_habits", "remember_preference", "standup_action", "team_report", ...CONNECTOR_TOOL_NAMES, "start_research", "research_status",
+      // The workspace's own apps and skills (owner decisions, 4 November 2026: phase 1): only in the person's own chat.
+      "app_tools", "use_app_tool", "act_with_app_tool", "read_skill"].sort());
     // Phase 6 (owner decision, 8 October 2026): sending to another assistant and answering what was brought wait for Confirm.
     // Phase 7a (owner decision, 8 October 2026): setting up or changing a routine waits for Confirm too.
     // Phase 7b (owner decision, 8 October 2026): answering a commitment or a block, and naming who a task waits on, too.

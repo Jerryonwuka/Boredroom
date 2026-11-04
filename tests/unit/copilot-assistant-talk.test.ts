@@ -64,6 +64,10 @@ import { verifyPayload } from "@/server/lib/crypto";
 import { ASSISTANT_TALK_NOT_READY, type AssistantItemView } from "@/lib/assistant-items";
 import { DEFAULT_ASSISTANT } from "@/lib/assistant-look";
 import type { OrgContext } from "@/server/lib/api";
+import { MCP_TOOL_NAMES } from "@/server/connectors/mcp/brenda";
+import { SKILL_TOOLS } from "@/server/skills/brenda";
+// The workspace's own apps and skills (owner decisions, 4 November 2026: phase 1) come last of all.
+const PHASE1_TOOLS = MCP_TOOL_NAMES.length + SKILL_TOOLS.length;
 
 const TZ = "Africa/Lagos";
 const ORG = "00000000-0000-4000-8000-0000000000a1";
@@ -106,7 +110,7 @@ describe("her tools for other people's assistants", () => {
 
   it("has the five tools after the others, with their required fields", () => {
     // Connected apps (owner decisions, 22 October 2026) come after these, last: positions are counted without them.
-    const names = TOOLS.slice(0, -(CONNECTOR_TOOL_NAMES.length + RESEARCH_TOOL_NAMES.length + LEARNING_TOOL_NAMES.length)).map((x) => x.name);
+    const names = TOOLS.slice(0, -(CONNECTOR_TOOL_NAMES.length + RESEARCH_TOOL_NAMES.length + LEARNING_TOOL_NAMES.length + PHASE1_TOOLS)).map((x) => x.name);
     // Phase 7a (owner decision, 8 October 2026): the three routine tools come after them; phase 7c's four after those.
     expect(names.slice(-12, -7)).toEqual(["pass_message", "hand_over_request", "add_report_note", "assistant_inbox", "respond_to_item"]);
     expect(names.slice(-7, -4)).toEqual(["list_routines", "create_routine", "update_routine"]);
