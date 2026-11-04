@@ -24,7 +24,7 @@ export const JOB_WORDS = {
   },
   asked: (words: string) => `You asked: “${words}”`,
   undoOnMac: "Undo is on the Mac where it ran.",
-  helper: { files: "Files helper", operator: "Mac operator" },
+  helper: { files: "Files helper", operator: "Mac operator", web: "Browser helper" },
   of: (done: number, of: number) => `${done} of ${of}`,
   forget: "Forget",
   forgetLabel: (title: string) => `Forget: ${title}`,

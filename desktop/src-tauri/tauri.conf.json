@@ -68,6 +68,9 @@
           "y": 190
         }
       }
+    },
+    "resources": {
+      "../../browser-extension/": "browser-extension/"
     }
   },
   "plugins": {

@@ -63,7 +63,7 @@ describe("kinds of file (D.5)", () => {
 describe("job limits (G.8, mirrored in jobs.rs)", () => {
   it("are the contract's", () => {
     expect(JOB_LIMITS).toEqual({
-      filesSteps: 40, operatorSteps: 20, callsPerTurn: 8, refsPerCall: 500, listItems: 500, readChars: 20_000, jobReadChars: 300_000, writeChars: 200_000,
+      filesSteps: 40, webSteps: 40, operatorSteps: 20, callsPerTurn: 8, refsPerCall: 500, listItems: 500, readChars: 20_000, jobReadChars: 300_000, writeChars: 200_000,
       newFiles: 10, changes: 2_000, idleMinutes: 30, maxHours: 24, askMinutes: 10, tokenSeconds: 120, bodyBytes: 4_000_000, resultChars: 120_000,
     });
   });

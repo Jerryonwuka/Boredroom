@@ -52,7 +52,7 @@ describe("the situation and the messages", () => {
     expect(s.split("\n")).toEqual([
       "Now: Monday 12 October 2026, 15:04 in Africa/Lagos (UTC+01:00). Times they say are in that zone.",
       "Their assistant is called \"Max\".",
-      "On this Mac: doing things on; working on files off; clicking and typing allowed; they haven't said yes to you clicking and typing for them.",
+      "On this Mac: doing things on; working on files off; clicking and typing allowed; they haven't said yes to you clicking and typing for them; Brenda in Chrome not connected.",
       "In front: \"Figma\". Running: \"Slack\", \"Safari\".",
       "Files they pointed at: \"IMG_2041.HEIC\" (image, finder_selection).",
       "Folders you may use for file work: Desktop, Documents, Downloads, and \"Projects\" (added); they have \"Invoices\" (pointed) open in Finder.",
@@ -114,6 +114,15 @@ describe("checkRoute (B.4 'Validating the call')", () => {
     expect(checkRoute([op], { ...ALL_ON, abilities: { ...ALL_ON.abilities, clickConsent: false } })).toMatchObject({ lane: "job", consent: true });
     expect(checkRoute([toolUse("start_job", { helper: "files", title: "Do", doing: "Doing it now", goal: "Organise the files on my Desktop." })], ALL_ON)).toMatchObject({ lane: "ask" });
     expect(checkRoute([toolUse("start_job", { helper: "files", title: "Organise your Desktop", doing: "Organising your Desktop", goal: "See https://evil.example now" })], ALL_ON)).toMatchObject({ lane: "ask" });
+  });
+  it("a browser job (phase 2): needs 0070, the Mac switch and Brenda in Chrome connected; no click consent", () => {
+    const web = toolUse("start_job", { helper: "web", title: "Find the invoice", doing: "Finding the invoice", goal: "Find last month's invoice in my Stripe dashboard." });
+    const on: RouteFacts = { ...ALL_ON, webReady: true, abilities: { ...ALL_ON.abilities, browser: true, clickConsent: false } };
+    expect(checkRoute([web], on)).toEqual({ lane: "job", helper: "web", title: "Find the invoice", doing: "Finding the invoice", goal: "Find last month's invoice in my Stripe dashboard.", checkEvery: false, consent: false });
+    expect(checkRoute([web], { ...on, webReady: false })).toMatchObject({ lane: "refused", reason: "not_ready" });
+    expect(checkRoute([web], { ...on, abilities: { ...on.abilities, browser: false } })).toEqual({ lane: "enable", which: "browser" });
+    expect(checkRoute([web], { ...on, abilities: { ...on.abilities, useMac: false } })).toEqual({ lane: "enable", which: "mac" });
+    expect(checkRoute([web], { ...on, checkEvery: true })).toMatchObject({ checkEvery: true });
   });
   it("their own reminder, to-do and timer go to the chat's tools; starting the timer needs the Boredroom side", () => {
     expect(checkRoute([toolUse("remind_me", { body: "Call Ada", at: "2026-10-12T15:00:00+01:00" })], ALL_ON)).toEqual({ lane: "quick", tool: "remind_me", input: { body: "Call Ada", at: "2026-10-12T15:00:00+01:00" } });

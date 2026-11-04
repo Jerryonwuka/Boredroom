@@ -28,11 +28,18 @@ export const RISK_KINDS = [
   "files.write", "files.open", "files.trash",
   "bd.remind_me", "bd.create_todos", "bd.timer", "bd.sends",
   "job.files", "job.operator",
+  // The Browser helper (owner decisions, 4 November 2026: phase 2): its calls in the person's Chrome, by what they do. A
+  // click or Enter is classed by the effect the extension reads off the element (describe), never the model's word alone.
+  "web.open", "web.read", "web.act", "web.type", "web.submit", "web.send", "web.pay", "web.delete", "web.sign_in", "web.accept_terms", "web.download",
+  "job.web",
 ] as const;
 export type RiskKind = (typeof RISK_KINDS)[number];
 
 /** The base class of each kind that does not start routine, with the ask kind its card uses (D.2). */
-const BASE_ASK: Readonly<Partial<Record<RiskKind, AskKind>>> = { wifi_off: "other", empty_trash: "delete", "files.trash": "delete", "bd.sends": "send" };
+const BASE_ASK: Readonly<Partial<Record<RiskKind, AskKind>>> = {
+  wifi_off: "other", empty_trash: "delete", "files.trash": "delete", "bd.sends": "send",
+  "web.submit": "submit", "web.send": "send", "web.pay": "pay", "web.delete": "delete", "web.sign_in": "sign_in", "web.accept_terms": "accept_terms", "web.download": "other",
+};
 
 export const RISK_FACTS = [
   "installer", "quarantined", "outside_apps", "secret", "never_look", "secure_field", "own", "finder", "bad_url", "outside_allowed",
@@ -40,6 +47,11 @@ export const RISK_FACTS = [
 ] as const;
 export type RiskFact = (typeof RISK_FACTS)[number];
 
+const WEB_ALL: readonly RiskKind[] = RISK_KINDS.filter((k) => k.startsWith("web."));
+/** What a web call does, by the effect the extension reads off the element (PROTOCOL.md describe.effect). */
+export const WEB_EFFECTS = ["none", "submit", "send", "pay", "delete", "sign_in", "accept_terms", "download"] as const;
+export type WebEffect = (typeof WEB_EFFECTS)[number];
+export const webEffectKind = (effect: WebEffect, typing = false): RiskKind => (effect === "none" ? (typing ? "web.type" : "web.act") : (`web.${effect}` as RiskKind));
 const FILE_CHANGES: readonly RiskKind[] = ["files.move", "files.copy", "files.rename", "files.trash", "files.organise", "files.rename_by_date"];
 const EVERY_FILE: readonly RiskKind[] = RISK_KINDS.filter((k) => k.startsWith("files."));
 
@@ -60,6 +72,10 @@ export const FACT_RULES: readonly { fact: RiskFact; raises: RiskClass; applies: 
   { fact: "recently_changed", raises: "never", applies: FILE_CHANGES },
   { fact: "cross_volume", raises: "never", applies: ["files.move"] },
   { fact: "others_todo", raises: "ask", applies: ["bd.create_todos"] },
+  // The Browser helper: a page that isn't http(s), a never-look site, a password or card field.
+  { fact: "bad_url", raises: "never", applies: ["web.open"] },
+  { fact: "never_look", raises: "never", applies: WEB_ALL },
+  { fact: "secure_field", raises: "never", applies: ["web.type"] },
 ];
 
 export type Classified = { class: RiskClass; reason: RiskFact | "base" | "check_every"; askKind: AskKind | null };
@@ -141,6 +157,18 @@ export const RISK_VECTORS: readonly RiskVector[] = [
   { request: ["files.trash"], checkEvery: true, want: "ask", reason: "base" },
   { request: ["find_files"], checkEvery: true, want: "routine", reason: "base" },
   { request: ["job.files"], checkEvery: true, want: "ask", reason: "check_every" },
+  { request: ["job.web"], checkEvery: false, want: "routine", reason: "base" },
+  { kind: "web.read", facts: [], want: "routine", reason: "base" },
+  { kind: "web.act", facts: [], want: "routine", reason: "base" },
+  { kind: "web.open", facts: ["bad_url"], want: "never", reason: "bad_url" },
+  { kind: "web.read", facts: ["never_look"], want: "never", reason: "never_look" },
+  { kind: "web.type", facts: ["secure_field"], want: "never", reason: "secure_field" },
+  { kind: "web.pay", facts: [], want: "ask", reason: "base", askKind: "pay" },
+  { kind: "web.send", facts: [], want: "ask", reason: "base", askKind: "send" },
+  { kind: "web.submit", facts: [], want: "ask", reason: "base", askKind: "submit" },
+  { kind: "web.sign_in", facts: [], want: "ask", reason: "base", askKind: "sign_in" },
+  { kind: "web.download", facts: [], want: "ask", reason: "base", askKind: "other" },
+  { kind: "web.delete", facts: ["never_look"], want: "never", reason: "never_look" },
   { step: "files.move", checkEvery: true, want: "routine", reason: "base" },
 ];
 

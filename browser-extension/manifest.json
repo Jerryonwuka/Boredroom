@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "Brenda for Chrome",
+  "version": "0.1.0",
+  "description": "Lets Brenda, your Boredroom assistant, use her own tabs in this Chrome profile while the Brenda Mac app is running.",
+  "minimum_chrome_version": "120",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArRBEtYtu8LKIbA39J5kc8pj7INL5hIUWNYRmtpx6LhzMWfZ/Zdww1DtK6AYOQoyInj4dSueCYBkuymV81QFs6bREtdnmJkLQF7tz67BtW9UM0fAleiVVHvRr/QCc02nG1b2pNs//XqlfqJu6QccMFMrUXjIPbWEMN9ql48aYiOdMRKT2JhQpcfTFP3BR6w0D/m+9eRGi6L2E1PNlnH/tnHaKKq3whUn9qRHeBgobPpCdWV1pRGi3j/JDmAZJDn90JEPsxyT1F0+lcGmrxRUxwwV8riSyFOBjTLNHuOD4KygS3s8eNnEjzLqAdZ3UjKyASwnyDuCabJ7waxeuRTBOYwIDAQAB",
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "permissions": [
+    "debugger",
+    "tabs",
+    "tabGroups",
+    "nativeMessaging",
+    "identity",
+    "identity.email"
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'none'"
+  }
+}

@@ -85,6 +85,12 @@ describe("cards (F.2, S.3, S.4, S.6)", () => {
     });
     expect([F.elapsed(12_000), F.elapsed(65_000), F.elapsed(760_000)]).toEqual(["0:12", "1:05", "12:40"]);
   });
+  it("the Browser helper (phase 2): its ask's button says what the step does, never Move to Trash; Connect Chrome", () => {
+    expect(F.jobAskModel({ kind: "delete", web: true, question: "Click “Delete project” on app.example.com?", because: "This deletes something." })).toMatchObject({ title: "Click “Delete project” on app.example.com?", yes: "Delete" });
+    expect(F.jobAskModel({ kind: "pay", web: true, question: "Click “Pay £42.00” on dashboard.stripe.com?", because: "This pays for something." })).toMatchObject({ yes: "Pay", because: "This pays for something." });
+    expect(F.jobAskModel({ kind: "odd", web: true, question: "Click “x”?" })).toMatchObject({ yes: "Yes, do it" });
+    expect(F.refusedModel({ title: "Connect Chrome first", sub: "x", enable: { which: "browser" } }, "Max")).toMatchObject({ enable: { which: "browser", button: "Connect Chrome", accent: true, pane: null }, retry: null });
+  });
   it("Undo's end card counts what came back and what was left", () => {
     expect(F.jobEndModel({ phase: "undone", restored: 3, skipped: 1 }, "Max")).toMatchObject({ title: "Put back", sub: "I put back 3 items. 1 had changed since, so I left it." });
   });

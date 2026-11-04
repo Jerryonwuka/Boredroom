@@ -363,11 +363,12 @@ const Front = (() => {
     const base = why ? t[why]({ app: clip(e.app, 60), name: clip(e.name, 60), folder: clip(e.folder, 60), where: clip(e.where, 120), message: clip(e.message, 300) }) : null;
     const title = clip(e.title, 160) || base?.title || "I couldn't do that";
     const sub = e.title ? clip(e.sub, 300) : base ? base.sub : clip(e.sub || e.message, 300);
-    const which = ["mac", "files", "accessibility", "screen", "folder", "finder"].includes(e.enable?.which ?? e.enable) ? (e.enable?.which ?? e.enable) : base?.enable ?? null;
+    const which = ["mac", "files", "accessibility", "screen", "folder", "finder", "browser"].includes(e.enable?.which ?? e.enable) ? (e.enable?.which ?? e.enable) : base?.enable ?? null;
     const enable = which ? {
       which,
-      button: which === "mac" || which === "files" ? "Turn it on" : which === "accessibility" || which === "screen" ? "Allow it" : "Open System Settings",
-      accent: which === "mac" || which === "files" || which === "accessibility" || which === "screen",
+      // "browser" (phase 2): Brenda in Chrome isn't connected; Connect Chrome sets it up.
+      button: which === "mac" || which === "files" ? "Turn it on" : which === "accessibility" || which === "screen" ? "Allow it" : which === "browser" ? "Connect Chrome" : "Open System Settings",
+      accent: which === "mac" || which === "files" || which === "accessibility" || which === "screen" || which === "browser",
       pane: which === "folder" ? "files" : which === "finder" ? "automation" : which === "screen" ? "screen" : which === "accessibility" ? "accessibility" : null,
     } : null;
     // Try again (white, never orange: Q.3) only where a second go can work and there is no switch to turn on.
@@ -416,16 +417,20 @@ const Front = (() => {
   function jobAskModel(ask = {}) {
     const w = WORDS();
     const count = int(ask.count, 0, 100_000);
-    const trash = ask.kind === "delete";
+    // The Browser helper (phase 2): a step in Chrome, worded by Rust from the element; its button says what it does.
+    const web = ask.web === true;
+    const trash = !web && ask.kind === "delete";
     const what = clip(ask.what, 80).replace(/^move\s+\d+\s+/i, "").replace(/\s+to the Trash$/i, "");
     return {
       title: clip(ask.question, 200) || (trash ? w.ask.jobTrash(count ?? 0, what) : clip(ask.what, 200)),
       because: clip(ask.because, 200) || (trash ? w.ask.jobBecause : ""),
       wait: w.ask.jobWait,
       no: w.check.no,
-      yes: trash ? w.ask.moveToTrash : w.check.yes,
+      yes: trash ? w.ask.moveToTrash : web ? WEB_YES[ask.kind] ?? w.check.yes : w.check.yes,
     };
   }
+  /** The Browser helper's ask card button, by what the step does. */
+  const WEB_YES = Object.freeze({ pay: "Pay", send: "Send", delete: "Delete", submit: "Submit", sign_in: "Sign in", accept_terms: "Agree", download: "Download" });
   /**
    * A job's end card (F.2 "job · done / stopped / failed / undone", S.6). `e.phase`: "done", "stopped", "failed" or
    * "undone"; the rest as Rust's `brenda://job` events carry it. Undo shows while anything changed and is not undone.

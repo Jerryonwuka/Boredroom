@@ -90,7 +90,7 @@ export type TaskRow = {
    * works before it (null): a job's helper, how it was authorised, its request row and its own record; whether it sat idle
    * 30 minutes or is 24 hours old.
    */
-  helper?: "files" | "operator" | null; authorised_by?: "request" | "yes" | null; request_id?: string | null;
+  helper?: "files" | "operator" | "web" | null; authorised_by?: "request" | "yes" | null; request_id?: string | null;
   job?: { title: string; doing: string; goal: string | null; model: "sonnet" | "opus"; failRun?: number; [k: string]: unknown } | null;
   job_idle?: boolean; job_aged?: boolean;
 };

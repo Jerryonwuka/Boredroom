@@ -125,11 +125,11 @@ impl Fact {
             Fact::Quarantined => (Class::Never, &["open_app", "switch_app", "open_url", "new_tab", "new_window", "search_web"]),
             Fact::OutsideApps => (Class::Never, &["open_app", "open_url", "new_tab", "new_window", "search_web"]),
             Fact::Secret => (Class::Never, &["open_file", "reveal_file", "files.read", "files.open", "files.convert"]),
-            Fact::NeverLook => (Class::Never, &["type_text", "copy_selection", "files.read"]),
-            Fact::SecureField => (Class::Never, &["type_text", "copy_selection"]),
+            Fact::NeverLook => (Class::Never, &["type_text", "copy_selection", "files.read", "web.open", "web.read", "web.act", "web.type", "web.submit", "web.send", "web.pay", "web.delete", "web.sign_in", "web.accept_terms", "web.download"]),
+            Fact::SecureField => (Class::Never, &["type_text", "copy_selection", "web.type"]),
             Fact::Own => (Class::Never, &["quit_app", "hide_app", "type_text", "copy_selection"]),
             Fact::Finder => (Class::Never, &["quit_app"]),
-            Fact::BadUrl => (Class::Never, &["open_url", "search_web"]),
+            Fact::BadUrl => (Class::Never, &["open_url", "search_web", "web.open"]),
             Fact::OutsideAllowed => (Class::Never, &["files.list", "files.read", "files.make_folder", "files.move", "files.copy", "files.rename", "files.organise", "files.rename_by_date", "files.convert", "files.write", "files.trash", "files.open"]),
             Fact::HiddenOrSystem | Fact::RecentlyChanged => (Class::Never, FILE_ITEMS),
             Fact::CrossVolume => (Class::Never, &["files.move"]),
@@ -148,10 +148,42 @@ pub const ROUTINE_KINDS: &[&str] = &[
     "new_tab", "new_window", "search_web",
     "files.list", "files.read", "files.make_folder", "files.move", "files.copy", "files.rename", "files.organise", "files.rename_by_date", "files.convert",
     "files.write", "files.open", "bd.remind_me", "bd.create_todos", "bd.timer", "job.files", "job.operator",
+    // The Browser helper (owner decisions, 4 November 2026: phase 2): reading and plain clicks and typing in her own tabs.
+    "web.open", "web.read", "web.act", "web.type", "job.web",
 ];
 
 /// The kinds that ask at base, and their `askKind` (phase 2's `ASK_KINDS`).
-pub const ASK_KINDS: &[(&str, &str)] = &[("wifi_off", "other"), ("empty_trash", "delete"), ("files.trash", "delete"), ("bd.sends", "send")];
+pub const ASK_KINDS: &[(&str, &str)] = &[
+    ("wifi_off", "other"),
+    ("empty_trash", "delete"),
+    ("files.trash", "delete"),
+    ("bd.sends", "send"),
+    // A web click or Enter, by the effect the extension reads off the element (browser-extension/PROTOCOL.md).
+    ("web.submit", "submit"),
+    ("web.send", "send"),
+    ("web.pay", "pay"),
+    ("web.delete", "delete"),
+    ("web.sign_in", "sign_in"),
+    ("web.accept_terms", "accept_terms"),
+    ("web.download", "other"),
+];
+
+/// The risk kind of a web call by the element's effect (`none` is a plain click, or typing).
+pub fn web_kind(effect: &str, typing: bool) -> &'static str {
+    match effect {
+        "submit" => "web.submit",
+        "send" => "web.send",
+        "pay" => "web.pay",
+        "delete" => "web.delete",
+        "sign_in" => "web.sign_in",
+        "accept_terms" => "web.accept_terms",
+        "download" => "web.download",
+        "none" if typing => "web.type",
+        "none" => "web.act",
+        // Anything the extension calls by another name is treated as the strictest outward kind.
+        _ => "web.pay",
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -284,6 +316,18 @@ pub const VECTORS: &[Vector] = &[
     req(&["files.trash"], true, Class::Ask, "base", Some("delete")),
     req(&["find_files"], true, Class::Routine, "base", None),
     req(&["job.files"], true, Class::Ask, "check_every", Some("other")),
+    req(&["job.web"], false, Class::Routine, "base", None),
+    one(&["web.read"], &[], Class::Routine, "base", None),
+    one(&["web.act"], &[], Class::Routine, "base", None),
+    one(&["web.open"], &["bad_url"], Class::Never, "bad_url", None),
+    one(&["web.read"], &["never_look"], Class::Never, "never_look", None),
+    one(&["web.type"], &["secure_field"], Class::Never, "secure_field", None),
+    one(&["web.pay"], &[], Class::Ask, "base", Some("pay")),
+    one(&["web.send"], &[], Class::Ask, "base", Some("send")),
+    one(&["web.submit"], &[], Class::Ask, "base", Some("submit")),
+    one(&["web.sign_in"], &[], Class::Ask, "base", Some("sign_in")),
+    one(&["web.download"], &[], Class::Ask, "base", Some("other")),
+    one(&["web.delete"], &["never_look"], Class::Never, "never_look", None),
     // A step of a job the person already said yes to: `classify`, so "Check with me" never re-asks.
     Vector { request: false, kinds: &["files.move"], facts: &["check_every"], check_every: true, class: Class::Routine, reason: "base", ask_kind: None },
 ];
@@ -310,7 +354,7 @@ mod tests {
             let got = run_vector(v);
             assert_eq!((got.class, got.reason, got.ask_kind), (v.class, v.reason, v.ask_kind), "{:?} {:?} check_every={}", v.kinds, v.facts, v.check_every);
         }
-        assert_eq!(VECTORS.len(), 38, "the same rows as RISK_VECTORS");
+        assert_eq!(VECTORS.len(), 50, "the same rows as RISK_VECTORS");
     }
 
     #[test]

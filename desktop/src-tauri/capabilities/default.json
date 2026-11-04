@@ -72,6 +72,8 @@
     "allow-job-reveal-output",
     "allow-job-show-folder",
     "allow-job-list",
+    "allow-browser-status",
+    "allow-browser-connect",
     "allow-update-status",
     "allow-update-install"
   ]

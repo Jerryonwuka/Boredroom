@@ -24,6 +24,7 @@ import { forget0037, isMissingSchema, schema0037Ready } from "@/server/lib/schem
 import { forget0057, schema0057Ready } from "@/server/lib/schema-0057";
 import { forget0058, schema0058Ready } from "@/server/lib/schema-0058";
 import { schema0060Ready } from "@/server/lib/schema-0060";
+import { schema0070Ready } from "@/server/lib/schema-0070";
 import { addDays, localMidnight, todayLocal } from "@/server/lib/time";
 
 /** Per person per day (owner decision, 8 October 2026). Counted in the organisation's own day, from local midnight. */
@@ -200,7 +201,7 @@ export async function recordLookUsage(e: { model: string; usage: ModelUsage; ima
 // a month): the front desk's router, quick looks, the Files helper and the Mac operator are counted here too, by kind,
 // with no workspace and no person. Migration 0060 widens the kinds; before it those rows are skipped (as tasks' were
 // before 0058).
-export type ActUsageKind = "screen" | "file" | "router" | "look_now" | "files" | "operator";
+export type ActUsageKind = "screen" | "file" | "router" | "look_now" | "files" | "operator" | "web";
 const NEW_KINDS: ReadonlySet<ActUsageKind> = new Set(["router", "look_now", "files", "operator"]);
 
 export async function recordActUsage(e: { model: string; kind: ActUsageKind; usage: ModelUsage; imageTokens?: number; first: boolean }): Promise<void> {
@@ -210,6 +211,8 @@ export async function recordActUsage(e: { model: string; kind: ActUsageKind; usa
     await withWorker(async (db) => {
       if (!(await schema0058Ready(db))) return;
       if (NEW_KINDS.has(e.kind) && !(await schema0060Ready(db))) return;
+      // The Browser helper's kind needs 0070 (phase 2); before it, nothing runs that would record it.
+      if (e.kind === "web" && !(await schema0070Ready(db))) return;
       await db.query(
         `INSERT INTO act_usage_daily(day, model, kind, tasks, steps, image_tokens, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens)
          VALUES ((now() AT TIME ZONE 'UTC')::date, $1, $2, $3, 1, $4, $5, $6, $7, $8)
@@ -217,7 +220,7 @@ export async function recordActUsage(e: { model: string; kind: ActUsageKind; usa
            image_tokens = act_usage_daily.image_tokens + EXCLUDED.image_tokens, input_tokens = act_usage_daily.input_tokens + EXCLUDED.input_tokens,
            output_tokens = act_usage_daily.output_tokens + EXCLUDED.output_tokens, cache_read_tokens = act_usage_daily.cache_read_tokens + EXCLUDED.cache_read_tokens,
            cache_write_tokens = act_usage_daily.cache_write_tokens + EXCLUDED.cache_write_tokens`,
-        [model, (["screen", "file", "router", "look_now", "files", "operator"] as const).includes(e.kind) ? e.kind : "screen", e.first ? 1 : 0, tokens(e.imageTokens), tokens(u.input_tokens), tokens(u.output_tokens), tokens(u.cache_read_input_tokens), tokens(u.cache_creation_input_tokens)]);
+        [model, (["screen", "file", "router", "look_now", "files", "operator", "web"] as const).includes(e.kind) ? e.kind : "screen", e.first ? 1 : 0, tokens(e.imageTokens), tokens(u.input_tokens), tokens(u.output_tokens), tokens(u.cache_read_input_tokens), tokens(u.cache_creation_input_tokens)]);
     });
   } catch (err) {
     if (isMissingSchema(err)) { forget0058(); return; }

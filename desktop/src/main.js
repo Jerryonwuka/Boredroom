@@ -5633,6 +5633,8 @@ function frontResult(f, s, r, o) {
 
 /** A switch or a permission is off (helpers contract B.4 `enable`): phase 3's offer, never "I can't". */
 function frontEnableReply(text, spoken, which) {
+  // Brenda in Chrome (phase 2): not a switch of this Mac's, so it is the refused card with Connect Chrome on it.
+  if (which === "browser") return frontRefused({ title: "Connect Chrome first", sub: "I work in your own Chrome through a small extension. Connect it once, then ask me again.", enable: { which: "browser" } }, front);
   const w = which === "files" ? "files" : which === "accessibility" ? "accessibility" : "mac";
   const e = Help.enableWords(w, me().name, [w]);
   const line = e?.line ?? "";
@@ -5942,6 +5944,22 @@ function frontEnable(which) {
   if (which === "screen") return openHelp({ step: "screen", request });
   if (which === "folder") return helpOpenPrivacy("files");
   if (which === "finder") return helpOpenPrivacy("automation");
+  if (which === "browser") return connectChrome();
+}
+
+/**
+ * Connect Chrome (phase 2; owner decisions, 4 November 2026: a private install first): Rust sets Chrome up for Brenda,
+ * shows the extension's folder in Finder and opens Chrome's extensions page; the card says the two steps left.
+ */
+async function connectChrome() {
+  const say = (line) => openCard({ kind: "voice", phase: "reply", heard: "", spoken: false, spokenText: line, speech: null, reply: line, actions: [], proposals: [], msg: null, sticky: true, closeAfter: REPLY_CLOSE_MS, enable: null, enableNeeds: null, setup: null });
+  try {
+    const s = await invoke("browser_connect");
+    if (s?.connected) return say(s.profile ? `Chrome is connected. I'll work in the Chrome signed in as ${String(s.profile).slice(0, 120)}.` : "Chrome is connected. Ask me again and I'll do it there.");
+    say("Two steps left in Chrome: on its Extensions page, turn on Developer mode, choose Load unpacked, and pick the browser-extension folder I just showed you in Finder. Then ask me again.");
+  } catch (err) {
+    say(`I couldn't connect Chrome. ${String(err?.message ?? err ?? "").slice(0, 200)}`.trim());
+  }
 }
 
 // ---- jobs (helpers contract G, P.3 `brenda://job`) ------------------------------------------------------------------
@@ -5951,7 +5969,7 @@ function jobStarted(j, e) {
   if (!j || typeof j !== "object" || !jobIdOk(j.id)) return;
   const f = front;
   const spoken = !!f?.spoken;
-  const helper = j.helper === "operator" ? "operator" : "files";
+  const helper = j.helper === "operator" ? "operator" : j.helper === "web" ? "web" : "files";
   const doing = String(j.doing ?? j.title ?? "").replace(/\s+/g, " ").trim().slice(0, 80);
   job = { id: j.id, helper, title: String(j.title ?? "").slice(0, 80), doing, phase: "running", done: 0, of: 0, note: "", startedAt: Date.now(), spoken, taskId: typeof j.taskId === "string" ? j.taskId : j.id };
   if (f) { frontLeaveCard(f); front = null; }

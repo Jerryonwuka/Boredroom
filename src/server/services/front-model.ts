@@ -33,7 +33,7 @@ export const ROUTER_RULES = [
   "You are Brenda's front desk on the person's Mac. They held her keys and spoke, or typed in her notch: their words are the last line of their message. Decide what happens by calling exactly one tool, at once.",
   "- do_on_mac: things macOS does directly and quickly: open an app, a web page, a folder or a file (found by words); a new tab or window in a web browser (new_tab, new_window); a web search (search_web); show a file in Finder; find files; switch to, hide, minimise, arrange, fill the screen with or quit apps; volume and mute; a screenshot to the Desktop; copy the selected text; type text into the box they're in (never pressing Return); Wi-Fi on or off; empty the Trash. Up to three actions, in order.",
   "- remind_me, create_todos, timer: their own reminder, to-do or timer in Boredroom, only for themselves (to start the timer on a task, call boredroom: it needs the task).",
-  "- start_job: work in the background. files: organise, tidy, rename, move, copy or convert files, summarise or go through a folder, or clear out (move to the Trash) files, in their Desktop, Documents, Downloads or folders they added; only when their words are about their own files or folders. operator: clicking and typing inside an app when nothing else here can do it (filling in a form, changing something inside an app).",
+  "- start_job: work in the background. files: organise, tidy, rename, move, copy or convert files, summarise or go through a folder, or clear out (move to the Trash) files, in their Desktop, Documents, Downloads or folders they added; only when their words are about their own files or folders. operator: clicking and typing inside an app when nothing else here can do it (filling in a form, changing something inside an app). web: doing something on a website in their own Chrome, where they are signed in (finding something in a site's account pages, checking an order, reading a dashboard, filling in a web form), when just opening the page isn't enough; prefer web to operator for anything on a website.",
   "- boredroom: their work in Boredroom (tasks, messages, people, documents, their day, follow-ups, reports, routines), anything that sends something to someone, and every question or request for you to think, write or find out (research, facts, news, explaining, advice, drafting, maths): Brenda answers those herself and can search the web. Never a job for those.",
   "- look: they want help with what is on their screen, or their words point at something on it (\"this\", \"that\", \"here\") that you would need to see, except typing \"here\", a screenshot \"of this\", and files they pointed at. lane think for errors, code, long documents and small print; otherwise now.",
   "- ask: their words are unclear, or could mean very different things. One short question.",
@@ -73,10 +73,10 @@ const DO_ON_MAC = {
 };
 const START_JOB = {
   name: "start_job", strict: true,
-  description: "Start a background job for their request. files: work on files and folders. operator: clicking and typing in an app.",
+  description: "Start a background job for their request. files: work on files and folders. operator: clicking and typing in an app. web: working on websites in their Chrome.",
   input_schema: {
     type: "object" as const, additionalProperties: false, required: ["helper", "title", "doing", "goal"],
-    properties: { helper: { type: "string", enum: ["files", "operator"] }, title: { type: "string" }, doing: { type: "string" }, goal: { type: "string" } },
+    properties: { helper: { type: "string", enum: ["files", "operator", "web"] }, title: { type: "string" }, doing: { type: "string" }, goal: { type: "string" } },
   },
 };
 const LOOK = {
@@ -106,7 +106,8 @@ export const ROUTER_TOOLS = [DO_ON_MAC, START_JOB, LOOK, BOREDROOM, ASK, ...QUIC
 
 // ---- The situation (contract B.4; exact, uncached) --------------------------------------------------------------------------
 
-export type RouterAbilities = { useMac: boolean; fileWork: boolean; accessibility: boolean; clickConsent: boolean; screenRecording: boolean };
+/** `browser`: Brenda in Chrome is connected on this Mac (phase 2; older Macs don't say, which is not connected). */
+export type RouterAbilities = { useMac: boolean; fileWork: boolean; accessibility: boolean; clickConsent: boolean; screenRecording: boolean; browser?: boolean };
 export type RouterFile = { source: string; name: string; kind: string; bytes: number };
 export type RouterFolder = { source: "named" | "added" | "pointed"; name: string };
 export type RouterContext = {
@@ -144,7 +145,7 @@ export function routerSituation(o: { now: Date; timeZone: string; name: string; 
   return [
     `Now: ${weekday} ${date}, ${time} in ${o.timeZone} (UTC${offset}). Times they say are in that zone.`,
     `Their assistant is called ${JSON.stringify(o.name)}.`,
-    `On this Mac: doing things ${a.useMac ? "on" : "off"}; working on files ${a.fileWork ? "on" : "off"}; clicking and typing ${a.accessibility ? "allowed" : "not allowed yet"}; they ${a.clickConsent ? "have" : "haven't"} said yes to you clicking and typing for them.`,
+    `On this Mac: doing things ${a.useMac ? "on" : "off"}; working on files ${a.fileWork ? "on" : "off"}; clicking and typing ${a.accessibility ? "allowed" : "not allowed yet"}; they ${a.clickConsent ? "have" : "haven't"} said yes to you clicking and typing for them; Brenda in Chrome ${a.browser ? "connected" : "not connected"}.`,
     `In front: ${c.front ? quoted(c.front.name) : "\"nothing\""}. Running: ${running || "nothing else"}.`,
     `Files they pointed at: ${files || "none"}.`,
     `Folders you may use for file work: Desktop, Documents, Downloads${added.length ? `, and ${added.join(", ")}` : ""}${pointed.length ? `; they have ${pointed.join(", ")} open in Finder` : ""}.`,
@@ -203,12 +204,12 @@ export async function runRouter(client: Anthropic, messages: RouterMessage[]): P
 export type RouteDecision =
   | { lane: "mac"; actions: MacAction[]; risk: "routine" | "ask" }
   | { lane: "quick"; tool: QuickTool; input: Record<string, unknown> }
-  | { lane: "job"; helper: "files" | "operator"; title: string; doing: string; goal: string; checkEvery: boolean; consent: boolean }
+  | { lane: "job"; helper: "files" | "operator" | "web"; title: string; doing: string; goal: string; checkEvery: boolean; consent: boolean }
   | { lane: "look"; look: "now" | "think" }
   | { lane: "look_screen" }
   | { lane: "boredroom"; why: string }
   | { lane: "ask"; question: string }
-  | { lane: "enable"; which: "mac" | "files" | "accessibility" }
+  | { lane: "enable"; which: "mac" | "files" | "accessibility" | "browser" }
   | { lane: "refused"; reason: string; message: string };
 
 const APP_RE = /^[^/\n\r\u0000-\u001f]{1,80}$/;
@@ -314,7 +315,10 @@ export function cleanMacAction(raw: unknown): MacAction | { refused: string } | 
 }
 
 /** What `checkRoute` needs to know beyond the call: the Mac's switches, a held picture, Check with me. */
-export type RouteFacts = { abilities: RouterAbilities; pictures: boolean; checkEvery: boolean };
+/** `webReady`: migration 0070 is applied, so a browser job can be made (phase 2). */
+export type RouteFacts = { abilities: RouterAbilities; pictures: boolean; checkEvery: boolean; webReady?: boolean };
+
+export const WEB_NOT_READY = "Working in Chrome needs a database update first.";
 
 const oneLineOk = (s: string, min: number, max: number) => s.length >= min && s.length <= max && !LINK_RE.test(s);
 
@@ -360,14 +364,17 @@ export function checkRoute(content: unknown[], f: RouteFacts): RouteDecision {
       return { lane: "quick", tool: name, input };
     }
     case "start_job": {
-      const helper = input.helper === "files" || input.helper === "operator" ? input.helper : null;
+      const helper = input.helper === "files" || input.helper === "operator" || input.helper === "web" ? input.helper : null;
       const title = oneLine(str(input.title)), doing = oneLine(str(input.doing)), goal = oneLine(str(input.goal));
       if (!helper || !oneLineOk(title, FRONT_LIMITS.titleMin, FRONT_LIMITS.titleMax) || !oneLineOk(doing, FRONT_LIMITS.titleMin, FRONT_LIMITS.titleMax)
         || !oneLineOk(goal, FRONT_LIMITS.goalMin, FRONT_LIMITS.goalMax)) return unclear;
       if (helper === "files" && !f.abilities.fileWork) return { lane: "enable", which: "files" };
       if (helper === "operator" && !f.abilities.useMac) return { lane: "enable", which: "mac" };
       if (helper === "operator" && !f.abilities.accessibility) return { lane: "enable", which: "accessibility" };
-      const start = classifyRequest([{ kind: helper === "files" ? "job.files" : "job.operator" }], f.checkEvery);
+      if (helper === "web" && !f.webReady) return { lane: "refused", reason: "not_ready", message: WEB_NOT_READY };
+      if (helper === "web" && !f.abilities.useMac) return { lane: "enable", which: "mac" };
+      if (helper === "web" && !f.abilities.browser) return { lane: "enable", which: "browser" };
+      const start = classifyRequest([{ kind: helper === "files" ? "job.files" : helper === "web" ? "job.web" : "job.operator" }], f.checkEvery);
       return { lane: "job", helper, title, doing, goal, checkEvery: start.reason === "check_every", consent: helper === "operator" && !f.abilities.clickConsent };
     }
     case "look": {

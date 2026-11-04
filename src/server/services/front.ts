@@ -23,16 +23,17 @@
  */
 import { z } from "zod";
 import { after } from "next/server";
-import { withUser, isUniqueViolation, type Db } from "@/server/db";
+import { withUser, withWorker, isUniqueViolation, type Db } from "@/server/db";
 import type { OrgContext } from "@/server/lib/api";
 import { AppError } from "@/server/lib/errors";
 import { signPayload } from "@/server/lib/crypto";
 import { schema0060Ready, retryWithout0060, forget0060, isMissingSchema } from "@/server/lib/schema-0060";
+import { schema0070Ready } from "@/server/lib/schema-0070";
 import type { MacContext } from "@/server/lib/mac-context";
 import type { NdjsonWrite } from "@/server/lib/ndjson";
 import { AI_BURST, AI_BURST_MESSAGE, checkAiBurst, newRequestId, recordActUsage, recordUsage } from "@/server/services/ai-usage";
 import { actClient, aiErrorCode, actSafe, withBusyRetry } from "@/server/services/act-model";
-import { checkRoute, routerMessages, routerSituation, runRouter, type RouteDecision, type RouterContext } from "@/server/services/front-model";
+import { WEB_NOT_READY, checkRoute, routerMessages, routerSituation, runRouter, type RouteDecision, type RouterContext } from "@/server/services/front-model";
 import { FRONT_LIMITS, FRONT_WORDS, MAC_ACTION_KINDS, type JobHelper } from "@/lib/front";
 import { SPEECH_MAX_CHARS } from "@/lib/natural-voices";
 import { speakable } from "@/lib/assistant-speech/speakable";
@@ -129,7 +130,8 @@ export const frontBodySchema = z.object({
     running: z.array(nameSchema).max(FRONT_LIMITS.running),
     files: z.array(z.object({ source: z.string().regex(/^[a-z_]{1,20}$/), name: z.string().min(1).max(255).refine((n) => !ONE_LINE_BAD.test(n) && !n.includes("/")), kind: z.string().regex(/^[a-z0-9_]{1,16}$/), bytes: z.number().int().min(0) })).max(FRONT_LIMITS.files),
     folders: z.array(z.object({ source: z.enum(["named", "added", "pointed"]), name: z.string().min(1).max(255).refine((n) => !ONE_LINE_BAD.test(n) && !n.includes("/")) })).max(FRONT_LIMITS.folders),
-    abilities: z.object({ useMac: z.boolean(), fileWork: z.boolean(), accessibility: z.boolean(), clickConsent: z.boolean(), screenRecording: z.boolean() }),
+    // browser (phase 2): Brenda in Chrome is connected; older Macs leave it out.
+    abilities: z.object({ useMac: z.boolean(), fileWork: z.boolean(), accessibility: z.boolean(), clickConsent: z.boolean(), screenRecording: z.boolean(), browser: z.boolean().optional() }),
     pictures: z.boolean(),
   }),
   messages: z.array(z.object({ role: z.enum(["user", "assistant"]), content: z.string().trim().min(1).max(FRONT_LIMITS.messageChars) })).min(1).max(FRONT_LIMITS.messages),
@@ -211,6 +213,11 @@ function recordOf(d: RouteDecision, req: FrontRequest): RequestRecord | null {
 
 // ---- The router (contract B.4) ------------------------------------------------------------------------------------------------
 
+/** Whether a browser job can be made here (migration 0070; phase 2). Never throws: unsure is no. */
+async function webJobsReady(): Promise<boolean> {
+  try { return await withWorker((db) => schema0070Ready(db)); } catch { return false; }
+}
+
 export type JobToken = { k: "job"; o: string; m: string; n: string; h: JobHelper; t: string; d: string; g: string; w: string; v: "voice" | "typed"; a: string; s: number };
 
 /**
@@ -247,9 +254,11 @@ export async function routeFront(mc: MacContext, body: FrontBody, write: NdjsonW
     await recordActUsage({ model: run.model, kind: "router", usage: run.usage, first: true });
     if (!burstCounted.has(mc)) await checkAiBurst(ctx).catch(() => undefined);
   });
-  const decision: RouteDecision = run.stopReason === "refusal"
+  let decision: RouteDecision = run.stopReason === "refusal"
     ? { lane: "ask", question: FRONT_WORDS.router.refusal }
-    : checkRoute(run.content, { abilities: body.context.abilities, pictures: body.context.pictures, checkEvery: mc.checkEvery });
+    : checkRoute(run.content, { abilities: body.context.abilities, pictures: body.context.pictures, checkEvery: mc.checkEvery, webReady: true });
+  // Migration 0070 is asked about only when the router chose a browser job (the one-query budget holds for the rest).
+  if (decision.lane === "job" && decision.helper === "web" && !(await webJobsReady())) decision = { lane: "refused", reason: "not_ready", message: WEB_NOT_READY };
   // What Brenda has learned (owner decision, 28 October 2026): the person's request on their Mac, with the lane and, for
   // what the Mac does itself, each action's kind and app (never an address or a file). A request that goes on to her
   // chat or a look is noted there instead, once.

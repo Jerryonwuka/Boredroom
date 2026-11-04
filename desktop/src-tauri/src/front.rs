@@ -1934,7 +1934,7 @@ pub fn route_line(v: &Value) -> RouteLine {
                 }
             }
             Some("job") => match v.get("job").cloned().and_then(|j| serde_json::from_value::<JobOffer>(j).ok()) {
-                Some(job) if job.helper == "files" || job.helper == "operator" => RouteLine::Job { job, say: s("say"), speech: v.get("speech").cloned().unwrap_or(Value::Null) },
+                Some(job) if job.helper == "files" || job.helper == "operator" || job.helper == "web" => RouteLine::Job { job, say: s("say"), speech: v.get("speech").cloned().unwrap_or(Value::Null) },
                 _ => RouteLine::Ignore,
             },
             Some("look") => RouteLine::Look { lane: v.pointer("/look/lane").and_then(|l| l.as_str()).filter(|l| *l == "now" || *l == "think").unwrap_or("now").to_string() },
@@ -1978,6 +1978,8 @@ pub struct FrontContext {
     pub accessibility: bool,
     pub click_consent: bool,
     pub screen_recording: bool,
+    /// Brenda in Chrome is connected (phase 2).
+    pub browser: bool,
     pub pictures: bool,
 }
 
@@ -1987,7 +1989,7 @@ pub fn front_context_json(c: &FrontContext) -> Value {
         "running": c.running.iter().take(20).map(|n| n.chars().take(80).collect::<String>()).collect::<Vec<_>>(),
         "files": c.files.iter().take(10).collect::<Vec<_>>(),
         "folders": c.folders.iter().take(14).collect::<Vec<_>>(),
-        "abilities": { "useMac": c.use_mac, "fileWork": c.file_work, "accessibility": c.accessibility, "clickConsent": c.click_consent, "screenRecording": c.screen_recording },
+        "abilities": { "useMac": c.use_mac, "fileWork": c.file_work, "accessibility": c.accessibility, "clickConsent": c.click_consent, "screenRecording": c.screen_recording, "browser": c.browser },
         "pictures": c.pictures,
     })
 }
@@ -2728,6 +2730,7 @@ async fn route(app: &AppHandle, req: &Req, messages: &[Value], pictures: bool) -
         accessibility: crate::act::can_click_and_type(),
         click_consent: consent,
         screen_recording: crate::capture::preflight(),
+        browser: app.try_state::<crate::browser::Hub>().is_some_and(|h| h.connected()),
         pictures,
     });
     let body = router_body(&request, &context, &router_messages(messages, &req.text));
@@ -2844,6 +2847,8 @@ async fn start_job(app: &AppHandle, req: &Req, job: JobOffer, say: Option<String
     view.speech = if view.say.is_empty() { Value::Null } else { speech };
     let started = if view.helper == "files" {
         crate::jobs::start_files(app, view.clone(), crate::jobs::StartCtx { candidates: req.candidates.clone(), pointed: req.pointed() })
+    } else if view.helper == "web" {
+        crate::jobs::start_web(app, view.clone())
     } else {
         let origin = crate::act::Origin { display: None, candidates: vec![], front_pid: crate::capture::person_front(app).map(|f| f.pid) };
         crate::jobs::start_operator(app, view.clone(), origin)
@@ -4005,6 +4010,7 @@ pub(crate) mod tests {
             accessibility: true,
             click_consent: false,
             screen_recording: true,
+            browser: false,
             pictures: true,
         });
         let body = router_body(&request, &context, &router_messages(&[json!({ "role": "assistant", "content": "Hello" })], "Organise my desktop"));
@@ -4042,7 +4048,7 @@ pub(crate) mod tests {
                 ("look", RouteLine::Look { lane }) => lane == "now" || lane == "think",
                 ("boredroom", RouteLine::Boredroom) => true,
                 ("ask", RouteLine::Ask { question }) => !question.is_empty(),
-                ("enable", RouteLine::Enable { which }) => ["mac", "files", "accessibility"].contains(&which.as_str()),
+                ("enable", RouteLine::Enable { which }) => ["mac", "files", "accessibility", "browser"].contains(&which.as_str()),
                 ("refused", RouteLine::Refused { message, .. }) => !message.is_empty(),
                 _ => false,
             });

@@ -81,7 +81,8 @@ export type MacAction = {
 export const FRONT_LANES = ["mac", "boredroom", "job", "look", "chat", "ask", "enable", "refused", "none"] as const;
 export type FrontLane = (typeof FRONT_LANES)[number];
 
-export type JobHelper = "files" | "operator";
+/** "web": the Browser helper in the person's Chrome (owner decisions, 4 November 2026: phase 2). */
+export type JobHelper = "files" | "operator" | "web";
 export type RiskClass = "routine" | "ask" | "never";
 
 /** A speech offer, as the speech route takes it (natural-voice.ts). */
@@ -97,7 +98,7 @@ export type RouteLine =
   | { t: "route"; lane: "look"; look: { lane: "now" | "think" }; screen?: true }
   | { t: "route"; lane: "boredroom" }
   | { t: "route"; lane: "ask"; question: string }
-  | { t: "route"; lane: "enable"; which: "mac" | "files" | "accessibility" }
+  | { t: "route"; lane: "enable"; which: "mac" | "files" | "accessibility" | "browser" }
   | { t: "route"; lane: "refused"; reason: string; message: string }
   | { t: "done"; result: Record<string, unknown> }
   | { t: "error"; status: number; code: string; message: string };
@@ -122,10 +123,20 @@ export type FilesCall = { id: string; name: Exclude<FilesToolName, "finished" | 
 /** One result the Mac sends back with its next step (each `out` at most `JOB_LIMITS.resultChars` as JSON). */
 export type FilesResult = { id: string; name: string; ok: boolean; out?: unknown; error?: string | null };
 
+// ---- The Browser helper's calls (owner decisions, 4 November 2026: phase 2; browser-extension/PROTOCOL.md) -----------------
+
+export const WEB_TOOL_NAMES = ["open_tab", "navigate", "read_page", "click", "type", "select", "press", "scroll", "wait_for", "close_tab", "finished", "cannot_continue"] as const;
+export type WebToolName = (typeof WEB_TOOL_NAMES)[number];
+/** Keys `press` may send (Enter only goes through `type` with `enter`, where its effect is checked). */
+export const WEB_KEYS = ["Tab", "Escape", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "PageUp", "PageDown", "Home", "End", "Backspace"] as const;
+/** A call the Mac passes to the extension, as the server checked it. */
+export type WebCall = { id: string; name: Exclude<WebToolName, "finished" | "cannot_continue">; input: Record<string, unknown> };
+
 // ---- Limits (contract G.8; mirrored in jobs.rs) ----------------------------------------------------------------------------
 
 export const JOB_LIMITS = {
   filesSteps: 40,
+  webSteps: 40,
   operatorSteps: 20,
   callsPerTurn: 8,
   refsPerCall: 500,

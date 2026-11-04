@@ -3,7 +3,7 @@
  * in the background. Multi-step work as jobs: a notch card with progress and Stop, then a result card with Open / Show in
  * Finder / Undo; a private Jobs list on the web (only the person)"; contract G, H, I, N.1).
  *
- * A job is an `assistant_tasks` row (kind 'job', helper 'files' or 'operator'; migration 0060), tied to the person's
+ * A job is an `assistant_tasks` row (kind 'job', helper 'files', 'operator' or 'web'; migrations 0060, 0070), tied to the person's
  * recorded request (`mac_requests`). Permission rule v2 (owner, 12 October 2026): "when you hold the keys and clearly ask
  * for a routine task, the request is the permission, and she does it. She still asks before anything destructive,
  * anything sent, anything that costs money, or anything sensitive." So:
@@ -13,6 +13,9 @@
  *   recorded request judged routine nor a recorded yes, and a request that isn't the person's own.
  * - The Files helper's `trash` is the only call that asks: it is held (`asking`) until step-answer records the person's
  *   yes for exactly those files (their count and the SHA-256 of their refs), and the Mac moves them only then.
+ * - The Browser helper (owner decisions, 4 November 2026: phase 2) works the same way in the person's Chrome: any click,
+ *   select or Return with an effect other than none is held (`asking`) until step-answer records their yes for exactly
+ *   that call (its SHA-256), and the Mac runs it only then.
  * - Stop is instant (act.ts stopTask takes job rows); a job idle 30 minutes or 24 hours old ends.
  * - The Mac holds the transcript; the server keeps its SHA-256 and checks it on every step. Paths never leave the Mac:
  *   the model sees names and refs. Undo manifests live on the Mac; the server keeps content-free counts and whether Undo
@@ -32,9 +35,10 @@ import { recordActUsage } from "@/server/services/ai-usage";
 import { actClient, actSafe, toolResult, toolUsesOf, type ActMessage } from "@/server/services/act-model";
 import { END_SET, ROW, readRow, transcriptHash, type TaskRow } from "@/server/services/act";
 import { FILES_WORDS, asksToOpen, filesFirstMessage, forMac, runFilesTurn, trashWhat, type FilesStart } from "@/server/services/jobs-model";
+import { WEB_WORDS, effectOf, runWebTurn, webFirstMessage } from "@/server/services/jobs-web-model";
 import { aiFail, frontFail, frontGate, insertRequest, type JobToken } from "@/server/services/front";
 import { ACT_LIMITS, CONFIRM_VIAS, verdict, type ConfirmVia } from "@/lib/act";
-import { FRONT_LIMITS, FRONT_WORDS, JOB_LIMITS, type FilesCall, type JobItem, type JobStatus, type JobView } from "@/lib/front";
+import { FRONT_LIMITS, FRONT_WORDS, JOB_LIMITS, type FilesCall, type JobHelper, type JobItem, type JobStatus, type JobView, type WebCall } from "@/lib/front";
 
 const E = FRONT_WORDS.errors;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -51,8 +55,12 @@ export type JobState = {
   approvedTrash?: string | null;
   /** The person's own words asked to open, see or find something (review, 16 October 2026); else `open` is refused. */
   mayOpen?: boolean;
+  /** The Browser helper: the SHA-256 of the one call the person said yes to, until its result comes back. */
+  approvedWeb?: string | null;
+  /** The Browser helper: the Chrome profile the Mac reported at the first step (shown to the model only). */
+  profile?: string | null;
 };
-type JobRow = Omit<TaskRow, "job"> & { helper: "files" | "operator" | null; authorised_by: "request" | "yes" | null; request_id: string | null; job: JobState | null; paused_at: string | null; idle: boolean; aged: boolean; created_at: string };
+type JobRow = Omit<TaskRow, "job"> & { helper: JobHelper | null; authorised_by: "request" | "yes" | null; request_id: string | null; job: JobState | null; paused_at: string | null; idle: boolean; aged: boolean; created_at: string };
 
 const JOB_ROW = `${ROW}, to_jsonb(t) ->> 'paused_at' AS paused_at, t.created_at,
   (COALESCE(t.last_step_at, t.created_at) < now() - make_interval(mins => ${JOB_LIMITS.idleMinutes})) AS idle,
@@ -98,9 +106,12 @@ export const createJobSchema = z.object({
 
 const planOf = (title: string) => FRONT_WORDS.jobPlan(title);
 
+const helperOf = (h: string | null): JobHelper => (h === "operator" || h === "web" ? h : "files");
+const STEP_CAP: Readonly<Record<JobHelper, number>> = { files: JOB_LIMITS.filesSteps, operator: JOB_LIMITS.operatorSteps, web: JOB_LIMITS.webSteps };
+
 export function jobViewOf(r: Pick<JobRow, "id" | "helper" | "plan_text" | "plan_sha256" | "step_cap" | "job" | "created_at">): JobView {
   return {
-    id: r.id, helper: r.helper === "operator" ? "operator" : "files", title: r.job?.title ?? "", doing: r.job?.doing ?? "", goal: r.job?.goal ?? "",
+    id: r.id, helper: helperOf(r.helper), title: r.job?.title ?? "", doing: r.job?.doing ?? "", goal: r.job?.goal ?? "",
     plan: r.plan_text, planSha256: r.plan_sha256, stepCap: r.step_cap, startedAt: new Date(r.created_at).toISOString(),
   };
 }
@@ -111,7 +122,7 @@ export async function createJob(mc: MacContext, body: z.infer<typeof createJobSc
   const { ctx } = mc;
   const t = verifyPayload<JobToken>(body.token);
   if (!t || t.k !== "job" || t.o !== ctx.org.id || t.m !== ctx.membership.id || !/^[0-9a-f]{32}$/.test(String(t.n))
-    || (t.h !== "files" && t.h !== "operator") || typeof t.t !== "string" || typeof t.d !== "string" || typeof t.g !== "string" || typeof t.w !== "string") {
+    || (t.h !== "files" && t.h !== "operator" && t.h !== "web") || typeof t.t !== "string" || typeof t.d !== "string" || typeof t.g !== "string" || typeof t.w !== "string") {
     throw frontFail(409, "JOB_TOKEN", E.jobToken);
   }
   if (!(t.s >= 0 && t.s <= FRONT_LIMITS.requestAgeMs)) throw frontFail(409, "FRONT_STALE", E.stale);
@@ -141,7 +152,7 @@ export async function createJob(mc: MacContext, body: z.infer<typeof createJobSc
                  CASE WHEN $10::text IS NULL THEN NULL ELSE now() END, $10, $11, $12, 'routine', $13, $14, $15, $16::jsonb)
          RETURNING ${JOB_ROW}`,
         [ctx.org.id, ctx.membership.id, t.h, t.w.slice(0, ACT_LIMITS.request), t.v, Math.round(t.s), plan, sha256(Buffer.from(plan, "utf8")),
-          t.h === "files" ? JOB_LIMITS.filesSteps : JOB_LIMITS.operatorSteps, yes?.via ?? null, yes?.text ?? null, yes ? "yes" : "request",
+          STEP_CAP[t.h as JobHelper], yes?.via ?? null, yes?.text ?? null, yes ? "yes" : "request",
           requestId, t.n, t.a, JSON.stringify(job)]);
       await db.query(`UPDATE mac_requests SET job_id = $2 WHERE id = $1`, [requestId, row.id]);
       return { ok: { job: jobViewOf(row) } };
@@ -398,6 +409,185 @@ export async function filesStep(mc: MacContext, id: string, input: FilesStepInpu
   });
 }
 
+// ---- A Browser helper step (owner decisions, 4 November 2026: phase 2) -------------------------------------------------------
+
+export const webStepSchema = z.object({
+  version: z.literal(1),
+  step: z.number().int().min(0).max(1_000),
+  transcript: z.array(z.object({ role: z.enum(["user", "assistant", "system"]), content: z.unknown() }).passthrough()).max(600).nullable(),
+  results: z.array(z.object({
+    id: z.string().min(1).max(200), name: z.string().min(1).max(40), ok: z.boolean(),
+    out: z.unknown().optional(), error: z.string().max(2_000).nullable().optional(),
+  })).max(JOB_LIMITS.callsPerTurn),
+  start: z.object({ profile: z.string().max(320).nullable() }).nullable().optional(),
+  progress: z.object({ done: z.number().int().min(0).max(1_000_000), of: z.number().int().min(0).max(1_000_000) }).optional(),
+  askAnswered: z.boolean().optional(),
+});
+export type WebStepInput = z.infer<typeof webStepSchema>;
+
+export type WebStepResponse =
+  | { status: "act"; calls: WebCall[]; approved: { callSha256: string } | null; note: string | null; append: ActMessage[]; step: number; stepsLeft: number }
+  | { status: "ask"; ask: { kind: string; call: WebCall; callSha256: string; what: string }; append: ActMessage[]; step: number }
+  | { status: "finished"; summary: string; outputs: string[]; speech: unknown; append: ActMessage[]; step: number }
+  | { status: "cannot"; reason: string; append: ActMessage[]; step: number };
+
+/** JSON with object keys sorted, so one call always hashes the same. */
+const sorted = (v: unknown): string => Array.isArray(v) ? `[${v.map(sorted).join(",")}]`
+  : v && typeof v === "object" ? `{${Object.keys(v).sort().map((k) => `${JSON.stringify(k)}:${sorted((v as Record<string, unknown>)[k])}`).join(",")}}` : JSON.stringify(v ?? null);
+/** What the person's yes covers: exactly one call, its name and checked input. */
+export const webCallSha = (c: { name: string; input: Record<string, unknown> }) => sha256(Buffer.from(sorted({ name: c.name, input: c.input }), "utf8"));
+
+/**
+ * One step of a Browser helper job: filesStep's checks in its order, then one model turn (or, after the person's yes, the
+ * held call itself without the model), the calls checked, the row updated. A call with an effect other than none is
+ * asked about alone; its result comes back only after a recorded yes for exactly that call.
+ */
+export async function webStep(mc: MacContext, id: string, input: WebStepInput): Promise<WebStepResponse> {
+  frontGate(mc);
+  const { ctx } = mc;
+  type Prep = { row: JobRow; transcript: ActMessage[]; next: ActMessage | null; approved: { call: WebCall; sha: string } | null; profile: string | null };
+  const prepare = () => jtx(ctx, async (db): Promise<Out<Prep>> => {
+    const r = await readJob(db, ctx, id);
+    if (!r) return { err: frontFail(404, "ACT_NOT_FOUND", E.jobNotFound) };
+    if (r.helper !== "web") return { err: frontFail(422, "ACT_INVALID", "That step couldn't be read, so I stopped.") };
+    if (r.status === "asking") return { err: frontFail(409, "ACT_STEP_ASK", "I'm waiting for your answer about the next step.") };
+    if (r.status === "paused") await db.query(`UPDATE assistant_tasks SET status = 'running', paused_at = NULL WHERE id = $1 AND status = 'paused'`, [r.id]);
+    else if (r.status !== "running") return { err: frontFail(409, "ACT_ENDED", E.jobEnded) };
+    if (!r.confirmed_at && r.authorised_by !== "request") return { err: frontFail(403, "ACT_NOT_CONFIRMED", "I haven't heard a yes for that, so I won't do it.") };
+    if (r.idle) { await endJob(db, r.id, { status: "stopped", reason: "time", stoppedBy: "idle", job: r.job }); return { err: frontFail(409, "ACT_ENDED", E.jobEnded) }; }
+    if (r.aged) { await endJob(db, r.id, { status: "stopped", reason: "time", stoppedBy: "age", job: r.job }); return { err: frontFail(409, "ACT_ENDED", E.jobEnded) }; }
+    if (r.steps_used >= r.step_cap) { await endJob(db, r.id, { status: "stopped", reason: "cap", job: r.job }); return { err: frontFail(429, "ACT_STEP_CAP", WEB_WORDS.tooLong) }; }
+    if (input.step !== r.steps_used) return { err: frontFail(409, "ACT_STEP_STALE", "I lost my place in that job, so I stopped.") };
+    if (r.gap_ms !== null && r.gap_ms < ACT_LIMITS.stepGapMs) return { err: frontFail(429, "ACT_WAIT", "One step at a time. Try again in a moment.") };
+    const invalid = async () => { await endJob(db, r.id, { status: "failed", reason: "failed", job: r.job }); return { err: frontFail(422, "JOB_CALL", E.jobCall) }; };
+    const job = r.job;
+    if (!job?.goal) return invalid();
+    let transcript: ActMessage[] = [];
+    let next: ActMessage | null = null;
+    let approved: Prep["approved"] = null;
+    let profile = job.profile ?? null;
+    if (r.steps_used === 0 && !r.transcript_sha256) {
+      if (input.transcript !== null || input.results.length || input.askAnswered || !input.start) return invalid();
+      profile = input.start.profile?.trim() || null;
+      next = webFirstMessage({ via: r.request_source, request: r.request_text ?? "", goal: job.goal, profile, now: new Date(), timeZone: ctx.org.timezone });
+    } else {
+      if (!input.transcript?.length) return invalid();
+      transcript = input.transcript as ActMessage[];
+      if (!r.transcript_sha256 || transcriptHash(transcript) !== r.transcript_sha256) {
+        await endJob(db, r.id, { status: "failed", reason: "failed", job: r.job });
+        return { err: frontFail(409, "ACT_TRANSCRIPT", "That job's steps didn't match, so I stopped it.") };
+      }
+      const last = transcript[transcript.length - 1];
+      const uses = toolUsesOf(last);
+      if (last.role !== "assistant" || !uses.length) return invalid();
+      const asked = (u: { name: string; input: Record<string, unknown> }) => effectOf(u) !== "none";
+      if (input.askAnswered) {
+        // The person said yes to the held call (step-answer recorded it): the server answers with that call itself.
+        const held = r.approved_ask as { kind?: string; what?: string; callSha256?: string } | null;
+        const u = uses.length === 1 && asked(uses[0]) ? uses[0] : null;
+        if (input.results.length || !held || !u || webCallSha(u) !== held.callSha256) return invalid();
+        approved = { call: { id: u.id, name: u.name as WebCall["name"], input: u.input }, sha: held.callSha256 };
+      } else {
+        if (r.approved_ask) return invalid();
+        // A call that sends, pays or submits comes back only after the person's yes for exactly that call.
+        if (uses.some(asked) && !(uses.length === 1 && job.approvedWeb && job.approvedWeb === webCallSha(uses[0]))) return invalid();
+        if (input.results.length !== uses.length) return invalid();
+        const content: Record<string, unknown>[] = [];
+        for (let i = 0; i < uses.length; i++) {
+          const res = input.results[i];
+          if (res.id !== uses[i].id || res.name !== uses[i].name) return invalid();
+          content.push(res.ok
+            ? toolResult({ id: res.id, member: false, text: capChars(res.out ?? { ok: true }) })
+            : toolResult({ id: res.id, member: false, text: String(res.error ?? "Not done.").slice(0, 2_000), error: true }));
+        }
+        next = { role: "user", content };
+      }
+    }
+    if (!approved) {
+      const claimed = await db.maybeOne(
+        `UPDATE assistant_tasks SET step_started_at = now() WHERE id = $1 AND status = 'running' AND steps_used = $2
+           AND (step_started_at IS NULL OR step_started_at < now() - make_interval(secs => $3)) RETURNING id`, [r.id, r.steps_used, ACT_LIMITS.claimSeconds]);
+      if (!claimed) return { err: frontFail(409, "ACT_STEP_STALE", "I lost my place in that job, so I stopped.") };
+    }
+    return { ok: { row: r, transcript, next, approved, profile } };
+  });
+  let prep: Prep;
+  try { prep = await prepare(); }
+  catch (err) {
+    if (!(err instanceof AppError) || err.code !== "ACT_WAIT") throw err;
+    await new Promise((res) => setTimeout(res, ACT_LIMITS.stepGapMs));
+    prep = await prepare();
+  }
+  const { row } = prep;
+  const job = row.job as JobState;
+  const progress = input.progress ?? job.progress;
+
+  if (prep.approved) {
+    const a = prep.approved;
+    return jtx(ctx, async (db): Promise<Out<WebStepResponse>> => {
+      const ok = await db.maybeOne(`UPDATE assistant_tasks SET approved_ask = NULL, last_step_at = now(), job = $2::jsonb WHERE id = $1 AND status = 'running' RETURNING id`,
+        [row.id, JSON.stringify({ ...job, progress, approvedWeb: a.sha })]);
+      if (!ok) return { err: frontFail(409, "ACT_ENDED", E.jobEnded) };
+      return { ok: { status: "act", calls: [a.call], approved: { callSha256: a.sha }, note: null, append: [], step: row.steps_used, stepsLeft: Math.max(0, row.step_cap - row.steps_used) } };
+    });
+  }
+
+  const client = await actClient();
+  if (!client) {
+    await jtx(ctx, async (db) => { await endJob(db, row.id, { status: "failed", reason: "failed", job }); return { ok: null }; });
+    throw frontFail(503, "ACT_UNAVAILABLE", "This isn't set up on this Boredroom yet.");
+  }
+  let run: Awaited<ReturnType<typeof runWebTurn>>;
+  try {
+    run = await runWebTurn(client, {
+      transcript: prep.transcript, next: prep.next, goal: job.goal ?? "", extraCalls: Math.max(0, Math.min(ACT_LIMITS.extraCalls, row.step_cap - row.steps_used - 1)),
+      left: (calls) => row.step_cap - row.steps_used - calls,
+    });
+  } catch (err) {
+    await jtx(ctx, async (db) => { await endJob(db, row.id, { status: "failed", reason: "failed", job }); return { ok: null }; });
+    throw aiFail(err);
+  }
+  run.usages.forEach((u, i) => { void recordActUsage({ model: u.model, kind: "web", usage: u.usage, first: row.steps_used === 0 && i === 0 }); });
+  const steps = row.steps_used + run.calls;
+  const hash = transcriptHash([...prep.transcript, ...run.append]);
+  const turn = run.turn;
+  const nextJob: JobState = { ...job, progress, counts: countsAfter(job.counts ?? {}, input.results), approvedWeb: null, profile: prep.profile };
+  return jtx(ctx, async (db): Promise<Out<WebStepResponse>> => {
+    const p = [row.id, row.steps_used, steps, hash, JSON.stringify(nextJob)];
+    const live = `steps_used = $3, transcript_sha256 = $4, last_step_at = now(), job = $5::jsonb, step_started_at = NULL`;
+    const where = `WHERE id = $1 AND status = 'running' AND steps_used = $2`;
+    if (turn.kind === "act") {
+      const ok = await db.maybeOne(`UPDATE assistant_tasks SET ${live} ${where} RETURNING id`, p);
+      if (!ok) return { err: frontFail(409, "ACT_ENDED", E.jobEnded) };
+      return { ok: { status: "act", calls: turn.calls, approved: null, note: run.note, append: run.append, step: steps, stepsLeft: Math.max(0, row.step_cap - steps) } };
+    }
+    if (turn.kind === "ask") {
+      // The question the person hears is the Mac's own, read off the element; this `what` is only its binding.
+      const callSha256 = webCallSha(turn.call);
+      const pendingAsk = { kind: turn.effect, what: `${turn.effect} ${callSha256}`, callSha256 };
+      const ok = await db.maybeOne(`UPDATE assistant_tasks SET ${live}, status = 'asking', pending_ask = $6::jsonb ${where} RETURNING id`, [...p, JSON.stringify(pendingAsk)]);
+      if (!ok) return { err: frontFail(409, "ACT_ENDED", E.jobEnded) };
+      return { ok: { status: "ask", ask: { kind: turn.effect, call: turn.call, callSha256, what: pendingAsk.what }, append: run.append, step: steps } };
+    }
+    const ended = await db.maybeOne<{ id: string }>(`SELECT id FROM assistant_tasks ${where} FOR UPDATE`, [row.id, row.steps_used]);
+    if (!ended) return { err: frontFail(409, "ACT_ENDED", E.jobEnded) };
+    await db.query(`UPDATE assistant_tasks SET steps_used = $2, transcript_sha256 = $3, last_step_at = now() WHERE id = $1`, [row.id, steps, hash]);
+    if (turn.kind === "finished") {
+      await endJob(db, row.id, { status: "done", reason: "done", summary: turn.summary, job: nextJob });
+      const { speechOfferFor } = await import("@/server/services/natural-voice");
+      const speech = await speechOfferFor(ctx)(turn.summary).catch(() => null);
+      return { ok: { status: "finished", summary: turn.summary, outputs: [], speech, append: run.append, step: steps } };
+    }
+    if (turn.kind === "cannot") {
+      await endJob(db, row.id, { status: "stopped", reason: "cannot", summary: `Couldn't: ${turn.reason}`, job: nextJob });
+      return { ok: { status: "cannot", reason: turn.reason, append: run.append, step: steps } };
+    }
+    const message = turn.kind === "failed" ? turn.message : WEB_WORDS.noStep;
+    await endJob(db, row.id, { status: "failed", reason: "failed", job: nextJob });
+    return { err: frontFail(502, "ACT_FAILED", message) };
+  });
+}
+
 // ---- Pause, resume and Undo (contract G.6, G.11) -------------------------------------------------------------------------
 
 export const jobStateSchema = z.object({ version: z.literal(1), state: z.enum(["paused", "running"]), why: z.enum(["sleep", "offline", "lock", "call", "share"]).optional() });
@@ -464,7 +654,7 @@ function itemOf(r: ListRow): JobItem {
   const j = r.job;
   const status = (["running", "asking", "paused", "done", "stopped", "said_no", "expired", "failed"] as const).includes(r.status as JobStatus) ? (r.status as JobStatus) : "stopped";
   return {
-    id: r.id, helper: r.helper === "operator" ? "operator" : "files", title: j?.title ?? "", status,
+    id: r.id, helper: helperOf(r.helper), title: j?.title ?? "", status,
     startedAt: new Date(r.created_at).toISOString(), endedAt: r.ended_at ? new Date(r.ended_at).toISOString() : null,
     progress: { done: Number(j?.progress?.done) || 0, of: Number(j?.progress?.of) || 0 }, summary: r.summary,
     outputs: Array.isArray(j?.outputs) ? j!.outputs.slice(0, 10).map((o) => ({ name: String(o.name ?? ""), folder: String(o.folder ?? "") })) : [],

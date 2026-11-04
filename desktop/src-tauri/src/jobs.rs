@@ -75,7 +75,7 @@ pub struct JobView {
 }
 
 pub fn view_ok(v: &JobView) -> bool {
-    crate::act::id_ok(&v.id) && (v.helper == "files" || v.helper == "operator") && (1..=60).contains(&v.title.chars().count()) && (1..=60).contains(&v.doing.chars().count())
+    crate::act::id_ok(&v.id) && (v.helper == "files" || v.helper == "operator" || v.helper == "web") && (1..=60).contains(&v.title.chars().count()) && (1..=60).contains(&v.doing.chars().count())
 }
 
 // ---- events (`brenda://job`, P.3) --------------------------------------------------------------------------------------
@@ -183,6 +183,11 @@ pub fn stopped_words(changed: bool) -> String {
 
 /// Posts a step, pausing for a sleep or a lost connection (G.6). Err with the end when it gives up or is stopped.
 fn post_step(host: &mut dyn JobHost, id: &str, body: &Value, clocks: &mut (SystemTime, Instant)) -> Result<Value, JobEnd> {
+    post_step_at(host, id, "step", body, clocks)
+}
+
+/// `post_step` to the helper's own step route (`step` for Files, `web-step` for the Browser helper).
+fn post_step_at(host: &mut dyn JobHost, id: &str, route: &str, body: &Value, clocks: &mut (SystemTime, Instant)) -> Result<Value, JobEnd> {
     let now = host.clocks();
     let mut paused = false;
     if slept(*clocks, now) {
@@ -196,7 +201,7 @@ fn post_step(host: &mut dyn JobHost, id: &str, body: &Value, clocks: &mut (Syste
         if host.stopped() {
             return Err(JobEnd::Stopped { why: "button".into() });
         }
-        match host.post(&format!("jobs/{id}/step"), body) {
+        match host.post(&format!("jobs/{id}/{route}"), body) {
             Ok(v) => {
                 if paused {
                     host.emit(JobEvent::Resumed { job_id: id.into() });
@@ -398,6 +403,319 @@ pub fn finish(host: &mut dyn JobHost, view: &JobView, job: &FilesJob, end: &JobE
             let _ = host.post(&format!("act/{}/stop", view.id), &json!({ "version": 1, "why": "failed" }));
             let m = if undo { format!("{message} What I did before that stays done.") } else { message.clone() };
             host.emit(JobEvent::Failed { job_id: id, code: code.clone(), message: m, undo, settings: job.denied });
+        }
+    }
+}
+
+// ---- the Browser helper (owner decisions, 4 November 2026: phase 2) ------------------------------------------------------
+//
+// Brenda in the person's own Chrome, through the extension (browser.rs, browser-extension/PROTOCOL.md). The server plans
+// each turn (`/web-step`); this Mac runs only the extension's fixed operations, and checks each one first:
+// - before a click, a Return in a field or a select, the extension reads what the element really does (`describe`); a
+//   call that would send, pay, delete, submit, sign in, agree or download runs only when the server asked the person about
+//   exactly that call, this Mac showed the question (in its own words, read off the element) and heard their yes;
+// - nothing is ever typed into a password, card or one-time-code field;
+// - a page on a never-look site stops the job, and its tab is closed;
+// - page text and screenshots are only passed through to Boredroom, never kept or logged here.
+
+pub const WEB_STEPS: u32 = 40;
+
+/// What the Browser helper needs from the extension (the real one is `browser::Hub`).
+pub trait WebOps {
+    fn call(&mut self, op: &str, args: Value, ms: u64) -> Result<Value, crate::browser::CallError>;
+}
+
+impl WebOps for crate::browser::Hub {
+    fn call(&mut self, op: &str, args: Value, ms: u64) -> Result<Value, crate::browser::CallError> {
+        crate::browser::Hub::call(self, op, args, ms)
+    }
+}
+
+const WEB_NEVER_LOOK: &str = "That site is on a never-look list, so I stopped and closed its tab.";
+
+fn s<'a>(v: &'a Value, k: &str) -> &'a str {
+    v.get(k).and_then(|x| x.as_str()).unwrap_or("")
+}
+
+/// The extension's operation for a call, its arguments and its time limit. None: not a call the Mac runs.
+pub fn web_op(c: &CallIn) -> Option<(&'static str, Value, u64)> {
+    let i = &c.input;
+    let tab = json!(s(i, "tab"));
+    Some(match c.name.as_str() {
+        "open_tab" => ("open_tab", json!({ "url": s(i, "url") }), 25_000),
+        "navigate" => ("navigate", json!({ "tab": tab, "url": s(i, "url") }), 25_000),
+        "read_page" => ("read_page", json!({ "tab": tab, "find": s(i, "find") }), 20_000),
+        "click" => ("click", json!({ "tab": tab, "ref": s(i, "ref") }), 20_000),
+        "type" => ("type", json!({ "tab": tab, "ref": s(i, "ref"), "text": s(i, "text"), "enter": i.get("enter").and_then(|e| e.as_bool()).unwrap_or(false) }), 20_000),
+        "select" => ("select", json!({ "tab": tab, "ref": s(i, "ref"), "option": s(i, "option") }), 20_000),
+        "press" => ("press", json!({ "tab": tab, "key": s(i, "key") }), 10_000),
+        "scroll" => ("scroll", json!({ "tab": tab, "dir": s(i, "dir") }), 10_000),
+        "wait_for" => {
+            let secs = i.get("seconds").and_then(|x| x.as_u64()).unwrap_or(5).clamp(1, 20);
+            ("wait_for", json!({ "tab": tab, "text": s(i, "text"), "ms": secs * 1_000 }), secs * 1_000 + 5_000)
+        }
+        "close_tab" => ("close_tab", json!({ "tab": tab }), 10_000),
+        _ => return None,
+    })
+}
+
+/// What a call does to the element, for `describe`: a click, a Return in a field, or a choice in a list.
+fn describe_action(c: &CallIn) -> Option<&'static str> {
+    match c.name.as_str() {
+        "click" => Some("click"),
+        "type" if c.input.get("enter").and_then(|e| e.as_bool()) == Some(true) => Some("enter"),
+        "type" => Some("click"),
+        "select" => Some("select"),
+        _ => None,
+    }
+}
+
+/// An address the Mac lets the extension open: http(s), a host, no user or password.
+pub fn web_url_ok(url: &str) -> bool {
+    let lower = url.to_ascii_lowercase();
+    let Some(rest) = lower.strip_prefix("https://").or_else(|| lower.strip_prefix("http://")) else { return false };
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
+    !authority.is_empty() && !authority.contains('@') && !url.chars().any(|c| c.is_control() || c == ' ')
+}
+
+/// The question's words for a call, read off the element the extension described.
+pub fn web_question(c: &CallIn, d: &Value) -> (String, String) {
+    let name: String = s(d, "name").chars().filter(|ch| !ch.is_control()).take(80).collect();
+    let name = if name.trim().is_empty() { "that button".to_string() } else { format!("“{}”", name.trim()) };
+    let host = s(d, "host");
+    let on = if host.is_empty() { String::new() } else { format!(" on {host}") };
+    let question = match c.name.as_str() {
+        "type" => format!("Press Return in {name}{on}?"),
+        "select" => format!("Choose “{}” in {name}{on}?", s(&c.input, "option").chars().take(60).collect::<String>()),
+        _ => format!("Click {name}{on}?"),
+    };
+    (question, web_because(s(d, "effect")).into())
+}
+
+fn web_because(effect: &str) -> &'static str {
+    match effect {
+        "pay" => "This pays for something.",
+        "send" => "This sends something.",
+        "delete" => "This deletes something.",
+        "sign_in" => "This signs in.",
+        "accept_terms" => "This agrees to something.",
+        "download" => "This downloads a file.",
+        _ => "This submits a form.",
+    }
+}
+
+fn web_result(c: &CallIn, out: Result<Value, String>) -> Value {
+    match out {
+        Ok(v) => json!({ "id": c.id, "name": c.name, "ok": true, "out": v }),
+        Err(e) => json!({ "id": c.id, "name": c.name, "ok": false, "error": e }),
+    }
+}
+
+/// Runs one call: the Mac's checks, then the extension. Err ends the job (a never-look site, Chrome gone).
+pub fn run_web_call(ops: &mut dyn WebOps, c: &CallIn, approved: bool, never: &dyn Fn(&str) -> bool) -> Result<Value, JobEnd> {
+    let Some((op, args, ms)) = web_op(c) else { return Ok(web_result(c, Err("Not done: that isn't a call Brenda runs in Chrome.".into()))) };
+    let declared = c.input.get("effect").and_then(|e| e.as_str()).unwrap_or("none");
+    if (op == "open_tab" || op == "navigate") && !web_url_ok(s(&args, "url")) {
+        return Ok(web_result(c, Err("Not done: only http and https addresses, without a user name or password in them.".into())));
+    }
+    if (op == "open_tab" || op == "navigate") && never(&crate::browser::host_of(s(&args, "url"))) {
+        return Err(JobEnd::Cannot { reason: WEB_NEVER_LOOK.into() });
+    }
+    if let Some(action) = describe_action(c) {
+        let d = match ops.call("describe", json!({ "tab": s(&c.input, "tab"), "ref": s(&c.input, "ref"), "action": action }), 10_000) {
+            Ok(d) => d,
+            Err(e) if e.code == "DISCONNECTED" => return Err(JobEnd::Failed { code: Some("BROWSER_GONE".into()), message: "Chrome disconnected, so I stopped.".into() }),
+            Err(e) => return Ok(web_result(c, Err(format!("Not done: {} ({})", e.message, e.code)))),
+        };
+        if c.name == "type" && d.get("sensitive").and_then(|x| x.as_bool()) == Some(true) {
+            return Ok(web_result(c, Err("Not done: that's a password, card or code field. Never type into those: ask the person to do that part themselves.".into())));
+        }
+        if never(s(&d, "host")) {
+            return Err(JobEnd::Cannot { reason: WEB_NEVER_LOOK.into() });
+        }
+        let effect = s(&d, "effect");
+        let real = if effect.is_empty() { "none" } else { effect };
+        // The shared risk table (risk.rs, mac-risk.ts): what the element really does decides whether it asks.
+        let verdict = crate::risk::classify(crate::risk::web_kind(real, c.name == "type"), &[]);
+        if verdict.class == crate::risk::Class::Never {
+            return Ok(web_result(c, Err("Not done: Brenda never does that in Chrome.".into())));
+        }
+        if verdict.class == crate::risk::Class::Ask && !(approved && declared != "none") {
+            return Ok(web_result(c, Err(format!("Not done: this would {}. Call it again alone with effect \"{}\" so the person is asked first.", real.replace('_', " "), real))));
+        }
+    }
+    if declared != "none" && !approved {
+        return Ok(web_result(c, Err("Not done: that needs the person's yes first.".into())));
+    }
+    match ops.call(op, args, ms) {
+        Ok(out) => {
+            if let Some(u) = out.get("url").and_then(|u| u.as_str()) {
+                if never(&crate::browser::host_of(u)) {
+                    if let Some(t) = out.get("tab").and_then(|t| t.as_str()).map(String::from).or_else(|| c.input.get("tab").and_then(|t| t.as_str()).map(String::from)) {
+                        let _ = ops.call("close_tab", json!({ "tab": t }), 5_000);
+                    }
+                    return Err(JobEnd::Cannot { reason: WEB_NEVER_LOOK.into() });
+                }
+            }
+            Ok(web_result(c, Ok(out)))
+        }
+        Err(e) if e.code == "DISCONNECTED" => Err(JobEnd::Failed { code: Some("BROWSER_GONE".into()), message: "Chrome disconnected, so I stopped.".into() }),
+        Err(e) if e.code == "USER_HERE" => Ok(web_result(c, Err("Not done: the person is using that tab right now. Wait a few seconds (wait_for), then try again.".into()))),
+        Err(e) => Ok(web_result(c, Err(format!("Not done: {} ({})", e.message, e.code)))),
+    }
+}
+
+/// The Browser helper's step loop: like `run_files`, with the extension instead of the file system.
+pub fn run_web(host: &mut dyn JobHost, ops: &mut dyn WebOps, view: &JobView, profile: &str, never: &dyn Fn(&str) -> bool) -> JobEnd {
+    let id = view.id.clone();
+    let mut transcript: Vec<Value> = Vec::new();
+    let mut step: u32 = 0;
+    let mut done = 0usize;
+    let mut clocks = host.clocks();
+    let profile = if profile.trim().is_empty() { Value::Null } else { json!(profile.trim()) };
+    let mut body = json!({ "version": 1, "step": 0, "transcript": null, "results": [], "start": { "profile": profile }, "progress": { "done": 0, "of": 0 }, "askAnswered": false });
+    let mut turns = 0u32;
+    let mut noted = true;
+    // The one call the person said yes to on THIS Mac, and its SHA-256: honoured only on the very next reply, once.
+    let mut heard_yes: Option<(CallIn, String)> = None;
+    loop {
+        if host.stopped() {
+            return JobEnd::Stopped { why: "button".into() };
+        }
+        if turns > 0 && !noted {
+            host.emit(JobEvent::Progress { job_id: id.clone(), done, of: 0, note: "Thinking".into() });
+        }
+        turns += 1;
+        if turns > WEB_STEPS + 4 {
+            return JobEnd::Failed { code: Some("ACT_STEP_CAP".into()), message: "That took more steps than one job may.".into() };
+        }
+        let r = match post_step_at(host, &id, "web-step", &body, &mut clocks) {
+            Ok(v) => v,
+            Err(end) => return end,
+        };
+        if let Some(a) = r.get("append").and_then(|a| a.as_array()) {
+            transcript.extend(a.iter().cloned());
+        }
+        step = r.get("step").and_then(|s| s.as_u64()).map(|s| s as u32).unwrap_or(step);
+        let note = r.get("note").and_then(|n| n.as_str()).map(|n| n.chars().take(60).collect::<String>()).filter(|n| !n.trim().is_empty());
+        noted = note.is_some();
+        if let Some(n) = note {
+            host.emit(JobEvent::Progress { job_id: id.clone(), done, of: 0, note: n });
+        }
+        let call_of = |c: &Value| Some(CallIn { id: c.get("id")?.as_str()?.to_string(), name: c.get("name")?.as_str()?.to_string(), input: c.get("input").cloned().unwrap_or(Value::Null) });
+        match r.get("status").and_then(|s| s.as_str()) {
+            Some("act") => {
+                let list: Vec<CallIn> = r.get("calls").and_then(|c| c.as_array()).map(|a| a.iter().filter_map(call_of).collect()).unwrap_or_default();
+                let sent = r.get("approved").and_then(|a| a.get("callSha256")).and_then(|x| x.as_str()).map(String::from);
+                let kept = heard_yes.take();
+                // The yes covers the reply's one call only when it is exactly the call this Mac asked about.
+                let approved_id = match (sent, kept) {
+                    (Some(sha), Some((call, k))) if sha == k && list.len() == 1 && list[0] == call => Some(call.id),
+                    _ => None,
+                };
+                let mut results: Vec<Value> = Vec::new();
+                if list.len() > fileops::CALLS_PER_TURN {
+                    for c in &list {
+                        results.push(web_result(c, Err(fileops::TOO_MANY_CALLS.into())));
+                    }
+                } else {
+                    for c in &list {
+                        if host.stopped() {
+                            break;
+                        }
+                        match run_web_call(ops, c, approved_id.as_deref() == Some(c.id.as_str()), never) {
+                            Ok(res) => {
+                                if res.get("ok").and_then(|o| o.as_bool()) == Some(true) && c.name != "read_page" && c.name != "wait_for" {
+                                    done += 1;
+                                }
+                                results.push(res);
+                            }
+                            Err(end) => return end,
+                        }
+                    }
+                }
+                if host.stopped() {
+                    return JobEnd::Stopped { why: "button".into() };
+                }
+                host.emit(JobEvent::Progress { job_id: id.clone(), done, of: 0, note: String::new() });
+                body = json!({ "version": 1, "step": step, "transcript": transcript, "results": results, "progress": { "done": done, "of": 0 }, "askAnswered": false });
+            }
+            Some("ask") => {
+                let ask = r.get("ask").cloned().unwrap_or(Value::Null);
+                let what = s(&ask, "what").to_string();
+                let sha = s(&ask, "callSha256").to_string();
+                let call = ask.get("call").and_then(call_of);
+                let no = |host: &mut dyn JobHost| {
+                    let ab = json!({ "version": 1, "answer": "no", "via": "unresolved", "askSha256": crate::act::sha256_hex(&what) });
+                    let _ = host.post(&format!("act/{id}/step-answer"), &ab);
+                };
+                // The question is this Mac's own, read off the element; the server's words are only echoed as their hash.
+                let described = call.as_ref().and_then(|c| {
+                    let action = describe_action(c)?;
+                    ops.call("describe", json!({ "tab": s(&c.input, "tab"), "ref": s(&c.input, "ref"), "action": action }), 10_000).ok().map(|d| (c.clone(), d))
+                });
+                let Some((call, d)) = described.filter(|_| !sha.is_empty()) else {
+                    no(host);
+                    return JobEnd::Cannot { reason: "I couldn't tell what that button does any more, so I left it.".into() };
+                };
+                if never(s(&d, "host")) {
+                    no(host);
+                    return JobEnd::Cannot { reason: WEB_NEVER_LOOK.into() };
+                }
+                let (question, because) = web_question(&call, &d);
+                let kind = s(&ask, "kind").to_string();
+                host.emit(JobEvent::Ask { job_id: id.clone(), ask: json!({ "kind": kind, "web": true, "question": question, "because": because }), wait_ms: ASK_WAIT_MS });
+                let (yes, via, text) = match host.wait_answer(ASK_WAIT_MS) {
+                    Some(a) => a,
+                    None if host.stopped() => return JobEnd::Stopped { why: "button".into() },
+                    None => (false, "timeout", None),
+                };
+                let mut ab = json!({ "version": 1, "answer": if yes { "yes" } else { "no" }, "via": via, "askSha256": crate::act::sha256_hex(&what) });
+                if let Some(t) = text {
+                    ab["text"] = json!(crate::look::clip_utf16(&t, crate::act::ANSWER_TEXT_MAX));
+                }
+                match host.post(&format!("act/{id}/step-answer"), &ab) {
+                    Ok(_) if yes => heard_yes = Some((call, sha)),
+                    Ok(_) => return JobEnd::SaidNo,
+                    Err(e) => return JobEnd::Failed { code: e.code, message: e.message },
+                }
+                body = json!({ "version": 1, "step": step, "transcript": transcript, "results": [], "progress": { "done": done, "of": 0 }, "askAnswered": true });
+            }
+            Some("finished") => {
+                let summary = r.get("summary").and_then(|s| s.as_str()).unwrap_or("Done.").chars().take(500).collect();
+                return JobEnd::Done { summary, outputs: vec![], speech: r.get("speech").cloned().unwrap_or(Value::Null) };
+            }
+            Some("cannot") => return JobEnd::Cannot { reason: r.get("reason").and_then(|s| s.as_str()).unwrap_or("I couldn't do that one.").chars().take(300).collect() },
+            Some("stopped") => return JobEnd::Stopped { why: "ended".into() },
+            _ => return JobEnd::Failed { code: None, message: "Boredroom's answer couldn't be read, so I stopped.".into() },
+        }
+    }
+}
+
+/// What the person sees when a browser job ends, and what is told to Boredroom (nothing to undo: what was done in a
+/// site stays done there).
+pub fn finish_web(host: &mut dyn JobHost, view: &JobView, end: &JobEnd, ms: u64) {
+    let id = view.id.clone();
+    match end {
+        JobEnd::Done { summary, speech, .. } => host.emit(JobEvent::Done { job_id: id, summary: summary.clone(), speech: speech.clone(), outputs: vec![], undo: false, ms, folder: None }),
+        JobEnd::SaidNo => host.emit(JobEvent::Stopped { job_id: id, why: "said_no".into(), summary: "Okay, I didn't do that.".into(), undo: false, settings: false }),
+        JobEnd::Stopped { why } => {
+            if why != "ended" {
+                let _ = host.post(&format!("act/{}/stop", view.id), &json!({ "version": 1, "why": why }));
+            }
+            host.emit(JobEvent::Stopped { job_id: id, why: why.clone(), summary: "I stopped. Your tabs are as I left them.".into(), undo: false, settings: false });
+        }
+        JobEnd::Cannot { reason } => {
+            let _ = host.post(&format!("act/{}/stop", view.id), &json!({ "version": 1, "why": "cannot" }));
+            host.emit(JobEvent::Stopped { job_id: id, why: "cannot".into(), summary: reason.clone(), undo: false, settings: false });
+        }
+        JobEnd::Offline => {
+            let _ = host.post(&format!("act/{}/stop", view.id), &json!({ "version": 1, "why": "offline" }));
+            host.emit(JobEvent::Stopped { job_id: id, why: "offline".into(), summary: "I lost Boredroom, so I stopped.".into(), undo: false, settings: false });
+        }
+        JobEnd::Failed { code, message } => {
+            let _ = host.post(&format!("act/{}/stop", view.id), &json!({ "version": 1, "why": "failed" }));
+            host.emit(JobEvent::Failed { job_id: id, code: code.clone(), message: message.clone(), undo: false, settings: false });
         }
     }
 }
@@ -858,6 +1176,52 @@ pub fn start_operator(app: &AppHandle, view: JobView, origin: crate::act::Origin
     Ok(())
 }
 
+/// Starts the Browser helper on its own thread (phase 2): Brenda in Chrome must be connected.
+pub fn start_web(app: &AppHandle, view: JobView) -> Result<(), ApiError> {
+    let hub = app.state::<crate::browser::Hub>().inner().clone();
+    let Some(hello) = hub.hello() else {
+        let _ = post_json(app, &format!("act/{}/stop", view.id), &json!({ "version": 1, "why": "failed" }), SMALL_TIMEOUT);
+        return Err(ApiError { status: 409, message: "Brenda isn't connected to Chrome. Open Chrome, then try again.".into(), code: Some("BROWSER_OFF".into()) });
+    };
+    let j = app.state::<Jobs>();
+    {
+        let mut live = j.live.lock().unwrap();
+        if live.is_some() || crate::act::live(app) {
+            return Err(ApiError { status: 409, message: "I'm still on the last job. Wait for it to finish, or stop it in the notch.".into(), code: Some("JOB_BUSY".into()) });
+        }
+        *live = Some(JobBrief { id: view.id.clone(), helper: "web".into(), title: view.title.clone(), doing: view.doing.clone(), state: "running".into(), at: now_ms(), undo: false, done: 0, of: 0, manifest: None, outputs: vec![], folder: None });
+    }
+    let stop = Arc::new(AtomicBool::new(false));
+    *j.stop.lock().unwrap() = Some(stop.clone());
+    emit(app, JobEvent::Started { job: json!({ "id": view.id, "helper": "web", "title": view.title, "doing": view.doing }), say: view.say.clone(), speech: view.speech.clone() });
+    crate::companion::badge(app, true);
+    crate::refresh_tray(app);
+    let app2 = app.clone();
+    std::thread::Builder::new()
+        .name("brenda-web-job".into())
+        .spawn(move || {
+            let started = Instant::now();
+            let mut ops = hub;
+            // The never-look rules are read when each page is checked, so a rule added while the job runs counts at once.
+            let app3 = app2.clone();
+            let never = move |host: &str| crate::browser::never_site(host, &crate::look::current_rules(&app3));
+            let mut host = RealHost { app: app2.clone(), stop: stop.clone() };
+            let end = run_web(&mut host, &mut ops, &view, &hello.profile, &never);
+            finish_web(&mut host, &view, &end, started.elapsed().as_millis() as u64);
+            let state = match &end {
+                JobEnd::Done { .. } => "done",
+                JobEnd::Failed { .. } => "failed",
+                _ => "stopped",
+            };
+            let brief = app2.state::<Jobs>().live.lock().unwrap().clone();
+            if let Some(b) = brief {
+                ended(&app2, b, state);
+            }
+        })
+        .map_err(|_| ApiError::new(0, "I couldn't start that job."))?;
+    Ok(())
+}
+
 /// The jobs this Mac knows (the live one and the last three finished), with the manifests on disk after a restart.
 pub fn list(app: &AppHandle) -> Vec<JobBrief> {
     let Some(j) = app.try_state::<Jobs>() else { return vec![] };
@@ -1049,14 +1413,14 @@ mod tests {
             self.events.iter().map(|e| serde_json::to_value(e).unwrap()["phase"].as_str().unwrap().to_string()).collect()
         }
         fn step_posts(&self) -> Vec<&Value> {
-            self.posts.iter().filter(|(t, _)| t.ends_with("/step")).map(|(_, b)| b).collect()
+            self.posts.iter().filter(|(t, _)| t.ends_with("/step") || t.ends_with("/web-step")).map(|(_, b)| b).collect()
         }
     }
 
     impl JobHost for Scripted {
         fn post(&mut self, tail: &str, body: &Value) -> Result<Value, ApiError> {
             self.posts.push((tail.to_string(), body.clone()));
-            if tail.ends_with("/step") {
+            if tail.ends_with("/step") || tail.ends_with("/web-step") {
                 return self.answers.pop_front().unwrap_or_else(|| Err(ApiError::new(500, "no more answers")));
             }
             Ok(json!({ "ok": true }))
@@ -1596,5 +1960,161 @@ mod tests {
         let r = roots(&t.home, &[], &[t.home.join("Documents/Invoices"), t.base.join("elsewhere"), t.home.join("Documents")]);
         assert_eq!(r.iter().map(|x| x.title.as_str()).collect::<Vec<_>>(), ["Desktop", "Documents", "Downloads", "Invoices"], "a pointed folder only inside an allowed root");
         assert_eq!(r[3].source, "pointed");
+    }
+
+    // ---- the Browser helper (phase 2) --------------------------------------------------------------------------------
+
+    /// The extension, scripted: `describe` answers from `effects` (by ref), every other op from `answer`; every call recorded.
+    struct FakeChrome {
+        effects: std::collections::HashMap<String, Value>,
+        calls: Vec<(String, Value)>,
+        fail: Option<crate::browser::CallError>,
+    }
+    impl FakeChrome {
+        fn new(effects: &[(&str, Value)]) -> Self {
+            FakeChrome { effects: effects.iter().map(|(k, v)| (k.to_string(), v.clone())).collect(), calls: vec![], fail: None }
+        }
+        fn ran(&self) -> Vec<String> {
+            self.calls.iter().filter(|(op, _)| op != "describe").map(|(op, _)| op.clone()).collect()
+        }
+    }
+    impl WebOps for FakeChrome {
+        fn call(&mut self, op: &str, args: Value, _ms: u64) -> Result<Value, crate::browser::CallError> {
+            self.calls.push((op.to_string(), args.clone()));
+            if let Some(e) = self.fail.clone() {
+                return Err(e);
+            }
+            match op {
+                "describe" => Ok(self.effects.get(args["ref"].as_str().unwrap_or("")).cloned().unwrap_or(json!({ "effect": "none", "host": "example.com", "name": "Link" }))),
+                "open_tab" => Ok(json!({ "tab": "t1", "url": args["url"], "title": "Page" })),
+                _ => Ok(json!({ "url": "https://example.com/", "title": "Page" })),
+            }
+        }
+    }
+
+    fn web_view() -> JobView {
+        JobView { helper: "web".into(), title: "Pay the invoice".into(), doing: "Paying the invoice".into(), goal: "Pay last month's invoice.".into(), ..view() }
+    }
+    fn web_act(step: u32, calls: Value, approved: Value) -> Result<Value, ApiError> {
+        Ok(json!({ "status": "act", "calls": calls, "approved": approved, "note": null, "append": [{ "role": "assistant", "content": [] }], "step": step, "stepsLeft": 30 }))
+    }
+    fn results_of(post: &Value) -> Vec<Value> {
+        post["results"].as_array().cloned().unwrap_or_default()
+    }
+    const PAY: &str = r#"{ "id": "tu_pay", "name": "click", "input": { "tab": "t1", "ref": "e9", "effect": "pay" } }"#;
+    fn pay_element() -> Value {
+        json!({ "effect": "pay", "host": "dashboard.stripe.com", "name": "Pay £42.00", "sensitive": false })
+    }
+    fn no_never(_: &str) -> bool {
+        false
+    }
+
+    #[test]
+    fn web_routine_calls_run_and_the_profile_goes_first() {
+        let mut host = Scripted::new(vec![
+            web_act(1, json!([{ "id": "a", "name": "open_tab", "input": { "url": "https://example.com" } }, { "id": "b", "name": "read_page", "input": { "tab": "t1", "find": "" } }]), Value::Null),
+            Ok(json!({ "status": "finished", "summary": "Found it.", "append": [], "step": 2 })),
+        ]);
+        let mut chrome = FakeChrome::new(&[]);
+        let end = run_web(&mut host, &mut chrome, &web_view(), "ada@example.com", &no_never);
+        assert_eq!(end, JobEnd::Done { summary: "Found it.".into(), outputs: vec![], speech: Value::Null });
+        let posts = host.step_posts();
+        assert_eq!(posts[0]["start"]["profile"], "ada@example.com");
+        assert!(host.posts[0].0.ends_with("/web-step"));
+        assert_eq!(chrome.ran(), vec!["open_tab", "read_page"]);
+        assert!(results_of(posts[1]).iter().all(|r| r["ok"] == true));
+    }
+
+    #[test]
+    fn web_a_click_that_really_pays_is_refused_when_said_to_be_none() {
+        let mut host = Scripted::new(vec![
+            web_act(1, json!([{ "id": "c", "name": "click", "input": { "tab": "t1", "ref": "e9", "effect": "none" } }]), Value::Null),
+            Ok(json!({ "status": "cannot", "reason": "x", "append": [], "step": 2 })),
+        ]);
+        let mut chrome = FakeChrome::new(&[("e9", pay_element())]);
+        run_web(&mut host, &mut chrome, &web_view(), "", &no_never);
+        assert!(chrome.ran().is_empty(), "nothing clicked");
+        let r = &results_of(host.step_posts()[1])[0];
+        assert_eq!(r["ok"], false);
+        assert!(r["error"].as_str().unwrap().contains("effect \"pay\""));
+    }
+
+    #[test]
+    fn web_the_ask_uses_the_elements_words_and_the_yes_covers_exactly_that_call() {
+        let pay: Value = serde_json::from_str(PAY).unwrap();
+        let mut host = Scripted::new(vec![
+            Ok(json!({ "status": "ask", "ask": { "kind": "pay", "call": pay, "callSha256": "abc", "what": "pay abc" }, "append": [], "step": 1 })),
+            web_act(1, json!([pay]), json!({ "callSha256": "abc" })),
+            Ok(json!({ "status": "finished", "summary": "Paid.", "append": [], "step": 2 })),
+        ]);
+        host.replies.push_back(Some((true, "button", None)));
+        let mut chrome = FakeChrome::new(&[("e9", pay_element())]);
+        let end = run_web(&mut host, &mut chrome, &web_view(), "", &no_never);
+        assert!(matches!(end, JobEnd::Done { .. }));
+        let ask = host.events.iter().find_map(|e| if let JobEvent::Ask { ask, .. } = e { Some(ask.clone()) } else { None }).unwrap();
+        assert_eq!(ask["question"], "Click “Pay £42.00” on dashboard.stripe.com?");
+        assert_eq!(ask["because"], "This pays for something.");
+        let answer = host.posts.iter().find(|(t, _)| t.ends_with("/step-answer")).unwrap();
+        assert_eq!(answer.1["askSha256"], crate::act::sha256_hex("pay abc"));
+        assert_eq!(chrome.ran(), vec!["click"]);
+    }
+
+    #[test]
+    fn web_an_approval_for_another_call_runs_nothing() {
+        let pay: Value = serde_json::from_str(PAY).unwrap();
+        let other = json!({ "id": "tu_pay", "name": "click", "input": { "tab": "t1", "ref": "e10", "effect": "pay" } });
+        let mut host = Scripted::new(vec![
+            Ok(json!({ "status": "ask", "ask": { "kind": "pay", "call": pay, "callSha256": "abc", "what": "pay abc" }, "append": [], "step": 1 })),
+            web_act(1, json!([other]), json!({ "callSha256": "abc" })),
+            Ok(json!({ "status": "cannot", "reason": "x", "append": [], "step": 2 })),
+        ]);
+        host.replies.push_back(Some((true, "button", None)));
+        let mut chrome = FakeChrome::new(&[("e9", pay_element()), ("e10", pay_element())]);
+        run_web(&mut host, &mut chrome, &web_view(), "", &no_never);
+        assert!(chrome.ran().is_empty());
+    }
+
+    #[test]
+    fn web_a_no_ends_it_and_silence_is_no() {
+        let pay: Value = serde_json::from_str(PAY).unwrap();
+        for reply in [Some((false, "button", None)), None] {
+            let mut host = Scripted::new(vec![Ok(json!({ "status": "ask", "ask": { "kind": "pay", "call": pay.clone(), "callSha256": "abc", "what": "pay abc" }, "append": [], "step": 1 }))]);
+            host.replies.push_back(reply);
+            let mut chrome = FakeChrome::new(&[("e9", pay_element())]);
+            assert_eq!(run_web(&mut host, &mut chrome, &web_view(), "", &no_never), JobEnd::SaidNo);
+            assert!(chrome.ran().is_empty());
+        }
+    }
+
+    #[test]
+    fn web_never_types_into_a_password_field() {
+        let mut host = Scripted::new(vec![
+            web_act(1, json!([{ "id": "t", "name": "type", "input": { "tab": "t1", "ref": "e3", "text": "hunter2", "enter": false, "effect": "none" } }]), Value::Null),
+            Ok(json!({ "status": "cannot", "reason": "x", "append": [], "step": 2 })),
+        ]);
+        let mut chrome = FakeChrome::new(&[("e3", json!({ "effect": "none", "sensitive": true, "host": "example.com", "name": "Password" }))]);
+        run_web(&mut host, &mut chrome, &web_view(), "", &no_never);
+        assert!(chrome.ran().is_empty());
+        assert!(results_of(host.step_posts()[1])[0]["error"].as_str().unwrap().contains("password"));
+    }
+
+    #[test]
+    fn web_a_never_look_site_stops_the_job_and_bad_addresses_are_refused() {
+        let mut host = Scripted::new(vec![web_act(1, json!([{ "id": "a", "name": "open_tab", "input": { "url": "https://login.mybank.com/" } }]), Value::Null)]);
+        let mut chrome = FakeChrome::new(&[]);
+        let never = |h: &str| h.ends_with("mybank.com");
+        assert!(matches!(run_web(&mut host, &mut chrome, &web_view(), "", &never), JobEnd::Cannot { .. }));
+        assert!(chrome.ran().is_empty());
+        assert!(!web_url_ok("file:///etc/passwd"));
+        assert!(!web_url_ok("https://user:pw@example.com/"));
+        assert!(web_url_ok("https://example.com/a?b=c"));
+    }
+
+    #[test]
+    fn web_chrome_going_away_fails_the_job() {
+        let mut host = Scripted::new(vec![web_act(1, json!([{ "id": "a", "name": "read_page", "input": { "tab": "t1", "find": "" } }]), Value::Null)]);
+        let mut chrome = FakeChrome::new(&[]);
+        chrome.fail = Some(crate::browser::CallError { code: "DISCONNECTED".into(), message: "gone".into() });
+        assert!(matches!(run_web(&mut host, &mut chrome, &web_view(), "", &no_never), JobEnd::Failed { code: Some(c), .. } if c == "BROWSER_GONE"));
     }
 }

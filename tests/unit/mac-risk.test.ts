@@ -15,7 +15,7 @@ describe("risk.vectors (D.6)", () => {
     expect(c.reason).toBe(v.reason);
     if ("askKind" in v && v.askKind) expect(c.askKind).toBe(v.askKind);
   });
-  it("covers the contract's table (35 rows, and 3 for browsers: owner report, 28 October 2026)", () => { expect(RISK_VECTORS).toHaveLength(38); });
+  it("covers the contract's table (35 rows, 3 for browsers: owner report, 28 October 2026; 12 for the Browser helper: phase 2)", () => { expect(RISK_VECTORS).toHaveLength(50); });
 });
 
 describe("the rules around the table", () => {
@@ -37,8 +37,8 @@ describe("the rules around the table", () => {
     expect(classifyRequest([{ kind: "find_files" }, { kind: "open_app" }], true).reason).toBe("check_every");
     expect(classifyRequest([], true).class).toBe("routine");
   });
-  it("every kind classifies without throwing; only the four ask kinds ask with no facts", () => {
+  it("every kind classifies without throwing; only the ask kinds ask with no facts (the four, and the web's outward clicks)", () => {
     const asks = RISK_KINDS.filter((k) => classify(k).class === "ask");
-    expect(asks.sort()).toEqual(["bd.sends", "empty_trash", "files.trash", "wifi_off"]);
+    expect(asks.sort()).toEqual(["bd.sends", "empty_trash", "files.trash", "web.accept_terms", "web.delete", "web.download", "web.pay", "web.send", "web.sign_in", "web.submit", "wifi_off"]);
   });
 });

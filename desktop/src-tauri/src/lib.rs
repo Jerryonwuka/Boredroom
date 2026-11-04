@@ -53,6 +53,7 @@ mod act;
 mod appindex;
 mod appmenu;
 mod ax;
+pub mod browser;
 mod capture;
 mod chrome;
 mod companion;
@@ -1021,6 +1022,10 @@ pub fn run() {
             app.manage(act::Act::default());
             app.manage(front::Front::default());
             app.manage(jobs::Jobs::default());
+            // Brenda in Chrome (phase 2): the socket the extension's relay connects to, for the life of the app.
+            let hub = browser::Hub::default();
+            browser::listen(hub.clone());
+            app.manage(hub);
             app.manage(appindex::AppIndex::default());
             app.manage(webauth::WebAuth::default());
             dashboard::manage(&handle);
@@ -1207,6 +1212,8 @@ pub fn run() {
             jobs::job_reveal_output,
             jobs::job_show_folder,
             jobs::job_list,
+            browser::browser_status,
+            browser::browser_connect,
             updater::update_status,
             updater::update_install
         ])
@@ -1308,6 +1315,8 @@ const COMMANDS: &[&str] = &[
     "job_reveal_output",
     "job_show_folder",
     "job_list",
+    "browser_status",
+    "browser_connect",
     "update_status",
     "update_install",
 ];
