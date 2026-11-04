@@ -22,6 +22,7 @@
     "smoke:assistant": "tsx scripts/smoke-assistant.ts",
     "smoke:brenda": "tsx scripts/smoke-brenda.ts",
     "smoke:brenda-history": "tsx scripts/smoke-brenda-history.ts",
+    "smoke:brenda-mcp": "tsx scripts/smoke-brenda-mcp.ts",
     "smoke:desktop": "tsx scripts/smoke-desktop.ts",
     "smoke:admin": "tsx scripts/smoke-admin.ts",
     "smoke:docs": "tsx scripts/smoke-docs.ts",

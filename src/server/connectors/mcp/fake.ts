@@ -84,3 +84,13 @@ export function startFakeMcpServer(o: FakeMcpOptions = {}): FakeMcpServer {
   });
   return server;
 }
+
+/**
+ * Development only: with MCP_FAKE=1 (never in production or tests, which start their own), https://mcp.fake.test/mcp
+ * answers in this process with the fake's two tools and no key, so the Settings screens and Brenda can be tried locally.
+ */
+let devFake: FakeMcpServer | null = null;
+export function devFakeMcp(): void {
+  if (devFake || process.env.MCP_FAKE !== "1" || process.env.NODE_ENV === "production" || process.env.NODE_ENV === "test") return;
+  devFake = startFakeMcpServer();
+}

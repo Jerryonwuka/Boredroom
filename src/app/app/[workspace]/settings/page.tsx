@@ -81,6 +81,12 @@ import { SCREEN_HELP_WORDS, type ScreenHelpMine, type ScreenHelpView } from "@/l
 import { cn } from "@/lib/utils";
 // Connected apps (owner decisions, 22 October 2026: connectors): Settings → Connectors and Your connections.
 import { ConnectorsSettings } from "@/components/app/connectors/connectors-settings";
+// The workspace's own apps (MCP) and skills (owner decisions, 4 November 2026: phase 1).
+import { McpServersSettings } from "@/components/app/mcp/mcp-servers";
+import { SkillsSettings } from "@/components/app/mcp/skills-settings";
+import { listServers } from "@/server/connectors/mcp/servers";
+import { listSkills } from "@/server/skills/skills";
+import type { McpServerView, SkillView } from "@/lib/mcp/types";
 import { YourConnections } from "@/components/app/connectors/your-connections";
 import { UpgradeGate } from "@/components/app/upgrade-gate";
 import { connectorsReady, connectorsView, notReadyView } from "@/server/connectors/connections";
@@ -88,6 +94,18 @@ import { CONNECTOR_WORDS } from "@/lib/connectors/words";
 import type { ConnectorsView } from "@/lib/connectors/types";
 
 /** The connectors view for the page; before 0061 (or a failed read) the not-ready view, so the cards say why. */
+/** The MCP servers for Settings: not ready before 0068 (or on any NOT_READY), never an error page. */
+async function mcpFor(ctx: Parameters<typeof listServers>[0]): Promise<{ ready: boolean; list: McpServerView[] }> {
+  try { return { ready: true, list: await listServers(ctx) }; }
+  catch (err) { if ((err as { code?: string })?.code === "NOT_READY") return { ready: false, list: [] }; throw err; }
+}
+
+/** The skills for Settings, the same way. */
+async function skillsFor(ctx: Parameters<typeof listSkills>[0]): Promise<{ ready: boolean; list: SkillView[] }> {
+  try { return { ready: true, list: await listSkills(ctx) }; }
+  catch (err) { if ((err as { code?: string })?.code === "NOT_READY") return { ready: false, list: [] }; throw err; }
+}
+
 async function connectorsFor(ctx: Parameters<typeof connectorsView>[0]): Promise<ConnectorsView> {
   try { return (await connectorsReady()) ? await connectorsView(ctx) : notReadyView(ctx); }
   catch (err) { console.warn(`[settings] connected apps unavailable: ${(err as Error)?.message ?? err}`); return notReadyView(ctx); }
@@ -401,7 +419,7 @@ export default async function SettingsPage({ params, searchParams }: { params: P
       notes = <PageNote section="Monitoring notice">Nobody signs the notice in advance. When a new version is published, everyone is told and can read it in their profile.</PageNote>;
     }
   } else if (section === "brenda") {
-    const [ai, brenda, a, usage, collection, mentions, notesSetting, actSetting, routinesSetting, commitmentsSetting, abilities, voiceKey, screenHelp] = await Promise.all([assistantStatus(ctx), brendaOverview(ctx), assistantProfiles(ctx), usageSummary(ctx),
+    const [ai, brenda, a, usage, collection, mentions, notesSetting, actSetting, routinesSetting, commitmentsSetting, abilities, voiceKey, screenHelp, skills] = await Promise.all([assistantStatus(ctx), brendaOverview(ctx), assistantProfiles(ctx), usageSummary(ctx),
       withUser(ctx.user.profileId, (db) => followUpSettings(db, ctx.org.id)), withUser(ctx.user.profileId, (db) => mentionSettings(db, ctx.org.id)),
       withUser(ctx.user.profileId, (db) => reportNoteSettings(db, ctx.org.id)), withUser(ctx.user.profileId, (db) => workspaceActSetting(db, ctx.org.id)),
       routineSettingsFor(ctx),
@@ -412,7 +430,9 @@ export default async function SettingsPage({ params, searchParams }: { params: P
       // Natural voice (9 October 2026): the key and this month's usage (ready: false before 0053). A failed read: not ready.
       voiceConnectionStatus(ctx).catch((): VoiceConnectionStatus => VOICE_UNREADABLE),
       // Screen help (11 October 2026): the workspace's switch and list; shown only in the pilot. A failed read: not shown.
-      screenHelpView(ctx).catch((): ScreenHelpView | null => null)]);
+      screenHelpView(ctx).catch((): ScreenHelpView | null => null),
+      // Skills (owner decisions, 4 November 2026: phase 1): owners and HR on the plan with connected apps; not ready before 0068.
+      admin && ctx.plan.features.CONNECTORS ? skillsFor(ctx) : null]);
     assistants = a;
     body = (
       <>
@@ -422,6 +442,8 @@ export default async function SettingsPage({ params, searchParams }: { params: P
           action={<Badge tone={ai.source === "none" ? "warning" : "success"} dot>{ai.source === "none" ? "AI not connected" : "On Claude"}</Badge>}>
           <div className="card-panel"><BrendaOrgSettings orgSlug={ctx.org.slug} initial={brenda} canEdit /></div>
         </SettingsSection>
+        {/* Skills (owner decisions, 4 November 2026: phase 1): owners and HR, on the plan with connected apps. */}
+        {skills ? <SkillsSettings orgSlug={ctx.org.slug} initial={skills.list} ready={skills.ready} /> : null}
         {/* What everyone's assistant can do in this workspace (owner decisions, 8–9 October 2026: phase 7c). */}
         <AbilitiesSettings orgSlug={ctx.org.slug} scope="workspace" name={a.personal.name} initial={abilities} />
         {/* Whether people may let their assistant act without asking (owner decision, 8 October 2026). */}
@@ -472,11 +494,17 @@ export default async function SettingsPage({ params, searchParams }: { params: P
   } else if (section === "connectors") {
     // Connected apps (owner decisions, 22 October 2026: connectors; spec §11.1): the plan gate, the database update, then
     // the catalogue by category.
-    const [apps, a] = await Promise.all([connectorsFor(ctx), assistantProfiles(ctx)]);
+    const [apps, a, mcp] = await Promise.all([connectorsFor(ctx), assistantProfiles(ctx), admin && ctx.plan.features.CONNECTORS ? mcpFor(ctx) : null]);
     assistants = a;
     body = !ctx.plan.features.CONNECTORS
       ? <UpgradeGate feature="CONNECTORS" orgSlug={ctx.org.slug} planName={ctx.plan.plan?.name ?? null} upgradeTo={ctx.plan.upgradeTo} isOwner={isOwner} lapsed={ctx.plan.lapsed} />
-      : <ConnectorsSettings orgSlug={ctx.org.slug} view={apps} timeZone={ctx.org.timezone} assistantName={a.workspace.name} isOwner={isOwner} />;
+      : (
+        <div className="space-y-10">
+          <ConnectorsSettings orgSlug={ctx.org.slug} view={apps} timeZone={ctx.org.timezone} assistantName={a.workspace.name} isOwner={isOwner} />
+          {/* The workspace's own apps over MCP (owner decisions, 4 November 2026: phase 1), owners and HR. */}
+          {admin && mcp ? <McpServersSettings orgSlug={ctx.org.slug} initial={mcp.list} ready={mcp.ready} /> : null}
+        </div>
+      );
     notes = apps.ready ? <>{CONNECTOR_WORDS.workspace.notes.map((n) => <PageNote key={n.body} section={n.title}>{n.body}</PageNote>)}</> : null;
   } else if (section === "billing") {
     const [billing, a] = await Promise.all([orgBilling(ctx), assistantProfiles(ctx)]);

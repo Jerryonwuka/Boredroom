@@ -12,6 +12,7 @@
  */
 import { createHash } from "node:crypto";
 import { BlockedAddress, guardedFetch } from "./guard";
+import { devFakeMcp } from "./fake";
 
 export const MCP_PROTOCOL_VERSION = "2025-06-18";
 export const MCP_CALL_TIMEOUT_MS = 20_000;
@@ -157,6 +158,7 @@ async function readAnswer(res: Response, id: number): Promise<RpcMessage> {
 type Wire = { server: McpServerRef; signal: AbortSignal };
 
 async function post(w: Wire, session: Session | null, body: unknown): Promise<Response> {
+  devFakeMcp();
   const headers: Record<string, string> = {
     ...authHeaders(w.server.auth),
     "content-type": "application/json",
