@@ -2,7 +2,8 @@ import { config } from "dotenv"; config({ path: [".env.local"], quiet: true });
 import { getPool } from "../src/server/db";
 import { contextFor } from "../src/server/services/fixtures";
 import { runBrendaTool, confirmAction } from "../src/server/services/copilot";
-import { addServer, refreshServer, removeServer, setToolAccess } from "../src/server/connectors/mcp/servers";
+import { addServer, listServers, mcpSignInReady, refreshServer, removeServer, setToolAccess } from "../src/server/connectors/mcp/servers";
+import { beginSignIn, completeSignIn } from "../src/server/connectors/mcp/signin";
 import { FAKE_MCP_TOOLS, startFakeMcpServer } from "../src/server/connectors/mcp/fake";
 import { addSkill, removeSkill } from "../src/server/skills/skills";
 
@@ -10,8 +11,9 @@ import { addSkill, removeSkill } from "../src/server/skills/skills";
  * Brenda's own apps over MCP and skills (owner decisions, 4 November 2026: phase 1) against the seeded test workspace
  * (company-a) and the in-process fake MCP server, without calling the AI model: an owner adds the server and switches a
  * Read and an Act tool on; Ada's Brenda lists them, reads, prepares a Confirm card for acting and runs it on the press;
- * a tool the server changes switches off; a skill is added and opened. Needs migration 0068 on that database and
- * refuses any database that isn't on this computer. Cleans up what it creates.
+ * a tool the server changes switches off; a skill is added and opened. With migration 0069 (phase 1b) too: an owner adds
+ * a server that signs in, signs in at the fake, and Ada's Brenda reads with the token. Needs migration 0068 on that
+ * database and refuses any database that isn't on this computer. Cleans up what it creates.
  */
 async function main() {
   const host = new URL(process.env.DATABASE_URL ?? "postgres://x/").hostname;
@@ -74,7 +76,31 @@ async function main() {
     expect(String(out(r).block ?? "").includes("weekly report"), "should open it"); return "weekly-report";
   });
 
+  let signInId = "";
+  const signInFake = startFakeMcpServer({ host: "smoke-signin.fake.test", oauth: {} });
+  if (await mcpSignInReady()) {
+    await check("owner adds a server that signs in and signs in", async () => {
+      const s = await addServer(owner, { name: "Smoke sign-in", url: signInFake.url, auth: { kind: "oauth" } });
+      signInId = s.id;
+      const started = await beginSignIn(owner, s.id);
+      const back = new URL(signInFake.approve(started.url).redirect);
+      const r = await completeSignIn({ query: back.searchParams, cookieState: started.state, user: owner.user });
+      const after = (await listServers(owner)).find((x) => x.id === s.id)!;
+      expect(r.ok && after.signIn?.signedIn === true && after.tools.length === 2, "should sign in and list two tools");
+      await setToolAccess(owner, s.id, after.tools.find((t) => t.name === "search_notes")!.id, "read");
+      return after.signIn;
+    });
+    await check("Ada's Brenda reads with the signed-in token", async () => {
+      const r = await runBrendaTool(ada, "use_app_tool", { app: "Smoke sign-in", tool: "search_notes", input: { q: "launch" } });
+      expect(String(out(r).block ?? "").includes("Launch checklist"), JSON.stringify(out(r)).slice(0, 200)); return "read";
+    });
+  } else {
+    console.log("skip  signing in: migration 0069 isn't applied on this database");
+  }
+
   if (serverId) await removeServer(owner, serverId).catch(() => undefined);
+  if (signInId) await removeServer(owner, signInId).catch(() => undefined);
+  signInFake.stop();
   if (skillId) await removeSkill(owner, skillId).catch(() => undefined);
   await admin.query("DELETE FROM brenda_actions WHERE tool IN ('use_app_tool', 'act_with_app_tool') AND membership_id = $1", [ada.membership.id]);
   fake.stop();

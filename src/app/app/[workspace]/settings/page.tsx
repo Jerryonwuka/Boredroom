@@ -84,7 +84,7 @@ import { ConnectorsSettings } from "@/components/app/connectors/connectors-setti
 // The workspace's own apps (MCP) and skills (owner decisions, 4 November 2026: phase 1).
 import { McpServersSettings } from "@/components/app/mcp/mcp-servers";
 import { SkillsSettings } from "@/components/app/mcp/skills-settings";
-import { listServers } from "@/server/connectors/mcp/servers";
+import { listServers, mcpSignInReady } from "@/server/connectors/mcp/servers";
 import { listSkills } from "@/server/skills/skills";
 import type { McpServerView, SkillView } from "@/lib/mcp/types";
 import { YourConnections } from "@/components/app/connectors/your-connections";
@@ -95,9 +95,9 @@ import type { ConnectorsView } from "@/lib/connectors/types";
 
 /** The connectors view for the page; before 0061 (or a failed read) the not-ready view, so the cards say why. */
 /** The MCP servers for Settings: not ready before 0068 (or on any NOT_READY), never an error page. */
-async function mcpFor(ctx: Parameters<typeof listServers>[0]): Promise<{ ready: boolean; list: McpServerView[] }> {
-  try { return { ready: true, list: await listServers(ctx) }; }
-  catch (err) { if ((err as { code?: string })?.code === "NOT_READY") return { ready: false, list: [] }; throw err; }
+async function mcpFor(ctx: Parameters<typeof listServers>[0]): Promise<{ ready: boolean; signInReady: boolean; list: McpServerView[] }> {
+  try { return { ready: true, signInReady: await mcpSignInReady(), list: await listServers(ctx) }; }
+  catch (err) { if ((err as { code?: string })?.code === "NOT_READY") return { ready: false, signInReady: false, list: [] }; throw err; }
 }
 
 /** The skills for Settings, the same way. */
@@ -502,7 +502,7 @@ export default async function SettingsPage({ params, searchParams }: { params: P
         <div className="space-y-10">
           <ConnectorsSettings orgSlug={ctx.org.slug} view={apps} timeZone={ctx.org.timezone} assistantName={a.workspace.name} isOwner={isOwner} />
           {/* The workspace's own apps over MCP (owner decisions, 4 November 2026: phase 1), owners and HR. */}
-          {admin && mcp ? <McpServersSettings orgSlug={ctx.org.slug} initial={mcp.list} ready={mcp.ready} /> : null}
+          {admin && mcp ? <McpServersSettings orgSlug={ctx.org.slug} initial={mcp.list} ready={mcp.ready} signInReady={mcp.signInReady} /> : null}
         </div>
       );
     notes = apps.ready ? <>{CONNECTOR_WORDS.workspace.notes.map((n) => <PageNote key={n.body} section={n.title}>{n.body}</PageNote>)}</> : null;

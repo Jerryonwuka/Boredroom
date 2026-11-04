@@ -22,7 +22,7 @@ import { ConnectorError } from "../types";
 import { schema0068Missing, noteMissing0068 } from "@/server/lib/schema-0068";
 import { BlockedAddress } from "./guard";
 import { McpError, callTool, stableJson, type McpCallResult } from "./client";
-import { serverRef } from "./servers";
+import { withServerRef } from "./servers";
 
 export const MCP_CALLS_PER_HOUR = 300;
 export const APP_TAG = "app_result";
@@ -61,7 +61,7 @@ const err = (words: string): Refusal => ({ error: words });
 const NOT_READY = "The workspace's own apps aren't switched on here yet.";
 
 type UsableTool = {
-  id: string; server_id: string; organisation_id: string; app: string; use_for: string | null; url: string; auth_kind: "none" | "bearer" | "header"; auth_header: string | null;
+  id: string; server_id: string; organisation_id: string; app: string; use_for: string | null; url: string; auth_kind: "none" | "bearer" | "header" | "oauth"; auth_header: string | null;
   name: string; title: string | null; description: string; input_schema: Record<string, unknown>; access: "read" | "act"; hash: string;
 };
 
@@ -132,13 +132,16 @@ const isOut = (v: unknown): v is Refusal => !!v && typeof v === "object" && type
 async function run(t: UsableTool, input: Record<string, unknown>): Promise<McpCallResult | Refusal> {
   try { await spend(`mcp:${t.organisation_id}`, 1, MCP_CALLS_PER_HOUR); }
   catch (e) { if (e instanceof ConnectorError && e.code === "RATE_LIMITED") return err(MCP_ERRORS.RATE_LIMITED_HOUR); throw e; }
-  const ref = await withWorker((db) => serverRef(db, { id: t.server_id, url: t.url, auth_kind: t.auth_kind, auth_header: t.auth_header }));
-  if (!ref) return err(`${t.app}'s key doesn't work any more. An owner or HR can save it again in Settings › Connectors.`);
   try {
-    return await callTool(ref, t.name, input);
+    return await withServerRef({ id: t.server_id, url: t.url, auth_kind: t.auth_kind, auth_header: t.auth_header }, (ref) => callTool(ref, t.name, input));
   } catch (e) {
     if (!(e instanceof McpError || e instanceof BlockedAddress)) throw e;
     const code = e instanceof McpError ? e.code : "BLOCKED_ADDRESS";
+    if (code === "SIGN_IN_NEEDED") return err(`${t.app} needs signing in again. An owner or HR can do that in Settings › Connectors.`);
+    if (code === "AUTH_FAILED" && t.auth_kind !== "oauth") {
+      await withWorker((db) => db.query(`UPDATE mcp_servers SET last_checked_at = now(), last_error_code = $2 WHERE id = $1`, [t.server_id, code])).catch(() => undefined);
+      return err(`${t.app}'s key doesn't work any more. An owner or HR can save it again in Settings › Connectors.`);
+    }
     await withWorker((db) => db.query(`UPDATE mcp_servers SET last_checked_at = now(), last_error_code = $2 WHERE id = $1`, [t.server_id, code])).catch(() => undefined);
     return err(`${t.app} didn't answer: ${mcpErrorWords(code)}`);
   }

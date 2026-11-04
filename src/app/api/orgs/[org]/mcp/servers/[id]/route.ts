@@ -2,7 +2,11 @@ import { z } from "zod";
 import { route, orgContext, parseBody, ok, uuid } from "@/server/lib/api";
 import { removeServer, updateServer } from "@/server/connectors/mcp/servers";
 
-const auth = z.object({ kind: z.enum(["none", "bearer", "header"]), key: z.string().max(4000).optional(), header: z.string().max(60).optional() });
+const auth = z.object({
+  kind: z.enum(["none", "bearer", "header", "oauth"]), key: z.string().max(4000).optional(), header: z.string().max(60).optional(),
+  // Signing in (phase 1b): a client from the app's developer settings, for a server that won't register Boredroom.
+  clientId: z.string().max(500).optional(), clientSecret: z.string().max(500).optional(),
+});
 const schema = z.object({ name: z.string().max(200).optional(), useFor: z.string().max(400).nullable().optional(), paused: z.boolean().optional(), auth: auth.optional() });
 
 /** Renames a server, says what it's for, pauses or resumes it, or changes its key (checked first). Owners and HR. */

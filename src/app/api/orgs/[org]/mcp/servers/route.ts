@@ -2,7 +2,11 @@ import { z } from "zod";
 import { route, orgContext, parseBody, ok } from "@/server/lib/api";
 import { addServer, listServers } from "@/server/connectors/mcp/servers";
 
-const auth = z.object({ kind: z.enum(["none", "bearer", "header"]), key: z.string().max(4000).optional(), header: z.string().max(60).optional() });
+const auth = z.object({
+  kind: z.enum(["none", "bearer", "header", "oauth"]), key: z.string().max(4000).optional(), header: z.string().max(60).optional(),
+  // Signing in (phase 1b): a client from the app's developer settings, for a server that won't register Boredroom.
+  clientId: z.string().max(500).optional(), clientSecret: z.string().max(500).optional(),
+});
 const schema = z.object({ name: z.string().max(200), url: z.string().max(500), useFor: z.string().max(400).nullable().optional(), auth });
 
 /** The workspace's MCP servers and their tools (owners and HR; owner decisions, 4 November 2026: phase 1). Never a key. */

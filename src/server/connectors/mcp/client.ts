@@ -27,7 +27,7 @@ const CLIENT_INFO = { name: "Boredroom", version: "1.0.0" };
 
 export type McpErrorCode =
   | "BLOCKED_ADDRESS" | "TIMEOUT" | "TOO_LARGE" | "AUTH_FAILED" | "NOT_FOUND" | "RATE_LIMITED" | "SERVER_DOWN" | "REDIRECTED"
-  | "BAD_RESPONSE" | "PROTOCOL";
+  | "BAD_RESPONSE" | "PROTOCOL" | "SIGN_IN_NEEDED";
 
 /** `message` is for logs and is never shown; people see words chosen from `code`. */
 export class McpError extends Error {
@@ -37,6 +37,7 @@ export class McpError extends Error {
   }
 }
 
+/** A signed-in server's access token rides as a bearer key. */
 export type McpAuth = { kind: "none" } | { kind: "bearer"; key: string } | { kind: "header"; name: string; value: string };
 export type McpServerRef = { id: string; url: string; auth: McpAuth };
 

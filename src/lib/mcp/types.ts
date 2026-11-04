@@ -3,7 +3,7 @@
  * key: a server shows only that it has one and its last four characters.
  */
 
-export type McpAuthKind = "none" | "bearer" | "header";
+export type McpAuthKind = "none" | "bearer" | "header" | "oauth";
 export type McpAccess = "off" | "read" | "act";
 export type McpServerStatus = "active" | "needs_attention" | "paused";
 
@@ -37,6 +37,8 @@ export type McpServerView = {
   lastOkAt: string | null;
   /** Words for the last problem, when there was one. */
   problem: string | null;
+  /** For a server that signs in: whether it is signed in, by whom and when. */
+  signIn: { signedIn: boolean; by: string | null; at: string | null } | null;
   tools: McpToolView[];
 };
 
