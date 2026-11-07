@@ -1253,8 +1253,8 @@ export function BrendaComposer({ chat, placeholder, className, onSend, label, le
   const ready = pct !== null ? <><span className="tabular-nums" aria-hidden>{pct}%</span><span className="sr-only">{Math.floor(pct / 25) * 25}%</span></> : null;
   // Under the card's title ("Listening…" or "Getting your words…"): what to do next.
   const hint = dictation.busy
-    ? ready ? <>Getting dictation ready… {ready}</> : "Writing out what you said, on this computer."
-    : dictation.engine === "whisper"
+    ? ready ? <>Getting dictation ready… {ready}</> : dictation.onDevice ? "Writing out what you said, on this computer." : "Writing out what you said…"
+    : dictation.engine === "whisper" && dictation.onDevice
       ? <>{ready ? <>Getting dictation ready in the background ({ready}). </> : null}Press stop or send when you&apos;re done and I&apos;ll write it out, on this computer.{dictation.englishOnly ? " On-device dictation understands English only." : null}</>
       : "Speak naturally. Press stop or send when you're done.";
   return (

@@ -200,6 +200,38 @@ export async function getSubscription(apiKey: string, signal?: AbortSignal): Pro
   };
 }
 
+// ---- Speech to text (owner request, 7 November 2026: "When I send voice note on to Brenda, should reply me instantly") ----
+
+/** Scribe: ElevenLabs' speech-to-text model, 99 languages. */
+export const STT_MODEL = "scribe_v1";
+/** A two-minute voice note is well under 2 MB; anything past this is refused before it is sent. */
+export const STT_MAX_BYTES = 10 * 1024 * 1024;
+const STT_TIMEOUT_MS = 30_000;
+
+/**
+ * POST /v1/speech-to-text: one recording in, its words out. Costs the key's transcription allowance. The audio goes to
+ * ElevenLabs only for this call and is not kept by Boredroom; nothing is logged, and only the text comes back.
+ */
+export async function transcribeSpeech(apiKey: string, audio: Blob, signal?: AbortSignal): Promise<{ text: string; language: string | null }> {
+  const d = deadline(STT_TIMEOUT_MS, signal);
+  try {
+    const form = new FormData();
+    form.append("model_id", STT_MODEL);
+    form.append("tag_audio_events", "false");
+    form.append("diarize", "false");
+    form.append("file", audio, "voice-note");
+    const res = await send(`${ELEVENLABS_API}/v1/speech-to-text`, { method: "POST", headers: { "xi-api-key": apiKey }, body: form, signal: d.signal });
+    if (!res.ok) throw await errorFromResponse(res);
+    const j = (await res.json().catch(() => null)) as { text?: unknown; language_code?: unknown } | null;
+    if (!j || typeof j.text !== "string") throw new ElevenLabsError("upstream", res.status);
+    return { text: j.text.replace(/\s+/g, " ").trim(), language: typeof j.language_code === "string" ? j.language_code.slice(0, 10) : null };
+  } catch (err) {
+    throw fromThrown(err, d.timedOut(), signal);
+  } finally {
+    d.clear();
+  }
+}
+
 /** GET /v1/voices/{id} (free): the voice's public preview MP3. Catalogue ids only. */
 export async function getVoicePreviewUrl(apiKey: string, voiceId: string): Promise<string> {
   if (!isNaturalVoiceId(voiceId)) throw new ElevenLabsError("bad_request");

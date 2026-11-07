@@ -623,7 +623,7 @@ function NewTodoRow({ orgSlug, assignable, aiConnected, timeZone, nudge, onAdded
 
   const update = (i: number, patch: Partial<Draft>) => setDrafts((cur) => cur.map((d, j) => (j === i ? { ...d, ...patch } : d)));
   const pct = dictation.progress !== null ? Math.round(dictation.progress * 100) : null;
-  const listeningHint = dictation.engine === "whisper"
+  const listeningHint = dictation.engine === "whisper" && dictation.onDevice
     ? `${pct !== null ? `Getting dictation ready (${pct}%). Keep talking.` : "Say your to-dos, one per sentence. Press Stop and they are written out on this computer."}${dictation.englishOnly ? " On-device dictation understands English only." : ""}`
     : `Say your to-dos, one per sentence${assignable.length ? ", and who each one is for" : ""}. Press Stop when you are done.`;
 

@@ -19,6 +19,12 @@
  * a session number, so a start that is overtaken (Stop, closing the panel, a second click) stops its microphone instead
  * of carrying on unseen.
  *
+ * Voice notes written out on the server (owner request, 7 November 2026: "When I send voice note on to Brenda, should
+ * reply me instantly"): where Whisper would be used, the recording goes to Boredroom's server when Stop is pressed
+ * (`/api/me/transcribe`, ElevenLabs' Scribe), which answers in about a second, so there is no model to download and no
+ * wait. Whisper on this computer is the fallback, used only when the server can't be (it isn't set up, or can't be
+ * reached); then its model downloads as before. `onDevice` says which one wrote it out last.
+ *
  * One microphone per dictation (7 October 2026, with the live waveform): the open microphone is handed out as `stream`
  * and shared (`shareMicrophone`), so the voice card's waveform measures it instead of opening its own. With the
  * browser's engine, the stream opened to ask for the microphone stays open for the waveform while the browser listens,
@@ -58,6 +64,23 @@ const stopTracks = (s: MediaStream) => s.getTracks().forEach((t) => t.stop());
 /** Whether a stream still carries a live microphone (a stand-in without tracks does not). */
 const isLive = (s: MediaStream) => typeof s.getTracks === "function" && s.getTracks().some((t) => t.readyState === "live");
 
+/** The server said dictation isn't set up there (503): this page load uses Whisper from the start. */
+let serverOff = false;
+
+/** The recording's words from Boredroom's server; null when the server can't be used, so this computer writes it out. */
+async function serverWords(blob: Blob): Promise<string | null> {
+  if (serverOff || typeof fetch === "undefined") return null;
+  try {
+    const res = await fetch("/api/me/transcribe", { method: "POST", headers: { "content-type": blob.type || "audio/webm" }, body: blob, credentials: "same-origin" });
+    if (res.status === 503) { serverOff = true; return null; }
+    if (!res.ok) return null;
+    const j = (await res.json().catch(() => null)) as { text?: unknown } | null;
+    return typeof j?.text === "string" ? j.text.replace(/\s+/g, " ").trim() : null;
+  } catch {
+    return null; // offline, or the request didn't finish: this computer does it
+  }
+}
+
 type Recording = { recorder: MediaRecorder; stream: MediaStream; chunks: Blob[]; limit: ReturnType<typeof setTimeout> };
 
 export function useDictation(text: string, setText: (t: string) => void) {
@@ -73,6 +96,8 @@ export function useDictation(text: string, setText: (t: string) => void) {
   /** Model download progress (0 to 1) while Whisper is getting ready, else null. */
   const [progress, setProgress] = useState<number | null>(null);
   const [modelReady, setModelReady] = useState(false);
+  /** The last voice note was written out on this computer (the server couldn't be used). */
+  const [onDevice, setOnDevice] = useState(false);
   // null during server render and hydration, then the browser's real answer.
   const supported = useSyncExternalStore(noSubscribe, () => !!speechCtor() || whisperSupported(), () => null);
 
@@ -191,7 +216,8 @@ export function useDictation(text: string, setText: (t: string) => void) {
     chooseEngine("whisper");
     showMic(stream);
     setListening(true); setPhase("listening"); setError(null);
-    warmUp(); // the model loads while the person speaks
+    // The model loads while the person speaks only when the server can't write it out (owner request, 7 November 2026).
+    if (serverOff) warmUp();
   }
 
   async function finishWhisper(): Promise<string | null> {
@@ -212,6 +238,22 @@ export function useDictation(text: string, setText: (t: string) => void) {
     const current = () => mine === transcribing.current && alive.current;
     const fail = (message: string, err?: unknown) => { if (err) console.error("Dictation:", err); if (current()) setError(message); return null; };
     try {
+      // The server first: about a second, and nothing to download.
+      if (blob.size > 2_000) {
+        const fromServer = await serverWords(blob);
+        if (!current()) return null;
+        if (fromServer !== null) {
+          setOnDevice(false);
+          if (!fromServer) return fail("I didn't catch any words. Try again a little closer to the microphone.");
+          const now = textNow.current.trim();
+          const next = ((now ? now + " " : "") + fromServer).replace(/\s+/g, " ").trim();
+          write(next);
+          setHeardWords(next.split(" ").filter(Boolean).length);
+          setHeard(fromServer);
+          return next;
+        }
+      }
+      setOnDevice(true);
       let audio: Float32Array;
       try { audio = await toWhisperAudio(blob); }
       catch (err) { return fail("The recording could not be read. Try again, or type instead.", err); }
@@ -380,7 +422,9 @@ export function useDictation(text: string, setText: (t: string) => void) {
     catch { wantListening.current = false; releaseLevel(); setError("Could not start dictation. Reload the page and try again, or type instead."); }
   }
 
-  const englishOnly = engine === "whisper" && typeof navigator !== "undefined" && !!navigator.language && !navigator.language.toLowerCase().startsWith("en");
+  // Whisper on this computer: when the server can't write it out (it understands every language).
+  const local = engine === "whisper" && (serverOff || onDevice);
+  const englishOnly = local && typeof navigator !== "undefined" && !!navigator.language && !navigator.language.toLowerCase().startsWith("en");
 
   return {
     listening, supported, heardWords, error, notice,
@@ -398,6 +442,8 @@ export function useDictation(text: string, setText: (t: string) => void) {
     progress: modelReady ? null : progress,
     /** On-device dictation only understands English; true when the browser's language is something else. */
     englishOnly,
+    /** Recordings are written out on this computer (Whisper), not on the server. */
+    onDevice: local,
     /** The open microphone while listening, else null: the waveform measures it (it is also shared, see above). */
     stream: micStream,
   };
