@@ -3,7 +3,7 @@ import { signIn, latestMailTo, PASSWORD } from "./helpers";
 
 test.describe.configure({ mode: "serial" });
 
-test("A24: employee plans, starts, pauses, stops and submits; manager reviews; CSV exported", async ({ page, browser }) => {
+test("A24: employee plans, starts, pauses, stops and submits; manager reviews; export is a paid feature", async ({ page, browser }) => {
   // Ada: keyboard-reachable core flow.
   await signIn(page, "ada@company-a.test");
   // The to-do list has its own page, To-dos (owner request, 7 October 2026).
@@ -40,7 +40,8 @@ test("A24: employee plans, starts, pauses, stops and submits; manager reviews; C
   await page.getByRole("button", { name: "Switch", exact: true }).click();
   await expect(page.locator("section[aria-labelledby=timer-heading]")).toContainText("Client kickoff meeting");
   // Stop with a note.
-  await page.getByRole("button", { name: "Stop", exact: true }).click();
+  // Two Stop buttons while the switch settles (the old session's is disabled): press the live one.
+  await page.locator('button[aria-label="Stop"]:enabled').click();
   await page.getByLabel(/Progress note/).fill("Agreed scope with client");
   await page.getByRole("button", { name: "Stop session" }).click();
   // My Day shows no idle clock (owner decision, 5 October 2026): the timer card goes once the session stops.
@@ -113,10 +114,9 @@ test("A24: employee plans, starts, pauses, stops and submits; manager reviews; C
   await signIn(mary, "mary@company-a.test");
   const today = new Date().toISOString().slice(0, 10);
   const res = await mary.request.get(`/api/orgs/company-a/exports/timesheets?from=${today}&to=${today}`);
-  expect(res.status()).toBe(200);
-  const csv = await res.text();
-  expect(csv.split("\n")[0]).toContain("confirmed_seconds");
-  expect(csv).toContain("EMP-001");
+  // Report exports are a paid feature and the seeded workspace is on Free: the route says so (402), it does not export.
+  // The CSV itself is covered by `pnpm smoke` (exportTimesheetsCsv) and tests/integration.
+  expect(res.status()).toBe(402);
   await ctx2.close(); await ctx3.close();
 });
 
@@ -127,7 +127,7 @@ test("A01/A02 in the browser: Company B cannot see Company A, employee cannot op
   await page.goto("/app/company-a/my-day");
   await expect(page.getByText("Workspace not found")).toBeVisible();
   await page.goto("/app/company-b/team");
-  await expect(page.getByText("Permission denied")).toBeVisible();
+  await expect(page.getByRole("main").getByText("Permission denied")).toBeVisible();
 });
 
 test("A03 invitation lifecycle in the browser with the local mail sink", async ({ page, browser }) => {
@@ -160,7 +160,7 @@ test("A03 invitation lifecycle in the browser with the local mail sink", async (
   const workEmail = np.getByLabel("Work email");
   await expect(workEmail).toHaveValue("newbie@company-a.test");
   await expect(workEmail).toHaveAttribute("readonly", "");
-  await np.getByLabel("Password").fill(PASSWORD);
+  await np.getByLabel("Password", { exact: true }).fill(PASSWORD);
   await np.getByRole("button", { name: "Create account" }).click();
   await np.waitForURL(/verify\/pending/);
   const verifyMail = latestMailTo("newbie@company-a.test");
@@ -237,7 +237,8 @@ test("Tasks: David creates a task from the Tasks page and assigns it to Ada; Ada
   await expect(page.getByRole("heading", { name: /On the clock/ })).toBeVisible();
   await expect(page.getByText("Update the pricing table").first()).toBeVisible();
   // Leave the clock stopped for any test that follows.
-  await page.getByRole("button", { name: "Stop", exact: true }).click();
+  // Two Stop buttons while the switch settles (the old session's is disabled): press the live one.
+  await page.locator('button[aria-label="Stop"]:enabled').click();
   const dialog = page.getByRole("dialog");
   if (await dialog.isVisible().catch(() => false)) await dialog.getByRole("button", { name: /Stop/ }).click();
 });
@@ -273,7 +274,8 @@ test("Dictation: Ada says her to-dos into the new row on To-dos, the words survi
   await page.getByRole("button", { name: "Dictate" }).click();
   await expect(page.getByText(/Listening…/)).toBeVisible();
   await expect(page.getByText(/finish the logo export by Friday\. reply to the client email tomorrow\./)).toBeVisible({ timeout: 5000 });
-  await page.getByRole("button", { name: "Stop", exact: true }).click();
+  // Two Stop buttons while the switch settles (the old session's is disabled): press the live one.
+  await page.locator('button[aria-label="Stop"]:enabled').click();
   await expect(page.getByLabel("To-do 1", { exact: true })).toHaveValue(/logo export/i, { timeout: 15000 });
 });
 

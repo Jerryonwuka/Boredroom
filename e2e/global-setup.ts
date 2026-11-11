@@ -16,4 +16,10 @@ export default async function globalSetup() {
   };
   execSync("pnpm exec tsx db/scripts/migrate.ts --test --reset", { stdio: "inherit", env });
   execSync("pnpm exec tsx db/scripts/seed.ts", { stdio: "inherit", env });
+  // The Free plan's seat cap (5 people) is lifted as tests/helpers/db.ts does: the seeded workspace is already full, and
+  // the invitation test adds a sixth person. Seat limits have their own integration tests.
+  const { Client } = await import("pg");
+  const admin = new Client({ connectionString: process.env.TEST_DATABASE_ADMIN_URL });
+  await admin.connect();
+  try { await admin.query("UPDATE plans SET max_users = NULL WHERE code = 'free'"); } finally { await admin.end(); }
 }

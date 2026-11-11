@@ -60,7 +60,10 @@ async function main() {
     const r = await runBrendaTool(ada, "update_task", { taskId: created[0], progressPercent: 40 });
     expect(r.proposals.length === 0 && !(r.out as { error?: string }).error, JSON.stringify(r.out)); return r.actions[0]?.summary;
   });
-  await check("staff comments", async () => (await runBrendaTool(ada, "add_comment", { taskId: created[0], body: "Brenda smoke comment" })).actions[0]?.summary);
+  await check("staff comment is prepared (it notifies others, so it asks first)", async () => {
+    const r = await runBrendaTool(ada, "add_comment", { taskId: created[0], body: "Brenda smoke comment" });
+    expect(r.actions.length === 0 && r.proposals.length === 1, JSON.stringify(r.out)); return r.proposals[0];
+  });
   await check("submit for review is prepared", async () => {
     const r = await runBrendaTool(ada, "submit_for_review", { taskId: created[0], note: "smoke" });
     expect(r.proposals.length === 1 || !!(r.out as { error?: string }).error, "should ask first or explain"); return r.out;

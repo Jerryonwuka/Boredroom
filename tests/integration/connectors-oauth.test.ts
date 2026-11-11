@@ -135,7 +135,7 @@ describe("the callback", () => {
 
   it("a role lost between start and callback", async () => {
     const s = await beginConnect(a.hrCtx, "fake", { kind: "workspace" });
-    await adminQuery(`UPDATE memberships SET role = 'employee' WHERE id = $1`, [a.hrCtx.membership.id]);
+    await adminQuery(`SELECT set_config('app.role', 'worker', false); UPDATE memberships SET role = 'employee' WHERE id = '${a.hrCtx.membership.id}'`);
     try {
       const url = new URL(s.url);
       expect((await completeConnect({ provider: "fake", query: url.searchParams, cookieState: s.state, user: a.hrCtx.user })).code).toBe("not_allowed");

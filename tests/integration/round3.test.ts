@@ -100,6 +100,9 @@ describe("Done from My Day", () => {
 
 describe("the to-do assistant", () => {
   it("proposes to-dos for staff (self only) and hands out to team members for leads, without creating anything", async () => {
+    // The built-in parser, not the model: its wording is fixed, so the titles can be checked word for word.
+    const savedKey = process.env.ANTHROPIC_API_KEY; delete process.env.ANTHROPIC_API_KEY;
+    try {
     const before = (await adminQuery<{ n: string }>("SELECT count(*) AS n FROM tasks"))[0].n;
     const mine = await planFromText(a.employeeCtx, { text: "Finish the pricing page copy by Friday, then send the draft to the client." });
     expect(mine.items.map((i) => i.title)).toEqual(["Finish the pricing page copy", "Send the draft to the client"]);
@@ -111,6 +114,7 @@ describe("the to-do assistant", () => {
     expect(lead.items[2]).toMatchObject({ title: "Prepare the sprint review", assigneeMembershipId: null });
     expect(["claude", "builtin"]).toContain(lead.engine);
     expect((await adminQuery<{ n: string }>("SELECT count(*) AS n FROM tasks"))[0].n).toBe(before);
+    } finally { if (savedKey === undefined) delete process.env.ANTHROPIC_API_KEY; else process.env.ANTHROPIC_API_KEY = savedKey; }
   });
 });
 

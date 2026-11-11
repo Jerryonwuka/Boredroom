@@ -66,6 +66,9 @@ async function main() {
   };
   const claude = (r: ChatResult) => { expect(r.engine === "claude" && !r.note, `fell back to the built-in helper: ${r.note}`); return r; };
 
+  // Since the security audit of 23 October 2026 a comment, a message, and a task change made after reading other people's
+  // words wait for the person's Confirm: done at once or a Confirm card for that tool both count.
+  const didOrAsks = (r: ChatResult, kind: string, tool: string) => r.actions.some((a) => a.kind === kind) || r.proposals.some((p) => p.kind === "confirm" && p.tool === tool);
   // Staff
   await check("staff: what's waiting for me", async () => { const r = claude(await say(ada, "What's waiting for me today?")); expect(r.reply.length > 10, "empty reply"); return r; });
   await check("staff: add a to-do with a due date", async () => {
@@ -91,7 +94,7 @@ async function main() {
   await check("staff: progress on own task, in a follow-up", async () => {
     const r = claude(await say(ada, "add a todo to write the partner FAQ", "mark the FAQ one as 40% done"));
     const row = (await admin.query("SELECT progress_percent FROM tasks WHERE organisation_id = $1 AND created_at >= $2 AND title ILIKE '%FAQ%' ORDER BY progress_percent DESC LIMIT 1", [ada.org.id, started])).rows[0];
-    expect(row?.progress_percent === 40, `progress is ${row?.progress_percent}`); return r;
+    expect(row?.progress_percent === 40 || didOrAsks(r, "update", "update_task"), `progress is ${row?.progress_percent} and no Confirm card`); return r;
   });
   await check("staff: start and stop the timer", async () => {
     const r1 = claude(await say(ada, "start the timer on the partner FAQ"));
@@ -102,7 +105,7 @@ async function main() {
   });
   await check("staff: comment on own task", async () => {
     const r = claude(await say(ada, "comment on the partner FAQ task: first draft is in the shared folder"));
-    expect(r.actions.some((a) => a.kind === "comment"), "no comment added"); return r;
+    expect(didOrAsks(r, "comment", "add_comment"), "no comment added or prepared"); return r;
   });
   await check("staff: list and cancel a reminder", async () => {
     const r = claude(await say(ada, "what reminders do I have?", "cancel the Josh one"));
@@ -111,11 +114,11 @@ async function main() {
   });
   await check("staff: mark own task done", async () => {
     const r = claude(await say(ada, "I finished the Q4 newsletter draft, mark it done"));
-    expect(r.actions.some((a) => a.kind === "complete"), "not marked done"); return r;
+    expect(didOrAsks(r, "complete", "complete_task"), "not marked done or prepared"); return r;
   });
   await check("staff: direct message to a person", async () => {
     const r = claude(await say(ada, "message David: the FAQ draft is ready for a look"));
-    expect(r.actions.some((a) => a.kind === "message"), "message not sent"); return r;
+    expect(didOrAsks(r, "message", "send_message"), "message not sent or prepared"); return r;
   });
   await check("staff: clock in and out", async () => {
     const r1 = claude(await say(ada, "clock me in"));

@@ -229,11 +229,12 @@ describe("following a commitment through", () => {
   });
 
   it("a gentle follow-up appears in the thread only when that switch is on, inside working hours, once", async () => {
-    const workday = lagosWeekday(3, "10:00");
+    // The next working day: far enough for the stalled one, too soon for the deck one (due tomorrow) to stall as well.
+    const workday = lagosWeekday(1, "10:00");
     expect((await runCommitmentFollowThrough({ now: workday })).threadPosts).toBe(0);
     expect(await count("SELECT count(*)::int AS n FROM messages WHERE author_kind = 'workspace'")).toBe(0);
     await C.saveCommitmentSettings(owner, { threadFollowUps: true });
-    expect((await runCommitmentFollowThrough({ now: lagosWeekday(3, "21:00") })).threadPosts).toBe(0);
+    expect((await runCommitmentFollowThrough({ now: lagosWeekday(1, "21:00") })).threadPosts).toBe(0);
     expect((await runCommitmentFollowThrough({ now: workday })).threadPosts).toBe(1);
     const posted = await adminQuery<{ id: string; body: string; reply_to_id: string; conversation_id: string; sender_membership_id: string }>(
       "SELECT id, body, reply_to_id, conversation_id, sender_membership_id FROM messages WHERE author_kind = 'workspace'");
