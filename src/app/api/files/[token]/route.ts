@@ -10,7 +10,7 @@ export async function GET(_req: Request, context: { params: Promise<{ token: str
   if (!user) return new Response("Sign in required", { status: 401 });
   const f = resolveFileToken(token);
   if (!f) return new Response("Link expired", { status: 410 });
-  const stream = storage().stream(f.key);
+  const stream = await storage().stream(f.key);
   if (!stream) return new Response("Not found", { status: 404 });
   const safeName = f.name.replace(/[^\w.-]+/g, "_");
   return new Response(Readable.toWeb(stream) as ReadableStream, {

@@ -3,6 +3,7 @@ import { getPool } from "@/server/db";
 import { mailConfigProblem } from "@/server/lib/mail";
 import { googleConfigured } from "@/server/auth/google";
 import { livekitConfigured } from "@/server/lib/livekit";
+import { storage, storageConfigProblem, storageKind, type R2StorageProvider } from "@/server/lib/storage";
 
 export type Check = { ok: boolean; detail?: string; fix?: string };
 
@@ -39,9 +40,22 @@ export async function runHealthChecks(): Promise<{ ok: boolean; checks: Record<s
     const why = explainInfraError(err);
     checks.database = { ok: false, detail: why ? `${why.message} [${(err as Error).message}]` : (err as Error).message, fix: why?.fix ?? "Check DATABASE_URL and that PostgreSQL is running." };
   }
-  const storageDir = process.env.STORAGE_LOCAL_DIR ?? "./var/storage";
-  try { mkdirSync(storageDir, { recursive: true }); accessSync(storageDir, constants.W_OK); checks.storage = { ok: true, detail: storageDir }; }
-  catch (err) { checks.storage = { ok: false, detail: `${storageDir}: ${(err as Error).message}`, fix: "Use a writable directory or configure a storage provider." }; }
+  const storageProblem = storageConfigProblem();
+  if (storageProblem) checks.storage = { ok: false, detail: storageKind(), fix: storageProblem };
+  else if (storageKind() === "r2") {
+    // One signed request to the bucket: the names only, never the keys.
+    const r = await (storage() as R2StorageProvider).check();
+    checks.storage = r.ok ? { ok: true, detail: `r2 bucket ${process.env.STORAGE_BUCKET}` } : { ok: false, detail: `r2 bucket ${process.env.STORAGE_BUCKET}: ${r.detail}`, fix: "Check R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY and STORAGE_BUCKET (docs/providers.md)." };
+  } else {
+    const storageDir = process.env.STORAGE_LOCAL_DIR ?? "./var/storage";
+    try {
+      mkdirSync(storageDir, { recursive: true }); accessSync(storageDir, constants.W_OK);
+      // A serverless host's disk is wiped and not shared between its servers: files saved there are lost (10 November 2026).
+      checks.storage = process.env.VERCEL
+        ? { ok: false, detail: `${storageDir}: this host does not keep files on disk, so uploads are lost`, fix: "Set STORAGE_PROVIDER=r2 with the R2 settings (docs/providers.md)." }
+        : { ok: true, detail: storageDir };
+    } catch (err) { checks.storage = { ok: false, detail: `${storageDir}: ${(err as Error).message}`, fix: "Use a writable directory or configure a storage provider." }; }
+  }
   const mailKind = process.env.MAIL_PROVIDER ?? "sink";
   const g = process.env.GOOGLE_CLIENT_ID || process.env.GOOGLE_CLIENT_SECRET;
   checks.google = googleConfigured() ? { ok: true, detail: "Sign in with Google is on" } : g ? { ok: false, detail: "half configured", fix: "Set both GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET (see .env.example)." } : { ok: true, detail: "Sign in with Google is off (optional; set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET)" };
@@ -55,5 +69,5 @@ export async function runHealthChecks(): Promise<{ ok: boolean; checks: Record<s
   // Calls (owner decisions, 8 October 2026: phase 8): LiveKit Cloud. Optional, so always ok; the names only, never values.
   const calls = livekitConfigured();
   checks.calls = { ok: true, detail: calls ? "LiveKit configured" : "Calls are off: set LIVEKIT_URL, LIVEKIT_API_KEY and LIVEKIT_API_SECRET." };
-  return { ok: Object.values(checks).every((c) => c.ok), checks, nodeEnv: process.env.NODE_ENV, mailProvider: process.env.MAIL_PROVIDER ?? "sink", storageProvider: process.env.STORAGE_PROVIDER ?? "local", assistantServerKey: !!process.env.ANTHROPIC_API_KEY, calls };
+  return { ok: Object.values(checks).every((c) => c.ok), checks, nodeEnv: process.env.NODE_ENV, mailProvider: process.env.MAIL_PROVIDER ?? "sink", storageProvider: storageKind(), assistantServerKey: !!process.env.ANTHROPIC_API_KEY, calls };
 }

@@ -22,7 +22,7 @@ Restore drill status: `pnpm db:dump` → `pnpm db:restore` into a fresh database
 
 Screen recording for tasks was taken out (owner decisions, 8 October 2026) and the existing recordings are deleted by the owner, with `db/scripts/delete-recordings.ts` (package script `db:delete-recordings`). It is the only thing that deletes recording data. It connects with `DATABASE_ADMIN_URL` (the database owner: the app role may not delete audit rows) and prints the host and the database's name only, never the connection string.
 
-Where to run it: on the machine that serves the web app's files, with that machine's storage settings (`STORAGE_PROVIDER`, `STORAGE_LOCAL_DIR`; only the local provider exists today) and a `DATABASE_ADMIN_URL` for the database to clean. The script deletes the stored video files through the storage provider of the machine it runs on and sweeps `org/*/recordings/` under that machine's `STORAGE_LOCAL_DIR`. Run anywhere else, the rows are deleted and the real files stay behind on the other machine, with nothing pointing at them.
+Where to run it: on the machine that serves the web app's files, with that machine's storage settings (`STORAGE_PROVIDER`, `STORAGE_LOCAL_DIR`; the script sweeps the local provider only) and a `DATABASE_ADMIN_URL` for the database to clean. The script deletes the stored video files through the storage provider of the machine it runs on and sweeps `org/*/recordings/` under that machine's `STORAGE_LOCAL_DIR`. Run anywhere else, the rows are deleted and the real files stay behind on the other machine, with nothing pointing at them.
 
 The order (contract A.9):
 

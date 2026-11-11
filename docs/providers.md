@@ -70,9 +70,34 @@ Another provider: implement `MailProvider.send` (and `verify` if it has a handsh
 
 ## Object storage
 
-Local: `STORAGE_PROVIDER=local` stores bytes under `STORAGE_LOCAL_DIR` (outside the web root). Keys are always server-generated and tenant-prefixed (`org/<id>/…`).
+It holds evidence uploads, voice notes in messages and pictures. Keys are always server-generated and tenant-prefixed (`org/<id>/…`). Downloads always go through the app's own routes and signed 60-second URLs, so a deletion takes effect at once; nothing is ever served from the bucket directly.
 
-It holds evidence uploads, voice notes and pictures. Supabase private Storage: implement `StorageProvider` (`put/get/stream/size/delete/exists`) against a private bucket with the service-role key on the server only. Do not enable public access or CDN caching for the bucket; downloads always go through the app's signed 60-second URLs so deletion takes effect immediately. Set lifecycle rules so backups expire on a defined schedule.
+### Local
+
+`STORAGE_PROVIDER=local` stores bytes under `STORAGE_LOCAL_DIR` (outside the web root). Only for a machine whose disk lasts. On Vercel (or any serverless host) the disk is wiped and is not shared between servers, so uploads vanish; the health check fails there with the fix.
+
+### Cloudflare R2 (production)
+
+`STORAGE_PROVIDER=r2` keeps files in a private R2 bucket over its S3 API (`R2StorageProvider` in `src/server/lib/storage.ts`).
+
+1. Cloudflare dashboard → R2 → Create bucket (for example `boredroom-private`). Leave public access off: no public development URL, no custom domain.
+2. R2 → Manage API tokens → Create API token: permission **Object Read & Write**, applied to that one bucket. Copy the Access Key ID and the Secret Access Key (shown once). The Account ID is on the R2 overview page.
+3. Set these on the web app (Vercel → Settings → Environment Variables) **and** on the worker (`fly secrets set … -a boredroom-worker-2`): the worker reads uploaded evidence to scan it.
+
+   ```
+   STORAGE_PROVIDER=r2
+   STORAGE_BUCKET=boredroom-private
+   R2_ACCOUNT_ID=…
+   R2_ACCESS_KEY_ID=…
+   R2_SECRET_ACCESS_KEY=…
+   ```
+
+   A bucket created in a jurisdiction (EU) also needs `R2_ENDPOINT=https://<account id>.eu.r2.cloudflarestorage.com`.
+4. Redeploy, then open `/api/health`: the `storage` check reads `r2 bucket <name>` when the keys work and the bucket is there, or says which of the two is wrong.
+
+Moving from local: upload the contents of the old `STORAGE_LOCAL_DIR` to the bucket keeping the same keys (the paths under that folder). Files that were only ever on a serverless host's disk are gone; their rows answer "Not found".
+
+Another provider: implement `StorageProvider` (`put/get/stream/size/delete/exists`) against a private bucket and add its name to `storage()` and `storageConfigProblem()`.
 
 ## Malware scanning
 
