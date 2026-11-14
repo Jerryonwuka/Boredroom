@@ -1,0 +1,80 @@
+/* The timer card on the desktop (owner request, 14 November 2026). Design system v4, as the notch draws its own timer
+   (style.css): the near-black panel with a white 7.5% hairline, Inter 13/18 for the task, Geist Mono for the clock.
+   The accent rules: orange only for what is live (a running timer's dot, which breathes, and its digits) and for
+   progress (the estimate hairline). Paused is amber on the dot and grey digits; a lost connection is red on the dot.
+   No button is orange: Pause, Resume and Stop are quiet icon buttons (28px, r8). The window is transparent and exactly
+   the card's size plus 6 points of room for its shadow. Reduced motion: the dot stands still. */
+@font-face { font-family: "Inter Variable"; font-style: normal; font-display: swap; font-weight: 100 900; src: url(fonts/inter-latin-ext-wght-normal.woff2) format("woff2");
+  unicode-range: U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF; }
+@font-face { font-family: "Inter Variable"; font-style: normal; font-display: swap; font-weight: 100 900; src: url(fonts/inter-latin-wght-normal.woff2) format("woff2");
+  unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
+@font-face { font-family: "Geist Mono Variable"; font-style: normal; font-display: swap; font-weight: 100 900; src: url(fonts/geist-mono-latin-wght-normal.woff2) format("woff2");
+  unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
+
+:root {
+  color-scheme: dark;
+  /* The notch's dark tokens (style.css), copied: this page loads this file only. */
+  --background: #0f0f10;
+  --foreground: #fff;
+  --secondary: rgb(255 255 255 / .64);
+  --subtle: rgb(255 255 255 / .53);
+  --border: rgb(255 255 255 / .075);
+  --border-input: rgb(255 255 255 / .1);
+  --fill-1: rgb(255 255 255 / .043);
+  --fill-150: rgb(255 255 255 / .07);
+  --accent: #ff6c02;
+  --accent-text: #ff9a4d;
+  --ring: rgb(255 108 2);
+  --warning: hsl(38 92% 50%);
+  --danger: hsl(0 84% 60%);
+  --font-sans: "Inter Variable", "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: "Geist Mono Variable", ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; }
+body { padding: 6px; font-family: var(--font-sans); -webkit-font-smoothing: antialiased; user-select: none; -webkit-user-select: none; cursor: default; }
+
+.card { height: 100%; display: flex; flex-direction: column; justify-content: space-between; gap: 4px; padding: 10px 10px 10px 14px; border-radius: 14px;
+  background: var(--background); border: 1px solid var(--border-input); box-shadow: 0 4px 14px rgb(0 0 0 / .35); position: relative; overflow: hidden; }
+.card[hidden] { display: none; }
+
+.top, .bottom { display: flex; align-items: center; gap: 8px; min-width: 0; }
+
+.dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--danger); }
+.card[data-state="running"] .dot { background: var(--accent); animation: live-ping 2s cubic-bezier(0, 0, .2, 1) infinite; }
+.card[data-state="paused"] .dot { background: var(--warning); }
+@keyframes live-ping { 0% { box-shadow: 0 0 0 0 rgb(255 108 2 / .6); } 75%, 100% { box-shadow: 0 0 0 5px rgb(255 108 2 / 0); } }
+
+/* The task: one line, cut with an ellipsis. A button (it opens the task), so it is not part of the drag area. */
+.title { flex: 1; min-width: 0; padding: 2px 4px; margin: -2px -4px; border: 0; border-radius: 6px; background: none; color: var(--foreground);
+  font: 500 13px/18px var(--font-sans); letter-spacing: -0.01em; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+.title:hover { background: var(--fill-1); }
+
+.clock { margin: 0; flex: none; font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 22px; line-height: 28px; font-weight: 700; letter-spacing: -0.15px; color: var(--secondary); }
+.card[data-state="running"] .clock { color: var(--accent-text); }
+.state { margin: 0; flex: 1; min-width: 0; font: 400 12px/16px var(--font-sans); color: var(--secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.actions { display: flex; gap: 4px; flex: none; }
+
+.icon { width: 28px; height: 28px; flex: none; display: grid; place-items: center; padding: 0; border-radius: 8px; border: 1px solid var(--border-input); background: var(--background); color: var(--foreground); cursor: pointer;
+  transition: background-color 75ms, border-color 75ms, color 75ms; }
+.icon:hover { background: var(--fill-150); }
+.icon svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+.icon.stop svg rect { fill: currentColor; stroke: none; }
+/* Resume is drawn as a filled triangle. */
+.card[data-state="paused"] #toggle svg, .card[data-state="interrupted"] #toggle svg { fill: currentColor; stroke-width: 1; }
+.icon.quiet { width: 22px; height: 22px; border-color: transparent; background: none; color: var(--subtle); }
+.icon.quiet:hover { color: var(--foreground); background: var(--fill-1); }
+.icon.quiet svg { width: 12px; height: 12px; }
+button:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
+button:disabled { opacity: .5; cursor: default; }
+
+/* The estimate, as the notch draws it: an orange hairline along the bottom edge. */
+.est { position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: var(--fill-150); }
+.est[hidden] { display: none; }
+.est i { display: block; height: 100%; background: var(--accent); transform-origin: left center; transition: transform 1s linear; }
+
+@media (prefers-reduced-motion: reduce) {
+  .card[data-state="running"] .dot { animation: none; }
+  .est i, .icon { transition: none; }
+}

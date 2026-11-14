@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Task timer</title><link rel="stylesheet" href="timer-card.css"></head>
+<!-- The timer card on the desktop (owner request, 14 November 2026: "a floating card that lives on your desktop when
+     you're working on a task … so that you don't forget that you have a task", seen even with Boredroom minimised). Rust
+     shows this page in its own small window while a task timer runs or is paused (timer_card.rs) and calls
+     TimerCard.apply(). The page can call one command, `timer_card_press`, with one of five fixed words; the notch does
+     the work. Dragging the card anywhere but a button moves the window. -->
+<body>
+  <main class="card" id="card" data-state="idle" data-tauri-drag-region hidden>
+    <div class="top" data-tauri-drag-region>
+      <span class="dot" id="dot" aria-hidden="true"></span>
+      <button type="button" class="title" id="title" data-press="open" title="Open this task in Boredroom"></button>
+      <button type="button" class="icon quiet" data-press="hide" aria-label="Hide this card until the next timer" title="Hide until the next timer">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg>
+      </button>
+    </div>
+    <div class="bottom" data-tauri-drag-region>
+      <p class="clock" id="clock" role="timer" aria-live="off" data-tauri-drag-region>00:00:00</p>
+      <p class="state" id="state" data-tauri-drag-region></p>
+      <div class="actions">
+        <button type="button" class="icon" id="toggle" data-press="pause" aria-label="Pause the timer" title="Pause">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path id="toggle-mark" d="M5.5 3.5v9M10.5 3.5v9"/></svg>
+        </button>
+        <button type="button" class="icon stop" data-press="stop" aria-label="Stop the timer" title="Stop">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="4" y="4" width="8" height="8" rx="1.5"/></svg>
+        </button>
+      </div>
+    </div>
+    <div class="est" id="est" aria-hidden="true" hidden><i id="est-bar"></i></div>
+  </main>
+  <script src="timer-card.js"></script>
+</body></html>

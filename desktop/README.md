@@ -164,6 +164,28 @@ the fallback (**Use a code instead**); the one sign-in above is the usual way.
   streamed), and a task's answer, steps, step answers, stop and file job (`POST /api/orgs/:org/assistant/act/:id/…`);
   the generic `api` command refuses those paths.
 
+## The timer card on the desktop
+
+Owner request, 14 November 2026: "a floating card that lives on your desktop when you're working on a task … so that
+you don't forget that you have a task", seen even with Boredroom minimised. Since 0.4.0.
+
+- While a task timer runs or is paused, a small card floats over the person's other windows: the task's name, its clock,
+  Pause or Resume, and Stop. The task's name opens the task in Boredroom.
+- Drag it anywhere but a button; it stays where it was put (`timerCardAt` in the app's config, on this Mac). If that
+  place is no longer on a screen, it goes back to the top right of the main screen.
+- It goes when the timer stops. Its × hides it until the next timer. The tray's "Turn the timer card off" keeps it away
+  (`timerCard` in the config; on unless switched off).
+- It shows over full-screen apps and never takes the keyboard.
+- The notch owns the timer: it tells Rust the timer after every poll (20 seconds) and every press, and at once when the
+  person leaves or closes the Boredroom window, so a task started there shows as they turn to their work. A press on
+  the card goes back to the notch, which does what its own Pause, Resume and Stop do (Stop keeps the task for later, with
+  no note). Nothing about the card is sent to Boredroom.
+- Security: the card's window (`timer-card`) has its own capability, `capabilities/timer-card.json`: one command,
+  `timer_card_press`, with one of six fixed words, and window dragging. It can call nothing else.
+
+Code: `src-tauri/src/timer_card.rs`, `src/timer-card.{html,css,js}`, `syncTimerCard` and `timerCardPress` in
+`src/main.js`. Tests: `cargo test timer_card` and `tests/unit/notch-timer-card.test.ts`.
+
 ## Talking to Brenda (hold to talk)
 
 Off until the person turns it on (the mic button on a card, or **Turn voice on** in the tray). Then:

@@ -35,6 +35,8 @@
     "allow-look-drop-held",
     "allow-look-discard",
     "allow-set-call-state",
+    "allow-timer-card-set",
+    "allow-timer-card-press",
     "allow-set-look-rules",
     "allow-companion-set-look",
     "allow-companion-speaking",

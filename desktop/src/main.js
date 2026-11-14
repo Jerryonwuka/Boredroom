@@ -2541,6 +2541,40 @@ async function refresh() {
     // During quiet hours (phase 7a) not even this opens on its own.
     if (err?.status && err.status !== 401 && !card && !quietNow()) openCard({ kind: "error", message: err.message });
   }
+  syncTimerCard();
+}
+
+/**
+ * The timer card on the desktop (owner request, 14 November 2026: "a floating card that lives on your desktop when you're
+ * working on a task"; desktop/src-tauri/src/timer_card.rs). The notch owns the timer, so after every poll and every
+ * press it tells Rust what the timer is (or that there is none), and Rust shows or hides the card. `elapsed` is the
+ * clock now; the card counts on from there until the next word. Nothing is sent to Boredroom.
+ */
+function timerCardView() {
+  const t = config?.signedIn ? data?.timer : null;
+  if (!t || typeof t.id !== "string") return null;
+  return { id: t.id, title: typeof t.taskTitle === "string" ? t.taskTitle : "", state: t.state, elapsed: elapsed(), estimateMinutes: typeof t.estimateMinutes === "number" ? t.estimateMinutes : null };
+}
+function syncTimerCard() { invoke("timer_card_set", { view: timerCardView() }).catch(() => {}); }
+
+/**
+ * A press on the card, passed on by Rust as one of four words. Pause, Resume and Stop do what the notch's own buttons
+ * do (Stop keeps the task for later, with no note), without opening the notch; Open shows the task in Boredroom.
+ * Whatever happens, the next poll puts the card right.
+ */
+async function timerCardPress(word) {
+  const t = config?.signedIn ? data?.timer : null;
+  if (!t) return syncTimerCard();
+  try {
+    if (word === "open") { await invoke("open_in_browser", { path: `/app/${encodeURIComponent(config.workspaceSlug)}/tasks/${encodeURIComponent(t.taskId)}` }); return; }
+    if (word === "pause" && t.state === "running") await call("POST", org(`/sessions/${t.id}/pause`), { expectedVersion: t.version });
+    else if (word === "resume" && t.state !== "running") await call("POST", org(`/sessions/${t.id}/resume`), { expectedVersion: t.version });
+    else if (word === "stop") await call("POST", org(`/sessions/${t.id}/stop`), { expectedVersion: t.version, note: "", outcome: "continue_later" });
+    else return syncTimerCard();
+    Sound.play(word === "stop" ? "success" : "tick");
+  } catch { Sound.play("error"); }
+  await refresh();
+  if (card?.kind === "home") render();
 }
 
 // nextNotification() is gone (owner decision, 9 October 2026: notch notifications, "A plus the grafts"): it opened the
@@ -8003,6 +8037,11 @@ listen("brenda://cursor", ({ payload }) => {
 });
 listen("brenda://sounds", ({ payload }) => { soundsOn = payload !== false; Sound.setEnabled(payload); if (payload) Sound.play("tick"); kickCalls(); });
 listen("brenda://always-visible", ({ payload }) => { alwaysVisible = !!payload; updateTuck(); });
+listen("brenda://timer-card", ({ payload }) => { if (["open", "pause", "resume", "stop"].includes(payload)) timerCardPress(payload); });
+// The person left the Boredroom window (Rust's word): a task started or stopped there shows on the card now, not at the
+// next poll. At most once every three seconds.
+let timerCheckedAt = 0;
+listen("brenda://timer-check", () => { if (!config?.signedIn || Date.now() - timerCheckedAt < 3000) return; timerCheckedAt = Date.now(); refresh(); });
 // The front app went full screen or came out of it, or its window now covers the screen or no longer does (island.rs).
 listen("brenda://covered", ({ payload }) => {
   const now = payload === true;

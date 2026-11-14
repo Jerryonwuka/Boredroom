@@ -36,7 +36,9 @@
 //!
 //! The app's commands are allowed only to the notch window (an app manifest in `build.rs` and `capabilities/`): the
 //! companion, ring and outline windows show model text and can call nothing, so no page that shows model text can
-//! ever press Yes.
+//! ever press Yes. The timer card on the desktop (owner request, 14 November 2026; `timer_card.rs`) shows a task's
+//! name and may call one command of its own, which can only pause, resume or stop the person's timer, open the task
+//! or hide the card.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -77,6 +79,7 @@ mod overlay;
 mod plan;
 mod policy;
 mod risk;
+mod timer_card;
 mod updater;
 mod voice;
 mod webauth;
@@ -158,6 +161,12 @@ struct Config {
     /// The Boredroom window has opened once on its own (the first launch).
     #[serde(default)]
     first_run_done: bool,
+    /// The timer card on the desktop (owner request, 14 November 2026; timer_card.rs): None = on.
+    #[serde(default)]
+    timer_card: Option<bool>,
+    /// Where the person left the card (the window's top-left corner, physical pixels), on this Mac.
+    #[serde(default)]
+    timer_card_at: Option<(i32, i32)>,
 }
 
 /// macOS's answer for each folder setup asked about: "granted" or "denied" (None: not asked).
@@ -378,6 +387,7 @@ fn local_sign_out(app: &AppHandle) {
     }
     dashboard::update(app, |f| f.last_path = None);
     forget_all(app, "signout");
+    timer_card::clear(app);
     companion::wake(app);
     let _ = app.emit("brenda://signed-out", ());
     refresh_tray(app);
@@ -693,6 +703,8 @@ async fn focus_notch(window: WebviewWindow) -> Result<(), String> {
 }
 
 struct SoundMenu(MenuItem<tauri::Wry>);
+/// The tray's timer card switch (timer_card.rs).
+struct TimerCardMenu(MenuItem<tauri::Wry>);
 struct VisibleMenu(MenuItem<tauri::Wry>);
 /// The tray's Hide/Show item, so a look that shows the notch again keeps its words right.
 struct ToggleMenu(MenuItem<tauri::Wry>);
@@ -910,6 +922,12 @@ fn tray_menu_event(app: &AppHandle, id: &str, toggle_item: &MenuItem<tauri::Wry>
             }
             let _ = app.emit("brenda://sounds", !c.muted);
         }
+        "timer_card" => {
+            let on = timer_card::toggle(app);
+            if let Some(item) = app.try_state::<TimerCardMenu>() {
+                let _ = item.0.set_text(timer_card::menu_label(on));
+            }
+        }
         "visible" => {
             let state = app.state::<AppState>();
             let mut c = state.config.lock().unwrap();
@@ -1022,6 +1040,7 @@ pub fn run() {
             app.manage(act::Act::default());
             app.manage(front::Front::default());
             app.manage(jobs::Jobs::default());
+            app.manage(timer_card::TimerCard::default());
             // Brenda in Chrome (phase 2): the socket the extension's relay connects to, for the life of the app.
             let hub = browser::Hub::default();
             browser::listen(hub.clone());
@@ -1095,10 +1114,12 @@ pub fn run() {
             let always = app.state::<AppState>().config.lock().unwrap().always_visible;
             let visible_item = MenuItem::with_id(app, "visible", visible_label(always, &companion::name(&handle)), true, None::<&str>)?;
             app.manage(VisibleMenu(visible_item.clone()));
+            let timer_item = MenuItem::with_id(app, "timer_card", timer_card::menu_label(timer_card::enabled(&handle)), true, None::<&str>)?;
+            app.manage(TimerCardMenu(timer_item.clone()));
             let signout = MenuItem::with_id(app, "signout", "Sign out of Boredroom", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit Boredroom", true, None::<&str>)?;
             let sep = PredefinedMenuItem::separator(app)?;
-            let menu = Menu::with_items(app, &[&open, &toggle, &voice_item, &screen_help, &sound_item, &visible_item, &sep, &signout, &quit])?;
+            let menu = Menu::with_items(app, &[&open, &toggle, &voice_item, &screen_help, &sound_item, &visible_item, &timer_item, &sep, &signout, &quit])?;
             // "Restart to update" joins the top of the menu only once an update is downloaded (updater.rs).
             app.manage(updater::UpdateMenu {
                 menu: menu.clone(),
@@ -1175,6 +1196,8 @@ pub fn run() {
             look::look_drop_held,
             look::look_discard,
             look::set_call_state,
+            timer_card::timer_card_set,
+            timer_card::timer_card_press,
             look::set_look_rules,
             companion_set_look,
             companion_speaking,
@@ -1278,6 +1301,8 @@ const COMMANDS: &[&str] = &[
     "look_drop_held",
     "look_discard",
     "set_call_state",
+    "timer_card_set",
+    "timer_card_press",
     "set_look_rules",
     "companion_set_look",
     "companion_speaking",
@@ -1640,6 +1665,7 @@ mod tests {
                 assert!(perms.contains(&format!("allow-{}", c.replace('_', "-"))), "{c} is registered but not allowed to the notch");
             }
             assert_eq!(cap["windows"], serde_json::json!(["notch"]));
+            // The timer card's own capability is one command and dragging (timer_card.rs's test holds it to that).
             let text = cap.to_string();
             for w in ["companion", "companion-ring", "look-outline", "file-render"] {
                 assert!(!cap["windows"].as_array().unwrap().iter().any(|x| x == w), "{w} must have no capability");

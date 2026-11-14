@@ -40,6 +40,8 @@ fn main() {
         "look_drop_held",
         "look_discard",
         "set_call_state",
+        "timer_card_set",
+        "timer_card_press",
         "set_look_rules",
         "companion_set_look",
         "companion_speaking",

@@ -641,7 +641,13 @@ fn window_event(app: &AppHandle, e: &WindowEvent) {
             save_frame_now(app);
         }
         WindowEvent::Moved(_) | WindowEvent::Resized(_) => save_frame_soon(app),
-        WindowEvent::Destroyed => schedule_accessory(app),
+        WindowEvent::Destroyed => {
+            schedule_accessory(app);
+            crate::timer_card::look_again(app);
+        }
+        // The person started a task here and turned to their work: the timer card should be there now, not at the
+        // notch's next poll (owner request, 14 November 2026).
+        WindowEvent::Focused(false) => crate::timer_card::look_again(app),
         _ => {}
     }
 }

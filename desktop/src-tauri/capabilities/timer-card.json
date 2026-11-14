@@ -1,0 +1,12 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "timer-card",
+  "description": "The timer card on the desktop (owner request, 14 November 2026) may send its presses (one of six fixed words: timer_card.rs) and be dragged. Nothing else: it shows a task's name, which may be Brenda's words or someone else's, so it can call no other command.",
+  "windows": [
+    "timer-card"
+  ],
+  "permissions": [
+    "allow-timer-card-press",
+    "core:window:allow-start-dragging"
+  ]
+}
