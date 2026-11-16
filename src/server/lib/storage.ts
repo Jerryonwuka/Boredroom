@@ -47,6 +47,9 @@ export class LocalStorageProvider implements StorageProvider {
   async exists(key: string) { return existsSync(this.path(key)); }
 }
 
+/** The one file the health check writes and removes. */
+const HEALTH_KEY = "health/write-check.txt";
+
 export type R2Settings = { accountId: string; accessKeyId: string; secretAccessKey: string; bucket: string; endpoint?: string };
 
 /**
@@ -113,14 +116,21 @@ export class R2StorageProvider implements StorageProvider {
   }
   async delete(key: string) { const res = await this.send("delete a file", key, { method: "DELETE" }, true); await res?.body?.cancel().catch(() => undefined); }
   async exists(key: string) { return (await this.send("look up a file", key, { method: "HEAD" }, true)) !== null; }
-  /** One signed request to the bucket itself: the keys work and the bucket is there. Never throws. */
+  /**
+   * The keys work, the bucket is there, and a file can be saved: one signed request to the bucket itself, then one small
+   * file written and removed (owner report, 16 November 2026: the bucket answered while every upload failed, and the
+   * health check stayed green). Never throws.
+   */
   async check(): Promise<{ ok: boolean; detail: string }> {
     try {
       const res = await this.client.fetch(this.base, { method: "HEAD" });
       await res.body?.cancel().catch(() => undefined);
-      if (res.ok) return { ok: true, detail: "reachable" };
-      return { ok: false, detail: res.status === 404 ? "the bucket was not found" : res.status === 401 || res.status === 403 ? "the keys were refused" : `status ${res.status}` };
+      if (!res.ok) return { ok: false, detail: res.status === 404 ? "the bucket was not found" : res.status === 401 || res.status === 403 ? "the keys were refused" : `status ${res.status}` };
     } catch { return { ok: false, detail: "could not be reached" }; }
+    try { await this.put(HEALTH_KEY, Buffer.from("ok"), "text/plain"); }
+    catch (err) { return { ok: false, detail: `reachable, but a file could not be saved (${/status \d+/.exec((err as Error).message)?.[0] ?? "no answer"})` }; }
+    await this.delete(HEALTH_KEY).catch(() => undefined);
+    return { ok: true, detail: "reachable, files can be saved" };
   }
 }
 

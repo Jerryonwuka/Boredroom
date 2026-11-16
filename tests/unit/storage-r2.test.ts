@@ -93,7 +93,20 @@ describe("R2 storage", () => {
     await expect(store.get(KEY)).rejects.toThrow("File storage (R2) refused to read a file: status 403");
     expect(await store.check()).toEqual({ ok: false, detail: "the keys were refused" });
     refuse = 0;
-    expect(await store.check()).toEqual({ ok: true, detail: "reachable" });
+    expect(await store.check()).toEqual({ ok: true, detail: "reachable, files can be saved" });
+    expect(objects.has("health/write-check.txt")).toBe(false);
+  });
+
+  it("the check saves a file, so a bucket that answers but refuses uploads is not called healthy (owner report, 16 November 2026)", async () => {
+    const store = r2();
+    const real = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const req = new Request(input, init);
+      return req.method === "HEAD" ? new Response(null, { status: 200 }) : real(req);
+    }) as typeof fetch;
+    refuse = 403;
+    try { expect(await store.check()).toEqual({ ok: false, detail: "reachable, but a file could not be saved (status 403)" }); }
+    finally { globalThis.fetch = real; }
   });
 
   it("a file goes up with its length stated, never in chunks (owner report, 16 November 2026: R2 answered 411 on Vercel)", async () => {
