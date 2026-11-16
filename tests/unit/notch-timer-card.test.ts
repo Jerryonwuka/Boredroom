@@ -185,6 +185,14 @@ describe("the card follows the timer, not the notch's workspace (owner report, 1
     expect(body("signedOut")).toContain("away = null");
   });
 
+  it("a running timer is kept alive from the notch after every poll; a paused or interrupted one is left alone", () => {
+    const keep = body("keepTimerAlive");
+    expect(keep).toContain('t.state !== "running"');
+    expect(keep).toContain("`/api/orgs/${c.slug}/sessions/${t.id}/heartbeat`");
+    expect(keep).toContain("SLUG.test(");
+    expect(body("refresh")).toMatch(/syncTimerCard\(\);\s*keepTimerAlive\(\);/);
+  });
+
   it("the presses go to the timer's own workspace", () => {
     const press = body("timerCardPress");
     expect(press).toContain("`/api/orgs/${c.slug}${path}`");

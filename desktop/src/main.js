@@ -2543,6 +2543,7 @@ async function refresh() {
   }
   await findAwayTimer();
   syncTimerCard();
+  keepTimerAlive();
 }
 
 /**
@@ -2567,6 +2568,19 @@ async function findAwayTimer() {
     const t = (await call("GET", `/api/orgs/${slug}/sessions/current`))?.session;
     away = t && typeof t.id === "string" ? { slug, timer: t, offsetMs: Date.parse(t.serverNow) - Date.now() } : null;
   } catch { /* a missed read keeps what the card shows; the next poll asks again */ }
+}
+/**
+ * The notch keeps a running timer alive (owner report, 16 November 2026: a timer started in the Boredroom window was
+ * "interrupted" after a minute and a half with the window behind another app). Only the page sent the heartbeat, and a
+ * page behind other windows, minimised or closed sends it late or not at all; the card is there for exactly that time.
+ * So after every poll (20 seconds; the server waits 90) the notch says the timer is still on the clock. A paused or
+ * interrupted timer is left alone, and so is everything once this Mac sleeps or Boredroom quits: then it is interrupted,
+ * as before.
+ */
+function keepTimerAlive() {
+  const c = cardTimer(), t = c?.t;
+  if (!t || t.state !== "running" || typeof t.id !== "string" || !SLUG.test(String(c.slug)) || !/^[0-9a-f-]{8,64}$/i.test(t.id)) return;
+  call("POST", `/api/orgs/${c.slug}/sessions/${t.id}/heartbeat`).catch(() => {});
 }
 /** The timer the card shows, with its workspace and that server's clock: this workspace's first, else the one elsewhere. */
 function cardTimer() {
