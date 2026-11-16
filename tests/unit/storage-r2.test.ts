@@ -13,6 +13,7 @@ const seen: { method: string; path: string; auth: string; sha: string }[] = [];
 let server: Server;
 let endpoint = "";
 let refuse = 0;
+let busy = 0; // this many requests are answered 503 first
 
 beforeAll(async () => {
   server = createServer((req, res) => {
@@ -21,11 +22,14 @@ beforeAll(async () => {
     req.on("end", () => {
       const path = decodeURIComponent(new URL(req.url ?? "/", "http://x").pathname);
       seen.push({ method: req.method ?? "", path, auth: String(req.headers.authorization ?? ""), sha: String(req.headers["x-amz-content-sha256"] ?? "") });
+      if (busy > 0) { busy--; res.writeHead(503).end(); return; }
       if (refuse) { res.writeHead(refuse, { "content-type": "application/xml" }).end("<Error><Code>AccessDenied</Code><Message>secret words from the provider</Message></Error>"); return; }
       if (path === "/bucket") { res.writeHead(200).end(); return; }
       if (!path.startsWith("/bucket/")) { res.writeHead(404).end(); return; }
       const key = path.slice("/bucket/".length);
       const found = objects.get(key);
+      // As R2: a file must come with its length (a body sent in chunks is refused, 411).
+      if (req.method === "PUT" && req.headers["content-length"] === undefined) { res.writeHead(411).end(); return; }
       if (req.method === "PUT") { objects.set(key, { bytes: Buffer.concat(chunks), type: String(req.headers["content-type"] ?? "") }); res.writeHead(200).end(); return; }
       if (req.method === "DELETE") { objects.delete(key); res.writeHead(204).end(); return; }
       if (!found) { res.writeHead(404).end(req.method === "HEAD" ? undefined : "<Error><Code>NoSuchKey</Code></Error>"); return; }
@@ -37,7 +41,7 @@ beforeAll(async () => {
   endpoint = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 });
 afterAll(async () => { await new Promise((r) => server.close(r)); });
-afterEach(() => { refuse = 0; seen.length = 0; });
+afterEach(() => { refuse = 0; busy = 0; seen.length = 0; });
 
 const r2 = () => new R2StorageProvider({ accountId: "acct", accessKeyId: "test-access-key", secretAccessKey: "test-secret-key", bucket: "bucket", endpoint });
 const KEY = "org/0123456789abcdef0123456789abcdef/voice/note-1.webm";
@@ -90,6 +94,33 @@ describe("R2 storage", () => {
     expect(await store.check()).toEqual({ ok: false, detail: "the keys were refused" });
     refuse = 0;
     expect(await store.check()).toEqual({ ok: true, detail: "reachable" });
+  });
+
+  it("a file goes up with its length stated, never in chunks (owner report, 16 November 2026: R2 answered 411 on Vercel)", async () => {
+    const store = r2();
+    // A wrapped fetch that sends every body in chunks, as the host's did: the upload must not depend on it.
+    const real = globalThis.fetch;
+    globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+      const req = new Request(input, init);
+      if (req.method !== "PUT") return real(req);
+      return real(req.url, { method: "PUT", headers: req.headers, body: req.body, duplex: "half" } as RequestInit);
+    }) as typeof fetch;
+    try {
+      await store.put(KEY, Buffer.from("with a length"), "text/plain");
+      expect(objects.get(KEY)!.bytes.toString()).toBe("with a length");
+    } finally { globalThis.fetch = real; await store.delete(KEY); }
+  });
+
+  it("a busy R2 is tried twice more, then the upload fails with the status", async () => {
+    const store = r2();
+    busy = 2;
+    await store.put(KEY, Buffer.from("third time"), "text/plain");
+    expect(objects.get(KEY)!.bytes.toString()).toBe("third time");
+    expect(seen.filter((s) => s.method === "PUT")).toHaveLength(3);
+    seen.length = 0; busy = 3;
+    await expect(store.put(KEY, Buffer.from("x"), "text/plain")).rejects.toThrow("File storage (R2) refused to save a file: status 503");
+    expect(seen).toHaveLength(3);
+    await store.delete(KEY);
   });
 
   it("an unsafe key never leaves this computer", async () => {

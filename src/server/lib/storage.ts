@@ -1,4 +1,6 @@
 import { createHash } from "node:crypto";
+import { request as httpRequest } from "node:http";
+import { request as httpsRequest } from "node:https";
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync, createReadStream } from "node:fs";
 import { dirname, join, normalize, resolve } from "node:path";
 import { Readable } from "node:stream";
@@ -67,12 +69,33 @@ export class R2StorageProvider implements StorageProvider {
     if (!res.ok) { await res.body?.cancel().catch(() => undefined); throw new Error(`File storage (R2) refused to ${step}: status ${res.status}`); }
     return res;
   }
+  /**
+   * A file goes up with Node's own http client and a stated Content-Length, not fetch (owner report, 16 November 2026:
+   * every upload on Vercel failed, R2 answering 411 Length Required): the fetch a host or framework wraps may send a
+   * body in chunks with no length, which R2 refuses. The request is signed as before, the body's own hash with it (the
+   * library's default for S3 leaves the body unsigned). A busy or failing R2 (429, 5xx) or a dropped connection is tried
+   * twice more.
+   */
   async put(key: string, bytes: Buffer, contentType: string) {
-    // The body's own hash is signed with the request (the library's default for S3 leaves the body unsigned).
     const sha256 = createHash("sha256").update(bytes).digest("hex");
-    const res = await this.send("save a file", key, { method: "PUT", body: new Uint8Array(bytes), headers: { "content-type": contentType || "application/octet-stream", "x-amz-content-sha256": sha256 } });
-    await res!.body?.cancel().catch(() => undefined);
-    return { size: bytes.length, sha256 };
+    const url = new URL(this.url(key));
+    let status = 0;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (attempt) await new Promise((r) => setTimeout(r, 300 * attempt));
+      // Signed afresh each time: the signature carries the time.
+      const signed = await this.client.sign(url.href, { method: "PUT", headers: { "content-type": contentType || "application/octet-stream", "x-amz-content-sha256": sha256 } });
+      const headers: Record<string, string> = { "content-length": String(bytes.length) };
+      signed.headers.forEach((v, k) => { headers[k] = v; });
+      status = await new Promise<number>((done) => {
+        const req = (url.protocol === "http:" ? httpRequest : httpsRequest)(url, { method: "PUT", headers, timeout: 60_000 }, (res) => { res.resume(); res.on("end", () => done(res.statusCode ?? 0)); res.on("error", () => done(0)); });
+        req.on("timeout", () => req.destroy(new Error("timeout")));
+        req.on("error", () => done(0));
+        req.end(bytes);
+      });
+      if (status >= 200 && status < 300) return { size: bytes.length, sha256 };
+      if (status !== 0 && status !== 429 && status < 500) break;
+    }
+    throw new Error(`File storage (R2) refused to save a file: ${status ? `status ${status}` : "it could not be reached"}`);
   }
   async get(key: string) {
     const res = await this.send("read a file", key, { method: "GET" }, true);
