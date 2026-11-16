@@ -2479,7 +2479,7 @@ async function signedOut() {
   config = await invoke("sign_out"); // which also stops her; its `spoken` ends her talking face
   lookStatus = null; lookOffAt = null; // Rust's sign_out turns screen help off: consent is the signed-in person's (contract B.11)
   forgetPhase2(); // and the opt-ins to act and work on files, with any task (phase 2)
-  data = null; card = null; link = null; talk = []; chat = newChat(); cached = null;
+  data = null; away = null; card = null; link = null; talk = []; chat = newChat(); cached = null;
   talkWaiting = false; clearTimeout(talkWaitTimer); clearTimeout(closeTimer);
   forgetNotices();
   applyQuiet(); // no one's quiet hours while signed out
@@ -2541,6 +2541,7 @@ async function refresh() {
     // During quiet hours (phase 7a) not even this opens on its own.
     if (err?.status && err.status !== 401 && !card && !quietNow()) openCard({ kind: "error", message: err.message });
   }
+  await findAwayTimer();
   syncTimerCard();
 }
 
@@ -2549,27 +2550,53 @@ async function refresh() {
  * working on a task"; desktop/src-tauri/src/timer_card.rs). The notch owns the timer, so after every poll and every
  * press it tells Rust what the timer is (or that there is none), and Rust shows or hides the card. `elapsed` is the
  * clock now; the card counts on from there until the next word. Nothing is sent to Boredroom.
+ *
+ * The card follows the timer, not the notch's workspace (owner report, 16 November 2026: a timer started in the
+ * Boredroom window, in another workspace than the one the notch is linked to, showed no card). A person has one open
+ * timer at most, across all their workspaces: when this workspace has none, `sessions/current` says where it is
+ * (`elsewhere`), and the same route there gives the timer. The notch's own bar and cards stay with its workspace.
  */
+const SLUG = /^[a-z0-9-]{1,64}$/;
+let away = null;            // the person's timer in another workspace: { slug, timer, offsetMs }, or null
+async function findAwayTimer() {
+  if (!config?.signedIn || !data || data.timer) { away = null; return; }
+  try {
+    const here = await call("GET", org("/sessions/current"));
+    const slug = here?.elsewhere?.organisationSlug;
+    if (typeof slug !== "string" || !SLUG.test(slug) || slug === config.workspaceSlug) { away = null; return; }
+    const t = (await call("GET", `/api/orgs/${slug}/sessions/current`))?.session;
+    away = t && typeof t.id === "string" ? { slug, timer: t, offsetMs: Date.parse(t.serverNow) - Date.now() } : null;
+  } catch { /* a missed read keeps what the card shows; the next poll asks again */ }
+}
+/** The timer the card shows, with its workspace and that server's clock: this workspace's first, else the one elsewhere. */
+function cardTimer() {
+  if (!config?.signedIn) return null;
+  if (data?.timer) return { t: data.timer, slug: config.workspaceSlug, off: offsetMs };
+  return away ? { t: away.timer, slug: away.slug, off: away.offsetMs } : null;
+}
 function timerCardView() {
-  const t = config?.signedIn ? data?.timer : null;
+  const c = cardTimer(), t = c?.t;
   if (!t || typeof t.id !== "string") return null;
-  return { id: t.id, title: typeof t.taskTitle === "string" ? t.taskTitle : "", state: t.state, elapsed: elapsed(), estimateMinutes: typeof t.estimateMinutes === "number" ? t.estimateMinutes : null };
+  const live = t.state === "running" && t.openIntervalStartedAt;
+  const seconds = t.confirmedSeconds + (live ? Math.max(0, Math.floor((Date.now() + c.off - Date.parse(t.serverNow)) / 1000)) : 0);
+  return { id: t.id, title: typeof t.taskTitle === "string" ? t.taskTitle : "", state: t.state, elapsed: seconds, estimateMinutes: typeof t.estimateMinutes === "number" ? t.estimateMinutes : null };
 }
 function syncTimerCard() { invoke("timer_card_set", { view: timerCardView() }).catch(() => {}); }
 
 /**
  * A press on the card, passed on by Rust as one of four words. Pause, Resume and Stop do what the notch's own buttons
- * do (Stop keeps the task for later, with no note), without opening the notch; Open shows the task in Boredroom.
- * Whatever happens, the next poll puts the card right.
+ * do (Stop keeps the task for later, with no note), without opening the notch; Open shows the task in Boredroom. Each
+ * goes to the timer's own workspace. Whatever happens, the next poll puts the card right.
  */
 async function timerCardPress(word) {
-  const t = config?.signedIn ? data?.timer : null;
+  const c = cardTimer(), t = c?.t;
   if (!t) return syncTimerCard();
+  const at = (path) => `/api/orgs/${c.slug}${path}`;
   try {
-    if (word === "open") { await invoke("open_in_browser", { path: `/app/${encodeURIComponent(config.workspaceSlug)}/tasks/${encodeURIComponent(t.taskId)}` }); return; }
-    if (word === "pause" && t.state === "running") await call("POST", org(`/sessions/${t.id}/pause`), { expectedVersion: t.version });
-    else if (word === "resume" && t.state !== "running") await call("POST", org(`/sessions/${t.id}/resume`), { expectedVersion: t.version });
-    else if (word === "stop") await call("POST", org(`/sessions/${t.id}/stop`), { expectedVersion: t.version, note: "", outcome: "continue_later" });
+    if (word === "open") { await invoke("open_in_browser", { path: `/app/${encodeURIComponent(c.slug)}/tasks/${encodeURIComponent(t.taskId)}` }); return; }
+    if (word === "pause" && t.state === "running") await call("POST", at(`/sessions/${t.id}/pause`), { expectedVersion: t.version });
+    else if (word === "resume" && t.state !== "running") await call("POST", at(`/sessions/${t.id}/resume`), { expectedVersion: t.version });
+    else if (word === "stop") await call("POST", at(`/sessions/${t.id}/stop`), { expectedVersion: t.version, note: "", outcome: "continue_later" });
     else return syncTimerCard();
     Sound.play(word === "stop" ? "success" : "tick");
   } catch { Sound.play("error"); }

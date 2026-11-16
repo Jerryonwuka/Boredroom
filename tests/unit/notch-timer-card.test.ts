@@ -169,3 +169,27 @@ describe("presses", () => {
     expect(html.match(/data-press="(\w+)"/g)).toEqual(['data-press="open"', 'data-press="hide"', 'data-press="pause"', 'data-press="stop"']);
   });
 });
+
+describe("the card follows the timer, not the notch's workspace (owner report, 16 November 2026)", () => {
+  const src = file("desktop/src/main.js");
+  const body = (name: string) => { const at = src.indexOf(`function ${name}(`); return src.slice(at, src.indexOf("\n}\n", at)); };
+
+  it("with no timer here, the notch asks where it is and reads it there, after every poll", () => {
+    const find = body("findAwayTimer");
+    expect(find).toContain('org("/sessions/current")');
+    expect(find).toContain("here?.elsewhere?.organisationSlug");
+    expect(find).toContain("SLUG.test(slug)"); // the slug goes into a path: only a workspace's own letters
+    expect(find).toContain("`/api/orgs/${slug}/sessions/current`");
+    expect(find).toMatch(/data\.timer\) \{ away = null; return; \}/); // a timer here: nothing is asked
+    expect(body("refresh")).toMatch(/await findAwayTimer\(\);\s*syncTimerCard\(\);/);
+    expect(body("signedOut")).toContain("away = null");
+  });
+
+  it("the presses go to the timer's own workspace", () => {
+    const press = body("timerCardPress");
+    expect(press).toContain("`/api/orgs/${c.slug}${path}`");
+    expect(press).toContain("`/app/${encodeURIComponent(c.slug)}/tasks/");
+    expect(press).not.toContain("org(");
+    expect(body("cardTimer")).toContain("if (data?.timer) return { t: data.timer, slug: config.workspaceSlug, off: offsetMs };");
+  });
+});
