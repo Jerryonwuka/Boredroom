@@ -12,7 +12,7 @@ import { createHmac } from "node:crypto";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { resetTestDatabase, adminQuery } from "../helpers/db";
 import { buildCompany, type CompanyFixture } from "@/server/services/fixtures";
-import { recordPayment, verifyAndRecord, verifyPaystackSignature, processPaystackEvent, markRefunded } from "@/server/admin/billing";
+import { recordPayment, verifyAndRecord, verifyPaystackSignature, processPaystackEvent, markRefunded, startCheckout, orgBilling } from "@/server/admin/billing";
 import { resolveEntitlements } from "@/server/lib/entitlements";
 import { createVerifiedUser } from "@/server/services/fixtures";
 import { permissionsFor } from "@/server/admin/permissions";
@@ -234,5 +234,42 @@ describe("issue 9: webhooks verify only with the current mode's key", () => {
     expect((await txRow(ref))!.status).toBe("success");
     const ev = (await adminQuery<{ error: string | null }>(`SELECT error FROM paystack_events WHERE event_key = $1`, ["refund.processed:7002"]))[0];
     expect(ev.error).toMatch(/domain/i);
+  });
+});
+
+describe("dollar prices paid in naira (owner decision, 16 November 2026)", () => {
+  const setBilling = async (value: Record<string, unknown> | null) => {
+    await adminQuery(`DELETE FROM platform_settings WHERE key = 'billing'`);
+    if (value) await adminQuery(`INSERT INTO platform_settings(key, value) VALUES ('billing', $1)`, [JSON.stringify(value)]);
+    await allSettings(true);
+  };
+  let before: { currency: string; monthly_price: number };
+  beforeAll(async () => { before = (await adminQuery<{ currency: string; monthly_price: number }>(`SELECT currency, monthly_price FROM plans WHERE id = $1`, [proId]))[0]; });
+  afterAll(async () => { await adminQuery(`UPDATE plans SET currency = $2, monthly_price = $3 WHERE id = $1`, [proId, before.currency, before.monthly_price]); await setBilling(null); });
+
+  it("checkout asks Paystack for the naira amount, stores it, and that payment (not a dollar one) activates the plan", async () => {
+    await adminQuery(`UPDATE plans SET currency = 'USD', monthly_price = 1500 WHERE id = $1`, [proId]);
+    await setBilling({ trial_days: 14, grace_days: 3, charge_currency: "NGN", usd_rate: 1600 });
+    expect((await orgBilling(a.ownerCtx)).charge).toEqual({ currency: "NGN", usdRate: 1600 });
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ status: true, data: { authorization_url: "https://checkout.paystack.com/made-up", access_code: "x", reference: "x" } }));
+    const r = await startCheckout(a.ownerCtx, { planId: proId, interval: "monthly" });
+    if (r.free) throw new Error("expected a paid checkout");
+    const sent = JSON.parse(String(fetchSpy.mock.calls[0][1]?.body)) as { amount: number; currency: string };
+    expect({ amount: sent.amount, currency: sent.currency }).toEqual({ amount: 2_400_000, currency: "NGN" });
+    expect((await adminQuery<{ amount: number; currency: string }>(`SELECT amount::int AS amount, currency FROM payment_transactions WHERE reference = $1`, [r.reference]))[0]).toEqual({ amount: 2_400_000, currency: "NGN" });
+    // Fifteen dollars' worth of cents reported in dollars is not the payment asked for.
+    await withSystem((db) => recordPayment(db, paid(r.reference, { amount: 1500, currency: "USD" })));
+    expect((await txRow(r.reference))?.status).toBe("pending");
+    await withSystem((db) => recordPayment(db, paid(r.reference, { amount: 2_400_000, currency: "NGN" })));
+    expect((await txRow(r.reference))?.status).toBe("success");
+    expect((await sub(a.ownerCtx.org.id))?.plan_id).toBe(proId);
+  });
+
+  it("with no rate set, a dollar plan is sent to Paystack in dollars as before", async () => {
+    await setBilling({ trial_days: 14, grace_days: 3 });
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ status: true, data: { authorization_url: "https://checkout.paystack.com/made-up", access_code: "x", reference: "x" } }));
+    await startCheckout(b.ownerCtx, { planId: proId, interval: "monthly" });
+    const sent = JSON.parse(String(fetchSpy.mock.calls[0][1]?.body)) as { amount: number; currency: string };
+    expect({ amount: sent.amount, currency: sent.currency }).toEqual({ amount: 1500, currency: "USD" });
   });
 });

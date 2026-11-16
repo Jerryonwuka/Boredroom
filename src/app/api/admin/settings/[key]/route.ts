@@ -7,7 +7,10 @@ import { setSetting } from "@/server/admin/settings";
 const SCHEMAS: Record<string, z.ZodTypeAny> = {
   general: z.object({ platform_name: z.string().trim().min(1).max(60), support_email: z.string().trim().email().or(z.literal("")), currency: z.string().trim().toUpperCase().length(3) }),
   landing: z.object({ headline: z.string().trim().max(120), subheadline: z.string().trim().max(300), cta: z.string().trim().max(40) }),
-  billing: z.object({ trial_days: z.number().int().min(0).max(365), grace_days: z.number().int().min(0).max(60) }),
+  // charge_currency "" charges plans as priced; a currency needs its rate (lib/charge.ts).
+  billing: z.object({ trial_days: z.number().int().min(0).max(365), grace_days: z.number().int().min(0).max(60), charge_currency: z.string().trim().toUpperCase().regex(/^([A-Z]{3})?$/, "Use a three-letter currency code, like NGN").default(""), usd_rate: z.number().min(0).max(10_000_000).default(0) })
+    .refine((v) => !v.charge_currency || v.usd_rate > 0, { message: "Enter how much one US dollar costs in that currency.", path: ["usd_rate"] })
+    .refine((v) => v.charge_currency !== "USD", { message: "Dollar prices are already charged in dollars; leave this blank.", path: ["charge_currency"] }),
   feature_flags: z.record(z.string().regex(/^[A-Z_]{3,40}$/), z.boolean()),
 };
 

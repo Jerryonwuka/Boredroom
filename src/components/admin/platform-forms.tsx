@@ -97,11 +97,15 @@ export function LandingSettingsForm({ value }: { value: LandingSettings }) {
 
 export function BillingSettingsForm({ value }: { value: BillingSettings }) {
   return (
-    <JsonForm path="/api/admin/settings/billing" method="PUT" transform={(d) => ({ value: { trial_days: Number(d.trial_days), grace_days: Number(d.grace_days) } })}>
+    <JsonForm path="/api/admin/settings/billing" method="PUT" transform={(d) => ({ value: { trial_days: Number(d.trial_days), grace_days: Number(d.grace_days), charge_currency: String(d.charge_currency ?? "").trim().toUpperCase(), usd_rate: Number(d.usd_rate) || 0 } })}>
       <div className="grid max-w-xl gap-3 sm:grid-cols-2">
         <Labelled label="Default trial" hint="days"><input name="trial_days" type="number" min={0} max={365} defaultValue={value.trial_days} className={inputCls} /></Labelled>
         <Labelled label="Grace after period end" hint="days"><input name="grace_days" type="number" min={0} max={60} defaultValue={value.grace_days} className={inputCls} /></Labelled>
+        {/* Dollar prices paid in another currency (lib/charge.ts). */}
+        <Labelled label="Charge dollar prices in" hint="currency code, blank for dollars"><input name="charge_currency" maxLength={3} placeholder="NGN" defaultValue={value.charge_currency ?? ""} className={cn(inputCls, "uppercase")} /></Labelled>
+        <Labelled label="One US dollar costs" hint="in that currency"><input name="usd_rate" type="number" min={0} step="0.01" placeholder="1600" defaultValue={value.usd_rate || ""} className={inputCls} /></Labelled>
       </div>
+      <p className={cn(subCls, "max-w-xl")}>Plans priced in dollars keep their dollar prices on the site. At checkout the person is shown and charged the amount in this currency at this rate, rounded to a whole unit. A payment already started keeps the rate it started with.</p>
     </JsonForm>
   );
 }

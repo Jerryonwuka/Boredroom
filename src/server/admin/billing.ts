@@ -14,6 +14,8 @@ import { AppError, invalid, notFound, forbidden } from "@/server/lib/errors";
 import { adminAudit, type Admin } from "@/server/admin/auth";
 import { emitEvent } from "@/server/admin/events";
 import { paystackConfig, type PaymentMode } from "@/server/admin/paystack-config";
+import { billingSettings } from "@/server/admin/settings";
+import { chargeFor, chargeRule } from "@/lib/charge";
 import { notifyBilling } from "@/server/admin/billing-reminders";
 import { dateOnly } from "@/lib/format";
 
@@ -254,10 +256,13 @@ export async function startCheckout(ctx: OrgContext, input: { planId: string; in
     });
     return { free: true as const };
   }
+  // A dollar price may be charged in another currency at the Control Center's rate (lib/charge.ts). The row holds what
+  // is charged, so the callback and the webhook check Paystack's amount and currency against exactly that.
+  const charge = chargeFor(amount, plan.currency, chargeRule(await billingSettings()));
   const reference = `BR-${ctx.org.id.replace(/-/g, "").slice(0, 12)}-${Date.now().toString(36)}`.toUpperCase();
-  await withSystem((db) => db.query(`INSERT INTO payment_transactions(reference, organisation_id, plan_id, customer_email, amount, currency, status, interval, subscription_id) VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7, (SELECT id FROM subscriptions WHERE organisation_id = $2))`, [reference, ctx.org.id, plan.id, ctx.user.email, amount, plan.currency, input.interval]));
+  await withSystem((db) => db.query(`INSERT INTO payment_transactions(reference, organisation_id, plan_id, customer_email, amount, currency, status, interval, subscription_id) VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7, (SELECT id FROM subscriptions WHERE organisation_id = $2))`, [reference, ctx.org.id, plan.id, ctx.user.email, charge.amount, charge.currency, input.interval]));
   const data = await paystack<{ authorization_url: string; access_code: string; reference: string }>("/transaction/initialize", { method: "POST", body: {
-    email: ctx.user.email, amount, currency: plan.currency, reference, callback_url: `${process.env.APP_ORIGIN ?? "http://localhost:3000"}/api/billing/paystack/callback`,
+    email: ctx.user.email, amount: charge.amount, currency: charge.currency, reference, callback_url: `${process.env.APP_ORIGIN ?? "http://localhost:3000"}/api/billing/paystack/callback`,
     metadata: { organisation_id: ctx.org.id, organisation: ctx.org.name, plan_id: plan.id, plan: plan.code, interval: input.interval, custom_fields: [{ display_name: "Organisation", variable_name: "organisation", value: ctx.org.name }, { display_name: "Plan", variable_name: "plan", value: `${plan.name} (${input.interval})` }] },
   } });
   return { free: false as const, url: data.authorization_url, reference };
@@ -405,7 +410,7 @@ export async function orgBilling(ctx: OrgContext) {
     const payments = ctx.membership.role === "owner" || ctx.membership.role === "hr" ? await db.query<{ reference: string; amount: number; currency: string; status: string; paid_at: string | null; created_at: string }>(`SELECT reference, amount, currency, status, paid_at, created_at FROM payment_transactions WHERE organisation_id = $1 ORDER BY created_at DESC LIMIT 12`, [ctx.org.id]) : [];
     const users = await db.one<{ n: number }>(`SELECT count(*)::int AS n FROM memberships WHERE organisation_id = $1 AND status = 'active'`, [ctx.org.id]);
     const pay = await paystackConfig();
-    return { sub, plans, payments, users: users.n, paystack: !!pay.secretKey, mode: pay.mode };
+    return { sub, plans, payments, users: users.n, paystack: !!pay.secretKey, mode: pay.mode, charge: chargeRule(await billingSettings()) };
   });
 }
 

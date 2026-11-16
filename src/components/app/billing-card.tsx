@@ -13,6 +13,7 @@ import { DataTable } from "@/components/ui/table";
 import { api, isApiFailure } from "@/lib/api-client";
 import { money, bytes, dateOnly } from "@/lib/format";
 import { FEATURE_LABELS, planFeatureKeys } from "@/lib/plans";
+import { chargeFor } from "@/lib/charge";
 import { cn } from "@/lib/utils";
 import { isDesktopApp } from "@/lib/desktop-app";
 import type { orgBilling } from "@/server/admin/billing";
@@ -102,6 +103,8 @@ export function BillingCard({ orgSlug, data, notice, preselect }: { orgSlug: str
           const chosen = !current && preselect === p.code;
           const features = planFeatureKeys(p.features).map((k) => FEATURE_LABELS[k]);
           const cantPay = price > 0 && !data.paystack;
+          // A dollar price paid in another currency: the amount charged is said before the person pays.
+          const charge = chargeFor(price, p.currency, data.charge);
           const action = pending === p.id ? (price ? "Opening Paystack…" : "Switching…") : price ? (chosen ? `Continue with ${p.name}` : price > currentPrice ? `Upgrade to ${p.name}` : `Pay with Paystack`) : `Switch to ${p.name}`;
           return (
             <div key={p.id} className={cn("flex flex-col rounded-2xl border bg-background p-5", current ? "border-border-input-hover" : "border-border")}>
@@ -110,6 +113,7 @@ export function BillingCard({ orgSlug, data, notice, preselect }: { orgSlug: str
                 {current ? <Badge>Current plan</Badge> : chosen ? <Badge tone="accent">Your pick</Badge> : null}
               </div>
               <p className="mt-3 flex items-baseline gap-1">{price ? <><span className="type-stat">{money(price, p.currency)}</span><span className="text-meta font-normal text-secondary">/ {per}</span></> : <span className="type-stat">Free</span>}</p>
+              {charge.converted && !current ? <p className="mt-1 text-meta font-medium tabular-nums text-foreground">You pay {money(charge.amount, charge.currency)}, at {money(Math.round(data.charge!.usdRate * 100), charge.currency)} to $1.</p> : null}
               {p.description ? <p className="mt-1 text-meta font-normal text-secondary">{p.description}</p> : null}
               <p className="mt-3 text-meta font-medium text-foreground"><span className="tabular-nums">{p.max_users ? `${p.max_users} people` : "Unlimited people"}</span>, <span className="tabular-nums">{p.max_storage_bytes ? `${bytes(p.max_storage_bytes)} storage` : "unlimited storage"}</span></p>
               {features.length ? (

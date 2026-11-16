@@ -9,7 +9,8 @@ export type LaunchMode = "waitlist" | "live" | "maintenance";
 export type LaunchSettings = { mode: LaunchMode; waitlist_open: boolean; app_access: boolean; message?: string };
 export type GeneralSettings = { platform_name: string; support_email: string; currency: string };
 export type LandingSettings = { headline: string; subheadline: string; cta: string };
-export type BillingSettings = { trial_days: number; grace_days: number };
+/** `charge_currency` and `usd_rate`: dollar prices paid in another currency (lib/charge.ts); unset means charged as priced. */
+export type BillingSettings = { trial_days: number; grace_days: number; charge_currency?: string; usd_rate?: number };
 export type FeatureFlags = Record<string, boolean>;
 
 // Calls have no flag: they are on every plan (owner decisions, 8 October 2026: phase 8, which also took out the two
