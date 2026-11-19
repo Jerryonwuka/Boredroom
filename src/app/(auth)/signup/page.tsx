@@ -4,7 +4,7 @@ import { Building2, Users } from "lucide-react";
 import { AuthShell, AUTH_LINK } from "@/components/auth/auth-shell";
 import { EntryRow } from "@/components/auth/entry-row";
 import { SignupForm } from "@/components/auth/forms";
-import { GoogleSignIn } from "@/components/auth/google-button";
+import { googleConfigured } from "@/server/auth/google";
 import { joiningTarget, safeNextPath } from "@/components/auth/next-path";
 import { buttonVariants } from "@/components/ui/button";
 import { ToolSquare } from "@/components/ui/tool-tile";
@@ -68,8 +68,8 @@ export default async function SignupPage({ searchParams }: { searchParams: Promi
       : "Your account will be linked to the organisation that gave you this link.";
   return (
     <AuthShell title={title} subtitle={subtitle} footer={<>Already have an account? <Link className={AUTH_LINK} href={`/login?next=${encodeURIComponent(next)}`}>Sign in</Link></>}>
-      <GoogleSignIn next={next} label="Sign up with Google" />
-      <SignupForm next={next} email={pendingInvite?.email} lockEmail={!!pendingInvite} orgName={orgName} />
+      {/* Google sits under the form here (11 November 2026): it needs the form's "I am 18 or older and agree…" box. */}
+      <SignupForm next={next} email={pendingInvite?.email} lockEmail={!!pendingInvite} orgName={orgName} google={googleConfigured()} />
     </AuthShell>
   );
 }

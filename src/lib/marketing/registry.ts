@@ -5,6 +5,8 @@ import { COMPARE_PAGES } from "@/lib/marketing/pages/compare";
 import { TOOLS_PAGES } from "@/lib/marketing/pages/tools";
 import { BLOG_PAGES } from "@/lib/marketing/pages/blog";
 import { DOWNLOAD_PAGES } from "@/lib/marketing/pages/download";
+import { LEGAL_PAGES } from "@/lib/marketing/pages/legal";
+import { DEMO_PAGES } from "@/lib/marketing/pages/demo";
 
 /**
  * The registry of public marketing pages (owner request, 17 October 2026: SEO analysis). One list, kept in one file per
@@ -14,7 +16,7 @@ import { DOWNLOAD_PAGES } from "@/lib/marketing/pages/download";
  *
  * `MarketingPath` is the union of the registered paths, so a link to a page that does not exist is a type error.
  */
-const ALL = [...HOME_PAGES, ...PRODUCT_PAGES, ...COMPARE_PAGES, ...TOOLS_PAGES, ...BLOG_PAGES, ...DOWNLOAD_PAGES] as const;
+const ALL = [...HOME_PAGES, ...PRODUCT_PAGES, ...COMPARE_PAGES, ...TOOLS_PAGES, ...BLOG_PAGES, ...DOWNLOAD_PAGES, ...DEMO_PAGES, ...LEGAL_PAGES] as const;
 
 export type MarketingPath = (typeof ALL)[number]["path"];
 export type RegistryPage = MarketingPage & { readonly path: MarketingPath };

@@ -18,7 +18,7 @@ const TONE: Record<string, "success" | "warning" | "danger" | "neutral" | "info"
 export default async function ContactsPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const admin = await requireAdmin("marketing.view");
   const sp = await searchParams;
-  const r = await listContacts({ q: sp.q, status: sp.status, waitlist: sp.waitlist === "1" ? true : undefined, source: sp.source, companySize: sp.companySize, country: sp.country, from: sp.from, to: sp.to, page: Number(sp.page ?? 1) });
+  const r = await listContacts({ q: sp.q, status: sp.status, waitlist: sp.waitlist === "1" ? true : undefined, demo: sp.demo === "1" ? true : undefined, source: sp.source, companySize: sp.companySize, country: sp.country, from: sp.from, to: sp.to, page: Number(sp.page ?? 1) });
   const qs = new URLSearchParams(Object.entries(sp).filter(([, v]) => v) as [string, string][]).toString();
   const edit = can(admin, "waitlist.edit");
   return (
@@ -33,6 +33,7 @@ export default async function ContactsPage({ searchParams }: { searchParams: Pro
         <F label="Search"><input name="q" defaultValue={sp.q ?? ""} placeholder="Email, name, company" className={cn(filterCls, "w-56")} /></F>
         <F label="Status"><select name="status" defaultValue={sp.status ?? ""} className={filterCls}><option value="">Any</option>{["waiting", "invited", "registered", "activated", "trial", "paid", "unsubscribed"].map((s) => <option key={s} value={s}>{words(s)}</option>)}</select></F>
         <F label="Waitlist"><select name="waitlist" defaultValue={sp.waitlist ?? ""} className={filterCls}><option value="">Everyone</option><option value="1">Waitlist only</option></select></F>
+        <F label="Demo"><select name="demo" defaultValue={sp.demo ?? ""} className={filterCls}><option value="">Everyone</option><option value="1">Asked for a demo</option></select></F>
         <F label="Company size"><input name="companySize" defaultValue={sp.companySize ?? ""} className={cn(filterCls, "w-24")} /></F>
         <F label="Country"><input name="country" defaultValue={sp.country ?? ""} className={cn(filterCls, "w-24")} /></F>
         <F label="From"><DatePicker name="from" defaultValue={sp.from ?? ""} size="xs" aria-label="From" /></F>
@@ -45,7 +46,7 @@ export default async function ContactsPage({ searchParams }: { searchParams: Pro
             <tr key={c.id}>
               <td><span className="block font-medium">{[c.first_name, c.last_name].filter(Boolean).join(" ") || "No name"}</span><span className={subCls}>{c.email}</span></td>
               <td>{c.company ?? <span className="text-secondary">None</span>}{c.company_size ? <span className={subCls}>{c.company_size}{c.role_title ? `, ${c.role_title}` : ""}</span> : null}</td>
-              <td><span className="inline-flex items-center gap-1.5">{c.source}{c.is_waitlist ? <Badge size="sm" tone="warning">Waitlist</Badge> : null}</span></td>
+              <td><span className="inline-flex items-center gap-1.5">{c.source}{c.is_waitlist ? <Badge size="sm" tone="warning">Waitlist</Badge> : null}{c.attributes?.demo_request ? <Badge size="sm" tone="info">Demo</Badge> : null}</span></td>
               <td><Badge tone={TONE[c.status] ?? "neutral"}>{words(c.status)}</Badge></td>
               <td className="text-meta">{c.brevo_error ? <span className="text-danger" title={c.brevo_error}>Failed</span> : c.brevo_synced_at ? <span className="text-secondary">Synced {dateOnly(c.brevo_synced_at)}</span> : <span className="text-secondary">Not synced</span>}</td>
               <td className="tabular-nums">{dateOnly(c.created_at)}</td>

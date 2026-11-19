@@ -509,6 +509,15 @@ export function SiteNavClient({ signedIn, waitlist = false, maintenance = false,
                     </Link>
                   </div>
                 ) : null}
+                {/* Book a demo (owner request, 17 November 2026): in the phone menu; the bar has no room for another button. */}
+                {signedIn ? null : (
+                  <div className="mt-2 border-t border-border pt-2">
+                    <Link href="/demo" aria-current={pathname === "/demo" ? "page" : undefined}
+                      className="flex h-11 items-center gap-3 rounded-lg px-3 text-base font-medium text-foreground transition-colors duration-75 hover:bg-fill-1 aria-[current]:bg-fill-1">
+                      <span className="min-w-0 flex-1 truncate">Book a demo</span>
+                    </Link>
+                  </div>
+                )}
                 {/* The theme with its name, so the sheet never ends on a lone icon (review fix, 10 October 2026). */}
                 <div className="mt-2 flex h-12 items-center gap-2 border-t border-border pl-3 pr-1 pt-2">
                   <span className="text-base font-medium text-secondary">Theme</span>

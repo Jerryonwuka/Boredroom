@@ -1,9 +1,10 @@
 /**
  * Every email Boredroom sends, on the design system: the black canvas, one card, one white button, quiet grey
- * meta text. Built as tables with inline styles because that is what mail clients honour; web fonts are asked for
- * and fall back to the system sans. Each builder returns the HTML and a plain-text twin, so a client that shows
+ * meta text. Built as tables with inline styles because that is what mail clients honour; the fonts are named and fall
+ * back to the system sans (no web font is loaded: a font request tells its host who opened the mail; 11 November 2026). Each builder returns the HTML and a plain-text twin, so a client that shows
  * neither images nor HTML still gets the link.
  */
+import { LEGAL_ENTITY, legalEntityReady } from "@/lib/legal";
 
 export type EmailContent = {
   /** The line inbox previews show after the subject; hidden in the body. */
@@ -20,6 +21,8 @@ export type EmailContent = {
   note?: string;
   /** Why the person received it; the footer. */
   reason?: string;
+  /** Product news only (owner decision, 11 November 2026): the person's own unsubscribe link, in the footer. */
+  unsubscribeUrl?: string;
 };
 
 // The tokens, as mail clients can use them (no CSS variables in email).
@@ -39,6 +42,8 @@ export function escapeHtml(s: string): string {
 
 export function renderEmail(c: EmailContent): { html: string; text: string } {
   const e = escapeHtml;
+  // Who sent it and from where (11 November 2026): the operator's name and postal address, once the owner has given them.
+  const sender = legalEntityReady() ? `${LEGAL_ENTITY.name.trim()}, ${LEGAL_ENTITY.address.trim()}` : "";
   const paragraphs = c.intro.map((p) => `<p style="margin:0 0 14px;font-family:${FONT};font-size:16px;line-height:1.55;color:${C.muted};">${e(p)}</p>`).join("");
   const button = c.cta ? `
     <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:24px 0 8px;">
@@ -66,7 +71,6 @@ export function renderEmail(c: EmailContent): { html: string; text: string } {
   <meta name="color-scheme" content="dark">
   <meta name="supported-color-schemes" content="dark">
   <title>${e(c.title)}</title>
-  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700&display=swap" rel="stylesheet">
   <style>
     body { margin: 0; padding: 0; background: ${C.canvas}; -webkit-text-size-adjust: 100%; }
     a { color: ${C.accent}; }
@@ -88,7 +92,7 @@ export function renderEmail(c: EmailContent): { html: string; text: string } {
           ${note}
         </td></tr>
         <tr><td style="padding:20px 6px 0;font-family:${FONT};font-size:12px;line-height:1.6;color:${C.subtle};">
-          ${c.reason ? `${e(c.reason)}<br>` : ""}Boredroom keeps track of what a remote team plans, does and delivers. Nothing in it is a productivity score.
+          ${c.reason ? `${e(c.reason)}<br>` : ""}${c.unsubscribeUrl ? `<a href="${e(c.unsubscribeUrl)}" style="color:${C.muted};text-decoration:underline;">Unsubscribe</a> from product news.<br>` : ""}Boredroom keeps track of what a remote team plans, does and delivers. Nothing in it is a productivity score.${sender ? `<br>${e(sender)}` : ""}
         </td></tr>
       </table>
     </td></tr>
@@ -105,7 +109,9 @@ export function renderEmail(c: EmailContent): { html: string; text: string } {
     c.details?.length ? "\n" + c.details.map((d) => `${d.label}: ${d.value}`).join("\n") : null,
     c.note ? `\n${c.note}` : null,
     c.reason ? `\n${c.reason}` : null,
+    c.unsubscribeUrl ? `Unsubscribe from product news: ${c.unsubscribeUrl}` : null,
     "\nBoredroom keeps track of what a remote team plans, does and delivers. Nothing in it is a productivity score.",
+    sender || null,
   ].filter((l): l is string => l !== null).join("\n");
 
   return { html, text };
@@ -156,6 +162,39 @@ export function invitationMail(input: { inviter: string; org: string; role: stri
     ],
     note: "The link works once. If you were not expecting this, ignore it.",
     reason: `You received this because ${input.inviter} entered this address at ${input.org}.`,
+  });
+}
+
+/** A demo request, to Boredroom (owner request, 17 November 2026: book a demo). Replying answers the person. */
+export function demoRequestMail(input: { name: string; email: string; company: string; companySize: string | null; role: string; times: string; notes: string; timezone: string; page: string }) {
+  return renderEmail({
+    preheader: `${input.name} at ${input.company} asked for a demo.`,
+    eyebrow: "Demo request",
+    title: `${input.name} asked for a demo`,
+    intro: [input.notes ? `They would like to see: ${input.notes}` : "They left no note about what they would like to see.", "Reply to this email to agree a time with them."],
+    details: [
+      { label: "Name", value: input.name },
+      { label: "Email", value: input.email },
+      { label: "Company", value: input.company },
+      ...(input.companySize ? [{ label: "Team size", value: input.companySize }] : []),
+      ...(input.role ? [{ label: "Role", value: input.role }] : []),
+      ...(input.times ? [{ label: "Times that suit", value: input.times }] : []),
+      ...(input.timezone ? [{ label: "Time zone", value: input.timezone }] : []),
+      { label: "Sent from", value: input.page },
+    ],
+    reason: "You received this because someone sent the Book a demo form on boredroom.cc.",
+  });
+}
+
+/** The receipt for a demo request, to the person who asked. */
+export function demoReceivedMail(input: { firstName: string }) {
+  return renderEmail({
+    preheader: "We will email you to agree a time.",
+    eyebrow: "Demo",
+    title: "We have your demo request",
+    intro: [`Thanks, ${input.firstName}. We will email you at this address to agree a time for your Boredroom demo.`, "If anything changes before then, reply to this email."],
+    note: "If you did not ask for a demo, ignore this message and nothing happens.",
+    reason: "You received this because a demo was requested with this address on boredroom.cc.",
   });
 }
 

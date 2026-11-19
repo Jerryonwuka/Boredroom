@@ -161,6 +161,8 @@ test("A03 invitation lifecycle in the browser with the local mail sink", async (
   await expect(workEmail).toHaveValue("newbie@company-a.test");
   await expect(workEmail).toHaveAttribute("readonly", "");
   await np.getByLabel("Password", { exact: true }).fill(PASSWORD);
+  // The one required box (owner decisions, 11 November 2026): 18 or older, the Terms and the Privacy Policy.
+  await np.getByRole("checkbox", { name: /I am 18 or older/ }).check();
   await np.getByRole("button", { name: "Create account" }).click();
   await np.waitForURL(/verify\/pending/);
   const verifyMail = latestMailTo("newbie@company-a.test");

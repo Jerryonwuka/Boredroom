@@ -4,9 +4,12 @@ import { forwardRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Eye, EyeOff } from "lucide-react";
-import { Button, type ButtonProps } from "@/components/ui/button";
+import { Button, buttonVariants, type ButtonProps } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import { Input, Field } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/switch";
+import { GoogleMark } from "@/components/auth/google-mark";
+import { LEGAL_WORDS, MINIMUM_AGE } from "@/lib/legal";
 import { Alert } from "@/components/ui/states";
 import { api, isApiFailure } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
@@ -158,18 +161,35 @@ export function LoginForm({ next, email: knownEmail }: { next?: string; email?: 
  * person came from an email invitation, which only that address can accept, so the address is shown filled in and
  * read-only, with a line saying why (a typo here would only lead to a refusal later).
  */
-export function SignupForm({ next, email: knownEmail, lockEmail = false, orgName }: { next?: string; email?: string; lockEmail?: boolean; orgName?: string | null }) {
+/**
+ * Creating an account. Since 11 November 2026 (owner decisions: Privacy and Terms before launch) nobody gets one without
+ * ticking the one required box: they are 18 or older and agree to the Terms and the Privacy Policy, which say what is
+ * recorded (IP address, activity in the workspace, cookies). A second, optional box asks for product news; unticked, the
+ * person gets account and billing email only. "Sign up with Google" (`google`: the server has Google's keys) sits under
+ * the form on this page, because it needs the same box: pressed without it, the box says so and takes the cursor.
+ */
+export function SignupForm({ next, email: knownEmail, lockEmail = false, orgName, google = false }: { next?: string; email?: string; lockEmail?: boolean; orgName?: string | null; google?: boolean }) {
   const { pending, error, fieldErrors, run, go, showFieldErrors } = useSubmit();
+  const [agreeError, setAgreeError] = useState(false);
   const safe = next ? safeNextPath(next, "") : "";
   const locked = lockEmail && !!knownEmail;
+  /** True when the box is ticked; otherwise the box shows why and takes the cursor. */
+  const agreed = (form: HTMLFormElement | null) => {
+    const box = form?.elements.namedItem("agree") as HTMLInputElement | null;
+    const ok = !!box?.checked;
+    setAgreeError(!ok);
+    if (!ok) box?.focus();
+    return ok;
+  };
   return (
     <form className={FORM} method="post" noValidate onSubmit={async (e) => {
       e.preventDefault();
       const form = e.currentTarget;
       const errors = check(form, { displayName: (v) => (v.trim() ? null : "Enter your name."), email, password: newPassword });
-      if (errors) return showFieldErrors(form, errors);
+      if (errors) { setAgreeError(false); return showFieldErrors(form, errors); }
+      if (!agreed(form)) return;
       const f = new FormData(form);
-      const r = await run(() => api<{ next: string }>("/api/auth/signup", { method: "POST", body: { displayName: f.get("displayName"), email: f.get("email"), password: f.get("password"), ...(safe ? { next: safe } : {}) }, retries: 0 }), form);
+      const r = await run(() => api<{ next: string }>("/api/auth/signup", { method: "POST", body: { displayName: f.get("displayName"), email: f.get("email"), password: f.get("password"), agree: true, marketing: f.get("marketing") === "on", ...(safe ? { next: safe } : {}) }, retries: 0 }), form);
       if (!r) return;
       if (safe) rememberAfterVerify(safe);
       go(safe ? `${r.next}?next=${encodeURIComponent(safe)}` : r.next);
@@ -187,8 +207,54 @@ export function SignupForm({ next, email: knownEmail, lockEmail = false, orgName
           readOnly={locked} aria-readonly={locked || undefined} className={locked ? "text-secondary" : undefined} />
       </Field>
       <Field label="Password" htmlFor="password" description="At least 10 characters." error={fieldErrors.password}><PasswordInput id="password" name="password" autoComplete="new-password" required minLength={10} maxLength={200} /></Field>
+      <div className="mt-1 flex flex-col gap-3">
+        <div>
+          <Checkbox id="agree" name="agree" required aria-invalid={agreeError || undefined} aria-describedby={agreeError ? "agree-error" : undefined} onChange={(e) => { if (e.currentTarget.checked) setAgreeError(false); }}>
+            <span className="font-normal text-secondary">
+              I am {MINIMUM_AGE} or older and agree to the <a className={AUTH_LINK} href="/terms" target="_blank" rel="noopener">Terms of Service</a> and the <a className={AUTH_LINK} href="/privacy" target="_blank" rel="noopener">Privacy Policy</a>, including how Boredroom records my IP address, my activity in the workspace and cookies.
+            </span>
+          </Checkbox>
+          {agreeError ? <p id="agree-error" role="alert" className="mt-1.5 pl-[26px] text-meta font-medium text-danger">{LEGAL_WORDS.agreeError}</p> : null}
+        </div>
+        <Checkbox id="marketing" name="marketing" hint={LEGAL_WORDS.marketingHint}><span className="font-normal text-secondary">{LEGAL_WORDS.marketing}</span></Checkbox>
+      </div>
       <Button type="submit" size="lg" className={SUBMIT} loading={pending}>{pending ? "Creating account…" : "Create account"}</Button>
+      {google ? (
+        <>
+          <p className="flex items-center gap-3 text-xs font-medium text-subtle before:h-px before:flex-1 before:bg-border after:h-px after:flex-1 after:bg-border">or</p>
+          {/* A plain anchor: the start route answers with a redirect to Google, which a client-side navigation cannot follow. */}
+          <a href={`/api/auth/google/start${safe ? `?next=${encodeURIComponent(safe)}` : ""}`} className={cn(buttonVariants({ variant: "outline", size: "lg" }), "w-full gap-2")}
+            onClick={(e) => {
+              const form = e.currentTarget.closest("form");
+              e.preventDefault();
+              if (!agreed(form)) return;
+              const q = new URLSearchParams({ ...(safe ? { next: safe } : {}), agree: "1", ...((form?.elements.namedItem("marketing") as HTMLInputElement | null)?.checked ? { news: "1" } : {}) });
+              // A full load on purpose: the start route answers with a redirect to Google.
+              // eslint-disable-next-line @next/next/no-location-assign-relative-destination
+              window.location.assign(`/api/auth/google/start?${q}`);
+            }}>
+            <GoogleMark />
+            Sign up with Google
+          </a>
+        </>
+      ) : null}
     </form>
+  );
+}
+
+/** The one press on /unsubscribe (owner decision, 11 November 2026): stops product news for the address the link was sent to. */
+export function UnsubscribeButton({ token }: { token: string }) {
+  const { pending, error, run } = useSubmit();
+  const router = useRouter();
+  const [done, setDone] = useState(false);
+  if (done) return <Alert tone="success" title="You are unsubscribed">We won&apos;t send you product news. Emails about your account, security and billing still arrive.</Alert>;
+  return (
+    <div className="flex flex-col gap-4">
+      {error ? <Alert tone="danger">{error.message}</Alert> : null}
+      <Button size="lg" className="w-full" loading={pending} onClick={async () => { const r = await run(() => api("/api/unsubscribe", { method: "POST", body: { token }, retries: 0 })); if (r) { setDone(true); router.refresh(); } }}>
+        {pending ? "Unsubscribing…" : "Unsubscribe"}
+      </Button>
+    </div>
   );
 }
 

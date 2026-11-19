@@ -8,6 +8,7 @@ import { AppError, invalid, rateLimited, unauthenticated } from "@/server/lib/er
 import { mail } from "@/server/lib/mail";
 import { verifyEmailMail, resetPasswordMail } from "@/server/lib/emails";
 import { contactRegistered } from "@/server/admin/marketing";
+import { recordLegalAcceptance, type LegalAcceptance } from "@/server/auth/legal";
 import { registrationOpen } from "@/server/admin/settings";
 import { joiningTarget, safeNextPath } from "@/components/auth/next-path";
 import { noteMissing0064, schema0064Missing } from "@/server/lib/schema-0064";
@@ -140,7 +141,7 @@ const REGISTRATION_CLOSED = "Boredroom is not open for new accounts yet. Join th
  * registration is closed it lets in someone joining by a pending invitation to this address or an enabled join code
  * (D9), and the verification link carries it, so confirming on another device still leads into the workspace.
  */
-export async function signUp(input: { email: string; password: string; displayName: string; ip?: string; next?: string | null }) {
+export async function signUp(input: { email: string; password: string; displayName: string; ip?: string; next?: string | null; /** The sign-up form's boxes (owner decisions, 11 November 2026): present when the person ticked "I am 18 or older and agree…"; the route requires it. */ accepted?: LegalAcceptance }) {
   const email = input.email.trim().toLowerCase();
   if (!(await registrationOpen()) && !(await joiningAllowed(input.next, email))) throw new AppError(403, "REGISTRATION_CLOSED", REGISTRATION_CLOSED);
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw invalid("Enter a valid email address.", { email: ["Enter a valid email address."] });
@@ -161,7 +162,8 @@ export async function signUp(input: { email: string; password: string; displayNa
       `INSERT INTO profiles(auth_user_id, display_name, email) VALUES ($1, $2, $3) RETURNING id`,
       [authUser.id, input.displayName.trim(), email]);
     await issueToken(db, authUser.id, email, "verify_email", input.next);
-    await contactRegistered(db, authUser.id, email, input.displayName).catch(() => undefined);
+    if (input.accepted) await recordLegalAcceptance(db, authUser.id, { via: "email", ip: input.ip, marketing: input.accepted.marketing });
+    await contactRegistered(db, authUser.id, email, input.displayName, !!input.accepted?.marketing).catch(() => undefined);
     return { authUserId: authUser.id, profileId: profile.id };
   });
 }

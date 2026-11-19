@@ -12,6 +12,8 @@ import { AppError } from "@/server/lib/errors";
 import { issueSession, joiningAllowed } from "@/server/auth";
 import { storage } from "@/server/lib/storage";
 import { contactRegistered } from "@/server/admin/marketing";
+import { recordLegalAcceptance, type LegalAcceptance } from "@/server/auth/legal";
+import { LEGAL_WORDS } from "@/lib/legal";
 import { registrationOpen } from "@/server/admin/settings";
 import { safeNextPath } from "@/components/auth/next-path";
 import { sniffImage, stripImageMetadata } from "@/server/lib/image-meta";
@@ -30,7 +32,7 @@ function origin() { return process.env.APP_ORIGIN ?? "http://localhost:3000"; }
 export function redirectUri() { return `${origin()}/api/auth/google/callback`; }
 
 /** Where to send the browser, plus the values to remember in the cookie until it comes back. */
-export function beginGoogleSignIn(next: string | null) {
+export function beginGoogleSignIn(next: string | null, accepted: { agree: boolean; marketing: boolean } = { agree: false, marketing: false }) {
   if (!googleConfigured()) throw new AppError(503, "GOOGLE_NOT_CONFIGURED", "Sign in with Google is not set up on this server.");
   const state = randomBytes(24).toString("base64url");
   const nonce = randomBytes(24).toString("base64url");
@@ -38,7 +40,7 @@ export function beginGoogleSignIn(next: string | null) {
     client_id: process.env.GOOGLE_CLIENT_ID!, redirect_uri: redirectUri(), response_type: "code", scope: "openid email profile",
     state, nonce, access_type: "online", prompt: "select_account",
   });
-  return { url: `${AUTH_URL}?${params}`, cookie: JSON.stringify({ state, nonce, next: safeNext(next), at: Date.now() }) };
+  return { url: `${AUTH_URL}?${params}`, cookie: JSON.stringify({ state, nonce, next: safeNext(next), at: Date.now(), agree: accepted.agree, marketing: accepted.agree && accepted.marketing }) };
 }
 
 /** A path on this site, resolved the way a browser reads it ("/\host" and "/<tab>/host" lead elsewhere), or the workspace list. */
@@ -58,6 +60,7 @@ export const GOOGLE_FAILURE = {
   email: "Google did not confirm an email address for this account.",
   suspended: "This account is suspended. Contact support if you think this is a mistake.",
   closed: "Boredroom is not open for new accounts yet. Join the waitlist and we will email you when it is.",
+  terms: LEGAL_WORDS.googleNeedsAgreement,
   failed: "Google could not sign you in. Try again.",
 } as const;
 export type GoogleFailure = keyof typeof GOOGLE_FAILURE;
@@ -66,6 +69,7 @@ export type GoogleFailure = keyof typeof GOOGLE_FAILURE;
 export function googleFailureCode(err: unknown): GoogleFailure {
   const code = err instanceof AppError ? err.code : "";
   if (code === "REGISTRATION_CLOSED") return "closed";
+  if (code === "TERMS_REQUIRED") return "terms";
   if (code.startsWith("ACCOUNT_")) return "suspended";
   if (code === "GOOGLE_EMAIL") return "email";
   if (err instanceof AppError && err.message.startsWith("The sign-in did not match")) return "mismatch";
@@ -132,7 +136,7 @@ export async function completeGoogleSignIn(code: string, nonce: string) {
  * is closed, a new account is still made for someone on their way into a workspace (`opts.next`: a pending invitation to
  * this address or an enabled join code; owner request, 11 October 2026: the first-run welcome, D9).
  */
-export async function signInWithGoogle(c: Claims, meta: { ip?: string; userAgent?: string }, opts: { next?: string | null } = {}) {
+export async function signInWithGoogle(c: Claims, meta: { ip?: string; userAgent?: string }, opts: { next?: string | null; /** The callback route: a NEW account needs `accepted` (owner decisions, 11 November 2026: the sign-up boxes); signing in to an existing one never does. */ requireAgreement?: boolean; accepted?: LegalAcceptance | null } = {}) {
   const email = c.email?.trim().toLowerCase();
   if (!email || !c.email_verified) throw new AppError(401, "GOOGLE_EMAIL", "Google did not confirm an email address for this account.");
   return withSystem(async (db) => {
@@ -144,9 +148,11 @@ export async function signInWithGoogle(c: Claims, meta: { ip?: string; userAgent
       user = await db.maybeOne<{ id: string }>(`SELECT id FROM auth_users WHERE email = $1`, [email]);
       if (!user) {
         if (!(await registrationOpen()) && !(await joiningAllowed(opts.next, email))) throw new AppError(403, "REGISTRATION_CLOSED", "Boredroom is not open for new accounts yet. Join the waitlist and we will email you when it is.");
+        if (opts.requireAgreement && !opts.accepted) throw new AppError(403, "TERMS_REQUIRED", LEGAL_WORDS.googleNeedsAgreement);
         user = await db.one<{ id: string }>(`INSERT INTO auth_users(email, password_hash, email_verified_at) VALUES ($1, NULL, now()) RETURNING id`, [email]);
         await db.query(`INSERT INTO profiles(auth_user_id, display_name, email) VALUES ($1, $2, $3)`, [user.id, (c.name?.trim() || email.split("@")[0]).slice(0, 120), email]);
-        await contactRegistered(db, user.id, email, c.name?.trim() || "").catch(() => undefined);
+        if (opts.accepted) await recordLegalAcceptance(db, user.id, { via: "google", ip: meta.ip, marketing: opts.accepted.marketing });
+        await contactRegistered(db, user.id, email, c.name?.trim() || "", !!opts.accepted?.marketing).catch(() => undefined);
         created = true;
       } else {
         // Same address, existing account: Google has verified it, so the account is verified too.

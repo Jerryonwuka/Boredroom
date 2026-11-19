@@ -112,7 +112,8 @@ export function Hero({ signedIn, waitlist = false, maintenance = false, notice =
           : waitlist ? <WaitlistLink className={heroButton("primary")}>{copy.cta || "Join the waitlist"}</WaitlistLink>
           : maintenance ? <Link href="/login" className={heroButton("primary")}>Log in</Link>
           : <Link href="/signup?intent=org" className={heroButton("primary")}>Get started</Link>}
-        <a href="#how" className={heroButton("secondary")}>How it works</a>
+        {/* Book a demo (owner request, 17 November 2026) took the place of "How it works": the nav still reaches that section. */}
+        <Link href="/demo" className={heroButton("secondary")}>Book a demo</Link>
       </div>
       {download ? (
         <p className="mt-5 flex justify-center">

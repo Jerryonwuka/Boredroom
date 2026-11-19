@@ -45,6 +45,9 @@ export const PAGE_ICON: Record<Exclude<MarketingPath, "/">, PageIconName> = {
   "/blog/remote-work-productivity-statistics": "chart-column",
   "/pricing": "credit-card",
   "/download": "brenda",
+  "/demo": "video",
+  "/privacy": "shield-check",
+  "/terms": "file-text",
 };
 
 /** The icon of a page (the home page borrows the features grid's). */

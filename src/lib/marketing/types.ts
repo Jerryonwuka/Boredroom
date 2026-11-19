@@ -6,8 +6,9 @@
  */
 
 /** What a page is: decides its JSON-LD type (a post is a BlogPosting, a hub a CollectionPage, the rest WebPage). The
- *  download page (24 October 2026) is a product page, as /pricing is. */
-export type PageKind = "home" | "hub" | "post" | "feature" | "solution" | "usecase" | "comparison" | "tool" | "pricing" | "download";
+ *  download page (24 October 2026) is a product page, as /pricing is. The legal pages (11 November 2026: /privacy and
+ *  /terms) are plain WebPages. The demo page (17 November 2026: /demo) is a product page, as /pricing is. */
+export type PageKind = "home" | "hub" | "post" | "feature" | "solution" | "usecase" | "comparison" | "tool" | "pricing" | "download" | "legal" | "demo";
 
 export type MarketingPage = {
   /** The URL path: "/" for the home page, otherwise no trailing slash ("/blog/end-of-day-report"). Fixed once published. */

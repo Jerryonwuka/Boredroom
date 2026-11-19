@@ -17,7 +17,7 @@ export async function GET(req: Request) {
     res.cookies.set(OAUTH_COOKIE, "", { path: "/api/auth/google", maxAge: 0 });
     return res;
   };
-  let pending: { state: string; nonce: string; next: string; at: number } | null = null;
+  let pending: { state: string; nonce: string; next: string; at: number; agree?: boolean; marketing?: boolean } | null = null;
   try { pending = raw ? JSON.parse(raw) : null; } catch { pending = null; }
   if (!pending || Date.now() - pending.at > 600_000) return fail("timeout");
   if (url.searchParams.get("error")) return fail(url.searchParams.get("error") === "access_denied" ? "cancelled" : "failed");
@@ -28,7 +28,7 @@ export async function GET(req: Request) {
     const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "local";
     wakeTag("auth"); // owner request, 23 October 2026: realtime plan, phase 0
     // `next` lets someone joining by invitation or join code in while registration is closed (owner request, 11 October 2026: D9).
-    const { token } = await signInWithGoogle(claims, { ip, userAgent: req.headers.get("user-agent") ?? undefined }, { next: pending.next });
+    const { token } = await signInWithGoogle(claims, { ip, userAgent: req.headers.get("user-agent") ?? undefined }, { next: pending.next, requireAgreement: true, accepted: pending.agree === true ? { marketing: pending.marketing === true } : null });
     const res = NextResponse.redirect(`${process.env.APP_ORIGIN ?? url.origin}${safeNext(pending.next)}`, 302);
     res.cookies.set(SESSION_COOKIE, token, await sessionCookieOptions());
     res.cookies.set(OAUTH_COOKIE, "", { path: "/api/auth/google", maxAge: 0 });

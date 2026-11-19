@@ -11,7 +11,8 @@ import { WRAP } from "@/components/landing/parts";
  * form on the right, signed in too, so the hero pill's link always reaches it (owner request, 10 October 2026); the admin's
  * landing copy replaces the headline, the line and the button's words. Otherwise the headline and the launch-aware
  * buttons: Open your workspace signed in, Log in in maintenance, else Get started and Join with a code. White buttons
- * only (the landing's buttons are all white).
+ * only (the landing's buttons are all white). Book a demo (owner request, 17 November 2026) is offered to anyone signed
+ * out: a button beside the others, or a line under the waitlist copy.
  */
 export function ClosingCta({ waitlist, maintenance, signedIn, copy, sourceFromPath = false }: {
   waitlist: boolean; maintenance: boolean; signedIn: boolean; copy: LandingCopy;
@@ -28,6 +29,7 @@ export function ClosingCta({ waitlist, maintenance, signedIn, copy, sourceFromPa
                 <h2 id="close-title" className="lp-h2 lg:text-[56px] lg:leading-[60px]">{copy.headline || <>Know what your<br className="max-sm:hidden" /> remote team is doing</>}</h2>
                 <p className="lp-sub mt-5 max-w-lg">{copy.subheadline || "Boredroom is opening soon. Leave your details and you get one email the morning it opens, with a code for your team."}</p>
                 <Badge size="lg" dot className="mt-6">Opening soon</Badge>
+                <p className="mt-5 text-sm font-normal text-secondary">Rather see it first? <Link href="/demo" className="text-foreground underline decoration-[var(--border-input-hover)] underline-offset-[3px] hover:decoration-accent">Book a demo</Link>.</p>
               </div>
               <div className="w-full min-w-0 rounded-[20px] border border-border bg-background p-5 shadow-chart sm:p-6 md:max-w-md md:justify-self-end">
                 <WaitlistForm cta={copy.cta || "Join the waitlist"} sourceFromPath={sourceFromPath} />
@@ -42,6 +44,7 @@ export function ClosingCta({ waitlist, maintenance, signedIn, copy, sourceFromPa
                   : maintenance ? <Link href="/login" className={heroButton("primary")}>Log in</Link>
                   : <Link href="/signup?intent=org" className={heroButton("primary")}>Get started</Link>}
                 {maintenance && !signedIn ? null : <Link href="/join" className={heroButton("secondary")}>Join with a code</Link>}
+                {signedIn ? null : <Link href="/demo" className={heroButton("secondary")}>Book a demo</Link>}
               </div>
             </div>
           )}

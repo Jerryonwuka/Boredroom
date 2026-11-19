@@ -9,7 +9,7 @@ import { WaitlistLink } from "@/components/landing/waitlist-link";
 import { Segmented } from "@/components/ui/segmented";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
-import { CONTACT_EMAIL, arrive } from "@/components/landing/parts";
+import { arrive } from "@/components/landing/parts";
 
 function money(minor: number, currency: string) {
   const major = minor / 100;
@@ -63,9 +63,10 @@ export function Pricing({ plans, waitlist, maintenance = false, signedIn }: { pl
           const hot = p.code === featured;
           const price = yearly ? p.annual_price / 12 : p.monthly_price;
           const free = p.monthly_price === 0 && p.annual_price === 0;
-          // "Talk to us" is a conversation, so it opens an email (review fix, 10 October 2026); in maintenance sign-ups are off.
+          // The plan with no workspace limit is a conversation: Book a demo (owner request, 17 November 2026; it opened an
+          // email before). In maintenance sign-ups are off.
           const cta = signedIn ? { href: `/app/billing?plan=${p.code}`, label: free ? "Use Free" : `Choose ${p.name}` }
-            : !waitlist && p.max_workspaces === null && !free ? { href: `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent(`Boredroom ${p.name}`)}`, label: "Talk to us" }
+            : !waitlist && p.max_workspaces === null && !free ? { href: "/demo", label: "Book a demo" }
             : waitlist || maintenance ? null
             : { href: `/signup?intent=org&plan=${p.code}`, label: free ? "Start for free" : `Start with ${p.name}` };
           const button = cn(buttonVariants({ variant: hot ? "primary" : "secondary", size: "lg" }), "w-full");

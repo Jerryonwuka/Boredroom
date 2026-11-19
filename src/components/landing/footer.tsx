@@ -24,6 +24,7 @@ const COLUMNS: { title: string; links: { label: string; href: MarketingPath }[] 
       { label: "Solutions", href: "/solutions" },
       { label: "Use cases", href: "/usecases" },
       { label: "Pricing", href: "/pricing" },
+      { label: "Book a demo", href: "/demo" },
     ],
   },
   {
@@ -72,6 +73,8 @@ export function SiteFooter({ waitlist = false }: { waitlist?: boolean }) {
           <Link href="/#faq" className={LINK}>FAQ</Link>
           <Link href="/#fair" className={LINK}>What is tracked</Link>
           <a href={`mailto:${CONTACT_EMAIL}`} className={LINK}>Contact</a>
+          <Link href="/privacy" className={LINK}>Privacy Policy</Link>
+          <Link href="/terms" className={LINK}>Terms of Service</Link>
         </nav>
       </div>
       <div className="border-t border-border">

@@ -56,7 +56,7 @@ export function WaitlistForm({ cta = "Join the waitlist", source = "landing", so
       <input name="website" tabIndex={-1} autoComplete="off" className="hidden" aria-hidden />
       {error ? <p role="alert" className="text-sm font-normal text-danger sm:col-span-2">{error}</p> : null}
       <div className="sm:col-span-2"><button type="submit" disabled={pending} aria-busy={pending || undefined} className={cn(buttonVariants({ variant: "primary", size: "lg" }), "h-11 w-full text-[15px]")}>{pending ? "Adding you…" : cta}</button></div>
-      <p className="text-xs font-normal text-secondary sm:col-span-2">One email when we open, nothing else. Reply “unsubscribe” to any email to stop.</p>
+      <p className="text-xs font-normal text-secondary sm:col-span-2">One email when we open, nothing else, with a link to unsubscribe. By joining you confirm you are 18 or older; how we use your details is in the <a href="/privacy" className="underline underline-offset-2 hover:text-foreground">Privacy Policy</a>.</p>
     </form>
   );
 }

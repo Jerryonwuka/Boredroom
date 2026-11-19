@@ -13,6 +13,49 @@ import { adminAudit, type Admin } from "@/server/admin/auth";
 import { emitEvent } from "@/server/admin/events";
 import { enqueueJob } from "@/server/services/common";
 import { money } from "@/server/admin/billing";
+import { keyedDigest } from "@/server/lib/crypto";
+
+/**
+ * Who may be sent product news (owner decision, 11 November 2026: marketing email only for people who opt in). A contact
+ * who joined the waitlist asked to hear from Boredroom; a contact who ticked "Email me product news and tips" at sign-up
+ * has `marketing_consent` (the time they ticked it) in `attributes`. Everyone else gets account and billing email only:
+ * they are left out of campaign audiences, their marketing and lifecycle automations are skipped as "unsubscribed" is,
+ * and they are not put on the Brevo list. `c` is marketing_contacts.
+ */
+export const MARKETING_OK_SQL = `(c.is_waitlist OR c.attributes ? 'marketing_consent')`;
+
+/** The link in a marketing email's footer: the contact's id and a keyed digest of it, so nobody can unsubscribe a stranger. */
+export function unsubscribeToken(contactId: string): string { return `${contactId}.${keyedDigest(`unsubscribe:${contactId}`).slice(0, 32)}`; }
+export function unsubscribeUrl(contactId: string): string { return `${process.env.APP_ORIGIN ?? "http://localhost:3000"}/unsubscribe?t=${unsubscribeToken(contactId)}`; }
+function contactOfToken(token: string): string | null {
+  const [id, sig] = token.split(".");
+  if (!id || !sig || !/^[0-9a-f-]{36}$/i.test(id)) return null;
+  return unsubscribeToken(id) === `${id}.${sig}` ? id : null;
+}
+const maskEmail = (email: string) => { const [n, d] = email.split("@"); return `${n.slice(0, 1)}${"•".repeat(Math.max(2, Math.min(6, n.length - 1)))}@${d ?? ""}`; };
+
+/** The unsubscribe page reads who the link is for (the address masked), or null for a link that is not ours. */
+export async function unsubscribePreview(token: string): Promise<{ email: string; done: boolean } | null> {
+  const id = contactOfToken(token);
+  if (!id) return null;
+  return withSystem(async (db) => {
+    const c = await db.maybeOne<{ email: string; status: string; ok: boolean }>(`SELECT c.email, c.status, ${MARKETING_OK_SQL} AS ok FROM marketing_contacts c WHERE c.id = $1`, [id]);
+    return c ? { email: maskEmail(c.email), done: c.status === "unsubscribed" || !c.ok } : null;
+  });
+}
+
+/** The person's own press on the unsubscribe page: no more product news, and the consent they gave is taken back. */
+export async function unsubscribeByToken(token: string): Promise<boolean> {
+  const id = contactOfToken(token);
+  if (!id) return false;
+  return withSystem(async (db) => {
+    const c = await db.maybeOne<{ id: string }>(
+      `UPDATE marketing_contacts SET status = 'unsubscribed', unsubscribed_at = COALESCE(unsubscribed_at, now()), attributes = attributes - 'marketing_consent', updated_at = now() WHERE id = $1 RETURNING id`, [id]);
+    if (!c) return false;
+    await enqueueJob(db, "brevo.sync_contact", { contactId: id }, { dedupKey: `brevo.sync:${id}:unsubscribed:${Date.now().toString(36).slice(0, 6)}` });
+    return true;
+  });
+}
 
 // ---- Contacts -------------------------------------------------------------------------------------------------
 
@@ -29,15 +72,16 @@ export const contactSchema = z.object({
   isWaitlist: z.boolean().default(true),
 });
 
-export type ContactRow = { id: string; email: string; first_name: string | null; last_name: string | null; company: string | null; company_size: string | null; role_title: string | null; country: string | null; interest: string | null; source: string; status: string; is_waitlist: boolean; auth_user_id: string | null; invited_at: string | null; unsubscribed_at: string | null; brevo_synced_at: string | null; brevo_error: string | null; created_at: string };
+export type ContactRow = { id: string; email: string; first_name: string | null; last_name: string | null; company: string | null; company_size: string | null; role_title: string | null; country: string | null; interest: string | null; source: string; status: string; is_waitlist: boolean; auth_user_id: string | null; invited_at: string | null; unsubscribed_at: string | null; brevo_synced_at: string | null; brevo_error: string | null; created_at: string; attributes?: Record<string, unknown> };
 
-export type ContactFilter = { q?: string; status?: string; waitlist?: boolean; source?: string; companySize?: string; country?: string; from?: string; to?: string; page?: number; pageSize?: number };
+export type ContactFilter = { q?: string; status?: string; waitlist?: boolean; /** Only people who asked for a demo (server/admin/demo.ts). */ demo?: boolean; source?: string; companySize?: string; country?: string; from?: string; to?: string; page?: number; pageSize?: number };
 
 function contactWhere(f: ContactFilter) {
   const where: string[] = []; const params: unknown[] = [];
   if (f.q?.trim()) { params.push(`%${f.q.trim()}%`); where.push(`(c.email::text ILIKE $${params.length} OR c.first_name ILIKE $${params.length} OR c.last_name ILIKE $${params.length} OR c.company ILIKE $${params.length})`); }
   if (f.status && f.status !== "all") { params.push(f.status); where.push(`c.status = $${params.length}`); }
   if (f.waitlist !== undefined) { params.push(f.waitlist); where.push(`c.is_waitlist = $${params.length}`); }
+  if (f.demo) where.push(`c.attributes ? 'demo_request'`);
   if (f.source) { params.push(f.source); where.push(`c.source = $${params.length}`); }
   if (f.companySize) { params.push(f.companySize); where.push(`c.company_size = $${params.length}`); }
   if (f.country) { params.push(f.country); where.push(`c.country ILIKE $${params.length}`); }
@@ -92,9 +136,11 @@ export async function setContactStatus(admin: Admin | null, id: string, status: 
 }
 
 /** Links a new account to its waitlist contact (same email) and moves it along the lifecycle. */
-export async function contactRegistered(db: Db, authUserId: string, email: string, name: string) {
+export async function contactRegistered(db: Db, authUserId: string, email: string, name: string, marketing = false) {
   const [first, ...rest] = name.trim().split(/\s+/);
   const r = await upsertContact(db, { email, firstName: first || null, lastName: rest.join(" ") || null, source: "signup", isWaitlist: false, authUserId, status: "registered" });
+  // "Email me product news and tips", ticked at sign-up (owner decision, 11 November 2026): when they said yes.
+  if (marketing) await db.query(`UPDATE marketing_contacts SET attributes = attributes || jsonb_build_object('marketing_consent', to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')) WHERE id = $1 AND NOT attributes ? 'marketing_consent'`, [r.id]);
   const c = await db.maybeOne<{ is_waitlist: boolean }>(`SELECT is_waitlist FROM marketing_contacts WHERE id = $1`, [r.id]);
   if (c?.is_waitlist) await emitEvent(db, "WAITLIST_CONVERTED", { contactId: r.id, authUserId, email });
   await emitEvent(db, "USER_CREATED", { authUserId, email, contactId: r.id });
@@ -173,7 +219,7 @@ function ruleSql(r: SegmentRule, params: unknown[]): string {
 
 export function audienceSql(audience: { kind: string; segmentId?: string | null }, rules: SegmentRule[] = []): { sql: string; params: unknown[] } {
   const params: unknown[] = [];
-  const conds: string[] = [`c.status <> 'unsubscribed'`];
+  const conds: string[] = [`c.status <> 'unsubscribed'`, MARKETING_OK_SQL];
   switch (audience.kind) {
     case "waitlist": conds.push(`c.is_waitlist AND c.status IN ('waiting','invited')`); break;
     case "free": conds.push(`p.code = 'free'`); break;
@@ -238,19 +284,19 @@ export type Vars = Record<string, string | number | boolean | null | undefined>;
 export function fill(text: string, vars: Vars) { return text.replace(/\{\{\s*([a-z_]+)\s*\}\}/gi, (_, k: string) => String(vars[k] ?? "")); }
 
 /** Renders a template (or an inline campaign body) with variables into the design-system email. */
-export function renderTemplate(t: { subject: string; eyebrow?: string | null; title: string; body: string; cta_label?: string | null; cta_url?: string | null }, vars: Vars, reason?: string) {
+export function renderTemplate(t: { subject: string; eyebrow?: string | null; title: string; body: string; cta_label?: string | null; cta_url?: string | null }, vars: Vars, reason?: string, unsubscribe?: string) {
   const v: Vars = { app_url: process.env.APP_ORIGIN ?? "http://localhost:3000", ...vars };
   const paragraphs = fill(t.body, v).split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
   const cta = t.cta_label && t.cta_url ? { label: fill(t.cta_label, v), url: fill(t.cta_url, v) } : undefined;
-  const { html, text } = renderEmail({ eyebrow: t.eyebrow ? fill(t.eyebrow, v) : undefined, title: fill(t.title, v), intro: paragraphs, cta, reason, preheader: paragraphs[0]?.slice(0, 120) });
+  const { html, text } = renderEmail({ eyebrow: t.eyebrow ? fill(t.eyebrow, v) : undefined, title: fill(t.title, v), intro: paragraphs, cta, reason, unsubscribeUrl: unsubscribe, preheader: paragraphs[0]?.slice(0, 120) });
   return { subject: fill(t.subject, v), html, text };
 }
 
 /** Sends one email through the platform provider and writes the log row. Never throws to the caller; the log carries the outcome. */
-export async function sendLogged(db: Db, m: { to: string; subject: string; html: string; text: string; category: string; campaignId?: string | null; automationId?: string | null; organisationId?: string | null; sentBy?: string | null }) {
+export async function sendLogged(db: Db, m: { to: string; subject: string; html: string; text: string; category: string; campaignId?: string | null; automationId?: string | null; organisationId?: string | null; sentBy?: string | null; /** Extra mail headers ("Reply-To"). */ headers?: Record<string, string> }) {
   const provider = process.env.MAIL_PROVIDER ?? "sink";
   try {
-    const r = await mail().send({ to: m.to, subject: m.subject, text: m.text, html: m.html, category: m.category });
+    const r = await mail().send({ to: m.to, subject: m.subject, text: m.text, html: m.html, category: m.category, ...(m.headers ? { headers: m.headers } : {}) });
     await db.query(`INSERT INTO email_log(to_email, subject, category, provider, provider_id, status, campaign_id, automation_id, organisation_id, sent_by) VALUES ($1, $2, $3, $4, $5, 'sent', $6, $7, $8, $9)`, [m.to, m.subject, m.category, provider, r.id, m.campaignId ?? null, m.automationId ?? null, m.organisationId ?? null, m.sentBy ?? null]);
     return { ok: true as const, id: r.id };
   } catch (err) {
@@ -261,11 +307,11 @@ export async function sendLogged(db: Db, m: { to: string; subject: string; html:
 
 /** Standard variables for a contact, with account and billing details when it has an account. */
 export async function contactVars(db: Db, contactId: string): Promise<Vars & { email: string; unsubscribed: boolean }> {
-  const c = await db.one<{ email: string; first_name: string | null; last_name: string | null; company: string | null; status: string; org_name: string | null; plan_name: string | null; period_end: string | null; amount: number | null; currency: string | null }>(
-    `SELECT c.email, c.first_name, c.last_name, c.company, c.status, o.name AS org_name, p.name AS plan_name, s.current_period_end AS period_end,
+  const c = await db.one<{ email: string; first_name: string | null; last_name: string | null; company: string | null; status: string; marketing_ok: boolean; org_name: string | null; plan_name: string | null; period_end: string | null; amount: number | null; currency: string | null }>(
+    `SELECT c.email, c.first_name, c.last_name, c.company, c.status, ${MARKETING_OK_SQL} AS marketing_ok, o.name AS org_name, p.name AS plan_name, s.current_period_end AS period_end,
             CASE WHEN s.billing_interval = 'annual' THEN p.annual_price ELSE p.monthly_price END AS amount, p.currency
      ${CONTACT_BASE} LEFT JOIN organisations o ON o.id = mem.organisation_id WHERE c.id = $1`, [contactId]);
-  return { email: c.email, unsubscribed: c.status === "unsubscribed", first_name: c.first_name ?? c.email.split("@")[0], last_name: c.last_name ?? "", organization_name: c.org_name ?? c.company ?? "your organisation", plan_name: c.plan_name ?? "Free", subscription_expiry: c.period_end ? new Date(c.period_end).toDateString() : "", renewal_amount: c.amount != null ? money(c.amount, c.currency ?? "NGN") : "" };
+  return { email: c.email, unsubscribed: c.status === "unsubscribed" || !c.marketing_ok, first_name: c.first_name ?? c.email.split("@")[0], last_name: c.last_name ?? "", organization_name: c.org_name ?? c.company ?? "your organisation", plan_name: c.plan_name ?? "Free", subscription_expiry: c.period_end ? new Date(c.period_end).toDateString() : "", renewal_amount: c.amount != null ? money(c.amount, c.currency ?? "NGN") : "" };
 }
 
 // ---- Campaigns -----------------------------------------------------------------------------------------------------
@@ -373,7 +419,7 @@ export async function runCampaignBatch(campaignId: string, batch = 40): Promise<
     for (const r of queued) {
       const vars = r.contact_id ? await contactVars(db, r.contact_id) : { email: r.email, unsubscribed: false, first_name: r.email.split("@")[0] };
       if (vars.unsubscribed) { await db.query(`UPDATE campaign_recipients SET status = 'skipped', error = 'unsubscribed' WHERE id = $1`, [r.id]); continue; }
-      const m = renderTemplate(content, vars, "You received this because you asked to hear from Boredroom. Reply with “unsubscribe” to stop.");
+      const m = renderTemplate(content, vars, "You received this because you asked to hear from Boredroom.", r.contact_id ? unsubscribeUrl(r.contact_id) : undefined);
       const out = await sendLogged(db, { to: r.email, subject: m.subject, html: m.html, text: m.text, category: "marketing", campaignId });
       await db.query(`UPDATE campaign_recipients SET status = $2, provider_id = $3, error = $4, sent_at = now() WHERE id = $1`, [r.id, out.ok ? "sent" : "failed", out.ok ? out.id : null, out.ok ? null : out.error.slice(0, 500)]);
     }
@@ -408,7 +454,8 @@ async function runAutomationFor(db: Db, a: { id: string; template_id: string; na
   const vars = await contactVars(db, contactId);
   // Lifecycle and marketing mail respects unsubscribes; billing and transactional mail does not.
   if (vars.unsubscribed && (t.category === "marketing" || t.category === "lifecycle")) { await db.query(`UPDATE automation_runs SET status = 'skipped', error = 'unsubscribed' WHERE id = $1`, [claimed[0].id]); return false; }
-  const m = renderTemplate(t, { ...vars, ...extra }, t.category === "billing" ? "You received this because your organisation has a Boredroom subscription." : t.category === "transactional" ? "You received this because of an action on your Boredroom account." : "You received this because you have a Boredroom account.");
+  const m = renderTemplate(t, { ...vars, ...extra }, t.category === "billing" ? "You received this because your organisation has a Boredroom subscription." : t.category === "transactional" ? "You received this because of an action on your Boredroom account." : "You received this because you asked for product news from Boredroom.",
+    t.category === "marketing" || t.category === "lifecycle" ? unsubscribeUrl(contactId) : undefined);
   const out = await sendLogged(db, { to: vars.email, subject: m.subject, html: m.html, text: m.text, category: t.category, automationId: a.id, organisationId });
   await db.query(`UPDATE automation_runs SET status = $2, error = $3, ran_at = now() WHERE id = $1`, [claimed[0].id, out.ok ? "sent" : "failed", out.ok ? null : out.error.slice(0, 500)]);
   return out.ok;
@@ -483,14 +530,17 @@ export async function brevoAccount() { return brevo<{ email: string; companyName
 export async function syncContactToBrevo(contactId: string) {
   if (!brevoConfigured()) return { skipped: true };
   return withSystem(async (db) => {
-    const c = await db.maybeOne<{ email: string; first_name: string | null; last_name: string | null; company: string | null; status: string; is_waitlist: boolean; country: string | null; created_at: string; org_name: string | null; plan: string | null; sub_status: string | null; period_end: string | null; last_seen: string | null }>(
-      `SELECT c.email, c.first_name, c.last_name, c.company, c.status, c.is_waitlist, c.country, c.created_at, o.name AS org_name, p.name AS plan, s.status AS sub_status, s.current_period_end AS period_end, (SELECT MAX(last_seen_at) FROM auth_sessions a WHERE a.user_id = u.id) AS last_seen
+    const c = await db.maybeOne<{ email: string; first_name: string | null; last_name: string | null; company: string | null; status: string; is_waitlist: boolean; marketing_ok: boolean; brevo_id: string | null; country: string | null; created_at: string; org_name: string | null; plan: string | null; sub_status: string | null; period_end: string | null; last_seen: string | null }>(
+      `SELECT c.email, c.first_name, c.last_name, c.company, c.status, c.is_waitlist, ${MARKETING_OK_SQL} AS marketing_ok, c.brevo_id, c.country, c.created_at, o.name AS org_name, p.name AS plan, s.status AS sub_status, s.current_period_end AS period_end, (SELECT MAX(last_seen_at) FROM auth_sessions a WHERE a.user_id = u.id) AS last_seen
        ${CONTACT_BASE} LEFT JOIN organisations o ON o.id = mem.organisation_id WHERE c.id = $1`, [contactId]);
     if (!c) return { skipped: true };
+    // Only people who asked for product news go to the mailing list (owner decision, 11 November 2026). Someone already
+    // there who has not asked (or has unsubscribed) is updated once more, so the list stops sending to them.
+    if (!c.marketing_ok && !c.brevo_id) return { skipped: true };
     const listId = Number(process.env.BREVO_LIST_ID ?? 0) || undefined;
     try {
       const r = await brevo<{ id?: number }>("/contacts", { method: "POST", body: {
-        email: c.email, updateEnabled: true, emailBlacklisted: c.status === "unsubscribed", listIds: listId ? [listId] : undefined,
+        email: c.email, updateEnabled: true, emailBlacklisted: c.status === "unsubscribed" || !c.marketing_ok, listIds: listId ? [listId] : undefined,
         attributes: { FIRSTNAME: c.first_name ?? "", LASTNAME: c.last_name ?? "", ORGANIZATION: c.org_name ?? c.company ?? "", PLAN: c.plan ?? "", SUBSCRIPTION_STATUS: c.sub_status ?? "", SUBSCRIPTION_EXPIRY: c.period_end ? c.period_end.slice(0, 10) : "", SIGNUP_DATE: c.created_at.slice(0, 10), LAST_ACTIVITY: c.last_seen ? c.last_seen.slice(0, 10) : "", COUNTRY: c.country ?? "", STATUS: c.status, WAITLIST: c.is_waitlist ? "yes" : "no" },
       } });
       await db.query(`UPDATE marketing_contacts SET brevo_id = COALESCE($2, brevo_id), brevo_synced_at = now(), brevo_error = NULL WHERE id = $1`, [contactId, r.id ?? null]);
